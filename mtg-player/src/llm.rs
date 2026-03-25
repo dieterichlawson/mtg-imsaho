@@ -214,18 +214,12 @@ impl LlmPlayer {
     }
 
     /// Check if the AI should auto-pass (nothing interesting to do).
-    fn should_auto_pass(view: &GameView, actions: &[Action]) -> bool {
+    fn should_auto_pass(_view: &GameView, actions: &[Action]) -> bool {
+        // Auto-pass when the only options are Pass and Concede.
         let has_pass = actions.iter().any(|a| matches!(a, Action::PassPriority));
         if !has_pass {
             return false;
         }
-
-        // Always auto-pass when it's not our turn (no instants in Phase 1).
-        if view.active_player != view.you {
-            return true;
-        }
-
-        // Auto-pass when only Pass + Concede (nothing to do).
         actions.iter().all(|a| matches!(a, Action::PassPriority | Action::Concede))
     }
 

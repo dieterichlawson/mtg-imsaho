@@ -356,11 +356,6 @@ impl Player for CliPlayer {
     fn choose_action(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
         let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
 
-        // Auto-pass when it's not our turn (no instants yet).
-        if view.active_player != view.you && has_pass {
-            return Action::PassPriority;
-        }
-
         // Auto-pass when the only options are Pass and Concede.
         let only_pass_concede = legal_actions.iter().all(|a| matches!(a,
             Action::PassPriority | Action::Concede
