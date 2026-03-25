@@ -1,0 +1,38 @@
+use crate::cards::{CardBehavior, CardData, ManaAbilityDef};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+pub struct Forest;
+
+impl CardBehavior for Forest {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Forest".into(),
+            cost: None,
+            card_types: vec![CardType::Land],
+            supertypes: vec![Supertype::Basic],
+            subtypes: vec!["Forest".into()],
+            power: None,
+            toughness: None,
+            oracle_text: "{T}: Add {G}.".into(),
+        }
+    }
+
+    fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
+        let obj = match state.get_object(object_id) {
+            Some(o) => o,
+            None => return vec![],
+        };
+        if obj.zone == Zone::Battlefield && !obj.tapped {
+            vec![ManaAbilityDef {
+                ability_index: 0,
+                description: "Add {G}".into(),
+                produced: vec![(ManaType::Green, 1)],
+                requires_tap: true,
+            }]
+        } else {
+            vec![]
+        }
+    }
+}

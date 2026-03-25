@@ -1,0 +1,8 @@
+[package]
+name = "mtg-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+mtg-engine = { path = "../mtg-engine" }
+mtg-player = { path = "../mtg-player" }
