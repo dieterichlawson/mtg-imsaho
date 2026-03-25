@@ -8,6 +8,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::types::*;
+use mtg_engine::view::GameView;
 
 /// Holy Strength attaches to a creature and gives +1/+2.
 #[test]
@@ -196,4 +197,83 @@ fn aura_toughness_bonus_prevents_death() {
     check_state_based_actions_with_registry(&mut state, Some(&registry));
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "3/4 creature with 4 damage should die");
+}
+
+/// GameView should show effective P/T for creatures with auras.
+#[test]
+fn view_shows_effective_pt_with_aura() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 1);
+    let hs_id = registry.get_id_by_name("Holy Strength").unwrap();
+    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
+    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
+        &registry,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    let view = GameView::for_player(&state, P0, &registry);
+    let perm = view.battlefield.iter().find(|p| p.object_id == creature).unwrap();
+
+    assert_eq!(perm.power, Some(2), "Raw power should be 2");
+    assert_eq!(perm.toughness, Some(1), "Raw toughness should be 1");
+    assert_eq!(perm.effective_power, Some(3), "Effective power should be 3 with Holy Strength");
+    assert_eq!(perm.effective_toughness, Some(3), "Effective toughness should be 3 with Holy Strength");
+}
+
+/// GameView should show aura attachment on the PermanentView.
+#[test]
+fn view_shows_aura_attached_to_creature() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let hs_id = registry.get_id_by_name("Holy Strength").unwrap();
+    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
+    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
+        &registry,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    let view = GameView::for_player(&state, P0, &registry);
+    let aura = view.battlefield.iter().find(|p| p.object_id == hs).unwrap();
+
+    assert_eq!(aura.attached_to, Some(creature),
+        "Aura should show as attached to the creature in the view");
+}
+
+/// GameView shows effective P/T with Glorious Anthem.
+#[test]
+fn view_shows_effective_pt_with_anthem() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+
+    let anthem_id = registry.get_id_by_name("Glorious Anthem").unwrap();
+    let anthem = state.create_object(anthem_id, P0, Zone::Hand, None, None);
+    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: anthem, targets: vec![] },
+        &registry,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    let view = GameView::for_player(&state, P0, &registry);
+    let perm = view.battlefield.iter().find(|p| p.object_id == creature).unwrap();
+
+    assert_eq!(perm.effective_power, Some(3), "Effective power should be 3 with Anthem");
+    assert_eq!(perm.effective_toughness, Some(3), "Effective toughness should be 3 with Anthem");
 }

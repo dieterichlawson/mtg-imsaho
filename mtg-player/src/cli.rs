@@ -154,22 +154,36 @@ impl CliPlayer {
                     println!("  Lands: {}", parts.join(", "));
                 }
 
-                // Creatures: listed individually with full status.
+                // Collect aura names by what they're attached to.
+                let mut aura_map: std::collections::HashMap<mtg_engine::ids::ObjectId, Vec<String>> = std::collections::HashMap::new();
+                for e in &enchantments {
+                    if let Some(target_id) = e.attached_to {
+                        aura_map.entry(target_id).or_default().push(e.name.clone());
+                    }
+                }
+
+                // Creatures: listed individually with full status and attached auras.
                 if !creatures.is_empty() {
                     println!("  Creatures:");
                     for c in &creatures {
                         let tapped = if c.tapped { " [TAPPED]" } else { "" };
                         let sick = if c.summoning_sick { " [SICK]" } else { "" };
-                        let pt = match (c.power, c.toughness) {
+                        let pt = match (c.effective_power, c.effective_toughness) {
                             (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                            _ => String::new(),
+                            _ => match (c.power, c.toughness) {
+                                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                                _ => String::new(),
+                            },
                         };
                         let dmg = if c.damage_marked > 0 {
                             format!(" ({}dmg)", c.damage_marked)
                         } else {
                             String::new()
                         };
-                        println!("    {}{}{}{}{} ({})", c.name, pt, dmg, tapped, sick, c.object_id);
+                        let auras = aura_map.get(&c.object_id)
+                            .map(|names| format!(" [{}]", names.join(", ")))
+                            .unwrap_or_default();
+                        println!("    {}{}{}{}{}{} ({})", c.name, pt, auras, dmg, tapped, sick, c.object_id);
                     }
                 }
 
@@ -182,10 +196,13 @@ impl CliPlayer {
                     }
                 }
 
-                // Enchantments.
-                if !enchantments.is_empty() {
+                // Enchantments: skip auras shown with creatures.
+                let non_aura_enchantments: Vec<_> = enchantments.iter()
+                    .filter(|e| e.attached_to.is_none())
+                    .collect();
+                if !non_aura_enchantments.is_empty() {
                     println!("  Enchantments:");
-                    for e in &enchantments {
+                    for e in &non_aura_enchantments {
                         println!("    {} ({})", e.name, e.object_id);
                     }
                 }
