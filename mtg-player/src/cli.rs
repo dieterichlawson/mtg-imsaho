@@ -267,7 +267,7 @@ impl CliPlayer {
         let row_before_opp = row;
         row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
         // Ensure minimum 2 lines for each half of the battlefield
-        while row < row_before_opp + 2 { row += 1; }
+        while row < row_before_opp + 4 { row += 1; }
 
         // Battlefield label — starts at mid_col, spans to right edge
         let bf_label = "─── BATTLEFIELD ";
@@ -281,7 +281,7 @@ impl CliPlayer {
             .filter(|p| p.controller == view.you).collect();
         let row_before_you = row;
         row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
-        while row < row_before_you + 2 { row += 1; }
+        while row < row_before_you + 4 { row += 1; }
 
         // Hand separator — starts at mid_col, spans to right edge
         let hand_label = "─── HAND ";
