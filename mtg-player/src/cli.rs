@@ -178,7 +178,7 @@ impl CliPlayer {
         // Opponent battlefield
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
-        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w);
+        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
 
         // Separator
         let mid_sep: String = "─".repeat(mid_w);
@@ -189,7 +189,7 @@ impl CliPlayer {
         // Your battlefield
         let your_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller == view.you).collect();
-        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w);
+        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
 
         // Status bar
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
@@ -271,7 +271,8 @@ impl CliPlayer {
 
     /// Render battlefield permanents at a specific column/row, return next row.
     fn render_battlefield_at(out: &mut io::Stdout, perms: &[&PermanentView], color: Color,
-                              col: u16, mut row: u16, max_w: usize) -> u16 {
+                              col: u16, mut row: u16, max_w: usize,
+                              all_perms: &[PermanentView]) -> u16 {
         let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
         let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
         let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
@@ -280,10 +281,14 @@ impl CliPlayer {
         let artifacts: Vec<_> = perms.iter().filter(|p|
             has_type(p, CardType::Artifact) && !has_type(p, CardType::Creature) && !has_type(p, CardType::Land)).collect();
 
+        // Build aura map from ALL permanents (auras can be controlled by a different
+        // player than the creature they're attached to, e.g. Pacifism).
         let mut aura_map: HashMap<ObjectId, Vec<String>> = HashMap::new();
-        for e in &enchantments {
-            if let Some(target_id) = e.attached_to {
-                aura_map.entry(target_id).or_default().push(e.name.clone());
+        for p in all_perms {
+            if p.attached_to.is_some() && p.card_types.contains(&CardType::Enchantment) {
+                if let Some(target_id) = p.attached_to {
+                    aura_map.entry(target_id).or_default().push(p.name.clone());
+                }
             }
         }
 
