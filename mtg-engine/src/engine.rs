@@ -112,11 +112,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
     if is_sorcery_speed {
         // Play a land (if land plays remaining > 0).
+        // Deduplicate — only show one "Play Forest" even if you have 3 in hand.
         if player_state.land_plays_remaining > 0 {
+            let mut seen_lands: Vec<CardId> = Vec::new();
             for obj in state.objects_in_zone(Zone::Hand, player) {
                 if let Some(behavior) = registry.get(obj.card_id) {
                     let data = behavior.card_data();
-                    if data.card_types.contains(&CardType::Land) {
+                    if data.card_types.contains(&CardType::Land) && !seen_lands.contains(&obj.card_id) {
+                        seen_lands.push(obj.card_id);
                         actions.push(Action::PlayLand { object_id: obj.id });
                     }
                 }
@@ -125,6 +128,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     // Cast spells from hand.
+    // Deduplicate untargeted spells — only show one "Cast Kalonian Tusker" even if you have 3.
+    // Targeted spells still get one entry per valid target.
+    let mut seen_untargeted_casts: Vec<CardId> = Vec::new();
     for obj in state.objects_in_zone(Zone::Hand, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
@@ -158,6 +164,15 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             // Generate cast actions with valid targets.
             let target_req = behavior.target_requirement();
+
+            // For untargeted spells, deduplicate by card_id.
+            if matches!(target_req, crate::cards::TargetRequirement::None) {
+                if seen_untargeted_casts.contains(&obj.card_id) {
+                    continue;
+                }
+                seen_untargeted_casts.push(obj.card_id);
+            }
+
             let cast_actions = generate_cast_actions_with_targets(
                 state, player, obj.id, &target_req, behavior,
             );
