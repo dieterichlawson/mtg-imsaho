@@ -1,11 +1,20 @@
-use std::io::{self, Write};
-use mtg_engine::actions::{Action, CombatPrompt};
+use std::collections::HashMap;
+use std::io::{self, Write, stdout};
+
+use crossterm::{
+    cursor, execute, queue,
+    style::{Color, SetForegroundColor, SetAttribute, Attribute, ResetColor, Print},
+    terminal::{self, Clear, ClearType},
+};
+
+use mtg_engine::actions::{Action, CombatPrompt, Target};
 use mtg_engine::ids::ObjectId;
+use mtg_engine::types::CardType;
 use mtg_engine::view::{GameView, CardView, PermanentView};
 
 use crate::Player;
 
-/// A player that interacts via the command line.
+/// A player that interacts via a terminal UI.
 pub struct CliPlayer {
     name: String,
 }
@@ -15,19 +24,245 @@ impl CliPlayer {
         Self { name: name.to_string() }
     }
 
+    // ── Rendering ──────────────────────────────────────────────────
+
+    fn render(view: &GameView, actions: Option<&[Action]>, message: Option<&str>) {
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+
+        let w = terminal::size().map(|(w, _)| w as usize).unwrap_or(80);
+        let bar = "─".repeat(w);
+
+        // ── Opponent info ──
+        Self::print_colored(&mut out, Color::Red, &format!(" OPPONENT"));
+        for opp in &view.opponents {
+            let _ = execute!(out,
+                Print(format!("  Life: {}  Hand: {}  Library: {}\n", opp.life, opp.hand_size, opp.library_size))
+            );
+        }
+
+        // ── Opponent battlefield ──
+        let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
+            .filter(|p| p.controller != view.you).collect();
+        if !opp_perms.is_empty() {
+            Self::render_battlefield(&mut out, &opp_perms, Color::Red);
+        }
+
+        Self::print_dim(&mut out, &format!("{}",  bar));
+
+        // ── Your battlefield ──
+        let your_perms: Vec<&PermanentView> = view.battlefield.iter()
+            .filter(|p| p.controller == view.you).collect();
+        if !your_perms.is_empty() {
+            Self::render_battlefield(&mut out, &your_perms, Color::Green);
+        }
+
+        // ── Stack ──
+        if !view.stack.is_empty() {
+            Self::print_colored(&mut out, Color::Cyan, " STACK");
+            for item in &view.stack {
+                let who = if item.controller == view.you { "you" } else { "opp" };
+                let _ = execute!(out, Print(format!("  {} ({})\n", item.name, who)));
+            }
+        }
+
+        // ── Status bar ──
+        Self::print_dim(&mut out, &format!("{}", bar));
+        let step_name = format!("{:?}", view.step);
+        let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opp's turn" };
+        let _ = execute!(out,
+            SetAttribute(Attribute::Bold),
+            Print(format!(" T{} {} | {}", view.turn_number, step_name, whose_turn)),
+            SetAttribute(Attribute::Reset),
+        );
+
+        if !view.your_mana_pool.is_empty() {
+            let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
+                .filter(|(_, &v)| v > 0)
+                .map(|(t, v)| format!("{:?}:{}", t, v))
+                .collect();
+            let _ = execute!(out, Print(format!("  Pool: {}", mana_str.join(" "))));
+        }
+        let _ = execute!(out, Print("\n"));
+
+        // ── Message ──
+        if let Some(msg) = message {
+            Self::print_colored(&mut out, Color::Yellow, &format!(" {}", msg));
+        }
+
+        // ── Actions ──
+        if let Some(actions) = actions {
+            let _ = execute!(out, Print("\n"));
+            for (i, action) in actions.iter().enumerate() {
+                let desc = Self::format_action(view, action);
+                let _ = execute!(out,
+                    SetAttribute(Attribute::Bold),
+                    Print(format!("  {}", i)),
+                    SetAttribute(Attribute::Reset),
+                    Print(format!(": {}\n", desc)),
+                );
+            }
+            let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
+            if has_pass {
+                Self::print_dim(&mut out, "  [enter=pass]  [g=graveyard]  [e=exile]  [?N=card info]");
+            } else {
+                Self::print_dim(&mut out, "  [g=graveyard]  [e=exile]  [?N=card info]");
+            }
+        }
+
+        // ── Hand ──
+        Self::print_dim(&mut out, &format!("{}", bar));
+        Self::print_colored(&mut out, Color::Green, " HAND");
+        if view.your_hand.is_empty() {
+            let _ = execute!(out, Print("  (empty)\n"));
+        } else {
+            for card in &view.your_hand {
+                let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                let pt = match (card.power, card.toughness) {
+                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    _ => String::new(),
+                };
+                let _ = execute!(out, Print(format!("  {}{}{}\n", card.name, cost, pt)));
+            }
+        }
+
+        // ── Your info bar ──
+        let _ = execute!(out,
+            SetForegroundColor(Color::Green),
+            SetAttribute(Attribute::Bold),
+            Print(format!(" Life: {}  Library: {}\n", view.your_life, view.your_library_size)),
+            SetAttribute(Attribute::Reset),
+            ResetColor,
+        );
+
+        let _ = out.flush();
+    }
+
+    fn render_battlefield(out: &mut impl Write, perms: &[&PermanentView], color: Color) {
+        let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
+        let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
+        let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
+        let enchantments: Vec<_> = perms.iter().filter(|p|
+            has_type(p, CardType::Enchantment) && !has_type(p, CardType::Creature)).collect();
+        let artifacts: Vec<_> = perms.iter().filter(|p|
+            has_type(p, CardType::Artifact) && !has_type(p, CardType::Creature) && !has_type(p, CardType::Land)).collect();
+
+        // Aura map
+        let mut aura_map: HashMap<ObjectId, Vec<String>> = HashMap::new();
+        for e in &enchantments {
+            if let Some(target_id) = e.attached_to {
+                aura_map.entry(target_id).or_default().push(e.name.clone());
+            }
+        }
+
+        // Lands
+        if !lands.is_empty() {
+            let mut summary: Vec<(String, usize, usize)> = Vec::new();
+            for land in &lands {
+                if let Some(entry) = summary.iter_mut().find(|(n, _, _)| *n == land.name) {
+                    if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
+                } else {
+                    let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
+                    summary.push((land.name.clone(), u, t));
+                }
+            }
+            let _ = execute!(out, SetForegroundColor(color));
+            let _ = execute!(out, Print("  Lands: "));
+            let _ = execute!(out, ResetColor);
+            let parts: Vec<String> = summary.iter().map(|(name, untapped, tapped)| {
+                let total = untapped + tapped;
+                if *tapped == 0 { format!("{}x {}", total, name) }
+                else if *untapped == 0 { format!("{}x {} (tapped)", total, name) }
+                else { format!("{}x {} ({} tapped)", total, name, tapped) }
+            }).collect();
+            let _ = execute!(out, Print(format!("{}\n", parts.join(", "))));
+        }
+
+        // Creatures
+        for c in &creatures {
+            let _ = execute!(out, SetForegroundColor(color));
+            let _ = execute!(out, Print("  "));
+
+            // Name
+            let _ = execute!(out, Print(&c.name));
+
+            // P/T
+            let pt = match (c.effective_power, c.effective_toughness) {
+                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                _ => match (c.power, c.toughness) {
+                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    _ => String::new(),
+                },
+            };
+            let _ = execute!(out, Print(&pt));
+            let _ = execute!(out, ResetColor);
+
+            // Auras
+            if let Some(names) = aura_map.get(&c.object_id) {
+                let _ = execute!(out, SetForegroundColor(Color::Magenta),
+                    Print(format!(" [{}]", names.join(", "))), ResetColor);
+            }
+
+            // Damage
+            if c.damage_marked > 0 {
+                let _ = execute!(out, SetForegroundColor(Color::Red),
+                    Print(format!(" ({}dmg)", c.damage_marked)), ResetColor);
+            }
+
+            // Tapped
+            if c.tapped {
+                let _ = execute!(out, SetForegroundColor(Color::Yellow),
+                    Print(" [T]"), ResetColor);
+            }
+
+            // Sick
+            if c.summoning_sick {
+                let _ = execute!(out, SetAttribute(Attribute::Dim),
+                    Print(" [S]"), SetAttribute(Attribute::Reset));
+            }
+
+            let _ = execute!(out, Print("\n"));
+        }
+
+        // Non-aura enchantments
+        for e in &enchantments {
+            if e.attached_to.is_some() { continue; }
+            let _ = execute!(out, SetForegroundColor(Color::Magenta),
+                Print(format!("  {}\n", e.name)), ResetColor);
+        }
+
+        // Artifacts
+        for a in &artifacts {
+            let tapped = if a.tapped { " [T]" } else { "" };
+            let _ = execute!(out, Print(format!("  {}{}\n", a.name, tapped)));
+        }
+    }
+
+    fn print_colored(out: &mut impl Write, color: Color, text: &str) {
+        let _ = execute!(out, SetForegroundColor(color), SetAttribute(Attribute::Bold),
+            Print(format!("{}\n", text)), SetAttribute(Attribute::Reset), ResetColor);
+    }
+
+    fn print_dim(out: &mut impl Write, text: &str) {
+        let _ = execute!(out, SetAttribute(Attribute::Dim),
+            Print(format!("{}\n", text)), SetAttribute(Attribute::Reset));
+    }
+
+    // ── Action formatting ──────────────────────────────────────────
+
     fn perm_name(view: &GameView, id: ObjectId) -> String {
         view.battlefield.iter()
             .find(|p| p.object_id == id)
             .map(|p| {
-                let pt = match (p.power, p.toughness) {
+                let pt = match (p.effective_power, p.effective_toughness) {
                     (Some(pw), Some(t)) => format!(" {}/{}", pw, t),
                     _ => String::new(),
                 };
-                format!("{}{} ({})", p.name, pt, p.object_id)
+                format!("{}{}", p.name, pt)
             })
             .or_else(|| view.your_hand.iter()
                 .find(|c| c.object_id == id)
-                .map(|c| format!("{} ({})", c.name, c.object_id)))
+                .map(|c| c.name.clone()))
             .unwrap_or_else(|| format!("{}", id))
     }
 
@@ -42,216 +277,74 @@ impl CliPlayer {
                     format!("Cast {}", name)
                 } else {
                     let target_names: Vec<String> = targets.iter().map(|t| match t {
-                        mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
-                        mtg_engine::actions::Target::Player(pid) => {
-                            if *pid == view.you { "you".into() } else { format!("opponent (p#{})", pid.0) }
+                        Target::Object(id) => Self::perm_name(view, *id),
+                        Target::Player(pid) => {
+                            if *pid == view.you { "you".into() } else { "opponent".into() }
                         }
                     }).collect();
-                    format!("Cast {} → {}", name, target_names.join(", "))
+                    format!("Cast {} -> {}", name, target_names.join(", "))
                 }
             }
             Action::ActivateManaAbility { object_id, .. } =>
                 format!("Tap {} for mana", Self::perm_name(view, *object_id)),
             Action::DeclareAttackers { attackers } => {
-                if attackers.is_empty() {
-                    "Don't attack".into()
-                } else {
+                if attackers.is_empty() { "Don't attack".into() }
+                else {
                     let names: Vec<String> = attackers.iter()
-                        .map(|(id, _)| Self::perm_name(view, *id))
-                        .collect();
+                        .map(|(id, _)| Self::perm_name(view, *id)).collect();
                     format!("Attack with {}", names.join(", "))
                 }
             }
             Action::DeclareBlockers { assignments } => {
-                if assignments.is_empty() {
-                    "Don't block".into()
-                } else {
+                if assignments.is_empty() { "Don't block".into() }
+                else {
                     let descs: Vec<String> = assignments.iter()
-                        .map(|(blocker, attacker)|
-                            format!("{} blocks {}", Self::perm_name(view, *blocker), Self::perm_name(view, *attacker)))
+                        .map(|(b, a)| format!("{} blocks {}", Self::perm_name(view, *b), Self::perm_name(view, *a)))
                         .collect();
                     format!("Block: {}", descs.join(", "))
                 }
             }
             Action::DiscardCards { cards } => {
                 let names: Vec<String> = cards.iter()
-                    .map(|id| Self::perm_name(view, *id))
-                    .collect();
+                    .map(|id| Self::perm_name(view, *id)).collect();
                 format!("Discard {}", names.join(", "))
             }
             Action::Concede => "Concede".into(),
         }
     }
 
-    fn print_game_state(&self, view: &GameView) {
-        println!("\n{}", "=".repeat(60));
-        println!("Turn {} | Step: {:?} | Active: player#{}",
-            view.turn_number, view.step, view.active_player.0);
-        println!("{}", "=".repeat(60));
+    // ── Input ──────────────────────────────────────────────────────
 
-        for opp in &view.opponents {
-            println!("Opponent (player#{}): Life={}, Hand={} cards, Library={} cards",
-                opp.id.0, opp.life, opp.hand_size, opp.library_size);
-        }
-
-        if !view.battlefield.is_empty() {
-            use mtg_engine::types::CardType;
-
-            let mut players: Vec<mtg_engine::ids::PlayerId> = view.battlefield.iter()
-                .map(|p| p.controller)
-                .collect();
-            players.sort_by_key(|p| p.0);
-            players.dedup();
-
-            for player in &players {
-                let is_you = *player == view.you;
-                let label = if is_you { "You".to_string() } else { format!("Opponent (p#{})", player.0) };
-
-                let perms: Vec<&PermanentView> = view.battlefield.iter()
-                    .filter(|p| p.controller == *player)
-                    .collect();
-
-                // Categorize permanents.
-                let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
-                let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
-                let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
-                let artifacts: Vec<_> = perms.iter().filter(|p|
-                    has_type(p, CardType::Artifact) && !has_type(p, CardType::Creature) && !has_type(p, CardType::Land)
-                ).collect();
-                let enchantments: Vec<_> = perms.iter().filter(|p|
-                    has_type(p, CardType::Enchantment) && !has_type(p, CardType::Creature)
-                ).collect();
-                let planeswalkers: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Planeswalker)).collect();
-                let other: Vec<_> = perms.iter().filter(|p|
-                    !has_type(p, CardType::Land) && !has_type(p, CardType::Creature) &&
-                    !has_type(p, CardType::Artifact) && !has_type(p, CardType::Enchantment) &&
-                    !has_type(p, CardType::Planeswalker)
-                ).collect();
-
-                println!("\n{}'s battlefield:", label);
-
-                // Lands: summarized on one line.
-                if !lands.is_empty() {
-                    let mut land_summary: Vec<(String, usize, usize)> = Vec::new();
-                    for land in &lands {
-                        if let Some(entry) = land_summary.iter_mut().find(|(n, _, _)| *n == land.name) {
-                            if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
-                        } else {
-                            let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
-                            land_summary.push((land.name.clone(), u, t));
-                        }
-                    }
-                    let parts: Vec<String> = land_summary.iter().map(|(name, untapped, tapped)| {
-                        let total = untapped + tapped;
-                        if *tapped == 0 {
-                            format!("{}x {}", total, name)
-                        } else if *untapped == 0 {
-                            format!("{}x {} [all tapped]", total, name)
-                        } else {
-                            format!("{}x {} ({} tapped)", total, name, tapped)
-                        }
-                    }).collect();
-                    println!("  Lands: {}", parts.join(", "));
-                }
-
-                // Collect aura names by what they're attached to.
-                let mut aura_map: std::collections::HashMap<mtg_engine::ids::ObjectId, Vec<String>> = std::collections::HashMap::new();
-                for e in &enchantments {
-                    if let Some(target_id) = e.attached_to {
-                        aura_map.entry(target_id).or_default().push(e.name.clone());
-                    }
-                }
-
-                // Creatures: listed individually with full status and attached auras.
-                if !creatures.is_empty() {
-                    println!("  Creatures:");
-                    for c in &creatures {
-                        let tapped = if c.tapped { " [TAPPED]" } else { "" };
-                        let sick = if c.summoning_sick { " [SICK]" } else { "" };
-                        let pt = match (c.effective_power, c.effective_toughness) {
-                            (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                            _ => match (c.power, c.toughness) {
-                                (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                                _ => String::new(),
-                            },
-                        };
-                        let dmg = if c.damage_marked > 0 {
-                            format!(" ({}dmg)", c.damage_marked)
-                        } else {
-                            String::new()
-                        };
-                        let auras = aura_map.get(&c.object_id)
-                            .map(|names| format!(" [{}]", names.join(", ")))
-                            .unwrap_or_default();
-                        println!("    {}{}{}{}{}{} ({})", c.name, pt, auras, dmg, tapped, sick, c.object_id);
-                    }
-                }
-
-                // Artifacts.
-                if !artifacts.is_empty() {
-                    println!("  Artifacts:");
-                    for a in &artifacts {
-                        let tapped = if a.tapped { " [TAPPED]" } else { "" };
-                        println!("    {}{} ({})", a.name, tapped, a.object_id);
-                    }
-                }
-
-                // Enchantments: skip auras shown with creatures.
-                let non_aura_enchantments: Vec<_> = enchantments.iter()
-                    .filter(|e| e.attached_to.is_none())
-                    .collect();
-                if !non_aura_enchantments.is_empty() {
-                    println!("  Enchantments:");
-                    for e in &non_aura_enchantments {
-                        println!("    {} ({})", e.name, e.object_id);
-                    }
-                }
-
-                // Planeswalkers.
-                if !planeswalkers.is_empty() {
-                    println!("  Planeswalkers:");
-                    for pw in &planeswalkers {
-                        println!("    {} ({})", pw.name, pw.object_id);
-                    }
-                }
-
-                // Other.
-                if !other.is_empty() {
-                    println!("  Other:");
-                    for o in &other {
-                        let tapped = if o.tapped { " [TAPPED]" } else { "" };
-                        println!("    {}{} ({})", o.name, tapped, o.object_id);
-                    }
-                }
-            }
-        }
-
-        if !view.stack.is_empty() {
-            println!("\nStack:");
-            for item in &view.stack {
-                println!("  {} (controller: player#{}, {})", item.name, item.controller.0, item.object_id);
-            }
-        }
-
-        println!("\nYou (player#{}): Life={}, Library={} cards",
-            view.you.0, view.your_life, view.your_library_size);
-
-        if !view.your_mana_pool.is_empty() {
-            println!("Mana pool: {:?}", view.your_mana_pool.mana);
-        }
-
-        println!("Hand:");
-        for card in &view.your_hand {
-            let cost_str = card.cost.as_ref()
-                .map(|c| format!(" {}", c))
-                .unwrap_or_default();
-            let pt = match (card.power, card.toughness) {
-                (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                _ => String::new(),
-            };
-            println!("  {}{}{} ({})", card.name, cost_str, pt, card.object_id);
-        }
+    fn read_line(prompt: &str) -> String {
+        print!("{}", prompt);
+        io::stdout().flush().unwrap();
+        let mut input = String::new();
+        io::stdin().read_line(&mut input).unwrap();
+        input.trim().to_string()
     }
+
+    fn show_zone(view: &GameView, title: &str, cards: &[CardView]) {
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        Self::print_colored(&mut out, Color::Cyan, &format!(" {}", title));
+        if cards.is_empty() {
+            let _ = execute!(out, Print("  (empty)\n"));
+        } else {
+            for card in cards {
+                let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                let pt = match (card.power, card.toughness) {
+                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    _ => String::new(),
+                };
+                let _ = execute!(out, Print(format!("  {}{}{}\n", card.name, cost, pt)));
+            }
+        }
+        let _ = execute!(out, Print("\n  Press enter to return..."));
+        let _ = out.flush();
+        let _ = Self::read_line("");
+    }
+
+    // ── Combat ─────────────────────────────────────────────────────
 
     fn choose_attackers(&self, view: &GameView, prompt: &CombatPrompt) -> Action {
         let (eligible, defending) = match prompt {
@@ -260,44 +353,43 @@ impl CliPlayer {
         };
 
         if eligible.is_empty() {
-            println!("\nNo creatures can attack.");
             return Action::DeclareAttackers { attackers: vec![] };
         }
 
-        println!("\nEligible attackers:");
+        Self::render(view, None, Some("DECLARE ATTACKERS"));
+
+        let mut out = stdout();
+        let _ = execute!(out, Print("\n"));
+        Self::print_colored(&mut out, Color::Yellow, " Eligible attackers:");
         for (i, &id) in eligible.iter().enumerate() {
-            println!("  {}: {}", i, Self::perm_name(view, id));
+            let _ = execute!(out,
+                SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
+                SetAttribute(Attribute::Reset), Print(format!(": {}\n", Self::perm_name(view, id))),
+            );
         }
-        println!("\nEnter attacker numbers separated by spaces (enter=don't attack):");
+        let _ = execute!(out, Print("\n"));
+        let _ = out.flush();
 
         loop {
-            print!("> ");
-            io::stdout().flush().unwrap();
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
-            let input = input.trim();
+            let input = Self::read_line("  Attack (numbers/all/enter=none)> ");
 
             if input.is_empty() {
                 return Action::DeclareAttackers { attackers: vec![] };
             }
-
             if input == "all" {
-                let attackers = eligible.iter().map(|&id| (id, defending)).collect();
-                return Action::DeclareAttackers { attackers };
+                return Action::DeclareAttackers {
+                    attackers: eligible.iter().map(|&id| (id, defending)).collect(),
+                };
             }
 
             let indices: Vec<usize> = input.split_whitespace()
-                .filter_map(|s| s.parse().ok())
-                .collect();
-
+                .filter_map(|s| s.parse().ok()).collect();
             if indices.iter().all(|&i| i < eligible.len()) {
-                let attackers = indices.iter()
-                    .map(|&i| (eligible[i], defending))
-                    .collect();
-                return Action::DeclareAttackers { attackers };
+                return Action::DeclareAttackers {
+                    attackers: indices.iter().map(|&i| (eligible[i], defending)).collect(),
+                };
             }
-
-            println!("Invalid selection. Enter numbers like '0 2' or 'all'.");
+            println!("  Invalid. Enter numbers like '0 2', 'all', or press enter.");
         }
     }
 
@@ -308,26 +400,26 @@ impl CliPlayer {
         };
 
         if eligible_blockers.is_empty() {
-            println!("\nNo creatures can block.");
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        println!("\nAttackers:");
+        Self::render(view, None, Some("DECLARE BLOCKERS"));
+
+        let mut out = stdout();
+        let _ = execute!(out, Print("\n"));
+        Self::print_colored(&mut out, Color::Red, " Attackers:");
         for (i, &id) in attacker_ids.iter().enumerate() {
-            println!("  {}: {}", i, Self::perm_name(view, id));
+            let _ = execute!(out, Print(format!("  {}: {}\n", i, Self::perm_name(view, id))));
         }
-        println!("\nYour eligible blockers:");
+        Self::print_colored(&mut out, Color::Green, " Your blockers:");
         for (i, &id) in eligible_blockers.iter().enumerate() {
-            println!("  {}: {}", i, Self::perm_name(view, id));
+            let _ = execute!(out, Print(format!("  {}: {}\n", i, Self::perm_name(view, id))));
         }
-        println!("\nAssign blockers as 'blocker->attacker' pairs (e.g., '0->0 1->0'). Enter=don't block:");
+        let _ = execute!(out, Print("\n"));
+        let _ = out.flush();
 
         loop {
-            print!("> ");
-            io::stdout().flush().unwrap();
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
-            let input = input.trim();
+            let input = Self::read_line("  Block (blocker->attacker / enter=none)> ");
 
             if input.is_empty() {
                 return Action::DeclareBlockers { assignments: vec![] };
@@ -335,32 +427,21 @@ impl CliPlayer {
 
             let mut assignments = Vec::new();
             let mut valid = true;
-
             for pair in input.split_whitespace() {
                 let parts: Vec<&str> = pair.split("->").collect();
-                if parts.len() != 2 {
-                    valid = false;
-                    break;
+                if parts.len() != 2 { valid = false; break; }
+                match (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
+                    (Ok(b), Ok(a)) if b < eligible_blockers.len() && a < attacker_ids.len() => {
+                        assignments.push((eligible_blockers[b], attacker_ids[a]));
+                    }
+                    _ => { valid = false; break; }
                 }
-                let blocker_idx: usize = match parts[0].parse() {
-                    Ok(v) => v,
-                    Err(_) => { valid = false; break; }
-                };
-                let attacker_idx: usize = match parts[1].parse() {
-                    Ok(v) => v,
-                    Err(_) => { valid = false; break; }
-                };
-                if blocker_idx >= eligible_blockers.len() || attacker_idx >= attacker_ids.len() {
-                    valid = false;
-                    break;
-                }
-                assignments.push((eligible_blockers[blocker_idx], attacker_ids[attacker_idx]));
             }
 
             if valid {
                 return Action::DeclareBlockers { assignments };
             }
-            println!("Invalid. Use format '0->0 1->0' (blocker->attacker).");
+            println!("  Invalid. Use '0->0 1->1' format.");
         }
     }
 }
@@ -371,9 +452,8 @@ impl Player for CliPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
-        let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
-
         // Auto-pass when the only options are Pass and Concede.
+        let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
         let only_pass_concede = legal_actions.iter().all(|a| matches!(a,
             Action::PassPriority | Action::Concede
         ));
@@ -381,53 +461,98 @@ impl Player for CliPlayer {
             return Action::PassPriority;
         }
 
-        self.print_game_state(view);
-
-        println!("\nActions:");
-        for (i, action) in legal_actions.iter().enumerate() {
-            println!("  {}: {}", i, Self::format_action(view, action));
-        }
-
-        // Default action.
-        let default_idx = if !legal_actions.is_empty() && matches!(legal_actions[0], Action::PassPriority) {
-            Some(0)
-        } else {
-            None
-        };
-
         loop {
-            if let Some(_) = default_idx {
-                print!("Choose action (enter=pass)> ");
-            } else {
-                print!("Choose action> ");
-            }
-            io::stdout().flush().unwrap();
+            Self::render(view, Some(legal_actions), None);
 
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
-            let input = input.trim();
+            let input = Self::read_line("\n  > ");
 
-            if input.is_empty() {
-                if let Some(idx) = default_idx {
-                    return legal_actions[idx].clone();
+            // Keyboard shortcuts
+            match input.as_str() {
+                "g" => {
+                    // Show all graveyards
+                    let mut all_gy: Vec<CardView> = Vec::new();
+                    for (pid, cards) in &view.graveyards {
+                        for card in cards {
+                            all_gy.push(card.clone());
+                        }
+                    }
+                    Self::show_zone(view, "GRAVEYARD", &all_gy);
+                    continue;
                 }
+                "e" => {
+                    Self::show_zone(view, "EXILE", &view.exile);
+                    continue;
+                }
+                "" => {
+                    // Enter = pass if available
+                    if has_pass {
+                        return Action::PassPriority;
+                    }
+                    continue;
+                }
+                _ => {}
+            }
+
+            // Card info: ?0, ?1, etc. — show details of a battlefield permanent
+            if input.starts_with('?') {
+                if let Ok(idx) = input[1..].parse::<usize>() {
+                    // Find the idx-th permanent on the battlefield
+                    if idx < view.battlefield.len() {
+                        let perm = &view.battlefield[idx];
+                        let mut out = stdout();
+                        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+                        Self::print_colored(&mut out, Color::Cyan,
+                            &format!(" CARD: {}", perm.name));
+                        let types: Vec<&str> = perm.card_types.iter().map(|t| match t {
+                            CardType::Land => "Land",
+                            CardType::Creature => "Creature",
+                            CardType::Instant => "Instant",
+                            CardType::Sorcery => "Sorcery",
+                            CardType::Enchantment => "Enchantment",
+                            CardType::Artifact => "Artifact",
+                            CardType::Planeswalker => "Planeswalker",
+                        }).collect();
+                        let _ = execute!(out, Print(format!("  Types: {}\n", types.join(" "))));
+                        if let (Some(p), Some(t)) = (perm.power, perm.toughness) {
+                            let _ = execute!(out, Print(format!("  Base P/T: {}/{}\n", p, t)));
+                        }
+                        if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
+                            let _ = execute!(out, Print(format!("  Effective P/T: {}/{}\n", p, t)));
+                        }
+                        if perm.damage_marked > 0 {
+                            let _ = execute!(out, Print(format!("  Damage: {}\n", perm.damage_marked)));
+                        }
+                        let controller = if perm.controller == view.you { "You" } else { "Opponent" };
+                        let _ = execute!(out, Print(format!("  Controller: {}\n", controller)));
+                        let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
+                        let _ = execute!(out, Print(format!("  Summoning sick: {}\n", perm.summoning_sick)));
+                        if let Some(att) = perm.attached_to {
+                            let att_name = view.battlefield.iter()
+                                .find(|p| p.object_id == att)
+                                .map(|p| p.name.as_str())
+                                .unwrap_or("?");
+                            let _ = execute!(out, Print(format!("  Attached to: {}\n", att_name)));
+                        }
+                        let _ = execute!(out, Print("\n  Press enter to return..."));
+                        let _ = out.flush();
+                        let _ = Self::read_line("");
+                    }
+                }
+                continue;
             }
 
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < legal_actions.len() {
                     if matches!(legal_actions[idx], Action::Concede) {
-                        print!("Are you sure you want to concede? (y/n)> ");
-                        io::stdout().flush().unwrap();
-                        let mut confirm = String::new();
-                        io::stdin().read_line(&mut confirm).unwrap();
-                        if confirm.trim().to_lowercase() != "y" {
+                        let confirm = Self::read_line("  Are you sure you want to concede? (y/n)> ");
+                        if confirm.to_lowercase() != "y" {
                             continue;
                         }
                     }
                     return legal_actions[idx].clone();
                 }
             }
-            println!("Invalid choice, try again.");
+            // Invalid input — just re-render
         }
     }
 
@@ -437,34 +562,29 @@ impl Player for CliPlayer {
         hand: &[CardView],
         count: usize,
     ) -> Vec<ObjectId> {
-        println!("\nChoose {} card(s) to put on the bottom of your library:", count);
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        Self::print_colored(&mut out, Color::Yellow,
+            &format!(" Choose {} card(s) to put on bottom:", count));
         for (i, card) in hand.iter().enumerate() {
-            println!("  {}: {}", i, card.name);
+            let _ = execute!(out, Print(format!("  {}: {}\n", i, card.name)));
         }
+        let _ = out.flush();
 
         loop {
-            print!("Enter {} card numbers (space-separated)> ", count);
-            io::stdout().flush().unwrap();
-
-            let mut input = String::new();
-            io::stdin().read_line(&mut input).unwrap();
-
-            let indices: Vec<usize> = input.trim().split_whitespace()
-                .filter_map(|s| s.parse().ok())
-                .collect();
-
+            let input = Self::read_line(&format!("  Enter {} numbers> ", count));
+            let indices: Vec<usize> = input.split_whitespace()
+                .filter_map(|s| s.parse().ok()).collect();
             if indices.len() == count && indices.iter().all(|&i| i < hand.len()) {
                 return indices.iter().map(|&i| hand[i].object_id).collect();
             }
-            println!("Invalid selection, try again.");
+            println!("  Invalid selection.");
         }
     }
 }
 
 impl CliPlayer {
-    /// Handle combat prompts.
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
-        self.print_game_state(view);
         match prompt {
             CombatPrompt::ChooseAttackers { .. } => self.choose_attackers(view, prompt),
             CombatPrompt::ChooseBlockers { .. } => self.choose_blockers(view, prompt),
