@@ -42,65 +42,63 @@ impl CliPlayer {
     /// Compare current view to previous view and log significant changes.
     fn update_log(&mut self, view: &GameView) {
         if let Some(prev) = &self.last_view {
+            // Turn changes (log first so they appear as headers)
+            if view.turn_number != prev.turn_number {
+                let whose = if view.active_player == view.you { "Your" } else { "Opp's" };
+                self.log.push(format!("── Turn {} ({}) ──", view.turn_number, whose));
+            }
+
             // Life changes
             if view.your_life != prev.your_life {
                 let diff = view.your_life - prev.your_life;
                 if diff > 0 {
-                    self.log.push(format!("T{} You gained {} life ({})", view.turn_number, diff, view.your_life));
+                    self.log.push(format!("You gained {} life ({})", diff, view.your_life));
                 } else {
-                    self.log.push(format!("T{} You took {} damage ({})", view.turn_number, -diff, view.your_life));
+                    self.log.push(format!("You took {} damage ({})", -diff, view.your_life));
                 }
             }
             for (opp, prev_opp) in view.opponents.iter().zip(prev.opponents.iter()) {
                 if opp.life != prev_opp.life {
                     let diff = opp.life - prev_opp.life;
                     if diff > 0 {
-                        self.log.push(format!("T{} Opponent gained {} life ({})", view.turn_number, diff, opp.life));
+                        self.log.push(format!("Opp gained {} life ({})", diff, opp.life));
                     } else {
-                        self.log.push(format!("T{} Opponent took {} damage ({})", view.turn_number, -diff, opp.life));
+                        self.log.push(format!("Opp took {} damage ({})", -diff, opp.life));
                     }
                 }
             }
 
-            // New permanents on battlefield
-            for perm in &view.battlefield {
-                if !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
-                    let who = if perm.controller == view.you { "You" } else { "Opponent" };
-                    let pt = match (perm.effective_power, perm.effective_toughness) {
-                        (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                        _ => String::new(),
-                    };
-                    self.log.push(format!("T{} {} played {}{}", view.turn_number, who, perm.name, pt));
-                }
-            }
-
-            // Permanents that left the battlefield
-            for prev_perm in &prev.battlefield {
-                if !view.battlefield.iter().any(|p| p.object_id == prev_perm.object_id) {
-                    let who = if prev_perm.controller == view.you { "Your" } else { "Opponent's" };
-                    self.log.push(format!("T{} {} {} left the battlefield", view.turn_number, who, prev_perm.name));
-                }
-            }
-
-            // New items on stack
+            // New items on stack (cast)
             for item in &view.stack {
                 if !prev.stack.iter().any(|s| s.object_id == item.object_id) {
-                    let who = if item.controller == view.you { "You" } else { "Opponent" };
-                    self.log.push(format!("T{} {} cast {}", view.turn_number, who, item.name));
+                    let who = if item.controller == view.you { "You" } else { "Opp" };
+                    self.log.push(format!("{} cast {}", who, item.name));
                 }
             }
 
             // Items resolved from stack
             for prev_item in &prev.stack {
                 if !view.stack.iter().any(|s| s.object_id == prev_item.object_id) {
-                    self.log.push(format!("T{} {} resolved", view.turn_number, prev_item.name));
+                    self.log.push(format!("{} resolved", prev_item.name));
                 }
             }
 
-            // Turn changes
-            if view.turn_number != prev.turn_number {
-                let whose = if view.active_player == view.you { "Your" } else { "Opponent's" };
-                self.log.push(format!("── Turn {} ({}) ──", view.turn_number, whose));
+            // New permanents — only log non-creatures (lands, enchantments, artifacts).
+            // Creatures are logged via cast + resolved above.
+            for perm in &view.battlefield {
+                if !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
+                    if perm.power.is_none() {
+                        let who = if perm.controller == view.you { "You" } else { "Opp" };
+                        self.log.push(format!("{} played {}", who, perm.name));
+                    }
+                }
+            }
+
+            // Permanents that left the battlefield
+            for prev_perm in &prev.battlefield {
+                if !view.battlefield.iter().any(|p| p.object_id == prev_perm.object_id) {
+                    self.log.push(format!("{} left battlefield", prev_perm.name));
+                }
             }
         }
         self.last_view = Some(view.clone());
