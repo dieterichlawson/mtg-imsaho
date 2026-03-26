@@ -494,7 +494,9 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
                     card_data.power,
                     card_data.toughness,
                 );
-                state.get_object_mut(obj_id).unwrap().colors = colors.clone();
+                let obj = state.get_object_mut(obj_id).unwrap();
+                obj.colors = colors.clone();
+                obj.name = card_name.clone();
                 library_ids.push(obj_id);
             }
         }

@@ -123,6 +123,7 @@ impl GameState {
         let obj = GameObject {
             id,
             card_id,
+            name: String::new(), // Set by caller or setup_game
             owner,
             controller: owner,
             zone,
@@ -143,6 +144,24 @@ impl GameState {
     /// Move an object to a new zone.
     /// Per MTG rules, changing zones makes it a "new object" — we increment zone_change_count.
     pub fn move_object(&mut self, id: ObjectId, to: Zone) {
+        // Collect log info before mutating.
+        let log_msg = self.objects.get(&id).and_then(|obj| {
+            if obj.zone == Zone::Battlefield && to != Zone::Battlefield && obj.power.is_some() {
+                let dest = match to {
+                    Zone::Graveyard => "died",
+                    Zone::Exile => "was exiled",
+                    _ => "left the battlefield",
+                };
+                Some(format!("{} {}", obj.name, dest))
+            } else {
+                None
+            }
+        });
+
+        if let Some(msg) = log_msg {
+            self.log(LogLevel::Event, msg);
+        }
+
         if let Some(obj) = self.objects.get_mut(&id) {
             let from = obj.zone;
             obj.zone = to;
@@ -414,6 +433,7 @@ fn parse_plus_minus(text: &str, index: usize) -> i32 {
 pub struct GameObject {
     pub id: ObjectId,
     pub card_id: CardId,
+    pub name: String,
     pub owner: PlayerId,
     pub controller: PlayerId,
     pub zone: Zone,
