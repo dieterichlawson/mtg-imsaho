@@ -187,6 +187,12 @@ impl CliPlayer {
         let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
         row += 1;
 
+        // Separator between stats and battlefield
+        let mid_sep: String = "─".repeat(mid_w);
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        row += 1;
+
         // Opponent battlefield
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
