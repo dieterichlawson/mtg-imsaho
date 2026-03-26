@@ -8,7 +8,7 @@ use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::mana;
 use crate::sba::check_state_based_actions_with_registry;
 use crate::stack;
-use crate::state::{AwaitingAction, GameState};
+use crate::state::{AwaitingAction, GameState, LogLevel};
 use crate::types::*;
 
 /// A decklist: card name -> count.
@@ -299,6 +299,17 @@ fn combinations(items: &[ObjectId], k: usize) -> Vec<Vec<ObjectId>> {
     result
 }
 
+fn card_name(state: &GameState, registry: &CardRegistry, obj_id: ObjectId) -> String {
+    state.get_object(obj_id)
+        .and_then(|o| registry.card_data(o.card_id))
+        .map(|d| d.name)
+        .unwrap_or_else(|| "?".into())
+}
+
+fn player_name(state: &GameState, player: PlayerId) -> &'static str {
+    if player == state.active_player { "Active" } else { "Opponent" }
+}
+
 /// Apply an action to the game state and return the new state.
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     let mut new_state = state.clone();
@@ -308,6 +319,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         Action::PassPriority => {
             let player = new_state.priority_player.unwrap();
             new_state.events.push(GameEvent::PriorityPassed { player });
+            new_state.log(LogLevel::Debug, format!("p{} passes priority", player.0));
             new_state.consecutive_passes += 1;
         }
 
@@ -328,8 +340,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             if let Some(obj) = new_state.get_object_mut(*object_id) {
                 obj.summoning_sick = false;
             }
+            let name = card_name(&new_state, registry, *object_id);
+            new_state.log(LogLevel::Info, format!("p{} played {}", player.0, name));
             new_state.consecutive_passes = 0;
-            // Player retains priority after a special action (rule 116.3).
         }
 
         Action::CastSpell { object_id, targets } => {
@@ -351,9 +364,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 object: *object_id,
             });
 
+            let name = card_name(&new_state, registry, *object_id);
+            new_state.log(LogLevel::Event, format!("p{} cast {}", player.0, name));
             new_state.consecutive_passes = 0;
-            // After casting, the active player receives priority (rule 117.3c).
-            // Actually: the player who cast the spell receives priority.
         }
 
         Action::ActivateManaAbility { object_id, ability_index } => {
@@ -379,17 +392,33 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 }
             }
 
-            // Mana abilities don't use the stack; player retains priority.
-            // Do NOT reset consecutive_passes — mana abilities don't count.
+            let name = card_name(&new_state, registry, *object_id);
+            new_state.log(LogLevel::Debug, format!("p{} tapped {} for mana", controller.0, name));
         }
 
         Action::DeclareAttackers { attackers } => {
+            if attackers.is_empty() {
+                new_state.log(LogLevel::Debug, "No attackers declared".into());
+            } else {
+                let names: Vec<String> = attackers.iter()
+                    .map(|(id, _)| card_name(state, registry, *id))
+                    .collect();
+                new_state.log(LogLevel::Event, format!("Attacking with {}", names.join(", ")));
+            }
             combat::declare_attackers(&mut new_state, attackers);
             new_state.awaiting_action = None;
             new_state.consecutive_passes = 0;
         }
 
         Action::DeclareBlockers { assignments } => {
+            if assignments.is_empty() {
+                new_state.log(LogLevel::Debug, "No blockers declared".into());
+            } else {
+                let descs: Vec<String> = assignments.iter()
+                    .map(|(b, a)| format!("{} blocks {}", card_name(state, registry, *b), card_name(state, registry, *a)))
+                    .collect();
+                new_state.log(LogLevel::Event, format!("Blocking: {}", descs.join(", ")));
+            }
             combat::declare_blockers(&mut new_state, assignments);
             new_state.awaiting_action = None;
             new_state.consecutive_passes = 0;
@@ -409,6 +438,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
         Action::Concede => {
             if let Some(player) = new_state.priority_player {
+                new_state.log(LogLevel::Milestone, format!("p{} concedes", player.0));
                 new_state.get_player_mut(player).lost = true;
                 new_state.events.push(GameEvent::PlayerLost {
                     player,
@@ -483,6 +513,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     }
 
     state.events.push(GameEvent::GameStarted);
+    state.log(LogLevel::Milestone, format!("── Turn 1 (p0) ──"));
     state
 }
 
@@ -495,8 +526,16 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
         };
         match card_id {
             Some(id) => {
+                // Get card name before moving (for logging).
+                let name = state.get_object(id)
+                    .map(|o| o.card_id)
+                    .and_then(|cid| {
+                        // We don't have registry here, just use card_id for now.
+                        None::<String>
+                    });
                 state.move_object(id, Zone::Hand);
                 state.events.push(GameEvent::CardDrawn { player, object: id });
+                state.log(LogLevel::Info, format!("p{} drew a card", player.0));
             }
             None => {
                 // Drew from empty library — SBA will catch it.
@@ -534,10 +573,12 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
                 player: next_player,
                 turn: state.turn_number,
             });
+            state.log(LogLevel::Milestone, format!("── Turn {} (p{}) ──", state.turn_number, next_player.0));
         }
     }
 
     state.events.push(GameEvent::StepStarted { step: state.step });
+    state.log(LogLevel::Debug, format!("Step: {:?}", state.step));
     state.consecutive_passes = 0;
 
     // Perform turn-based actions for this step.

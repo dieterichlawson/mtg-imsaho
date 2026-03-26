@@ -1,6 +1,6 @@
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
-use crate::state::GameState;
+use crate::state::{GameState, LogLevel};
 use crate::types::Zone;
 
 /// Resolve the top item on the stack.
@@ -15,6 +15,8 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
         None => return,
     };
 
+    let name = registry.card_data(card_id).map(|d| d.name).unwrap_or_else(|| "?".into());
+    state.log(LogLevel::Event, format!("{} resolved", name));
     state.events.push(GameEvent::SpellResolved { object: object_id });
 
     // Call the card's on_resolve behavior with targets.

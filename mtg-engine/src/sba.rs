@@ -1,6 +1,6 @@
 use crate::cards::CardRegistry;
 use crate::events::{GameEvent, LossReason};
-use crate::state::{GameResult, GameState};
+use crate::state::{GameResult, GameState, LogLevel};
 use crate::types::Zone;
 
 /// Perform state-based actions without a registry (for backward compat with tests).
@@ -70,6 +70,10 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             .collect();
 
         for id in creatures_to_kill {
+            let name = registry.and_then(|r| {
+                state.get_object(id).and_then(|o| r.card_data(o.card_id)).map(|d| d.name)
+            }).unwrap_or_else(|| "creature".into());
+            state.log(LogLevel::Event, format!("{} died", name));
             state.events.push(GameEvent::CreatureDied { object: id });
             state.move_object(id, Zone::Graveyard);
             took_action = true;

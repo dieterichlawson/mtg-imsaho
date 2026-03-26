@@ -1,7 +1,7 @@
 
 use crate::events::{GameEvent, DamageTarget};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{CombatState, GameState};
+use crate::state::{CombatState, GameState, LogLevel};
 use crate::types::Zone;
 
 /// Set up attackers. Validates and taps them.
@@ -83,6 +83,7 @@ pub fn deal_combat_damage(state: &mut GameState) {
                 old: old_life,
                 new_life,
             });
+            state.log(LogLevel::Event, format!("p{} took {} combat damage ({})", defending_player.0, attacker_power, new_life));
         } else {
             // Blocked: deal damage to first blocker (Phase 1: no damage ordering).
             // Attacker deals its power to the first blocker.
