@@ -846,7 +846,12 @@ impl Player for CliPlayer {
         loop {
             Self::render(view, Some(legal_actions), None, &self.log);
 
-            let input = Self::read_line("\n  > ");
+            // Position cursor in the middle panel for input
+            let (term_w, _) = terminal::size().unwrap_or((100, 30));
+            let side = term_w as usize / 5;
+            let col = (side + 1) as u16;
+            let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
+            let input = Self::read_line("  > ");
 
             // Keyboard shortcuts
             match input.as_str() {
