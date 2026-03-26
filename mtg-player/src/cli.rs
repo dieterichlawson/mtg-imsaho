@@ -267,9 +267,9 @@ impl CliPlayer {
             }
             let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
             let hints = if has_pass {
-                "  [enter=pass] [f=pass turn] [l=log] [g=graveyard] [e=exile] [d=deck]"
+                "  [enter=pass] [f=pass turn] [l=log] [g=graveyard] [e=exile] [i=inspect] [d=deck]"
             } else {
-                "  [l=log] [g=graveyard] [e=exile] [d=deck]"
+                "  [l=log] [g=graveyard] [e=exile] [i=inspect] [d=deck]"
             };
             let _ = execute!(out, cursor::MoveTo(mid_col, row),
                 SetAttribute(Attribute::Dim), Print(hints), SetAttribute(Attribute::Reset));
@@ -464,6 +464,133 @@ impl CliPlayer {
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
         input.trim().to_string()
+    }
+
+    fn show_battlefield_inspector(view: &GameView) {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let mut out = stdout();
+
+        loop {
+            let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+            Self::print_colored(&mut out, Color::Cyan, " INSPECT BATTLEFIELD");
+            let _ = execute!(out, Print("\n"));
+
+            let your_perms: Vec<&PermanentView> = view.battlefield.iter()
+                .filter(|p| p.controller == view.you).collect();
+            let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
+                .filter(|p| p.controller != view.you).collect();
+
+            let _ = execute!(out, SetAttribute(Attribute::Bold),
+                Print(" Your permanents:\n"), SetAttribute(Attribute::Reset));
+            let mut idx = 0;
+            for perm in &your_perms {
+                let pt = match (perm.effective_power, perm.effective_toughness) {
+                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    _ => String::new(),
+                };
+                let flags = format!("{}{}",
+                    if perm.tapped { " [T]" } else { "" },
+                    if perm.summoning_sick { " [S]" } else { "" });
+                let _ = execute!(out,
+                    SetAttribute(Attribute::Bold), Print(format!("  {:>2}", idx)),
+                    SetAttribute(Attribute::Reset),
+                    Print(format!(": {}{}{} #{}\n", perm.name, pt, flags, perm.object_id.0)));
+                idx += 1;
+            }
+
+            let _ = execute!(out, Print("\n"));
+            let _ = execute!(out, SetAttribute(Attribute::Bold),
+                Print(" Opponent's permanents:\n"), SetAttribute(Attribute::Reset));
+            for perm in &opp_perms {
+                let pt = match (perm.effective_power, perm.effective_toughness) {
+                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    _ => String::new(),
+                };
+                let flags = format!("{}{}",
+                    if perm.tapped { " [T]" } else { "" },
+                    if perm.summoning_sick { " [S]" } else { "" });
+                let _ = execute!(out,
+                    SetAttribute(Attribute::Bold), Print(format!("  {:>2}", idx)),
+                    SetAttribute(Attribute::Reset),
+                    Print(format!(": {}{}{} #{}\n", perm.name, pt, flags, perm.object_id.0)));
+                idx += 1;
+            }
+
+            let all_perms: Vec<&PermanentView> = your_perms.iter().chain(opp_perms.iter()).copied().collect();
+
+            let _ = execute!(out, Print("\n  Enter number for details, or press enter to return: "));
+            let _ = out.flush();
+            let input = Self::read_line("");
+
+            if input.is_empty() { return; }
+
+            if let Ok(i) = input.parse::<usize>() {
+                if i < all_perms.len() {
+                    let perm = all_perms[i];
+                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+                    Self::print_colored(&mut out, Color::Cyan, &format!(" {}", perm.name));
+
+                    let types: Vec<&str> = perm.card_types.iter().map(|t| match t {
+                        CardType::Land => "Land",
+                        CardType::Creature => "Creature",
+                        CardType::Instant => "Instant",
+                        CardType::Sorcery => "Sorcery",
+                        CardType::Enchantment => "Enchantment",
+                        CardType::Artifact => "Artifact",
+                        CardType::Planeswalker => "Planeswalker",
+                    }).collect();
+                    let _ = execute!(out, Print(format!("  Type: {}\n", types.join(" "))));
+
+                    if let (Some(p), Some(t)) = (perm.power, perm.toughness) {
+                        let _ = execute!(out, Print(format!("  Base P/T: {}/{}\n", p, t)));
+                    }
+                    if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
+                        let _ = execute!(out, Print(format!("  Effective P/T: {}/{}\n", p, t)));
+                    }
+                    if perm.damage_marked > 0 {
+                        let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
+                    }
+
+                    let controller = if perm.controller == view.you { "You" } else { "Opponent" };
+                    let _ = execute!(out, Print(format!("  Controller: {}\n", controller)));
+                    let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
+                    let _ = execute!(out, Print(format!("  Summoning sick: {}\n", perm.summoning_sick)));
+                    let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
+
+                    // Show attached auras
+                    let auras: Vec<&PermanentView> = view.battlefield.iter()
+                        .filter(|p| p.attached_to == Some(perm.object_id))
+                        .collect();
+                    if !auras.is_empty() {
+                        let _ = execute!(out, Print("  Enchanted by: "));
+                        let names: Vec<&str> = auras.iter().map(|a| a.name.as_str()).collect();
+                        let _ = execute!(out, Print(format!("{}\n", names.join(", "))));
+                    }
+
+                    if let Some(att) = perm.attached_to {
+                        let att_name = view.battlefield.iter()
+                            .find(|p| p.object_id == att)
+                            .map(|p| p.name.as_str())
+                            .unwrap_or("?");
+                        let _ = execute!(out, Print(format!("  Attached to: {}\n", att_name)));
+                    }
+
+                    // Show oracle text
+                    if let Some(data) = registry.card_data(perm.card_id) {
+                        if !data.oracle_text.is_empty() {
+                            let _ = execute!(out, Print("\n"),
+                                SetForegroundColor(Color::Yellow),
+                                Print(format!("  {}\n", data.oracle_text)),
+                                ResetColor);
+                        }
+                    }
+
+                    let _ = execute!(out, Print("\n  Press enter to return to list..."));
+                    let _ = out.flush();
+                    let _ = Self::read_line("");
+                }
+            }
+        }
     }
 
     fn show_log(log: &[String]) {
@@ -864,6 +991,10 @@ impl Player for CliPlayer {
                     let _ = execute!(out, Print("\n  Press enter to return..."));
                     let _ = out.flush();
                     let _ = Self::read_line("");
+                    continue;
+                }
+                "i" => {
+                    Self::show_battlefield_inspector(view);
                     continue;
                 }
                 "f" => {
