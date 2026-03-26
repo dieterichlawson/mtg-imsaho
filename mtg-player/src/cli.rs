@@ -609,11 +609,10 @@ impl Player for CliPlayer {
                 // Break if it's our turn AND we're on a later turn than when we pressed 'f'.
                 let is_new_turn = view.active_player == view.you
                     && view.turn_number > activated_turn;
-                // Break if opponent put something on the stack we can respond to.
-                let opponent_acted = !view.stack.is_empty()
-                    && view.active_player != view.you;
+                // Break if something is on the stack (opponent cast a spell we can respond to).
+                let stack_has_spell = !view.stack.is_empty();
 
-                if is_new_turn || opponent_acted {
+                if is_new_turn || stack_has_spell {
                     self.pass_until_turn_after = None;
                 } else {
                     self.update_log(view);
