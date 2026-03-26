@@ -91,31 +91,6 @@ impl CliPlayer {
         }
         let _ = execute!(out, Print("\n"));
 
-        // ── Message ──
-        if let Some(msg) = message {
-            Self::print_colored(&mut out, Color::Yellow, &format!(" {}", msg));
-        }
-
-        // ── Actions ──
-        if let Some(actions) = actions {
-            let _ = execute!(out, Print("\n"));
-            for (i, action) in actions.iter().enumerate() {
-                let desc = Self::format_action(view, action);
-                let _ = execute!(out,
-                    SetAttribute(Attribute::Bold),
-                    Print(format!("  {}", i)),
-                    SetAttribute(Attribute::Reset),
-                    Print(format!(": {}\n", desc)),
-                );
-            }
-            let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
-            if has_pass {
-                Self::print_dim(&mut out, "  [enter=pass]  [f=pass until my turn]  [g=graveyard]  [e=exile]  [?N=card info]");
-            } else {
-                Self::print_dim(&mut out, "  [g=graveyard]  [e=exile]  [?N=card info]");
-            }
-        }
-
         // ── Hand ──
         Self::print_dim(&mut out, &format!("{}", bar));
         Self::print_colored(&mut out, Color::Green, " HAND");
@@ -140,6 +115,31 @@ impl CliPlayer {
             SetAttribute(Attribute::Reset),
             ResetColor,
         );
+
+        // ── Message ──
+        if let Some(msg) = message {
+            Self::print_colored(&mut out, Color::Yellow, &format!(" {}", msg));
+        }
+
+        // ── Actions ──
+        if let Some(actions) = actions {
+            Self::print_dim(&mut out, &format!("{}", bar));
+            for (i, action) in actions.iter().enumerate() {
+                let desc = Self::format_action(view, action);
+                let _ = execute!(out,
+                    SetAttribute(Attribute::Bold),
+                    Print(format!("  {}", i)),
+                    SetAttribute(Attribute::Reset),
+                    Print(format!(": {}\n", desc)),
+                );
+            }
+            let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
+            if has_pass {
+                Self::print_dim(&mut out, "  [enter=pass]  [f=pass until my turn]  [g=graveyard]  [e=exile]  [?N=card info]");
+            } else {
+                Self::print_dim(&mut out, "  [g=graveyard]  [e=exile]  [?N=card info]");
+            }
+        }
 
         let _ = out.flush();
     }
