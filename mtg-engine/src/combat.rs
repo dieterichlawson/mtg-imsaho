@@ -83,7 +83,11 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &crate::cards::CardRe
                 old: old_life,
                 new_life,
             });
-            state.log(LogLevel::Event, format!("p{} took {} combat damage ({})", defending_player.0, attacker_power, new_life));
+            let attacker_name = state.get_object(attacker_id)
+                .and_then(|o| registry.card_data(o.card_id))
+                .map(|d| d.name)
+                .unwrap_or_else(|| "?".into());
+            state.log(LogLevel::Event, format!("p{} took {} combat damage ({}) from {}", defending_player.0, attacker_power, new_life, attacker_name));
         } else {
             // Blocked: deal damage to first blocker (Phase 1: no damage ordering).
             // Attacker deals its power to the first blocker.
