@@ -824,7 +824,46 @@ impl Player for CliPlayer {
                     continue;
                 }
                 "e" => {
-                    Self::show_zone(view, "EXILE", &view.exile);
+                    let mut out = stdout();
+                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+                    Self::print_colored(&mut out, Color::Cyan, " EXILE");
+                    let _ = execute!(out, Print("\n"));
+                    let your_exile: Vec<_> = view.exile.iter().filter(|c| c.owner == view.you).collect();
+                    let opp_exile: Vec<_> = view.exile.iter().filter(|c| c.owner != view.you).collect();
+                    let _ = execute!(out, SetAttribute(Attribute::Bold),
+                        Print(format!(" Your exile ({}):\n", your_exile.len())),
+                        SetAttribute(Attribute::Reset));
+                    if your_exile.is_empty() {
+                        let _ = execute!(out, Print("   (empty)\n"));
+                    } else {
+                        for card in &your_exile {
+                            let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                            let pt = match (card.power, card.toughness) {
+                                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                                _ => String::new(),
+                            };
+                            let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
+                        }
+                    }
+                    let _ = execute!(out, Print("\n"));
+                    let _ = execute!(out, SetAttribute(Attribute::Bold),
+                        Print(format!(" Opponent's exile ({}):\n", opp_exile.len())),
+                        SetAttribute(Attribute::Reset));
+                    if opp_exile.is_empty() {
+                        let _ = execute!(out, Print("   (empty)\n"));
+                    } else {
+                        for card in &opp_exile {
+                            let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                            let pt = match (card.power, card.toughness) {
+                                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                                _ => String::new(),
+                            };
+                            let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
+                        }
+                    }
+                    let _ = execute!(out, Print("\n  Press enter to return..."));
+                    let _ = out.flush();
+                    let _ = Self::read_line("");
                     continue;
                 }
                 "f" => {
