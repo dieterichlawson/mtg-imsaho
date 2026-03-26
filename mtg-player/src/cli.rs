@@ -62,9 +62,9 @@ impl CliPlayer {
                 }
             }
 
-            // New creatures on battlefield
+            // New permanents on battlefield
             for perm in &view.battlefield {
-                if perm.power.is_some() && !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
+                if !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
                     let who = if perm.controller == view.you { "You" } else { "Opponent" };
                     let pt = match (perm.effective_power, perm.effective_toughness) {
                         (Some(p), Some(t)) => format!(" {}/{}", p, t),
@@ -74,10 +74,11 @@ impl CliPlayer {
                 }
             }
 
-            // Creatures that left the battlefield
+            // Permanents that left the battlefield
             for prev_perm in &prev.battlefield {
-                if prev_perm.power.is_some() && !view.battlefield.iter().any(|p| p.object_id == prev_perm.object_id) {
-                    self.log.push(format!("T{} {} left the battlefield", view.turn_number, prev_perm.name));
+                if !view.battlefield.iter().any(|p| p.object_id == prev_perm.object_id) {
+                    let who = if prev_perm.controller == view.you { "Your" } else { "Opponent's" };
+                    self.log.push(format!("T{} {} {} left the battlefield", view.turn_number, who, prev_perm.name));
                 }
             }
 
