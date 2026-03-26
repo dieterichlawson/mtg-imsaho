@@ -112,11 +112,16 @@ impl CliPlayer {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
-        let w = terminal::size().map(|(w, _)| w as usize).unwrap_or(80);
-        let bar = "─".repeat(w);
+        let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+        let w = term_w as usize;
+        let log_w = w / 3;          // right 1/3 for log
+        let main_w = w - log_w - 1; // left 2/3 for game, -1 for separator
+
+        // Build left-side lines as plain strings (we'll colorize when rendering).
+        // For now, just render normally on the left and overlay the log on the right.
 
         // ── Opponent info ──
-        Self::print_colored(&mut out, Color::Red, &format!(" OPPONENT"));
+        Self::print_colored(&mut out, Color::Red, " OPPONENT");
         for opp in &view.opponents {
             let _ = execute!(out,
                 Print(format!("  Life: {}  Hand: {}  Library: {}\n", opp.life, opp.hand_size, opp.library_size))
@@ -130,7 +135,8 @@ impl CliPlayer {
             Self::render_battlefield(&mut out, &opp_perms, Color::Red);
         }
 
-        Self::print_dim(&mut out, &format!("{}",  bar));
+        let sep = "─".repeat(main_w);
+        Self::print_dim(&mut out, &sep);
 
         // ── Your battlefield ──
         let your_perms: Vec<&PermanentView> = view.battlefield.iter()
@@ -149,7 +155,7 @@ impl CliPlayer {
         }
 
         // ── Status bar ──
-        Self::print_dim(&mut out, &format!("{}", bar));
+        Self::print_dim(&mut out, &sep);
         let step_name = format!("{:?}", view.step);
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opp's turn" };
         let _ = execute!(out,
@@ -167,18 +173,8 @@ impl CliPlayer {
         }
         let _ = execute!(out, Print("\n"));
 
-        // ── Recent log ──
-        if !log.is_empty() {
-            let show = 4; // show last N entries
-            let start = if log.len() > show { log.len() - show } else { 0 };
-            for entry in &log[start..] {
-                let _ = execute!(out, SetAttribute(Attribute::Dim),
-                    Print(format!("  {}\n", entry)), SetAttribute(Attribute::Reset));
-            }
-        }
-
         // ── Hand ──
-        Self::print_dim(&mut out, &format!("{}", bar));
+        Self::print_dim(&mut out, &sep);
         Self::print_colored(&mut out, Color::Green, " HAND");
         if view.your_hand.is_empty() {
             let _ = execute!(out, Print("  (empty)\n"));
@@ -209,7 +205,7 @@ impl CliPlayer {
 
         // ── Actions ──
         if let Some(actions) = actions {
-            Self::print_dim(&mut out, &format!("{}", bar));
+            Self::print_dim(&mut out, &sep);
             for (i, action) in actions.iter().enumerate() {
                 let desc = Self::format_action(view, action);
                 let _ = execute!(out,
@@ -227,6 +223,38 @@ impl CliPlayer {
             }
         }
 
+        // ── Log on the right side ──
+        if !log.is_empty() {
+            let h = term_h as usize;
+            let log_col = (main_w + 1) as u16;
+            let visible = h.saturating_sub(2);
+            let start = if log.len() > visible { log.len() - visible } else { 0 };
+
+            // Draw separator line
+            for row in 0..h {
+                let _ = execute!(out, cursor::MoveTo(main_w as u16, row as u16),
+                    SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
+            }
+
+            // Draw log header
+            let _ = execute!(out, cursor::MoveTo(log_col, 0),
+                SetForegroundColor(Color::Cyan), SetAttribute(Attribute::Bold),
+                Print("LOG"), SetAttribute(Attribute::Reset), ResetColor);
+
+            // Draw log entries
+            for (i, entry) in log[start..].iter().enumerate() {
+                let row = (i + 1) as u16;
+                if row >= term_h { break; }
+                let truncated: String = entry.chars().take(log_w.saturating_sub(1)).collect();
+                let _ = execute!(out, cursor::MoveTo(log_col + 1, row),
+                    SetAttribute(Attribute::Dim),
+                    Print(&truncated),
+                    SetAttribute(Attribute::Reset));
+            }
+        }
+
+        // Move cursor back to input area
+        let _ = execute!(out, cursor::MoveTo(0, term_h.saturating_sub(1)));
         let _ = out.flush();
     }
 
