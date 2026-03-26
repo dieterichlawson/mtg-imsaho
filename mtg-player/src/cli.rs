@@ -42,6 +42,12 @@ impl CliPlayer {
 
     /// Compare current view to previous view and log significant changes.
     fn update_log(&mut self, view: &GameView) {
+        if self.last_view.is_none() {
+            // First view — add turn 1 header
+            let whose = if view.active_player == view.you { "Your" } else { "Opp's" };
+            self.log.push(format!("── Turn {} ({}) ──", view.turn_number, whose));
+        }
+
         if let Some(prev) = &self.last_view {
             // Turn changes (log first so they appear as headers)
             if view.turn_number != prev.turn_number {
