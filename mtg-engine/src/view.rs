@@ -175,7 +175,7 @@ impl GameView {
             priority_player: state.priority_player,
             turn_number: state.turn_number,
             display_log: state.game_log.iter()
-                .filter(|e| e.level >= crate::state::LogLevel::Event)
+                .filter(|e| e.level >= crate::state::LogLevel::Info)
                 .map(|e| e.message.clone())
                 .collect(),
             full_log: state.game_log.iter()
