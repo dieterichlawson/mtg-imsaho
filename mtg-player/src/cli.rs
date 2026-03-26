@@ -169,7 +169,7 @@ impl CliPlayer {
 
         // Log separator with label
         let log_label = "─── LOG ";
-        let log_line = format!("{}{}", log_label, "─".repeat(left_w.saturating_sub(log_label.len())));
+        let log_line = format!("{}{}", log_label, "─".repeat(left_w.saturating_sub(log_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(0, log_start as u16),
             SetAttribute(Attribute::Dim), Print(&log_line), SetAttribute(Attribute::Reset));
         if !log.is_empty() {
@@ -271,7 +271,7 @@ impl CliPlayer {
 
         // Battlefield label — starts at mid_col, spans to right edge
         let bf_label = "─── BATTLEFIELD ";
-        let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.len())));
+        let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
         row += 1;
@@ -285,7 +285,7 @@ impl CliPlayer {
 
         // Hand separator — starts at mid_col, spans to right edge
         let hand_label = "─── HAND ";
-        let hand_line = format!("{}{}", hand_label, "─".repeat(mid_w.saturating_sub(hand_label.len())));
+        let hand_line = format!("{}{}", hand_label, "─".repeat(mid_w.saturating_sub(hand_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&hand_line), SetAttribute(Attribute::Reset));
         row += 1;
