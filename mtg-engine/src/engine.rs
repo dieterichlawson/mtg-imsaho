@@ -407,13 +407,15 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::DeclareBlockers { assignments } => {
+            // The defending player is the opponent of the active player.
+            let defender = new_state.opponent(new_state.active_player);
             if assignments.is_empty() {
-                new_state.log(LogLevel::Info, "No blockers declared".into());
+                new_state.log(LogLevel::Info, format!("p{} declared no blockers", defender.0));
             } else {
                 let descs: Vec<String> = assignments.iter()
                     .map(|(b, a)| format!("{} blocks {}", card_name(state, registry, *b), card_name(state, registry, *a)))
                     .collect();
-                new_state.log(LogLevel::Event, format!("Blocking: {}", descs.join(", ")));
+                new_state.log(LogLevel::Event, format!("p{} declared blockers: {}", defender.0, descs.join(", ")));
             }
             combat::declare_blockers(&mut new_state, assignments);
             new_state.awaiting_action = None;
