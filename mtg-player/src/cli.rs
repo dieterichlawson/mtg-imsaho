@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{self, Write, stdout};
 
 use crossterm::{
-    cursor, execute, queue,
+    cursor, execute,
     style::{Color, SetForegroundColor, SetAttribute, Attribute, ResetColor, Print},
     terminal::{self, Clear, ClearType},
 };
@@ -112,72 +112,113 @@ impl CliPlayer {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
-        let (term_w, term_h) = terminal::size().unwrap_or((80, 24));
+        let (term_w, term_h) = terminal::size().unwrap_or((100, 30));
         let w = term_w as usize;
-        let log_w = w / 3;          // right 1/3 for log
-        let main_w = w - log_w - 1; // left 2/3 for game, -1 for separator
+        let h = term_h as usize;
 
-        // Build left-side lines as plain strings (we'll colorize when rendering).
-        // For now, just render normally on the left and overlay the log on the right.
+        // Panel widths
+        let stack_w: usize = 18;     // left panel
+        let log_w = w / 4;            // right panel
+        let mid_w = w.saturating_sub(stack_w + log_w + 2); // middle, -2 for separators
+        let mid_col = (stack_w + 1) as u16;
+        let log_col = (stack_w + 1 + mid_w + 1) as u16;
 
-        // ── Opponent info ──
-        Self::print_colored(&mut out, Color::Red, " OPPONENT");
-        for opp in &view.opponents {
-            let _ = execute!(out,
-                Print(format!("  Life: {}  Hand: {}  Library: {}\n", opp.life, opp.hand_size, opp.library_size))
-            );
+        // ── Draw vertical separators ──
+        for row in 0..h {
+            let _ = execute!(out, cursor::MoveTo(stack_w as u16, row as u16),
+                SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
+            let _ = execute!(out, cursor::MoveTo(log_col - 1, row as u16),
+                SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
         }
 
-        // ── Opponent battlefield ──
-        let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
-            .filter(|p| p.controller != view.you).collect();
-        if !opp_perms.is_empty() {
-            Self::render_battlefield(&mut out, &opp_perms, Color::Red);
-        }
-
-        let sep = "─".repeat(main_w);
-        Self::print_dim(&mut out, &sep);
-
-        // ── Your battlefield ──
-        let your_perms: Vec<&PermanentView> = view.battlefield.iter()
-            .filter(|p| p.controller == view.you).collect();
-        if !your_perms.is_empty() {
-            Self::render_battlefield(&mut out, &your_perms, Color::Green);
-        }
-
-        // ── Stack ──
-        if !view.stack.is_empty() {
-            Self::print_colored(&mut out, Color::Cyan, " STACK");
-            for item in &view.stack {
+        // ── Left panel: STACK ──
+        let _ = execute!(out, cursor::MoveTo(0, 0),
+            SetForegroundColor(Color::Cyan), SetAttribute(Attribute::Bold),
+            Print(" STACK"), SetAttribute(Attribute::Reset), ResetColor);
+        if view.stack.is_empty() {
+            let _ = execute!(out, cursor::MoveTo(1, 1),
+                SetAttribute(Attribute::Dim), Print("(empty)"), SetAttribute(Attribute::Reset));
+        } else {
+            for (i, item) in view.stack.iter().enumerate() {
+                let row = (i + 1) as u16;
+                if row >= term_h - 1 { break; }
                 let who = if item.controller == view.you { "you" } else { "opp" };
-                let _ = execute!(out, Print(format!("  {} ({})\n", item.name, who)));
+                let text = format!("{} ({})", item.name, who);
+                let truncated: String = text.chars().take(stack_w.saturating_sub(1)).collect();
+                let _ = execute!(out, cursor::MoveTo(1, row),
+                    SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
             }
         }
 
-        // ── Status bar ──
-        Self::print_dim(&mut out, &sep);
+        // ── Right panel: LOG ──
+        let _ = execute!(out, cursor::MoveTo(log_col, 0),
+            SetForegroundColor(Color::DarkYellow), SetAttribute(Attribute::Bold),
+            Print("LOG"), SetAttribute(Attribute::Reset), ResetColor);
+        if !log.is_empty() {
+            let visible = h.saturating_sub(2);
+            let start = if log.len() > visible { log.len() - visible } else { 0 };
+            for (i, entry) in log[start..].iter().enumerate() {
+                let row = (i + 1) as u16;
+                if row >= term_h - 1 { break; }
+                let truncated: String = entry.chars().take(log_w.saturating_sub(1)).collect();
+                let _ = execute!(out, cursor::MoveTo(log_col + 1, row),
+                    SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
+            }
+        }
+
+        // ── Middle panel: main game ──
+        let mut row: u16 = 0;
+
+        // Opponent info
+        Self::mid_print(&mut out, mid_col, &mut row, mid_w, " OPPONENT", Some(Color::Red), true);
+        for opp in &view.opponents {
+            Self::mid_print(&mut out, mid_col, &mut row, mid_w,
+                &format!("  Life: {}  Hand: {}  Library: {}", opp.life, opp.hand_size, opp.library_size),
+                None, false);
+        }
+
+        // Opponent battlefield
+        let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
+            .filter(|p| p.controller != view.you).collect();
+        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w);
+
+        // Separator
+        let mid_sep: String = "─".repeat(mid_w);
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        row += 1;
+
+        // Your battlefield
+        let your_perms: Vec<&PermanentView> = view.battlefield.iter()
+            .filter(|p| p.controller == view.you).collect();
+        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w);
+
+        // Status bar
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        row += 1;
+
         let step_name = format!("{:?}", view.step);
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opp's turn" };
-        let _ = execute!(out,
-            SetAttribute(Attribute::Bold),
-            Print(format!(" T{} {} | {}", view.turn_number, step_name, whose_turn)),
-            SetAttribute(Attribute::Reset),
-        );
-
+        let mut status = format!(" T{} {} | {}", view.turn_number, step_name, whose_turn);
         if !view.your_mana_pool.is_empty() {
             let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
                 .filter(|(_, &v)| v > 0)
                 .map(|(t, v)| format!("{:?}:{}", t, v))
                 .collect();
-            let _ = execute!(out, Print(format!("  Pool: {}", mana_str.join(" "))));
+            status.push_str(&format!("  Pool: {}", mana_str.join(" ")));
         }
-        let _ = execute!(out, Print("\n"));
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
+        row += 1;
 
-        // ── Hand ──
-        Self::print_dim(&mut out, &sep);
-        Self::print_colored(&mut out, Color::Green, " HAND");
+        // Hand
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        row += 1;
+        Self::mid_print(&mut out, mid_col, &mut row, mid_w, " HAND", Some(Color::Green), true);
         if view.your_hand.is_empty() {
-            let _ = execute!(out, Print("  (empty)\n"));
+            Self::mid_print(&mut out, mid_col, &mut row, mid_w, "  (empty)", None, false);
         } else {
             for card in &view.your_hand {
                 let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
@@ -185,77 +226,133 @@ impl CliPlayer {
                     (Some(p), Some(t)) => format!(" {}/{}", p, t),
                     _ => String::new(),
                 };
-                let _ = execute!(out, Print(format!("  {}{}{}\n", card.name, cost, pt)));
+                Self::mid_print(&mut out, mid_col, &mut row, mid_w,
+                    &format!("  {}{}{}", card.name, cost, pt), None, false);
             }
         }
 
-        // ── Your info bar ──
-        let _ = execute!(out,
-            SetForegroundColor(Color::Green),
-            SetAttribute(Attribute::Bold),
-            Print(format!(" Life: {}  Library: {}\n", view.your_life, view.your_library_size)),
-            SetAttribute(Attribute::Reset),
-            ResetColor,
-        );
+        // Your info
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
+            Print(format!(" Life: {}  Library: {}", view.your_life, view.your_library_size)),
+            SetAttribute(Attribute::Reset), ResetColor);
+        row += 1;
 
-        // ── Message ──
+        // Message
         if let Some(msg) = message {
-            Self::print_colored(&mut out, Color::Yellow, &format!(" {}", msg));
+            Self::mid_print(&mut out, mid_col, &mut row, mid_w, &format!(" {}", msg), Some(Color::Yellow), true);
         }
 
-        // ── Actions ──
+        // Actions
         if let Some(actions) = actions {
-            Self::print_dim(&mut out, &sep);
+            let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+            row += 1;
             for (i, action) in actions.iter().enumerate() {
                 let desc = Self::format_action(view, action);
-                let _ = execute!(out,
-                    SetAttribute(Attribute::Bold),
-                    Print(format!("  {}", i)),
-                    SetAttribute(Attribute::Reset),
-                    Print(format!(": {}\n", desc)),
-                );
+                let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                    SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
+                    SetAttribute(Attribute::Reset), Print(format!(": {}", desc)));
+                row += 1;
             }
             let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
-            if has_pass {
-                Self::print_dim(&mut out, "  [enter=pass] [f=pass turn] [l=log] [g=graveyard] [e=exile] [?N=card info]");
+            let hints = if has_pass {
+                "  [enter=pass] [f=pass turn] [l=log] [g=gy] [e=exile] [?N=info]"
             } else {
-                Self::print_dim(&mut out, "  [l=log] [g=graveyard] [e=exile] [?N=card info]");
-            }
+                "  [l=log] [g=gy] [e=exile] [?N=info]"
+            };
+            let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                SetAttribute(Attribute::Dim), Print(hints), SetAttribute(Attribute::Reset));
+            row += 1;
         }
 
-        // ── Log on the right side ──
-        if !log.is_empty() {
-            let h = term_h as usize;
-            let log_col = (main_w + 1) as u16;
-            let visible = h.saturating_sub(2);
-            let start = if log.len() > visible { log.len() - visible } else { 0 };
-
-            // Draw separator line
-            for row in 0..h {
-                let _ = execute!(out, cursor::MoveTo(main_w as u16, row as u16),
-                    SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
-            }
-
-            // Draw log header
-            let _ = execute!(out, cursor::MoveTo(log_col, 0),
-                SetForegroundColor(Color::Cyan), SetAttribute(Attribute::Bold),
-                Print("LOG"), SetAttribute(Attribute::Reset), ResetColor);
-
-            // Draw log entries
-            for (i, entry) in log[start..].iter().enumerate() {
-                let row = (i + 1) as u16;
-                if row >= term_h { break; }
-                let truncated: String = entry.chars().take(log_w.saturating_sub(1)).collect();
-                let _ = execute!(out, cursor::MoveTo(log_col + 1, row),
-                    SetAttribute(Attribute::Dim),
-                    Print(&truncated),
-                    SetAttribute(Attribute::Reset));
-            }
-        }
-
-        // Move cursor back to input area
-        let _ = execute!(out, cursor::MoveTo(0, term_h.saturating_sub(1)));
+        // Move cursor to input area
+        let _ = execute!(out, cursor::MoveTo(mid_col, row));
         let _ = out.flush();
+    }
+
+    /// Render battlefield permanents at a specific column/row, return next row.
+    fn render_battlefield_at(out: &mut io::Stdout, perms: &[&PermanentView], color: Color,
+                              col: u16, mut row: u16, max_w: usize) -> u16 {
+        let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
+        let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
+        let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
+        let enchantments: Vec<_> = perms.iter().filter(|p|
+            has_type(p, CardType::Enchantment) && !has_type(p, CardType::Creature)).collect();
+        let artifacts: Vec<_> = perms.iter().filter(|p|
+            has_type(p, CardType::Artifact) && !has_type(p, CardType::Creature) && !has_type(p, CardType::Land)).collect();
+
+        let mut aura_map: HashMap<ObjectId, Vec<String>> = HashMap::new();
+        for e in &enchantments {
+            if let Some(target_id) = e.attached_to {
+                aura_map.entry(target_id).or_default().push(e.name.clone());
+            }
+        }
+
+        // Lands
+        if !lands.is_empty() {
+            let mut summary: Vec<(String, usize, usize)> = Vec::new();
+            for land in &lands {
+                if let Some(entry) = summary.iter_mut().find(|(n, _, _)| *n == land.name) {
+                    if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
+                } else {
+                    let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
+                    summary.push((land.name.clone(), u, t));
+                }
+            }
+            let parts: Vec<String> = summary.iter().map(|(name, untapped, tapped)| {
+                let total = untapped + tapped;
+                if *tapped == 0 { format!("{}x {}", total, name) }
+                else if *untapped == 0 { format!("{}x {} (tapped)", total, name) }
+                else { format!("{}x {} ({} tapped)", total, name, tapped) }
+            }).collect();
+            let text = format!("  Lands: {}", parts.join(", "));
+            let truncated: String = text.chars().take(max_w).collect();
+            let _ = execute!(out, cursor::MoveTo(col, row),
+                SetForegroundColor(color), Print(&truncated), ResetColor);
+            row += 1;
+        }
+
+        // Creatures
+        for c in &creatures {
+            let pt = match (c.effective_power, c.effective_toughness) {
+                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                _ => match (c.power, c.toughness) {
+                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    _ => String::new(),
+                },
+            };
+            let auras = aura_map.get(&c.object_id)
+                .map(|names| format!(" [{}]", names.join(",")))
+                .unwrap_or_default();
+            let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
+            let flags = format!("{}{}",
+                if c.tapped { " [T]" } else { "" },
+                if c.summoning_sick { " [S]" } else { "" });
+
+            let text = format!("  {}{}{}{}{}", c.name, pt, auras, dmg, flags);
+            let truncated: String = text.chars().take(max_w).collect();
+            let _ = execute!(out, cursor::MoveTo(col, row),
+                SetForegroundColor(color), Print(&truncated), ResetColor);
+            row += 1;
+        }
+
+        // Non-aura enchantments
+        for e in &enchantments {
+            if e.attached_to.is_some() { continue; }
+            let _ = execute!(out, cursor::MoveTo(col, row),
+                SetForegroundColor(Color::Magenta), Print(format!("  {}", e.name)), ResetColor);
+            row += 1;
+        }
+
+        // Artifacts
+        for a in &artifacts {
+            let t = if a.tapped { " [T]" } else { "" };
+            let _ = execute!(out, cursor::MoveTo(col, row), Print(format!("  {}{}", a.name, t)));
+            row += 1;
+        }
+
+        row
     }
 
     fn render_battlefield(out: &mut impl Write, perms: &[&PermanentView], color: Color) {
@@ -358,6 +455,18 @@ impl CliPlayer {
         }
     }
 
+    fn mid_print(out: &mut io::Stdout, col: u16, row: &mut u16, max_w: usize,
+                  text: &str, color: Option<Color>, bold: bool) {
+        let _ = execute!(out, cursor::MoveTo(col, *row));
+        if let Some(c) = color { let _ = execute!(out, SetForegroundColor(c)); }
+        if bold { let _ = execute!(out, SetAttribute(Attribute::Bold)); }
+        let truncated: String = text.chars().take(max_w).collect();
+        let _ = execute!(out, Print(&truncated));
+        if bold { let _ = execute!(out, SetAttribute(Attribute::Reset)); }
+        if color.is_some() { let _ = execute!(out, ResetColor); }
+        *row += 1;
+    }
+
     fn print_colored(out: &mut impl Write, color: Color, text: &str) {
         let _ = execute!(out, SetForegroundColor(color), SetAttribute(Attribute::Bold),
             Print(format!("{}\n", text)), SetAttribute(Attribute::Reset), ResetColor);
@@ -453,7 +562,7 @@ impl CliPlayer {
             let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
             let visible = h.saturating_sub(4); // leave room for header/footer
             let start = if log.len() > visible { log.len() - visible } else { 0 };
-            for (i, entry) in log[start..].iter().enumerate() {
+            for (_i, entry) in log[start..].iter().enumerate() {
                 let _ = execute!(out, SetAttribute(Attribute::Dim),
                     Print(format!("  {}\n", entry)), SetAttribute(Attribute::Reset));
             }
@@ -463,7 +572,7 @@ impl CliPlayer {
         let _ = Self::read_line("");
     }
 
-    fn show_zone(view: &GameView, title: &str, cards: &[CardView]) {
+    fn show_zone(_view: &GameView, title: &str, cards: &[CardView]) {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
         Self::print_colored(&mut out, Color::Cyan, &format!(" {}", title));
@@ -633,7 +742,7 @@ impl Player for CliPlayer {
                 "g" => {
                     // Show all graveyards
                     let mut all_gy: Vec<CardView> = Vec::new();
-                    for (pid, cards) in &view.graveyards {
+                    for (_pid, cards) in &view.graveyards {
                         for card in cards {
                             all_gy.push(card.clone());
                         }
