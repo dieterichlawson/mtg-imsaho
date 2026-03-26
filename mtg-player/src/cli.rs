@@ -20,6 +20,12 @@ pub struct CliPlayer {
     /// When true, auto-pass priority until it's our turn again
     /// or the opponent puts something on the stack we can respond to.
     pass_until_my_turn: bool,
+    /// Rolling game log of significant events.
+    log: Vec<String>,
+    /// Previous view for diffing.
+    last_view: Option<GameView>,
+    /// Scroll offset for log viewer.
+    log_scroll: usize,
 }
 
 impl CliPlayer {
@@ -27,12 +33,81 @@ impl CliPlayer {
         Self {
             name: name.to_string(),
             pass_until_my_turn: false,
+            log: Vec::new(),
+            last_view: None,
+            log_scroll: 0,
         }
+    }
+
+    /// Compare current view to previous view and log significant changes.
+    fn update_log(&mut self, view: &GameView) {
+        if let Some(prev) = &self.last_view {
+            // Life changes
+            if view.your_life != prev.your_life {
+                let diff = view.your_life - prev.your_life;
+                if diff > 0 {
+                    self.log.push(format!("T{} You gained {} life ({})", view.turn_number, diff, view.your_life));
+                } else {
+                    self.log.push(format!("T{} You took {} damage ({})", view.turn_number, -diff, view.your_life));
+                }
+            }
+            for (opp, prev_opp) in view.opponents.iter().zip(prev.opponents.iter()) {
+                if opp.life != prev_opp.life {
+                    let diff = opp.life - prev_opp.life;
+                    if diff > 0 {
+                        self.log.push(format!("T{} Opponent gained {} life ({})", view.turn_number, diff, opp.life));
+                    } else {
+                        self.log.push(format!("T{} Opponent took {} damage ({})", view.turn_number, -diff, opp.life));
+                    }
+                }
+            }
+
+            // New creatures on battlefield
+            for perm in &view.battlefield {
+                if perm.power.is_some() && !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
+                    let who = if perm.controller == view.you { "You" } else { "Opponent" };
+                    let pt = match (perm.effective_power, perm.effective_toughness) {
+                        (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                        _ => String::new(),
+                    };
+                    self.log.push(format!("T{} {} played {}{}", view.turn_number, who, perm.name, pt));
+                }
+            }
+
+            // Creatures that left the battlefield
+            for prev_perm in &prev.battlefield {
+                if prev_perm.power.is_some() && !view.battlefield.iter().any(|p| p.object_id == prev_perm.object_id) {
+                    self.log.push(format!("T{} {} left the battlefield", view.turn_number, prev_perm.name));
+                }
+            }
+
+            // New items on stack
+            for item in &view.stack {
+                if !prev.stack.iter().any(|s| s.object_id == item.object_id) {
+                    let who = if item.controller == view.you { "You" } else { "Opponent" };
+                    self.log.push(format!("T{} {} cast {}", view.turn_number, who, item.name));
+                }
+            }
+
+            // Items resolved from stack
+            for prev_item in &prev.stack {
+                if !view.stack.iter().any(|s| s.object_id == prev_item.object_id) {
+                    self.log.push(format!("T{} {} resolved", view.turn_number, prev_item.name));
+                }
+            }
+
+            // Turn changes
+            if view.turn_number != prev.turn_number {
+                let whose = if view.active_player == view.you { "Your" } else { "Opponent's" };
+                self.log.push(format!("── Turn {} ({}) ──", view.turn_number, whose));
+            }
+        }
+        self.last_view = Some(view.clone());
     }
 
     // ── Rendering ──────────────────────────────────────────────────
 
-    fn render(view: &GameView, actions: Option<&[Action]>, message: Option<&str>) {
+    fn render(view: &GameView, actions: Option<&[Action]>, message: Option<&str>, log: &[String]) {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -91,6 +166,16 @@ impl CliPlayer {
         }
         let _ = execute!(out, Print("\n"));
 
+        // ── Recent log ──
+        if !log.is_empty() {
+            let show = 4; // show last N entries
+            let start = if log.len() > show { log.len() - show } else { 0 };
+            for entry in &log[start..] {
+                let _ = execute!(out, SetAttribute(Attribute::Dim),
+                    Print(format!("  {}\n", entry)), SetAttribute(Attribute::Reset));
+            }
+        }
+
         // ── Hand ──
         Self::print_dim(&mut out, &format!("{}", bar));
         Self::print_colored(&mut out, Color::Green, " HAND");
@@ -135,9 +220,9 @@ impl CliPlayer {
             }
             let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
             if has_pass {
-                Self::print_dim(&mut out, "  [enter=pass]  [f=pass until my turn]  [g=graveyard]  [e=exile]  [?N=card info]");
+                Self::print_dim(&mut out, "  [enter=pass] [f=pass turn] [l=log] [g=graveyard] [e=exile] [?N=card info]");
             } else {
-                Self::print_dim(&mut out, "  [g=graveyard]  [e=exile]  [?N=card info]");
+                Self::print_dim(&mut out, "  [l=log] [g=graveyard] [e=exile] [?N=card info]");
             }
         }
 
@@ -329,6 +414,26 @@ impl CliPlayer {
         input.trim().to_string()
     }
 
+    fn show_log(log: &[String]) {
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        Self::print_colored(&mut out, Color::Cyan, " GAME LOG");
+        if log.is_empty() {
+            let _ = execute!(out, Print("  (no events yet)\n"));
+        } else {
+            let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
+            let visible = h.saturating_sub(4); // leave room for header/footer
+            let start = if log.len() > visible { log.len() - visible } else { 0 };
+            for (i, entry) in log[start..].iter().enumerate() {
+                let _ = execute!(out, SetAttribute(Attribute::Dim),
+                    Print(format!("  {}\n", entry)), SetAttribute(Attribute::Reset));
+            }
+        }
+        let _ = execute!(out, Print("\n  Press enter to return..."));
+        let _ = out.flush();
+        let _ = Self::read_line("");
+    }
+
     fn show_zone(view: &GameView, title: &str, cards: &[CardView]) {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
@@ -362,7 +467,7 @@ impl CliPlayer {
             return Action::DeclareAttackers { attackers: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE ATTACKERS"));
+        Self::render(view, None, Some("DECLARE ATTACKERS"), &self.log);
 
         let mut out = stdout();
         let _ = execute!(out, Print("\n"));
@@ -409,7 +514,7 @@ impl CliPlayer {
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE BLOCKERS"));
+        Self::render(view, None, Some("DECLARE BLOCKERS"), &self.log);
 
         let mut out = stdout();
         let _ = execute!(out, Print("\n"));
@@ -465,6 +570,7 @@ impl Player for CliPlayer {
             Action::PassPriority | Action::Concede
         ));
         if only_pass_concede && has_pass {
+            self.update_log(view);
             return Action::PassPriority;
         }
 
@@ -480,12 +586,15 @@ impl Player for CliPlayer {
             }
             // Otherwise, auto-pass.
             else {
+                self.update_log(view);
                 return Action::PassPriority;
             }
         }
 
+        self.update_log(view);
+
         loop {
-            Self::render(view, Some(legal_actions), None);
+            Self::render(view, Some(legal_actions), None, &self.log);
 
             let input = Self::read_line("\n  > ");
 
@@ -512,6 +621,10 @@ impl Player for CliPlayer {
                         self.pass_until_my_turn = true;
                         return Action::PassPriority;
                     }
+                    continue;
+                }
+                "l" => {
+                    Self::show_log(&self.log);
                     continue;
                 }
                 "" => {
@@ -616,17 +729,15 @@ impl Player for CliPlayer {
 
 impl CliPlayer {
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
+        self.update_log(view);
         match prompt {
             CombatPrompt::ChooseAttackers { .. } => {
-                // If in pass mode, don't attack.
                 if self.pass_until_my_turn {
                     return Action::DeclareAttackers { attackers: vec![] };
                 }
                 self.choose_attackers(view, prompt)
             }
             CombatPrompt::ChooseBlockers { .. } => {
-                // Always prompt for blockers — blocking is too important to skip.
-                // Break pass mode so player sees the board state.
                 self.pass_until_my_turn = false;
                 self.choose_blockers(view, prompt)
             }
