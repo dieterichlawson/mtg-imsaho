@@ -21,12 +21,6 @@ pub struct CliPlayer {
     /// When set, auto-pass priority until our next turn.
     /// Stores the turn number when 'f' was pressed.
     pass_until_turn_after: Option<u32>,
-    /// Rolling game log of significant events.
-    log: Vec<String>,
-    /// Previous view for diffing.
-    last_view: Option<GameView>,
-    /// Scroll offset for log viewer.
-    log_scroll: usize,
 }
 
 impl CliPlayer {
@@ -34,98 +28,7 @@ impl CliPlayer {
         Self {
             name: name.to_string(),
             pass_until_turn_after: None,
-            log: Vec::new(),
-            last_view: None,
-            log_scroll: 0,
         }
-    }
-
-    /// Compare current view to previous view and log significant changes.
-    fn update_log(&mut self, view: &GameView) {
-        if self.last_view.is_none() {
-            // First view — add turn 1 header
-            let whose = if view.active_player == view.you { "Your" } else { "Opp's" };
-            self.log.push(format!("── Turn {} ({}) ──", view.turn_number, whose));
-        }
-
-        if let Some(prev) = &self.last_view {
-            // Turn changes (log first so they appear as headers)
-            if view.turn_number != prev.turn_number {
-                let whose = if view.active_player == view.you { "Your" } else { "Opp's" };
-                self.log.push(format!("── Turn {} ({}) ──", view.turn_number, whose));
-            }
-
-            // Life changes
-            if view.your_life != prev.your_life {
-                let diff = view.your_life - prev.your_life;
-                if diff > 0 {
-                    self.log.push(format!("You gained {} life ({})", diff, view.your_life));
-                } else {
-                    self.log.push(format!("You took {} damage ({})", -diff, view.your_life));
-                }
-            }
-            for (opp, prev_opp) in view.opponents.iter().zip(prev.opponents.iter()) {
-                if opp.life != prev_opp.life {
-                    let diff = opp.life - prev_opp.life;
-                    if diff > 0 {
-                        self.log.push(format!("Opp gained {} life ({})", diff, opp.life));
-                    } else {
-                        self.log.push(format!("Opp took {} damage ({})", -diff, opp.life));
-                    }
-                }
-            }
-
-            // Cards drawn
-            for card in &view.your_hand {
-                let was_in_hand = prev.your_hand.iter().any(|c| c.object_id == card.object_id);
-                let was_on_battlefield = prev.battlefield.iter().any(|p| p.object_id == card.object_id);
-                let was_on_stack = prev.stack.iter().any(|s| s.object_id == card.object_id);
-                if !was_in_hand && !was_on_battlefield && !was_on_stack {
-                    self.log.push(format!("You drew {}", card.name));
-                }
-            }
-            for (opp, prev_opp) in view.opponents.iter().zip(prev.opponents.iter()) {
-                let drawn = opp.hand_size as i32 - prev_opp.hand_size as i32;
-                if drawn > 0 {
-                    for _ in 0..drawn {
-                        self.log.push("Opp drew a card".into());
-                    }
-                }
-            }
-
-            // Lands and non-creature permanents played (these don't use the stack)
-            for perm in &view.battlefield {
-                if !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
-                    if perm.power.is_none() {
-                        let who = if perm.controller == view.you { "You" } else { "Opp" };
-                        self.log.push(format!("{} played {}", who, perm.name));
-                    }
-                }
-            }
-
-            // Spells cast (new items on stack)
-            for item in &view.stack {
-                if !prev.stack.iter().any(|s| s.object_id == item.object_id) {
-                    let who = if item.controller == view.you { "You" } else { "Opp" };
-                    self.log.push(format!("{} cast {}", who, item.name));
-                }
-            }
-
-            // Spells resolved (left the stack)
-            for prev_item in &prev.stack {
-                if !view.stack.iter().any(|s| s.object_id == prev_item.object_id) {
-                    self.log.push(format!("{} resolved", prev_item.name));
-                }
-            }
-
-            // Permanents that left the battlefield
-            for prev_perm in &prev.battlefield {
-                if !view.battlefield.iter().any(|p| p.object_id == prev_perm.object_id) {
-                    self.log.push(format!("{} left battlefield", prev_perm.name));
-                }
-            }
-        }
-        self.last_view = Some(view.clone());
     }
 
     // ── Rendering ──────────────────────────────────────────────────
@@ -462,105 +365,7 @@ impl CliPlayer {
         row
     }
 
-    fn render_battlefield(out: &mut impl Write, perms: &[&PermanentView], color: Color) {
-        let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
-        let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
-        let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
-        let enchantments: Vec<_> = perms.iter().filter(|p|
-            has_type(p, CardType::Enchantment) && !has_type(p, CardType::Creature)).collect();
-        let artifacts: Vec<_> = perms.iter().filter(|p|
-            has_type(p, CardType::Artifact) && !has_type(p, CardType::Creature) && !has_type(p, CardType::Land)).collect();
-
-        // Aura map
-        let mut aura_map: HashMap<ObjectId, Vec<String>> = HashMap::new();
-        for e in &enchantments {
-            if let Some(target_id) = e.attached_to {
-                aura_map.entry(target_id).or_default().push(e.name.clone());
-            }
-        }
-
-        // Lands
-        if !lands.is_empty() {
-            let mut summary: Vec<(String, usize, usize)> = Vec::new();
-            for land in &lands {
-                if let Some(entry) = summary.iter_mut().find(|(n, _, _)| *n == land.name) {
-                    if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
-                } else {
-                    let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
-                    summary.push((land.name.clone(), u, t));
-                }
-            }
-            let _ = execute!(out, SetForegroundColor(color));
-            let _ = execute!(out, Print("  Lands: "));
-            let _ = execute!(out, ResetColor);
-            let parts: Vec<String> = summary.iter().map(|(name, untapped, tapped)| {
-                let total = untapped + tapped;
-                if *tapped == 0 { format!("{}x {}", total, name) }
-                else if *untapped == 0 { format!("{}x {} (tapped)", total, name) }
-                else { format!("{}x {} ({} tapped)", total, name, tapped) }
-            }).collect();
-            let _ = execute!(out, Print(format!("{}\n", parts.join(", "))));
-        }
-
-        // Creatures
-        for c in &creatures {
-            let _ = execute!(out, SetForegroundColor(color));
-            let _ = execute!(out, Print("  "));
-
-            // Name
-            let _ = execute!(out, Print(&c.name));
-
-            // P/T
-            let pt = match (c.effective_power, c.effective_toughness) {
-                (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                _ => match (c.power, c.toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                    _ => String::new(),
-                },
-            };
-            let _ = execute!(out, Print(&pt));
-            let _ = execute!(out, ResetColor);
-
-            // Auras
-            if let Some(names) = aura_map.get(&c.object_id) {
-                let _ = execute!(out, SetForegroundColor(Color::Magenta),
-                    Print(format!(" [{}]", names.join(", "))), ResetColor);
-            }
-
-            // Damage
-            if c.damage_marked > 0 {
-                let _ = execute!(out, SetForegroundColor(Color::Red),
-                    Print(format!(" ({}dmg)", c.damage_marked)), ResetColor);
-            }
-
-            // Tapped
-            if c.tapped {
-                let _ = execute!(out, SetForegroundColor(Color::Yellow),
-                    Print(" [T]"), ResetColor);
-            }
-
-            // Sick
-            if c.summoning_sick {
-                let _ = execute!(out, SetAttribute(Attribute::Dim),
-                    Print(" [S]"), SetAttribute(Attribute::Reset));
-            }
-
-            let _ = execute!(out, Print("\n"));
-        }
-
-        // Non-aura enchantments
-        for e in &enchantments {
-            if e.attached_to.is_some() { continue; }
-            let _ = execute!(out, SetForegroundColor(Color::Magenta),
-                Print(format!("  {}\n", e.name)), ResetColor);
-        }
-
-        // Artifacts
-        for a in &artifacts {
-            let tapped = if a.tapped { " [T]" } else { "" };
-            let _ = execute!(out, Print(format!("  {}{}\n", a.name, tapped)));
-        }
-    }
+    // (Old render_battlefield removed — replaced by render_battlefield_at)
 
     fn mid_print(out: &mut io::Stdout, col: u16, row: &mut u16, max_w: usize,
                   text: &str, color: Option<Color>, bold: bool) {
@@ -579,10 +384,6 @@ impl CliPlayer {
             Print(format!("{}\n", text)), SetAttribute(Attribute::Reset), ResetColor);
     }
 
-    fn print_dim(out: &mut impl Write, text: &str) {
-        let _ = execute!(out, SetAttribute(Attribute::Dim),
-            Print(format!("{}\n", text)), SetAttribute(Attribute::Reset));
-    }
 
     // ── Action formatting ──────────────────────────────────────────
 
@@ -825,7 +626,7 @@ impl CliPlayer {
             return Action::DeclareAttackers { attackers: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE ATTACKERS"), &self.log);
+        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log);
 
         let mut out = stdout();
         let _ = execute!(out, Print("\n"));
@@ -872,7 +673,7 @@ impl CliPlayer {
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE BLOCKERS"), &self.log);
+        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log);
 
         let mut out = stdout();
         let _ = execute!(out, Print("\n"));
@@ -928,7 +729,6 @@ impl Player for CliPlayer {
             Action::PassPriority | Action::Concede
         ));
         if only_pass_concede && has_pass {
-            self.update_log(view);
             return Action::PassPriority;
         }
 
@@ -944,16 +744,13 @@ impl Player for CliPlayer {
                 if is_new_turn || stack_has_spell {
                     self.pass_until_turn_after = None;
                 } else {
-                    self.update_log(view);
                     return Action::PassPriority;
                 }
             }
         }
 
-        self.update_log(view);
-
         loop {
-            Self::render(view, Some(legal_actions), None, &self.log);
+            Self::render(view, Some(legal_actions), None, &view.display_log);
 
             // Position cursor in the middle panel for input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -988,7 +785,7 @@ impl Player for CliPlayer {
                     continue;
                 }
                 "l" => {
-                    Self::show_log(&self.log);
+                    Self::show_log(&view.display_log);
                     continue;
                 }
                 "" => {
@@ -1051,7 +848,6 @@ impl Player for CliPlayer {
 
 impl CliPlayer {
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
-        self.update_log(view);
         match prompt {
             CombatPrompt::ChooseAttackers { .. } => {
                 if self.pass_until_turn_after.is_some() {

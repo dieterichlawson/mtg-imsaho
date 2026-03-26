@@ -306,10 +306,6 @@ fn card_name(state: &GameState, registry: &CardRegistry, obj_id: ObjectId) -> St
         .unwrap_or_else(|| "?".into())
 }
 
-fn player_name(state: &GameState, player: PlayerId) -> &'static str {
-    if player == state.active_player { "Active" } else { "Opponent" }
-}
-
 /// Apply an action to the game state and return the new state.
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     let mut new_state = state.clone();
@@ -526,13 +522,6 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
         };
         match card_id {
             Some(id) => {
-                // Get card name before moving (for logging).
-                let name = state.get_object(id)
-                    .map(|o| o.card_id)
-                    .and_then(|cid| {
-                        // We don't have registry here, just use card_id for now.
-                        None::<String>
-                    });
                 state.move_object(id, Zone::Hand);
                 state.events.push(GameEvent::CardDrawn { player, object: id });
                 state.log(LogLevel::Info, format!("p{} drew a card", player.0));
