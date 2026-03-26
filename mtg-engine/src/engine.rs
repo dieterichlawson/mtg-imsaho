@@ -4,7 +4,7 @@ use crate::actions::Action;
 use crate::cards::CardRegistry;
 use crate::combat;
 use crate::events::GameEvent;
-use crate::ids::{ObjectId, PlayerId};
+use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::mana;
 use crate::sba::check_state_based_actions_with_registry;
 use crate::stack;
@@ -84,14 +84,20 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     actions.push(Action::PassPriority);
 
     // Mana abilities: can activate anytime you have priority.
+    // Deduplicate by card_id — if you have 5 untapped Forests, only show one "Tap Forest".
+    let mut seen_mana_abilities: Vec<(CardId, usize)> = Vec::new();
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
             let mana_abs = behavior.mana_abilities(state, obj.id);
             for ma in mana_abs {
-                actions.push(Action::ActivateManaAbility {
-                    object_id: obj.id,
-                    ability_index: ma.ability_index,
-                });
+                let key = (obj.card_id, ma.ability_index);
+                if !seen_mana_abilities.contains(&key) {
+                    seen_mana_abilities.push(key);
+                    actions.push(Action::ActivateManaAbility {
+                        object_id: obj.id,
+                        ability_index: ma.ability_index,
+                    });
+                }
             }
         }
     }
