@@ -47,7 +47,7 @@ pub fn declare_blockers(
 }
 
 /// Deal combat damage. All damage is simultaneous (no first strike in Phase 1).
-pub fn deal_combat_damage(state: &mut GameState) {
+pub fn deal_combat_damage(state: &mut GameState, registry: &crate::cards::CardRegistry) {
     let combat = match &state.combat {
         Some(c) => c.clone(),
         None => return,
@@ -58,7 +58,7 @@ pub fn deal_combat_damage(state: &mut GameState) {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => continue, // attacker may have been removed
         };
-        let attacker_power = match attacker.power {
+        let attacker_power = match state.effective_power(attacker_id, registry) {
             Some(p) if p > 0 => p as u32,
             _ => continue,
         };
@@ -93,7 +93,7 @@ pub fn deal_combat_damage(state: &mut GameState) {
                     Some(o) if o.zone == Zone::Battlefield => o,
                     _ => continue,
                 };
-                let blocker_power = blocker.power.unwrap_or(0);
+                let blocker_power = state.effective_power(blocker_id, registry).unwrap_or(0);
 
                 // Attacker damages blocker.
                 state.get_object_mut(blocker_id).unwrap().damage_marked += attacker_power;

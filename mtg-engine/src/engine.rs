@@ -585,7 +585,7 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
 }
 
 /// Perform automatic actions when entering a step.
-fn perform_turn_based_actions(state: &mut GameState, _registry: &CardRegistry) {
+fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
     let active = state.active_player;
 
     match state.step {
@@ -658,7 +658,7 @@ fn perform_turn_based_actions(state: &mut GameState, _registry: &CardRegistry) {
                 .unwrap_or(false);
 
             if has_attackers {
-                combat::deal_combat_damage(state);
+                combat::deal_combat_damage(state, registry);
             }
             // No priority in combat damage step for Phase 1.
             // (Technically there should be, but no instants yet.)
