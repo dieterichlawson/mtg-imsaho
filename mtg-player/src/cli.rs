@@ -794,14 +794,33 @@ impl Player for CliPlayer {
             // Keyboard shortcuts
             match input.as_str() {
                 "g" => {
-                    // Show all graveyards
-                    let mut all_gy: Vec<CardView> = Vec::new();
-                    for (_pid, cards) in &view.graveyards {
-                        for card in cards {
-                            all_gy.push(card.clone());
+                    let mut out = stdout();
+                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+                    Self::print_colored(&mut out, Color::Cyan, " GRAVEYARDS");
+                    let _ = execute!(out, Print("\n"));
+                    for (pid, cards) in &view.graveyards {
+                        let who = if *pid == view.you { "Your" } else { "Opponent's" };
+                        let _ = execute!(out,
+                            SetAttribute(Attribute::Bold),
+                            Print(format!(" {} graveyard ({}):\n", who, cards.len())),
+                            SetAttribute(Attribute::Reset));
+                        if cards.is_empty() {
+                            let _ = execute!(out, Print("   (empty)\n"));
+                        } else {
+                            for card in cards {
+                                let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                                let pt = match (card.power, card.toughness) {
+                                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                                    _ => String::new(),
+                                };
+                                let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
+                            }
                         }
+                        let _ = execute!(out, Print("\n"));
                     }
-                    Self::show_zone(view, "GRAVEYARD", &all_gy);
+                    let _ = execute!(out, Print("  Press enter to return..."));
+                    let _ = out.flush();
+                    let _ = Self::read_line("");
                     continue;
                 }
                 "e" => {
