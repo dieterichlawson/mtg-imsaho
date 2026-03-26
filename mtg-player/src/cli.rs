@@ -606,28 +606,29 @@ impl CliPlayer {
         let mut out = stdout();
 
         // Count how many of each card name the player has across all zones.
-        let mut counts: HashMap<String, (usize, usize, usize, usize, usize)> = HashMap::new(); // (total, hand, battlefield, graveyard, library)
+        let mut counts: HashMap<String, usize> = HashMap::new();
         for card in &view.your_hand {
-            let e = counts.entry(card.name.clone()).or_default();
-            e.0 += 1; e.1 += 1;
+            *counts.entry(card.name.clone()).or_default() += 1;
         }
         for perm in &view.battlefield {
             if perm.controller == view.you {
-                let e = counts.entry(perm.name.clone()).or_default();
-                e.0 += 1; e.2 += 1;
+                *counts.entry(perm.name.clone()).or_default() += 1;
             }
         }
         for (_pid, cards) in &view.graveyards {
             for card in cards {
                 if card.owner == view.you {
-                    let e = counts.entry(card.name.clone()).or_default();
-                    e.0 += 1; e.3 += 1;
+                    *counts.entry(card.name.clone()).or_default() += 1;
                 }
             }
         }
-        // Library cards are hidden, but we know the count. We can infer
-        // library copies = (total started with) - (hand + battlefield + graveyard + exile).
-        // For now, just show what we can see.
+        for card in &view.exile {
+            if card.owner == view.you {
+                *counts.entry(card.name.clone()).or_default() += 1;
+            }
+        }
+        // Library cards are hidden but we know the total count.
+        // Remaining copies = library_size cards we can't see.
 
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
@@ -665,15 +666,11 @@ impl CliPlayer {
                     (Some(p), Some(t)) => format!(" {}/{}", p, t),
                     _ => String::new(),
                 };
-                let (total, hand, bf, gy, _lib) = counts.get(&data.name).copied().unwrap_or_default();
-                let where_str = format!("({}x: {} hand, {} field, {} grave)",
-                    total, hand, bf, gy);
+                let total = counts.get(&data.name).copied().unwrap_or(0);
                 let _ = execute!(out,
                     SetAttribute(Attribute::Bold), Print(format!("  {:>2}", i)),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{} [{}]{} ", data.name, cost, types.join(" "), pt)),
-                    SetAttribute(Attribute::Dim), Print(format!("{}\n", where_str)),
-                    SetAttribute(Attribute::Reset));
+                    Print(format!(": {}x {}{} [{}]{}\n", total, data.name, cost, types.join(" "), pt)));
             }
 
             let _ = execute!(out, Print("\n  Enter number for details, or press enter to return: "));
