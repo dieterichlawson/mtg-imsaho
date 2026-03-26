@@ -17,9 +17,9 @@ use crate::Player;
 /// A player that interacts via a terminal UI.
 pub struct CliPlayer {
     name: String,
-    /// When true, auto-pass priority until it's our turn again
-    /// or the opponent puts something on the stack we can respond to.
-    pass_until_my_turn: bool,
+    /// When set, auto-pass priority until our next turn.
+    /// Stores the turn number when 'f' was pressed.
+    pass_until_turn_after: Option<u32>,
     /// Rolling game log of significant events.
     log: Vec<String>,
     /// Previous view for diffing.
@@ -32,7 +32,7 @@ impl CliPlayer {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            pass_until_my_turn: false,
+            pass_until_turn_after: None,
             log: Vec::new(),
             last_view: None,
             log_scroll: 0,
@@ -604,19 +604,21 @@ impl Player for CliPlayer {
         }
 
         // "Pass until my turn" mode (F6-like).
-        if self.pass_until_my_turn && has_pass {
-            // Break if it's our turn.
-            if view.active_player == view.you {
-                self.pass_until_my_turn = false;
-            }
-            // Break if opponent put something on the stack we can respond to.
-            else if !view.stack.is_empty() {
-                self.pass_until_my_turn = false;
-            }
-            // Otherwise, auto-pass.
-            else {
-                self.update_log(view);
-                return Action::PassPriority;
+        if let Some(activated_turn) = self.pass_until_turn_after {
+            if has_pass {
+                // Break if it's our turn AND we're on a later turn than when we pressed 'f'.
+                let is_new_turn = view.active_player == view.you
+                    && view.turn_number > activated_turn;
+                // Break if opponent put something on the stack we can respond to.
+                let opponent_acted = !view.stack.is_empty()
+                    && view.active_player != view.you;
+
+                if is_new_turn || opponent_acted {
+                    self.pass_until_turn_after = None;
+                } else {
+                    self.update_log(view);
+                    return Action::PassPriority;
+                }
             }
         }
 
@@ -647,7 +649,7 @@ impl Player for CliPlayer {
                 "f" => {
                     // Pass until my next turn (F6-like).
                     if has_pass {
-                        self.pass_until_my_turn = true;
+                        self.pass_until_turn_after = Some(view.turn_number);
                         return Action::PassPriority;
                     }
                     continue;
@@ -761,13 +763,13 @@ impl CliPlayer {
         self.update_log(view);
         match prompt {
             CombatPrompt::ChooseAttackers { .. } => {
-                if self.pass_until_my_turn {
+                if self.pass_until_turn_after.is_some() {
                     return Action::DeclareAttackers { attackers: vec![] };
                 }
                 self.choose_attackers(view, prompt)
             }
             CombatPrompt::ChooseBlockers { .. } => {
-                self.pass_until_my_turn = false;
+                self.pass_until_turn_after = None;
                 self.choose_blockers(view, prompt)
             }
         }
