@@ -167,11 +167,9 @@ impl CliPlayer {
             }
         }
 
-        // Log separator with label (like battlefield/hand labels)
-        let log_label = "── LOG ──";
-        let log_pad = left_w.saturating_sub(log_label.len()) / 2;
-        let log_line = format!("{}{}{}", "─".repeat(log_pad), log_label,
-            "─".repeat(left_w.saturating_sub(log_pad + log_label.len())));
+        // Log separator with label
+        let log_label = "─── LOG ";
+        let log_line = format!("{}{}", log_label, "─".repeat(left_w.saturating_sub(log_label.len())));
         let _ = execute!(out, cursor::MoveTo(0, log_start as u16),
             SetAttribute(Attribute::Dim), Print(&log_line), SetAttribute(Attribute::Reset));
         if !log.is_empty() {
