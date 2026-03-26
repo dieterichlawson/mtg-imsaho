@@ -23,6 +23,11 @@ pub struct GameView {
     pub active_player: PlayerId,
     pub priority_player: Option<PlayerId>,
     pub turn_number: u32,
+
+    /// Display-worthy log entries (Event level and above).
+    pub display_log: Vec<String>,
+    /// Full detailed log (all levels).
+    pub full_log: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -169,6 +174,13 @@ impl GameView {
             active_player: state.active_player,
             priority_player: state.priority_player,
             turn_number: state.turn_number,
+            display_log: state.game_log.iter()
+                .filter(|e| e.level >= crate::state::LogLevel::Event)
+                .map(|e| e.message.clone())
+                .collect(),
+            full_log: state.game_log.iter()
+                .map(|e| e.message.clone())
+                .collect(),
         }
     }
 }
