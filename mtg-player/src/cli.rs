@@ -601,13 +601,37 @@ impl CliPlayer {
         let _ = Self::read_line("");
     }
 
-    fn show_deck_browser() {
+    fn show_deck_browser(view: &GameView) {
         let registry = mtg_engine::cards::CardRegistry::with_all_cards();
         let mut out = stdout();
 
+        // Count how many of each card name the player has across all zones.
+        let mut counts: HashMap<String, (usize, usize, usize, usize, usize)> = HashMap::new(); // (total, hand, battlefield, graveyard, library)
+        for card in &view.your_hand {
+            let e = counts.entry(card.name.clone()).or_default();
+            e.0 += 1; e.1 += 1;
+        }
+        for perm in &view.battlefield {
+            if perm.controller == view.you {
+                let e = counts.entry(perm.name.clone()).or_default();
+                e.0 += 1; e.2 += 1;
+            }
+        }
+        for (_pid, cards) in &view.graveyards {
+            for card in cards {
+                if card.owner == view.you {
+                    let e = counts.entry(card.name.clone()).or_default();
+                    e.0 += 1; e.3 += 1;
+                }
+            }
+        }
+        // Library cards are hidden, but we know the count. We can infer
+        // library copies = (total started with) - (hand + battlefield + graveyard + exile).
+        // For now, just show what we can see.
+
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-            Self::print_colored(&mut out, Color::Cyan, " CARD BROWSER");
+            Self::print_colored(&mut out, Color::Cyan, " YOUR DECK");
             let _ = execute!(out, Print("\n"));
 
             let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
@@ -621,7 +645,12 @@ impl CliPlayer {
             }
             cards.sort_by(|a, b| a.name.cmp(&b.name));
 
-            for (i, data) in cards.iter().enumerate() {
+            // Only show cards the player actually has (or had)
+            let deck_cards: Vec<&mtg_engine::cards::CardData> = cards.iter()
+                .filter(|c| counts.contains_key(&c.name))
+                .collect();
+
+            for (i, data) in deck_cards.iter().enumerate() {
                 let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
                 let types: Vec<&str> = data.card_types.iter().map(|t| match t {
                     CardType::Land => "Land",
@@ -636,10 +665,15 @@ impl CliPlayer {
                     (Some(p), Some(t)) => format!(" {}/{}", p, t),
                     _ => String::new(),
                 };
+                let (total, hand, bf, gy, _lib) = counts.get(&data.name).copied().unwrap_or_default();
+                let where_str = format!("({}x: {} hand, {} field, {} grave)",
+                    total, hand, bf, gy);
                 let _ = execute!(out,
                     SetAttribute(Attribute::Bold), Print(format!("  {:>2}", i)),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{} [{}]{}\n", data.name, cost, types.join(" "), pt)));
+                    Print(format!(": {}{} [{}]{} ", data.name, cost, types.join(" "), pt)),
+                    SetAttribute(Attribute::Dim), Print(format!("{}\n", where_str)),
+                    SetAttribute(Attribute::Reset));
             }
 
             let _ = execute!(out, Print("\n  Enter number for details, or press enter to return: "));
@@ -649,8 +683,8 @@ impl CliPlayer {
             if input.is_empty() { return; }
 
             if let Ok(idx) = input.parse::<usize>() {
-                if idx < cards.len() {
-                    let data = &cards[idx];
+                if idx < deck_cards.len() {
+                    let data = deck_cards[idx];
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
                     Self::print_colored(&mut out, Color::Cyan, &format!(" {}", data.name));
                     let cost = data.cost.as_ref().map(|c| format!("{}", c)).unwrap_or_else(|| "(none)".into());
@@ -894,7 +928,7 @@ impl Player for CliPlayer {
 
             // Deck browser
             if input == "d" {
-                Self::show_deck_browser();
+                Self::show_deck_browser(view);
                 continue;
             }
 
