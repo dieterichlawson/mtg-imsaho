@@ -17,11 +17,17 @@ use crate::Player;
 /// A player that interacts via a terminal UI.
 pub struct CliPlayer {
     name: String,
+    /// When true, auto-pass priority until it's our turn again
+    /// or the opponent puts something on the stack we can respond to.
+    pass_until_my_turn: bool,
 }
 
 impl CliPlayer {
     pub fn new(name: &str) -> Self {
-        Self { name: name.to_string() }
+        Self {
+            name: name.to_string(),
+            pass_until_my_turn: false,
+        }
     }
 
     // ── Rendering ──────────────────────────────────────────────────
@@ -104,7 +110,7 @@ impl CliPlayer {
             }
             let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
             if has_pass {
-                Self::print_dim(&mut out, "  [enter=pass]  [g=graveyard]  [e=exile]  [?N=card info]");
+                Self::print_dim(&mut out, "  [enter=pass]  [f=pass until my turn]  [g=graveyard]  [e=exile]  [?N=card info]");
             } else {
                 Self::print_dim(&mut out, "  [g=graveyard]  [e=exile]  [?N=card info]");
             }
@@ -452,13 +458,30 @@ impl Player for CliPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
-        // Auto-pass when the only options are Pass and Concede.
         let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
+
+        // Auto-pass when the only options are Pass and Concede.
         let only_pass_concede = legal_actions.iter().all(|a| matches!(a,
             Action::PassPriority | Action::Concede
         ));
         if only_pass_concede && has_pass {
             return Action::PassPriority;
+        }
+
+        // "Pass until my turn" mode (F6-like).
+        if self.pass_until_my_turn && has_pass {
+            // Break if it's our turn.
+            if view.active_player == view.you {
+                self.pass_until_my_turn = false;
+            }
+            // Break if opponent put something on the stack we can respond to.
+            else if !view.stack.is_empty() {
+                self.pass_until_my_turn = false;
+            }
+            // Otherwise, auto-pass.
+            else {
+                return Action::PassPriority;
+            }
         }
 
         loop {
@@ -481,6 +504,14 @@ impl Player for CliPlayer {
                 }
                 "e" => {
                     Self::show_zone(view, "EXILE", &view.exile);
+                    continue;
+                }
+                "f" => {
+                    // Pass until my next turn (F6-like).
+                    if has_pass {
+                        self.pass_until_my_turn = true;
+                        return Action::PassPriority;
+                    }
                     continue;
                 }
                 "" => {
@@ -586,8 +617,19 @@ impl Player for CliPlayer {
 impl CliPlayer {
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
-            CombatPrompt::ChooseAttackers { .. } => self.choose_attackers(view, prompt),
-            CombatPrompt::ChooseBlockers { .. } => self.choose_blockers(view, prompt),
+            CombatPrompt::ChooseAttackers { .. } => {
+                // If in pass mode, don't attack.
+                if self.pass_until_my_turn {
+                    return Action::DeclareAttackers { attackers: vec![] };
+                }
+                self.choose_attackers(view, prompt)
+            }
+            CombatPrompt::ChooseBlockers { .. } => {
+                // Always prompt for blockers — blocking is too important to skip.
+                // Break pass mode so player sees the board state.
+                self.pass_until_my_turn = false;
+                self.choose_blockers(view, prompt)
+            }
         }
     }
 }
