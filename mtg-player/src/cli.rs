@@ -271,11 +271,10 @@ impl CliPlayer {
         // Ensure minimum 2 lines for each half of the battlefield
         while row < row_before_opp + 2 { row += 1; }
 
-        // Battlefield label — full width, label near left
-        let full_sep = "─".repeat(w);
+        // Battlefield label — starts at mid_col, spans to right edge
         let bf_label = "─── BATTLEFIELD ";
-        let bf_line = format!("{}{}", bf_label, "─".repeat(w.saturating_sub(bf_label.len())));
-        let _ = execute!(out, cursor::MoveTo(0, row),
+        let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.len())));
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
         row += 1;
 
@@ -286,10 +285,10 @@ impl CliPlayer {
         row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
         while row < row_before_you + 2 { row += 1; }
 
-        // Hand separator — full width, label near left
+        // Hand separator — starts at mid_col, spans to right edge
         let hand_label = "─── HAND ";
-        let hand_line = format!("{}{}", hand_label, "─".repeat(w.saturating_sub(hand_label.len())));
-        let _ = execute!(out, cursor::MoveTo(0, row),
+        let hand_line = format!("{}{}", hand_label, "─".repeat(mid_w.saturating_sub(hand_label.len())));
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&hand_line), SetAttribute(Attribute::Reset));
         row += 1;
 
@@ -325,8 +324,9 @@ impl CliPlayer {
 
         // Actions
         if let Some(actions) = actions {
-            let _ = execute!(out, cursor::MoveTo(0, row),
-                SetAttribute(Attribute::Dim), Print(&full_sep), SetAttribute(Attribute::Reset));
+            let mid_sep: String = "─".repeat(mid_w);
+            let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
             row += 1;
             for (i, action) in actions.iter().enumerate() {
                 let desc = Self::format_action(view, action);
