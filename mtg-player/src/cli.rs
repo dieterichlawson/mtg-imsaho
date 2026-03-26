@@ -75,8 +75,7 @@ impl CliPlayer {
                 }
             }
 
-            // Cards drawn — new cards in your hand that weren't there before
-            // and didn't come from the battlefield (i.e., not bounced)
+            // Cards drawn
             for card in &view.your_hand {
                 let was_in_hand = prev.your_hand.iter().any(|c| c.object_id == card.object_id);
                 let was_on_battlefield = prev.battlefield.iter().any(|p| p.object_id == card.object_id);
@@ -85,12 +84,8 @@ impl CliPlayer {
                     self.log.push(format!("You drew {}", card.name));
                 }
             }
-
-            // Opponent drew cards (can only see hand size change)
             for (opp, prev_opp) in view.opponents.iter().zip(prev.opponents.iter()) {
                 let drawn = opp.hand_size as i32 - prev_opp.hand_size as i32;
-                // Only log if hand grew and nothing left the stack (which would mean
-                // a spell returned to hand, not a draw). Simple heuristic.
                 if drawn > 0 {
                     for _ in 0..drawn {
                         self.log.push("Opp drew a card".into());
@@ -98,7 +93,17 @@ impl CliPlayer {
                 }
             }
 
-            // New items on stack (cast)
+            // Lands and non-creature permanents played (these don't use the stack)
+            for perm in &view.battlefield {
+                if !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
+                    if perm.power.is_none() {
+                        let who = if perm.controller == view.you { "You" } else { "Opp" };
+                        self.log.push(format!("{} played {}", who, perm.name));
+                    }
+                }
+            }
+
+            // Spells cast (new items on stack)
             for item in &view.stack {
                 if !prev.stack.iter().any(|s| s.object_id == item.object_id) {
                     let who = if item.controller == view.you { "You" } else { "Opp" };
@@ -106,21 +111,10 @@ impl CliPlayer {
                 }
             }
 
-            // Items resolved from stack
+            // Spells resolved (left the stack)
             for prev_item in &prev.stack {
                 if !view.stack.iter().any(|s| s.object_id == prev_item.object_id) {
                     self.log.push(format!("{} resolved", prev_item.name));
-                }
-            }
-
-            // New permanents — only log non-creatures (lands, enchantments, artifacts).
-            // Creatures are logged via cast + resolved above.
-            for perm in &view.battlefield {
-                if !prev.battlefield.iter().any(|p| p.object_id == perm.object_id) {
-                    if perm.power.is_none() {
-                        let who = if perm.controller == view.you { "You" } else { "Opp" };
-                        self.log.push(format!("{} played {}", who, perm.name));
-                    }
                 }
             }
 
