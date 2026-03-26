@@ -8,6 +8,7 @@ use crossterm::{
 };
 
 use mtg_engine::actions::{Action, CombatPrompt, Target};
+use mtg_engine::types::Step;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::types::CardType;
 use mtg_engine::view::{GameView, CardView, PermanentView};
@@ -114,21 +115,22 @@ impl CliPlayer {
         let w = term_w as usize;
         let h = term_h as usize;
 
-        // Panel widths — stack and log are the same width
-        let side_w: usize = w / 5;
-        let mid_w = w.saturating_sub(side_w * 2 + 2); // middle, -2 for separators
-        let mid_col = (side_w + 1) as u16;
-        let log_col = (side_w + 1 + mid_w + 1) as u16;
+        // Panel widths — left gutter (stack+log), middle (game), right (empty for now)
+        let left_w: usize = w / 5;
+        let mid_w = w.saturating_sub(left_w + 1); // -1 for separator
+        let mid_col = (left_w + 1) as u16;
 
-        // ── Draw vertical separators ──
-        for row in 0..h {
-            let _ = execute!(out, cursor::MoveTo(side_w as u16, row as u16),
-                SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
-            let _ = execute!(out, cursor::MoveTo(log_col - 1, row as u16),
+        // ── Draw vertical separator ──
+        for r in 0..h {
+            let _ = execute!(out, cursor::MoveTo(left_w as u16, r as u16),
                 SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
         }
 
-        // ── Left panel: STACK ──
+        // ── Left panel: STACK (top 1/3) + LOG (bottom 2/3) ──
+        let stack_h = h / 3;
+        let log_start = stack_h;
+
+        // Stack
         let _ = execute!(out, cursor::MoveTo(0, 0),
             SetForegroundColor(Color::Cyan), SetAttribute(Attribute::Bold),
             Print(" STACK"), SetAttribute(Attribute::Reset), ResetColor);
@@ -138,16 +140,15 @@ impl CliPlayer {
         } else {
             let mut srow: u16 = 1;
             for item in view.stack.iter() {
-                if srow >= term_h - 1 { break; }
+                if srow >= stack_h as u16 { break; }
                 let who = if item.controller == view.you { "you" } else { "opp" };
                 let text = format!("{} ({})", item.name, who);
-                let truncated: String = text.chars().take(side_w.saturating_sub(1)).collect();
+                let truncated: String = text.chars().take(left_w.saturating_sub(1)).collect();
                 let _ = execute!(out, cursor::MoveTo(1, srow),
                     SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
                 srow += 1;
-                // Show targets
                 for target in &item.targets {
-                    if srow >= term_h - 1 { break; }
+                    if srow >= stack_h as u16 { break; }
                     let target_name = match target {
                         mtg_engine::actions::Target::Object(id) => {
                             view.battlefield.iter().find(|p| p.object_id == *id)
@@ -158,7 +159,7 @@ impl CliPlayer {
                             if *pid == view.you { " -> you".into() } else { " -> opp".into() }
                         }
                     };
-                    let truncated: String = target_name.chars().take(side_w.saturating_sub(1)).collect();
+                    let truncated: String = target_name.chars().take(left_w.saturating_sub(1)).collect();
                     let _ = execute!(out, cursor::MoveTo(1, srow),
                         SetForegroundColor(Color::DarkCyan), Print(&truncated), ResetColor);
                     srow += 1;
@@ -166,18 +167,24 @@ impl CliPlayer {
             }
         }
 
-        // ── Right panel: LOG ──
-        let _ = execute!(out, cursor::MoveTo(log_col, 0),
+        // Horizontal separator between stack and log
+        let _ = execute!(out, cursor::MoveTo(0, log_start as u16),
+            SetAttribute(Attribute::Dim),
+            Print(&"─".repeat(left_w)),
+            SetAttribute(Attribute::Reset));
+
+        // Log
+        let _ = execute!(out, cursor::MoveTo(0, (log_start + 1) as u16),
             SetForegroundColor(Color::DarkYellow), SetAttribute(Attribute::Bold),
-            Print("LOG"), SetAttribute(Attribute::Reset), ResetColor);
+            Print(" LOG"), SetAttribute(Attribute::Reset), ResetColor);
         if !log.is_empty() {
-            let visible = h.saturating_sub(2);
-            let start = if log.len() > visible { log.len() - visible } else { 0 };
+            let log_visible = h.saturating_sub(log_start + 3);
+            let start = if log.len() > log_visible { log.len() - log_visible } else { 0 };
             for (i, entry) in log[start..].iter().enumerate() {
-                let row = (i + 1) as u16;
-                if row >= term_h - 1 { break; }
-                let truncated: String = entry.chars().take(side_w.saturating_sub(1)).collect();
-                let _ = execute!(out, cursor::MoveTo(log_col + 1, row),
+                let r = (log_start + 2 + i) as u16;
+                if r >= term_h - 1 { break; }
+                let truncated: String = entry.chars().take(left_w.saturating_sub(1)).collect();
+                let _ = execute!(out, cursor::MoveTo(1, r),
                     SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
             }
         }
@@ -186,10 +193,25 @@ impl CliPlayer {
         let mut row: u16 = 0;
         let mid_sep: String = "─".repeat(mid_w);
 
-        // Turn/phase at top
-        let step_name = format!("{:?}", view.step);
-        let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opp's turn" };
-        let mut status = format!(" T{} {} | {}", view.turn_number, step_name, whose_turn);
+        // Readable step name
+        let step_name = match view.step {
+            Step::Untap => "Untap",
+            Step::Upkeep => "Upkeep",
+            Step::Draw => "Draw",
+            Step::PrecombatMain => "Main Phase 1",
+            Step::BeginCombat => "Begin Combat",
+            Step::DeclareAttackers => "Declare Attackers",
+            Step::DeclareBlockers => "Declare Blockers",
+            Step::CombatDamage => "Combat Damage",
+            Step::EndCombat => "End Combat",
+            Step::PostcombatMain => "Main Phase 2",
+            Step::EndStep => "End Step",
+            Step::Cleanup => "Cleanup",
+        };
+
+        // Turn/phase bar
+        let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
+        let mut status = format!(" Turn {} - {} | {}", view.turn_number, step_name, whose_turn);
         if !view.your_mana_pool.is_empty() {
             let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
                 .filter(|(_, &v)| v > 0)
@@ -201,52 +223,92 @@ impl CliPlayer {
             SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
         row += 1;
 
-        // Opponent info
+        // Separator below turn bar
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        row += 1;
+
+        // Vital stats — you on left, opponent on right, same line
+        let your_gy: usize = view.graveyards.iter()
+            .filter(|(pid, _)| *pid == view.you)
+            .map(|(_, cards)| cards.len()).sum();
+        let your_exile: usize = view.exile.iter()
+            .filter(|c| c.owner == view.you).count();
         let opp_gy: usize = view.graveyards.iter()
             .filter(|(pid, _)| *pid != view.you)
             .map(|(_, cards)| cards.len()).sum();
         let opp_exile: usize = view.exile.iter()
             .filter(|c| c.owner != view.you).count();
-        Self::mid_print(&mut out, mid_col, &mut row, mid_w, " OPPONENT", Some(Color::Red), true);
-        for opp in &view.opponents {
-            Self::mid_print(&mut out, mid_col, &mut row, mid_w,
-                &format!("  Life: {}  Hand: {}  Library: {}  Grave: {}  Exile: {}",
-                    opp.life, opp.hand_size, opp.library_size, opp_gy, opp_exile),
-                None, false);
+
+        let your_stats = format!(" You: {}hp  {}lib  {}gy  {}ex  {}hand",
+            view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len());
+        let opp_stats = view.opponents.first().map(|opp|
+            format!("Opp: {}hp  {}lib  {}gy  {}ex  {}hand",
+                opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size)
+        ).unwrap_or_default();
+
+        let is_your_turn = view.active_player == view.you;
+
+        // Your stats (bold if your turn)
+        let _ = execute!(out, cursor::MoveTo(mid_col, row));
+        if is_your_turn {
+            let _ = execute!(out, SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold));
+        } else {
+            let _ = execute!(out, SetForegroundColor(Color::Green));
         }
+        let _ = execute!(out, Print(&your_stats));
+        if is_your_turn {
+            let _ = execute!(out, SetAttribute(Attribute::Reset));
+        }
+        let _ = execute!(out, ResetColor);
+
+        // Opponent stats (bold if their turn), right-aligned
+        let opp_col = mid_col as usize + mid_w.saturating_sub(opp_stats.len() + 1);
+        let _ = execute!(out, cursor::MoveTo(opp_col as u16, row));
+        if !is_your_turn {
+            let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
+        } else {
+            let _ = execute!(out, SetForegroundColor(Color::Red));
+        }
+        let _ = execute!(out, Print(&opp_stats));
+        if !is_your_turn {
+            let _ = execute!(out, SetAttribute(Attribute::Reset));
+        }
+        let _ = execute!(out, ResetColor);
+        row += 1;
+
+        // Separator below vital stats
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        row += 1;
 
         // Opponent battlefield
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
         row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
 
-        // Battlefield separator
-        Self::mid_print(&mut out, mid_col, &mut row, mid_w, &format!("─── BATTLEFIELD {}", "─".repeat(mid_w.saturating_sub(16))), None, false);
+        // Battlefield label (centered)
+        let bf_label = "── BATTLEFIELD ──";
+        let bf_pad = mid_w.saturating_sub(bf_label.len()) / 2;
+        let bf_line = format!("{}{}{}", "─".repeat(bf_pad), bf_label, "─".repeat(mid_w.saturating_sub(bf_pad + bf_label.len())));
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
+        row += 1;
 
         // Your battlefield
         let your_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller == view.you).collect();
         row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
 
-        // Your info (above hand)
+        // Hand separator (centered label)
+        let hand_label = "── HAND ──";
+        let hand_pad = mid_w.saturating_sub(hand_label.len()) / 2;
+        let hand_line = format!("{}{}{}", "─".repeat(hand_pad), hand_label, "─".repeat(mid_w.saturating_sub(hand_pad + hand_label.len())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
-        row += 1;
-
-        let your_gy: usize = view.graveyards.iter()
-            .filter(|(pid, _)| *pid == view.you)
-            .map(|(_, cards)| cards.len()).sum();
-        let your_exile: usize = view.exile.iter()
-            .filter(|c| c.owner == view.you).count();
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
-            Print(format!(" Life: {}  Library: {}  Grave: {}  Exile: {}",
-                view.your_life, view.your_library_size, your_gy, your_exile)),
-            SetAttribute(Attribute::Reset), ResetColor);
+            SetAttribute(Attribute::Dim), Print(&hand_line), SetAttribute(Attribute::Reset));
         row += 1;
 
         // Hand
-        Self::mid_print(&mut out, mid_col, &mut row, mid_w, " HAND", Some(Color::Green), true);
         if view.your_hand.is_empty() {
             Self::mid_print(&mut out, mid_col, &mut row, mid_w, "  (empty)", None, false);
         } else {
