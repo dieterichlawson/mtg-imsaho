@@ -114,16 +114,15 @@ impl CliPlayer {
         let w = term_w as usize;
         let h = term_h as usize;
 
-        // Panel widths
-        let stack_w: usize = 18;     // left panel
-        let log_w = w / 4;            // right panel
-        let mid_w = w.saturating_sub(stack_w + log_w + 2); // middle, -2 for separators
-        let mid_col = (stack_w + 1) as u16;
-        let log_col = (stack_w + 1 + mid_w + 1) as u16;
+        // Panel widths — stack and log are the same width
+        let side_w: usize = w / 5;
+        let mid_w = w.saturating_sub(side_w * 2 + 2); // middle, -2 for separators
+        let mid_col = (side_w + 1) as u16;
+        let log_col = (side_w + 1 + mid_w + 1) as u16;
 
         // ── Draw vertical separators ──
         for row in 0..h {
-            let _ = execute!(out, cursor::MoveTo(stack_w as u16, row as u16),
+            let _ = execute!(out, cursor::MoveTo(side_w as u16, row as u16),
                 SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
             let _ = execute!(out, cursor::MoveTo(log_col - 1, row as u16),
                 SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
@@ -142,7 +141,7 @@ impl CliPlayer {
                 if srow >= term_h - 1 { break; }
                 let who = if item.controller == view.you { "you" } else { "opp" };
                 let text = format!("{} ({})", item.name, who);
-                let truncated: String = text.chars().take(stack_w.saturating_sub(1)).collect();
+                let truncated: String = text.chars().take(side_w.saturating_sub(1)).collect();
                 let _ = execute!(out, cursor::MoveTo(1, srow),
                     SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
                 srow += 1;
@@ -159,7 +158,7 @@ impl CliPlayer {
                             if *pid == view.you { " -> you".into() } else { " -> opp".into() }
                         }
                     };
-                    let truncated: String = target_name.chars().take(stack_w.saturating_sub(1)).collect();
+                    let truncated: String = target_name.chars().take(side_w.saturating_sub(1)).collect();
                     let _ = execute!(out, cursor::MoveTo(1, srow),
                         SetForegroundColor(Color::DarkCyan), Print(&truncated), ResetColor);
                     srow += 1;
@@ -177,7 +176,7 @@ impl CliPlayer {
             for (i, entry) in log[start..].iter().enumerate() {
                 let row = (i + 1) as u16;
                 if row >= term_h - 1 { break; }
-                let truncated: String = entry.chars().take(log_w.saturating_sub(1)).collect();
+                let truncated: String = entry.chars().take(side_w.saturating_sub(1)).collect();
                 let _ = execute!(out, cursor::MoveTo(log_col + 1, row),
                     SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
             }
@@ -185,36 +184,9 @@ impl CliPlayer {
 
         // ── Middle panel: main game ──
         let mut row: u16 = 0;
-
-        // Opponent info
-        Self::mid_print(&mut out, mid_col, &mut row, mid_w, " OPPONENT", Some(Color::Red), true);
-        for opp in &view.opponents {
-            Self::mid_print(&mut out, mid_col, &mut row, mid_w,
-                &format!("  Life: {}  Hand: {}  Library: {}", opp.life, opp.hand_size, opp.library_size),
-                None, false);
-        }
-
-        // Opponent battlefield
-        let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
-            .filter(|p| p.controller != view.you).collect();
-        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
-
-        // Separator
         let mid_sep: String = "─".repeat(mid_w);
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
-        row += 1;
 
-        // Your battlefield
-        let your_perms: Vec<&PermanentView> = view.battlefield.iter()
-            .filter(|p| p.controller == view.you).collect();
-        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
-
-        // Status bar
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
-        row += 1;
-
+        // Turn/phase at top
         let step_name = format!("{:?}", view.step);
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opp's turn" };
         let mut status = format!(" T{} {} | {}", view.turn_number, step_name, whose_turn);
@@ -229,10 +201,51 @@ impl CliPlayer {
             SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
         row += 1;
 
-        // Hand
+        // Opponent info
+        let opp_gy: usize = view.graveyards.iter()
+            .filter(|(pid, _)| *pid != view.you)
+            .map(|(_, cards)| cards.len()).sum();
+        let opp_exile: usize = view.exile.iter()
+            .filter(|c| c.owner != view.you).count();
+        Self::mid_print(&mut out, mid_col, &mut row, mid_w, " OPPONENT", Some(Color::Red), true);
+        for opp in &view.opponents {
+            Self::mid_print(&mut out, mid_col, &mut row, mid_w,
+                &format!("  Life: {}  Hand: {}  Library: {}  Grave: {}  Exile: {}",
+                    opp.life, opp.hand_size, opp.library_size, opp_gy, opp_exile),
+                None, false);
+        }
+
+        // Opponent battlefield
+        let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
+            .filter(|p| p.controller != view.you).collect();
+        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
+
+        // Battlefield separator
+        Self::mid_print(&mut out, mid_col, &mut row, mid_w, &format!("─── BATTLEFIELD {}", "─".repeat(mid_w.saturating_sub(16))), None, false);
+
+        // Your battlefield
+        let your_perms: Vec<&PermanentView> = view.battlefield.iter()
+            .filter(|p| p.controller == view.you).collect();
+        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
+
+        // Your info (above hand)
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
         row += 1;
+
+        let your_gy: usize = view.graveyards.iter()
+            .filter(|(pid, _)| *pid == view.you)
+            .map(|(_, cards)| cards.len()).sum();
+        let your_exile: usize = view.exile.iter()
+            .filter(|c| c.owner == view.you).count();
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
+            Print(format!(" Life: {}  Library: {}  Grave: {}  Exile: {}",
+                view.your_life, view.your_library_size, your_gy, your_exile)),
+            SetAttribute(Attribute::Reset), ResetColor);
+        row += 1;
+
+        // Hand
         Self::mid_print(&mut out, mid_col, &mut row, mid_w, " HAND", Some(Color::Green), true);
         if view.your_hand.is_empty() {
             Self::mid_print(&mut out, mid_col, &mut row, mid_w, "  (empty)", None, false);
@@ -247,13 +260,6 @@ impl CliPlayer {
                     &format!("  {}{}{}", card.name, cost, pt), None, false);
             }
         }
-
-        // Your info
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
-            Print(format!(" Life: {}  Library: {}", view.your_life, view.your_library_size)),
-            SetAttribute(Attribute::Reset), ResetColor);
-        row += 1;
 
         // Message
         if let Some(msg) = message {
@@ -274,16 +280,16 @@ impl CliPlayer {
             }
             let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
             let hints = if has_pass {
-                "  [enter=pass] [f=pass turn] [l=log] [g=gy] [e=exile] [?N=info]"
+                "  [enter=pass] [f=pass turn] [l=log] [g=graveyard] [e=exile] [d=deck]"
             } else {
-                "  [l=log] [g=gy] [e=exile] [?N=info]"
+                "  [l=log] [g=graveyard] [e=exile] [d=deck]"
             };
             let _ = execute!(out, cursor::MoveTo(mid_col, row),
                 SetAttribute(Attribute::Dim), Print(hints), SetAttribute(Attribute::Reset));
             row += 1;
         }
 
-        // Move cursor to input area
+        // Move cursor to input area in middle panel
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
         let _ = out.flush();
     }
@@ -595,6 +601,88 @@ impl CliPlayer {
         let _ = Self::read_line("");
     }
 
+    fn show_deck_browser() {
+        let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+        let mut out = stdout();
+
+        loop {
+            let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+            Self::print_colored(&mut out, Color::Cyan, " CARD BROWSER");
+            let _ = execute!(out, Print("\n"));
+
+            let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
+            for i in 1..100u32 {
+                let id = mtg_engine::ids::CardId(i);
+                if let Some(data) = registry.card_data(id) {
+                    if !cards.iter().any(|c| c.name == data.name) {
+                        cards.push(data);
+                    }
+                }
+            }
+            cards.sort_by(|a, b| a.name.cmp(&b.name));
+
+            for (i, data) in cards.iter().enumerate() {
+                let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                let types: Vec<&str> = data.card_types.iter().map(|t| match t {
+                    CardType::Land => "Land",
+                    CardType::Creature => "Creature",
+                    CardType::Instant => "Instant",
+                    CardType::Sorcery => "Sorcery",
+                    CardType::Enchantment => "Enchantment",
+                    CardType::Artifact => "Artifact",
+                    CardType::Planeswalker => "Planeswalker",
+                }).collect();
+                let pt = match (data.power, data.toughness) {
+                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    _ => String::new(),
+                };
+                let _ = execute!(out,
+                    SetAttribute(Attribute::Bold), Print(format!("  {:>2}", i)),
+                    SetAttribute(Attribute::Reset),
+                    Print(format!(": {}{} [{}]{}\n", data.name, cost, types.join(" "), pt)));
+            }
+
+            let _ = execute!(out, Print("\n  Enter number for details, or press enter to return: "));
+            let _ = out.flush();
+            let input = Self::read_line("");
+
+            if input.is_empty() { return; }
+
+            if let Ok(idx) = input.parse::<usize>() {
+                if idx < cards.len() {
+                    let data = &cards[idx];
+                    let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+                    Self::print_colored(&mut out, Color::Cyan, &format!(" {}", data.name));
+                    let cost = data.cost.as_ref().map(|c| format!("{}", c)).unwrap_or_else(|| "(none)".into());
+                    let _ = execute!(out, Print(format!("  Mana cost: {}\n", cost)));
+                    let types: Vec<&str> = data.card_types.iter().map(|t| match t {
+                        CardType::Land => "Land",
+                        CardType::Creature => "Creature",
+                        CardType::Instant => "Instant",
+                        CardType::Sorcery => "Sorcery",
+                        CardType::Enchantment => "Enchantment",
+                        CardType::Artifact => "Artifact",
+                        CardType::Planeswalker => "Planeswalker",
+                    }).collect();
+                    let _ = execute!(out, Print(format!("  Type: {}\n", types.join(" "))));
+                    if !data.subtypes.is_empty() {
+                        let _ = execute!(out, Print(format!("  Subtypes: {}\n", data.subtypes.join(", "))));
+                    }
+                    if let (Some(p), Some(t)) = (data.power, data.toughness) {
+                        let _ = execute!(out, Print(format!("  Power/Toughness: {}/{}\n", p, t)));
+                    }
+                    if !data.oracle_text.is_empty() {
+                        let _ = execute!(out, SetForegroundColor(Color::Yellow),
+                            Print(format!("\n  {}\n", data.oracle_text)), ResetColor);
+                    }
+                    let _ = execute!(out, Print("\n  Press enter to return to list..."));
+                    let _ = out.flush();
+                    let _ = Self::read_line("");
+                }
+            }
+        }
+    }
+
     fn show_zone(_view: &GameView, title: &str, cards: &[CardView]) {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
@@ -799,51 +887,9 @@ impl Player for CliPlayer {
                 _ => {}
             }
 
-            // Card info: ?0, ?1, etc. — show details of a battlefield permanent
-            if input.starts_with('?') {
-                if let Ok(idx) = input[1..].parse::<usize>() {
-                    // Find the idx-th permanent on the battlefield
-                    if idx < view.battlefield.len() {
-                        let perm = &view.battlefield[idx];
-                        let mut out = stdout();
-                        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-                        Self::print_colored(&mut out, Color::Cyan,
-                            &format!(" CARD: {}", perm.name));
-                        let types: Vec<&str> = perm.card_types.iter().map(|t| match t {
-                            CardType::Land => "Land",
-                            CardType::Creature => "Creature",
-                            CardType::Instant => "Instant",
-                            CardType::Sorcery => "Sorcery",
-                            CardType::Enchantment => "Enchantment",
-                            CardType::Artifact => "Artifact",
-                            CardType::Planeswalker => "Planeswalker",
-                        }).collect();
-                        let _ = execute!(out, Print(format!("  Types: {}\n", types.join(" "))));
-                        if let (Some(p), Some(t)) = (perm.power, perm.toughness) {
-                            let _ = execute!(out, Print(format!("  Base P/T: {}/{}\n", p, t)));
-                        }
-                        if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
-                            let _ = execute!(out, Print(format!("  Effective P/T: {}/{}\n", p, t)));
-                        }
-                        if perm.damage_marked > 0 {
-                            let _ = execute!(out, Print(format!("  Damage: {}\n", perm.damage_marked)));
-                        }
-                        let controller = if perm.controller == view.you { "You" } else { "Opponent" };
-                        let _ = execute!(out, Print(format!("  Controller: {}\n", controller)));
-                        let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
-                        let _ = execute!(out, Print(format!("  Summoning sick: {}\n", perm.summoning_sick)));
-                        if let Some(att) = perm.attached_to {
-                            let att_name = view.battlefield.iter()
-                                .find(|p| p.object_id == att)
-                                .map(|p| p.name.as_str())
-                                .unwrap_or("?");
-                            let _ = execute!(out, Print(format!("  Attached to: {}\n", att_name)));
-                        }
-                        let _ = execute!(out, Print("\n  Press enter to return..."));
-                        let _ = out.flush();
-                        let _ = Self::read_line("");
-                    }
-                }
+            // Deck browser
+            if input == "d" {
+                Self::show_deck_browser();
                 continue;
             }
 
