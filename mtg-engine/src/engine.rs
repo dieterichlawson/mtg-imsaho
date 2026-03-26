@@ -399,7 +399,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 let names: Vec<String> = attackers.iter()
                     .map(|(id, _)| card_name(state, registry, *id))
                     .collect();
-                new_state.log(LogLevel::Event, format!("Attacking with {}", names.join(", ")));
+                new_state.log(LogLevel::Event, format!("p{} declared attackers: {}", new_state.active_player.0, names.join(", ")));
             }
             combat::declare_attackers(&mut new_state, attackers);
             new_state.awaiting_action = None;
