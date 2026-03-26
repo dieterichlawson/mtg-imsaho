@@ -506,7 +506,6 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     for player_idx in 0..num_players {
         let player_id = PlayerId(player_idx);
         draw_cards(&mut state, player_id, 7);
-        state.log(LogLevel::Info, format!("p{} drew 7 cards", player_idx));
     }
 
     state.events.push(GameEvent::GameStarted);
@@ -514,8 +513,9 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     state
 }
 
-/// Draw N cards for a player.
+/// Draw N cards for a player. Logs a single summary entry.
 pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
+    let mut drawn = 0;
     for _ in 0..count {
         let card_id = {
             let player_state = state.get_player_mut(player);
@@ -525,11 +525,19 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
             Some(id) => {
                 state.move_object(id, Zone::Hand);
                 state.events.push(GameEvent::CardDrawn { player, object: id });
+                drawn += 1;
             }
             None => {
                 // Drew from empty library — SBA will catch it.
                 break;
             }
+        }
+    }
+    if drawn > 0 {
+        if drawn == 1 {
+            state.log(LogLevel::Info, format!("p{} drew a card", player.0));
+        } else {
+            state.log(LogLevel::Info, format!("p{} drew {} cards", player.0, drawn));
         }
     }
 }
@@ -614,7 +622,6 @@ fn perform_turn_based_actions(state: &mut GameState, _registry: &CardRegistry) {
             // Active player draws a card (skip on the very first turn).
             if !state.is_first_turn {
                 draw_cards(state, active, 1);
-                state.log(LogLevel::Info, format!("p{} drew a card", active.0));
             }
             state.priority_player = Some(active);
         }
