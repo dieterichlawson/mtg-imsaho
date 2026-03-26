@@ -167,21 +167,18 @@ impl CliPlayer {
             }
         }
 
-        // Horizontal separator between stack and log
+        // Log separator with label (like battlefield/hand labels)
+        let log_label = "── LOG ──";
+        let log_pad = left_w.saturating_sub(log_label.len()) / 2;
+        let log_line = format!("{}{}{}", "─".repeat(log_pad), log_label,
+            "─".repeat(left_w.saturating_sub(log_pad + log_label.len())));
         let _ = execute!(out, cursor::MoveTo(0, log_start as u16),
-            SetAttribute(Attribute::Dim),
-            Print(&"─".repeat(left_w)),
-            SetAttribute(Attribute::Reset));
-
-        // Log
-        let _ = execute!(out, cursor::MoveTo(0, (log_start + 1) as u16),
-            SetForegroundColor(Color::DarkYellow), SetAttribute(Attribute::Bold),
-            Print(" LOG"), SetAttribute(Attribute::Reset), ResetColor);
+            SetAttribute(Attribute::Dim), Print(&log_line), SetAttribute(Attribute::Reset));
         if !log.is_empty() {
-            let log_visible = h.saturating_sub(log_start + 3);
+            let log_visible = h.saturating_sub(log_start + 2);
             let start = if log.len() > log_visible { log.len() - log_visible } else { 0 };
             for (i, entry) in log[start..].iter().enumerate() {
-                let r = (log_start + 2 + i) as u16;
+                let r = (log_start + 1 + i) as u16;
                 if r >= term_h - 1 { break; }
                 let truncated: String = entry.chars().take(left_w.saturating_sub(1)).collect();
                 let _ = execute!(out, cursor::MoveTo(1, r),
@@ -211,14 +208,7 @@ impl CliPlayer {
 
         // Turn/phase bar
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
-        let mut status = format!(" Turn {} - {} | {}", view.turn_number, step_name, whose_turn);
-        if !view.your_mana_pool.is_empty() {
-            let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
-                .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{:?}:{}", t, v))
-                .collect();
-            status.push_str(&format!("  Pool: {}", mana_str.join(" ")));
-        }
+        let status = format!(" Turn {} - {} | {}", view.turn_number, step_name, whose_turn);
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
         row += 1;
@@ -240,14 +230,16 @@ impl CliPlayer {
         let opp_exile: usize = view.exile.iter()
             .filter(|c| c.owner != view.you).count();
 
-        let your_stats = format!(" You: {}hp  {}lib  {}gy  {}ex  {}hand",
-            view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len());
-        let opp_stats = view.opponents.first().map(|opp|
-            format!("Opp: {}hp  {}lib  {}gy  {}ex  {}hand",
-                opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size)
-        ).unwrap_or_default();
-
         let is_your_turn = view.active_player == view.you;
+        let your_caret = if is_your_turn { "▸ " } else { "  " };
+        let opp_caret = if !is_your_turn { "▸ " } else { "  " };
+
+        let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand",
+            your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len());
+        let opp_stats = view.opponents.first().map(|opp|
+            format!("{}Opp: {}hp  {}lib  {}gy  {}ex  {}hand",
+                opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size)
+        ).unwrap_or_default();
 
         // Your stats (bold if your turn)
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
@@ -257,54 +249,47 @@ impl CliPlayer {
             let _ = execute!(out, SetForegroundColor(Color::Green));
         }
         let _ = execute!(out, Print(&your_stats));
-        if is_your_turn {
-            let _ = execute!(out, SetAttribute(Attribute::Reset));
-        }
-        let _ = execute!(out, ResetColor);
+        let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
+        row += 1;
 
-        // Opponent stats (bold if their turn), right-aligned
-        let opp_col = mid_col as usize + mid_w.saturating_sub(opp_stats.len() + 1);
-        let _ = execute!(out, cursor::MoveTo(opp_col as u16, row));
+        // Opponent stats below yours (bold if their turn)
+        let _ = execute!(out, cursor::MoveTo(mid_col, row));
         if !is_your_turn {
             let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
         } else {
             let _ = execute!(out, SetForegroundColor(Color::Red));
         }
         let _ = execute!(out, Print(&opp_stats));
-        if !is_your_turn {
-            let _ = execute!(out, SetAttribute(Attribute::Reset));
-        }
-        let _ = execute!(out, ResetColor);
-        row += 1;
-
-        // Separator below vital stats
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
         row += 1;
 
         // Opponent battlefield
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
+        let row_before_opp = row;
         row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
+        // Ensure minimum 2 lines for each half of the battlefield
+        while row < row_before_opp + 2 { row += 1; }
 
-        // Battlefield label (centered)
-        let bf_label = "── BATTLEFIELD ──";
-        let bf_pad = mid_w.saturating_sub(bf_label.len()) / 2;
-        let bf_line = format!("{}{}{}", "─".repeat(bf_pad), bf_label, "─".repeat(mid_w.saturating_sub(bf_pad + bf_label.len())));
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+        // Battlefield label — full width, label near left
+        let full_sep = "─".repeat(w);
+        let bf_label = "─── BATTLEFIELD ";
+        let bf_line = format!("{}{}", bf_label, "─".repeat(w.saturating_sub(bf_label.len())));
+        let _ = execute!(out, cursor::MoveTo(0, row),
             SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
         row += 1;
 
         // Your battlefield
         let your_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller == view.you).collect();
+        let row_before_you = row;
         row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
+        while row < row_before_you + 2 { row += 1; }
 
-        // Hand separator (centered label)
-        let hand_label = "── HAND ──";
-        let hand_pad = mid_w.saturating_sub(hand_label.len()) / 2;
-        let hand_line = format!("{}{}{}", "─".repeat(hand_pad), hand_label, "─".repeat(mid_w.saturating_sub(hand_pad + hand_label.len())));
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+        // Hand separator — full width, label near left
+        let hand_label = "─── HAND ";
+        let hand_line = format!("{}{}", hand_label, "─".repeat(w.saturating_sub(hand_label.len())));
+        let _ = execute!(out, cursor::MoveTo(0, row),
             SetAttribute(Attribute::Dim), Print(&hand_line), SetAttribute(Attribute::Reset));
         row += 1;
 
@@ -323,6 +308,16 @@ impl CliPlayer {
             }
         }
 
+        // Mana pool at bottom of hand area
+        if !view.your_mana_pool.is_empty() {
+            let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
+                .filter(|(_, &v)| v > 0)
+                .map(|(t, v)| format!("{:?}:{}", t, v))
+                .collect();
+            Self::mid_print(&mut out, mid_col, &mut row, mid_w,
+                &format!("  Mana: {}", mana_str.join(" ")), Some(Color::Yellow), false);
+        }
+
         // Message
         if let Some(msg) = message {
             Self::mid_print(&mut out, mid_col, &mut row, mid_w, &format!(" {}", msg), Some(Color::Yellow), true);
@@ -330,8 +325,8 @@ impl CliPlayer {
 
         // Actions
         if let Some(actions) = actions {
-            let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+            let _ = execute!(out, cursor::MoveTo(0, row),
+                SetAttribute(Attribute::Dim), Print(&full_sep), SetAttribute(Attribute::Reset));
             row += 1;
             for (i, action) in actions.iter().enumerate() {
                 let desc = Self::format_action(view, action);
