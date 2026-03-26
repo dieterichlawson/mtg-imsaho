@@ -408,7 +408,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
         Action::DeclareBlockers { assignments } => {
             if assignments.is_empty() {
-                new_state.log(LogLevel::Debug, "No blockers declared".into());
+                new_state.log(LogLevel::Info, "No blockers declared".into());
             } else {
                 let descs: Vec<String> = assignments.iter()
                     .map(|(b, a)| format!("{} blocks {}", card_name(state, registry, *b), card_name(state, registry, *a)))
