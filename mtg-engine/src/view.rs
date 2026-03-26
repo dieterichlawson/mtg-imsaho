@@ -61,6 +61,7 @@ pub struct StackItemView {
     pub object_id: ObjectId,
     pub name: String,
     pub controller: PlayerId,
+    pub targets: Vec<crate::actions::Target>,
 }
 
 #[derive(Debug, Clone)]
@@ -142,6 +143,7 @@ impl GameView {
                         .map(|d| d.name)
                         .unwrap_or_else(|| "Unknown".into()),
                     controller: obj.controller,
+                    targets: obj.targets.clone(),
                 })
             })
             .collect();

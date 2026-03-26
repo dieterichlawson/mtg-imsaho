@@ -137,14 +137,33 @@ impl CliPlayer {
             let _ = execute!(out, cursor::MoveTo(1, 1),
                 SetAttribute(Attribute::Dim), Print("(empty)"), SetAttribute(Attribute::Reset));
         } else {
-            for (i, item) in view.stack.iter().enumerate() {
-                let row = (i + 1) as u16;
-                if row >= term_h - 1 { break; }
+            let mut srow: u16 = 1;
+            for item in view.stack.iter() {
+                if srow >= term_h - 1 { break; }
                 let who = if item.controller == view.you { "you" } else { "opp" };
                 let text = format!("{} ({})", item.name, who);
                 let truncated: String = text.chars().take(stack_w.saturating_sub(1)).collect();
-                let _ = execute!(out, cursor::MoveTo(1, row),
+                let _ = execute!(out, cursor::MoveTo(1, srow),
                     SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
+                srow += 1;
+                // Show targets
+                for target in &item.targets {
+                    if srow >= term_h - 1 { break; }
+                    let target_name = match target {
+                        mtg_engine::actions::Target::Object(id) => {
+                            view.battlefield.iter().find(|p| p.object_id == *id)
+                                .map(|p| format!(" -> {}", p.name))
+                                .unwrap_or_else(|| " -> ?".into())
+                        }
+                        mtg_engine::actions::Target::Player(pid) => {
+                            if *pid == view.you { " -> you".into() } else { " -> opp".into() }
+                        }
+                    };
+                    let truncated: String = target_name.chars().take(stack_w.saturating_sub(1)).collect();
+                    let _ = execute!(out, cursor::MoveTo(1, srow),
+                        SetForegroundColor(Color::DarkCyan), Print(&truncated), ResetColor);
+                    srow += 1;
+                }
             }
         }
 
@@ -333,7 +352,8 @@ impl CliPlayer {
                 if c.tapped { " [T]" } else { "" },
                 if c.summoning_sick { " [S]" } else { "" });
 
-            let text = format!("  {}{}{}{}{}", c.name, pt, auras, dmg, flags);
+            let id_tag = format!(" #{}", c.object_id.0);
+            let text = format!("  {}{}{}{}{}{}", c.name, pt, auras, dmg, flags, id_tag);
             let truncated: String = text.chars().take(max_w).collect();
             let _ = execute!(out, cursor::MoveTo(col, row),
                 SetForegroundColor(color), Print(&truncated), ResetColor);
@@ -344,14 +364,14 @@ impl CliPlayer {
         for e in &enchantments {
             if e.attached_to.is_some() { continue; }
             let _ = execute!(out, cursor::MoveTo(col, row),
-                SetForegroundColor(Color::Magenta), Print(format!("  {}", e.name)), ResetColor);
+                SetForegroundColor(Color::Magenta), Print(format!("  {} #{}", e.name, e.object_id.0)), ResetColor);
             row += 1;
         }
 
         // Artifacts
         for a in &artifacts {
             let t = if a.tapped { " [T]" } else { "" };
-            let _ = execute!(out, cursor::MoveTo(col, row), Print(format!("  {}{}", a.name, t)));
+            let _ = execute!(out, cursor::MoveTo(col, row), Print(format!("  {}{} #{}", a.name, t, a.object_id.0)));
             row += 1;
         }
 
