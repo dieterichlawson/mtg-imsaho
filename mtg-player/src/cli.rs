@@ -634,19 +634,29 @@ impl CliPlayer {
 
         Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log);
 
+        // Get mid_col for positioning
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        let side = term_w as usize / 5;
+        let col = (side + 1) as u16;
+        let cur_row = cursor::position().unwrap_or((0, 20)).1;
+
         let mut out = stdout();
-        let _ = execute!(out, Print("\n"));
-        Self::print_colored(&mut out, Color::Yellow, " Eligible attackers:");
+        let mut r = cur_row;
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
+            Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
+        r += 1;
         for (i, &id) in eligible.iter().enumerate() {
-            let _ = execute!(out,
+            let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
-                SetAttribute(Attribute::Reset), Print(format!(": {}\n", Self::perm_name(view, id))),
-            );
+                SetAttribute(Attribute::Reset), Print(format!(": {}", Self::perm_name(view, id))));
+            r += 1;
         }
-        let _ = execute!(out, Print("\n"));
+        let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
         loop {
+            let _ = execute!(stdout(), cursor::MoveTo(col, r));
             let input = Self::read_line("  Attack (numbers/all/enter=none)> ");
 
             if input.is_empty() {
@@ -681,20 +691,36 @@ impl CliPlayer {
 
         Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log);
 
+        let (term_w, _) = terminal::size().unwrap_or((100, 30));
+        let side = term_w as usize / 5;
+        let col = (side + 1) as u16;
+        let cur_row = cursor::position().unwrap_or((0, 20)).1;
+
         let mut out = stdout();
-        let _ = execute!(out, Print("\n"));
-        Self::print_colored(&mut out, Color::Red, " Attackers:");
+        let mut r = cur_row;
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
+            Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
+        r += 1;
         for (i, &id) in attacker_ids.iter().enumerate() {
-            let _ = execute!(out, Print(format!("  {}: {}\n", i, Self::perm_name(view, id))));
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                Print(format!("  {}: {}", i, Self::perm_name(view, id))));
+            r += 1;
         }
-        Self::print_colored(&mut out, Color::Green, " Your blockers:");
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold),
+            Print(" Your blockers:"), SetAttribute(Attribute::Reset), ResetColor);
+        r += 1;
         for (i, &id) in eligible_blockers.iter().enumerate() {
-            let _ = execute!(out, Print(format!("  {}: {}\n", i, Self::perm_name(view, id))));
+            let _ = execute!(out, cursor::MoveTo(col, r),
+                Print(format!("  {}: {}", i, Self::perm_name(view, id))));
+            r += 1;
         }
-        let _ = execute!(out, Print("\n"));
+        let _ = execute!(out, cursor::MoveTo(col, r));
         let _ = out.flush();
 
         loop {
+            let _ = execute!(stdout(), cursor::MoveTo(col, r));
             let input = Self::read_line("  Block (blocker->attacker / enter=none)> ");
 
             if input.is_empty() {
