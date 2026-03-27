@@ -405,7 +405,7 @@ impl LlmPlayer {
         for attempt in 0..3 {
             if attempt > 0 {
                 let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
-                eprintln!("[LLM] Retrying in {}s...", delay.as_secs());
+                self.log("RETRY", &format!("Retrying in {}s...", delay.as_secs()));
                 std::thread::sleep(delay);
             }
 
@@ -432,7 +432,7 @@ impl LlmPlayer {
 
                     let status = resp.status();
                     let text = resp.text().unwrap_or_default();
-                    eprintln!("[LLM] API error {}: {}", status, text);
+                    self.log("API-ERROR", &format!("{}: {}", status, text));
                     self.log("ERROR", &format!("API {} - {}", status, text));
 
                     // Retry on overload (529) or rate limit (429).
@@ -444,7 +444,7 @@ impl LlmPlayer {
                     return "0".to_string();
                 }
                 Err(e) => {
-                    eprintln!("[LLM] Request failed: {}", e);
+                    self.log("REQUEST-FAILED", &format!("{}", e));
                     self.log("ERROR", &format!("Request failed: {}", e));
                     continue;
                 }
@@ -472,7 +472,7 @@ impl LlmPlayer {
         for attempt in 0..3 {
             if attempt > 0 {
                 let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
-                eprintln!("[LLM] Retrying in {}s...", delay.as_secs());
+                self.log("RETRY", &format!("Retrying in {}s...", delay.as_secs()));
                 std::thread::sleep(delay);
             }
 
@@ -497,7 +497,7 @@ impl LlmPlayer {
 
                     let status = resp.status();
                     let text = resp.text().unwrap_or_default();
-                    eprintln!("[LLM] API error {}: {}", status, text);
+                    self.log("API-ERROR", &format!("{}: {}", status, text));
                     self.log("ERROR", &format!("API {} - {}", status, text));
 
                     let code = status.as_u16();
@@ -507,7 +507,7 @@ impl LlmPlayer {
                     return "0".to_string();
                 }
                 Err(e) => {
-                    eprintln!("[LLM] Request failed: {}", e);
+                    self.log("REQUEST-FAILED", &format!("{}", e));
                     self.log("ERROR", &format!("Request failed: {}", e));
                     continue;
                 }
@@ -556,7 +556,7 @@ impl LlmPlayer {
             if let Some(idx) = self.parse_action_index(&response, max) {
                 // Double-check concede: ask the model to confirm.
                 if matches!(actions.get(idx), Some(Action::Concede)) {
-                    eprintln!("[LLM] AI chose Concede, confirming...");
+                    self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
                     let confirm = self.call_api(
                         "You chose to CONCEDE the game. Are you sure? Reply ONLY 'yes' or 'no'."
                     );
@@ -566,17 +566,17 @@ impl LlmPlayer {
                         .trim()
                         .to_lowercase();
                     if !last.contains("yes") {
-                        eprintln!("[LLM] Concede cancelled, passing instead");
+                        self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
                         return 0;
                     }
                 }
-                eprintln!("[LLM] Chose action {}", idx);
+                self.log("CHOSE", &format!("action {}", idx));
                 return idx;
             }
             if attempt == 0 {
-                eprintln!("[LLM] Malformed response '{}', retrying...", response);
+                self.log("MALFORMED", &format!("'{}', retrying...", response));
             } else {
-                eprintln!("[LLM] Retry also malformed '{}', defaulting to 0", response);
+                self.log("MALFORMED", &format!("Retry also malformed '{}', defaulting to 0", response));
             }
         }
         0
@@ -599,7 +599,7 @@ impl Player for LlmPlayer {
         let actions = Self::format_actions_compact(view, legal_actions);
         let prompt = format!("{}\n{}", state, actions);
 
-        eprintln!("[LLM] Thinking... ({} actions)", legal_actions.len());
+        self.log("THINKING", &format!("{} actions", legal_actions.len()));
         let idx = self.choose_with_retry(&prompt, legal_actions.len(), legal_actions);
         legal_actions[idx].clone()
     }
@@ -632,9 +632,9 @@ impl LlmPlayer {
                 }
                 combat_text.push_str("\nNumbers, 'all', or 'none'");
 
-                eprintln!("[LLM] Thinking about attackers...");
+                self.log("THINKING", "attackers...");
                 let response = self.call_api(&format!("{}\n{}", state, combat_text));
-                eprintln!("[LLM] Attackers: '{}'", response);
+                self.log("ATTACKERS", &response);
 
                 // Parse from last line, strip "ANSWER:" prefix.
                 let last_line = response.lines().rev()
@@ -681,9 +681,9 @@ impl LlmPlayer {
                 }
                 combat_text.push_str("\nFormat: 'blocker->attacker' pairs, or 'none'");
 
-                eprintln!("[LLM] Thinking about blockers...");
+                self.log("THINKING", "blockers...");
                 let response = self.call_api(&format!("{}\n{}", state, combat_text));
-                eprintln!("[LLM] Blockers: '{}'", response);
+                self.log("BLOCKERS", &response);
 
                 // Parse from last line, strip "ANSWER:" prefix.
                 let last_line = response.lines().rev()
