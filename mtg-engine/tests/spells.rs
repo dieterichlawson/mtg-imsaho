@@ -256,3 +256,91 @@ fn lava_axe_damages_player() {
     assert_eq!(state.get_player(P1).life, 15);
     assert_eq!(state.get_object(axe).unwrap().zone, Zone::Graveyard);
 }
+
+/// Counterspell counters a spell, preventing it from resolving.
+#[test]
+fn counterspell_counters_spell() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0 casts Lightning Bolt targeting P1.
+    let bolt_id = registry.get_id_by_name("Lightning Bolt").unwrap();
+    let bolt = state.create_object(bolt_id, P0, Zone::Hand, None, None);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)] },
+        &registry,
+    );
+    assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Stack);
+
+    // P1 responds with Counterspell targeting the Bolt.
+    state.priority_player = Some(P1);
+    let counter_id = registry.get_id_by_name("Counterspell").unwrap();
+    let counter = state.create_object(counter_id, P1, Zone::Hand, None, None);
+    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)] },
+        &registry,
+    );
+
+    // Resolve Counterspell (top of stack).
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    // Bolt should be in graveyard without resolving — P1 life unchanged.
+    assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_player(P1).life, 20);
+    // Counterspell itself in graveyard.
+    assert_eq!(state.get_object(counter).unwrap().zone, Zone::Graveyard);
+}
+
+/// Counterspell appears as a legal action when there's a spell on the stack.
+#[test]
+fn counterspell_legal_when_spell_on_stack() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put a spell on the stack.
+    let bolt_id = registry.get_id_by_name("Lightning Bolt").unwrap();
+    let bolt = state.create_object(bolt_id, P0, Zone::Stack, None, None);
+    state.stack.push(bolt);
+
+    // P1 has Counterspell and mana.
+    state.priority_player = Some(P1);
+    let counter_id = registry.get_id_by_name("Counterspell").unwrap();
+    state.create_object(counter_id, P1, Zone::Hand, None, None);
+    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 2);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let has_counter = legal.actions.iter().any(|a| match a {
+        Action::CastSpell { targets, .. } => {
+            targets.iter().any(|t| matches!(t, Target::Object(id) if *id == bolt))
+        }
+        _ => false,
+    });
+    assert!(has_counter, "Should be able to cast Counterspell targeting spell on stack");
+}
+
+/// Counterspell is NOT a legal action when the stack is empty.
+#[test]
+fn counterspell_illegal_with_empty_stack() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let counter_id = registry.get_id_by_name("Counterspell").unwrap();
+    state.create_object(counter_id, P0, Zone::Hand, None, None);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let has_counter = legal.actions.iter().any(|a| match a {
+        Action::CastSpell { object_id, .. } => {
+            state.get_object(*object_id).map(|o| o.card_id) == Some(counter_id)
+        }
+        _ => false,
+    });
+    assert!(!has_counter, "Should not be able to cast Counterspell with empty stack");
+}

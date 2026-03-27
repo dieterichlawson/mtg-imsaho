@@ -380,6 +380,9 @@ impl LlmPlayer {
             .or_else(|| view.your_hand.iter()
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
+            .or_else(|| view.stack.iter()
+                .find(|s| s.object_id == id)
+                .map(|s| s.name.clone()))
             .unwrap_or_else(|| format!("{}", id))
     }
 

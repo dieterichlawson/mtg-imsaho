@@ -18,6 +18,7 @@ pub mod lava_axe;
 pub mod glorious_anthem;
 pub mod holy_strength;
 pub mod pacifism;
+pub mod counterspell;
 
 use std::collections::HashMap;
 
@@ -60,6 +61,8 @@ pub enum TargetRequirement {
     CreatureWithFilter(String),
     /// Target a player only (Lava Axe)
     PlayerOnly,
+    /// Target a spell on the stack (Counterspell)
+    Spell,
 }
 
 /// The trait that every card implements.
@@ -160,6 +163,7 @@ impl CardRegistry {
         reg.register(Box::new(giant_growth::GiantGrowth));
         reg.register(Box::new(doom_blade::DoomBlade));
         reg.register(Box::new(swords_to_plowshares::SwordsToPlowshares));
+        reg.register(Box::new(counterspell::Counterspell));
         // Sorceries
         reg.register(Box::new(divination::Divination));
         reg.register(Box::new(lava_axe::LavaAxe));
