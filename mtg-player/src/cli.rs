@@ -138,7 +138,7 @@ impl CliPlayer {
             Step::EndCombat => "End Combat",
             Step::PostcombatMain => "Main Phase 2",
             Step::EndStep => "End Step",
-            Step::Cleanup => "Cleanup",
+            Step::Cleanup => "Cleanup (Discard to 7)",
         };
 
         // Turn/phase bar
