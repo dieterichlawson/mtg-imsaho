@@ -137,12 +137,7 @@ impl CliPlayer {
             SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
         row += 1;
 
-        // Separator below turn bar
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
-        row += 1;
-
-        // Vital stats — you on left, opponent on right, same line
+        // Compute stats
         let your_gy: usize = view.graveyards.iter()
             .filter(|(pid, _)| *pid == view.you)
             .map(|(_, cards)| cards.len()).sum();
@@ -165,18 +160,14 @@ impl CliPlayer {
                 opp_caret, opp.life, opp.library_size, opp_gy, opp_exile, opp.hand_size)
         ).unwrap_or_default();
 
-        // Your stats (bold if your turn)
-        let _ = execute!(out, cursor::MoveTo(mid_col, row));
-        if is_your_turn {
-            let _ = execute!(out, SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold));
-        } else {
-            let _ = execute!(out, SetForegroundColor(Color::Green));
-        }
-        let _ = execute!(out, Print(&your_stats));
-        let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
+        // ── BATTLEFIELD section (combined) ──
+        let bf_label = "─── BATTLEFIELD ";
+        let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.chars().count())));
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
         row += 1;
 
-        // Opponent stats below yours (bold if their turn)
+        // Opponent status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
         if !is_your_turn {
             let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
@@ -187,33 +178,34 @@ impl CliPlayer {
         let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
         row += 1;
 
-        // Separator between stats and battlefield
-        let mid_sep: String = "─".repeat(mid_w);
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
-        row += 1;
-
-        // Opponent battlefield
+        // Opponent lands
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
-        let row_before_opp = row;
         row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
-        // Ensure minimum 2 lines for each half of the battlefield
-        while row < row_before_opp + 4 { row += 1; }
+        // Minimum height for opponent half
+        let min_opp_row = row;
+        while row < min_opp_row + 2 { row += 1; }
 
-        // Battlefield label — starts at mid_col, spans to right edge
-        let bf_label = "─── BATTLEFIELD ";
-        let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.chars().count())));
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
+        // Space between halves
         row += 1;
 
-        // Your battlefield
+        // Your creatures/lands (rendered in reverse: creatures first, then lands)
         let your_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller == view.you).collect();
         let row_before_you = row;
         row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
-        while row < row_before_you + 4 { row += 1; }
+        while row < row_before_you + 2 { row += 1; }
+
+        // Your status line
+        let _ = execute!(out, cursor::MoveTo(mid_col, row));
+        if is_your_turn {
+            let _ = execute!(out, SetForegroundColor(Color::Green), SetAttribute(Attribute::Bold));
+        } else {
+            let _ = execute!(out, SetForegroundColor(Color::Green));
+        }
+        let _ = execute!(out, Print(&your_stats));
+        let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
+        row += 1;
 
         // Hand separator — starts at mid_col, spans to right edge
         let hand_label = "─── HAND ";
