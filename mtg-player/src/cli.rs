@@ -1083,6 +1083,12 @@ impl Player for CliPlayer {
 }
 
 impl CliPlayer {
+    /// Show the game state with "Opponent thinking..." indicator.
+    /// Called by the runner while the AI is processing.
+    pub fn show_thinking(view: &GameView) {
+        Self::render(view, None, Some("Opponent thinking..."), &view.display_log);
+    }
+
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
             CombatPrompt::ChooseAttackers { .. } => {

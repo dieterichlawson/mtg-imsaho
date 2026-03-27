@@ -101,6 +101,19 @@ fn main() {
 
         let player = if acting_player == PlayerId(0) { &mut p1 } else { &mut p2 };
 
+        // Show thinking indicator for AI players — render from the human's
+        // perspective so the human sees the board while the AI thinks.
+        let is_ai = match player {
+            PlayerKind::Llm(_) => true,
+            _ => false,
+        };
+        if is_ai {
+            // Find the human player and render from their perspective
+            let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
+            let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
+            mtg_player::cli::CliPlayer::show_thinking(&human_view);
+        }
+
         if let Some(prompt) = &legal.combat_prompt {
             return choose_combat(player, &view, prompt);
         }
