@@ -107,12 +107,14 @@ fn main() {
             PlayerKind::Llm(_) => true,
             _ => false,
         };
-        if is_ai {
-            // Find the human player and render from their perspective
+        // Start spinner for AI players
+        let _spinner = if is_ai {
             let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
             let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
-            mtg_player::cli::CliPlayer::show_thinking(&human_view);
-        }
+            Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
+        } else {
+            None
+        };
 
         if let Some(prompt) = &legal.combat_prompt {
             return choose_combat(player, &view, prompt);
