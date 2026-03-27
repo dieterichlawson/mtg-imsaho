@@ -18,15 +18,13 @@ use crate::Player;
 /// Handle for the background spinner thread. Drop to stop.
 pub struct SpinnerHandle {
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
-    thread: Option<std::thread::JoinHandle<()>>,
 }
 
 impl Drop for SpinnerHandle {
     fn drop(&mut self) {
         self.running.store(false, std::sync::atomic::Ordering::Relaxed);
-        if let Some(handle) = self.thread.take() {
-            let _ = handle.join();
-        }
+        // Don't join — let the thread die on its own. The next render
+        // will overwrite whatever it last printed.
     }
 }
 
@@ -1140,7 +1138,8 @@ impl CliPlayer {
             let _ = out.flush();
         });
 
-        SpinnerHandle { running, thread: Some(handle) }
+        let _ = handle; // detach — thread stops when `running` goes false
+        SpinnerHandle { running }
     }
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
