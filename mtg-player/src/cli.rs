@@ -178,22 +178,45 @@ impl CliPlayer {
         let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
         row += 1;
 
-        // Opponent lands
+        // Opponent board
+        let bf_content_start = row;
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
         row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
+        let opp_rows = row - bf_content_start;
 
-        // Divider between halves
-        let dots = "· · ·";
-        let dots_pad = mid_w.saturating_sub(dots.len()) / 2;
-        let _ = execute!(out, cursor::MoveTo(mid_col + dots_pad as u16, row),
-            SetAttribute(Attribute::Dim), Print(dots), SetAttribute(Attribute::Reset));
-        row += 1;
-
-        // Your creatures/lands (rendered in reverse: creatures first, then lands)
+        // Your board (measure first to calculate padding)
         let your_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller == view.you).collect();
-        let row_before_you = row;
+        // Count how many rows your side will take (lands + creatures + artifacts + enchantments)
+        let your_row_count = {
+            let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
+            let lands: Vec<_> = your_perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
+            let creatures: Vec<_> = your_perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
+            let other: usize = your_perms.iter().filter(|p|
+                !has_type(p, CardType::Land) && !has_type(p, CardType::Creature)).count();
+            (if lands.is_empty() { 0 } else { 1 }) + creatures.len() + other
+        };
+
+        // Pad the divider area so the total battlefield is at least 9 lines
+        // (opp_status + opp_board + divider + your_board + your_status = content)
+        let min_bf_height: u16 = 9;
+        let content_rows = 2 + opp_rows + your_row_count as u16; // 2 for status lines
+        let padding = if content_rows + 1 < min_bf_height {
+            (min_bf_height - content_rows) as u16
+        } else {
+            1 // at least 1 line for the divider
+        };
+
+        // Draw divider with padding
+        let divider_mid = row + padding / 2;
+        let dots = "· · ·";
+        let dots_pad = mid_w.saturating_sub(dots.chars().count()) / 2;
+        let _ = execute!(out, cursor::MoveTo(mid_col + dots_pad as u16, divider_mid),
+            SetAttribute(Attribute::Dim), Print(dots), SetAttribute(Attribute::Reset));
+        row += padding;
+
+        // Your board
         row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
 
         // Your status line
