@@ -1128,14 +1128,7 @@ impl CliPlayer {
                 std::thread::sleep(std::time::Duration::from_millis(80));
                 i += 1;
             }
-            // Restore the caret
-            let _ = execute!(out,
-                cursor::SavePosition,
-                cursor::MoveTo(col, spinner_row),
-                Print("▸"),
-                cursor::RestorePosition,
-            );
-            let _ = out.flush();
+            // Don't restore caret — the next render overwrites it.
         });
 
         let _ = handle; // detach — thread stops when `running` goes false
