@@ -1,6 +1,6 @@
 use crate::cards::CardRegistry;
 use crate::events::{GameEvent, LossReason};
-use crate::state::{GameResult, GameState, LogLevel};
+use crate::state::{GameResult, GameState};
 use crate::types::Zone;
 
 /// Perform state-based actions without a registry (for backward compat with tests).

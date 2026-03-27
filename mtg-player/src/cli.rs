@@ -125,8 +125,6 @@ impl CliPlayer {
 
         // ── Middle panel: main game ──
         let mut row: u16 = 0;
-        let mid_sep: String = "─".repeat(mid_w);
-
         // Readable step name
         let step_name = match view.step {
             Step::Untap => "Untap",
@@ -195,7 +193,7 @@ impl CliPlayer {
         let bf_content_start = row;
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
-        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
+        row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield, false);
         let opp_rows = row - bf_content_start;
 
         // Your board (measure first to calculate padding)
@@ -230,7 +228,7 @@ impl CliPlayer {
         row += padding;
 
         // Your board
-        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
+        row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield, true);
 
         // Your status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
@@ -312,7 +310,7 @@ impl CliPlayer {
     /// Render battlefield permanents at a specific column/row, return next row.
     fn render_battlefield_at(out: &mut io::Stdout, perms: &[&PermanentView], color: Color,
                               col: u16, mut row: u16, max_w: usize,
-                              all_perms: &[PermanentView]) -> u16 {
+                              all_perms: &[PermanentView], lands_last: bool) -> u16 {
         let has_type = |p: &&PermanentView, t: CardType| p.card_types.contains(&t);
         let lands: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Land)).collect();
         let creatures: Vec<_> = perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
@@ -332,68 +330,75 @@ impl CliPlayer {
             }
         }
 
-        // Lands
-        if !lands.is_empty() {
-            let mut summary: Vec<(String, usize, usize)> = Vec::new();
-            for land in &lands {
-                if let Some(entry) = summary.iter_mut().find(|(n, _, _)| *n == land.name) {
-                    if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
-                } else {
-                    let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
-                    summary.push((land.name.clone(), u, t));
+        // Helper: render the lands summary line
+        let render_lands = |out: &mut io::Stdout, row: &mut u16| {
+            if !lands.is_empty() {
+                let mut summary: Vec<(String, usize, usize)> = Vec::new();
+                for land in &lands {
+                    if let Some(entry) = summary.iter_mut().find(|(n, _, _)| *n == land.name) {
+                        if land.tapped { entry.2 += 1; } else { entry.1 += 1; }
+                    } else {
+                        let (u, t) = if land.tapped { (0, 1) } else { (1, 0) };
+                        summary.push((land.name.clone(), u, t));
+                    }
                 }
+                let parts: Vec<String> = summary.iter().map(|(name, untapped, tapped)| {
+                    let total = untapped + tapped;
+                    if *tapped == 0 { format!("{}x {}", total, name) }
+                    else if *untapped == 0 { format!("{}x {} (tapped)", total, name) }
+                    else { format!("{}x {} ({} tapped)", total, name, tapped) }
+                }).collect();
+                let text = format!("  Lands: {}", parts.join(", "));
+                let truncated: String = text.chars().take(max_w).collect();
+                let _ = execute!(out, cursor::MoveTo(col, *row),
+                    SetForegroundColor(color), Print(&truncated), ResetColor);
+                *row += 1;
             }
-            let parts: Vec<String> = summary.iter().map(|(name, untapped, tapped)| {
-                let total = untapped + tapped;
-                if *tapped == 0 { format!("{}x {}", total, name) }
-                else if *untapped == 0 { format!("{}x {} (tapped)", total, name) }
-                else { format!("{}x {} ({} tapped)", total, name, tapped) }
-            }).collect();
-            let text = format!("  Lands: {}", parts.join(", "));
-            let truncated: String = text.chars().take(max_w).collect();
-            let _ = execute!(out, cursor::MoveTo(col, row),
-                SetForegroundColor(color), Print(&truncated), ResetColor);
-            row += 1;
-        }
+        };
 
-        // Creatures
-        for c in &creatures {
-            let pt = match (c.effective_power, c.effective_toughness) {
-                (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                _ => match (c.power, c.toughness) {
+        // Helper: render creatures, enchantments, artifacts
+        let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
+            for c in &creatures {
+                let pt = match (c.effective_power, c.effective_toughness) {
                     (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                    _ => String::new(),
-                },
-            };
-            let auras = aura_map.get(&c.object_id)
-                .map(|names| format!(" [{}]", names.join(",")))
-                .unwrap_or_default();
-            let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
-            let flags = format!("{}{}",
-                if c.tapped { " [T]" } else { "" },
-                if c.summoning_sick { " [S]" } else { "" });
+                    _ => match (c.power, c.toughness) {
+                        (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                        _ => String::new(),
+                    },
+                };
+                let auras = aura_map.get(&c.object_id)
+                    .map(|names| format!(" [{}]", names.join(",")))
+                    .unwrap_or_default();
+                let dmg = if c.damage_marked > 0 { format!(" ({}d)", c.damage_marked) } else { String::new() };
+                let flags = format!("{}{}",
+                    if c.tapped { " [T]" } else { "" },
+                    if c.summoning_sick { " [S]" } else { "" });
+                let id_tag = format!(" #{}", c.object_id.0);
+                let text = format!("  {}{}{}{}{}{}", c.name, pt, auras, dmg, flags, id_tag);
+                let truncated: String = text.chars().take(max_w).collect();
+                let _ = execute!(out, cursor::MoveTo(col, *row),
+                    SetForegroundColor(color), Print(&truncated), ResetColor);
+                *row += 1;
+            }
+            for e in &enchantments {
+                if e.attached_to.is_some() { continue; }
+                let _ = execute!(out, cursor::MoveTo(col, *row),
+                    SetForegroundColor(Color::Magenta), Print(format!("  {} #{}", e.name, e.object_id.0)), ResetColor);
+                *row += 1;
+            }
+            for a in &artifacts {
+                let t = if a.tapped { " [T]" } else { "" };
+                let _ = execute!(out, cursor::MoveTo(col, *row), Print(format!("  {}{} #{}", a.name, t, a.object_id.0)));
+                *row += 1;
+            }
+        };
 
-            let id_tag = format!(" #{}", c.object_id.0);
-            let text = format!("  {}{}{}{}{}{}", c.name, pt, auras, dmg, flags, id_tag);
-            let truncated: String = text.chars().take(max_w).collect();
-            let _ = execute!(out, cursor::MoveTo(col, row),
-                SetForegroundColor(color), Print(&truncated), ResetColor);
-            row += 1;
-        }
-
-        // Non-aura enchantments
-        for e in &enchantments {
-            if e.attached_to.is_some() { continue; }
-            let _ = execute!(out, cursor::MoveTo(col, row),
-                SetForegroundColor(Color::Magenta), Print(format!("  {} #{}", e.name, e.object_id.0)), ResetColor);
-            row += 1;
-        }
-
-        // Artifacts
-        for a in &artifacts {
-            let t = if a.tapped { " [T]" } else { "" };
-            let _ = execute!(out, cursor::MoveTo(col, row), Print(format!("  {}{} #{}", a.name, t, a.object_id.0)));
-            row += 1;
+        if lands_last {
+            render_nonlands(out, &mut row);
+            render_lands(out, &mut row);
+        } else {
+            render_lands(out, &mut row);
+            render_nonlands(out, &mut row);
         }
 
         row
@@ -752,27 +757,6 @@ impl CliPlayer {
                 }
             }
         }
-    }
-
-    fn show_zone(_view: &GameView, title: &str, cards: &[CardView]) {
-        let mut out = stdout();
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-        Self::print_colored(&mut out, Color::Cyan, &format!(" {}", title));
-        if cards.is_empty() {
-            let _ = execute!(out, Print("  (empty)\n"));
-        } else {
-            for card in cards {
-                let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
-                let pt = match (card.power, card.toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
-                    _ => String::new(),
-                };
-                let _ = execute!(out, Print(format!("  {}{}{}\n", card.name, cost, pt)));
-            }
-        }
-        let _ = execute!(out, Print("\n  Press enter to return..."));
-        let _ = out.flush();
-        let _ = Self::read_line("");
     }
 
     // ── Combat ─────────────────────────────────────────────────────

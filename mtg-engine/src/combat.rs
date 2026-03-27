@@ -54,7 +54,7 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &crate::cards::CardRe
     };
 
     for (&attacker_id, &defending_player) in &combat.attackers {
-        let attacker = match state.get_object(attacker_id) {
+        let _attacker = match state.get_object(attacker_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => continue, // attacker may have been removed
         };
@@ -93,7 +93,7 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &crate::cards::CardRe
             // Attacker deals its power to the first blocker.
             // Each blocker deals its power to the attacker.
             for &blocker_id in &blockers {
-                let blocker = match state.get_object(blocker_id) {
+                let _blocker = match state.get_object(blocker_id) {
                     Some(o) if o.zone == Zone::Battlefield => o,
                     _ => continue,
                 };
