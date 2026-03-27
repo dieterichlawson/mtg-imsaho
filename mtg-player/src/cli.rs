@@ -186,7 +186,11 @@ impl CliPlayer {
         let min_opp_row = row;
         while row < min_opp_row + 2 { row += 1; }
 
-        // Space between halves
+        // Divider between halves
+        let dots = "· · ·";
+        let dots_pad = mid_w.saturating_sub(dots.len()) / 2;
+        let _ = execute!(out, cursor::MoveTo(mid_col + dots_pad as u16, row),
+            SetAttribute(Attribute::Dim), Print(dots), SetAttribute(Attribute::Reset));
         row += 1;
 
         // Your creatures/lands (rendered in reverse: creatures first, then lands)
