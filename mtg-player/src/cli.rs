@@ -182,9 +182,6 @@ impl CliPlayer {
         let opp_perms: Vec<&PermanentView> = view.battlefield.iter()
             .filter(|p| p.controller != view.you).collect();
         row = Self::render_battlefield_at(&mut out, &opp_perms, Color::Red, mid_col, row, mid_w, &view.battlefield);
-        // Minimum height for opponent half
-        let min_opp_row = row;
-        while row < min_opp_row + 2 { row += 1; }
 
         // Divider between halves
         let dots = "· · ·";
@@ -198,7 +195,6 @@ impl CliPlayer {
             .filter(|p| p.controller == view.you).collect();
         let row_before_you = row;
         row = Self::render_battlefield_at(&mut out, &your_perms, Color::Green, mid_col, row, mid_w, &view.battlefield);
-        while row < row_before_you + 2 { row += 1; }
 
         // Your status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
