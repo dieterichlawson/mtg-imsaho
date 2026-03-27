@@ -1098,29 +1098,17 @@ impl Player for CliPlayer {
 }
 
 impl CliPlayer {
-    /// Show the game state with a spinning indicator on the AI's
-    /// caret while it thinks. Drop the returned handle to stop.
-    /// `ai_player` is the PlayerId of the AI that's thinking.
-    pub fn start_thinking(view: &GameView, ai_player: mtg_engine::ids::PlayerId) -> SpinnerHandle {
+    /// Show the game state with a spinning indicator on the opponent's
+    /// caret while the AI thinks. Drop the returned handle to stop.
+    pub fn start_thinking(view: &GameView) -> SpinnerHandle {
         Self::render(view, None, None, &view.display_log);
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
-        let col = (side + 1) as u16; // mid_col
-
-        // Figure out which row the AI's stats are on.
-        // Opponent stats are at row 2 (turn bar=0, BATTLEFIELD label=1, opp stats=2).
-        // Your stats row is variable (depends on board size) — use cursor position
-        // from the last render. Since the AI is "the opponent" from the human's
-        // perspective (we render from the human's view), if ai_player != view.you
-        // it's row 2. If ai_player == view.you, it's the your-stats row which
-        // we can get from cursor position after render.
-        let spinner_row: u16 = if ai_player != view.you {
-            2 // opponent stats row
-        } else {
-            // Your stats row — approximate from cursor position after render
-            cursor::position().unwrap_or((0, 10)).1.saturating_sub(2)
-        };
+        let col = (side + 1) as u16;
+        // Opponent stats are always at row 2 from the human's perspective
+        // (row 0 = turn bar, row 1 = BATTLEFIELD label, row 2 = opp stats)
+        let spinner_row: u16 = 2;
 
         let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let running_clone = running.clone();
