@@ -258,6 +258,21 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
+        TargetRequirement::Spell => {
+            let mut actions = Vec::new();
+            for &stack_obj_id in &state.stack {
+                // Don't let a spell target itself on the stack.
+                if stack_obj_id == spell_id { continue; }
+                let target = Target::Object(stack_obj_id);
+                if behavior.is_valid_target(state, caster, &target) {
+                    actions.push(Action::CastSpell {
+                        object_id: spell_id,
+                        targets: vec![target],
+                    });
+                }
+            }
+            actions
+        }
     }
 }
 
@@ -505,6 +520,8 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
         library_ids.shuffle(&mut rng);
         state.get_player_mut(player_id).library_order = library_ids;
     }
+
+    state.log(LogLevel::Milestone, "Game started".into());
 
     // Draw opening hands (7 cards each).
     for player_idx in 0..num_players {
