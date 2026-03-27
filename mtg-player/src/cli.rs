@@ -1098,18 +1098,17 @@ impl Player for CliPlayer {
 }
 
 impl CliPlayer {
-    /// Show the game state with a spinning indicator while the AI thinks.
-    /// Returns a SpinnerHandle that updates the spinner in a background thread.
-    /// Drop the handle to stop the spinner.
+    /// Show the game state with a spinning indicator on the opponent's
+    /// caret while the AI thinks. Drop the returned handle to stop.
     pub fn start_thinking(view: &GameView) -> SpinnerHandle {
         Self::render(view, None, None, &view.display_log);
 
-        // Get position for spinner (end of turn bar line)
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
-        let col = side + 1;
+        let col = (side + 1) as u16; // mid_col
+        // Opponent stats line is at row 2 (row 0 = turn bar, row 1 = BATTLEFIELD label)
+        let spinner_row: u16 = 2;
 
-        // Spinner runs in a background thread
         let running = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let running_clone = running.clone();
 
@@ -1119,10 +1118,10 @@ impl CliPlayer {
             let mut out = stdout();
             while running_clone.load(std::sync::atomic::Ordering::Relaxed) {
                 let _ = execute!(out,
-                    cursor::MoveTo((col + 1) as u16, 0),
                     cursor::SavePosition,
+                    cursor::MoveTo(col, spinner_row),
                     SetForegroundColor(Color::Yellow),
-                    Print(format!("{} Opponent thinking...", frames[i % frames.len()])),
+                    Print(frames[i % frames.len()]),
                     ResetColor,
                     cursor::RestorePosition,
                 );
@@ -1130,11 +1129,14 @@ impl CliPlayer {
                 std::thread::sleep(std::time::Duration::from_millis(80));
                 i += 1;
             }
-            // Clear the spinner
+            // Restore the caret
             let _ = execute!(out,
-                cursor::MoveTo((col + 1) as u16, 0),
-                Print("                        "),
+                cursor::SavePosition,
+                cursor::MoveTo(col, spinner_row),
+                Print("▸"),
+                cursor::RestorePosition,
             );
+            let _ = out.flush();
         });
 
         SpinnerHandle { running, thread: Some(handle) }
