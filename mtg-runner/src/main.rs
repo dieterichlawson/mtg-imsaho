@@ -107,8 +107,15 @@ fn main() {
             PlayerKind::Llm(_) => true,
             _ => false,
         };
-        // Start spinner for AI players
-        let _spinner = if is_ai {
+        // Start spinner for AI players, but only if they'll actually call the API
+        // (skip if the only actions are Pass+Concede — they'll auto-pass instantly)
+        let will_call_api = is_ai && (
+            legal.combat_prompt.is_some() ||
+            !legal.actions.iter().all(|a| matches!(a,
+                mtg_engine::actions::Action::PassPriority | mtg_engine::actions::Action::Concede
+            ))
+        );
+        let _spinner = if will_call_api {
             let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
             let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
             Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
