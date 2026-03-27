@@ -70,9 +70,12 @@ impl CliPlayer {
         let log_start = stack_h;
 
         // Stack
+        let stack_label = "─── STACK ";
+        let stack_line = format!("{}{}", stack_label, "─".repeat(left_w.saturating_sub(stack_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(0, 0),
-            SetForegroundColor(Color::Cyan), SetAttribute(Attribute::Bold),
-            Print(" STACK"), SetAttribute(Attribute::Reset), ResetColor);
+            SetAttribute(Attribute::Dim), Print(&stack_line), SetAttribute(Attribute::Reset));
+        let _ = execute!(out, cursor::MoveTo(left_w as u16, 0),
+            SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
         if view.stack.is_empty() {
             let _ = execute!(out, cursor::MoveTo(1, 1),
                 SetAttribute(Attribute::Dim), Print("(empty)"), SetAttribute(Attribute::Reset));
@@ -84,7 +87,7 @@ impl CliPlayer {
                 let text = format!("{} ({})", item.name, who);
                 let truncated: String = text.chars().take(left_w.saturating_sub(1)).collect();
                 let _ = execute!(out, cursor::MoveTo(1, srow),
-                    SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
+                    Print(&truncated));
                 srow += 1;
                 for target in &item.targets {
                     if srow >= stack_h as u16 { break; }
@@ -100,7 +103,7 @@ impl CliPlayer {
                     };
                     let truncated: String = target_name.chars().take(left_w.saturating_sub(1)).collect();
                     let _ = execute!(out, cursor::MoveTo(1, srow),
-                        SetForegroundColor(Color::DarkCyan), Print(&truncated), ResetColor);
+                        SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
                     srow += 1;
                 }
             }
@@ -111,6 +114,8 @@ impl CliPlayer {
         let log_line = format!("{}{}", log_label, "─".repeat(left_w.saturating_sub(log_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(0, log_start as u16),
             SetAttribute(Attribute::Dim), Print(&log_line), SetAttribute(Attribute::Reset));
+        let _ = execute!(out, cursor::MoveTo(left_w as u16, log_start as u16),
+            SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
         if !log.is_empty() {
             let log_visible = h.saturating_sub(log_start + 2);
             let start = if log.len() > log_visible { log.len() - log_visible } else { 0 };
@@ -176,6 +181,8 @@ impl CliPlayer {
         let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
+        let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+            SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
         row += 1;
 
         // Opponent status line
@@ -246,6 +253,8 @@ impl CliPlayer {
         let hand_line = format!("{}{}", hand_label, "─".repeat(mid_w.saturating_sub(hand_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&hand_line), SetAttribute(Attribute::Reset));
+        let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+            SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
         row += 1;
 
         // Hand
@@ -283,6 +292,8 @@ impl CliPlayer {
             let mid_sep: String = "─".repeat(mid_w);
             let _ = execute!(out, cursor::MoveTo(mid_col, row),
                 SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+            let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+                SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
             row += 1;
             for (i, action) in actions.iter().enumerate() {
                 let desc = Self::format_action(view, action);
@@ -439,6 +450,9 @@ impl CliPlayer {
             .or_else(|| view.your_hand.iter()
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
+            .or_else(|| view.stack.iter()
+                .find(|s| s.object_id == id)
+                .map(|s| s.name.clone()))
             .unwrap_or_else(|| format!("{}", id))
     }
 
