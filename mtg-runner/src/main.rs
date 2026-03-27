@@ -111,7 +111,7 @@ fn main() {
         let _spinner = if is_ai {
             let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
             let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
-            Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
+            Some(mtg_player::cli::CliPlayer::start_thinking(&human_view, acting_player))
         } else {
             None
         };
