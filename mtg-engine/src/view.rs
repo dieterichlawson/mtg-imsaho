@@ -109,10 +109,10 @@ impl GameView {
                 card_id: obj.card_id,
                 name: registry.card_data(obj.card_id)
                     .map(|d| d.name)
-                    .unwrap_or_else(|| "Unknown".into()),
+                    .unwrap_or_else(|| obj.name.clone()),
                 card_types: registry.card_data(obj.card_id)
                     .map(|d| d.card_types)
-                    .unwrap_or_default(),
+                    .unwrap_or_else(|| obj.card_types.clone()),
                 controller: obj.controller,
                 owner: obj.owner,
                 tapped: obj.tapped,

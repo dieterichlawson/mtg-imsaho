@@ -98,6 +98,16 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             took_action = true;
         }
 
+        // Rule 704.5d: A token not on the battlefield ceases to exist.
+        let dead_tokens: Vec<_> = state.objects.values()
+            .filter(|o| o.is_token && o.zone != Zone::Battlefield)
+            .map(|o| o.id)
+            .collect();
+        for id in dead_tokens {
+            state.objects.remove(&id);
+            took_action = true;
+        }
+
         // Check for game end: only one (or zero) players alive.
         let alive: Vec<_> = state.players.iter().filter(|p| !p.lost).collect();
         if alive.len() <= 1 && state.result.is_none() {

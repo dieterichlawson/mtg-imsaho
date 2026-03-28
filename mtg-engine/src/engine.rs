@@ -458,10 +458,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 player,
                 object: *object_id,
             });
-            new_state.events.push(GameEvent::EnteredBattlefield {
-                object: *object_id,
-                controller: player,
-            });
+            // EnteredBattlefield is now emitted by move_object.
             // Lands don't have summoning sickness (only creatures care).
             if let Some(obj) = new_state.get_object_mut(*object_id) {
                 obj.summoning_sick = false;
@@ -627,6 +624,8 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
                 let obj = state.get_object_mut(obj_id).unwrap();
                 obj.colors = colors.clone();
                 obj.name = card_name.clone();
+                obj.keywords = card_data.keywords.clone();
+                obj.card_types = card_data.card_types.clone();
                 library_ids.push(obj_id);
             }
         }

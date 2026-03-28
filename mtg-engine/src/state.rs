@@ -147,11 +147,57 @@ impl GameState {
             power,
             toughness,
             colors: Vec::new(),
+            keywords: Vec::new(),
+            card_types: Vec::new(),
             targets: Vec::new(),
             attached_to: None,
             zone_change_count: 0,
+            is_token: false,
+            counters: HashMap::new(),
         };
         self.objects.insert(id, obj);
+        id
+    }
+
+    /// Create a token on the battlefield.
+    pub fn create_token(
+        &mut self,
+        name: &str,
+        owner: PlayerId,
+        power: i32,
+        toughness: i32,
+        colors: Vec<crate::types::Color>,
+        card_types: Vec<crate::types::CardType>,
+        keywords: Vec<crate::types::Keyword>,
+    ) -> ObjectId {
+        let id = self.next_id();
+        let obj = GameObject {
+            id,
+            card_id: CardId(0), // sentinel for tokens
+            name: name.to_string(),
+            owner,
+            controller: owner,
+            zone: Zone::Battlefield,
+            tapped: false,
+            summoning_sick: true,
+            damage_marked: 0,
+            dealt_deathtouch_damage: false,
+            power: Some(power),
+            toughness: Some(toughness),
+            colors,
+            keywords,
+            card_types,
+            targets: Vec::new(),
+            attached_to: None,
+            zone_change_count: 0,
+            is_token: true,
+            counters: HashMap::new(),
+        };
+        self.objects.insert(id, obj);
+        self.events.push(crate::events::GameEvent::EnteredBattlefield {
+            object: id,
+            controller: owner,
+        });
         id
     }
 
@@ -188,11 +234,17 @@ impl GameState {
                 obj.damage_marked = 0;
                 obj.dealt_deathtouch_damage = false;
                 obj.attached_to = None;
+                obj.counters.clear();
             }
 
             // Set summoning sickness when entering the battlefield.
             if to == Zone::Battlefield && from != Zone::Battlefield {
                 obj.summoning_sick = true;
+                let controller = obj.controller;
+                self.events.push(crate::events::GameEvent::EnteredBattlefield {
+                    object: id,
+                    controller,
+                });
             }
         }
     }
@@ -268,6 +320,10 @@ impl GameState {
         // Global continuous effects (e.g., Glorious Anthem).
         power += self.anthem_power_bonus(id, registry);
 
+        // +1/+1 and -1/-1 counter bonuses.
+        power += *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
+        power -= *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
+
         // Until-end-of-turn effects.
         for effect in &self.until_end_of_turn_effects {
             if effect.target == id {
@@ -285,6 +341,10 @@ impl GameState {
 
         toughness += self.aura_toughness_bonus(id, registry);
         toughness += self.anthem_toughness_bonus(id, registry);
+
+        // +1/+1 and -1/-1 counter bonuses.
+        toughness += *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
+        toughness -= *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
 
         for effect in &self.until_end_of_turn_effects {
             if effect.target == id {
@@ -410,7 +470,12 @@ impl GameState {
             _ => return false,
         };
 
-        // 1. Static keywords from card definition.
+        // 0. Keywords stored directly on the object (tokens, or populated at creation).
+        if obj.keywords.contains(&keyword) {
+            return true;
+        }
+
+        // 1. Static keywords from card definition (for cards where keywords weren't populated).
         if let Some(behavior) = registry.get(obj.card_id) {
             if behavior.card_data().keywords.contains(&keyword) {
                 return true;
@@ -436,6 +501,21 @@ impl GameState {
         }
 
         false
+    }
+
+    /// Add counters to a permanent.
+    pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        if let Some(obj) = self.objects.get_mut(&id) {
+            *obj.counters.entry(counter_type).or_insert(0) += count;
+        }
+    }
+
+    /// Get the number of counters of a type on a permanent.
+    pub fn get_counter_count(&self, id: ObjectId, counter_type: crate::types::CounterType) -> u32 {
+        self.get_object(id)
+            .and_then(|o| o.counters.get(&counter_type))
+            .copied()
+            .unwrap_or(0)
     }
 
     /// Is the game over?
@@ -500,6 +580,10 @@ pub struct GameObject {
     pub power: Option<i32>,
     pub toughness: Option<i32>,
     pub colors: Vec<crate::types::Color>,
+    /// Keywords on this object (populated from card_data for real cards, set directly for tokens).
+    pub keywords: Vec<crate::types::Keyword>,
+    /// Card types on this object (populated from card_data, set directly for tokens).
+    pub card_types: Vec<crate::types::CardType>,
 
     // Targets chosen when this spell was cast (only relevant while on the stack).
     pub targets: Vec<crate::actions::Target>,
@@ -509,6 +593,12 @@ pub struct GameObject {
 
     // Tracks zone changes for staleness detection (XMage pattern).
     pub zone_change_count: u32,
+
+    /// Whether this object is a token (tokens cease to exist when not on the battlefield).
+    pub is_token: bool,
+
+    /// Counters on this permanent (+1/+1, -1/-1, etc.).
+    pub counters: HashMap<crate::types::CounterType, u32>,
 }
 
 /// A player's state.
