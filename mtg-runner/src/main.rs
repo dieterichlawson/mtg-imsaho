@@ -51,10 +51,19 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
-    let matchup = args.iter().position(|a| a == "--matchup")
+    // Deck specs: --deck1 <name-or-file> --deck2 <name-or-file>
+    // Built-in deck names: red-green, white-black, blue-white,
+    //   black-aggro, innistrad-white, innistrad-blue
+    // Or a path to a deck file (one "COUNT CARD NAME" per line).
+    let deck1_spec = args.iter().position(|a| a == "--deck1")
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str())
-        .unwrap_or("rg-wb");
+        .unwrap_or("red-green");
+
+    let deck2_spec = args.iter().position(|a| a == "--deck2")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+        .unwrap_or("white-black");
 
     let save_file = args.iter().position(|a| a == "--save")
         .and_then(|i| args.get(i + 1))
@@ -80,39 +89,20 @@ fn main() {
         }
         (save.player_names, save.state)
     } else {
-        let config = match matchup {
-            "rg-uw" => {
-                if !quiet {
-                    println!("MTG Engine — {} (Red/Green) vs {} (Blue/White)", p1_spec, p2_spec);
-                    println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
-                    println!("U/W: Coral Merfolk, Savannah Lions, Counterspell, Swords to Plowshares, Divination");
-                    println!();
-                }
-                GameConfig {
-                    player_names: vec!["Red/Green".into(), "Blue/White".into()],
-                    decklists: vec![
-                        deck_red_green(),
-                        deck_blue_white(),
-                    ],
-                    starting_life: 20,
-                }
-            }
-            _ => {
-                if !quiet {
-                    println!("MTG Engine — {} (Red/Green) vs {} (White/Black)", p1_spec, p2_spec);
-                    println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
-                    println!("W/B: Savannah Lions, Walking Corpse, Swords to Plowshares, Doom Blade, Holy Strength, Pacifism");
-                    println!();
-                }
-                GameConfig {
-                    player_names: vec!["Red/Green".into(), "White/Black".into()],
-                    decklists: vec![
-                        deck_red_green(),
-                        deck_white_black(),
-                    ],
-                    starting_life: 20,
-                }
-            }
+        let deck1 = load_deck(deck1_spec, &registry);
+        let deck2 = load_deck(deck2_spec, &registry);
+        let name1 = deck_display_name(deck1_spec);
+        let name2 = deck_display_name(deck2_spec);
+
+        if !quiet {
+            println!("MTG Engine — {} ({}) vs {} ({})", p1_spec, name1, p2_spec, name2);
+            println!();
+        }
+
+        let config = GameConfig {
+            player_names: vec![name1.clone(), name2.clone()],
+            decklists: vec![deck1, deck2],
+            starting_life: 20,
         };
         let player_names = config.player_names.clone();
         let state = engine::setup_game(&config, &registry);
@@ -261,9 +251,32 @@ fn choose_combat(player: &mut PlayerKind, view: &GameView, prompt: &mtg_engine::
     }
 }
 
-fn deck_red_green() -> Decklist {
-    Decklist {
-        entries: vec![
+/// Resolve a deck spec: either a built-in name or a file path.
+fn load_deck(spec: &str, registry: &CardRegistry) -> Decklist {
+    match builtin_deck(spec) {
+        Some(deck) => deck,
+        None => load_deck_file(spec, registry),
+    }
+}
+
+/// Short display name for a deck spec.
+fn deck_display_name(spec: &str) -> String {
+    if builtin_deck(spec).is_some() {
+        spec.to_string()
+    } else {
+        // Use filename without extension.
+        std::path::Path::new(spec)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(spec)
+            .to_string()
+    }
+}
+
+/// Look up a built-in deck by name.
+fn builtin_deck(name: &str) -> Option<Decklist> {
+    Some(match name {
+        "red-green" | "rg" => Decklist { entries: vec![
             ("Mountain".into(), 10),
             ("Forest".into(), 10),
             ("Goblin Piker".into(), 4),
@@ -271,13 +284,8 @@ fn deck_red_green() -> Decklist {
             ("Kalonian Tusker".into(), 4),
             ("Lightning Bolt".into(), 4),
             ("Giant Growth".into(), 4),
-        ],
-    }
-}
-
-fn deck_white_black() -> Decklist {
-    Decklist {
-        entries: vec![
+        ]},
+        "white-black" | "wb" => Decklist { entries: vec![
             ("Plains".into(), 10),
             ("Swamp".into(), 10),
             ("Savannah Lions".into(), 4),
@@ -286,13 +294,8 @@ fn deck_white_black() -> Decklist {
             ("Doom Blade".into(), 4),
             ("Holy Strength".into(), 2),
             ("Pacifism".into(), 2),
-        ],
-    }
-}
-
-fn deck_blue_white() -> Decklist {
-    Decklist {
-        entries: vec![
+        ]},
+        "blue-white" | "uw" => Decklist { entries: vec![
             ("Island".into(), 12),
             ("Plains".into(), 8),
             ("Coral Merfolk".into(), 4),
@@ -300,6 +303,82 @@ fn deck_blue_white() -> Decklist {
             ("Counterspell".into(), 4),
             ("Swords to Plowshares".into(), 4),
             ("Divination".into(), 4),
-        ],
+        ]},
+        "black-aggro" | "ba" => Decklist { entries: vec![
+            ("Swamp".into(), 14),
+            ("Typhoid Rats".into(), 4),
+            ("Diregraf Ghoul".into(), 4),
+            ("Walking Corpse".into(), 4),
+            ("Markov Patrician".into(), 4),
+            ("Dead Weight".into(), 4),
+            ("Doom Blade".into(), 4),
+            ("Gruesome Deformity".into(), 2),
+        ]},
+        "innistrad-white" | "iw" => Decklist { entries: vec![
+            ("Plains".into(), 14),
+            ("Savannah Lions".into(), 4),
+            ("Chapel Geist".into(), 4),
+            ("Abbey Griffin".into(), 4),
+            ("Voiceless Spirit".into(), 4),
+            ("Bonds of Faith".into(), 4),
+            ("Moment of Heroism".into(), 3),
+            ("Rally the Peasants".into(), 3),
+        ]},
+        "innistrad-blue" | "iu" => Decklist { entries: vec![
+            ("Island".into(), 14),
+            ("Fortress Crab".into(), 4),
+            ("Moon Heron".into(), 4),
+            ("Invisible Stalker".into(), 4),
+            ("Claustrophobia".into(), 4),
+            ("Sensory Deprivation".into(), 4),
+            ("Hysterical Blindness".into(), 3),
+            ("Spectral Flight".into(), 3),
+        ]},
+        "innistrad-green" | "ig" => Decklist { entries: vec![
+            ("Forest".into(), 14),
+            ("Ambush Viper".into(), 4),
+            ("Somberwald Spider".into(), 4),
+            ("Kindercatch".into(), 3),
+            ("Grizzly Bears".into(), 4),
+            ("Ranger's Guile".into(), 4),
+            ("Spidery Grasp".into(), 4),
+            ("Giant Growth".into(), 3),
+        ]},
+        _ => return None,
+    })
+}
+
+/// Load a deck from a text file. Format: one "COUNT CARD NAME" per line.
+/// Lines starting with # or empty lines are ignored.
+///
+/// Example:
+///   4 Lightning Bolt
+///   4 Goblin Piker
+///   10 Mountain
+fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
+    let content = fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("Failed to read deck file '{}': {}", path, e));
+
+    let mut entries = Vec::new();
+    for (line_num, line) in content.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let (count_str, card_name) = line.split_once(' ')
+            .unwrap_or_else(|| panic!("{}:{}: expected 'COUNT CARD NAME', got '{}'", path, line_num + 1, line));
+        let count: u32 = count_str.parse()
+            .unwrap_or_else(|_| panic!("{}:{}: invalid count '{}'", path, line_num + 1, count_str));
+        let card_name = card_name.trim();
+        if registry.get_id_by_name(card_name).is_none() {
+            panic!("{}:{}: unknown card '{}'", path, line_num + 1, card_name);
+        }
+        entries.push((card_name.to_string(), count));
     }
+
+    if entries.is_empty() {
+        panic!("Deck file '{}' is empty", path);
+    }
+
+    Decklist { entries }
 }
