@@ -1029,17 +1029,25 @@ impl CliPlayer {
             }
         }
 
-        // Total visible = sum of all zones. Library = library_size (unseen cards).
-        let visible_total: usize = hand_counts.values().sum::<usize>()
+        // Library cards
+        let mut lib_counts: HashMap<String, usize> = HashMap::new();
+        for card in &view.your_library_cards {
+            *lib_counts.entry(card.name.clone()).or_default() += 1;
+            if !all_names.contains(&card.name) {
+                all_names.push(card.name.clone());
+            }
+        }
+
+        let total_cards: usize = hand_counts.values().sum::<usize>()
             + board_counts.values().sum::<usize>()
             + gy_counts.values().sum::<usize>()
-            + exile_counts.values().sum::<usize>();
-        let library_count = view.your_library_size;
+            + exile_counts.values().sum::<usize>()
+            + lib_counts.values().sum::<usize>();
 
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
             Self::print_colored(&mut out, Color::Cyan,
-                &format!(" YOUR DECK ({} visible + {} in library)", visible_total, library_count));
+                &format!(" YOUR DECK ({} cards)", total_cards));
             let _ = execute!(out, Print("\n"));
 
             let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
@@ -1064,7 +1072,8 @@ impl CliPlayer {
                 let b = board_counts.get(&data.name).copied().unwrap_or(0);
                 let g = gy_counts.get(&data.name).copied().unwrap_or(0);
                 let e = exile_counts.get(&data.name).copied().unwrap_or(0);
-                let total = h + b + g + e;
+                let lib = lib_counts.get(&data.name).copied().unwrap_or(0);
+                let total = h + b + g + e + lib;
 
                 // Build location breakdown
                 let mut locs = Vec::new();
@@ -1072,6 +1081,7 @@ impl CliPlayer {
                 if b > 0 { locs.push(format!("{}board", b)); }
                 if g > 0 { locs.push(format!("{}gy", g)); }
                 if e > 0 { locs.push(format!("{}exile", e)); }
+                if lib > 0 { locs.push(format!("{}lib", lib)); }
                 let loc_str = if locs.is_empty() { String::new() } else { format!(" ({})", locs.join(", ")) };
 
                 let _ = execute!(out,

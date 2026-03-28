@@ -11,6 +11,8 @@ pub struct GameView {
     pub your_life: i32,
     pub your_mana_pool: ManaPool,
     pub your_library_size: usize,
+    /// Card names in your library (you know your decklist, just not the order).
+    pub your_library_cards: Vec<CardView>,
 
     pub opponents: Vec<OpponentView>,
 
@@ -91,6 +93,12 @@ impl GameView {
             .map(|obj| card_view(obj, registry))
             .collect();
 
+        // Your library cards (you know what's in your deck, not the order).
+        let your_library_cards = player_state.library_order.iter()
+            .filter_map(|&obj_id| state.get_object(obj_id))
+            .map(|obj| card_view(obj, registry))
+            .collect();
+
         // Opponents.
         let opponents = state.players.iter()
             .filter(|p| p.id != player)
@@ -168,6 +176,7 @@ impl GameView {
             your_life: player_state.life,
             your_mana_pool: player_state.mana_pool.clone(),
             your_library_size: player_state.library_order.len(),
+            your_library_cards,
             opponents,
             battlefield,
             graveyards,
