@@ -1,10 +1,12 @@
+use serde::{Serialize, Deserialize};
+
 use crate::ids::{ObjectId, PlayerId};
 use crate::types::{Zone, Step, ManaType};
 use crate::state::GameResult;
 
 /// Events emitted by state transitions. Used for game log, triggered abilities (future),
 /// and UI updates.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GameEvent {
     GameStarted,
     TurnStarted { player: PlayerId, turn: u32 },
@@ -31,13 +33,13 @@ pub enum GameEvent {
     Discarded { player: PlayerId, object: ObjectId },
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DamageTarget {
     Player(PlayerId),
     Object(ObjectId),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum LossReason {
     LifeReachedZero,
     DrewFromEmptyLibrary,

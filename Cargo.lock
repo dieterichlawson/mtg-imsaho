@@ -688,6 +688,7 @@ name = "mtg-engine"
 version = "0.1.0"
 dependencies = [
  "rand",
+ "serde",
 ]
 
 [[package]]
@@ -708,6 +709,8 @@ version = "0.1.0"
 dependencies = [
  "mtg-engine",
  "mtg-player",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

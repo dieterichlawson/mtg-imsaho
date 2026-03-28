@@ -1,7 +1,8 @@
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 
 /// The 5 colors of Magic.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Color {
     White,
     Blue,
@@ -11,7 +12,7 @@ pub enum Color {
 }
 
 /// What can exist in a mana pool. Includes colorless (not a color, but a mana type).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ManaType {
     White,
     Blue,
@@ -34,7 +35,7 @@ impl From<Color> for ManaType {
 }
 
 /// A single mana symbol in a cost.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ManaSymbol {
     /// A colored mana symbol: {W}, {U}, {B}, {R}, {G}
     Colored(Color),
@@ -48,7 +49,7 @@ pub enum ManaSymbol {
 }
 
 /// A complete mana cost (e.g., {2}{R}{R} for a spell).
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManaCost {
     pub symbols: Vec<ManaSymbol>,
 }
@@ -125,7 +126,7 @@ impl std::fmt::Display for ManaCost {
 }
 
 /// Floating mana a player has available.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManaPool {
     pub mana: HashMap<ManaType, u32>,
 }
@@ -163,7 +164,7 @@ impl Default for ManaPool {
 }
 
 /// Card types.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CardType {
     Land,
     Creature,
@@ -182,7 +183,7 @@ impl CardType {
 }
 
 /// Supertypes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Supertype {
     Basic,
     Legendary,
@@ -190,7 +191,7 @@ pub enum Supertype {
 }
 
 /// Zones where objects can exist.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Zone {
     Library,
     Hand,
@@ -202,7 +203,7 @@ pub enum Zone {
 }
 
 /// Turn phases.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Phase {
     Beginning,
     PrecombatMain,
@@ -212,7 +213,7 @@ pub enum Phase {
 }
 
 /// Steps within phases.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Step {
     Untap,
     Upkeep,
@@ -273,7 +274,7 @@ impl Step {
 }
 
 /// Counter types that can exist on permanents.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CounterType {
     PlusOnePlusOne,
     MinusOneMinusOne,

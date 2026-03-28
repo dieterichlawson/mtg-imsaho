@@ -1,7 +1,9 @@
+use serde::{Serialize, Deserialize};
+
 use crate::ids::{ObjectId, PlayerId};
 
 /// A target for a spell or ability.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Target {
     /// Target a permanent or creature on the stack.
     Object(ObjectId),
@@ -10,7 +12,7 @@ pub enum Target {
 }
 
 /// An action a player can take.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Action {
     /// Pass priority to the next player.
     PassPriority,
@@ -39,7 +41,7 @@ pub enum Action {
 }
 
 /// Prompt returned by legal_actions for combat.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CombatPrompt {
     /// Choose a subset of these creatures to attack with.
     ChooseAttackers {

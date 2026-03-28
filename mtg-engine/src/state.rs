@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
+use serde::{Serialize, Deserialize};
+
 use crate::ids::{ObjectId, PlayerId, CardId};
 use crate::types::{Zone, Step, ManaPool};
 
 /// The complete, immutable game state. Clone to produce new states.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
     /// All game objects keyed by their unique ID.
     pub objects: HashMap<ObjectId, GameObject>,
@@ -49,7 +51,7 @@ pub struct GameState {
 }
 
 /// Log level for game log entries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 pub enum LogLevel {
     /// Every priority pass, mana tap, etc.
     Debug = 0,
@@ -62,14 +64,14 @@ pub enum LogLevel {
 }
 
 /// A single log entry with a level.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
     pub level: LogLevel,
     pub message: String,
 }
 
 /// A temporary modifier applied to an object that expires at cleanup.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UntilEndOfTurnEffect {
     pub target: ObjectId,
     pub power_mod: i32,
@@ -429,7 +431,7 @@ fn parse_plus_minus(text: &str, index: usize) -> i32 {
 }
 
 /// A single game object — an instance of a card on the battlefield, in hand, etc.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameObject {
     pub id: ObjectId,
     pub card_id: CardId,
@@ -459,7 +461,7 @@ pub struct GameObject {
 }
 
 /// A player's state.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PlayerState {
     pub id: PlayerId,
     pub life: i32,
@@ -496,7 +498,7 @@ impl PlayerState {
 }
 
 /// Combat state, tracking attackers and blockers.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CombatState {
     /// Map of attacker ObjectId -> defending PlayerId.
     pub attackers: HashMap<ObjectId, PlayerId>,
@@ -514,7 +516,7 @@ impl CombatState {
 }
 
 /// What the engine is waiting for the player to do.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AwaitingAction {
     DeclareAttackers,
     DeclareBlockers { defending_player: PlayerId },
@@ -522,7 +524,7 @@ pub enum AwaitingAction {
 }
 
 /// Game result.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GameResult {
     Winner(PlayerId),
     Draw,
