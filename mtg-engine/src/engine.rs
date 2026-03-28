@@ -673,6 +673,66 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 new_state.log(LogLevel::Event, format!("p{} declared attackers: {}", new_state.active_player.0, names.join(", ")));
             }
             combat::declare_attackers_with_registry(&mut new_state, attackers, registry);
+
+            // Collect forced attackers (creatures with "attacks each combat if able" aura).
+            let forced_ids: Vec<crate::ids::ObjectId> = {
+                let active = new_state.active_player;
+                let mut forced = Vec::new();
+                for creature in new_state.objects.values() {
+                    if creature.zone != Zone::Battlefield || creature.controller != active
+                        || creature.power.is_none() || creature.tapped || creature.summoning_sick {
+                        continue;
+                    }
+                    if new_state.combat.as_ref().map(|c| c.attackers.contains_key(&creature.id)).unwrap_or(false) {
+                        continue; // already attacking
+                    }
+                    // Check for Defender — can't be forced to attack.
+                    if new_state.has_keyword(creature.id, crate::types::Keyword::Defender, registry) {
+                        continue;
+                    }
+                    // Check attached auras for forced attack.
+                    let has_forced_aura = new_state.objects.values().any(|a| {
+                        a.zone == Zone::Battlefield && a.attached_to == Some(creature.id) && {
+                            registry.card_data(a.card_id)
+                                .map(|d| d.oracle_text.contains("attacks each combat if able"))
+                                .unwrap_or(false)
+                        }
+                    });
+                    if has_forced_aura {
+                        forced.push(creature.id);
+                    }
+                }
+                forced
+            };
+
+            // Add forced attackers to combat.
+            if !forced_ids.is_empty() {
+                let defending = new_state.opponent(new_state.active_player);
+                if let Some(ref mut combat) = new_state.combat {
+                    for id in &forced_ids {
+                        if !combat.attackers.contains_key(id) {
+                            combat.attackers.insert(*id, defending);
+                            combat.blocker_assignments.insert(*id, Vec::new());
+                        }
+                    }
+                }
+                // Tap forced attackers (unless vigilance).
+                for id in &forced_ids {
+                    let has_vig = new_state.has_keyword(*id, crate::types::Keyword::Vigilance, registry);
+                    if !has_vig {
+                        if let Some(obj) = new_state.get_object_mut(*id) {
+                            if !obj.tapped {
+                                obj.tapped = true;
+                            }
+                        }
+                    }
+                }
+                let names: Vec<String> = forced_ids.iter()
+                    .map(|id| card_name(&new_state, registry, *id))
+                    .collect();
+                new_state.log(LogLevel::Event, format!("Forced attackers: {}", names.join(", ")));
+            }
+
             new_state.awaiting_action = None;
             new_state.consecutive_passes = 0;
         }
