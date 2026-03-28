@@ -71,6 +71,20 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Spidery Grasp ({2}{G} instant): Untap target creature. It gets +2/+4 and gains reach until end of turn.
 - Rally the Peasants ({2}{W} instant): Creatures you control get +2/+0 until end of turn.
 - Vampiric Fury ({1}{R} instant): Vampire creatures you control get +2/+0 and gain first strike until end of turn.
+- Midnight Haunting ({2}{W} instant): Create two 1/1 white Spirit creature tokens with flying. Great for surprise blockers!
+- Moan of the Unhallowed ({2}{B}{B} sorcery): Create two 2/2 black Zombie creature tokens.
+- Doomed Traveler ({W} creature 1/1): When it dies, creates a 1/1 Spirit token with flying. Good early blocker.
+- Mausoleum Guard ({3}{W} creature 2/2): When it dies, creates two 1/1 Spirit tokens with flying.
+- Village Bell-Ringer ({2}{W} creature 1/4 flash): When it enters, untaps all your creatures. Cast during combat to untap blockers!
+- Slayer of the Wicked ({3}{W} creature 3/2): When it enters, destroys a Vampire, Werewolf, or Zombie.
+- Pitchburn Devils ({4}{R} creature 3/3): When it dies, deals 3 damage to opponent.
+- Falkenrath Noble ({3}{B} creature 2/2 flying): Whenever ANY creature dies, opponent loses 1 life and you gain 1.
+- Rage Thrower ({5}{R} creature 4/2): Whenever another creature dies, deals 2 damage to opponent.
+- Fiend Hunter ({1}{W}{W} creature 1/3): When it enters, exiles an opponent's creature.
+- Intangible Virtue ({1}{W} enchantment): Your creatures get +1/+1.
+- Unruly Mob ({1}{W} creature 1/1): Gets a +1/+1 counter whenever another of your creatures dies.
+- Lumberknot ({2}{G}{G} creature 1/1 hexproof): Gets a +1/+1 counter whenever any creature dies. Can't be targeted!
+- Elder Cathar ({2}{W} creature 2/2): When it dies, puts a +1/+1 counter on one of your creatures.
 
 ## Strategy tips
 - Save instants for combat! Giant Growth during DeclareBlockers makes your 2/2 into a 5/5. Lightning Bolt during DeclareAttackers can kill a would-be blocker.
