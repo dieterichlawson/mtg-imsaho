@@ -22,6 +22,7 @@ impl CardBehavior for Divination {
             toughness: None,
             oracle_text: "Draw two cards.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

@@ -23,6 +23,7 @@ impl CardBehavior for ElderCathar {
             toughness: Some(2),
             oracle_text: "When Elder Cathar dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

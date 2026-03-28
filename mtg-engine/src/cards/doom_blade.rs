@@ -22,6 +22,7 @@ impl CardBehavior for DoomBlade {
             toughness: None,
             oracle_text: "Destroy target nonblack creature.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

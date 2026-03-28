@@ -22,6 +22,7 @@ impl CardBehavior for SpectralFlight {
             toughness: None,
             oracle_text: "Enchanted creature gets +2/+2 and has flying.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

@@ -19,6 +19,7 @@ impl CardBehavior for WalkingCorpse {
             toughness: Some(2),
             oracle_text: String::new(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 }

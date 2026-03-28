@@ -21,6 +21,7 @@ impl CardBehavior for SilentDeparture {
             toughness: None,
             oracle_text: "Return target creature to its owner's hand.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

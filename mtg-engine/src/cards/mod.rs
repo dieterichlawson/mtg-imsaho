@@ -103,6 +103,7 @@ pub struct CardData {
     pub toughness: Option<i32>,
     pub oracle_text: String,
     pub keywords: Vec<Keyword>,
+    pub flashback_cost: Option<ManaCost>,
 }
 
 /// A mana ability definition.

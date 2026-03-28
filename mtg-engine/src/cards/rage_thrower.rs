@@ -22,6 +22,7 @@ impl CardBehavior for RageThrower {
             toughness: Some(2),
             oracle_text: "Whenever another creature dies, Rage Thrower deals 2 damage to target player or planeswalker.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

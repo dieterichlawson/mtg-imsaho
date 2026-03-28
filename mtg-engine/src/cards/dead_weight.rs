@@ -21,6 +21,7 @@ impl CardBehavior for DeadWeight {
             toughness: None,
             oracle_text: "Enchanted creature gets -2/-2.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

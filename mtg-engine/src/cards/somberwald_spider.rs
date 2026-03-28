@@ -19,6 +19,7 @@ impl CardBehavior for SomberwaldSpider {
             toughness: Some(4),
             oracle_text: "Reach".into(),
             keywords: vec![Keyword::Reach],
+            flashback_cost: None,
         }
     }
 }

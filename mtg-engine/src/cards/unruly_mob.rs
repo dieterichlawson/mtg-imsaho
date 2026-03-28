@@ -22,6 +22,7 @@ impl CardBehavior for UnrulyMob {
             toughness: Some(1),
             oracle_text: "Whenever another creature you control dies, put a +1/+1 counter on Unruly Mob.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

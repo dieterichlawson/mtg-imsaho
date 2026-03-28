@@ -22,6 +22,7 @@ impl CardBehavior for SmiteTheMonstrous {
             toughness: None,
             oracle_text: "Destroy target creature with power 4 or greater.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

@@ -21,6 +21,7 @@ impl CardBehavior for GruesomeDeformity {
             toughness: None,
             oracle_text: "Enchanted creature has intimidate.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

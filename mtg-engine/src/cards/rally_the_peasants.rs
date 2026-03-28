@@ -22,6 +22,7 @@ impl CardBehavior for RallyThePeasants {
             toughness: None,
             oracle_text: "Creatures you control get +2/+0 until end of turn.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

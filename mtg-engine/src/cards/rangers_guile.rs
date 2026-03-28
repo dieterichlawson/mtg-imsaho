@@ -21,6 +21,7 @@ impl CardBehavior for RangersGuile {
             toughness: None,
             oracle_text: "Target creature you control gets +1/+1 and gains hexproof until end of turn.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

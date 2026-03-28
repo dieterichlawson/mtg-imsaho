@@ -22,6 +22,7 @@ impl CardBehavior for Geistflame {
             toughness: None,
             oracle_text: "Geistflame deals 1 damage to any target.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

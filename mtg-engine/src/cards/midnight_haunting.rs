@@ -22,6 +22,7 @@ impl CardBehavior for MidnightHaunting {
             toughness: None,
             oracle_text: "Create two 1/1 white Spirit creature tokens with flying.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

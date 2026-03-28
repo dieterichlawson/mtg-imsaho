@@ -19,6 +19,7 @@ impl CardBehavior for MoonHeron {
             toughness: Some(2),
             oracle_text: "Flying".into(),
             keywords: vec![Keyword::Flying],
+            flashback_cost: None,
         }
     }
 }

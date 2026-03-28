@@ -23,6 +23,7 @@ impl CardBehavior for Bramblecrush {
             toughness: None,
             oracle_text: "Destroy target noncreature permanent.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

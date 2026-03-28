@@ -19,6 +19,7 @@ impl CardBehavior for RiotDevils {
             toughness: Some(3),
             oracle_text: String::new(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 }

@@ -22,6 +22,7 @@ impl CardBehavior for Naturalize {
             toughness: None,
             oracle_text: "Destroy target artifact or enchantment.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

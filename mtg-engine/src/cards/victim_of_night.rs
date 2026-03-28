@@ -22,6 +22,7 @@ impl CardBehavior for VictimOfNight {
             toughness: None,
             oracle_text: "Destroy target non-Vampire, non-Werewolf, non-Zombie creature.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

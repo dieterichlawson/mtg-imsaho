@@ -17,6 +17,7 @@ impl CardBehavior for Forest {
             toughness: None,
             oracle_text: "{T}: Add {G}.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

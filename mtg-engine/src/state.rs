@@ -153,6 +153,7 @@ impl GameState {
             attached_to: None,
             zone_change_count: 0,
             is_token: false,
+            cast_with_flashback: false,
             counters: HashMap::new(),
         };
         self.objects.insert(id, obj);
@@ -191,6 +192,7 @@ impl GameState {
             attached_to: None,
             zone_change_count: 0,
             is_token: true,
+            cast_with_flashback: false,
             counters: HashMap::new(),
         };
         self.objects.insert(id, obj);
@@ -503,6 +505,19 @@ impl GameState {
         false
     }
 
+    /// Move a resolving spell to the appropriate zone.
+    /// Flashback spells go to exile; others go to graveyard.
+    pub fn move_spell_after_resolve(&mut self, object_id: ObjectId) {
+        let exile = self.get_object(object_id)
+            .map(|o| o.cast_with_flashback)
+            .unwrap_or(false);
+        if exile {
+            self.move_object(object_id, Zone::Exile);
+        } else {
+            self.move_object(object_id, Zone::Graveyard);
+        }
+    }
+
     /// Add counters to a permanent.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
         if let Some(obj) = self.objects.get_mut(&id) {
@@ -596,6 +611,10 @@ pub struct GameObject {
 
     /// Whether this object is a token (tokens cease to exist when not on the battlefield).
     pub is_token: bool,
+
+    /// Whether this spell was cast using flashback (exiled instead of going to graveyard).
+    #[serde(default)]
+    pub cast_with_flashback: bool,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
     pub counters: HashMap<crate::types::CounterType, u32>,

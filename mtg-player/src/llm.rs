@@ -394,8 +394,12 @@ impl LlmPlayer {
                 Action::PlayLand { object_id } => format!("Play {}", Self::obj_name(view, *object_id)),
                 Action::CastSpell { object_id, targets, .. } => {
                     let name = Self::obj_name(view, *object_id);
+                    // Detect flashback: object is in a graveyard.
+                    let is_flashback = view.graveyards.iter()
+                        .any(|(_, cards)| cards.iter().any(|c| c.object_id == *object_id));
+                    let verb = if is_flashback { "Flashback" } else { "Cast" };
                     if targets.is_empty() {
-                        format!("Cast {}", name)
+                        format!("{} {}", verb, name)
                     } else {
                         let t: Vec<String> = targets.iter().map(|t| match t {
                             mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
@@ -403,7 +407,7 @@ impl LlmPlayer {
                                 if *pid == view.you { "you".into() } else { "opponent".into() }
                             }
                         }).collect();
-                        format!("Cast {}→{}", name, t.join(","))
+                        format!("{} {}→{}", verb, name, t.join(","))
                     }
                 }
                 Action::ActivateManaAbility { object_id, .. } => format!("Tap {}", Self::obj_name(view, *object_id)),
@@ -425,6 +429,10 @@ impl LlmPlayer {
             .or_else(|| view.stack.iter()
                 .find(|s| s.object_id == id)
                 .map(|s| s.name.clone()))
+            .or_else(|| view.graveyards.iter()
+                .flat_map(|(_, cards)| cards.iter())
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
             .unwrap_or_else(|| format!("{}", id))
     }
 

@@ -22,6 +22,7 @@ impl CardBehavior for HystericalBlindness {
             toughness: None,
             oracle_text: "Creatures your opponents control get -4/-0 until end of turn.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

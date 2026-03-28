@@ -182,6 +182,49 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
     }
 
+    // Cast spells via flashback from graveyard.
+    let mut seen_untargeted_flashbacks: Vec<CardId> = Vec::new();
+    for obj in state.objects_in_zone(Zone::Graveyard, player) {
+        if let Some(behavior) = registry.get(obj.card_id) {
+            let data = behavior.card_data();
+
+            let fb_cost = match &data.flashback_cost {
+                Some(c) => c,
+                None => continue,
+            };
+
+            let is_instant = data.card_types.contains(&CardType::Instant);
+            let is_sorcery_type = data.card_types.contains(&CardType::Sorcery)
+                || data.card_types.contains(&CardType::Creature)
+                || data.card_types.contains(&CardType::Enchantment);
+
+            let has_flash = data.keywords.contains(&Keyword::Flash);
+            let can_cast_timing = if is_instant || has_flash {
+                true
+            } else if is_sorcery_type {
+                is_sorcery_speed
+            } else {
+                false
+            };
+
+            if !can_cast_timing { continue; }
+
+            if !mana::can_pay(&player_state.mana_pool, fb_cost) { continue; }
+
+            let target_req = behavior.target_requirement();
+
+            if matches!(target_req, crate::cards::TargetRequirement::None) {
+                if seen_untargeted_flashbacks.contains(&obj.card_id) { continue; }
+                seen_untargeted_flashbacks.push(obj.card_id);
+            }
+
+            let cast_actions = generate_cast_actions_with_targets(
+                state, player, obj.id, &target_req, behavior,
+            );
+            actions.extend(cast_actions);
+        }
+    }
+
     // Concede is always last.
     actions.push(Action::Concede);
 
@@ -472,15 +515,31 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         Action::CastSpell { object_id, targets } => {
             let player = new_state.priority_player.unwrap();
 
-            // Pay mana cost.
+            // Detect flashback: card is being cast from the graveyard.
+            let is_flashback = new_state.get_object(*object_id)
+                .map(|o| o.zone == Zone::Graveyard)
+                .unwrap_or(false);
+
+            // Pay the appropriate mana cost.
             let card_id = new_state.get_object(*object_id).unwrap().card_id;
-            let cost = registry.get(card_id).unwrap().card_data().cost.unwrap();
+            let data = registry.get(card_id).unwrap().card_data();
+            let cost = if is_flashback {
+                data.flashback_cost.expect("flashback cast on card without flashback_cost")
+            } else {
+                data.cost.unwrap()
+            };
             mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
                 .expect("legal_actions should have verified mana availability");
 
             // Move to stack and store targets.
             new_state.move_object(*object_id, Zone::Stack);
-            new_state.get_object_mut(*object_id).unwrap().targets = targets.clone();
+            {
+                let obj = new_state.get_object_mut(*object_id).unwrap();
+                obj.targets = targets.clone();
+                if is_flashback {
+                    obj.cast_with_flashback = true;
+                }
+            }
             new_state.stack.push(*object_id);
 
             new_state.events.push(GameEvent::SpellCast {
@@ -489,7 +548,8 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             });
 
             let name = card_name(&new_state, registry, *object_id);
-            new_state.log(LogLevel::Event, format!("p{} cast {}", player.0, name));
+            let suffix = if is_flashback { " (flashback)" } else { "" };
+            new_state.log(LogLevel::Event, format!("p{} cast {}{}", player.0, name, suffix));
             new_state.consecutive_passes = 0;
         }
 
@@ -675,6 +735,25 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
         } else {
             state.log(LogLevel::Info, format!("p{} drew {} cards", player.0, drawn));
         }
+    }
+}
+
+/// Mill N cards from a player's library (move top N cards to graveyard).
+pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize) {
+    let mut milled = 0;
+    for _ in 0..count {
+        let card_id = {
+            let player_state = state.get_player_mut(player);
+            if player_state.library_order.is_empty() {
+                break;
+            }
+            player_state.library_order.remove(0)
+        };
+        state.move_object(card_id, Zone::Graveyard);
+        milled += 1;
+    }
+    if milled > 0 {
+        state.log(LogLevel::Event, format!("p{} milled {} card{}", player.0, milled, if milled == 1 { "" } else { "s" }));
     }
 }
 

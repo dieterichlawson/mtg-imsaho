@@ -23,6 +23,7 @@ impl CardBehavior for MoanOfTheUnhallowed {
             toughness: None,
             oracle_text: "Create two 2/2 black Zombie creature tokens.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

@@ -22,6 +22,7 @@ impl CardBehavior for BumpInTheNight {
             toughness: None,
             oracle_text: "Target opponent loses 3 life.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

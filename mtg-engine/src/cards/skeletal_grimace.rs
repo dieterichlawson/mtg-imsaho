@@ -22,6 +22,7 @@ impl CardBehavior for SkeletalGrimace {
             toughness: None,
             oracle_text: "Enchanted creature gets +1/+1 and has \"{B}: Regenerate this creature.\"".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

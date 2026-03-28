@@ -19,6 +19,7 @@ impl CardBehavior for ThrabenPurebloods {
             toughness: Some(5),
             oracle_text: String::new(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 }

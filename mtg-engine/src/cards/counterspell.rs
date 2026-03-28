@@ -22,6 +22,7 @@ impl CardBehavior for Counterspell {
             toughness: None,
             oracle_text: "Counter target spell.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 
@@ -46,7 +47,7 @@ impl CardBehavior for Counterspell {
                 if obj.zone == Zone::Stack {
                     let name = obj.name.clone();
                     state.stack.retain(|&id| id != *target_id);
-                    state.move_object(*target_id, Zone::Graveyard);
+                    state.move_spell_after_resolve(*target_id);
                     state.log(LogLevel::Event, format!("{} was countered", name));
                 }
             }

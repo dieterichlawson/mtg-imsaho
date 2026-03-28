@@ -18,6 +18,7 @@ impl CardBehavior for TyphoidRats {
             toughness: Some(1),
             oracle_text: "Deathtouch".into(),
             keywords: vec![Keyword::Deathtouch],
+            flashback_cost: None,
         }
     }
 }

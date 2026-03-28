@@ -24,12 +24,11 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
         behavior.on_resolve(state, object_id, &targets);
     }
 
-    // If the card is still on the stack after resolution (instants/sorceries
-    // should have moved themselves to graveyard, but catch any that didn't),
-    // move it to graveyard.
+    // If the card is still on the stack after resolution, move it to the
+    // appropriate zone. Flashback spells go to exile; others to graveyard.
     if let Some(obj) = state.get_object(object_id) {
         if obj.zone == Zone::Stack {
-            state.move_object(object_id, Zone::Graveyard);
+            state.move_spell_after_resolve(object_id);
         }
     }
 }

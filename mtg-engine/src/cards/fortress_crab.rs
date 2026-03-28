@@ -19,6 +19,7 @@ impl CardBehavior for FortressCrab {
             toughness: Some(6),
             oracle_text: String::new(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 }

@@ -23,6 +23,7 @@ impl CardBehavior for BrimstoneVolley {
             toughness: None,
             oracle_text: "Brimstone Volley deals 3 damage to any target.".into(),
             keywords: vec![],
+            flashback_cost: None,
         }
     }
 

@@ -20,6 +20,7 @@ impl CardBehavior for GraveBramble {
             toughness: Some(4),
             oracle_text: "Defender, protection from Zombies".into(),
             keywords: vec![Keyword::Defender],
+            flashback_cost: None,
         }
     }
 }

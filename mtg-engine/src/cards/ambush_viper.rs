@@ -19,6 +19,7 @@ impl CardBehavior for AmbushViper {
             toughness: Some(1),
             oracle_text: "Flash\nDeathtouch".into(),
             keywords: vec![Keyword::Flash, Keyword::Deathtouch],
+            flashback_cost: None,
         }
     }
 }
