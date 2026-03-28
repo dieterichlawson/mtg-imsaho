@@ -1,14 +1,24 @@
 use std::env;
+use std::fs;
 
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
 use mtg_engine::ids::PlayerId;
+use mtg_engine::state::GameState;
 use mtg_engine::view::GameView;
 
 use mtg_player::Player;
 use mtg_player::cli::CliPlayer;
 use mtg_player::llm::LlmPlayer;
 use mtg_player::random::RandomPlayer;
+
+use serde::{Serialize, Deserialize};
+
+#[derive(Serialize, Deserialize)]
+struct SaveData {
+    state: GameState,
+    player_names: Vec<String>,
+}
 
 enum PlayerKind {
     Cli(CliPlayer),
@@ -46,46 +56,68 @@ fn main() {
         .map(|s| s.as_str())
         .unwrap_or("rg-wb");
 
+    let save_file = args.iter().position(|a| a == "--save")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+
+    let resume_file = args.iter().position(|a| a == "--resume")
+        .and_then(|i| args.get(i + 1))
+        .cloned();
+
     let registry = CardRegistry::with_all_cards();
 
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
 
-    let config = match matchup {
-        "rg-uw" => {
-            if !quiet {
-                println!("MTG Engine — {} (Red/Green) vs {} (Blue/White)", p1_spec, p2_spec);
-                println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
-                println!("U/W: Coral Merfolk, Savannah Lions, Counterspell, Swords to Plowshares, Divination");
-                println!();
-            }
-            GameConfig {
-                player_names: vec!["Red/Green".into(), "Blue/White".into()],
-                decklists: vec![
-                    deck_red_green(),
-                    deck_blue_white(),
-                ],
-                starting_life: 20,
-            }
+    let (player_names, mut state) = if let Some(ref path) = resume_file {
+        let data = fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("Failed to read save file '{}': {}", path, e));
+        let save: SaveData = serde_json::from_str(&data)
+            .unwrap_or_else(|e| panic!("Failed to parse save file '{}': {}", path, e));
+        if !quiet {
+            println!("MTG Engine — resuming from {} (turn {}, {} vs {})",
+                path, save.state.turn_number, save.player_names[0], save.player_names[1]);
+            println!();
         }
-        _ => {
-            if !quiet {
-                println!("MTG Engine — {} (Red/Green) vs {} (White/Black)", p1_spec, p2_spec);
-                println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
-                println!("W/B: Savannah Lions, Walking Corpse, Swords to Plowshares, Doom Blade, Holy Strength, Pacifism");
-                println!();
+        (save.player_names, save.state)
+    } else {
+        let config = match matchup {
+            "rg-uw" => {
+                if !quiet {
+                    println!("MTG Engine — {} (Red/Green) vs {} (Blue/White)", p1_spec, p2_spec);
+                    println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
+                    println!("U/W: Coral Merfolk, Savannah Lions, Counterspell, Swords to Plowshares, Divination");
+                    println!();
+                }
+                GameConfig {
+                    player_names: vec!["Red/Green".into(), "Blue/White".into()],
+                    decklists: vec![
+                        deck_red_green(),
+                        deck_blue_white(),
+                    ],
+                    starting_life: 20,
+                }
             }
-            GameConfig {
-                player_names: vec!["Red/Green".into(), "White/Black".into()],
-                decklists: vec![
-                    deck_red_green(),
-                    deck_white_black(),
-                ],
-                starting_life: 20,
+            _ => {
+                if !quiet {
+                    println!("MTG Engine — {} (Red/Green) vs {} (White/Black)", p1_spec, p2_spec);
+                    println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
+                    println!("W/B: Savannah Lions, Walking Corpse, Swords to Plowshares, Doom Blade, Holy Strength, Pacifism");
+                    println!();
+                }
+                GameConfig {
+                    player_names: vec!["Red/Green".into(), "White/Black".into()],
+                    decklists: vec![
+                        deck_red_green(),
+                        deck_white_black(),
+                    ],
+                    starting_life: 20,
+                }
             }
-        }
+        };
+        let player_names = config.player_names.clone();
+        let state = engine::setup_game(&config, &registry);
+        (player_names, state)
     };
-
-    let mut state = engine::setup_game(&config, &registry);
 
     let mut p1 = make_player(p1_spec, "P1", log_file);
     let mut p2 = make_player(p2_spec, "P2", log_file);
@@ -95,8 +127,21 @@ fn main() {
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;
 
-    engine::run_game_loop(&mut state, &registry, |game_state, acting_player, legal| {
+    let save_file_ref = save_file.clone();
+    let player_names_ref = player_names.clone();
+
+    let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
+
+        // Save state before each decision point.
+        if let Some(ref path) = save_file_ref {
+            let save = SaveData {
+                state: game_state.clone(),
+                player_names: player_names_ref.clone(),
+            };
+            let json = serde_json::to_string(&save).expect("Failed to serialize game state");
+            fs::write(path, json).expect("Failed to write save file");
+        }
 
         if action_count >= max_actions {
             if let Some(concede_idx) = legal.actions.iter().position(|a| matches!(a, mtg_engine::actions::Action::Concede)) {
@@ -134,11 +179,22 @@ fn main() {
         }
 
         choose_action(player, &view, &legal.actions)
-    });
+    };
+
+    if resume_file.is_some() {
+        engine::resume_game_loop(&mut state, &registry, &mut game_callback);
+    } else {
+        engine::run_game_loop(&mut state, &registry, &mut game_callback);
+    }
+
+    // Clean up save file when game completes.
+    if let Some(ref path) = save_file {
+        let _ = fs::remove_file(path);
+    }
 
     match &state.result {
         Some(mtg_engine::state::GameResult::Winner(id)) => {
-            let name = &config.player_names[id.0 as usize];
+            let name = &player_names[id.0 as usize];
             println!("\nGame over! {} wins!", name);
         }
         Some(mtg_engine::state::GameResult::Draw) => {
