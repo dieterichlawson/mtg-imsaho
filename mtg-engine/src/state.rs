@@ -51,6 +51,13 @@ pub struct GameState {
 
     /// Temporary keyword grants that expire at end of turn.
     pub until_end_of_turn_keywords: Vec<UntilEndOfTurnKeyword>,
+
+    /// Temporary "can't block" restrictions that expire at end of turn.
+    pub until_end_of_turn_cant_block: Vec<ObjectId>,
+
+    /// Whether a creature has died this turn (for morbid).
+    #[serde(default)]
+    pub creature_died_this_turn: bool,
 }
 
 /// Log level for game log entries.
@@ -113,6 +120,8 @@ impl GameState {
             game_log: Vec::new(),
             until_end_of_turn_effects: Vec::new(),
             until_end_of_turn_keywords: Vec::new(),
+            until_end_of_turn_cant_block: Vec::new(),
+            creature_died_this_turn: false,
         }
     }
 
@@ -224,6 +233,8 @@ impl GameState {
             self.log(LogLevel::Event, msg);
         }
 
+        let from = self.objects.get(&id).map(|o| o.zone);
+
         if let Some(obj) = self.objects.get_mut(&id) {
             let from = obj.zone;
             obj.zone = to;
@@ -242,7 +253,19 @@ impl GameState {
             // Set summoning sickness when entering the battlefield.
             if to == Zone::Battlefield && from != Zone::Battlefield {
                 obj.summoning_sick = true;
-                let controller = obj.controller;
+            }
+        }
+
+        // Emit zone-change events outside the mutable borrow.
+        if let Some(from_zone) = from {
+            if from_zone == Zone::Battlefield && to != Zone::Battlefield {
+                self.events.push(crate::events::GameEvent::LeftBattlefield {
+                    object: id,
+                    to,
+                });
+            }
+            if to == Zone::Battlefield && from_zone != Zone::Battlefield {
+                let controller = self.get_object(id).map(|o| o.controller).unwrap_or(PlayerId(0));
                 self.events.push(crate::events::GameEvent::EnteredBattlefield {
                     object: id,
                     controller,

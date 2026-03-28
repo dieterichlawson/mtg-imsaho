@@ -863,6 +863,7 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
             state.turn_number += 1;
             state.step = Step::Untap;
             state.is_first_turn = false;
+            state.creature_died_this_turn = false;
 
             state.events.push(GameEvent::TurnStarted {
                 player: next_player,
@@ -994,6 +995,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             // Remove "until end of turn" effects.
             state.until_end_of_turn_effects.clear();
             state.until_end_of_turn_keywords.clear();
+            state.until_end_of_turn_cant_block.clear();
 
             // Empty mana pools.
             for player in &mut state.players {

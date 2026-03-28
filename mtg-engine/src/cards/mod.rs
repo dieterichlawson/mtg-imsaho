@@ -177,6 +177,9 @@ pub trait CardBehavior: Send + Sync {
     /// Called when ANY creature dies. `self_id` is this permanent, `dead_id` is the deceased.
     fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _registry: &CardRegistry) {}
 
+    /// Called when this permanent leaves the battlefield (moves to any other zone).
+    fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+
     /// List of mana abilities this permanent has while on the battlefield.
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
         vec![]

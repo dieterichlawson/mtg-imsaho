@@ -46,6 +46,16 @@ pub fn process_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
+            GameEvent::LeftBattlefield { object, .. } => {
+                let obj_id = *object;
+                let card_id = match state.get_object(obj_id) {
+                    Some(o) => o.card_id,
+                    None => continue,
+                };
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_leave_battlefield(state, obj_id, registry);
+                }
+            }
             _ => {}
         }
     }
