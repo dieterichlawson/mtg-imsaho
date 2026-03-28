@@ -5,8 +5,6 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Travel Preparations — {1}{G} sorcery. Put a +1/+1 counter on each of up to two target creatures.
-/// Simplified: targets one creature and puts a +1/+1 counter on it.
-/// TODO: implement multi-target casting flow for "up to two targets".
 pub struct TravelPreparations;
 
 impl CardBehavior for TravelPreparations {
@@ -29,13 +27,15 @@ impl CardBehavior for TravelPreparations {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::Creature
+        TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature))
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
-        if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                state.add_counters(*target_id, CounterType::PlusOnePlusOne, 1);
+        for target in targets {
+            if let Target::Object(target_id) = target {
+                if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    state.add_counters(*target_id, CounterType::PlusOnePlusOne, 1);
+                }
             }
         }
         state.move_spell_after_resolve(object_id);
