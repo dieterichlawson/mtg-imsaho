@@ -48,12 +48,16 @@ fn main() {
 
     let registry = CardRegistry::with_all_cards();
 
+    let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+
     let config = match matchup {
         "rg-uw" => {
-            println!("MTG Engine — {} (Red/Green) vs {} (Blue/White)", p1_spec, p2_spec);
-            println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
-            println!("U/W: Coral Merfolk, Savannah Lions, Counterspell, Swords to Plowshares, Divination");
-            println!();
+            if !quiet {
+                println!("MTG Engine — {} (Red/Green) vs {} (Blue/White)", p1_spec, p2_spec);
+                println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
+                println!("U/W: Coral Merfolk, Savannah Lions, Counterspell, Swords to Plowshares, Divination");
+                println!();
+            }
             GameConfig {
                 player_names: vec!["Red/Green".into(), "Blue/White".into()],
                 decklists: vec![
@@ -64,10 +68,12 @@ fn main() {
             }
         }
         _ => {
-            println!("MTG Engine — {} (Red/Green) vs {} (White/Black)", p1_spec, p2_spec);
-            println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
-            println!("W/B: Savannah Lions, Walking Corpse, Swords to Plowshares, Doom Blade, Holy Strength, Pacifism");
-            println!();
+            if !quiet {
+                println!("MTG Engine — {} (Red/Green) vs {} (White/Black)", p1_spec, p2_spec);
+                println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
+                println!("W/B: Savannah Lions, Walking Corpse, Swords to Plowshares, Doom Blade, Holy Strength, Pacifism");
+                println!();
+            }
             GameConfig {
                 player_names: vec!["Red/Green".into(), "White/Black".into()],
                 decklists: vec![
