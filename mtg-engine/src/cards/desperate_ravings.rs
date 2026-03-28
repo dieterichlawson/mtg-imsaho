@@ -1,0 +1,42 @@
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData};
+use crate::ids::{ObjectId, PlayerId};
+use crate::state::GameState;
+use crate::types::*;
+
+/// Desperate Ravings — {1}{R} instant. Draw two cards, then discard a card at random.
+/// Simplified: discards the first card in hand.
+pub struct DesperateRavings;
+
+impl CardBehavior for DesperateRavings {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Desperate Ravings".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(1),
+                ManaSymbol::Colored(Color::Red),
+            ])),
+            card_types: vec![CardType::Instant],
+            supertypes: vec![],
+            subtypes: vec![],
+            power: None,
+            toughness: None,
+            oracle_text: "Draw two cards, then discard a card at random.".into(),
+            keywords: vec![],
+            flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Blue)])),
+        }
+    }
+
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target]) {
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        crate::engine::draw_cards(state, controller, 2);
+        // Discard a card at random (simplified: discard the first card in hand).
+        let to_discard = state.objects.values()
+            .find(|o| o.zone == Zone::Hand && o.owner == controller)
+            .map(|o| o.id);
+        if let Some(discard_id) = to_discard {
+            state.move_object(discard_id, Zone::Graveyard);
+        }
+        state.move_spell_after_resolve(object_id);
+    }
+}
