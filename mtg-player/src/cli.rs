@@ -679,8 +679,20 @@ impl CliPlayer {
         self.card_filter.clear();
 
         loop {
-            // Re-render with current filter (cursor stays at action area prompt)
+            // Re-render with current filter
             Self::render(view, Some(actions), None, &view.display_log, &self.card_filter);
+
+            // Print the > prompt in the action area (render positions cursor there)
+            let _ = execute!(stdout(), Print("  > "));
+
+            // Move actual cursor to the search box in the right gutter
+            let (term_w, _) = terminal::size().unwrap_or((100, 30));
+            let w = term_w as usize;
+            let gutter_w = w / 5;
+            let mid_w = w.saturating_sub(gutter_w * 2 + 2);
+            let right_col = (gutter_w + 1 + mid_w + 1) as u16;
+            let cursor_x = right_col + 2 + self.card_filter.chars().count() as u16;
+            let _ = execute!(stdout(), cursor::MoveTo(cursor_x, 1));
             let _ = stdout().flush();
 
             // Read one key event
