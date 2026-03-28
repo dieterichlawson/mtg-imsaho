@@ -490,7 +490,7 @@ impl CliPlayer {
             if p.card_types.iter().all(|t| matches!(t, CardType::Land)) { continue; }
             add(&p.name, p.card_id);
         }
-        // Priority 5: graveyard flashback cards
+        // Priority 5: graveyard flashback cards (yours)
         for (pid, cards) in &view.graveyards {
             if *pid == view.you {
                 for c in cards {
@@ -499,6 +499,18 @@ impl CliPlayer {
                     }
                 }
             }
+        }
+        // Priority 6: recently seen cards in graveyards (both players,
+        // most recent first — instants/sorceries that just resolved,
+        // creatures that just died). Graveyard order is chronological.
+        for (_, cards) in &view.graveyards {
+            for c in cards.iter().rev() {
+                add(&c.name, c.card_id);
+            }
+        }
+        // Priority 7: exile (cards that were exiled)
+        for c in &view.exile {
+            add(&c.name, c.card_id);
         }
 
         // Look up CardData, filter out basic lands, apply text filter
