@@ -85,6 +85,19 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Unruly Mob ({1}{W} creature 1/1): Gets a +1/+1 counter whenever another of your creatures dies.
 - Lumberknot ({2}{G}{G} creature 1/1 hexproof): Gets a +1/+1 counter whenever any creature dies. Can't be targeted!
 - Elder Cathar ({2}{W} creature 2/2): When it dies, puts a +1/+1 counter on one of your creatures.
+- Think Twice ({1}{U} instant, flashback {2}{U}): Draw a card. Can cast from graveyard!
+- Dream Twist ({U} instant, flashback {1}{U}): Target player mills 3 cards.
+- Travel Preparations ({1}{G} sorcery, flashback {1}{W}): Put a +1/+1 counter on target creature.
+- Feeling of Dread ({1}{W} instant, flashback {1}{U}): Tap target creature.
+- Nightbird's Clutches ({1}{R} sorcery, flashback {3}{R}): Tap target creature so it can't block.
+- Gnaw to the Bone ({2}{G} instant, flashback {2}{G}): Gain 2 life per creature in your graveyard.
+- Forbidden Alchemy ({2}{U} instant, flashback {6}{B}): Draw 1 card, mill 3.
+- Rolling Temblor ({2}{R} sorcery, flashback {4}{R}{R}): 2 damage to each creature without flying.
+- Unburial Rites ({4}{B} sorcery, flashback {3}{W}): Return a creature from your graveyard to the battlefield.
+- Desperate Ravings ({1}{R} instant, flashback {2}{U}): Draw 2 cards, discard 1.
+
+## Flashback
+Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. Tap lands to get mana, then the Flashback option appears.
 
 ## Strategy tips
 - Save instants for combat! Giant Growth during DeclareBlockers makes your 2/2 into a 5/5. Lightning Bolt during DeclareAttackers can kill a would-be blocker.
@@ -315,6 +328,25 @@ impl LlmPlayer {
                 .collect();
             s.push_str(&cards.join(", "));
             s.push('\n');
+        }
+
+        // Show flashback-eligible cards in your graveyard.
+        let your_gy = view.graveyards.iter()
+            .find(|(pid, _)| *pid == view.you)
+            .map(|(_, cards)| cards);
+        if let Some(gy_cards) = your_gy {
+            let fb_cards: Vec<String> = gy_cards.iter()
+                .filter(|c| c.flashback_cost.is_some())
+                .map(|c| {
+                    let fb = c.flashback_cost.as_ref().unwrap();
+                    format!("{} (flashback {})", c.name, fb)
+                })
+                .collect();
+            if !fb_cards.is_empty() {
+                s.push_str("Graveyard flashback: ");
+                s.push_str(&fb_cards.join(", "));
+                s.push('\n');
+            }
         }
 
         s

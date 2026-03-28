@@ -41,6 +41,7 @@ pub struct CardView {
     pub toughness: Option<i32>,
     pub oracle_text: String,
     pub owner: PlayerId,
+    pub flashback_cost: Option<ManaCost>,
 }
 
 #[derive(Debug, Clone)]
@@ -195,7 +196,8 @@ fn card_view(obj: &crate::state::GameObject, registry: &CardRegistry) -> CardVie
         card_types: data.as_ref().map(|d| d.card_types.clone()).unwrap_or_default(),
         power: obj.power,
         toughness: obj.toughness,
-        oracle_text: data.map(|d| d.oracle_text).unwrap_or_default(),
+        oracle_text: data.as_ref().map(|d| d.oracle_text.clone()).unwrap_or_default(),
         owner: obj.owner,
+        flashback_cost: data.map(|d| d.flashback_cost).unwrap_or(None),
     }
 }
