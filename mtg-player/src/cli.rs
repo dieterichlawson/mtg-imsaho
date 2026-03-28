@@ -3,6 +3,7 @@ use std::io::{self, Write, stdout};
 
 use crossterm::{
     cursor, execute,
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
     style::{Color, SetForegroundColor, SetAttribute, Attribute, ResetColor, Print},
     terminal::{self, Clear, ClearType},
 };
@@ -515,15 +516,26 @@ impl CliPlayer {
         if right_w < 10 { return; }
 
         // Header — full gutter width
-        let label = if filter.is_empty() { "─── CARDS " } else { "─── CARDS (filtered) " };
+        let label = "─── CARDS ";
         let header = format!("{}{}", label, "─".repeat(right_w.saturating_sub(label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(right_col, 0),
             SetAttribute(Attribute::Dim), Print(&header), SetAttribute(Attribute::Reset));
 
+        // Search box below title
+        let search_display = if filter.is_empty() {
+            format!(" /search{}", " ".repeat(right_w.saturating_sub(8)))
+        } else {
+            let text = format!(" /{}", filter);
+            let pad = right_w.saturating_sub(text.chars().count());
+            format!("{}{}", text, " ".repeat(pad))
+        };
+        let _ = execute!(out, cursor::MoveTo(right_col, 1),
+            SetAttribute(Attribute::Dim), Print(&search_display), SetAttribute(Attribute::Reset));
+
         let content_w = right_w.saturating_sub(1); // text margin
 
-        let mut row: u16 = 1;
-        let max_row = (h as u16).saturating_sub(2);
+        let mut row: u16 = 2; // cards start below search box
+        let max_row = (h as u16).saturating_sub(1);
 
         for card in cards {
             if row >= max_row { break; }
@@ -633,15 +645,7 @@ impl CliPlayer {
             }
         }
 
-        // Footer with search hint
-        let footer_row = (h as u16).saturating_sub(1);
-        let footer = if filter.is_empty() {
-            "[/=search cards]".to_string()
-        } else {
-            format!("[filter: {}] [/=clear]", filter)
-        };
-        let _ = execute!(out, cursor::MoveTo(right_col, footer_row),
-            SetAttribute(Attribute::Dim), Print(&footer), SetAttribute(Attribute::Reset));
+        // (search box is at top, no footer needed)
     }
 
     /// Simple word-wrap for oracle text.
@@ -665,6 +669,56 @@ impl CliPlayer {
             }
         }
         lines
+    }
+
+    /// Interactive card search: enters raw mode, reads key-by-key,
+    /// re-renders the right panel live, exits on Escape or `/`.
+    fn run_card_search(&mut self, view: &GameView, actions: &[Action]) {
+        let _ = terminal::enable_raw_mode();
+
+        self.card_filter.clear();
+
+        loop {
+            // Re-render with current filter
+            Self::render(view, Some(actions), Some("searching cards..."), &view.display_log, &self.card_filter);
+
+            // Position cursor in the search box
+            let (term_w, _) = terminal::size().unwrap_or((100, 30));
+            let w = term_w as usize;
+            let gutter_w = w / 5;
+            let mid_w = w.saturating_sub(gutter_w * 2 + 2);
+            let right_col = (gutter_w + 1 + mid_w + 1) as u16;
+            let cursor_x = right_col + 1 + self.card_filter.chars().count() as u16;
+            let _ = execute!(stdout(), cursor::MoveTo(cursor_x, 1));
+            let _ = stdout().flush();
+
+            // Read one key event
+            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+                match code {
+                    KeyCode::Esc | KeyCode::Enter => {
+                        self.card_filter.clear();
+                        break;
+                    }
+                    KeyCode::Char('/') => {
+                        self.card_filter.clear();
+                        break;
+                    }
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.card_filter.clear();
+                        break;
+                    }
+                    KeyCode::Backspace => {
+                        self.card_filter.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        self.card_filter.push(c);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        let _ = terminal::disable_raw_mode();
     }
 
     // ── Action formatting ──────────────────────────────────────────
@@ -1283,9 +1337,9 @@ impl Player for CliPlayer {
                 continue;
             }
 
-            // Card reference filter
-            if input.starts_with('/') {
-                self.card_filter = input[1..].trim().to_string();
+            // Card reference interactive search
+            if input == "/" {
+                self.run_card_search(view, legal_actions);
                 continue;
             }
 
