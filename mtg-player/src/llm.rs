@@ -256,7 +256,10 @@ impl LlmPlayer {
         if !view.stack.is_empty() {
             s.push_str("Stack: ");
             let items: Vec<String> = view.stack.iter()
-                .map(|i| i.name.clone())
+                .map(|i| {
+                    let who = if i.controller == view.you { "your" } else { "opp's" };
+                    format!("{} ({})", i.name, who)
+                })
                 .collect();
             s.push_str(&items.join(", "));
             s.push('\n');
