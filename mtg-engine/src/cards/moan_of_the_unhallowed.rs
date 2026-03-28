@@ -23,7 +23,7 @@ impl CardBehavior for MoanOfTheUnhallowed {
             toughness: None,
             oracle_text: "Create two 2/2 black Zombie creature tokens.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(5), ManaSymbol::Colored(Color::Black), ManaSymbol::Colored(Color::Black)])),
         }
     }
 
@@ -32,6 +32,6 @@ impl CardBehavior for MoanOfTheUnhallowed {
         for _ in 0..2 {
             state.create_token("Zombie", controller, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![]);
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

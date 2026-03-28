@@ -22,7 +22,7 @@ impl CardBehavior for Geistflame {
             toughness: None,
             oracle_text: "Geistflame deals 1 damage to any target.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)])),
         }
     }
 
@@ -63,6 +63,6 @@ impl CardBehavior for Geistflame {
             }
         }
         // Instant goes to graveyard after resolution.
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

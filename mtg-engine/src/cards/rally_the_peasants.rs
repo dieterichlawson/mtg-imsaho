@@ -22,7 +22,7 @@ impl CardBehavior for RallyThePeasants {
             toughness: None,
             oracle_text: "Creatures you control get +2/+0 until end of turn.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Red)])),
         }
     }
 
@@ -49,6 +49,6 @@ impl CardBehavior for RallyThePeasants {
             );
         }
 
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

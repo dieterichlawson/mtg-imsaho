@@ -21,7 +21,7 @@ impl CardBehavior for SilentDeparture {
             toughness: None,
             oracle_text: "Return target creature to its owner's hand.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(4), ManaSymbol::Colored(Color::Blue)])),
         }
     }
 
@@ -35,6 +35,6 @@ impl CardBehavior for SilentDeparture {
                 state.move_object(*target_id, Zone::Hand);
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

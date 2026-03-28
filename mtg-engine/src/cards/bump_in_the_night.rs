@@ -22,7 +22,7 @@ impl CardBehavior for BumpInTheNight {
             toughness: None,
             oracle_text: "Target opponent loses 3 life.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(5), ManaSymbol::Colored(Color::Red)])),
         }
     }
 
@@ -41,6 +41,6 @@ impl CardBehavior for BumpInTheNight {
                 new_life,
             });
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }
