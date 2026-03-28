@@ -36,6 +36,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 ## Key rules
 - Mana pools empty at EVERY step boundary. Tap lands and cast spells in the same step.
 - The "Cast" option only appears AFTER you have enough mana in pool. Tap lands first.
+- Generic mana (numbers like {1}, {2}) can be paid with ANY color. For example, {1}{G} can be paid with {G}{G} — the first {G} pays the generic {1} cost. So if a spell costs {1}{G}, tapping two Forests ({G}{G}) is enough.
 - Spells go on the stack and resolve when both players pass priority.
 - Creatures have summoning sickness — can't attack the turn they enter. [S] means sick.
 - Play one land per turn, only during your main phase.
@@ -45,6 +46,24 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Attack to win! Creatures deal damage to the opponent when unblocked.
 
 ## Card knowledge
+
+### Creatures
+- Abbey Griffin ({3}{W} 2/2 flying, vigilance): Flyer that doesn't tap when attacking.
+- Chapel Geist ({1}{W}{W} 2/3 flying): Solid flying body.
+- Voiceless Spirit ({2}{W} 2/1 flying, first strike): Deals damage before blockers hit back.
+- Moon Heron ({3}{U} 3/2 flying): Evasive flyer.
+- Typhoid Rats ({B} 1/1 deathtouch): Kills anything it damages. Great blocker.
+- Markov Patrician ({2}{B} 3/1 lifelink): You gain life equal to damage dealt.
+- Ambush Viper ({1}{G} 2/1 flash, deathtouch): Cast anytime (flash)! Surprise blocker that kills anything.
+- Vampire Interloper ({1}{B} 2/1 flying): Can't block.
+- Spectral Rider ({W}{W} 2/2 intimidate): Only blocked by artifact creatures or same-color creatures.
+- Invisible Stalker ({1}{U} 1/1 hexproof): Can't be targeted by opponents. Can't be blocked.
+- Somberwald Spider ({4}{G} 2/4 reach): Can block flyers.
+- Diregraf Ghoul ({B} 2/2): Enters tapped.
+- Grave Bramble ({1}{G}{G} 3/4 defender): Can't attack, but great blocker.
+- One-Eyed Scarecrow ({3} 2/3 artifact creature, defender): Can't attack.
+
+### Spells
 - Lightning Bolt ({R} instant): Deal 3 damage to any target. Use to kill creatures or finish off opponent.
 - Giant Growth ({G} instant): Target creature gets +3/+3 until end of turn. SAVE THIS FOR COMBAT — cast it during DeclareBlockers to pump your attacker or save a blocker.
 - Doom Blade ({1}{B} instant): Destroy target nonblack creature. Can cast during combat to remove a blocker before damage.
