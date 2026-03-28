@@ -321,9 +321,9 @@ impl CliPlayer {
             }
             let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
             let hints = if has_pass {
-                "  [enter=pass] [f=pass turn] [/=search] [l=log] [g=gy] [e=exile] [i=inspect]"
+                "  [enter=pass] [f=pass turn] [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
             } else {
-                "  [/=search] [l=log] [g=gy] [e=exile] [i=inspect]"
+                "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
             };
             let _ = execute!(out, cursor::MoveTo(mid_col, row),
                 SetAttribute(Attribute::Dim), Print(hints), SetAttribute(Attribute::Reset));
@@ -992,72 +992,92 @@ impl CliPlayer {
         let registry = mtg_engine::cards::CardRegistry::with_all_cards();
         let mut out = stdout();
 
-        // Count how many of each card name the player has across all zones.
-        let mut counts: HashMap<String, usize> = HashMap::new();
+        // Count per-zone for each card name the player owns.
+        let mut hand_counts: HashMap<String, usize> = HashMap::new();
+        let mut board_counts: HashMap<String, usize> = HashMap::new();
+        let mut gy_counts: HashMap<String, usize> = HashMap::new();
+        let mut exile_counts: HashMap<String, usize> = HashMap::new();
+
         for card in &view.your_hand {
-            *counts.entry(card.name.clone()).or_default() += 1;
+            *hand_counts.entry(card.name.clone()).or_default() += 1;
         }
         for perm in &view.battlefield {
             if perm.controller == view.you {
-                *counts.entry(perm.name.clone()).or_default() += 1;
+                *board_counts.entry(perm.name.clone()).or_default() += 1;
             }
         }
-        for (_pid, cards) in &view.graveyards {
-            for card in cards {
-                if card.owner == view.you {
-                    *counts.entry(card.name.clone()).or_default() += 1;
+        for (pid, cards) in &view.graveyards {
+            if *pid == view.you {
+                for card in cards {
+                    *gy_counts.entry(card.name.clone()).or_default() += 1;
                 }
             }
         }
         for card in &view.exile {
             if card.owner == view.you {
-                *counts.entry(card.name.clone()).or_default() += 1;
+                *exile_counts.entry(card.name.clone()).or_default() += 1;
             }
         }
-        // Library cards are hidden but we know the total count.
-        // Remaining copies = library_size cards we can't see.
+
+        // Collect all card names the player owns in any visible zone.
+        let mut all_names: Vec<String> = Vec::new();
+        for map in [&hand_counts, &board_counts, &gy_counts, &exile_counts] {
+            for name in map.keys() {
+                if !all_names.contains(name) {
+                    all_names.push(name.clone());
+                }
+            }
+        }
+
+        // Total visible = sum of all zones. Library = library_size (unseen cards).
+        let visible_total: usize = hand_counts.values().sum::<usize>()
+            + board_counts.values().sum::<usize>()
+            + gy_counts.values().sum::<usize>()
+            + exile_counts.values().sum::<usize>();
+        let library_count = view.your_library_size;
 
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-            Self::print_colored(&mut out, Color::Cyan, " YOUR DECK");
+            Self::print_colored(&mut out, Color::Cyan,
+                &format!(" YOUR DECK ({} visible + {} in library)", visible_total, library_count));
             let _ = execute!(out, Print("\n"));
 
             let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
-            for i in 1..100u32 {
-                let id = mtg_engine::ids::CardId(i);
-                if let Some(data) = registry.card_data(id) {
-                    if !cards.iter().any(|c| c.name == data.name) {
+            for name in &all_names {
+                if let Some(id) = registry.get_id_by_name(name) {
+                    if let Some(data) = registry.card_data(id) {
                         cards.push(data);
                     }
                 }
             }
             cards.sort_by(|a, b| a.name.cmp(&b.name));
 
-            // Only show cards the player actually has (or had)
-            let deck_cards: Vec<&mtg_engine::cards::CardData> = cards.iter()
-                .filter(|c| counts.contains_key(&c.name))
-                .collect();
+            let deck_cards: Vec<&mtg_engine::cards::CardData> = cards.iter().collect();
 
             for (i, data) in deck_cards.iter().enumerate() {
                 let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
-                let types: Vec<&str> = data.card_types.iter().map(|t| match t {
-                    CardType::Land => "Land",
-                    CardType::Creature => "Creature",
-                    CardType::Instant => "Instant",
-                    CardType::Sorcery => "Sorcery",
-                    CardType::Enchantment => "Enchantment",
-                    CardType::Artifact => "Artifact",
-                    CardType::Planeswalker => "Planeswalker",
-                }).collect();
                 let pt = match (data.power, data.toughness) {
                     (Some(p), Some(t)) => format!(" {}/{}", p, t),
                     _ => String::new(),
                 };
-                let total = counts.get(&data.name).copied().unwrap_or(0);
+                let h = hand_counts.get(&data.name).copied().unwrap_or(0);
+                let b = board_counts.get(&data.name).copied().unwrap_or(0);
+                let g = gy_counts.get(&data.name).copied().unwrap_or(0);
+                let e = exile_counts.get(&data.name).copied().unwrap_or(0);
+                let total = h + b + g + e;
+
+                // Build location breakdown
+                let mut locs = Vec::new();
+                if h > 0 { locs.push(format!("{}hand", h)); }
+                if b > 0 { locs.push(format!("{}board", b)); }
+                if g > 0 { locs.push(format!("{}gy", g)); }
+                if e > 0 { locs.push(format!("{}exile", e)); }
+                let loc_str = if locs.is_empty() { String::new() } else { format!(" ({})", locs.join(", ")) };
+
                 let _ = execute!(out,
                     SetAttribute(Attribute::Bold), Print(format!("  {:>2}", i)),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}x {}{} [{}]{}\n", total, data.name, cost, types.join(" "), pt)));
+                    Print(format!(": {}x {}{}{}{}\n", total, data.name, cost, pt, loc_str)));
             }
 
             let _ = execute!(out, Print("\n  Enter number for details, or press enter to return: "));
@@ -1089,9 +1109,34 @@ impl CliPlayer {
                     if let (Some(p), Some(t)) = (data.power, data.toughness) {
                         let _ = execute!(out, Print(format!("  Power/Toughness: {}/{}\n", p, t)));
                     }
+                    if !data.keywords.is_empty() {
+                        let kws: Vec<&str> = data.keywords.iter().map(|k| match k {
+                            mtg_engine::types::Keyword::Flying => "Flying",
+                            mtg_engine::types::Keyword::FirstStrike => "First strike",
+                            mtg_engine::types::Keyword::DoubleStrike => "Double strike",
+                            mtg_engine::types::Keyword::Trample => "Trample",
+                            mtg_engine::types::Keyword::Deathtouch => "Deathtouch",
+                            mtg_engine::types::Keyword::Lifelink => "Lifelink",
+                            mtg_engine::types::Keyword::Vigilance => "Vigilance",
+                            mtg_engine::types::Keyword::Flash => "Flash",
+                            mtg_engine::types::Keyword::Reach => "Reach",
+                            mtg_engine::types::Keyword::Haste => "Haste",
+                            mtg_engine::types::Keyword::Defender => "Defender",
+                            mtg_engine::types::Keyword::Hexproof => "Hexproof",
+                            mtg_engine::types::Keyword::Intimidate => "Intimidate",
+                            mtg_engine::types::Keyword::Menace => "Menace",
+                            mtg_engine::types::Keyword::Indestructible => "Indestructible",
+                        }).collect();
+                        let _ = execute!(out, SetForegroundColor(Color::Blue),
+                            Print(format!("  Keywords: {}\n", kws.join(", "))), ResetColor);
+                    }
                     if !data.oracle_text.is_empty() {
                         let _ = execute!(out, SetForegroundColor(Color::Yellow),
                             Print(format!("\n  {}\n", data.oracle_text)), ResetColor);
+                    }
+                    if let Some(fb) = &data.flashback_cost {
+                        let _ = execute!(out, SetForegroundColor(Color::Cyan),
+                            Print(format!("  Flashback: {}\n", fb)), ResetColor);
                     }
                     let _ = execute!(out, Print("\n  Press enter to return to list..."));
                     let _ = out.flush();
