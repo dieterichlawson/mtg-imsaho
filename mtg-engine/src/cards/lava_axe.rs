@@ -22,6 +22,7 @@ impl CardBehavior for LavaAxe {
             power: None,
             toughness: None,
             oracle_text: "Lava Axe deals 5 damage to target player or planeswalker.".into(),
+            keywords: vec![],
         }
     }
 

@@ -703,6 +703,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
 
             // Remove "until end of turn" effects.
             state.until_end_of_turn_effects.clear();
+            state.until_end_of_turn_keywords.clear();
 
             // Empty mana pools.
             for player in &mut state.players {

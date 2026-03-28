@@ -20,6 +20,7 @@ impl CardBehavior for GloriousAnthem {
             power: None,
             toughness: None,
             oracle_text: "Creatures you control get +1/+1.".into(),
+            keywords: vec![],
         }
     }
 }

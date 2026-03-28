@@ -18,6 +18,7 @@ impl CardBehavior for KalonianTusker {
             power: Some(3),
             toughness: Some(3),
             oracle_text: String::new(),
+            keywords: vec![],
         }
     }
 }

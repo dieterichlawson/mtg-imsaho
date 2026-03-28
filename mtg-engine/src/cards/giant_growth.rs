@@ -20,6 +20,7 @@ impl CardBehavior for GiantGrowth {
             power: None,
             toughness: None,
             oracle_text: "Target creature gets +3/+3 until end of turn.".into(),
+            keywords: vec![],
         }
     }
 

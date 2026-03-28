@@ -20,6 +20,7 @@ impl CardBehavior for HolyStrength {
             power: None,
             toughness: None,
             oracle_text: "Enchanted creature gets +1/+2.".into(),
+            keywords: vec![],
         }
     }
 

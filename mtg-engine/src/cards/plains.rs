@@ -16,6 +16,7 @@ impl CardBehavior for Plains {
             power: None,
             toughness: None,
             oracle_text: "{T}: Add {W}.".into(),
+            keywords: vec![],
         }
     }
 

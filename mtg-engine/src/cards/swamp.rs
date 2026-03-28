@@ -16,6 +16,7 @@ impl CardBehavior for Swamp {
             power: None,
             toughness: None,
             oracle_text: "{T}: Add {B}.".into(),
+            keywords: vec![],
         }
     }
 

@@ -21,6 +21,7 @@ impl CardBehavior for Counterspell {
             power: None,
             toughness: None,
             oracle_text: "Counter target spell.".into(),
+            keywords: vec![],
         }
     }
 

@@ -21,6 +21,7 @@ impl CardBehavior for LightningBolt {
             power: None,
             toughness: None,
             oracle_text: "Lightning Bolt deals 3 damage to any target.".into(),
+            keywords: vec![],
         }
     }
 

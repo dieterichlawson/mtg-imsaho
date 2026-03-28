@@ -18,6 +18,7 @@ impl CardBehavior for GrizzlyBears {
             power: Some(2),
             toughness: Some(2),
             oracle_text: String::new(),
+            keywords: vec![],
         }
     }
 }

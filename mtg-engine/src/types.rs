@@ -282,6 +282,26 @@ pub enum CounterType {
     // extend as needed
 }
 
+/// Keyword abilities.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Keyword {
+    Flying,
+    FirstStrike,
+    DoubleStrike,
+    Trample,
+    Deathtouch,
+    Lifelink,
+    Vigilance,
+    Flash,
+    Reach,
+    Haste,
+    Defender,
+    Hexproof,
+    Intimidate,
+    Menace,
+    Indestructible,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -22,6 +22,7 @@ impl CardBehavior for Pacifism {
             power: None,
             toughness: None,
             oracle_text: "Enchanted creature can't attack or block.".into(),
+            keywords: vec![],
         }
     }
 

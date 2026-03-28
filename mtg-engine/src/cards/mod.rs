@@ -39,6 +39,7 @@ pub struct CardData {
     pub power: Option<i32>,
     pub toughness: Option<i32>,
     pub oracle_text: String,
+    pub keywords: Vec<Keyword>,
 }
 
 /// A mana ability definition.
@@ -80,6 +81,11 @@ pub trait CardBehavior: Send + Sync {
     /// Called for each potential target when building legal actions.
     fn is_valid_target(&self, _state: &GameState, _caster: PlayerId, _target: &Target) -> bool {
         true
+    }
+
+    /// Keywords this permanent grants to the creature it's attached to (for auras).
+    fn granted_keywords(&self) -> Vec<Keyword> {
+        vec![]
     }
 
     /// List of mana abilities this permanent has while on the battlefield.

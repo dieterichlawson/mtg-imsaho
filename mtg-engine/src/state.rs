@@ -48,6 +48,9 @@ pub struct GameState {
 
     /// Temporary effects that expire at end of turn (e.g., Giant Growth's +3/+3).
     pub until_end_of_turn_effects: Vec<UntilEndOfTurnEffect>,
+
+    /// Temporary keyword grants that expire at end of turn.
+    pub until_end_of_turn_keywords: Vec<UntilEndOfTurnKeyword>,
 }
 
 /// Log level for game log entries.
@@ -78,6 +81,13 @@ pub struct UntilEndOfTurnEffect {
     pub toughness_mod: i32,
 }
 
+/// A temporary keyword grant that expires at cleanup.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UntilEndOfTurnKeyword {
+    pub target: ObjectId,
+    pub keyword: crate::types::Keyword,
+}
+
 impl GameState {
     /// Create a new game state for a given number of players.
     pub fn new(num_players: u8) -> Self {
@@ -102,6 +112,7 @@ impl GameState {
             events: Vec::new(),
             game_log: Vec::new(),
             until_end_of_turn_effects: Vec::new(),
+            until_end_of_turn_keywords: Vec::new(),
         }
     }
 
@@ -387,6 +398,42 @@ impl GameState {
             }
         }
         true
+    }
+
+    /// Check if a creature on the battlefield has a given keyword ability.
+    /// Checks static card keywords, aura-granted keywords, and until-EOT grants.
+    pub fn has_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
+        let obj = match self.get_object(creature_id) {
+            Some(o) if o.zone == Zone::Battlefield => o,
+            _ => return false,
+        };
+
+        // 1. Static keywords from card definition.
+        if let Some(behavior) = registry.get(obj.card_id) {
+            if behavior.card_data().keywords.contains(&keyword) {
+                return true;
+            }
+        }
+
+        // 2. Keywords granted by attached auras/equipment.
+        for attached in self.objects.values() {
+            if attached.zone == Zone::Battlefield && attached.attached_to == Some(creature_id) {
+                if let Some(behavior) = registry.get(attached.card_id) {
+                    if behavior.granted_keywords().contains(&keyword) {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        // 3. Temporary keyword grants (until end of turn).
+        for grant in &self.until_end_of_turn_keywords {
+            if grant.target == creature_id && grant.keyword == keyword {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Is the game over?

@@ -19,6 +19,7 @@ impl CardBehavior for SolRing {
             power: None,
             toughness: None,
             oracle_text: "{T}: Add {C}{C}.".into(),
+            keywords: vec![],
         }
     }
 

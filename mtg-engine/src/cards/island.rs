@@ -16,6 +16,7 @@ impl CardBehavior for Island {
             power: None,
             toughness: None,
             oracle_text: "{T}: Add {U}.".into(),
+            keywords: vec![],
         }
     }
 

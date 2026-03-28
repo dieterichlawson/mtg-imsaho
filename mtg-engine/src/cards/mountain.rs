@@ -16,6 +16,7 @@ impl CardBehavior for Mountain {
             power: None,
             toughness: None,
             oracle_text: "{T}: Add {R}.".into(),
+            keywords: vec![],
         }
     }
 

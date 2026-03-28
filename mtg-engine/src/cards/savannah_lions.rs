@@ -17,6 +17,7 @@ impl CardBehavior for SavannahLions {
             power: Some(2),
             toughness: Some(1),
             oracle_text: String::new(),
+            keywords: vec![],
         }
     }
 }
