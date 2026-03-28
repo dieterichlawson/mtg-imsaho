@@ -799,6 +799,49 @@ impl CliPlayer {
         input.trim().to_string()
     }
 
+    /// Read a line of input, but detect '/' immediately (without Enter)
+    /// to trigger card search. Returns None if '/' was pressed first.
+    fn read_line_with_search(_col: u16) -> Option<String> {
+        let mut out = stdout();
+        let _ = execute!(out, Print("  > "));
+        let _ = out.flush();
+
+        let _ = terminal::enable_raw_mode();
+        let mut buf = String::new();
+
+        let result = loop {
+            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+                match code {
+                    KeyCode::Char('/') if buf.is_empty() => {
+                        break None; // trigger card search
+                    }
+                    KeyCode::Enter => {
+                        break Some(buf.clone());
+                    }
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        break Some(String::new());
+                    }
+                    KeyCode::Backspace => {
+                        if buf.pop().is_some() {
+                            // Erase character on screen
+                            let _ = execute!(out, Print("\x08 \x08"));
+                            let _ = out.flush();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        buf.push(c);
+                        let _ = execute!(out, Print(c.to_string()));
+                        let _ = out.flush();
+                    }
+                    _ => {}
+                }
+            }
+        };
+
+        let _ = terminal::disable_raw_mode();
+        result
+    }
+
     fn show_battlefield_inspector(view: &GameView) {
         let registry = mtg_engine::cards::CardRegistry::with_all_cards();
         let mut out = stdout();
@@ -1228,7 +1271,17 @@ impl Player for CliPlayer {
             let side = term_w as usize / 5;
             let col = (side + 1) as u16;
             let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
-            let input = Self::read_line("  > ");
+
+            // Read input: use raw mode to detect '/' immediately for card search,
+            // but accumulate other characters into a line buffer for normal input.
+            let input = Self::read_line_with_search(col);
+
+            // '/' triggers card search immediately (returns None to re-render)
+            if input.is_none() {
+                self.run_card_search(view, legal_actions);
+                continue;
+            }
+            let input = input.unwrap();
 
             // Keyboard shortcuts
             match input.as_str() {
@@ -1337,11 +1390,7 @@ impl Player for CliPlayer {
                 continue;
             }
 
-            // Card reference interactive search
-            if input == "/" {
-                self.run_card_search(view, legal_actions);
-                continue;
-            }
+            // (Card search is handled before this point via read_line_with_search)
 
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < legal_actions.len() {
