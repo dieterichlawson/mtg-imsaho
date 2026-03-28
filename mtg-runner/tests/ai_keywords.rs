@@ -552,7 +552,7 @@ fn ai_flash_ambush_viper() {
         }
 
         let view = GameView::for_player(&current_state, PlayerId(1), &registry);
-        let action = player.choose_action(&view, &legal.actions);
+        let action = player.choose_action(&view, &legal);
 
         match &action {
             Action::CastSpell { object_id, .. } => {

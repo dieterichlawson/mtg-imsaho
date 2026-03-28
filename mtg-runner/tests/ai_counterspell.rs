@@ -198,7 +198,7 @@ fn ai_counterspell() {
     for i in 0..10 {
         let legal = engine::legal_actions(&current_state, &registry);
         let view = GameView::for_player(&current_state, PlayerId(1), &registry);
-        let action = player.choose_action(&view, &legal.actions);
+        let action = player.choose_action(&view, &legal);
 
         match &action {
             Action::CastSpell { object_id, .. } => {

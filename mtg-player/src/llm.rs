@@ -692,7 +692,8 @@ impl Player for LlmPlayer {
         &self.name
     }
 
-    fn choose_action(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
+    fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        let legal_actions = &legal.actions;
         // Auto-pass when there's nothing interesting to do.
         if Self::should_auto_pass(view, legal_actions) {
             self.log("AUTO-PASS", &format!("Step: {:?}, active: p#{}", view.step, view.active_player.0));

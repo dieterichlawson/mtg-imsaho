@@ -168,7 +168,7 @@ fn main() {
             return choose_combat(player, &view, prompt);
         }
 
-        choose_action(player, &view, &legal.actions)
+        choose_action(player, &view, legal)
     };
 
     if resume_file.is_some() {
@@ -235,11 +235,11 @@ fn make_player(spec: &str, name: &str, log_file: Option<&str>) -> PlayerKind {
     }
 }
 
-fn choose_action(player: &mut PlayerKind, view: &GameView, actions: &[mtg_engine::actions::Action]) -> mtg_engine::actions::Action {
+fn choose_action(player: &mut PlayerKind, view: &GameView, legal: &engine::LegalActions) -> mtg_engine::actions::Action {
     match player {
-        PlayerKind::Cli(p) => p.choose_action(view, actions),
-        PlayerKind::Llm(p) => p.choose_action(view, actions),
-        PlayerKind::Random(p) => p.choose_action(view, actions),
+        PlayerKind::Cli(p) => p.choose_action(view, legal),
+        PlayerKind::Llm(p) => p.choose_action(view, legal),
+        PlayerKind::Random(p) => p.choose_action(view, legal),
     }
 }
 

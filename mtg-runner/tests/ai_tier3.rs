@@ -77,7 +77,7 @@ fn run_ai_decision(
             return (action, current);
         }
         let view = GameView::for_player(&current, player_id, registry);
-        let action = player.choose_action(&view, &legal.actions);
+        let action = player.choose_action(&view, &legal);
         match &action {
             Action::CastSpell { .. } => {
                 eprintln!("  AI cast spell on action #{}", i + 1);

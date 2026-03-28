@@ -21,7 +21,8 @@ impl Player for RandomPlayer {
         &self.name
     }
 
-    fn choose_action(&mut self, _view: &GameView, legal_actions: &[Action]) -> Action {
+    fn choose_action(&mut self, _view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        let legal_actions = &legal.actions;
         // Filter out Concede.
         let non_concede: Vec<usize> = legal_actions.iter().enumerate()
             .filter(|(_, a)| !matches!(a, Action::Concede))

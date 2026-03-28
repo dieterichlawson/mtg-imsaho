@@ -50,7 +50,7 @@ impl CliPlayer {
 
     // ── Rendering ──────────────────────────────────────────────────
 
-    fn render(view: &GameView, actions: Option<&[Action]>, message: Option<&str>, log: &[String], card_filter: &str) {
+    fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str) {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -311,15 +311,14 @@ impl CliPlayer {
         row += 1;
 
         // Action list (only when actions are provided)
-        if let Some(actions) = actions {
-            for (i, action) in actions.iter().enumerate() {
-                let desc = Self::format_action(view, action);
+        if let Some(labels) = actions {
+            for (i, label) in labels.iter().enumerate() {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
-                    SetAttribute(Attribute::Reset), Print(format!(": {}", desc)));
+                    SetAttribute(Attribute::Reset), Print(format!(": {}", label)));
                 row += 1;
             }
-            let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
+            let has_pass = labels.first().map(|l| l == "Pass priority").unwrap_or(false);
             let hints = if has_pass {
                 "  [enter=pass] [f=pass turn] [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
             } else {
@@ -685,7 +684,7 @@ impl CliPlayer {
 
     /// Interactive card search: enters raw mode, reads key-by-key,
     /// re-renders the right panel live, exits on Escape or `/`.
-    fn run_card_search(&mut self, view: &GameView, actions: &[Action]) {
+    fn run_card_search(&mut self, view: &GameView, actions: &[String]) {
         let _ = terminal::enable_raw_mode();
 
         self.card_filter.clear();
@@ -731,6 +730,112 @@ impl CliPlayer {
         }
 
         let _ = terminal::disable_raw_mode();
+    }
+
+    /// Interactive target selection for a castable spell.
+    /// Returns None if the user cancels (presses Escape/back).
+    fn choose_targets(&self, view: &GameView, spell: &mtg_engine::actions::CastableSpell) -> Option<Action> {
+        use mtg_engine::actions::CastTargetSpec;
+
+        match &spell.target_spec {
+            CastTargetSpec::NoTargets => {
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![] })
+            }
+            CastTargetSpec::SingleTarget(options) => {
+                if options.len() == 1 {
+                    // Only one valid target — skip the sub-prompt.
+                    return Some(Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()] });
+                }
+                let target = self.prompt_target(view, options, &format!("Choose target for {}", spell.name))?;
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![target] })
+            }
+            CastTargetSpec::TwoTargets(options1, options2) => {
+                let t1 = self.prompt_target(view, options1, &format!("{}: choose first target", spell.name))?;
+                let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
+                if remaining.is_empty() {
+                    return None; // no valid second target
+                }
+                let t2 = self.prompt_target(view, &remaining, &format!("{}: choose second target", spell.name))?;
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2] })
+            }
+            CastTargetSpec::UpToTargets { max, options } => {
+                let mut chosen = Vec::new();
+                let mut remaining = options.clone();
+                for i in 0..*max {
+                    if remaining.is_empty() { break; }
+                    let label = format!("{}: target {} of {} (enter=done)", spell.name, i + 1, max);
+                    match self.prompt_target_optional(view, &remaining, &label) {
+                        Some(target) => {
+                            remaining.retain(|t| *t != target);
+                            chosen.push(target);
+                        }
+                        None => break, // user said done
+                    }
+                }
+                if chosen.is_empty() {
+                    return None; // must pick at least one
+                }
+                Some(Action::CastSpell { object_id: spell.object_id, targets: chosen })
+            }
+        }
+    }
+
+    /// Prompt the user to pick one target from a list. Returns None on cancel.
+    fn prompt_target(&self, view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        let _ = execute!(out, SetAttribute(Attribute::Bold), Print(format!(" {}\n\n", label)), SetAttribute(Attribute::Reset));
+
+        for (i, target) in options.iter().enumerate() {
+            let desc = match target {
+                mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+                mtg_engine::actions::Target::Player(pid) => {
+                    if *pid == view.you { "you".into() } else { "opponent".into() }
+                }
+            };
+            let _ = execute!(out, Print(format!("  {}: {}\n", i, desc)));
+        }
+        let _ = execute!(out, Print("\n  [enter/esc=cancel]\n"));
+        let _ = out.flush();
+
+        loop {
+            let input = Self::read_line("  > ");
+            if input.is_empty() { return None; }
+            if let Ok(idx) = input.parse::<usize>() {
+                if idx < options.len() {
+                    return Some(options[idx].clone());
+                }
+            }
+        }
+    }
+
+    /// Prompt for an optional target (for "up to N" spells). Empty = done.
+    fn prompt_target_optional(&self, view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
+        let mut out = stdout();
+        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
+        let _ = execute!(out, SetAttribute(Attribute::Bold), Print(format!(" {}\n\n", label)), SetAttribute(Attribute::Reset));
+
+        for (i, target) in options.iter().enumerate() {
+            let desc = match target {
+                mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+                mtg_engine::actions::Target::Player(pid) => {
+                    if *pid == view.you { "you".into() } else { "opponent".into() }
+                }
+            };
+            let _ = execute!(out, Print(format!("  {}: {}\n", i, desc)));
+        }
+        let _ = execute!(out, Print("\n  [enter=done]\n"));
+        let _ = out.flush();
+
+        loop {
+            let input = Self::read_line("  > ");
+            if input.is_empty() { return None; } // done
+            if let Ok(idx) = input.parse::<usize>() {
+                if idx < options.len() {
+                    return Some(options[idx].clone());
+                }
+            }
+        }
     }
 
     // ── Action formatting ──────────────────────────────────────────
@@ -1301,7 +1406,8 @@ impl Player for CliPlayer {
         &self.name
     }
 
-    fn choose_action(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
+    fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        let legal_actions = &legal.actions;
         let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
 
         // Auto-pass when the only options are Pass and Concede.
@@ -1333,11 +1439,44 @@ impl Player for CliPlayer {
             }
         }
 
-        loop {
-            Self::render(view, Some(legal_actions), None, &view.display_log, &self.card_filter);
+        // Build a collapsed display list: non-CastSpell actions + one entry per castable spell.
+        // Each entry maps to either a direct action or an interactive casting flow.
+        enum DisplayEntry {
+            Direct(usize),        // index into legal_actions
+            Cast(usize),          // index into legal.castable_spells
+        }
+        let mut display: Vec<DisplayEntry> = Vec::new();
+        let mut display_labels: Vec<String> = Vec::new();
+        let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
 
-            // Read input: render already positioned cursor after "  > " prompt.
-            // Use raw mode to detect '/' immediately for card search.
+        for (i, action) in legal_actions.iter().enumerate() {
+            match action {
+                Action::CastSpell { object_id, .. } => {
+                    // Skip expanded CastSpell entries — use castable_spells instead.
+                    if !seen_spell_objects.contains(object_id) {
+                        // Find the matching CastableSpell entry.
+                        if let Some(cs_idx) = legal.castable_spells.iter()
+                            .position(|cs| cs.object_id == *object_id)
+                        {
+                            seen_spell_objects.push(*object_id);
+                            let cs = &legal.castable_spells[cs_idx];
+                            let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
+                            display.push(DisplayEntry::Cast(cs_idx));
+                            display_labels.push(format!("{} {}", verb, cs.name));
+                        }
+                    }
+                }
+                _ => {
+                    display.push(DisplayEntry::Direct(i));
+                    display_labels.push(Self::format_action(view, action));
+                }
+            }
+        }
+
+        loop {
+            Self::render(view, Some(&display_labels), None, &view.display_log, &self.card_filter);
+
+            // Read input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
             let side = term_w as usize / 5;
             let col = (side + 1) as u16;
@@ -1345,7 +1484,7 @@ impl Player for CliPlayer {
 
             // '/' triggers card search immediately (returns None to re-render)
             if input.is_none() {
-                self.run_card_search(view, legal_actions);
+                self.run_card_search(view, &display_labels);
                 continue;
             }
             let input = input.unwrap();
@@ -1460,15 +1599,28 @@ impl Player for CliPlayer {
             // (Card search is handled before this point via read_line_with_search)
 
             if let Ok(idx) = input.parse::<usize>() {
-                if idx < legal_actions.len() {
-                    if matches!(legal_actions[idx], Action::Concede) {
-                        let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
-                        let confirm = Self::read_line("  Are you sure you want to concede? (y/n)> ");
-                        if confirm.to_lowercase() != "y" {
+                if idx < display.len() {
+                    match &display[idx] {
+                        DisplayEntry::Direct(action_idx) => {
+                            let action = &legal_actions[*action_idx];
+                            if matches!(action, Action::Concede) {
+                                let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
+                                let confirm = Self::read_line("  Are you sure you want to concede? (y/n)> ");
+                                if confirm.to_lowercase() != "y" {
+                                    continue;
+                                }
+                            }
+                            return action.clone();
+                        }
+                        DisplayEntry::Cast(cs_idx) => {
+                            let cs = &legal.castable_spells[*cs_idx];
+                            if let Some(action) = self.choose_targets(view, cs) {
+                                return action;
+                            }
+                            // User cancelled target selection — re-render
                             continue;
                         }
                     }
-                    return legal_actions[idx].clone();
                 }
             }
             // Invalid input — just re-render
