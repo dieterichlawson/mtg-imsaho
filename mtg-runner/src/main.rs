@@ -237,8 +237,8 @@ fn deck_white_black() -> Decklist {
 fn deck_blue_white() -> Decklist {
     Decklist {
         entries: vec![
-            ("Island".into(), 10),
-            ("Plains".into(), 10),
+            ("Island".into(), 12),
+            ("Plains".into(), 8),
             ("Coral Merfolk".into(), 4),
             ("Savannah Lions".into(), 4),
             ("Counterspell".into(), 4),
