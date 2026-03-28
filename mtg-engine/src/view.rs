@@ -65,6 +65,7 @@ pub struct PermanentView {
 #[derive(Debug, Clone)]
 pub struct StackItemView {
     pub object_id: ObjectId,
+    pub card_id: CardId,
     pub name: String,
     pub controller: PlayerId,
     pub targets: Vec<crate::actions::Target>,
@@ -145,6 +146,7 @@ impl GameView {
                 let obj = state.get_object(obj_id)?;
                 Some(StackItemView {
                     object_id: obj.id,
+                    card_id: obj.card_id,
                     name: registry.card_data(obj.card_id)
                         .map(|d| d.name)
                         .unwrap_or_else(|| "Unknown".into()),

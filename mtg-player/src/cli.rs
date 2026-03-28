@@ -34,6 +34,8 @@ pub struct CliPlayer {
     /// When set, auto-pass priority until our next turn.
     /// Stores the turn number when 'f' was pressed.
     pass_until_turn_after: Option<u32>,
+    /// Filter string for the card reference panel.
+    card_filter: String,
 }
 
 impl CliPlayer {
@@ -41,12 +43,13 @@ impl CliPlayer {
         Self {
             name: name.to_string(),
             pass_until_turn_after: None,
+            card_filter: String::new(),
         }
     }
 
     // ── Rendering ──────────────────────────────────────────────────
 
-    fn render(view: &GameView, actions: Option<&[Action]>, message: Option<&str>, log: &[String]) {
+    fn render(view: &GameView, actions: Option<&[Action]>, message: Option<&str>, log: &[String], card_filter: &str) {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -54,15 +57,25 @@ impl CliPlayer {
         let w = term_w as usize;
         let h = term_h as usize;
 
-        // Panel widths — left gutter (stack+log), middle (game), right (empty for now)
-        let left_w: usize = w / 5;
-        let mid_w = w.saturating_sub(left_w + 1); // -1 for separator
+        // 3-column layout: left (stack+log), middle (game), right (card reference)
+        let has_right = w >= 100;
+        let left_w: usize = if has_right { w * 15 / 100 } else { w / 5 };
+        let right_w: usize = if has_right { w * 28 / 100 } else { 0 };
+        let mid_w = w.saturating_sub(left_w + right_w + if has_right { 2 } else { 1 });
         let mid_col = (left_w + 1) as u16;
+        let right_sep_col = (left_w + 1 + mid_w) as u16;
+        let right_col = if has_right { right_sep_col + 1 } else { 0 };
 
-        // ── Draw vertical separator ──
+        // ── Draw vertical separators ──
         for r in 0..h {
             let _ = execute!(out, cursor::MoveTo(left_w as u16, r as u16),
                 SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
+        }
+        if has_right {
+            for r in 0..h {
+                let _ = execute!(out, cursor::MoveTo(right_sep_col, r as u16),
+                    SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
+            }
         }
 
         // ── Left panel: STACK (top 1/3) + LOG (bottom 2/3) ──
@@ -306,13 +319,20 @@ impl CliPlayer {
             }
             let has_pass = actions.first().map(|a| matches!(a, Action::PassPriority)).unwrap_or(false);
             let hints = if has_pass {
-                "  [enter=pass] [f=pass turn] [l=log] [g=graveyard] [e=exile] [i=inspect] [d=deck]"
+                "  [enter=pass] [f=pass turn] [/=search] [l=log] [g=gy] [e=exile] [i=inspect]"
             } else {
-                "  [l=log] [g=graveyard] [e=exile] [i=inspect] [d=deck]"
+                "  [/=search] [l=log] [g=gy] [e=exile] [i=inspect]"
             };
             let _ = execute!(out, cursor::MoveTo(mid_col, row),
                 SetAttribute(Attribute::Dim), Print(hints), SetAttribute(Attribute::Reset));
             row += 1;
+        }
+
+        // ── Right panel: card reference ──
+        if has_right {
+            let registry = mtg_engine::cards::CardRegistry::with_all_cards();
+            let card_refs = Self::build_card_refs(view, &registry, card_filter);
+            Self::render_right_panel(&mut out, &card_refs, right_col, right_w, h, card_filter);
         }
 
         // Move cursor to input area in middle panel
@@ -436,6 +456,200 @@ impl CliPlayer {
             Print(format!("{}\n", text)), SetAttribute(Attribute::Reset), ResetColor);
     }
 
+    // ── Card reference panel ──────────────────────────────────────
+
+    /// Build a prioritized, deduplicated list of card data for the reference panel.
+    fn build_card_refs(view: &GameView, registry: &mtg_engine::cards::CardRegistry, filter: &str) -> Vec<mtg_engine::cards::CardData> {
+        let mut seen: Vec<String> = Vec::new();
+        let mut card_ids: Vec<mtg_engine::ids::CardId> = Vec::new();
+
+        let mut add = |name: &str, card_id: mtg_engine::ids::CardId| {
+            if !seen.contains(&name.to_string()) {
+                seen.push(name.to_string());
+                card_ids.push(card_id);
+            }
+        };
+
+        // Priority 1: cards in your hand
+        for c in &view.your_hand {
+            add(&c.name, c.card_id);
+        }
+        // Priority 2: cards on the stack
+        for s in &view.stack {
+            add(&s.name, s.card_id);
+        }
+        // Priority 3: opponent's battlefield (non-land)
+        for p in view.battlefield.iter().filter(|p| p.controller != view.you) {
+            if p.card_types.iter().all(|t| matches!(t, CardType::Land)) { continue; }
+            add(&p.name, p.card_id);
+        }
+        // Priority 4: your battlefield (non-land)
+        for p in view.battlefield.iter().filter(|p| p.controller == view.you) {
+            if p.card_types.iter().all(|t| matches!(t, CardType::Land)) { continue; }
+            add(&p.name, p.card_id);
+        }
+        // Priority 5: graveyard flashback cards
+        for (pid, cards) in &view.graveyards {
+            if *pid == view.you {
+                for c in cards {
+                    if c.flashback_cost.is_some() {
+                        add(&c.name, c.card_id);
+                    }
+                }
+            }
+        }
+
+        // Look up CardData, filter out basic lands, apply text filter
+        let filter_lower = filter.to_lowercase();
+        card_ids.iter()
+            .filter_map(|id| registry.card_data(*id))
+            .filter(|d| !d.supertypes.contains(&mtg_engine::types::Supertype::Basic))
+            .filter(|d| filter.is_empty() || d.name.to_lowercase().contains(&filter_lower))
+            .collect()
+    }
+
+    /// Render the card reference panel in the right column.
+    fn render_right_panel(out: &mut io::Stdout, cards: &[mtg_engine::cards::CardData],
+                           right_col: u16, right_w: usize, h: usize, filter: &str) {
+        let content_w = right_w.saturating_sub(1);
+        if content_w < 10 { return; }
+
+        // Header
+        let label = if filter.is_empty() { "─── CARDS " } else { "─── CARDS (filtered) " };
+        let header = format!("{}{}", label, "─".repeat(content_w.saturating_sub(label.len())));
+        let _ = execute!(out, cursor::MoveTo(right_col, 0),
+            SetAttribute(Attribute::Dim), Print(&header), SetAttribute(Attribute::Reset));
+
+        let mut row: u16 = 1;
+        let max_row = (h as u16).saturating_sub(2);
+
+        for card in cards {
+            if row >= max_row { break; }
+
+            // Name + cost
+            let cost_str = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+            let name_line = format!("{}{}", card.name, cost_str);
+            let truncated: String = name_line.chars().take(content_w).collect();
+            let _ = execute!(out, cursor::MoveTo(right_col, row),
+                SetAttribute(Attribute::Bold), Print(&truncated), SetAttribute(Attribute::Reset));
+            row += 1;
+            if row >= max_row { break; }
+
+            // Type line + P/T
+            let types: Vec<&str> = card.card_types.iter().map(|t| match t {
+                CardType::Creature => "Creature",
+                CardType::Instant => "Instant",
+                CardType::Sorcery => "Sorcery",
+                CardType::Enchantment => "Enchantment",
+                CardType::Artifact => "Artifact",
+                CardType::Land => "Land",
+                CardType::Planeswalker => "Planeswalker",
+            }).collect();
+            let subtypes = if card.subtypes.is_empty() { String::new() }
+                else { format!(" — {}", card.subtypes.join(" ")) };
+            let pt = match (card.power, card.toughness) {
+                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                _ => String::new(),
+            };
+            let type_line = format!("{}{}{}", types.join(" "), subtypes, pt);
+            let truncated: String = type_line.chars().take(content_w).collect();
+            let _ = execute!(out, cursor::MoveTo(right_col, row),
+                SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
+            row += 1;
+            if row >= max_row { break; }
+
+            // Keywords
+            if !card.keywords.is_empty() {
+                let kw_str: Vec<&str> = card.keywords.iter().map(|k| match k {
+                    mtg_engine::types::Keyword::Flying => "Flying",
+                    mtg_engine::types::Keyword::FirstStrike => "First strike",
+                    mtg_engine::types::Keyword::DoubleStrike => "Double strike",
+                    mtg_engine::types::Keyword::Trample => "Trample",
+                    mtg_engine::types::Keyword::Deathtouch => "Deathtouch",
+                    mtg_engine::types::Keyword::Lifelink => "Lifelink",
+                    mtg_engine::types::Keyword::Vigilance => "Vigilance",
+                    mtg_engine::types::Keyword::Flash => "Flash",
+                    mtg_engine::types::Keyword::Reach => "Reach",
+                    mtg_engine::types::Keyword::Haste => "Haste",
+                    mtg_engine::types::Keyword::Defender => "Defender",
+                    mtg_engine::types::Keyword::Hexproof => "Hexproof",
+                    mtg_engine::types::Keyword::Intimidate => "Intimidate",
+                    mtg_engine::types::Keyword::Menace => "Menace",
+                    mtg_engine::types::Keyword::Indestructible => "Indestructible",
+                }).collect();
+                let kw_line = kw_str.join(", ");
+                let truncated: String = kw_line.chars().take(content_w).collect();
+                let _ = execute!(out, cursor::MoveTo(right_col, row),
+                    SetForegroundColor(Color::Yellow), Print(&truncated), ResetColor);
+                row += 1;
+                if row >= max_row { break; }
+            }
+
+            // Oracle text (word-wrapped)
+            if !card.oracle_text.is_empty() {
+                // Skip oracle text that just repeats keyword names
+                let text = card.oracle_text.trim();
+                let wrapped = Self::wrap_text(text, content_w);
+                for line in wrapped {
+                    if row >= max_row { break; }
+                    let _ = execute!(out, cursor::MoveTo(right_col, row), Print(&line));
+                    row += 1;
+                }
+            }
+
+            // Flashback cost
+            if let Some(fb) = &card.flashback_cost {
+                if row < max_row {
+                    let fb_line = format!("Flashback {}", fb);
+                    let truncated: String = fb_line.chars().take(content_w).collect();
+                    let _ = execute!(out, cursor::MoveTo(right_col, row),
+                        SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
+                    row += 1;
+                }
+            }
+
+            // Separator between cards
+            if row < max_row {
+                let sep: String = "─".repeat(content_w.min(20));
+                let _ = execute!(out, cursor::MoveTo(right_col, row),
+                    SetAttribute(Attribute::Dim), Print(&sep), SetAttribute(Attribute::Reset));
+                row += 1;
+            }
+        }
+
+        // Footer with search hint
+        let footer_row = (h as u16).saturating_sub(1);
+        let footer = if filter.is_empty() {
+            "[/=search cards]".to_string()
+        } else {
+            format!("[filter: {}] [/=clear]", filter)
+        };
+        let _ = execute!(out, cursor::MoveTo(right_col, footer_row),
+            SetAttribute(Attribute::Dim), Print(&footer), SetAttribute(Attribute::Reset));
+    }
+
+    /// Simple word-wrap for oracle text.
+    fn wrap_text(text: &str, width: usize) -> Vec<String> {
+        let mut lines = Vec::new();
+        for paragraph in text.split('\n') {
+            let mut line = String::new();
+            for word in paragraph.split_whitespace() {
+                if line.is_empty() {
+                    line = word.to_string();
+                } else if line.len() + 1 + word.len() <= width {
+                    line.push(' ');
+                    line.push_str(word);
+                } else {
+                    lines.push(line);
+                    line = word.to_string();
+                }
+            }
+            if !line.is_empty() {
+                lines.push(line);
+            }
+        }
+        lines
+    }
 
     // ── Action formatting ──────────────────────────────────────────
 
@@ -787,11 +1001,11 @@ impl CliPlayer {
             return Action::DeclareAttackers { attackers: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log);
+        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "");
 
         // Get mid_col for positioning
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
+        let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
         let col = (side + 1) as u16;
         let cur_row = cursor::position().unwrap_or((0, 20)).1;
 
@@ -844,10 +1058,10 @@ impl CliPlayer {
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log);
+        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "");
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
+        let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
         let col = (side + 1) as u16;
         let cur_row = cursor::position().unwrap_or((0, 20)).1;
 
@@ -937,11 +1151,11 @@ impl Player for CliPlayer {
         }
 
         loop {
-            Self::render(view, Some(legal_actions), None, &view.display_log);
+            Self::render(view, Some(legal_actions), None, &view.display_log, &self.card_filter);
 
             // Position cursor in the middle panel for input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
-            let side = term_w as usize / 5;
+            let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
             let col = (side + 1) as u16;
             let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
             let input = Self::read_line("  > ");
@@ -1053,6 +1267,12 @@ impl Player for CliPlayer {
                 continue;
             }
 
+            // Card reference filter
+            if input.starts_with('/') {
+                self.card_filter = input[1..].trim().to_string();
+                continue;
+            }
+
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < legal_actions.len() {
                     if matches!(legal_actions[idx], Action::Concede) {
@@ -1100,10 +1320,10 @@ impl CliPlayer {
     /// Show the game state with a spinning indicator on the opponent's
     /// caret while the AI thinks. Drop the returned handle to stop.
     pub fn start_thinking(view: &GameView) -> SpinnerHandle {
-        Self::render(view, None, None, &view.display_log);
+        Self::render(view, None, None, &view.display_log, "");
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = term_w as usize / 5;
+        let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
         let col = (side + 1) as u16;
         // Opponent stats are always at row 2 from the human's perspective
         // (row 0 = turn bar, row 1 = BATTLEFIELD label, row 2 = opp stats)
