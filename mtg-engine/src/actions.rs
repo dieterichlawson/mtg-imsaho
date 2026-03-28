@@ -55,6 +55,29 @@ pub enum CombatPrompt {
     },
 }
 
+/// A spell that can be cast, with its valid target options.
+/// Used by player implementations to present a collapsed casting UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CastableSpell {
+    pub object_id: ObjectId,
+    pub name: String,
+    pub is_flashback: bool,
+    pub target_spec: CastTargetSpec,
+}
+
+/// Describes how targets should be chosen for a castable spell.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CastTargetSpec {
+    /// No targets needed. Cast directly.
+    NoTargets,
+    /// Choose exactly one target from this list.
+    SingleTarget(Vec<Target>),
+    /// Choose two targets, one from each list. Targets must be different.
+    TwoTargets(Vec<Target>, Vec<Target>),
+    /// Choose up to N targets from this list.
+    UpToTargets { max: usize, options: Vec<Target> },
+}
+
 impl std::fmt::Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -30,12 +30,16 @@ pub struct GameConfig {
 pub struct LegalActions {
     pub actions: Vec<Action>,
     pub combat_prompt: Option<crate::actions::CombatPrompt>,
+    /// Castable spells with valid target options, for interactive target selection.
+    /// Each entry is one castable spell (collapsed view). The `actions` list still
+    /// contains the fully-expanded CastSpell entries for LLM/random players.
+    pub castable_spells: Vec<crate::actions::CastableSpell>,
 }
 
 /// Compute all legal actions for the player who currently needs to act.
 pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions {
     if state.is_game_over() {
-        return LegalActions { actions: vec![], combat_prompt: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![] };
     }
 
     // If we're waiting for a specific action (attackers, blockers, discard).
@@ -50,6 +54,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         eligible,
                         defending_player: defending,
                     }),
+                    castable_spells: vec![],
                 }
             }
             AwaitingAction::DeclareBlockers { defending_player } => {
@@ -63,12 +68,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         eligible_blockers,
                         attackers: attacker_ids,
                     }),
+                    castable_spells: vec![],
                 }
             }
             AwaitingAction::DiscardToHandSize { player, discard_count } => {
                 LegalActions {
                     actions: legal_discard_actions(state, *player, *discard_count),
                     combat_prompt: None,
+                    castable_spells: vec![],
                 }
             }
         };
@@ -76,10 +83,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
     let player = match state.priority_player {
         Some(p) => p,
-        None => return LegalActions { actions: vec![], combat_prompt: None },
+        None => return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![] },
     };
 
     let mut actions = Vec::new();
+    let mut castable_spells = Vec::new();
 
     // PassPriority is always available when you have priority.
     actions.push(Action::PassPriority);
@@ -178,7 +186,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             let cast_actions = generate_cast_actions_with_targets(
                 state, player, obj.id, &target_req, behavior,
             );
-            actions.extend(cast_actions);
+            if !cast_actions.is_empty() {
+                actions.extend(cast_actions);
+                let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
+                castable_spells.push(crate::actions::CastableSpell {
+                    object_id: obj.id,
+                    name: data.name.clone(),
+                    is_flashback: false,
+                    target_spec: spec,
+                });
+            }
         }
     }
 
@@ -221,14 +238,23 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             let cast_actions = generate_cast_actions_with_targets(
                 state, player, obj.id, &target_req, behavior,
             );
-            actions.extend(cast_actions);
+            if !cast_actions.is_empty() {
+                actions.extend(cast_actions);
+                let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
+                castable_spells.push(crate::actions::CastableSpell {
+                    object_id: obj.id,
+                    name: data.name.clone(),
+                    is_flashback: true,
+                    target_spec: spec,
+                });
+            }
         }
     }
 
     // Concede is always last.
     actions.push(Action::Concede);
 
-    LegalActions { actions, combat_prompt: None }
+    LegalActions { actions, combat_prompt: None, castable_spells }
 }
 
 /// Check if a permanent can be targeted by a spell from the given caster.
@@ -369,6 +395,32 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
+        TargetRequirement::UpToTargets(max, ref inner_req) => {
+            // Generate all combinations of 1..=max targets for LLM/random expanded list.
+            let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);
+            let mut actions = Vec::new();
+            for k in 1..=(*max).min(options.len()) {
+                fn target_combinations(targets: &[crate::actions::Target], k: usize) -> Vec<Vec<crate::actions::Target>> {
+                    if k == 0 { return vec![vec![]]; }
+                    if targets.len() < k { return vec![]; }
+                    let mut result = Vec::new();
+                    for i in 0..=targets.len() - k {
+                        for mut combo in target_combinations(&targets[i + 1..], k - 1) {
+                            combo.insert(0, targets[i].clone());
+                            result.push(combo);
+                        }
+                    }
+                    result
+                }
+                for combo in target_combinations(&options, k) {
+                    actions.push(Action::CastSpell {
+                        object_id: spell_id,
+                        targets: combo,
+                    });
+                }
+            }
+            actions
+        }
     }
 }
 
@@ -432,6 +484,37 @@ fn valid_targets_for_req(
                 .collect()
         }
         _ => vec![],
+    }
+}
+
+/// Build a CastTargetSpec for a spell, describing what targets the player needs to choose.
+fn build_cast_target_spec(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    target_req: &crate::cards::TargetRequirement,
+    behavior: &dyn crate::cards::CardBehavior,
+) -> crate::actions::CastTargetSpec {
+    use crate::actions::CastTargetSpec;
+    use crate::cards::TargetRequirement;
+    let registry = &CardRegistry::with_all_cards();
+
+    match target_req {
+        TargetRequirement::None => CastTargetSpec::NoTargets,
+        TargetRequirement::TwoTargets(req1, req2) => {
+            let t1 = valid_targets_for_req(state, caster, spell_id, req1, behavior, registry);
+            let t2 = valid_targets_for_req(state, caster, spell_id, req2, behavior, registry);
+            CastTargetSpec::TwoTargets(t1, t2)
+        }
+        TargetRequirement::UpToTargets(max, inner_req) => {
+            let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);
+            CastTargetSpec::UpToTargets { max: *max, options }
+        }
+        // All single-target types
+        _ => {
+            let options = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
+            CastTargetSpec::SingleTarget(options)
+        }
     }
 }
 

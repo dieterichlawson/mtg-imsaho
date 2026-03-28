@@ -143,6 +143,8 @@ pub enum TargetRequirement {
     PermanentWithFilter(String),
     /// Two separate targets (Prey Upon, Lost in the Mist). Engine generates Cartesian product.
     TwoTargets(Box<TargetRequirement>, Box<TargetRequirement>),
+    /// Up to N targets matching the inner requirement (Travel Preparations).
+    UpToTargets(usize, Box<TargetRequirement>),
 }
 
 /// The trait that every card implements.
