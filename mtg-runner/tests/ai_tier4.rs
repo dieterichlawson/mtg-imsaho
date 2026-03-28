@@ -329,10 +329,11 @@ fn ai_tier4_silent_departure_flashback() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario 5: Cast Dream Twist from hand to mill opponent
+// Scenario 5: Cast Dream Twist to mill out opponent
 //
-// P0 (AI) main phase, Dream Twist in hand, 1 Island. Cost is {U}.
-// Should cast to mill opponent 3 cards.
+// P0 (AI) main phase, Dream Twist in hand, 1 Island. Opponent has
+// only 3 cards left in library. Milling 3 empties it — opponent
+// loses on their next draw step. This is lethal!
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -340,9 +341,9 @@ fn ai_tier4_silent_departure_flashback() {
 fn ai_tier4_dream_twist() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
-    state.players[0].life = 15;
-    state.players[1].life = 15;
-    state.turn_number = 6;
+    state.players[0].life = 5;
+    state.players[1].life = 20;
+    state.turn_number = 20;
     state.active_player = PlayerId(0);
     state.priority_player = Some(PlayerId(0));
     state.step = Step::PrecombatMain;
@@ -354,25 +355,44 @@ fn ai_tier4_dream_twist() {
     let dt = state.create_object(dt_id, PlayerId(0), Zone::Hand, None, None);
     state.get_object_mut(dt).unwrap().name = "Dream Twist".into();
 
-    // P0 (AI): 1 Island for {U} cost
+    // P0 (AI): 1 Island
     let island_id = reg.get_id_by_name("Island").unwrap();
     let isl = state.create_object(island_id, PlayerId(0), Zone::Battlefield, None, None);
     state.get_object_mut(isl).unwrap().name = "Island".into();
     state.get_object_mut(isl).unwrap().summoning_sick = false;
 
-    add_libraries(&mut state, &reg);
+    // P0 library: 15 cards (healthy)
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    let mut p0_lib = Vec::new();
+    for _ in 0..15 {
+        let id = state.create_object(forest_id, PlayerId(0), Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        p0_lib.push(id);
+    }
+    state.players[0].library_order = p0_lib;
+
+    // P1 library: only 3 cards left — milling 3 empties it!
+    let swamp_id = reg.get_id_by_name("Swamp").unwrap();
+    let mut p1_lib = Vec::new();
+    for _ in 0..3 {
+        let id = state.create_object(swamp_id, PlayerId(1), Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = "Swamp".into();
+        p1_lib.push(id);
+    }
+    state.players[1].library_order = p1_lib;
+
     save_scenario(&state, "ai_dream_twist");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_dream_twist.log");
     let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
-        "AI should cast Dream Twist, not {:?}", action);
+        "AI should cast Dream Twist to mill out opponent, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Dream Twist");
-    // Verify outcome: opponent's library should have 3 fewer cards (15 → 12).
-    assert_eq!(final_state.get_player(PlayerId(1)).library_order.len(), 12,
-        "Dream Twist should mill 3 cards from opponent's library");
-    eprintln!("OK: AI cast Dream Twist — opponent milled 3 cards");
+    // Verify outcome: opponent's library is empty.
+    assert_eq!(final_state.get_player(PlayerId(1)).library_order.len(), 0,
+        "Dream Twist should empty opponent's library (3 cards milled)");
+    eprintln!("OK: AI cast Dream Twist — opponent's library is empty, they lose on next draw");
 }
 
 // ═══════════════════════════════════════════════════════════════════
