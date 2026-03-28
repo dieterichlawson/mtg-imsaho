@@ -363,6 +363,13 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
 pub fn eligible_blockers_with_registry(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
     eligible_blockers(state, player).into_iter()
         .filter(|&id| state.can_block(id, registry))
+        // "Can't block" (e.g., Vampire Interloper) — check oracle text.
+        .filter(|&id| {
+            state.get_object(id)
+                .and_then(|o| registry.card_data(o.card_id))
+                .map(|d| !d.oracle_text.contains("can't block"))
+                .unwrap_or(true)
+        })
         .collect()
 }
 
@@ -399,6 +406,15 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
     }
 
     // Menace: must be blocked by two or more creatures (handled at validation, not per-blocker).
+
+    // "Can't be blocked" (e.g., Invisible Stalker) — check oracle text.
+    if let Some(attacker_obj) = state.get_object(attacker_id) {
+        if let Some(data) = registry.card_data(attacker_obj.card_id) {
+            if data.oracle_text.contains("can't be blocked") {
+                return false;
+            }
+        }
+    }
 
     true
 }

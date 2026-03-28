@@ -886,10 +886,21 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
 
     match state.step {
         Step::Untap => {
-            // Untap all permanents the active player controls.
+            // Check which creatures are prevented from untapping (e.g., by Claustrophobia).
+            let locked_ids: Vec<ObjectId> = state.objects.values()
+                .filter(|o| o.zone == Zone::Battlefield && o.attached_to.is_some())
+                .filter(|o| {
+                    registry.card_data(o.card_id)
+                        .map(|d| d.oracle_text.contains("doesn't untap"))
+                        .unwrap_or(false)
+                })
+                .filter_map(|o| o.attached_to)
+                .collect();
+
+            // Untap all permanents the active player controls, except locked ones.
             let to_untap: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, active)
                 .iter()
-                .filter(|o| o.tapped)
+                .filter(|o| o.tapped && !locked_ids.contains(&o.id))
                 .map(|o| o.id)
                 .collect();
 

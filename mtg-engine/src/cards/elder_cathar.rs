@@ -27,7 +27,7 @@ impl CardBehavior for ElderCathar {
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
         // Find a creature we control on the battlefield.
         let target = state.objects.values()
@@ -35,9 +35,14 @@ impl CardBehavior for ElderCathar {
             .map(|o| o.id)
             .next();
         if let Some(target_id) = target {
-            // Simplified: always add 1 counter (Human check is future work).
-            state.add_counters(target_id, CounterType::PlusOnePlusOne, 1);
-            state.log(crate::state::LogLevel::Event, "Elder Cathar's death granted a +1/+1 counter".into());
+            let is_human = state.get_object(target_id)
+                .and_then(|o| registry.card_data(o.card_id))
+                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                .unwrap_or(false);
+            let count = if is_human { 2 } else { 1 };
+            state.add_counters(target_id, CounterType::PlusOnePlusOne, count);
+            state.log(crate::state::LogLevel::Event,
+                format!("Elder Cathar's death granted {} +1/+1 counter{}", count, if count > 1 { "s" } else { "" }));
         }
     }
 }

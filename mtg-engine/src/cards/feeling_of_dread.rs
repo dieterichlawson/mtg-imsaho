@@ -5,7 +5,6 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Feeling of Dread — {1}{W} instant. Tap up to two target creatures.
-/// Simplified to tap one target creature.
 pub struct FeelingOfDread;
 
 impl CardBehavior for FeelingOfDread {
@@ -28,14 +27,16 @@ impl CardBehavior for FeelingOfDread {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::Creature
+        TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature))
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
-        if let Some(Target::Object(target_id)) = targets.first() {
-            if let Some(obj) = state.get_object_mut(*target_id) {
-                if obj.zone == Zone::Battlefield {
-                    obj.tapped = true;
+        for target in targets {
+            if let Target::Object(target_id) = target {
+                if let Some(obj) = state.get_object_mut(*target_id) {
+                    if obj.zone == Zone::Battlefield {
+                        obj.tapped = true;
+                    }
                 }
             }
         }
