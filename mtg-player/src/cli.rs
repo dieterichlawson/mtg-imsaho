@@ -624,9 +624,9 @@ impl CliPlayer {
                 }
             }
 
-            // Separator between cards (dotted full-width line)
+            // Subtle separator between cards
             if row < max_row {
-                let sep: String = "╌".repeat(right_w);
+                let sep: String = "·".repeat(right_w);
                 let _ = execute!(out, cursor::MoveTo(right_col, row),
                     SetAttribute(Attribute::Dim), Print(&sep), SetAttribute(Attribute::Reset));
                 row += 1;
