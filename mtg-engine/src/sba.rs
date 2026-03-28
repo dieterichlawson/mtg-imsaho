@@ -51,6 +51,7 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
 
         // Rule 704.5f: Creature with 0 or less toughness goes to graveyard.
         // Rule 704.5g: Creature with lethal damage is destroyed.
+        // Rule 704.5h: Creature dealt damage by a deathtouch source is destroyed.
         let creature_ids: Vec<_> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
             .map(|o| o.id)
@@ -61,9 +62,11 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
                 let effective_t = registry
                     .and_then(|r| state.effective_toughness(id, r))
                     .or_else(|| state.get_object(id).and_then(|o| o.toughness));
-                let damage = state.get_object(id).map(|o| o.damage_marked).unwrap_or(0);
+                let obj = state.get_object(id);
+                let damage = obj.map(|o| o.damage_marked).unwrap_or(0);
+                let deathtouch = obj.map(|o| o.dealt_deathtouch_damage).unwrap_or(false);
                 match effective_t {
-                    Some(t) => t <= 0 || (damage as i32) >= t,
+                    Some(t) => t <= 0 || (damage as i32) >= t || (deathtouch && damage > 0),
                     None => false,
                 }
             })

@@ -1,10 +1,40 @@
 
+use crate::cards::CardRegistry;
 use crate::events::{GameEvent, DamageTarget};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{CombatState, GameState, LogLevel};
-use crate::types::Zone;
+use crate::types::{Keyword, Zone};
 
 /// Set up attackers. Validates and taps them.
+/// Creatures with vigilance don't tap when attacking.
+pub fn declare_attackers_with_registry(
+    state: &mut GameState,
+    attackers: &[(ObjectId, PlayerId)],
+    registry: &CardRegistry,
+) {
+    let mut combat = CombatState::new();
+
+    for &(attacker_id, defending_player) in attackers {
+        // Vigilance: don't tap when attacking.
+        let has_vigilance = state.has_keyword(attacker_id, Keyword::Vigilance, registry);
+        if !has_vigilance {
+            if let Some(obj) = state.get_object_mut(attacker_id) {
+                obj.tapped = true;
+                state.events.push(GameEvent::Tapped { object: attacker_id });
+            }
+        }
+        combat.attackers.insert(attacker_id, defending_player);
+        combat.blocker_assignments.insert(attacker_id, Vec::new());
+    }
+
+    state.events.push(GameEvent::AttackersDeclared {
+        attackers: attackers.to_vec(),
+    });
+
+    state.combat = Some(combat);
+}
+
+/// Legacy wrapper without registry (taps all attackers).
 pub fn declare_attackers(
     state: &mut GameState,
     attackers: &[(ObjectId, PlayerId)],
@@ -13,7 +43,6 @@ pub fn declare_attackers(
 
     for &(attacker_id, defending_player) in attackers {
         if let Some(obj) = state.get_object_mut(attacker_id) {
-            // Tap the attacker (per default rules; some creatures have vigilance — future).
             obj.tapped = true;
             state.events.push(GameEvent::Tapped { object: attacker_id });
         }
@@ -46,22 +75,79 @@ pub fn declare_blockers(
     });
 }
 
-/// Deal combat damage. All damage is simultaneous (no first strike in Phase 1).
-pub fn deal_combat_damage(state: &mut GameState, registry: &crate::cards::CardRegistry) {
+/// Set up blockers with validation. Filters out illegal block assignments
+/// (e.g., non-flyer blocking a flyer).
+pub fn declare_blockers_with_registry(
+    state: &mut GameState,
+    assignments: &[(ObjectId, ObjectId)],
+    registry: &CardRegistry,
+) {
+    let valid: Vec<_> = assignments.iter()
+        .filter(|&&(blocker, attacker)| can_block_attacker(state, blocker, attacker, registry))
+        .cloned()
+        .collect();
+    declare_blockers(state, &valid);
+}
+
+/// Deal combat damage with full keyword support.
+/// Handles first strike, trample, deathtouch, and lifelink.
+pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
     let combat = match &state.combat {
         Some(c) => c.clone(),
         None => return,
     };
 
+    // Check if any creature has first/double strike to determine damage steps.
+    let any_first_strike = combat.attackers.keys().chain(
+        combat.blocker_assignments.values().flat_map(|v| v.iter())
+    ).any(|&id| {
+        state.has_keyword(id, Keyword::FirstStrike, registry)
+            || state.has_keyword(id, Keyword::DoubleStrike, registry)
+    });
+
+    if any_first_strike {
+        // First strike damage step: only first/double strikers deal damage.
+        deal_damage_step(state, &combat, registry, true);
+        // Run SBAs between first strike and normal damage.
+        while crate::sba::check_state_based_actions_with_registry(state, Some(registry)) {}
+        // Normal damage step: non-first-strikers + double strikers.
+        deal_damage_step(state, &combat, registry, false);
+    } else {
+        // No first strike: everyone deals damage simultaneously.
+        deal_damage_step(state, &combat, registry, false);
+    }
+}
+
+/// Execute one combat damage step.
+/// If `first_strike_only`, only creatures with first/double strike deal damage.
+/// If not, creatures without first strike deal damage (plus double strikers again).
+fn deal_damage_step(
+    state: &mut GameState,
+    combat: &CombatState,
+    registry: &CardRegistry,
+    first_strike_only: bool,
+) {
     for (&attacker_id, &defending_player) in &combat.attackers {
-        let _attacker = match state.get_object(attacker_id) {
-            Some(o) if o.zone == Zone::Battlefield => o,
-            _ => continue, // attacker may have been removed
+        if state.get_object(attacker_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+            continue;
+        }
+
+        let has_fs = state.has_keyword(attacker_id, Keyword::FirstStrike, registry);
+        let has_ds = state.has_keyword(attacker_id, Keyword::DoubleStrike, registry);
+        let attacker_deals = if first_strike_only {
+            has_fs || has_ds
+        } else {
+            !has_fs || has_ds // normal strikers + double strikers
         };
-        let attacker_power = match state.effective_power(attacker_id, registry) {
-            Some(p) if p > 0 => p as u32,
-            _ => continue,
+
+        let attacker_power = if attacker_deals {
+            state.effective_power(attacker_id, registry).unwrap_or(0).max(0) as u32
+        } else {
+            0
         };
+
+        let has_trample = state.has_keyword(attacker_id, Keyword::Trample, registry);
+        let has_deathtouch_attacker = state.has_keyword(attacker_id, Keyword::Deathtouch, registry);
 
         let blockers = combat.blocker_assignments.get(&attacker_id)
             .cloned()
@@ -69,55 +155,140 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &crate::cards::CardRe
 
         if blockers.is_empty() {
             // Unblocked: deal damage to defending player.
-            let old_life = state.get_player(defending_player).life;
-            let new_life = old_life - attacker_power as i32;
-            state.get_player_mut(defending_player).life = new_life;
-
-            state.events.push(GameEvent::CombatDamageDealt {
-                source: attacker_id,
-                target: DamageTarget::Player(defending_player),
-                amount: attacker_power,
-            });
-            state.events.push(GameEvent::LifeChanged {
-                player: defending_player,
-                old: old_life,
-                new_life,
-            });
-            let attacker_name = state.get_object(attacker_id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| d.name)
-                .unwrap_or_else(|| "?".into());
-            state.log(LogLevel::Event, format!("p{} took {} combat damage ({}) from {}", defending_player.0, attacker_power, new_life, attacker_name));
+            if attacker_power > 0 {
+                deal_damage_to_player(state, attacker_id, defending_player, attacker_power, registry);
+            }
         } else {
-            // Blocked: deal damage to first blocker (Phase 1: no damage ordering).
-            // Attacker deals its power to the first blocker.
-            // Each blocker deals its power to the attacker.
+            // Blocked: distribute damage to blockers, with trample overflow.
+            let mut remaining_power = attacker_power;
+
             for &blocker_id in &blockers {
-                let _blocker = match state.get_object(blocker_id) {
-                    Some(o) if o.zone == Zone::Battlefield => o,
-                    _ => continue,
+                if state.get_object(blocker_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+                    continue;
+                }
+
+                // Blocker deals damage to attacker.
+                let blocker_has_fs = state.has_keyword(blocker_id, Keyword::FirstStrike, registry);
+                let blocker_has_ds = state.has_keyword(blocker_id, Keyword::DoubleStrike, registry);
+                let blocker_deals = if first_strike_only {
+                    blocker_has_fs || blocker_has_ds
+                } else {
+                    !blocker_has_fs || blocker_has_ds
                 };
-                let blocker_power = state.effective_power(blocker_id, registry).unwrap_or(0);
 
-                // Attacker damages blocker.
-                state.get_object_mut(blocker_id).unwrap().damage_marked += attacker_power;
-                state.events.push(GameEvent::CombatDamageDealt {
-                    source: attacker_id,
-                    target: DamageTarget::Object(blocker_id),
-                    amount: attacker_power,
-                });
+                if blocker_deals {
+                    let blocker_power = state.effective_power(blocker_id, registry).unwrap_or(0).max(0) as u32;
+                    if blocker_power > 0 {
+                        deal_damage_to_creature(state, blocker_id, attacker_id, blocker_power, registry);
+                    }
+                }
 
-                // Blocker damages attacker.
-                if blocker_power > 0 {
-                    state.get_object_mut(attacker_id).unwrap().damage_marked += blocker_power as u32;
-                    state.events.push(GameEvent::CombatDamageDealt {
-                        source: blocker_id,
-                        target: DamageTarget::Object(attacker_id),
-                        amount: blocker_power as u32,
-                    });
+                // Attacker deals damage to blocker.
+                if remaining_power > 0 {
+                    let blocker_toughness = state.effective_toughness(blocker_id, registry).unwrap_or(0);
+                    let blocker_damage = state.get_object(blocker_id).map(|o| o.damage_marked).unwrap_or(0);
+                    let lethal = if has_deathtouch_attacker {
+                        1 // deathtouch: 1 damage is lethal
+                    } else {
+                        (blocker_toughness - blocker_damage as i32).max(0) as u32
+                    };
+
+                    let assigned = if has_trample {
+                        remaining_power.min(lethal) // assign minimum lethal, save rest for trample
+                    } else {
+                        remaining_power // assign all to this blocker
+                    };
+
+                    if assigned > 0 {
+                        deal_damage_to_creature(state, attacker_id, blocker_id, assigned, registry);
+                        remaining_power -= assigned;
+                    }
                 }
             }
+
+            // Trample: remaining damage goes to the defending player.
+            if has_trample && remaining_power > 0 {
+                deal_damage_to_player(state, attacker_id, defending_player, remaining_power, registry);
+            }
         }
+    }
+}
+
+/// Deal damage from a source creature to a target creature. Handles lifelink.
+fn deal_damage_to_creature(
+    state: &mut GameState,
+    source: ObjectId,
+    target: ObjectId,
+    amount: u32,
+    registry: &CardRegistry,
+) {
+    let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
+    if let Some(obj) = state.get_object_mut(target) {
+        obj.damage_marked += amount;
+        if has_deathtouch {
+            obj.dealt_deathtouch_damage = true;
+        }
+    }
+    state.events.push(GameEvent::CombatDamageDealt {
+        source,
+        target: DamageTarget::Object(target),
+        amount,
+    });
+
+    // Lifelink: source's controller gains life.
+    if state.has_keyword(source, Keyword::Lifelink, registry) {
+        let controller = state.get_object(source).unwrap().controller;
+        let old_life = state.get_player(controller).life;
+        let new_life = old_life + amount as i32;
+        state.get_player_mut(controller).life = new_life;
+        state.events.push(GameEvent::LifeChanged {
+            player: controller,
+            old: old_life,
+            new_life,
+        });
+    }
+}
+
+/// Deal damage from a source creature to a player. Handles lifelink.
+fn deal_damage_to_player(
+    state: &mut GameState,
+    source: ObjectId,
+    player: PlayerId,
+    amount: u32,
+    registry: &CardRegistry,
+) {
+    let old_life = state.get_player(player).life;
+    let new_life = old_life - amount as i32;
+    state.get_player_mut(player).life = new_life;
+
+    state.events.push(GameEvent::CombatDamageDealt {
+        source,
+        target: DamageTarget::Player(player),
+        amount,
+    });
+    state.events.push(GameEvent::LifeChanged {
+        player,
+        old: old_life,
+        new_life,
+    });
+
+    let name = state.get_object(source)
+        .and_then(|o| registry.card_data(o.card_id))
+        .map(|d| d.name)
+        .unwrap_or_else(|| "?".into());
+    state.log(LogLevel::Event, format!("p{} took {} combat damage ({}) from {}", player.0, amount, new_life, name));
+
+    // Lifelink: source's controller gains life.
+    if state.has_keyword(source, Keyword::Lifelink, registry) {
+        let controller = state.get_object(source).unwrap().controller;
+        let old = state.get_player(controller).life;
+        let new = old + amount as i32;
+        state.get_player_mut(controller).life = new;
+        state.events.push(GameEvent::LifeChanged {
+            player: controller,
+            old,
+            new_life: new,
+        });
     }
 }
 
@@ -141,10 +312,22 @@ pub fn eligible_attackers(state: &GameState, player: PlayerId) -> Vec<ObjectId> 
 }
 
 /// Get all creatures a player controls that are eligible to attack,
-/// also checking continuous effects (e.g., Pacifism).
-pub fn eligible_attackers_with_registry(state: &GameState, player: PlayerId, registry: &crate::cards::CardRegistry) -> Vec<ObjectId> {
-    eligible_attackers(state, player).into_iter()
-        .filter(|&id| state.can_attack(id, registry))
+/// also checking keywords (defender, haste) and continuous effects (Pacifism).
+pub fn eligible_attackers_with_registry(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
+    state.objects.values()
+        .filter(|o| {
+            o.zone == Zone::Battlefield
+                && o.controller == player
+                && o.power.is_some()
+                && !o.tapped
+                // Haste overrides summoning sickness.
+                && (!o.summoning_sick || state.has_keyword(o.id, Keyword::Haste, registry))
+                // Defender can't attack.
+                && !state.has_keyword(o.id, Keyword::Defender, registry)
+                // Check aura-based restrictions (Pacifism).
+                && state.can_attack(o.id, registry)
+        })
+        .map(|o| o.id)
         .collect()
 }
 
@@ -163,10 +346,47 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
 
 /// Get all creatures a player controls that are eligible to block,
 /// also checking continuous effects (e.g., Pacifism).
-pub fn eligible_blockers_with_registry(state: &GameState, player: PlayerId, registry: &crate::cards::CardRegistry) -> Vec<ObjectId> {
+pub fn eligible_blockers_with_registry(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
     eligible_blockers(state, player).into_iter()
         .filter(|&id| state.can_block(id, registry))
         .collect()
+}
+
+/// Check if a blocker can legally block a specific attacker.
+/// Enforces flying (only blocked by flying/reach) and intimidate (only by artifact/same color).
+pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: ObjectId, registry: &CardRegistry) -> bool {
+    // Flying: can only be blocked by creatures with flying or reach.
+    if state.has_keyword(attacker_id, Keyword::Flying, registry) {
+        if !state.has_keyword(blocker_id, Keyword::Flying, registry)
+            && !state.has_keyword(blocker_id, Keyword::Reach, registry) {
+            return false;
+        }
+    }
+
+    // Intimidate: can only be blocked by artifact creatures or creatures that share a color.
+    if state.has_keyword(attacker_id, Keyword::Intimidate, registry) {
+        let blocker = match state.get_object(blocker_id) {
+            Some(o) => o,
+            None => return false,
+        };
+        let is_artifact = registry.card_data(blocker.card_id)
+            .map(|d| d.card_types.contains(&crate::types::CardType::Artifact))
+            .unwrap_or(false);
+        if !is_artifact {
+            let attacker = match state.get_object(attacker_id) {
+                Some(o) => o,
+                None => return false,
+            };
+            let shares_color = attacker.colors.iter().any(|c| blocker.colors.contains(c));
+            if !shares_color {
+                return false;
+            }
+        }
+    }
+
+    // Menace: must be blocked by two or more creatures (handled at validation, not per-blocker).
+
+    true
 }
 
 #[cfg(test)]

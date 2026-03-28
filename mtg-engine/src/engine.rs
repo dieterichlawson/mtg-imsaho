@@ -143,8 +143,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 || data.card_types.contains(&CardType::Artifact)
                 || data.card_types.contains(&CardType::Planeswalker);
 
-            let can_cast_timing = if is_instant {
-                true // Instants can be cast anytime you have priority
+            let has_flash = data.keywords.contains(&Keyword::Flash);
+            let can_cast_timing = if is_instant || has_flash {
+                true // Instants and cards with flash can be cast anytime you have priority
             } else if is_sorcery_type {
                 is_sorcery_speed
             } else {
@@ -186,6 +187,20 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     LegalActions { actions, combat_prompt: None }
 }
 
+/// Check if a permanent can be targeted by a spell from the given caster.
+/// Returns false if the target has hexproof and the caster is an opponent.
+fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, registry: &CardRegistry) -> bool {
+    if state.has_keyword(target_id, Keyword::Hexproof, registry) {
+        let controller = state.get_object(target_id)
+            .map(|o| o.controller)
+            .unwrap_or(PlayerId(255));
+        if controller != caster {
+            return false; // hexproof: can't be targeted by opponents
+        }
+    }
+    true
+}
+
 /// Generate CastSpell actions with all valid target combinations.
 fn generate_cast_actions_with_targets(
     state: &GameState,
@@ -196,6 +211,7 @@ fn generate_cast_actions_with_targets(
 ) -> Vec<Action> {
     use crate::actions::Target;
     use crate::cards::TargetRequirement;
+    let registry = &CardRegistry::with_all_cards();
 
     match target_req {
         TargetRequirement::None => {
@@ -206,6 +222,7 @@ fn generate_cast_actions_with_targets(
             let mut actions = Vec::new();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 if obj.power.is_some() { // is a creature
+                    if !can_be_targeted(state, obj.id, caster, registry) { continue; }
                     let target = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &target) {
                         actions.push(Action::CastSpell {
@@ -232,6 +249,7 @@ fn generate_cast_actions_with_targets(
             let mut actions = Vec::new();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 if obj.power.is_some() { // is a creature
+                    if !can_be_targeted(state, obj.id, caster, registry) { continue; }
                     let target = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &target) {
                         actions.push(Action::CastSpell {
@@ -416,7 +434,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     .collect();
                 new_state.log(LogLevel::Event, format!("p{} declared attackers: {}", new_state.active_player.0, names.join(", ")));
             }
-            combat::declare_attackers(&mut new_state, attackers);
+            combat::declare_attackers_with_registry(&mut new_state, attackers, registry);
             new_state.awaiting_action = None;
             new_state.consecutive_passes = 0;
         }
@@ -432,7 +450,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     .collect();
                 new_state.log(LogLevel::Event, format!("p{} declared blockers: {}", defender.0, descs.join(", ")));
             }
-            combat::declare_blockers(&mut new_state, assignments);
+            combat::declare_blockers_with_registry(&mut new_state, assignments, registry);
             new_state.awaiting_action = None;
             new_state.consecutive_passes = 0;
         }
@@ -698,7 +716,9 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 .collect();
 
             for id in damaged {
-                state.get_object_mut(id).unwrap().damage_marked = 0;
+                let obj = state.get_object_mut(id).unwrap();
+                obj.damage_marked = 0;
+                obj.dealt_deathtouch_damage = false;
             }
 
             // Remove "until end of turn" effects.

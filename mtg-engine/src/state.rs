@@ -143,6 +143,7 @@ impl GameState {
             tapped: false,
             summoning_sick: zone == Zone::Battlefield,
             damage_marked: 0,
+            dealt_deathtouch_damage: false,
             power,
             toughness,
             colors: Vec::new(),
@@ -185,6 +186,7 @@ impl GameState {
                 obj.tapped = false;
                 obj.summoning_sick = false;
                 obj.damage_marked = 0;
+                obj.dealt_deathtouch_damage = false;
                 obj.attached_to = None;
             }
 
@@ -491,6 +493,8 @@ pub struct GameObject {
     pub tapped: bool,
     pub summoning_sick: bool,
     pub damage_marked: u32,
+    /// Whether this creature has been dealt damage by a source with deathtouch.
+    pub dealt_deathtouch_damage: bool,
 
     // Characteristics (from card data, may be modified by effects later)
     pub power: Option<i32>,
