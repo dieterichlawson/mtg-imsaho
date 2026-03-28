@@ -20,6 +20,40 @@ pub mod holy_strength;
 pub mod pacifism;
 pub mod counterspell;
 pub mod coral_merfolk;
+pub mod thraben_purebloods;
+pub mod rotting_fensnake;
+pub mod riot_devils;
+pub mod kindercatch;
+pub mod fortress_crab;
+pub mod abbey_griffin;
+pub mod chapel_geist;
+pub mod voiceless_spirit;
+pub mod moon_heron;
+pub mod typhoid_rats;
+pub mod markov_patrician;
+pub mod ambush_viper;
+pub mod vampire_interloper;
+pub mod spectral_rider;
+pub mod invisible_stalker;
+pub mod somberwald_spider;
+pub mod diregraf_ghoul;
+pub mod grave_bramble;
+pub mod one_eyed_scarecrow;
+pub mod moment_of_heroism;
+pub mod rangers_guile;
+pub mod spidery_grasp;
+pub mod vampiric_fury;
+pub mod rally_the_peasants;
+pub mod hysterical_blindness;
+pub mod dead_weight;
+pub mod sensory_deprivation;
+pub mod spectral_flight;
+pub mod furor_of_the_bitten;
+pub mod gruesome_deformity;
+pub mod skeletal_grimace;
+pub mod bonds_of_faith;
+pub mod ghostly_possession;
+pub mod claustrophobia;
 
 use std::collections::HashMap;
 
@@ -164,6 +198,25 @@ impl CardRegistry {
         reg.register(Box::new(grizzly_bears::GrizzlyBears));
         reg.register(Box::new(walking_corpse::WalkingCorpse));
         reg.register(Box::new(coral_merfolk::CoralMerfolk));
+        reg.register(Box::new(thraben_purebloods::ThrabenPurebloods));
+        reg.register(Box::new(rotting_fensnake::RottingFensnake));
+        reg.register(Box::new(riot_devils::RiotDevils));
+        reg.register(Box::new(kindercatch::Kindercatch));
+        reg.register(Box::new(fortress_crab::FortressCrab));
+        reg.register(Box::new(abbey_griffin::AbbeyGriffin));
+        reg.register(Box::new(chapel_geist::ChapelGeist));
+        reg.register(Box::new(voiceless_spirit::VoicelessSpirit));
+        reg.register(Box::new(moon_heron::MoonHeron));
+        reg.register(Box::new(typhoid_rats::TyphoidRats));
+        reg.register(Box::new(markov_patrician::MarkovPatrician));
+        reg.register(Box::new(ambush_viper::AmbushViper));
+        reg.register(Box::new(vampire_interloper::VampireInterloper));
+        reg.register(Box::new(spectral_rider::SpectralRider));
+        reg.register(Box::new(invisible_stalker::InvisibleStalker));
+        reg.register(Box::new(somberwald_spider::SomberwaldSpider));
+        reg.register(Box::new(diregraf_ghoul::DiregrafGhoul));
+        reg.register(Box::new(grave_bramble::GraveBramble));
+        reg.register(Box::new(one_eyed_scarecrow::OneEyedScarecrow));
         // Artifacts
         reg.register(Box::new(sol_ring::SolRing));
         // Instants
@@ -179,6 +232,23 @@ impl CardRegistry {
         reg.register(Box::new(glorious_anthem::GloriousAnthem));
         reg.register(Box::new(holy_strength::HolyStrength));
         reg.register(Box::new(pacifism::Pacifism));
+        // Innistrad instants
+        reg.register(Box::new(moment_of_heroism::MomentOfHeroism));
+        reg.register(Box::new(rangers_guile::RangersGuile));
+        reg.register(Box::new(spidery_grasp::SpideryGrasp));
+        reg.register(Box::new(vampiric_fury::VampiricFury));
+        reg.register(Box::new(rally_the_peasants::RallyThePeasants));
+        reg.register(Box::new(hysterical_blindness::HystericalBlindness));
+        // Innistrad auras
+        reg.register(Box::new(dead_weight::DeadWeight));
+        reg.register(Box::new(sensory_deprivation::SensoryDeprivation));
+        reg.register(Box::new(spectral_flight::SpectralFlight));
+        reg.register(Box::new(furor_of_the_bitten::FurorOfTheBitten));
+        reg.register(Box::new(gruesome_deformity::GruesomeDeformity));
+        reg.register(Box::new(skeletal_grimace::SkeletalGrimace));
+        reg.register(Box::new(bonds_of_faith::BondsOfFaith));
+        reg.register(Box::new(ghostly_possession::GhostlyPossession));
+        reg.register(Box::new(claustrophobia::Claustrophobia));
         reg
     }
 }
