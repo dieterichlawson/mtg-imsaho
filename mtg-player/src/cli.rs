@@ -680,7 +680,7 @@ impl CliPlayer {
 
         loop {
             // Re-render with current filter
-            Self::render(view, Some(actions), Some("searching cards..."), &view.display_log, &self.card_filter);
+            Self::render(view, Some(actions), None, &view.display_log, &self.card_filter);
 
             // Position cursor in the search box
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
