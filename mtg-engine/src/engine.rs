@@ -9,6 +9,7 @@ use crate::mana;
 use crate::sba::check_state_based_actions_with_registry;
 use crate::stack;
 use crate::state::{AwaitingAction, GameState, LogLevel};
+use crate::triggers;
 use crate::types::*;
 
 /// A decklist: card name -> count.
@@ -892,8 +893,15 @@ fn run_game_loop_inner<F>(
             break;
         }
 
-        // Check SBAs before giving priority.
-        while check_state_based_actions_with_registry(state, Some(registry)) {}
+        // Process triggers from the last action, then SBA+trigger loop.
+        triggers::process_triggers(state, registry);
+        loop {
+            let sba = check_state_based_actions_with_registry(state, Some(registry));
+            if sba {
+                triggers::process_triggers(state, registry);
+            }
+            if !sba { break; }
+        }
         if state.is_game_over() {
             break;
         }
