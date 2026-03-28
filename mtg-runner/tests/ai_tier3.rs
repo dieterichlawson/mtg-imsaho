@@ -472,3 +472,366 @@ fn ai_tier3_fiend_hunter() {
     assert_eq!(spell_name(&final_state, &action), "Fiend Hunter");
     eprintln!("OK: AI cast Fiend Hunter to exile the opponent's 5/5");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Mausoleum Guard — cast the creature
+//
+// P0 (AI) has Mausoleum Guard in hand + 4 Plains. Main phase, nothing
+// else to do. Should cast the 2/2 (its dies trigger is a bonus).
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_mausoleum_guard() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 20;
+    state.turn_number = 4;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    let mg_id = reg.get_id_by_name("Mausoleum Guard").unwrap();
+    let mg = state.create_object(mg_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(mg).unwrap().name = "Mausoleum Guard".into();
+
+    let plains_id = reg.get_id_by_name("Plains").unwrap();
+    for _ in 0..4 {
+        let id = state.create_object(plains_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_mausoleum_guard");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_mausoleum_guard.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Mausoleum Guard, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Mausoleum Guard");
+    eprintln!("OK: AI cast Mausoleum Guard");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Rage Thrower — cast the creature
+//
+// P0 (AI) has Rage Thrower + 6 Mountains. Should cast the 4/2.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_rage_thrower() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 15;
+    state.players[1].life = 20;
+    state.turn_number = 6;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    let rt_id = reg.get_id_by_name("Rage Thrower").unwrap();
+    let rt = state.create_object(rt_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(rt).unwrap().name = "Rage Thrower".into();
+
+    let mtn_id = reg.get_id_by_name("Mountain").unwrap();
+    for _ in 0..6 {
+        let id = state.create_object(mtn_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Mountain".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_rage_thrower");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_rage_thrower.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Rage Thrower, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Rage Thrower");
+    eprintln!("OK: AI cast Rage Thrower");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Slayer of the Wicked — cast to destroy opponent's Zombie
+//
+// P0 (AI) has Slayer + 4 Plains. Opponent has Walking Corpse (Zombie).
+// Should cast Slayer to trigger ETB and destroy the Zombie.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_slayer_of_the_wicked() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 15;
+    state.players[1].life = 20;
+    state.turn_number = 5;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    // Opponent has a Walking Corpse (Zombie)
+    let wc_id = reg.get_id_by_name("Walking Corpse").unwrap();
+    let wc = state.create_object(wc_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(wc).unwrap().name = "Walking Corpse".into();
+    state.get_object_mut(wc).unwrap().summoning_sick = false;
+    state.get_object_mut(wc).unwrap().colors = vec![Color::Black];
+
+    let sw_id = reg.get_id_by_name("Slayer of the Wicked").unwrap();
+    let sw = state.create_object(sw_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(sw).unwrap().name = "Slayer of the Wicked".into();
+
+    let plains_id = reg.get_id_by_name("Plains").unwrap();
+    for _ in 0..4 {
+        let id = state.create_object(plains_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_slayer");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_slayer.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Slayer of the Wicked, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Slayer of the Wicked");
+    eprintln!("OK: AI cast Slayer of the Wicked to destroy Zombie");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Intangible Virtue — cast the anthem
+//
+// P0 (AI) has two creatures and Intangible Virtue + 2 Plains.
+// Casting the anthem buffs all creatures. Should cast it.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_intangible_virtue() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 20;
+    state.turn_number = 4;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    // P0 has two creatures
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    for _ in 0..2 {
+        let id = state.create_object(bears_id, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+        state.get_object_mut(id).unwrap().colors = vec![Color::Green];
+    }
+
+    let iv_id = reg.get_id_by_name("Intangible Virtue").unwrap();
+    let iv = state.create_object(iv_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(iv).unwrap().name = "Intangible Virtue".into();
+
+    let plains_id = reg.get_id_by_name("Plains").unwrap();
+    for _ in 0..2 {
+        let id = state.create_object(plains_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_intangible_virtue");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_intangible_virtue.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Intangible Virtue, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Intangible Virtue");
+    eprintln!("OK: AI cast Intangible Virtue to buff creatures");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Unruly Mob — cast the creature
+//
+// P0 (AI) has Unruly Mob + Plains. Turn 2, should cast the 1-drop.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_unruly_mob() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 20;
+    state.turn_number = 2;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    let um_id = reg.get_id_by_name("Unruly Mob").unwrap();
+    let um = state.create_object(um_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(um).unwrap().name = "Unruly Mob".into();
+
+    let plains_id = reg.get_id_by_name("Plains").unwrap();
+    for _ in 0..2 {
+        let id = state.create_object(plains_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_unruly_mob");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_unruly_mob.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Unruly Mob, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Unruly Mob");
+    eprintln!("OK: AI cast Unruly Mob");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Lumberknot — cast the hexproof creature
+//
+// P0 (AI) has Lumberknot + 4 Forests. Should cast the hexproof 1/1.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_lumberknot() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 20;
+    state.turn_number = 4;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    let lk_id = reg.get_id_by_name("Lumberknot").unwrap();
+    let lk = state.create_object(lk_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(lk).unwrap().name = "Lumberknot".into();
+
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    for _ in 0..4 {
+        let id = state.create_object(forest_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_lumberknot");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_lumberknot.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Lumberknot, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Lumberknot");
+    eprintln!("OK: AI cast Lumberknot");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Elder Cathar — cast the creature
+//
+// P0 (AI) has Elder Cathar + 3 Plains. Should cast the 2/2.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_elder_cathar() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 20;
+    state.turn_number = 3;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    let ec_id = reg.get_id_by_name("Elder Cathar").unwrap();
+    let ec = state.create_object(ec_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(ec).unwrap().name = "Elder Cathar".into();
+
+    let plains_id = reg.get_id_by_name("Plains").unwrap();
+    for _ in 0..3 {
+        let id = state.create_object(plains_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_elder_cathar");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_elder_cathar.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Elder Cathar, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Elder Cathar");
+    eprintln!("OK: AI cast Elder Cathar");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Village Cannibals — cast the creature
+//
+// P0 (AI) has Village Cannibals + 3 Swamps. Should cast the 2/2.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier3_village_cannibals() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 20;
+    state.turn_number = 3;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+
+    let vc_id = reg.get_id_by_name("Village Cannibals").unwrap();
+    let vc = state.create_object(vc_id, PlayerId(0), Zone::Hand, None, None);
+    state.get_object_mut(vc).unwrap().name = "Village Cannibals".into();
+
+    let swamp_id = reg.get_id_by_name("Swamp").unwrap();
+    for _ in 0..3 {
+        let id = state.create_object(swamp_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Swamp".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_village_cannibals");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_village_cannibals.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Village Cannibals, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Village Cannibals");
+    eprintln!("OK: AI cast Village Cannibals");
+}
