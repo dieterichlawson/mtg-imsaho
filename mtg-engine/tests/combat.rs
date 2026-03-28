@@ -11,6 +11,10 @@ use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::AwaitingAction;
 use mtg_engine::types::*;
 
+fn registry() -> CardRegistry {
+    CardRegistry::with_all_cards()
+}
+
 /// Rule 509.1h: A blocked creature remains blocked even if all blockers
 /// are removed. Without trample, it deals no damage to the player.
 /// Rule 510.1c: A blocked creature with no remaining blockers assigns
@@ -27,7 +31,7 @@ fn blocked_creature_with_removed_blocker_deals_no_damage() {
     // Blocker is removed before damage (e.g., by a spell).
     state.move_object(blocker, Zone::Graveyard);
 
-    combat::deal_combat_damage(&mut state);
+    combat::deal_combat_damage(&mut state, &registry());
 
     assert_eq!(state.get_player(P1).life, 20,
         "Blocked creature with removed blocker deals no damage (rules 509.1h, 510.1c)");
@@ -92,7 +96,7 @@ fn multiple_blockers_all_deal_damage_to_attacker() {
 
     combat::declare_attackers(&mut state, &[(attacker, P1)]);
     combat::declare_blockers(&mut state, &[(blocker_a, attacker), (blocker_b, attacker)]);
-    combat::deal_combat_damage(&mut state);
+    combat::deal_combat_damage(&mut state, &registry());
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 5,
         "Attacker should take 2+3=5 damage from both blockers");
@@ -108,7 +112,7 @@ fn zero_power_creature_deals_no_damage() {
 
     combat::declare_attackers(&mut state, &[(attacker, P1)]);
     combat::declare_blockers(&mut state, &[]);
-    combat::deal_combat_damage(&mut state);
+    combat::deal_combat_damage(&mut state, &registry());
 
     assert_eq!(state.get_player(P1).life, 20,
         "0-power creature should deal no combat damage");
@@ -147,7 +151,7 @@ fn full_combat_with_partial_block() {
     assert!(state.get_object(attacker_b).unwrap().tapped);
 
     combat::declare_blockers(&mut state, &[(blocker, attacker_a)]);
-    combat::deal_combat_damage(&mut state);
+    combat::deal_combat_damage(&mut state, &registry());
 
     // Attacker A and blocker trade.
     assert_eq!(state.get_object(attacker_a).unwrap().damage_marked, 3);
@@ -172,7 +176,7 @@ fn attacker_survives_small_blocker() {
 
     combat::declare_attackers(&mut state, &[(attacker, P1)]);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
-    combat::deal_combat_damage(&mut state);
+    combat::deal_combat_damage(&mut state, &registry());
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 1);
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 5);

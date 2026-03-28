@@ -172,10 +172,12 @@ pub fn eligible_blockers_with_registry(state: &GameState, player: PlayerId, regi
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cards::CardRegistry;
     use crate::ids::CardId;
 
     #[test]
     fn unblocked_attacker_deals_damage() {
+        let registry = CardRegistry::with_all_cards();
         let mut state = GameState::new(2);
         let attacker = state.create_object(
             CardId(1), PlayerId(0), Zone::Battlefield, Some(3), Some(3),
@@ -185,13 +187,14 @@ mod tests {
         let defending = PlayerId(1);
         declare_attackers(&mut state, &[(attacker, defending)]);
         declare_blockers(&mut state, &[]);
-        deal_combat_damage(&mut state);
+        deal_combat_damage(&mut state, &registry);
 
         assert_eq!(state.get_player(defending).life, 40 - 3);
     }
 
     #[test]
     fn blocked_creature_trades() {
+        let registry = CardRegistry::with_all_cards();
         let mut state = GameState::new(2);
         let attacker = state.create_object(
             CardId(1), PlayerId(0), Zone::Battlefield, Some(2), Some(2),
@@ -205,7 +208,7 @@ mod tests {
         let defending = PlayerId(1);
         declare_attackers(&mut state, &[(attacker, defending)]);
         declare_blockers(&mut state, &[(blocker, attacker)]);
-        deal_combat_damage(&mut state);
+        deal_combat_damage(&mut state, &registry);
 
         // Both should have lethal damage marked.
         assert_eq!(state.get_object(attacker).unwrap().damage_marked, 2);
