@@ -1320,8 +1320,15 @@ impl Player for CliPlayer {
                     && view.turn_number > activated_turn;
                 // Break if something is on the stack (opponent cast a spell we can respond to).
                 let stack_has_spell = !view.stack.is_empty();
+                // Break during opponent's combat after attackers are declared —
+                // we need to see what's attacking and may want to cast flash
+                // creatures or instants before declaring blockers.
+                let opponent_combat = view.active_player != view.you
+                    && matches!(view.step,
+                        mtg_engine::types::Step::DeclareAttackers
+                        | mtg_engine::types::Step::DeclareBlockers);
 
-                if is_new_turn || stack_has_spell {
+                if is_new_turn || stack_has_spell || opponent_combat {
                     self.pass_until_turn_after = None;
                 } else {
                     return Action::PassPriority;
