@@ -287,14 +287,16 @@ impl CliPlayer {
             Self::mid_print(&mut out, mid_col, &mut row, mid_w, &format!(" {}", msg), Some(Color::Yellow), true);
         }
 
-        // Actions
+        // Actions separator (always drawn)
+        let mid_sep: String = "─".repeat(mid_w);
+        let _ = execute!(out, cursor::MoveTo(mid_col, row),
+            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+        let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+            SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
+        row += 1;
+
+        // Action list (only when actions are provided)
         if let Some(actions) = actions {
-            let mid_sep: String = "─".repeat(mid_w);
-            let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
-            let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
-                SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
-            row += 1;
             for (i, action) in actions.iter().enumerate() {
                 let desc = Self::format_action(view, action);
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
@@ -1054,6 +1056,7 @@ impl Player for CliPlayer {
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < legal_actions.len() {
                     if matches!(legal_actions[idx], Action::Concede) {
+                        let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
                         let confirm = Self::read_line("  Are you sure you want to concede? (y/n)> ");
                         if confirm.to_lowercase() != "y" {
                             continue;
