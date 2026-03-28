@@ -10,8 +10,11 @@ use std::fs;
 
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
+use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::stack;
 use mtg_engine::state::{AwaitingAction, CombatState, GameState};
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
@@ -159,6 +162,18 @@ fn ai_flying_attack() {
                 "AI should attack with Abbey Griffin (flying, can't be blocked by ground creatures). \
                  Attackers declared: {:?}", attackers);
             eprintln!("OK: AI attacked with Abbey Griffin ({} total attackers)", attackers.len());
+
+            // Submit the action and verify combat state
+            let new_state = engine::submit_action(&state, &action, &registry);
+            let combat = new_state.combat.as_ref().expect("Combat state should exist after declaring attackers");
+            assert!(combat.attackers.contains_key(&griffin_id),
+                "Griffin should be in the attackers map after submitting DeclareAttackers");
+
+            // Abbey Griffin has vigilance — it should NOT be tapped from attacking
+            let griffin_obj = new_state.get_object(griffin_id).unwrap();
+            assert!(!griffin_obj.tapped,
+                "Abbey Griffin has vigilance and should NOT be tapped after attacking");
+            eprintln!("OK: Griffin is attacking and untapped (vigilance)");
         }
         other => panic!("Expected DeclareAttackers, got: {:?}", other),
     }
@@ -282,6 +297,20 @@ fn ai_deathtouch_block() {
                 "AI should block Kalonian Tusker with Typhoid Rats (deathtouch trades 1/1 for 3/3). \
                  Assignments: {:?}", assignments);
             eprintln!("OK: AI blocked Kalonian Tusker with Typhoid Rats (deathtouch)");
+
+            // Submit the blocker declaration, deal combat damage, then run SBAs
+            let mut new_state = engine::submit_action(&state, &action, &registry);
+            combat::deal_combat_damage(&mut new_state, &registry);
+            while check_state_based_actions_with_registry(&mut new_state, Some(&registry)) {}
+
+            // Both Kalonian Tusker and Typhoid Rats should be dead (in graveyard)
+            let tusker_obj = new_state.get_object(tusker_id).unwrap();
+            assert_eq!(tusker_obj.zone, Zone::Graveyard,
+                "Kalonian Tusker (3/3) should be dead from deathtouch, but is in {:?}", tusker_obj.zone);
+            let rats_obj = new_state.get_object(rats_id).unwrap();
+            assert_eq!(rats_obj.zone, Zone::Graveyard,
+                "Typhoid Rats (1/1) should be dead from combat damage, but is in {:?}", rats_obj.zone);
+            eprintln!("OK: Both Kalonian Tusker and Typhoid Rats died in combat (deathtouch trade)");
         }
         other => panic!("Expected DeclareBlockers, got: {:?}", other),
     }
@@ -393,6 +422,21 @@ fn ai_lifelink_attack() {
                 "AI at 4 life should attack with Markov Patrician (3/1 lifelink) to gain 3 life. \
                  Attackers declared: {:?}", attackers);
             eprintln!("OK: AI attacked with Markov Patrician (lifelink, {} total attackers)", attackers.len());
+
+            // Submit attackers, declare no blockers, deal combat damage
+            let mut new_state = engine::submit_action(&state, &action, &registry);
+            combat::declare_blockers(&mut new_state, &[]);
+            combat::deal_combat_damage(&mut new_state, &registry);
+
+            // P0 had 4 life, should gain 3 from lifelink -> 7
+            let p0_life = new_state.players[0].life;
+            assert_eq!(p0_life, 7,
+                "P0 should have gained 3 life from lifelink (4 -> 7), but has {}", p0_life);
+            // P1 had 15 life, should lose 3 from combat damage -> 12
+            let p1_life = new_state.players[1].life;
+            assert_eq!(p1_life, 12,
+                "P1 should have lost 3 life from combat damage (15 -> 12), but has {}", p1_life);
+            eprintln!("OK: Lifelink gained 3 life (4->7), opponent took 3 damage (15->12)");
         }
         other => panic!("Expected DeclareAttackers, got: {:?}", other),
     }
@@ -497,13 +541,14 @@ fn ai_flash_ambush_viper() {
     let mut current_state = state;
 
     // AI should tap forests and cast Ambush Viper (flash).
+    let mut cast_action = None;
     for i in 0..10 {
         let legal = engine::legal_actions(&current_state, &registry);
 
         // If we get a combat prompt, the Viper was already cast and resolved.
         if legal.combat_prompt.is_some() {
             eprintln!("OK: Reached blocker declaration (Ambush Viper was cast)");
-            return; // success — the Viper is on the battlefield for blocking
+            break;
         }
 
         let view = GameView::for_player(&current_state, PlayerId(1), &registry);
@@ -515,7 +560,9 @@ fn ai_flash_ambush_viper() {
                 assert_eq!(obj.name, "Ambush Viper",
                     "Expected Ambush Viper cast but got: {}", obj.name);
                 eprintln!("OK: AI cast Ambush Viper with flash (action #{})", i + 1);
-                return; // success
+                cast_action = Some((*object_id, action.clone()));
+                current_state = engine::submit_action(&current_state, &action, &registry);
+                break;
             }
             Action::PassPriority => {
                 panic!("AI passed priority instead of casting Ambush Viper! \
@@ -534,5 +581,22 @@ fn ai_flash_ambush_viper() {
         }
     }
 
-    panic!("AI did not cast Ambush Viper within 10 actions");
+    let (viper_id, _) = cast_action.expect("AI did not cast Ambush Viper within 10 actions");
+
+    // Resolve the stack so Ambush Viper enters the battlefield
+    stack::resolve_top_of_stack(&mut current_state, &registry);
+
+    // Verify: Ambush Viper is on the battlefield
+    let viper_obj = current_state.get_object(viper_id).unwrap();
+    assert_eq!(viper_obj.zone, Zone::Battlefield,
+        "Ambush Viper should be on the battlefield after resolving, but is in {:?}", viper_obj.zone);
+
+    // Verify: it has summoning sickness (just entered)
+    assert!(viper_obj.summoning_sick,
+        "Ambush Viper should have summoning sickness (just resolved)");
+
+    // Verify: it has the deathtouch keyword
+    assert!(current_state.has_keyword(viper_id, Keyword::Deathtouch, &registry),
+        "Ambush Viper should have deathtouch");
+    eprintln!("OK: Ambush Viper is on the battlefield with summoning sickness and deathtouch");
 }

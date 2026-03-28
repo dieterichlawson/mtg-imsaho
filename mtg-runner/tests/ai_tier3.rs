@@ -81,6 +81,10 @@ fn run_ai_decision(
         match &action {
             Action::CastSpell { .. } => {
                 eprintln!("  AI cast spell on action #{}", i + 1);
+                current = engine::submit_action(&current, &action, registry);
+                mtg_engine::stack::resolve_top_of_stack(&mut current, registry);
+                mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
+                mtg_engine::triggers::process_triggers(&mut current, registry);
                 return (action, current);
             }
             Action::ActivateManaAbility { object_id, .. } => {
@@ -159,7 +163,15 @@ fn ai_tier3_midnight_haunting() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Midnight Haunting to create blockers, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Midnight Haunting");
-    eprintln!("OK: AI cast Midnight Haunting to create two 1/1 Spirit tokens");
+
+    // Verify outcome: two Spirit tokens on the battlefield
+    let spirit_tokens: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.is_token && o.card_types.contains(&CardType::Creature))
+        .collect();
+    assert_eq!(spirit_tokens.len(), 2,
+        "Expected 2 Spirit tokens on battlefield, found {}", spirit_tokens.len());
+    eprintln!("OK: AI cast Midnight Haunting — 2 Spirit tokens on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -212,7 +224,15 @@ fn ai_tier3_moan_of_the_unhallowed() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Moan of the Unhallowed for blockers, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Moan of the Unhallowed");
-    eprintln!("OK: AI cast Moan of the Unhallowed to create two 2/2 Zombies");
+
+    // Verify outcome: two Zombie tokens on the battlefield
+    let zombie_tokens: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.is_token && o.card_types.contains(&CardType::Creature))
+        .collect();
+    assert_eq!(zombie_tokens.len(), 2,
+        "Expected 2 Zombie tokens on battlefield, found {}", zombie_tokens.len());
+    eprintln!("OK: AI cast Moan of the Unhallowed — 2 Zombie tokens on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -256,7 +276,15 @@ fn ai_tier3_doomed_traveler() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Doomed Traveler, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Doomed Traveler");
-    eprintln!("OK: AI cast Doomed Traveler (1/1 for W, dies into a Spirit)");
+
+    // Verify outcome: Doomed Traveler resolved onto the battlefield
+    let travelers: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Doomed Traveler")
+        .collect();
+    assert_eq!(travelers.len(), 1,
+        "Expected Doomed Traveler on battlefield, found {}", travelers.len());
+    eprintln!("OK: AI cast Doomed Traveler — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -326,7 +354,20 @@ fn ai_tier3_village_bell_ringer_flash() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Village Bell-Ringer with flash, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Village Bell-Ringer");
-    eprintln!("OK: AI cast Village Bell-Ringer to untap creatures for blocking");
+
+    // Verify outcome: Village Bell-Ringer on the battlefield
+    let vbr_on_bf: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(1))
+        .into_iter()
+        .filter(|o| o.name == "Village Bell-Ringer")
+        .collect();
+    assert_eq!(vbr_on_bf.len(), 1,
+        "Expected Village Bell-Ringer on battlefield, found {}", vbr_on_bf.len());
+
+    // Verify ETB trigger: the previously tapped Grizzly Bears should be untapped
+    let bears = final_state.get_object(tapped_blocker).unwrap();
+    assert!(!bears.tapped,
+        "Village Bell-Ringer ETB should have untapped Grizzly Bears");
+    eprintln!("OK: AI cast Village Bell-Ringer — on battlefield, tapped creature untapped");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -371,7 +412,15 @@ fn ai_tier3_pitchburn_devils() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Pitchburn Devils, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Pitchburn Devils");
-    eprintln!("OK: AI cast Pitchburn Devils (3/3 that deals 3 on death)");
+
+    // Verify outcome: Pitchburn Devils on the battlefield
+    let devils: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Pitchburn Devils")
+        .collect();
+    assert_eq!(devils.len(), 1,
+        "Expected Pitchburn Devils on battlefield, found {}", devils.len());
+    eprintln!("OK: AI cast Pitchburn Devils — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -417,7 +466,17 @@ fn ai_tier3_falkenrath_noble() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Falkenrath Noble, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Falkenrath Noble");
-    eprintln!("OK: AI cast Falkenrath Noble (2/2 flyer with drain ability)");
+
+    // Verify outcome: Falkenrath Noble on the battlefield with flying
+    let nobles: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Falkenrath Noble")
+        .collect();
+    assert_eq!(nobles.len(), 1,
+        "Expected Falkenrath Noble on battlefield, found {}", nobles.len());
+    assert!(final_state.has_keyword(nobles[0].id, Keyword::Flying, &reg),
+        "Falkenrath Noble should have flying");
+    eprintln!("OK: AI cast Falkenrath Noble — on battlefield with flying");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -470,7 +529,20 @@ fn ai_tier3_fiend_hunter() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Fiend Hunter to exile the 5/5, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Fiend Hunter");
-    eprintln!("OK: AI cast Fiend Hunter to exile the opponent's 5/5");
+
+    // Verify outcome: Fiend Hunter on the battlefield
+    let hunters: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Fiend Hunter")
+        .collect();
+    assert_eq!(hunters.len(), 1,
+        "Expected Fiend Hunter on battlefield, found {}", hunters.len());
+
+    // Verify ETB trigger: Kindercatch should be exiled
+    let kindercatch = final_state.get_object(big).unwrap();
+    assert_eq!(kindercatch.zone, Zone::Exile,
+        "Fiend Hunter ETB should have exiled Kindercatch, but it's in {:?}", kindercatch.zone);
+    eprintln!("OK: AI cast Fiend Hunter — on battlefield, Kindercatch exiled");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -514,7 +586,15 @@ fn ai_tier3_mausoleum_guard() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Mausoleum Guard, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Mausoleum Guard");
-    eprintln!("OK: AI cast Mausoleum Guard");
+
+    // Verify outcome: Mausoleum Guard on the battlefield
+    let guards: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Mausoleum Guard")
+        .collect();
+    assert_eq!(guards.len(), 1,
+        "Expected Mausoleum Guard on battlefield, found {}", guards.len());
+    eprintln!("OK: AI cast Mausoleum Guard — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -557,7 +637,15 @@ fn ai_tier3_rage_thrower() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Rage Thrower, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Rage Thrower");
-    eprintln!("OK: AI cast Rage Thrower");
+
+    // Verify outcome: Rage Thrower on the battlefield
+    let throwers: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Rage Thrower")
+        .collect();
+    assert_eq!(throwers.len(), 1,
+        "Expected Rage Thrower on battlefield, found {}", throwers.len());
+    eprintln!("OK: AI cast Rage Thrower — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -608,7 +696,20 @@ fn ai_tier3_slayer_of_the_wicked() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Slayer of the Wicked, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Slayer of the Wicked");
-    eprintln!("OK: AI cast Slayer of the Wicked to destroy Zombie");
+
+    // Verify outcome: Slayer of the Wicked on the battlefield
+    let slayers: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Slayer of the Wicked")
+        .collect();
+    assert_eq!(slayers.len(), 1,
+        "Expected Slayer of the Wicked on battlefield, found {}", slayers.len());
+
+    // Verify ETB trigger: Walking Corpse (Zombie) should be in graveyard
+    let corpse = final_state.get_object(wc).unwrap();
+    assert_eq!(corpse.zone, Zone::Graveyard,
+        "Slayer ETB should have destroyed Walking Corpse, but it's in {:?}", corpse.zone);
+    eprintln!("OK: AI cast Slayer of the Wicked — on battlefield, Walking Corpse destroyed");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -661,7 +762,15 @@ fn ai_tier3_intangible_virtue() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Intangible Virtue, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Intangible Virtue");
-    eprintln!("OK: AI cast Intangible Virtue to buff creatures");
+
+    // Verify outcome: Intangible Virtue on the battlefield
+    let virtues: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Intangible Virtue")
+        .collect();
+    assert_eq!(virtues.len(), 1,
+        "Expected Intangible Virtue on battlefield, found {}", virtues.len());
+    eprintln!("OK: AI cast Intangible Virtue — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -704,7 +813,15 @@ fn ai_tier3_unruly_mob() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Unruly Mob, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Unruly Mob");
-    eprintln!("OK: AI cast Unruly Mob");
+
+    // Verify outcome: Unruly Mob on the battlefield
+    let mobs: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Unruly Mob")
+        .collect();
+    assert_eq!(mobs.len(), 1,
+        "Expected Unruly Mob on battlefield, found {}", mobs.len());
+    eprintln!("OK: AI cast Unruly Mob — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -747,7 +864,15 @@ fn ai_tier3_lumberknot() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Lumberknot, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Lumberknot");
-    eprintln!("OK: AI cast Lumberknot");
+
+    // Verify outcome: Lumberknot on the battlefield
+    let knots: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Lumberknot")
+        .collect();
+    assert_eq!(knots.len(), 1,
+        "Expected Lumberknot on battlefield, found {}", knots.len());
+    eprintln!("OK: AI cast Lumberknot — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -790,7 +915,15 @@ fn ai_tier3_elder_cathar() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Elder Cathar, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Elder Cathar");
-    eprintln!("OK: AI cast Elder Cathar");
+
+    // Verify outcome: Elder Cathar on the battlefield
+    let cathars: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Elder Cathar")
+        .collect();
+    assert_eq!(cathars.len(), 1,
+        "Expected Elder Cathar on battlefield, found {}", cathars.len());
+    eprintln!("OK: AI cast Elder Cathar — resolved on battlefield");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -833,5 +966,13 @@ fn ai_tier3_village_cannibals() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Village Cannibals, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Village Cannibals");
-    eprintln!("OK: AI cast Village Cannibals");
+
+    // Verify outcome: Village Cannibals on the battlefield
+    let cannibals: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter()
+        .filter(|o| o.name == "Village Cannibals")
+        .collect();
+    assert_eq!(cannibals.len(), 1,
+        "Expected Village Cannibals on battlefield, found {}", cannibals.len());
+    eprintln!("OK: AI cast Village Cannibals — resolved on battlefield");
 }

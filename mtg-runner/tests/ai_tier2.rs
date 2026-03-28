@@ -54,7 +54,8 @@ fn add_libraries(state: &mut GameState, registry: &CardRegistry) {
     }
 }
 
-/// Run the AI decision loop. Returns the first CastSpell action the AI takes.
+/// Run the AI decision loop. When the AI casts a spell, submits the action
+/// and resolves the stack, then returns the action and the post-resolution state.
 /// Handles mana tapping automatically.
 fn run_ai_decision(
     state: &GameState,
@@ -75,6 +76,11 @@ fn run_ai_decision(
         match &action {
             Action::CastSpell { .. } => {
                 eprintln!("  AI cast spell on action #{}", i + 1);
+                // Submit the cast action and resolve the stack.
+                current = engine::submit_action(&current, &action, registry);
+                mtg_engine::stack::resolve_top_of_stack(&mut current, registry);
+                mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
+                mtg_engine::triggers::process_triggers(&mut current, registry);
                 return (action, current);
             }
             Action::ActivateManaAbility { object_id, .. } => {
@@ -151,6 +157,9 @@ fn ai_tier2_silent_departure_bounces_threat() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Silent Departure, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Silent Departure");
+    // Verify the 5/5 was bounced to its owner's hand
+    assert_eq!(final_state.get_object(big).unwrap().zone, Zone::Hand,
+        "Kalonian Tusker should be bounced to hand after Silent Departure resolves");
     eprintln!("OK: AI cast Silent Departure to bounce the 5/5");
 }
 
@@ -211,6 +220,9 @@ fn ai_tier2_naturalize_frees_creature() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Naturalize to remove Pacifism, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Naturalize");
+    // Verify Pacifism was destroyed
+    assert_eq!(final_state.get_object(pac).unwrap().zone, Zone::Graveyard,
+        "Pacifism should be in graveyard after Naturalize resolves");
     eprintln!("OK: AI cast Naturalize to free its creature from Pacifism");
 }
 
@@ -272,6 +284,15 @@ fn ai_tier2_prey_upon_fights() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Prey Upon, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Prey Upon");
+    // Verify the opponent's 2/2 died from the fight (3 damage kills it)
+    assert_eq!(final_state.get_object(theirs).unwrap().zone, Zone::Graveyard,
+        "Opponent's Grizzly Bears should be dead after fight with 3/3");
+    // Verify AI's 3/3 took 2 damage from the fight but survived
+    let mine_obj = final_state.get_object(mine).unwrap();
+    assert_eq!(mine_obj.zone, Zone::Battlefield,
+        "AI's Kalonian Tusker should survive the fight");
+    assert!(mine_obj.damage_marked >= 2,
+        "AI's creature should have at least 2 damage marked from fight");
     eprintln!("OK: AI cast Prey Upon to fight opponent's creature");
 }
 
@@ -332,6 +353,9 @@ fn ai_tier2_smite_the_monstrous() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Smite the Monstrous to survive, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Smite the Monstrous");
+    // Verify the 6/6 was destroyed
+    assert_eq!(final_state.get_object(big).unwrap().zone, Zone::Graveyard,
+        "Kindercatch should be in graveyard after Smite the Monstrous resolves");
     eprintln!("OK: AI cast Smite the Monstrous to kill the attacking 6/6");
 }
 
@@ -384,6 +408,9 @@ fn ai_tier2_victim_of_night() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Victim of Night, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Victim of Night");
+    // Verify the target creature was destroyed
+    assert_eq!(final_state.get_object(threat).unwrap().zone, Zone::Graveyard,
+        "Kalonian Tusker should be in graveyard after Victim of Night resolves");
     eprintln!("OK: AI cast Victim of Night to kill the 3/3");
 }
 
@@ -432,6 +459,9 @@ fn ai_tier2_geistflame_lethal() {
         assert!(targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == PlayerId(0))),
             "Should target opponent for lethal damage");
     }
+    // Verify opponent is dead
+    assert!(final_state.players[0].life <= 0,
+        "Opponent should be at 0 or less life after Geistflame, got {}", final_state.players[0].life);
     eprintln!("OK: AI cast Geistflame at opponent for lethal");
 }
 
@@ -486,6 +516,9 @@ fn ai_tier2_dissipate_counters() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Dissipate, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Dissipate");
+    // Verify the countered spell was exiled (Dissipate exiles instead of graveyard)
+    assert_eq!(final_state.get_object(kc).unwrap().zone, Zone::Exile,
+        "Kindercatch should be exiled after being countered by Dissipate");
     eprintln!("OK: AI cast Dissipate to counter the 6/6 Kindercatch");
 }
 
@@ -547,6 +580,9 @@ fn ai_tier2_rebuke_kills_attacker() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Rebuke on the attacker, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Rebuke");
+    // Verify the attacking creature was destroyed
+    assert_eq!(final_state.get_object(attacker).unwrap().zone, Zone::Graveyard,
+        "Kalonian Tusker should be in graveyard after Rebuke resolves");
     eprintln!("OK: AI cast Rebuke to destroy the attacking 3/3");
 }
 
@@ -595,6 +631,9 @@ fn ai_tier2_brimstone_volley_lethal() {
         assert!(targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == PlayerId(0))),
             "Should target opponent for lethal");
     }
+    // Verify opponent is dead
+    assert!(final_state.players[0].life <= 0,
+        "Opponent should be at 0 or less life after Brimstone Volley, got {}", final_state.players[0].life);
     eprintln!("OK: AI cast Brimstone Volley at opponent for lethal");
 }
 
@@ -637,6 +676,9 @@ fn ai_tier2_bump_in_the_night_lethal() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Bump in the Night for lethal, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Bump in the Night");
+    // Verify opponent is dead (started at 2, Bump causes 3 life loss)
+    assert!(final_state.players[0].life <= 0,
+        "Opponent should be at 0 or less life after Bump in the Night, got {}", final_state.players[0].life);
     eprintln!("OK: AI cast Bump in the Night for lethal");
 }
 
@@ -695,6 +737,9 @@ fn ai_tier2_bramblecrush_destroys_artifact() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Bramblecrush, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Bramblecrush");
+    // Verify Sol Ring was destroyed
+    assert_eq!(final_state.get_object(ring).unwrap().zone, Zone::Graveyard,
+        "Sol Ring should be in graveyard after Bramblecrush resolves");
     eprintln!("OK: AI cast Bramblecrush to destroy Sol Ring");
 }
 
@@ -748,6 +793,9 @@ fn ai_tier2_urgent_exorcism_kills_spirit() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Urgent Exorcism on the Spirit, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Urgent Exorcism");
+    // Verify Chapel Geist was destroyed
+    assert_eq!(final_state.get_object(geist).unwrap().zone, Zone::Graveyard,
+        "Chapel Geist should be in graveyard after Urgent Exorcism resolves");
     eprintln!("OK: AI cast Urgent Exorcism to destroy Chapel Geist");
 }
 
@@ -801,6 +849,9 @@ fn ai_tier2_frightful_delusion_counters() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Frightful Delusion, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Frightful Delusion");
+    // Verify the countered spell went to graveyard (not exile -- Frightful Delusion is a normal counter)
+    assert_eq!(final_state.get_object(tusker).unwrap().zone, Zone::Graveyard,
+        "Kalonian Tusker should be in graveyard after being countered by Frightful Delusion");
     eprintln!("OK: AI cast Frightful Delusion to counter the 3/3");
 }
 
@@ -862,5 +913,11 @@ fn ai_tier2_lost_in_the_mist() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Lost in the Mist, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Lost in the Mist");
+    // Verify the countered spell went to graveyard
+    assert_eq!(final_state.get_object(kc).unwrap().zone, Zone::Graveyard,
+        "Kindercatch should be in graveyard after being countered by Lost in the Mist");
+    // Verify the bounced creature is back in its owner's hand
+    assert_eq!(final_state.get_object(tusker).unwrap().zone, Zone::Hand,
+        "Kalonian Tusker should be bounced to hand by Lost in the Mist");
     eprintln!("OK: AI cast Lost in the Mist to counter and bounce");
 }

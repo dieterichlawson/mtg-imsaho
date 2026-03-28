@@ -206,6 +206,34 @@ fn ai_counterspell() {
                 assert_eq!(obj.name, "Counterspell",
                     "Expected Counterspell cast but got: {}", obj.name);
                 eprintln!("OK: Claude cast Counterspell (action #{})", i + 1);
+
+                // Submit the CastSpell action (puts Counterspell on the stack)
+                current_state = engine::submit_action(&current_state, &action, &registry);
+
+                // Resolve the top of stack (Counterspell resolves, countering Kalonian Tusker)
+                mtg_engine::stack::resolve_top_of_stack(&mut current_state, &registry);
+
+                // Verify Kalonian Tusker ended up in the graveyard (not battlefield or stack)
+                let tusker_in_graveyard = current_state.objects_in_zone(Zone::Graveyard, PlayerId(0))
+                    .iter().any(|o| o.name == "Kalonian Tusker");
+                let tusker_on_battlefield = current_state.all_objects_in_zone(Zone::Battlefield)
+                    .iter().any(|o| o.name == "Kalonian Tusker");
+                let tusker_on_stack = current_state.all_objects_in_zone(Zone::Stack)
+                    .iter().any(|o| o.name == "Kalonian Tusker");
+                assert!(tusker_in_graveyard,
+                    "Kalonian Tusker should be in the graveyard after being countered");
+                assert!(!tusker_on_battlefield,
+                    "Kalonian Tusker should NOT be on the battlefield");
+                assert!(!tusker_on_stack,
+                    "Kalonian Tusker should NOT be on the stack");
+
+                // Verify Counterspell is in the graveyard
+                let counterspell_in_graveyard = current_state.objects_in_zone(Zone::Graveyard, PlayerId(1))
+                    .iter().any(|o| o.name == "Counterspell");
+                assert!(counterspell_in_graveyard,
+                    "Counterspell should be in the graveyard after resolving");
+
+                eprintln!("OK: Kalonian Tusker countered and both spells in graveyard");
                 return; // success
             }
             Action::PassPriority => {
