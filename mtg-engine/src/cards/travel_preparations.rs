@@ -5,7 +5,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Travel Preparations — {1}{G} sorcery. Put a +1/+1 counter on each of up to two target creatures.
-/// Simplified to one target creature.
+/// Simplified: targets one creature and puts a +1/+1 counter on it.
+/// TODO: implement multi-target casting flow for "up to two targets".
 pub struct TravelPreparations;
 
 impl CardBehavior for TravelPreparations {

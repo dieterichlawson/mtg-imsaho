@@ -358,7 +358,7 @@ fn generate_cast_actions_with_targets(
             let mut actions = Vec::new();
             for t1 in &targets1 {
                 for t2 in &targets2 {
-                    if t1 != t2 { // can't target the same thing twice
+                    if t1 != t2 {
                         let pair: Vec<crate::actions::Target> = vec![t1.clone(), t2.clone()];
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
