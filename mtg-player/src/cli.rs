@@ -516,7 +516,7 @@ impl CliPlayer {
 
         // Header — full gutter width
         let label = if filter.is_empty() { "─── CARDS " } else { "─── CARDS (filtered) " };
-        let header = format!("{}{}", label, "─".repeat(right_w.saturating_sub(label.len())));
+        let header = format!("{}{}", label, "─".repeat(right_w.saturating_sub(label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(right_col, 0),
             SetAttribute(Attribute::Dim), Print(&header), SetAttribute(Attribute::Reset));
 
@@ -587,15 +587,29 @@ impl CliPlayer {
                 if row >= max_row { break; }
             }
 
-            // Oracle text (word-wrapped)
+            // Oracle text (word-wrapped), skipping lines that just repeat keywords
             if !card.oracle_text.is_empty() {
-                // Skip oracle text that just repeats keyword names
-                let text = card.oracle_text.trim();
-                let wrapped = Self::wrap_text(text, content_w);
-                for line in wrapped {
-                    if row >= max_row { break; }
-                    let _ = execute!(out, cursor::MoveTo(right_col, row), Print(&line));
-                    row += 1;
+                let keyword_names: Vec<&str> = vec![
+                    "Flying", "First strike", "Double strike", "Trample", "Deathtouch",
+                    "Lifelink", "Vigilance", "Flash", "Reach", "Haste", "Defender",
+                    "Hexproof", "Intimidate", "Menace", "Indestructible",
+                ];
+                let lines: Vec<&str> = card.oracle_text.split('\n').collect();
+                let non_keyword_text: Vec<&str> = lines.iter()
+                    .filter(|line| {
+                        let trimmed = line.trim().trim_end_matches(',');
+                        !keyword_names.iter().any(|kw| trimmed.eq_ignore_ascii_case(kw))
+                    })
+                    .copied()
+                    .collect();
+                let text = non_keyword_text.join("\n");
+                if !text.trim().is_empty() {
+                    let wrapped = Self::wrap_text(text.trim(), content_w);
+                    for line in wrapped {
+                        if row >= max_row { break; }
+                        let _ = execute!(out, cursor::MoveTo(right_col, row), Print(&line));
+                        row += 1;
+                    }
                 }
             }
 
