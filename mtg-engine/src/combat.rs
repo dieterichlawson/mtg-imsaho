@@ -118,6 +118,20 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
     }
 }
 
+/// Fight: each creature deals damage equal to its power to the other.
+/// Used by Prey Upon and similar "fight" cards.
+pub fn fight(state: &mut GameState, a: ObjectId, b: ObjectId, registry: &CardRegistry) {
+    let power_a = state.effective_power(a, registry).unwrap_or(0).max(0) as u32;
+    let power_b = state.effective_power(b, registry).unwrap_or(0).max(0) as u32;
+
+    if power_a > 0 {
+        deal_damage_to_creature(state, a, b, power_a, registry);
+    }
+    if power_b > 0 {
+        deal_damage_to_creature(state, b, a, power_b, registry);
+    }
+}
+
 /// Execute one combat damage step.
 /// If `first_strike_only`, only creatures with first/double strike deal damage.
 /// If not, creatures without first strike deal damage (plus double strikers again).

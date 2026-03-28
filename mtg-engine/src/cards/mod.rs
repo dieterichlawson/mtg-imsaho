@@ -99,6 +99,10 @@ pub enum TargetRequirement {
     PlayerOnly,
     /// Target a spell on the stack (Counterspell)
     Spell,
+    /// Target any permanent on the battlefield matching a filter (Naturalize, Bramblecrush)
+    PermanentWithFilter(String),
+    /// Two separate targets (Prey Upon, Lost in the Mist). Engine generates Cartesian product.
+    TwoTargets(Box<TargetRequirement>, Box<TargetRequirement>),
 }
 
 /// The trait that every card implements.

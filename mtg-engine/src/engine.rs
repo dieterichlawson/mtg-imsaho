@@ -291,6 +291,103 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
+        TargetRequirement::PermanentWithFilter(_) => {
+            // Target any permanent on the battlefield matching a filter.
+            // Actual filtering is done by the card's is_valid_target.
+            let mut actions = Vec::new();
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                if !can_be_targeted(state, obj.id, caster, registry) { continue; }
+                let target = Target::Object(obj.id);
+                if behavior.is_valid_target(state, caster, &target) {
+                    actions.push(Action::CastSpell {
+                        object_id: spell_id,
+                        targets: vec![target],
+                    });
+                }
+            }
+            actions
+        }
+        TargetRequirement::TwoTargets(ref req1, ref req2) => {
+            // Generate Cartesian product of valid targets for each requirement.
+            let targets1 = valid_targets_for_req(state, caster, spell_id, req1, behavior, registry);
+            let targets2 = valid_targets_for_req(state, caster, spell_id, req2, behavior, registry);
+            let mut actions = Vec::new();
+            for t1 in &targets1 {
+                for t2 in &targets2 {
+                    if t1 != t2 { // can't target the same thing twice
+                        let pair: Vec<crate::actions::Target> = vec![t1.clone(), t2.clone()];
+                        actions.push(Action::CastSpell {
+                            object_id: spell_id,
+                            targets: pair,
+                        });
+                    }
+                }
+            }
+            actions
+        }
+    }
+}
+
+/// Helper: collect all valid targets for a single-target requirement.
+fn valid_targets_for_req(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    req: &crate::cards::TargetRequirement,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Vec<crate::actions::Target> {
+    use crate::actions::Target;
+    use crate::cards::TargetRequirement;
+
+    match req {
+        TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_) => {
+            state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| o.power.is_some())
+                .filter(|o| can_be_targeted(state, o.id, caster, registry))
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .collect()
+        }
+        TargetRequirement::Spell => {
+            state.stack.iter()
+                .filter(|&&id| id != spell_id)
+                .map(|&id| Target::Object(id))
+                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .collect()
+        }
+        TargetRequirement::PermanentWithFilter(_) => {
+            state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| can_be_targeted(state, o.id, caster, registry))
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .collect()
+        }
+        TargetRequirement::AnyTarget => {
+            let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| o.power.is_some())
+                .filter(|o| can_be_targeted(state, o.id, caster, registry))
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .collect();
+            for p in &state.players {
+                if !p.lost {
+                    let t = Target::Player(p.id);
+                    if behavior.is_valid_target(state, caster, &t) {
+                        targets.push(t);
+                    }
+                }
+            }
+            targets
+        }
+        TargetRequirement::PlayerOnly => {
+            state.players.iter()
+                .filter(|p| !p.lost)
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .collect()
+        }
+        _ => vec![],
     }
 }
 
