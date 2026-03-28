@@ -12,7 +12,7 @@ use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
-use mtg_engine::state::GameState;
+use mtg_engine::state::{CombatState, GameState};
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
 
@@ -155,62 +155,63 @@ fn ai_tier2_silent_departure_bounces_threat() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Naturalize destroys opponent's Glorious Anthem
+// Scenario: Naturalize removes Pacifism from own creature
 //
-// P1 (AI) faces an opponent whose creatures are buffed by Glorious
-// Anthem (+1/+1). AI has Naturalize in hand + mana. Destroying the
-// Anthem weakens all of P0's creatures.
+// P0 (AI) has a 3/3 creature locked down by opponent's Pacifism.
+// Has Naturalize in hand + mana. Should destroy the Pacifism to
+// free the creature for attacking.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
 #[ignore]
-fn ai_tier2_naturalize_destroys_anthem() {
+fn ai_tier2_naturalize_frees_creature() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
-    state.players[0].life = 20;
-    state.players[1].life = 12;
-    state.turn_number = 6;
-    state.active_player = PlayerId(1);
-    state.priority_player = Some(PlayerId(1));
+    state.players[0].life = 15;
+    state.players[1].life = 20;
+    state.turn_number = 5;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(0));
     state.step = Step::PrecombatMain;
     state.is_first_turn = false;
-    state.players[1].land_plays_remaining = 0;
+    state.players[0].land_plays_remaining = 0;
 
-    // P0: two 2/2 creatures + Glorious Anthem (makes them effectively 3/3)
-    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    for _ in 0..2 {
-        let id = state.create_object(bears_id, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
-        state.get_object_mut(id).unwrap().summoning_sick = false;
-        state.get_object_mut(id).unwrap().colors = vec![Color::Green];
-    }
-    let anthem_id = reg.get_id_by_name("Glorious Anthem").unwrap();
-    let anthem = state.create_object(anthem_id, PlayerId(0), Zone::Battlefield, None, None);
-    state.get_object_mut(anthem).unwrap().name = "Glorious Anthem".into();
-    state.get_object_mut(anthem).unwrap().summoning_sick = false;
+    // P0 (AI): 3/3 creature with opponent's Pacifism attached
+    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
+    let creature = state.create_object(tusker_id, PlayerId(0), Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(creature).unwrap().name = "Kalonian Tusker".into();
+    state.get_object_mut(creature).unwrap().summoning_sick = false;
+    state.get_object_mut(creature).unwrap().colors = vec![Color::Green];
 
-    // P1 (AI): Naturalize in hand + 2 Forests
+    let pac_id = reg.get_id_by_name("Pacifism").unwrap();
+    let pac = state.create_object(pac_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(pac).unwrap().name = "Pacifism".into();
+    state.get_object_mut(pac).unwrap().attached_to = Some(creature);
+    state.get_object_mut(pac).unwrap().summoning_sick = false;
+
+    // P0 hand: Naturalize
     let nat_id = reg.get_id_by_name("Naturalize").unwrap();
-    let nat = state.create_object(nat_id, PlayerId(1), Zone::Hand, None, None);
+    let nat = state.create_object(nat_id, PlayerId(0), Zone::Hand, None, None);
     state.get_object_mut(nat).unwrap().name = "Naturalize".into();
 
+    // P0 lands: 2 untapped Forests
     let forest_id = reg.get_id_by_name("Forest").unwrap();
     for _ in 0..2 {
-        let id = state.create_object(forest_id, PlayerId(1), Zone::Battlefield, None, None);
+        let id = state.create_object(forest_id, PlayerId(0), Zone::Battlefield, None, None);
         state.get_object_mut(id).unwrap().name = "Forest".into();
         state.get_object_mut(id).unwrap().summoning_sick = false;
     }
 
     add_libraries(&mut state, &reg);
-    save_scenario(&state, "ai_naturalize");
+    save_scenario(&state, "ai_naturalize_pacifism");
 
-    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_naturalize.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_naturalize_pacifism.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
-        "AI should cast Naturalize, not {:?}", action);
+        "AI should cast Naturalize to remove Pacifism, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Naturalize");
-    eprintln!("OK: AI cast Naturalize to destroy Glorious Anthem");
+    eprintln!("OK: AI cast Naturalize to free its creature from Pacifism");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -275,11 +276,11 @@ fn ai_tier2_prey_upon_fights() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Smite the Monstrous kills a big creature
+// Scenario: Smite the Monstrous kills an attacking 6/6
 //
-// P1 (AI) is at 7 life. P0 has a 6/6 Kindercatch that will attack
-// next turn for lethal. AI has Smite the Monstrous + 4 Plains on
-// their own main phase. Must kill it now or die.
+// P0 attacks with Kindercatch (6/6). P1 (AI) at 7 life has Smite
+// the Monstrous in hand and priority after attackers are declared.
+// Taking 6 damage is lethal. Must kill it now.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -288,19 +289,26 @@ fn ai_tier2_smite_the_monstrous() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
     state.players[0].life = 20;
-    state.players[1].life = 7; // will die to 6/6 attack
+    state.players[1].life = 7; // 6 damage is lethal
     state.turn_number = 7;
-    state.active_player = PlayerId(1);
-    state.priority_player = Some(PlayerId(1));
-    state.step = Step::PrecombatMain;
+    state.active_player = PlayerId(0);
+    state.step = Step::DeclareAttackers;
     state.is_first_turn = false;
-    state.players[1].land_plays_remaining = 0;
 
-    // P0: 6/6 creature ready to attack next turn
+    // P0: Kindercatch 6/6 is attacking
     let big_id = reg.get_id_by_name("Kindercatch").unwrap();
     let big = state.create_object(big_id, PlayerId(0), Zone::Battlefield, Some(6), Some(6));
     state.get_object_mut(big).unwrap().name = "Kindercatch".into();
     state.get_object_mut(big).unwrap().summoning_sick = false;
+    state.get_object_mut(big).unwrap().tapped = true; // tapped from attacking
+
+    let mut combat = CombatState::new();
+    combat.attackers.insert(big, PlayerId(1));
+    combat.blocker_assignments.insert(big, Vec::new());
+    state.combat = Some(combat);
+
+    // P1 (AI) has priority after attackers declared
+    state.priority_player = Some(PlayerId(1));
 
     // P1 (AI): Smite the Monstrous in hand + 4 Plains
     let smite_id = reg.get_id_by_name("Smite the Monstrous").unwrap();
@@ -315,15 +323,16 @@ fn ai_tier2_smite_the_monstrous() {
     }
 
     add_libraries(&mut state, &reg);
+    state.log(mtg_engine::state::LogLevel::Event, "p0 declared attackers: Kindercatch".into());
     save_scenario(&state, "ai_smite");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_smite.log");
     let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
-        "AI should cast Smite the Monstrous, not {:?}", action);
+        "AI should cast Smite the Monstrous to survive, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Smite the Monstrous");
-    eprintln!("OK: AI cast Smite the Monstrous to kill the 6/6");
+    eprintln!("OK: AI cast Smite the Monstrous to kill the attacking 6/6");
 }
 
 // ═══════════════════════════════════════════════════════════════════
