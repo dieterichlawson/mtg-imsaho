@@ -19,6 +19,7 @@ pub mod glorious_anthem;
 pub mod holy_strength;
 pub mod pacifism;
 pub mod counterspell;
+pub mod coral_merfolk;
 
 use std::collections::HashMap;
 
@@ -156,6 +157,7 @@ impl CardRegistry {
         reg.register(Box::new(savannah_lions::SavannahLions));
         reg.register(Box::new(grizzly_bears::GrizzlyBears));
         reg.register(Box::new(walking_corpse::WalkingCorpse));
+        reg.register(Box::new(coral_merfolk::CoralMerfolk));
         // Artifacts
         reg.register(Box::new(sol_ring::SolRing));
         // Instants
