@@ -746,6 +746,28 @@ pub fn run_game_loop<F>(
     });
     perform_turn_based_actions(state, registry);
 
+    run_game_loop_inner(state, registry, &mut choose_action);
+}
+
+/// Resume a game loop from a previously saved state. Unlike `run_game_loop`,
+/// this skips the initial turn setup since the state already has it applied.
+pub fn resume_game_loop<F>(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    mut choose_action: F,
+) where
+    F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
+{
+    run_game_loop_inner(state, registry, &mut choose_action);
+}
+
+fn run_game_loop_inner<F>(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    choose_action: &mut F,
+) where
+    F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
+{
     let num_players = state.players.len() as u32;
 
     loop {
