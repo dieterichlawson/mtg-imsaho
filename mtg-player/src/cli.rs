@@ -512,14 +512,15 @@ impl CliPlayer {
     /// Render the card reference panel in the right column.
     fn render_right_panel(out: &mut io::Stdout, cards: &[mtg_engine::cards::CardData],
                            right_col: u16, right_w: usize, h: usize, filter: &str) {
-        let content_w = right_w.saturating_sub(1);
-        if content_w < 10 { return; }
+        if right_w < 10 { return; }
 
-        // Header
+        // Header — full gutter width
         let label = if filter.is_empty() { "─── CARDS " } else { "─── CARDS (filtered) " };
-        let header = format!("{}{}", label, "─".repeat(content_w.saturating_sub(label.len())));
+        let header = format!("{}{}", label, "─".repeat(right_w.saturating_sub(label.len())));
         let _ = execute!(out, cursor::MoveTo(right_col, 0),
             SetAttribute(Attribute::Dim), Print(&header), SetAttribute(Attribute::Reset));
+
+        let content_w = right_w.saturating_sub(1); // text margin
 
         let mut row: u16 = 1;
         let max_row = (h as u16).saturating_sub(2);
@@ -611,7 +612,7 @@ impl CliPlayer {
 
             // Separator between cards (dotted full-width line)
             if row < max_row {
-                let sep: String = "╌".repeat(content_w);
+                let sep: String = "╌".repeat(right_w);
                 let _ = execute!(out, cursor::MoveTo(right_col, row),
                     SetAttribute(Attribute::Dim), Print(&sep), SetAttribute(Attribute::Reset));
                 row += 1;
