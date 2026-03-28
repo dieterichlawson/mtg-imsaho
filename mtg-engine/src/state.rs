@@ -163,6 +163,7 @@ impl GameState {
             zone_change_count: 0,
             is_token: false,
             cast_with_flashback: false,
+            instance_oracle_text: None,
             counters: HashMap::new(),
         };
         self.objects.insert(id, obj);
@@ -202,6 +203,7 @@ impl GameState {
             zone_change_count: 0,
             is_token: true,
             cast_with_flashback: false,
+            instance_oracle_text: None,
             counters: HashMap::new(),
         };
         self.objects.insert(id, obj);
@@ -388,8 +390,9 @@ impl GameState {
                 if let Some(behavior) = registry.get(obj.card_id) {
                     let data = behavior.card_data();
                     if data.card_types.contains(&crate::types::CardType::Enchantment) {
-                        // Check for power bonus in oracle text (simple parsing).
-                        bonus += parse_aura_power_bonus(&data.oracle_text);
+                        // Use instance oracle text if available, otherwise card data.
+                        let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
+                        bonus += parse_aura_power_bonus(oracle);
                     }
                 }
             }
@@ -404,7 +407,9 @@ impl GameState {
                 if let Some(behavior) = registry.get(obj.card_id) {
                     let data = behavior.card_data();
                     if data.card_types.contains(&crate::types::CardType::Enchantment) {
-                        bonus += parse_aura_toughness_bonus(&data.oracle_text);
+                        // Use instance oracle text if available, otherwise card data.
+                        let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
+                        bonus += parse_aura_toughness_bonus(oracle);
                     }
                 }
             }
@@ -463,7 +468,9 @@ impl GameState {
             if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
                 if let Some(behavior) = registry.get(obj.card_id) {
                     let data = behavior.card_data();
-                    if data.oracle_text.contains("can't attack or block") {
+                    // Use instance oracle text if available, otherwise card data.
+                    let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
+                    if oracle.contains("can't attack or block") {
                         return false;
                     }
                 }
@@ -478,7 +485,9 @@ impl GameState {
             if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
                 if let Some(behavior) = registry.get(obj.card_id) {
                     let data = behavior.card_data();
-                    if data.oracle_text.contains("can't attack or block") {
+                    // Use instance oracle text if available, otherwise card data.
+                    let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
+                    if oracle.contains("can't attack or block") {
                         return false;
                     }
                 }
@@ -638,6 +647,11 @@ pub struct GameObject {
     /// Whether this spell was cast using flashback (exiled instead of going to graveyard).
     #[serde(default)]
     pub cast_with_flashback: bool,
+
+    /// Per-instance oracle text override (e.g., Bonds of Faith conditional effect).
+    /// When set, aura parsing uses this instead of the card's static oracle text.
+    #[serde(default)]
+    pub instance_oracle_text: Option<String>,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
     pub counters: HashMap<crate::types::CounterType, u32>,

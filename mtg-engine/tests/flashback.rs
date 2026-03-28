@@ -513,15 +513,15 @@ fn feeling_of_dread_taps_creature() {
         "Feeling of Dread should tap the target creature");
 }
 
-/// Nightbird's Clutches taps a target creature (simplified proxy for "can't block").
+/// Nightbird's Clutches prevents target creatures from blocking this turn.
 #[test]
 fn nightbirds_clutches_taps_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P1, 3, 3);
-    assert!(!state.get_object(creature).unwrap().tapped,
-        "Creature should start untapped");
+    assert!(!state.until_end_of_turn_cant_block.contains(&creature),
+        "Creature should start able to block");
 
     // Cast Nightbird's Clutches. Cost: {1}{R}.
     let nc_id = reg.get_id_by_name("Nightbird's Clutches").unwrap();
@@ -536,8 +536,8 @@ fn nightbirds_clutches_taps_creature() {
     );
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    assert!(state.get_object(creature).unwrap().tapped,
-        "Nightbird's Clutches should tap the target creature");
+    assert!(state.until_end_of_turn_cant_block.contains(&creature),
+        "Nightbird's Clutches should prevent the target creature from blocking");
 }
 
 /// Bump in the Night flashback: opponent loses 3 life and Bump is exiled.

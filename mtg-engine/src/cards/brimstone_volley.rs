@@ -6,6 +6,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Brimstone Volley — {2}{R} instant. Deal 3 damage to any target.
+/// Morbid — Brimstone Volley deals 5 damage instead if a creature died this turn.
 pub struct BrimstoneVolley;
 
 impl CardBehavior for BrimstoneVolley {
@@ -21,7 +22,7 @@ impl CardBehavior for BrimstoneVolley {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Brimstone Volley deals 3 damage to any target.".into(),
+            oracle_text: "Brimstone Volley deals 3 damage to any target.\nMorbid — Brimstone Volley deals 5 damage instead if a creature died this turn.".into(),
             keywords: vec![],
             flashback_cost: None,
         }
@@ -32,28 +33,29 @@ impl CardBehavior for BrimstoneVolley {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+        let damage: u32 = if state.creature_died_this_turn { 5 } else { 3 };
         if let Some(target) = targets.first() {
             match target {
                 Target::Object(target_id) => {
                     if let Some(obj) = state.get_object_mut(*target_id) {
                         if obj.zone == Zone::Battlefield {
-                            obj.damage_marked += 3;
+                            obj.damage_marked += damage;
                             state.events.push(GameEvent::CombatDamageDealt {
                                 source: object_id,
                                 target: DamageTarget::Object(*target_id),
-                                amount: 3,
+                                amount: damage,
                             });
                         }
                     }
                 }
                 Target::Player(player_id) => {
                     let old_life = state.get_player(*player_id).life;
-                    let new_life = old_life - 3;
+                    let new_life = old_life - (damage as i32);
                     state.get_player_mut(*player_id).life = new_life;
                     state.events.push(GameEvent::CombatDamageDealt {
                         source: object_id,
                         target: DamageTarget::Player(*player_id),
-                        amount: 3,
+                        amount: damage,
                     });
                     state.events.push(GameEvent::LifeChanged {
                         player: *player_id,

@@ -370,6 +370,8 @@ pub fn eligible_blockers_with_registry(state: &GameState, player: PlayerId, regi
                 .map(|d| !d.oracle_text.contains("can't block"))
                 .unwrap_or(true)
         })
+        // "Can't block this turn" (e.g., Nightbird's Clutches).
+        .filter(|&id| !state.until_end_of_turn_cant_block.contains(&id))
         .collect()
 }
 

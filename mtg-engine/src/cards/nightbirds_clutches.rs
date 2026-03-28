@@ -5,7 +5,6 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Nightbird's Clutches — {1}{R} sorcery. Up to two target creatures can't block this turn.
-/// Simplified to one target; taps it as a proxy for "can't block."
 pub struct NightbirdsClutches;
 
 impl CardBehavior for NightbirdsClutches {
@@ -28,14 +27,16 @@ impl CardBehavior for NightbirdsClutches {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::Creature
+        TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature))
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
-        if let Some(Target::Object(target_id)) = targets.first() {
-            if let Some(obj) = state.get_object_mut(*target_id) {
-                if obj.zone == Zone::Battlefield {
-                    obj.tapped = true;
+        for target in targets {
+            if let Target::Object(target_id) = target {
+                if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    state.until_end_of_turn_cant_block.push(*target_id);
+                    let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
+                    state.log(crate::state::LogLevel::Event, format!("{} can't block this turn", name));
                 }
             }
         }

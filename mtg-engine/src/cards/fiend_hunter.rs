@@ -1,3 +1,4 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -7,9 +8,6 @@ use crate::types::*;
 /// When Fiend Hunter enters the battlefield, you may exile another target creature.
 /// When Fiend Hunter leaves the battlefield, return the exiled card to the battlefield
 /// under its owner's control.
-///
-/// TODO: The "leaves the battlefield" trigger isn't wired into the trigger system yet.
-/// For now, the exile is one-way. Add on_leave_battlefield support later.
 pub struct FiendHunter;
 
 impl CardBehavior for FiendHunter {
@@ -42,11 +40,25 @@ impl CardBehavior for FiendHunter {
         if let Some(target_id) = target {
             let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(target_id, Zone::Exile);
-            // Store the exiled creature's ID so we can return it later.
+            // Store exiled ID in targets (persists after leaving battlefield, unlike attached_to).
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.attached_to = Some(target_id);
+                obj.targets = vec![Target::Object(target_id)];
             }
             state.log(crate::state::LogLevel::Event, format!("Fiend Hunter exiled {}", name));
+        }
+    }
+
+    fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+        // Retrieve the exiled creature's ID from the targets field.
+        let exiled_id = state.get_object(object_id)
+            .and_then(|o| o.targets.first().cloned())
+            .and_then(|t| if let Target::Object(id) = t { Some(id) } else { None });
+        if let Some(target_id) = exiled_id {
+            if state.get_object(target_id).map(|o| o.zone == Zone::Exile).unwrap_or(false) {
+                let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
+                state.move_object(target_id, Zone::Battlefield);
+                state.log(crate::state::LogLevel::Event, format!("{} returned to the battlefield", name));
+            }
         }
     }
 }
