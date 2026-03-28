@@ -47,10 +47,30 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 ## Card knowledge
 - Lightning Bolt ({R} instant): Deal 3 damage to any target. Use to kill creatures or finish off opponent.
 - Giant Growth ({G} instant): Target creature gets +3/+3 until end of turn. SAVE THIS FOR COMBAT — cast it during DeclareBlockers to pump your attacker or save a blocker.
-- Doom Blade ({1}{B} instant): Destroy target creature. Can cast during combat to remove a blocker before damage.
+- Doom Blade ({1}{B} instant): Destroy target nonblack creature. Can cast during combat to remove a blocker before damage.
 - Swords to Plowshares ({W} instant): Exile target creature. Controller gains life equal to power. Best used on big threats.
+- Counterspell ({U}{U} instant): Counter target spell on the stack. Use when opponent casts a threatening creature or spell.
+- Dissipate ({1}{U}{U} instant): Counter target spell and exile it (not graveyard).
+- Frightful Delusion ({2}{U} instant): Counter target spell. Its controller discards a card.
+- Lost in the Mist ({3}{U}{U} instant): Counter target spell AND return target permanent to its owner's hand. Two-for-one!
 - Holy Strength ({W} aura): Enchanted creature gets +1/+2. Cast on your creatures during main phase.
 - Pacifism ({1}{W} aura): Enchanted creature can't attack or block. Cast on opponent's creatures.
+- Rebuke ({2}{W} instant): Destroy target ATTACKING creature. Cast during combat after attackers are declared.
+- Smite the Monstrous ({3}{W} instant): Destroy target creature with power 4 or greater.
+- Victim of Night ({B}{B} instant): Destroy target non-Vampire, non-Werewolf, non-Zombie creature.
+- Geistflame ({R} instant): Deal 1 damage to any target.
+- Brimstone Volley ({2}{R} instant): Deal 3 damage to any target.
+- Bump in the Night ({B} sorcery): Target opponent loses 3 life.
+- Silent Departure ({U} sorcery): Return target creature to its owner's hand.
+- Naturalize ({1}{G} instant): Destroy target artifact or enchantment. Use to remove auras like Pacifism from your creatures!
+- Urgent Exorcism ({1}{W} instant): Destroy target Spirit or enchantment.
+- Bramblecrush ({2}{G}{G} sorcery): Destroy target noncreature permanent (lands, artifacts, enchantments).
+- Prey Upon ({G} sorcery): Target creature you control fights target creature you don't control. Both deal damage equal to their power to the other.
+- Moment of Heroism ({1}{W} instant): Target creature gets +2/+2 and gains lifelink until end of turn.
+- Ranger's Guile ({G} instant): Target creature gets +1/+1 and gains hexproof until end of turn.
+- Spidery Grasp ({2}{G} instant): Untap target creature. It gets +2/+4 and gains reach until end of turn.
+- Rally the Peasants ({2}{W} instant): Creatures you control get +2/+0 until end of turn.
+- Vampiric Fury ({1}{R} instant): Vampire creatures you control get +2/+0 and gain first strike until end of turn.
 
 ## Strategy tips
 - Save instants for combat! Giant Growth during DeclareBlockers makes your 2/2 into a 5/5. Lightning Bolt during DeclareAttackers can kill a would-be blocker.
