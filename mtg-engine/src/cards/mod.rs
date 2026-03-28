@@ -54,6 +54,20 @@ pub mod skeletal_grimace;
 pub mod bonds_of_faith;
 pub mod ghostly_possession;
 pub mod claustrophobia;
+pub mod bump_in_the_night;
+pub mod geistflame;
+pub mod brimstone_volley;
+pub mod dissipate;
+pub mod victim_of_night;
+pub mod smite_the_monstrous;
+pub mod rebuke;
+pub mod silent_departure;
+pub mod naturalize;
+pub mod urgent_exorcism;
+pub mod bramblecrush;
+pub mod prey_upon;
+pub mod frightful_delusion;
+pub mod lost_in_the_mist;
 
 use std::collections::HashMap;
 
@@ -253,6 +267,21 @@ impl CardRegistry {
         reg.register(Box::new(bonds_of_faith::BondsOfFaith));
         reg.register(Box::new(ghostly_possession::GhostlyPossession));
         reg.register(Box::new(claustrophobia::Claustrophobia));
+        // Innistrad instants/sorceries (Tier 2)
+        reg.register(Box::new(bump_in_the_night::BumpInTheNight));
+        reg.register(Box::new(geistflame::Geistflame));
+        reg.register(Box::new(brimstone_volley::BrimstoneVolley));
+        reg.register(Box::new(dissipate::Dissipate));
+        reg.register(Box::new(victim_of_night::VictimOfNight));
+        reg.register(Box::new(smite_the_monstrous::SmiteTheMonstrous));
+        reg.register(Box::new(rebuke::Rebuke));
+        reg.register(Box::new(silent_departure::SilentDeparture));
+        reg.register(Box::new(naturalize::Naturalize));
+        reg.register(Box::new(urgent_exorcism::UrgentExorcism));
+        reg.register(Box::new(bramblecrush::Bramblecrush));
+        reg.register(Box::new(prey_upon::PreyUpon));
+        reg.register(Box::new(frightful_delusion::FrightfulDelusion));
+        reg.register(Box::new(lost_in_the_mist::LostInTheMist));
         reg
     }
 }
