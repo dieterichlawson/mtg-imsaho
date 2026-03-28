@@ -58,7 +58,8 @@ fn add_libraries(state: &mut GameState, registry: &CardRegistry) {
     }
 }
 
-/// Run the AI decision loop. Returns the first CastSpell action the AI takes.
+/// Run the AI decision loop. When the AI casts a spell, submits the action
+/// and resolves the stack, then returns the action and the post-resolution state.
 /// Handles mana tapping automatically.
 fn run_ai_decision(
     state: &GameState,
@@ -79,6 +80,11 @@ fn run_ai_decision(
         match &action {
             Action::CastSpell { .. } => {
                 eprintln!("  AI cast spell on action #{}", i + 1);
+                // Submit the cast action and resolve the stack.
+                current = engine::submit_action(&current, &action, registry);
+                mtg_engine::stack::resolve_top_of_stack(&mut current, registry);
+                mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
+                mtg_engine::triggers::process_triggers(&mut current, registry);
                 return (action, current);
             }
             Action::ActivateManaAbility { object_id, .. } => {
@@ -97,6 +103,7 @@ fn run_ai_decision(
     }
     panic!("AI did not act within 15 actions");
 }
+
 
 fn spell_name<'a>(state: &'a GameState, action: &Action) -> &'a str {
     match action {
@@ -151,7 +158,12 @@ fn ai_tier4_think_twice_flashback() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should flashback Think Twice, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Think Twice");
-    eprintln!("OK: AI flashed back Think Twice to draw a card");
+    // Verify outcome: drew a card and spell is exiled (flashback).
+    let hand_size = final_state.objects_in_zone(Zone::Hand, PlayerId(0)).len();
+    assert!(hand_size >= 1, "Should have drawn a card, hand size = {}", hand_size);
+    assert_eq!(final_state.get_object(tt).unwrap().zone, Zone::Exile,
+        "Flashback spell should be exiled after resolution");
+    eprintln!("OK: AI flashed back Think Twice — drew a card, spell exiled");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -201,7 +213,10 @@ fn ai_tier4_geistflame_flashback_lethal() {
         assert!(targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == PlayerId(1))),
             "Should target opponent for lethal damage");
     }
-    eprintln!("OK: AI flashed back Geistflame at opponent for lethal");
+    // Verify outcome: opponent should be at 0 or less life.
+    assert!(final_state.get_player(PlayerId(1)).life <= 0,
+        "Geistflame should deal 1 damage for lethal, opponent life = {}", final_state.get_player(PlayerId(1)).life);
+    eprintln!("OK: AI flashed back Geistflame at opponent for lethal (life={})", final_state.get_player(PlayerId(1)).life);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -248,7 +263,10 @@ fn ai_tier4_bump_flashback_lethal() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should flashback Bump in the Night for lethal, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Bump in the Night");
-    eprintln!("OK: AI flashed back Bump in the Night for lethal");
+    // Verify outcome: opponent loses 3 life (was at 3, now 0 or less).
+    assert!(final_state.get_player(PlayerId(1)).life <= 0,
+        "Bump should drain 3 for lethal, opponent life = {}", final_state.get_player(PlayerId(1)).life);
+    eprintln!("OK: AI flashed back Bump in the Night for lethal (life={})", final_state.get_player(PlayerId(1)).life);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -302,7 +320,12 @@ fn ai_tier4_silent_departure_flashback() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should flashback Silent Departure, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Silent Departure");
-    eprintln!("OK: AI flashed back Silent Departure to bounce the 5/5");
+    // Verify outcome: 5/5 should be bounced to hand, spell exiled.
+    assert_eq!(final_state.get_object(big).unwrap().zone, Zone::Hand,
+        "Silent Departure should bounce the 5/5 to hand");
+    assert_eq!(final_state.get_object(sd).unwrap().zone, Zone::Exile,
+        "Flashback spell should be exiled");
+    eprintln!("OK: AI flashed back Silent Departure — 5/5 bounced, spell exiled");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -346,7 +369,10 @@ fn ai_tier4_dream_twist() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Dream Twist, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Dream Twist");
-    eprintln!("OK: AI cast Dream Twist to mill the opponent");
+    // Verify outcome: opponent's library should have 3 fewer cards (15 → 12).
+    assert_eq!(final_state.get_player(PlayerId(1)).library_order.len(), 12,
+        "Dream Twist should mill 3 cards from opponent's library");
+    eprintln!("OK: AI cast Dream Twist — opponent milled 3 cards");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -401,7 +427,11 @@ fn ai_tier4_travel_preparations() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Travel Preparations, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Travel Preparations");
-    eprintln!("OK: AI cast Travel Preparations to buff its creature");
+    // Verify outcome: creature should have a +1/+1 counter.
+    assert_eq!(final_state.get_counter_count(bears, CounterType::PlusOnePlusOne), 1,
+        "Travel Preparations should add a +1/+1 counter");
+    assert_eq!(final_state.effective_power(bears, &reg), Some(3));
+    eprintln!("OK: AI cast Travel Preparations — creature is now 3/3 with +1/+1 counter");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -458,7 +488,12 @@ fn ai_tier4_rolling_temblor() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Rolling Temblor to kill both 2/2s, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Rolling Temblor");
-    eprintln!("OK: AI cast Rolling Temblor to wipe opponent's creatures");
+    // Verify outcome: opponent's 2/2s should have 2 damage (lethal after SBA).
+    let opp_creatures: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(1))
+        .iter().filter(|o| o.power.is_some()).map(|o| o.id).collect();
+    assert_eq!(opp_creatures.len(), 0,
+        "Rolling Temblor should kill both 2/2 ground creatures");
+    eprintln!("OK: AI cast Rolling Temblor — both 2/2s killed");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -510,7 +545,10 @@ fn ai_tier4_unburial_rites() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Unburial Rites to reanimate, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Unburial Rites");
-    eprintln!("OK: AI cast Unburial Rites to reanimate the 6/6");
+    // Verify outcome: Kindercatch should be on the battlefield now.
+    assert_eq!(final_state.get_object(kc).unwrap().zone, Zone::Battlefield,
+        "Unburial Rites should return Kindercatch to the battlefield");
+    eprintln!("OK: AI cast Unburial Rites — Kindercatch 6/6 reanimated");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -565,7 +603,10 @@ fn ai_tier4_gnaw_to_the_bone() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Gnaw to the Bone at 3 life, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Gnaw to the Bone");
-    eprintln!("OK: AI cast Gnaw to the Bone to gain 8 life");
+    // Verify outcome: AI started at 3 life, should gain 2 * 4 = 8 life → 11.
+    assert!(final_state.get_player(PlayerId(0)).life > 3,
+        "Gnaw should gain life, AI life = {}", final_state.get_player(PlayerId(0)).life);
+    eprintln!("OK: AI cast Gnaw to the Bone — life now {}", final_state.get_player(PlayerId(0)).life);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -612,7 +653,11 @@ fn ai_tier4_desperate_ravings() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Desperate Ravings for card advantage, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Desperate Ravings");
-    eprintln!("OK: AI cast Desperate Ravings for card advantage");
+    // Verify outcome: net +1 card in hand (draw 2, discard 1, cast 1 = started with 1, now should have 1).
+    // AI had Desperate Ravings in hand (1 card). Cast it (0), drew 2, discarded 1 → 1 card.
+    let hand = final_state.objects_in_zone(Zone::Hand, PlayerId(0)).len();
+    assert!(hand >= 1, "Should have cards in hand after draw 2 discard 1, hand = {}", hand);
+    eprintln!("OK: AI cast Desperate Ravings — hand size {}", hand);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -658,7 +703,10 @@ fn ai_tier4_forbidden_alchemy() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Forbidden Alchemy for card selection, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Forbidden Alchemy");
-    eprintln!("OK: AI cast Forbidden Alchemy for card selection");
+    // Verify outcome: drew 1 card (hand had 1, now has 1 after cast), library shrunk by 4 (1 draw + 3 mill).
+    let lib_size = final_state.get_player(PlayerId(0)).library_order.len();
+    assert!(lib_size <= 11, "Should have drawn+milled 4 cards, library = {}", lib_size);
+    eprintln!("OK: AI cast Forbidden Alchemy — library now {}", lib_size);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -712,7 +760,10 @@ fn ai_tier4_feeling_of_dread() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Feeling of Dread to tap the 5/5, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Feeling of Dread");
-    eprintln!("OK: AI cast Feeling of Dread to tap the threatening creature");
+    // Verify outcome: opponent's 5/5 should be tapped.
+    assert!(final_state.get_object(big).unwrap().tapped,
+        "Feeling of Dread should tap the target creature");
+    eprintln!("OK: AI cast Feeling of Dread — 5/5 is now tapped");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -774,7 +825,10 @@ fn ai_tier4_nightbirds_clutches() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Nightbird's Clutches to clear the blocker, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Nightbird's Clutches");
-    eprintln!("OK: AI cast Nightbird's Clutches to tap the blocker");
+    // Verify outcome: opponent's blocker should be tapped.
+    assert!(final_state.get_object(blocker).unwrap().tapped,
+        "Nightbird's Clutches should tap the target creature");
+    eprintln!("OK: AI cast Nightbird's Clutches — blocker is now tapped");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -831,7 +885,16 @@ fn ai_tier4_rally_flashback() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should flashback Rally the Peasants, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Rally the Peasants");
-    eprintln!("OK: AI flashed back Rally the Peasants to pump creatures");
+    // Verify outcome: creatures should have +2/+0 (effective 4/2), spell exiled.
+    let my_creatures: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .iter().filter(|o| o.power.is_some()).map(|o| o.id).collect();
+    for &id in &my_creatures {
+        assert_eq!(final_state.effective_power(id, &reg), Some(4),
+            "Creatures should be pumped to 4 power from Rally");
+    }
+    assert_eq!(final_state.get_object(rally).unwrap().zone, Zone::Exile,
+        "Flashback spell should be exiled");
+    eprintln!("OK: AI flashed back Rally — creatures pumped to 4/2, spell exiled");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -884,5 +947,11 @@ fn ai_tier4_moan_flashback() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should flashback Moan of the Unhallowed, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Moan of the Unhallowed");
-    eprintln!("OK: AI flashed back Moan of the Unhallowed for two Zombies");
+    // Verify outcome: two 2/2 Zombie tokens on the battlefield, spell exiled.
+    let my_creatures: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .iter().filter(|o| o.power.is_some()).map(|o| o.id).collect();
+    assert_eq!(my_creatures.len(), 2, "Should have two Zombie tokens on battlefield");
+    assert_eq!(final_state.get_object(moan).unwrap().zone, Zone::Exile,
+        "Flashback spell should be exiled");
+    eprintln!("OK: AI flashed back Moan — two Zombie tokens created, spell exiled");
 }
