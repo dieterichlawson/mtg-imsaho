@@ -704,8 +704,8 @@ impl CliPlayer {
                         break;
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.card_filter.clear();
-                        break;
+                        let _ = terminal::disable_raw_mode();
+                        std::process::exit(0);
                     }
                     KeyCode::Backspace => {
                         self.card_filter.pop();
@@ -817,7 +817,8 @@ impl CliPlayer {
                         break Some(buf.clone());
                     }
                     KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        break Some(String::new());
+                        let _ = terminal::disable_raw_mode();
+                        std::process::exit(0);
                     }
                     KeyCode::Backspace => {
                         if buf.pop().is_some() {
