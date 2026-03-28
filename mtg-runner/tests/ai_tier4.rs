@@ -787,11 +787,11 @@ fn ai_tier4_feeling_of_dread() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario 13: Cast Nightbird's Clutches to clear blockers
+// Scenario 13: Nightbird's Clutches to clear blocker for lethal
 //
-// P0 (AI) main phase with creatures. Nightbird's Clutches in hand +
-// 2 Mountains. Cost is {1}{R}. Opponent has a blocker. Should cast
-// to tap the blocker before combat.
+// P0 (AI) has a 3/3, opponent at 3 life with a 3/3 blocker.
+// If the blocker is tapped, the 3/3 attacks unblocked for lethal.
+// Nightbird's Clutches is the only card in hand. No other play wins.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -800,7 +800,7 @@ fn ai_tier4_nightbirds_clutches() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
     state.players[0].life = 15;
-    state.players[1].life = 5;
+    state.players[1].life = 3; // 3/3 unblocked = lethal
     state.turn_number = 6;
     state.active_player = PlayerId(0);
     state.priority_player = Some(PlayerId(0));

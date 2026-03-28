@@ -288,12 +288,13 @@ fn ai_tier3_doomed_traveler() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Village Bell-Ringer flash to untap blockers
+// Scenario: Village Bell-Ringer flash to survive lethal attack
 //
-// P0 attacks with a 3/3 creature. P1 (AI) has Village Bell-Ringer
-// in hand + 3 Plains. P1 has a tapped 2/2 creature from last turn.
-// Casting VBR with flash untaps the 2/2, giving P1 two potential
-// blockers (VBR 1/4 + the 2/2). Just verify the AI casts VBR.
+// P0 attacks with a 3/3. P1 (AI) at 3 life — this attack is LETHAL
+// if unblocked. P1 has no untapped creatures but has VBR in hand
+// with flash. Casting VBR gives P1 a 1/4 body that can block the
+// 3/3. It also untaps the tapped 2/2 as a bonus. Without casting
+// VBR, P1 dies. No other play survives.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -302,7 +303,7 @@ fn ai_tier3_village_bell_ringer_flash() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
     state.players[0].life = 20;
-    state.players[1].life = 5; // low life makes blocking critical
+    state.players[1].life = 3; // 3/3 is LETHAL — must block or die
     state.turn_number = 6;
     state.active_player = PlayerId(0);
     state.step = Step::DeclareAttackers;
@@ -480,11 +481,11 @@ fn ai_tier3_falkenrath_noble() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Fiend Hunter exiles a big threat
+// Scenario: Fiend Hunter exiles to survive lethal
 //
-// P0 (AI) has Fiend Hunter in hand + 3 Plains. Opponent has a 5/5
-// creature. Should cast Fiend Hunter to exile it (ETB auto-targets
-// the strongest opponent creature).
+// P0 (AI) at 5 life, opponent has a 5/5 that will attack for lethal
+// next turn. Fiend Hunter is the only card in hand — exiles the
+// 5/5 on entry. Without casting, P0 dies.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -492,7 +493,7 @@ fn ai_tier3_falkenrath_noble() {
 fn ai_tier3_fiend_hunter() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
-    state.players[0].life = 12;
+    state.players[0].life = 5; // 5/5 attack is lethal
     state.players[1].life = 20;
     state.turn_number = 5;
     state.active_player = PlayerId(0);

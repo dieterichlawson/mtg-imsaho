@@ -37,13 +37,18 @@ impl CardBehavior for PreyUpon {
             if let (Target::Object(a), Target::Object(b)) = (&targets[0], &targets[1]) {
                 let caster = state.get_object(object_id).map(|o| o.controller);
                 let a_mine = caster.and_then(|c| state.get_object(*a).map(|o| o.controller == c)).unwrap_or(false);
-                let b_theirs = caster.and_then(|c| state.get_object(*b).map(|o| o.controller != c)).unwrap_or(false);
-                if a_mine && b_theirs {
-                    let registry = crate::cards::CardRegistry::with_all_cards();
-                    crate::combat::fight(state, *a, *b, &registry);
-                }
+
+                // Handle both target orderings: (mine, theirs) or (theirs, mine).
+                let (my_creature, their_creature) = if a_mine {
+                    (*a, *b)
+                } else {
+                    (*b, *a)
+                };
+
+                let registry = crate::cards::CardRegistry::with_all_cards();
+                crate::combat::fight(state, my_creature, their_creature, &registry);
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

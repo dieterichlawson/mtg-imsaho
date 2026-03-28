@@ -227,11 +227,11 @@ fn ai_tier2_naturalize_frees_creature() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Prey Upon to kill a creature
+// Scenario: Prey Upon to clear blocker for lethal
 //
-// P0 (AI) has a 3/3 and the opponent has a 2/2. AI has Prey Upon
-// in hand + mana. Should fight to kill the 2/2 (3/3 survives with
-// 2 damage).
+// P0 (AI) has a 3/3, opponent at 3 life with a 2/2 blocker.
+// Fighting kills the blocker so the 3/3 can attack unblocked for
+// lethal. Prey Upon is the only card in hand — no other play wins.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -240,8 +240,8 @@ fn ai_tier2_prey_upon_fights() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
     state.players[0].life = 20;
-    state.players[1].life = 20;
-    state.turn_number = 4;
+    state.players[1].life = 3; // 3/3 is lethal if unblocked
+    state.turn_number = 6;
     state.active_player = PlayerId(0);
     state.priority_player = Some(PlayerId(0));
     state.step = Step::PrecombatMain;
@@ -856,11 +856,13 @@ fn ai_tier2_frightful_delusion_counters() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Lost in the Mist counters a spell and bounces a creature
+// Scenario: Lost in the Mist is the only way to survive
 //
 // P0 casts Kindercatch (6/6) and has a 3/3 on the battlefield.
-// P1 (AI) at 5 life has Lost in the Mist and 5 Islands. Should
-// counter the 6/6 AND bounce the 3/3 for a huge tempo swing.
+// P1 (AI) at 3 life — the 3/3 alone is lethal next attack, and a
+// 6/6 resolving makes it even worse. Lost in the Mist is the ONLY
+// card in hand and counters the 6/6 + bounces the 3/3, clearing
+// all threats. No other play survives.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -869,7 +871,7 @@ fn ai_tier2_lost_in_the_mist() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
     state.players[0].life = 20;
-    state.players[1].life = 5;
+    state.players[1].life = 3; // 3/3 is lethal, must counter+bounce
     state.turn_number = 8;
     state.active_player = PlayerId(0);
     state.priority_player = Some(PlayerId(1));
