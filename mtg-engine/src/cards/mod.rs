@@ -68,6 +68,21 @@ pub mod bramblecrush;
 pub mod prey_upon;
 pub mod frightful_delusion;
 pub mod lost_in_the_mist;
+pub mod midnight_haunting;
+pub mod moan_of_the_unhallowed;
+pub mod doomed_traveler;
+pub mod mausoleum_guard;
+pub mod village_bell_ringer;
+pub mod slayer_of_the_wicked;
+pub mod pitchburn_devils;
+pub mod intangible_virtue;
+pub mod falkenrath_noble;
+pub mod rage_thrower;
+pub mod unruly_mob;
+pub mod lumberknot;
+pub mod elder_cathar;
+pub mod village_cannibals;
+pub mod fiend_hunter;
 
 use std::collections::HashMap;
 
@@ -291,6 +306,23 @@ impl CardRegistry {
         reg.register(Box::new(prey_upon::PreyUpon));
         reg.register(Box::new(frightful_delusion::FrightfulDelusion));
         reg.register(Box::new(lost_in_the_mist::LostInTheMist));
+        // Token creators and trigger cards
+        reg.register(Box::new(midnight_haunting::MidnightHaunting));
+        reg.register(Box::new(moan_of_the_unhallowed::MoanOfTheUnhallowed));
+        reg.register(Box::new(doomed_traveler::DoomedTraveler));
+        reg.register(Box::new(mausoleum_guard::MausoleumGuard));
+        reg.register(Box::new(village_bell_ringer::VillageBellRinger));
+        reg.register(Box::new(slayer_of_the_wicked::SlayerOfTheWicked));
+        reg.register(Box::new(pitchburn_devils::PitchburnDevils));
+        reg.register(Box::new(intangible_virtue::IntangibleVirtue));
+        // Death triggers and +1/+1 counter creatures
+        reg.register(Box::new(falkenrath_noble::FalkenrathNoble));
+        reg.register(Box::new(rage_thrower::RageThrower));
+        reg.register(Box::new(unruly_mob::UnrulyMob));
+        reg.register(Box::new(lumberknot::Lumberknot));
+        reg.register(Box::new(elder_cathar::ElderCathar));
+        reg.register(Box::new(village_cannibals::VillageCannibals));
+        reg.register(Box::new(fiend_hunter::FiendHunter));
         reg
     }
 }
