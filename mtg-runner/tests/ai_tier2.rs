@@ -488,3 +488,379 @@ fn ai_tier2_dissipate_counters() {
     assert_eq!(spell_name(&final_state, &action), "Dissipate");
     eprintln!("OK: AI cast Dissipate to counter the 6/6 Kindercatch");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Rebuke destroys an attacking creature
+//
+// P0 attacks with a 3/3. P1 (AI) at 4 life has Rebuke in hand and
+// 3 Plains during DeclareBlockers. Taking 3 is nearly lethal with
+// no blockers available. Must use Rebuke.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier2_rebuke_kills_attacker() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 4; // 3 damage is nearly lethal
+    state.turn_number = 6;
+    state.active_player = PlayerId(0);
+    state.step = Step::DeclareBlockers;
+    state.is_first_turn = false;
+
+    // P0: 3/3 attacking (tapped from attack declaration)
+    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
+    let attacker = state.create_object(tusker_id, PlayerId(0), Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(attacker).unwrap().name = "Kalonian Tusker".into();
+    state.get_object_mut(attacker).unwrap().summoning_sick = false;
+    state.get_object_mut(attacker).unwrap().tapped = true;
+    state.get_object_mut(attacker).unwrap().colors = vec![Color::Green];
+
+    let mut combat = CombatState::new();
+    combat.attackers.insert(attacker, PlayerId(1));
+    combat.blocker_assignments.insert(attacker, Vec::new());
+    state.combat = Some(combat);
+
+    // P1 has priority during DeclareBlockers (can cast instants before declaring)
+    state.priority_player = Some(PlayerId(1));
+
+    // P1 (AI): Rebuke + 3 Plains
+    let rebuke_id = reg.get_id_by_name("Rebuke").unwrap();
+    let rebuke = state.create_object(rebuke_id, PlayerId(1), Zone::Hand, None, None);
+    state.get_object_mut(rebuke).unwrap().name = "Rebuke".into();
+
+    let plains_id = reg.get_id_by_name("Plains").unwrap();
+    for _ in 0..3 {
+        let id = state.create_object(plains_id, PlayerId(1), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    state.log(mtg_engine::state::LogLevel::Event, "p0 declared attackers: Kalonian Tusker".into());
+    save_scenario(&state, "ai_rebuke");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_rebuke.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Rebuke on the attacker, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Rebuke");
+    eprintln!("OK: AI cast Rebuke to destroy the attacking 3/3");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Brimstone Volley for lethal
+//
+// P1 (AI) at 15 life. P0 at 3 life. AI has Brimstone Volley in hand
+// and 3 Mountains. Should fire at opponent for lethal.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier2_brimstone_volley_lethal() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 3;
+    state.players[1].life = 15;
+    state.turn_number = 8;
+    state.active_player = PlayerId(1);
+    state.priority_player = Some(PlayerId(1));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[1].land_plays_remaining = 0;
+
+    let bv_id = reg.get_id_by_name("Brimstone Volley").unwrap();
+    let bv = state.create_object(bv_id, PlayerId(1), Zone::Hand, None, None);
+    state.get_object_mut(bv).unwrap().name = "Brimstone Volley".into();
+
+    let mtn_id = reg.get_id_by_name("Mountain").unwrap();
+    for _ in 0..3 {
+        let id = state.create_object(mtn_id, PlayerId(1), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Mountain".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_brimstone_volley");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_brimstone_volley.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Brimstone Volley for lethal, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Brimstone Volley");
+    if let Action::CastSpell { targets, .. } = &action {
+        assert!(targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == PlayerId(0))),
+            "Should target opponent for lethal");
+    }
+    eprintln!("OK: AI cast Brimstone Volley at opponent for lethal");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Bump in the Night for lethal
+//
+// P1 (AI) at 10 life. P0 at 2 life. AI has Bump in the Night and
+// a Swamp. 3 life loss is lethal.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier2_bump_in_the_night_lethal() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 2;
+    state.players[1].life = 10;
+    state.turn_number = 9;
+    state.active_player = PlayerId(1);
+    state.priority_player = Some(PlayerId(1));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[1].land_plays_remaining = 0;
+
+    let bump_id = reg.get_id_by_name("Bump in the Night").unwrap();
+    let bump = state.create_object(bump_id, PlayerId(1), Zone::Hand, None, None);
+    state.get_object_mut(bump).unwrap().name = "Bump in the Night".into();
+
+    let swamp_id = reg.get_id_by_name("Swamp").unwrap();
+    let sw = state.create_object(swamp_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(sw).unwrap().name = "Swamp".into();
+    state.get_object_mut(sw).unwrap().summoning_sick = false;
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_bump");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_bump.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Bump in the Night for lethal, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Bump in the Night");
+    eprintln!("OK: AI cast Bump in the Night for lethal");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Bramblecrush destroys opponent's Sol Ring
+//
+// P0 has Sol Ring producing extra mana. P1 (AI) has Bramblecrush
+// and 4 Forests. Destroying Sol Ring cuts off P0's mana advantage.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier2_bramblecrush_destroys_artifact() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 15;
+    state.turn_number = 4;
+    state.active_player = PlayerId(1);
+    state.priority_player = Some(PlayerId(1));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[1].land_plays_remaining = 0;
+
+    // P0: Sol Ring on battlefield
+    let ring_id = reg.get_id_by_name("Sol Ring").unwrap();
+    let ring = state.create_object(ring_id, PlayerId(0), Zone::Battlefield, None, None);
+    state.get_object_mut(ring).unwrap().name = "Sol Ring".into();
+    state.get_object_mut(ring).unwrap().summoning_sick = false;
+
+    // P0 also has some lands and a creature
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    for _ in 0..3 {
+        let id = state.create_object(forest_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    // P1 (AI): Bramblecrush + 4 Forests
+    let bc_id = reg.get_id_by_name("Bramblecrush").unwrap();
+    let bc = state.create_object(bc_id, PlayerId(1), Zone::Hand, None, None);
+    state.get_object_mut(bc).unwrap().name = "Bramblecrush".into();
+
+    for _ in 0..4 {
+        let id = state.create_object(forest_id, PlayerId(1), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_bramblecrush");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_bramblecrush.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Bramblecrush, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Bramblecrush");
+    eprintln!("OK: AI cast Bramblecrush to destroy Sol Ring");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Urgent Exorcism destroys an opponent's Spirit
+//
+// P0 has a Chapel Geist (2/3 flying Spirit) that's been attacking.
+// P1 (AI) at 6 life has Urgent Exorcism and 2 Plains. Must remove
+// the flyer or die to aerial attacks.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier2_urgent_exorcism_kills_spirit() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 6;
+    state.turn_number = 6;
+    state.active_player = PlayerId(1);
+    state.priority_player = Some(PlayerId(1));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[1].land_plays_remaining = 0;
+
+    // P0: Chapel Geist (2/3 flying Spirit)
+    let geist_id = reg.get_id_by_name("Chapel Geist").unwrap();
+    let geist = state.create_object(geist_id, PlayerId(0), Zone::Battlefield, Some(2), Some(3));
+    state.get_object_mut(geist).unwrap().name = "Chapel Geist".into();
+    state.get_object_mut(geist).unwrap().summoning_sick = false;
+    state.get_object_mut(geist).unwrap().colors = vec![Color::White];
+
+    // P1 (AI): Urgent Exorcism + 2 Plains
+    let ue_id = reg.get_id_by_name("Urgent Exorcism").unwrap();
+    let ue = state.create_object(ue_id, PlayerId(1), Zone::Hand, None, None);
+    state.get_object_mut(ue).unwrap().name = "Urgent Exorcism".into();
+
+    let plains_id = reg.get_id_by_name("Plains").unwrap();
+    for _ in 0..2 {
+        let id = state.create_object(plains_id, PlayerId(1), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_urgent_exorcism");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_urgent_exorcism.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Urgent Exorcism on the Spirit, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Urgent Exorcism");
+    eprintln!("OK: AI cast Urgent Exorcism to destroy Chapel Geist");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Frightful Delusion counters a threatening spell
+//
+// P0 casts Kalonian Tusker (3/3). P1 (AI) at 6 life has Frightful
+// Delusion and 3 Islands. Letting a 3/3 resolve is dangerous.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier2_frightful_delusion_counters() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 6;
+    state.turn_number = 5;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(1));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.consecutive_passes = 1;
+
+    // Kalonian Tusker on the stack
+    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
+    let tusker = state.create_object(tusker_id, PlayerId(0), Zone::Stack, Some(3), Some(3));
+    state.get_object_mut(tusker).unwrap().name = "Kalonian Tusker".into();
+    state.get_object_mut(tusker).unwrap().colors = vec![Color::Green];
+    state.stack.push(tusker);
+
+    // P1 (AI): Frightful Delusion + 3 Islands
+    let fd_id = reg.get_id_by_name("Frightful Delusion").unwrap();
+    let fd = state.create_object(fd_id, PlayerId(1), Zone::Hand, None, None);
+    state.get_object_mut(fd).unwrap().name = "Frightful Delusion".into();
+
+    let island_id = reg.get_id_by_name("Island").unwrap();
+    for _ in 0..3 {
+        let id = state.create_object(island_id, PlayerId(1), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Island".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    state.log(mtg_engine::state::LogLevel::Event, "p0 cast Kalonian Tusker".into());
+    save_scenario(&state, "ai_frightful_delusion");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_frightful_delusion.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Frightful Delusion, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Frightful Delusion");
+    eprintln!("OK: AI cast Frightful Delusion to counter the 3/3");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Lost in the Mist counters a spell and bounces a creature
+//
+// P0 casts Kindercatch (6/6) and has a 3/3 on the battlefield.
+// P1 (AI) at 5 life has Lost in the Mist and 5 Islands. Should
+// counter the 6/6 AND bounce the 3/3 for a huge tempo swing.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier2_lost_in_the_mist() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 5;
+    state.turn_number = 8;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(1));
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.consecutive_passes = 1;
+
+    // P0: 3/3 on battlefield
+    let bears_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
+    let tusker = state.create_object(bears_id, PlayerId(0), Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(tusker).unwrap().name = "Kalonian Tusker".into();
+    state.get_object_mut(tusker).unwrap().summoning_sick = false;
+    state.get_object_mut(tusker).unwrap().colors = vec![Color::Green];
+
+    // Kindercatch on the stack
+    let kc_id = reg.get_id_by_name("Kindercatch").unwrap();
+    let kc = state.create_object(kc_id, PlayerId(0), Zone::Stack, Some(6), Some(6));
+    state.get_object_mut(kc).unwrap().name = "Kindercatch".into();
+    state.get_object_mut(kc).unwrap().colors = vec![Color::Green];
+    state.stack.push(kc);
+
+    // P1 (AI): Lost in the Mist + 5 Islands
+    let litm_id = reg.get_id_by_name("Lost in the Mist").unwrap();
+    let litm = state.create_object(litm_id, PlayerId(1), Zone::Hand, None, None);
+    state.get_object_mut(litm).unwrap().name = "Lost in the Mist".into();
+
+    let island_id = reg.get_id_by_name("Island").unwrap();
+    for _ in 0..5 {
+        let id = state.create_object(island_id, PlayerId(1), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Island".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+    }
+
+    add_libraries(&mut state, &reg);
+    state.log(mtg_engine::state::LogLevel::Event, "p0 cast Kindercatch".into());
+    save_scenario(&state, "ai_lost_in_the_mist");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_lost_in_the_mist.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::CastSpell { .. }),
+        "AI should cast Lost in the Mist, not {:?}", action);
+    assert_eq!(spell_name(&final_state, &action), "Lost in the Mist");
+    eprintln!("OK: AI cast Lost in the Mist to counter and bounce");
+}
