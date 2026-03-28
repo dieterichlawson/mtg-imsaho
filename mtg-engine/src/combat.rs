@@ -228,6 +228,32 @@ fn deal_damage_step(
     }
 }
 
+/// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
+fn has_damage_prevention(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
+    state.objects.values().any(|a| {
+        a.zone == Zone::Battlefield && a.attached_to == Some(creature_id)
+            && registry.card_data(a.card_id)
+                .map(|d| d.oracle_text.contains("Prevent all combat damage"))
+                .unwrap_or(false)
+    })
+}
+
+/// Check if a creature has protection from a specific subtype.
+fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, registry: &CardRegistry) -> bool {
+    state.get_object(creature_id)
+        .and_then(|o| registry.card_data(o.card_id))
+        .map(|d| d.oracle_text.contains(&format!("protection from {}", subtype)))
+        .unwrap_or(false)
+}
+
+/// Check if a creature has a specific subtype (e.g., "Zombie").
+fn is_subtype(state: &GameState, creature_id: ObjectId, subtype: &str, registry: &CardRegistry) -> bool {
+    state.get_object(creature_id)
+        .and_then(|o| registry.card_data(o.card_id))
+        .map(|d| d.subtypes.iter().any(|s| s == subtype))
+        .unwrap_or(false)
+}
+
 /// Deal damage from a source creature to a target creature. Handles lifelink.
 fn deal_damage_to_creature(
     state: &mut GameState,
@@ -236,6 +262,16 @@ fn deal_damage_to_creature(
     amount: u32,
     registry: &CardRegistry,
 ) {
+    // Skip if source or target has combat damage prevention (e.g., Ghostly Possession).
+    if has_damage_prevention(state, source, registry) || has_damage_prevention(state, target, registry) {
+        return;
+    }
+
+    // Protection: if target has protection from a type the source has, prevent damage.
+    if has_protection_from(state, target, "Zombies", registry) && is_subtype(state, source, "Zombie", registry) {
+        return;
+    }
+
     let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
     if let Some(obj) = state.get_object_mut(target) {
         obj.damage_marked += amount;
@@ -271,6 +307,11 @@ fn deal_damage_to_player(
     amount: u32,
     registry: &CardRegistry,
 ) {
+    // Skip if source has combat damage prevention (e.g., Ghostly Possession).
+    if has_damage_prevention(state, source, registry) {
+        return;
+    }
+
     let old_life = state.get_player(player).life;
     let new_life = old_life - amount as i32;
     state.get_player_mut(player).life = new_life;
@@ -416,6 +457,14 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
                 return false;
             }
         }
+    }
+
+    // Protection: a creature with protection from Zombies can't be blocked by Zombies.
+    if has_protection_from(state, blocker_id, "Zombies", registry) && is_subtype(state, attacker_id, "Zombie", registry) {
+        return false;
+    }
+    if has_protection_from(state, attacker_id, "Zombies", registry) && is_subtype(state, blocker_id, "Zombie", registry) {
+        return false;
     }
 
     true
