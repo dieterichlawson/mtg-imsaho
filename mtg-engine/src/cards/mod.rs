@@ -83,6 +83,16 @@ pub mod lumberknot;
 pub mod elder_cathar;
 pub mod village_cannibals;
 pub mod fiend_hunter;
+pub mod think_twice;
+pub mod feeling_of_dread;
+pub mod dream_twist;
+pub mod travel_preparations;
+pub mod nightbirds_clutches;
+pub mod gnaw_to_the_bone;
+pub mod forbidden_alchemy;
+pub mod rolling_temblor;
+pub mod unburial_rites;
+pub mod desperate_ravings;
 
 use std::collections::HashMap;
 
@@ -324,6 +334,17 @@ impl CardRegistry {
         reg.register(Box::new(elder_cathar::ElderCathar));
         reg.register(Box::new(village_cannibals::VillageCannibals));
         reg.register(Box::new(fiend_hunter::FiendHunter));
+        // Innistrad flashback cards
+        reg.register(Box::new(think_twice::ThinkTwice));
+        reg.register(Box::new(feeling_of_dread::FeelingOfDread));
+        reg.register(Box::new(dream_twist::DreamTwist));
+        reg.register(Box::new(travel_preparations::TravelPreparations));
+        reg.register(Box::new(nightbirds_clutches::NightbirdsClutches));
+        reg.register(Box::new(gnaw_to_the_bone::GnawToTheBone));
+        reg.register(Box::new(forbidden_alchemy::ForbiddenAlchemy));
+        reg.register(Box::new(rolling_temblor::RollingTemblor));
+        reg.register(Box::new(unburial_rites::UnburialRites));
+        reg.register(Box::new(desperate_ravings::DesperateRavings));
         reg
     }
 }
