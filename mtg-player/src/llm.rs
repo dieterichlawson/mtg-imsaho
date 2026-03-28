@@ -240,15 +240,16 @@ impl LlmPlayer {
         // Battlefield — compact
         let your_perms: Vec<_> = view.battlefield.iter().filter(|p| p.controller == view.you).collect();
         let opp_perms: Vec<_> = view.battlefield.iter().filter(|p| p.controller != view.you).collect();
+        let all_perms: Vec<_> = view.battlefield.iter().collect();
 
         if !your_perms.is_empty() {
             s.push_str("Your board: ");
-            s.push_str(&Self::format_perms_compact(&your_perms));
+            s.push_str(&Self::format_perms_compact(&your_perms, &all_perms));
             s.push('\n');
         }
         if !opp_perms.is_empty() {
             s.push_str("Opp board: ");
-            s.push_str(&Self::format_perms_compact(&opp_perms));
+            s.push_str(&Self::format_perms_compact(&opp_perms, &all_perms));
             s.push('\n');
         }
 
@@ -285,7 +286,7 @@ impl LlmPlayer {
         s
     }
 
-    fn format_perms_compact(perms: &[&mtg_engine::view::PermanentView]) -> String {
+    fn format_perms_compact(perms: &[&mtg_engine::view::PermanentView], all_perms: &[&mtg_engine::view::PermanentView]) -> String {
         // Group lands by name with tapped count.
         let lands: Vec<_> = perms.iter().filter(|p| p.card_types.contains(&CardType::Land)).collect();
         let creatures: Vec<_> = perms.iter().filter(|p| p.card_types.contains(&CardType::Creature)).collect();
@@ -317,11 +318,15 @@ impl LlmPlayer {
             }
         }
 
-        // Collect aura names by what they're attached to.
+        // Collect aura names by what they're attached to — search ALL permanents
+        // so we find auras that cross controller boundaries (e.g., opponent's
+        // Pacifism on your creature).
         let mut aura_map: std::collections::HashMap<mtg_engine::ids::ObjectId, Vec<String>> = std::collections::HashMap::new();
-        for o in &other {
-            if let Some(target_id) = o.attached_to {
-                aura_map.entry(target_id).or_default().push(o.name.clone());
+        for o in all_perms {
+            if o.attached_to.is_some() && !o.card_types.contains(&CardType::Land) && !o.card_types.contains(&CardType::Creature) {
+                if let Some(target_id) = o.attached_to {
+                    aura_map.entry(target_id).or_default().push(o.name.clone());
+                }
             }
         }
 
