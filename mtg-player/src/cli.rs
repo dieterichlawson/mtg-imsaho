@@ -688,7 +688,7 @@ impl CliPlayer {
             let gutter_w = w / 5;
             let mid_w = w.saturating_sub(gutter_w * 2 + 2);
             let right_col = (gutter_w + 1 + mid_w + 1) as u16;
-            let cursor_x = right_col + 1 + self.card_filter.chars().count() as u16;
+            let cursor_x = right_col + 2 + self.card_filter.chars().count() as u16; // +2 for " /"
             let _ = execute!(stdout(), cursor::MoveTo(cursor_x, 1));
             let _ = stdout().flush();
 
