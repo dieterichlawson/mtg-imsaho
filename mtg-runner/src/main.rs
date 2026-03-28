@@ -41,49 +41,50 @@ fn main() {
         .and_then(|i| args.get(i + 1))
         .map(|s| s.as_str());
 
-    println!("MTG Engine — {} (Red/Green) vs {} (White/Black)", p1_spec, p2_spec);
-    println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
-    println!("W/B: Savannah Lions, Walking Corpse, Swords to Plowshares, Doom Blade, Holy Strength, Pacifism");
-    println!();
+    let matchup = args.iter().position(|a| a == "--matchup")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.as_str())
+        .unwrap_or("rg-wb");
 
     let registry = CardRegistry::with_all_cards();
 
-    let config = GameConfig {
-        player_names: vec!["Red/Green".into(), "White/Black".into()],
-        decklists: vec![
-            // Red/Green deck
-            Decklist {
-                entries: vec![
-                    ("Mountain".into(), 10),
-                    ("Forest".into(), 10),
-                    ("Goblin Piker".into(), 4),
-                    ("Grizzly Bears".into(), 4),
-                    ("Kalonian Tusker".into(), 4),
-                    ("Lightning Bolt".into(), 4),
-                    ("Giant Growth".into(), 4),
+    let config = match matchup {
+        "rg-uw" => {
+            println!("MTG Engine — {} (Red/Green) vs {} (Blue/White)", p1_spec, p2_spec);
+            println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
+            println!("U/W: Coral Merfolk, Savannah Lions, Counterspell, Swords to Plowshares, Divination");
+            println!();
+            GameConfig {
+                player_names: vec!["Red/Green".into(), "Blue/White".into()],
+                decklists: vec![
+                    deck_red_green(),
+                    deck_blue_white(),
                 ],
-            },
-            // White/Black deck
-            Decklist {
-                entries: vec![
-                    ("Plains".into(), 10),
-                    ("Swamp".into(), 10),
-                    ("Savannah Lions".into(), 4),
-                    ("Walking Corpse".into(), 4),
-                    ("Swords to Plowshares".into(), 4),
-                    ("Doom Blade".into(), 4),
-                    ("Holy Strength".into(), 2),
-                    ("Pacifism".into(), 2),
+                starting_life: 20,
+            }
+        }
+        _ => {
+            println!("MTG Engine — {} (Red/Green) vs {} (White/Black)", p1_spec, p2_spec);
+            println!("R/G: Goblin Piker, Grizzly Bears, Kalonian Tusker, Lightning Bolt, Giant Growth");
+            println!("W/B: Savannah Lions, Walking Corpse, Swords to Plowshares, Doom Blade, Holy Strength, Pacifism");
+            println!();
+            GameConfig {
+                player_names: vec!["Red/Green".into(), "White/Black".into()],
+                decklists: vec![
+                    deck_red_green(),
+                    deck_white_black(),
                 ],
-            },
-        ],
-        starting_life: 20,
+                starting_life: 20,
+            }
+        }
     };
 
     let mut state = engine::setup_game(&config, &registry);
 
-    let mut p1 = make_player(p1_spec, "Green", log_file);
-    let mut p2 = make_player(p2_spec, "Red", log_file);
+    let mut p1 = make_player(p1_spec, "P1", log_file);
+    let mut p2 = make_player(p2_spec, "P2", log_file);
+
+    let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
 
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;
@@ -101,24 +102,23 @@ fn main() {
 
         let player = if acting_player == PlayerId(0) { &mut p1 } else { &mut p2 };
 
-        // Show thinking indicator for AI players — render from the human's
-        // perspective so the human sees the board while the AI thinks.
-        let is_ai = match player {
-            PlayerKind::Llm(_) => true,
-            _ => false,
-        };
-        // Start spinner for AI players, but only if they'll actually call the API
-        // (skip if the only actions are Pass+Concede — they'll auto-pass instantly)
-        let will_call_api = is_ai && (
-            legal.combat_prompt.is_some() ||
-            !legal.actions.iter().all(|a| matches!(a,
-                mtg_engine::actions::Action::PassPriority | mtg_engine::actions::Action::Concede
-            ))
-        );
-        let _spinner = if will_call_api {
-            let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
-            let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
-            Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
+        // Show thinking spinner only if a human is playing — render from the
+        // human's perspective so they see the board while the AI thinks.
+        let _spinner = if has_human {
+            let is_ai = matches!(player, PlayerKind::Llm(_));
+            let will_call_api = is_ai && (
+                legal.combat_prompt.is_some() ||
+                !legal.actions.iter().all(|a| matches!(a,
+                    mtg_engine::actions::Action::PassPriority | mtg_engine::actions::Action::Concede
+                ))
+            );
+            if will_call_api {
+                let human_id = if acting_player == PlayerId(0) { PlayerId(1) } else { PlayerId(0) };
+                let human_view = GameView::for_player(game_state, human_id, &CardRegistry::with_all_cards());
+                Some(mtg_player::cli::CliPlayer::start_thinking(&human_view))
+            } else {
+                None
+            }
         } else {
             None
         };
@@ -196,5 +196,48 @@ fn choose_combat(player: &mut PlayerKind, view: &GameView, prompt: &mtg_engine::
         PlayerKind::Cli(p) => p.choose_combat(view, prompt),
         PlayerKind::Llm(p) => p.choose_combat(view, prompt),
         PlayerKind::Random(p) => p.choose_combat(prompt),
+    }
+}
+
+fn deck_red_green() -> Decklist {
+    Decklist {
+        entries: vec![
+            ("Mountain".into(), 10),
+            ("Forest".into(), 10),
+            ("Goblin Piker".into(), 4),
+            ("Grizzly Bears".into(), 4),
+            ("Kalonian Tusker".into(), 4),
+            ("Lightning Bolt".into(), 4),
+            ("Giant Growth".into(), 4),
+        ],
+    }
+}
+
+fn deck_white_black() -> Decklist {
+    Decklist {
+        entries: vec![
+            ("Plains".into(), 10),
+            ("Swamp".into(), 10),
+            ("Savannah Lions".into(), 4),
+            ("Walking Corpse".into(), 4),
+            ("Swords to Plowshares".into(), 4),
+            ("Doom Blade".into(), 4),
+            ("Holy Strength".into(), 2),
+            ("Pacifism".into(), 2),
+        ],
+    }
+}
+
+fn deck_blue_white() -> Decklist {
+    Decklist {
+        entries: vec![
+            ("Island".into(), 10),
+            ("Plains".into(), 10),
+            ("Coral Merfolk".into(), 4),
+            ("Savannah Lions".into(), 4),
+            ("Counterspell".into(), 4),
+            ("Swords to Plowshares".into(), 4),
+            ("Divination".into(), 4),
+        ],
     }
 }
