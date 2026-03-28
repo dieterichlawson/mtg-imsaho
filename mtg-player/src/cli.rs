@@ -337,8 +337,8 @@ impl CliPlayer {
             Self::render_right_panel(&mut out, &card_refs, right_col, right_w, h, card_filter);
         }
 
-        // Move cursor to input area in middle panel
-        let _ = execute!(out, cursor::MoveTo(mid_col, row));
+        // Print prompt and move cursor to input area in middle panel
+        let _ = execute!(out, cursor::MoveTo(mid_col, row), Print("  > "));
         let _ = out.flush();
     }
 
@@ -682,9 +682,6 @@ impl CliPlayer {
             // Re-render with current filter
             Self::render(view, Some(actions), None, &view.display_log, &self.card_filter);
 
-            // Print the > prompt in the action area (render positions cursor there)
-            let _ = execute!(stdout(), Print("  > "));
-
             // Move actual cursor to the search box in the right gutter
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
             let w = term_w as usize;
@@ -805,10 +802,8 @@ impl CliPlayer {
     /// Read a line of input, but detect '/' immediately (without Enter)
     /// to trigger card search. Returns None if '/' was pressed first.
     fn read_line_with_search(_col: u16) -> Option<String> {
+        // Prompt "> " is already printed by render.
         let mut out = stdout();
-        let _ = execute!(out, Print("  > "));
-        let _ = out.flush();
-
         let _ = terminal::enable_raw_mode();
         let mut buf = String::new();
 
