@@ -1269,7 +1269,7 @@ impl CliPlayer {
 
         loop {
             let _ = execute!(stdout(), cursor::MoveTo(col, r));
-            let input = Self::read_line("  Block (blocker->attacker / enter=none)> ");
+            let input = Self::read_line("  Block (blocker:attacker / enter=none)> ");
 
             if input.is_empty() {
                 return Action::DeclareBlockers { assignments: vec![] };
@@ -1278,7 +1278,7 @@ impl CliPlayer {
             let mut assignments = Vec::new();
             let mut valid = true;
             for pair in input.split_whitespace() {
-                let parts: Vec<&str> = pair.split("->").collect();
+                let parts: Vec<&str> = pair.split(':').collect();
                 if parts.len() != 2 { valid = false; break; }
                 match (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
                     (Ok(b), Ok(a)) if b < eligible_blockers.len() && a < attacker_ids.len() => {

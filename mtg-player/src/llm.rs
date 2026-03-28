@@ -15,7 +15,7 @@ const SYSTEM_PROMPT: &str = r#"You are playing Magic: The Gathering. Respond wit
 ## Response format
 - Action selection: a single number (e.g. "3")
 - Choosing attackers: space-separated numbers, "all", or "none"
-- Choosing blockers: "blocker->attacker" pairs (e.g. "0->0 1->2"), or "none"
+- Choosing blockers: "blocker:attacker" pairs (e.g. "0:0 1:2"), or "none"
 
 You may briefly reason about your decision. Your FINAL LINE must be ONLY your answer — a single number, space-separated numbers, "all", or "none". Nothing else on that line.
 
@@ -29,7 +29,7 @@ ANSWER: all
 
 Example response for blockers:
 Block the 3/3 with my 2/1 to prevent damage.
-ANSWER: 0->0
+ANSWER: 0:0
 
 The system parses ONLY the last line. If the last line isn't a valid number/format, you default to passing.
 
@@ -205,12 +205,12 @@ Your board: 3xMountain, Goblin Piker 2/1, Goblin Piker 2/1
 Opp board: 3xForest(tapped), Kalonian Tusker 3/3[T], Kalonian Tusker 3/3[T]
 Attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
 Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
-Format: 'blocker->attacker' pairs, or 'none'
+Format: 'blocker:attacker' pairs, or 'none'
 ```
-Answer: 0->0 1->1
+Answer: 0:0 1:1
 (Block both. Your 2/1s die but prevent 6 damage.)
 
-IMPORTANT: For blocking, the format is BLOCKER_NUMBER->ATTACKER_NUMBER (e.g. "0->0" NOT "0->" or "0>0"). Both numbers are required.
+IMPORTANT: For blocking, the format is BLOCKER_NUMBER:ATTACKER_NUMBER (e.g. "0:0" NOT "0:" or "0>0"). Both numbers are required.
 "#;
 
 #[derive(Clone)]
@@ -783,7 +783,7 @@ impl LlmPlayer {
                     let name = Self::obj_name(view, id);
                     combat_text.push_str(&format!("{}:{} ", i, name));
                 }
-                combat_text.push_str("\nFormat: 'blocker->attacker' pairs, or 'none'");
+                combat_text.push_str("\nFormat: 'blocker:attacker' pairs, or 'none'");
 
                 self.log("THINKING", "blockers...");
                 let response = self.call_api(&format!("{}\n{}", state, combat_text));
@@ -805,7 +805,12 @@ impl LlmPlayer {
 
                 let mut assignments = Vec::new();
                 for pair in answer.split_whitespace() {
-                    let parts: Vec<&str> = pair.split("->").collect();
+                    // Accept both "0:0" and "0->0" formats
+                    let parts: Vec<&str> = if pair.contains("->") {
+                        pair.split("->").collect()
+                    } else {
+                        pair.split(':').collect()
+                    };
                     if parts.len() == 2 {
                         if let (Ok(b), Ok(a)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
                             if b < eligible_blockers.len() && a < attackers.len() {
