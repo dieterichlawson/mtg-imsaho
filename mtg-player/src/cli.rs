@@ -594,7 +594,7 @@ impl CliPlayer {
                 let kw_line = kw_str.join(", ");
                 let truncated: String = kw_line.chars().take(content_w).collect();
                 let _ = execute!(out, cursor::MoveTo(right_col, row),
-                    SetForegroundColor(Color::Yellow), Print(&truncated), ResetColor);
+                    SetForegroundColor(Color::Blue), Print(&truncated), ResetColor);
                 row += 1;
                 if row >= max_row { break; }
             }
@@ -1455,7 +1455,7 @@ impl CliPlayer {
                 let _ = execute!(out,
                     cursor::SavePosition,
                     cursor::MoveTo(col, spinner_row),
-                    SetForegroundColor(Color::Yellow),
+                    SetForegroundColor(Color::Red),
                     Print(frames[i % frames.len()]),
                     ResetColor,
                     cursor::RestorePosition,
