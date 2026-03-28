@@ -59,8 +59,9 @@ impl CliPlayer {
 
         // 3-column layout: left (stack+log), middle (game), right (card reference)
         let has_right = w >= 100;
-        let left_w: usize = if has_right { w * 15 / 100 } else { w / 5 };
-        let right_w: usize = if has_right { w * 28 / 100 } else { 0 };
+        let gutter_w: usize = w / 5; // 20% each gutter
+        let left_w: usize = gutter_w;
+        let right_w: usize = if has_right { gutter_w } else { 0 };
         let mid_w = w.saturating_sub(left_w + right_w + if has_right { 2 } else { 1 });
         let mid_col = (left_w + 1) as u16;
         let right_sep_col = (left_w + 1 + mid_w) as u16;
@@ -608,9 +609,9 @@ impl CliPlayer {
                 }
             }
 
-            // Separator between cards
+            // Separator between cards (dotted full-width line)
             if row < max_row {
-                let sep: String = "─".repeat(content_w.min(20));
+                let sep: String = "╌".repeat(content_w);
                 let _ = execute!(out, cursor::MoveTo(right_col, row),
                     SetAttribute(Attribute::Dim), Print(&sep), SetAttribute(Attribute::Reset));
                 row += 1;
@@ -1005,7 +1006,7 @@ impl CliPlayer {
 
         // Get mid_col for positioning
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
+        let side = term_w as usize / 5;
         let col = (side + 1) as u16;
         let cur_row = cursor::position().unwrap_or((0, 20)).1;
 
@@ -1061,7 +1062,7 @@ impl CliPlayer {
         Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "");
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
+        let side = term_w as usize / 5;
         let col = (side + 1) as u16;
         let cur_row = cursor::position().unwrap_or((0, 20)).1;
 
@@ -1155,7 +1156,7 @@ impl Player for CliPlayer {
 
             // Position cursor in the middle panel for input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
-            let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
+            let side = term_w as usize / 5;
             let col = (side + 1) as u16;
             let _ = execute!(stdout(), cursor::MoveTo(col, cursor::position().unwrap_or((0, 24)).1));
             let input = Self::read_line("  > ");
@@ -1323,7 +1324,7 @@ impl CliPlayer {
         Self::render(view, None, None, &view.display_log, "");
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
-        let side = if term_w >= 100 { term_w as usize * 15 / 100 } else { term_w as usize / 5 };
+        let side = term_w as usize / 5;
         let col = (side + 1) as u16;
         // Opponent stats are always at row 2 from the human's perspective
         // (row 0 = turn bar, row 1 = BATTLEFIELD label, row 2 = opp stats)
