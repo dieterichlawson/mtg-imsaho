@@ -437,37 +437,111 @@ impl LlmPlayer {
         parts.join(", ")
     }
 
-    fn format_actions_compact(view: &GameView, actions: &[Action]) -> String {
-        let mut s = String::new();
-        for (i, action) in actions.iter().enumerate() {
-            let desc = match action {
-                Action::PassPriority => "Pass".into(),
-                Action::PlayLand { object_id } => format!("Play {}", Self::obj_name(view, *object_id)),
-                Action::CastSpell { object_id, targets, .. } => {
-                    let name = Self::obj_name(view, *object_id);
-                    // Detect flashback: object is in a graveyard.
-                    let is_flashback = view.graveyards.iter()
-                        .any(|(_, cards)| cards.iter().any(|c| c.object_id == *object_id));
-                    let verb = if is_flashback { "Flashback" } else { "Cast" };
-                    if targets.is_empty() {
-                        format!("{} {}", verb, name)
-                    } else {
-                        let t: Vec<String> = targets.iter().map(|t| match t {
-                            mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
-                            mtg_engine::actions::Target::Player(pid) => {
-                                if *pid == view.you { "you".into() } else { "opponent".into() }
-                            }
-                        }).collect();
-                        format!("{} {}→{}", verb, name, t.join(","))
-                    }
-                }
-                Action::ActivateManaAbility { object_id, .. } => format!("Tap {}", Self::obj_name(view, *object_id)),
-                Action::Concede => "Concede".into(),
-                other => format!("{}", other),
-            };
-            s.push_str(&format!("{}:{} ", i, desc));
+    /// Format a single non-CastSpell action for the collapsed display.
+    fn format_single_action(view: &GameView, action: &Action) -> String {
+        match action {
+            Action::PassPriority => "Pass".into(),
+            Action::PlayLand { object_id } => format!("Play {}", Self::obj_name(view, *object_id)),
+            Action::ActivateManaAbility { object_id, .. } => format!("Tap {}", Self::obj_name(view, *object_id)),
+            Action::Concede => "Concede".into(),
+            Action::DiscardCards { cards } => format!("Discard {} cards", cards.len()),
+            other => format!("{}", other),
         }
-        s
+    }
+
+    /// Second API call: choose targets for a castable spell.
+    fn choose_cast_targets(&mut self, view: &GameView, spell: &mtg_engine::actions::CastableSpell, legal_actions: &[Action]) -> Action {
+        use mtg_engine::actions::{CastTargetSpec, Target};
+
+        match &spell.target_spec {
+            CastTargetSpec::NoTargets => {
+                Action::CastSpell { object_id: spell.object_id, targets: vec![] }
+            }
+            CastTargetSpec::SingleTarget(options) => {
+                if options.len() == 1 {
+                    return Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()] };
+                }
+                let target = self.prompt_target_selection(view, &spell.name, options);
+                Action::CastSpell { object_id: spell.object_id, targets: vec![target] }
+            }
+            CastTargetSpec::TwoTargets(options1, options2) => {
+                let t1 = self.prompt_target_selection(view, &format!("{} (first target)", spell.name), options1);
+                let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
+                if remaining.is_empty() {
+                    // Fallback: find any matching expanded action
+                    return self.fallback_to_expanded(spell.object_id, legal_actions);
+                }
+                let t2 = self.prompt_target_selection(view, &format!("{} (second target)", spell.name), &remaining);
+                Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2] }
+            }
+            CastTargetSpec::UpToTargets { max, options } => {
+                // For the LLM, present all options and ask to pick numbers.
+                let target_list: String = options.iter().enumerate()
+                    .map(|(i, t)| {
+                        let desc = match t {
+                            Target::Object(id) => Self::obj_name(view, *id),
+                            Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                        };
+                        format!("{}:{}", i, desc)
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let prompt = format!(
+                    "Choose up to {} targets for {}:\n{}\nRespond with space-separated numbers (e.g. '0 2')",
+                    max, spell.name, target_list
+                );
+                self.log("TARGETS", &prompt);
+                let response = self.call_api(&prompt);
+                self.log("TARGET-RESPONSE", &response);
+
+                let last_line = response.lines().rev()
+                    .find(|l| !l.trim().is_empty())
+                    .unwrap_or(&response)
+                    .trim();
+                let answer = last_line.strip_prefix("ANSWER:").or_else(|| last_line.strip_prefix("Answer:"))
+                    .unwrap_or(last_line)
+                    .trim();
+
+                let chosen: Vec<Target> = answer.split_whitespace()
+                    .filter_map(|s| s.parse::<usize>().ok())
+                    .filter(|&i| i < options.len())
+                    .map(|i| options[i].clone())
+                    .collect();
+
+                if chosen.is_empty() {
+                    // Pick at least one — use the first option.
+                    Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()] }
+                } else {
+                    Action::CastSpell { object_id: spell.object_id, targets: chosen }
+                }
+            }
+        }
+    }
+
+    /// Make a second API call to select one target from a list.
+    fn prompt_target_selection(&mut self, view: &GameView, spell_name: &str, options: &[mtg_engine::actions::Target]) -> mtg_engine::actions::Target {
+        let target_list: String = options.iter().enumerate()
+            .map(|(i, t)| {
+                let desc = match t {
+                    mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
+                    mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                };
+                format!("{}:{}", i, desc)
+            })
+            .collect::<Vec<_>>()
+            .join(" ");
+        let prompt = format!("Choose target for {}:\n{}", spell_name, target_list);
+        self.log("TARGETS", &prompt);
+        let idx = self.choose_with_retry(&prompt, options.len(), &[]);
+        options[idx.min(options.len() - 1)].clone()
+    }
+
+    /// Fallback: find the first matching expanded action for this spell.
+    fn fallback_to_expanded(&self, object_id: ObjectId, legal_actions: &[Action]) -> Action {
+        legal_actions.iter()
+            .find(|a| matches!(a, Action::CastSpell { object_id: oid, .. } if *oid == object_id))
+            .cloned()
+            .unwrap_or(Action::PassPriority)
     }
 
     fn obj_name(view: &GameView, id: ObjectId) -> String {
@@ -700,13 +774,59 @@ impl Player for LlmPlayer {
             return Action::PassPriority;
         }
 
-        let state = Self::format_state_compact(view);
-        let actions = Self::format_actions_compact(view, legal_actions);
-        let prompt = format!("{}\n{}", state, actions);
+        // Build collapsed display: non-CastSpell actions + one per castable spell.
+        let mut display_labels = Vec::new();
+        enum DisplayEntry {
+            Direct(usize),   // index into legal_actions
+            Cast(usize),     // index into legal.castable_spells
+        }
+        let mut display_entries: Vec<DisplayEntry> = Vec::new();
+        let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
 
-        self.log("THINKING", &format!("{} actions", legal_actions.len()));
-        let idx = self.choose_with_retry(&prompt, legal_actions.len(), legal_actions);
-        legal_actions[idx].clone()
+        for (i, action) in legal_actions.iter().enumerate() {
+            match action {
+                Action::CastSpell { object_id, .. } => {
+                    if !seen_spell_objects.contains(object_id) {
+                        if let Some(cs_idx) = legal.castable_spells.iter()
+                            .position(|cs| cs.object_id == *object_id)
+                        {
+                            seen_spell_objects.push(*object_id);
+                            let cs = &legal.castable_spells[cs_idx];
+                            let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
+                            display_labels.push(format!("{} {}", verb, cs.name));
+                            display_entries.push(DisplayEntry::Cast(cs_idx));
+                        }
+                    }
+                }
+                _ => {
+                    display_labels.push(Self::format_single_action(view, action));
+                    display_entries.push(DisplayEntry::Direct(i));
+                }
+            }
+        }
+
+        let state_str = Self::format_state_compact(view);
+        let actions_str: String = display_labels.iter().enumerate()
+            .map(|(i, label)| format!("{}:{} ", i, label))
+            .collect();
+        let prompt = format!("{}\n{}", state_str, actions_str);
+
+        self.log("THINKING", &format!("{} actions (collapsed from {})", display_labels.len(), legal_actions.len()));
+        let idx = self.choose_with_retry(&prompt, display_labels.len(), legal_actions);
+
+        if idx >= display_entries.len() {
+            return Action::PassPriority;
+        }
+
+        match &display_entries[idx] {
+            DisplayEntry::Direct(action_idx) => {
+                legal_actions[*action_idx].clone()
+            }
+            DisplayEntry::Cast(cs_idx) => {
+                let cs = &legal.castable_spells[*cs_idx];
+                self.choose_cast_targets(view, cs, legal_actions)
+            }
+        }
     }
 
     fn choose_cards_to_bottom(
