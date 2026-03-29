@@ -1121,3 +1121,55 @@ fn skeletal_grimace_regeneration_saves_from_lethal() {
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
         "Shield should be consumed");
 }
+
+/// Skeletal Grimace regeneration saves creature from Doom Blade.
+#[test]
+fn skeletal_grimace_regeneration_vs_doom_blade() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0's creature with Skeletal Grimace attached.
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(creature).unwrap().name = "Runeclaw Bear".into();
+    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
+    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
+    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    // Cast and resolve Skeletal Grimace.
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Activate regenerate.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let legal = engine::legal_actions(&state, &reg);
+    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
+    state = engine::submit_action(&state, &activate, &reg);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1);
+
+    // P1 casts Doom Blade targeting the creature.
+    state.priority_player = Some(P1);
+    let db_id = reg.get_id_by_name("Doom Blade").unwrap();
+    let db = state.create_object(db_id, P1, Zone::Hand, None, None);
+    state.get_object_mut(db).unwrap().name = "Doom Blade".into();
+    state.get_player_mut(P1).mana_pool.add(ManaType::Black, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: db, targets: vec![Target::Object(creature)] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Creature should survive via regeneration.
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Regeneration should save from Doom Blade");
+    assert!(state.get_object(creature).unwrap().tapped,
+        "Regenerated creature should be tapped");
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "Shield should be consumed");
+}
