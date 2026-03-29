@@ -79,11 +79,10 @@ fn cleanup_sba_kills_creature_when_buff_expires() {
         }
     }
 
-    // After cleanup: buff expired, creature is now 0/0 from the counter.
-    // SBAs should have been checked during cleanup and killed the creature.
-    // (CR 514.3a: SBAs are checked during cleanup.)
-    assert_eq!(state.effective_toughness(creature, &reg), Some(0),
-        "After cleanup, effective toughness should be 0 (buff expired, counter remains)");
+    // After cleanup: EOT buff expired, SBAs ran and found 0 toughness.
+    // The creature should have been killed during cleanup (CR 514.3a).
+    // (Moving to graveyard clears counters, so we check zone, not counters.)
+    assert!(state.until_end_of_turn_effects.is_empty(), "EOT effects should be cleared");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "Creature with 0 toughness after buff expires should die during cleanup (CR 514.3a)");
 }

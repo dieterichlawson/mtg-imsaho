@@ -1308,16 +1308,26 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 player.mana_pool.empty();
             }
 
-            // Check hand size: max 7 cards.
-            let hand_size = state.objects_in_zone(Zone::Hand, active).len();
-            if hand_size > 7 {
-                state.awaiting_action = Some(AwaitingAction::DiscardToHandSize {
-                    player: active,
-                    discard_count: hand_size - 7,
-                });
+            // CR 514.3a: Check SBAs after clearing effects. If any SBA
+            // fires, players get priority (the cleanup step essentially restarts).
+            let registry_ref = registry;
+            let sba_fired = crate::sba::check_state_based_actions_with_registry(state, Some(registry_ref));
+            if sba_fired {
+                // SBA occurred — give active player priority. The game loop
+                // will process actions and eventually advance past cleanup.
                 state.priority_player = Some(active);
             } else {
-                state.priority_player = None; // No priority in cleanup normally.
+                // Check hand size: max 7 cards.
+                let hand_size = state.objects_in_zone(Zone::Hand, active).len();
+                if hand_size > 7 {
+                    state.awaiting_action = Some(AwaitingAction::DiscardToHandSize {
+                        player: active,
+                        discard_count: hand_size - 7,
+                    });
+                    state.priority_player = Some(active);
+                } else {
+                    state.priority_player = None; // No priority in cleanup normally.
+                }
             }
         }
 
@@ -1426,7 +1436,6 @@ fn run_game_loop_inner<F>(
                 if state.consecutive_passes >= num_players {
                     // All players passed in succession.
                     if !state.stack.is_empty() {
-                        stack::resolve_top_of_stack(&mut state.clone(), registry);
                         let mut new_state = state.clone();
                         stack::resolve_top_of_stack(&mut new_state, registry);
                         *state = new_state;
