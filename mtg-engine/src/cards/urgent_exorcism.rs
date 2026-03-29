@@ -50,13 +50,6 @@ impl CardBehavior for UrgentExorcism {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        if let Some(Target::Object(target_id)) = targets.first() {
-            if let Some(obj) = state.get_object(*target_id) {
-                if obj.zone == Zone::Battlefield {
-                    crate::destruction::try_destroy(state, *target_id, registry);
-                }
-            }
-        }
-        state.move_spell_after_resolve(object_id);
+        crate::cards::helpers::resolve_destroy(state, object_id, targets, registry);
     }
 }

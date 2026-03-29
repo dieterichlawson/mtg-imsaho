@@ -1,3 +1,4 @@
+pub mod helpers;
 pub mod forest;
 pub mod mountain;
 pub mod plains;

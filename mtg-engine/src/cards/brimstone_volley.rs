@@ -1,6 +1,5 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
-use crate::events::{GameEvent, DamageTarget};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -33,39 +32,7 @@ impl CardBehavior for BrimstoneVolley {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        let damage: u32 = if state.creature_died_this_turn { 5 } else { 3 };
-        if let Some(target) = targets.first() {
-            match target {
-                Target::Object(target_id) => {
-                    if let Some(obj) = state.get_object_mut(*target_id) {
-                        if obj.zone == Zone::Battlefield {
-                            obj.damage_marked += damage;
-                            state.events.push(GameEvent::CombatDamageDealt {
-                                source: object_id,
-                                target: DamageTarget::Object(*target_id),
-                                amount: damage,
-                            });
-                        }
-                    }
-                }
-                Target::Player(player_id) => {
-                    let old_life = state.get_player(*player_id).life;
-                    let new_life = old_life - (damage as i32);
-                    state.get_player_mut(*player_id).life = new_life;
-                    state.events.push(GameEvent::CombatDamageDealt {
-                        source: object_id,
-                        target: DamageTarget::Player(*player_id),
-                        amount: damage,
-                    });
-                    state.events.push(GameEvent::LifeChanged {
-                        player: *player_id,
-                        old: old_life,
-                        new_life,
-                    });
-                }
-            }
-        }
-        // Instant goes to graveyard after resolution.
-        state.move_object(object_id, Zone::Graveyard);
+        let damage = if state.creature_died_this_turn { 5 } else { 3 };
+        crate::cards::helpers::resolve_damage(state, object_id, targets, damage);
     }
 }

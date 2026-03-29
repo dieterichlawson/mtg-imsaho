@@ -1,6 +1,5 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
-use crate::events::{GameEvent, DamageTarget};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -31,38 +30,6 @@ impl CardBehavior for Geistflame {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        if let Some(target) = targets.first() {
-            match target {
-                Target::Object(target_id) => {
-                    if let Some(obj) = state.get_object_mut(*target_id) {
-                        if obj.zone == Zone::Battlefield {
-                            obj.damage_marked += 1;
-                            state.events.push(GameEvent::CombatDamageDealt {
-                                source: object_id,
-                                target: DamageTarget::Object(*target_id),
-                                amount: 1,
-                            });
-                        }
-                    }
-                }
-                Target::Player(player_id) => {
-                    let old_life = state.get_player(*player_id).life;
-                    let new_life = old_life - 1;
-                    state.get_player_mut(*player_id).life = new_life;
-                    state.events.push(GameEvent::CombatDamageDealt {
-                        source: object_id,
-                        target: DamageTarget::Player(*player_id),
-                        amount: 1,
-                    });
-                    state.events.push(GameEvent::LifeChanged {
-                        player: *player_id,
-                        old: old_life,
-                        new_life,
-                    });
-                }
-            }
-        }
-        // Instant goes to graveyard after resolution.
-        state.move_spell_after_resolve(object_id);
+        crate::cards::helpers::resolve_damage(state, object_id, targets, 1);
     }
 }
