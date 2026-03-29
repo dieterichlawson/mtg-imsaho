@@ -266,9 +266,11 @@ fn fiend_hunter_exiles_on_etb() {
 // Dies triggers — damage and life drain
 // ══════════════════════════════════════════════════════════════════
 
-/// Pitchburn Devils deals 3 damage to the opponent when it dies.
+/// Pitchburn Devils deals 3 damage to any target when it dies.
 #[test]
 fn pitchburn_devils_deals_3_on_death() {
+    use mtg_engine::actions::ResolvedChoice;
+
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -285,6 +287,16 @@ fn pitchburn_devils_deals_3_on_death() {
     assert_eq!(state.get_object(pd).unwrap().zone, Zone::Graveyard);
 
     triggers::process_triggers(&mut state, &reg);
+
+    // Should be awaiting a target choice (both players are valid targets).
+    assert!(state.awaiting_action.is_some(), "Should be awaiting damage target choice");
+
+    // Choose opponent as target.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))) },
+        &reg,
+    );
 
     assert_eq!(state.get_player(P1).life, 17,
         "Opponent should lose 3 life from Pitchburn Devils dying");
