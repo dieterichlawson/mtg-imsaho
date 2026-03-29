@@ -50,11 +50,15 @@ impl CardBehavior for Bramblecrush {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
-                if obj.zone == Zone::Battlefield {
+                if obj.zone == Zone::Battlefield && obj.power.is_some() {
+                    // Creatures are destroyed (can be regenerated).
+                    state.destroy_creature(*target_id);
+                } else if obj.zone == Zone::Battlefield {
+                    // Non-creature permanents are just moved to graveyard.
                     state.move_object(*target_id, Zone::Graveyard);
                 }
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

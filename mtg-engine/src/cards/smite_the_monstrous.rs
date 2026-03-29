@@ -49,10 +49,10 @@ impl CardBehavior for SmiteTheMonstrous {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {
-                    state.move_object(*target_id, Zone::Graveyard);
+                    state.destroy_creature(*target_id);
                 }
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

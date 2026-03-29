@@ -988,7 +988,7 @@ fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, 
         }
         (Target::Object(id), PendingEffect::Destroy { source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*id, Zone::Graveyard);
+            state.destroy_creature(*id);
             state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
         }
         (Target::Object(id), PendingEffect::ReturnToBattlefield { spell_id }) => {
