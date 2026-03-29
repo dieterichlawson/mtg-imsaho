@@ -183,13 +183,15 @@ fn counter_annihilation_more_minus() {
 /// gets annihilated down to 1 -1/-1, making it 0/0 — it dies.
 #[test]
 fn counter_annihilation_can_kill() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 1, 1);
 
     state.add_counters(creature, CounterType::PlusOnePlusOne, 1);
     state.add_counters(creature, CounterType::MinusOneMinusOne, 2);
 
-    check_state_based_actions(&mut state);
+    // Need registry so effective_toughness accounts for counters.
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
 
     // After annihilation: 0 plus, 1 minus. Creature is 0/0 — dies.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,

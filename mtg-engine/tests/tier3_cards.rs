@@ -255,7 +255,7 @@ fn pitchburn_devils_deals_3_on_death() {
         "Opponent should lose 3 life from Pitchburn Devils dying");
 }
 
-/// Falkenrath Noble drains 1 life whenever any creature dies.
+/// Falkenrath Noble drains 1 life whenever a creature you control dies.
 #[test]
 fn falkenrath_noble_drains_on_any_death() {
     let reg = registry();
@@ -264,8 +264,8 @@ fn falkenrath_noble_drains_on_any_death() {
     // Falkenrath Noble on P0's side.
     let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
 
-    // A creature on P1's side to kill.
-    let victim = ready_creature(&mut state, P1, 1, 1);
+    // A creature on P0's side to kill (Noble triggers on your creatures dying).
+    let victim = ready_creature(&mut state, P0, 1, 1);
 
     // Kill the victim.
     state.get_object_mut(victim).unwrap().damage_marked = 1;

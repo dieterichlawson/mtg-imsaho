@@ -160,6 +160,50 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             took_action = true;
         }
 
+        // Rule 704.5q: +1/+1 and -1/-1 counters annihilate in pairs.
+        let counter_targets: Vec<_> = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                    && *o.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) > 0
+                    && *o.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) > 0
+            })
+            .map(|o| o.id)
+            .collect();
+        for id in counter_targets {
+            if let Some(obj) = state.objects.get_mut(&id) {
+                let plus = *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0);
+                let minus = *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0);
+                let annihilate = plus.min(minus);
+                *obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0) -= annihilate;
+                *obj.counters.entry(crate::types::CounterType::MinusOneMinusOne).or_insert(0) -= annihilate;
+                took_action = true;
+            }
+        }
+
+        // Rule 704.5k: Legend rule — if a player controls two or more legendary
+        // permanents with the same name, all are put into the graveyard.
+        // (Simplified: keep the newest, remove the rest.)
+        {
+            use std::collections::HashMap as Map;
+            let mut legend_groups: Map<(crate::ids::PlayerId, String), Vec<crate::ids::ObjectId>> = Map::new();
+            for obj in state.objects.values() {
+                if obj.zone == Zone::Battlefield && obj.is_legendary {
+                    legend_groups.entry((obj.controller, obj.name.clone()))
+                        .or_default()
+                        .push(obj.id);
+                }
+            }
+            for (_, ids) in legend_groups {
+                if ids.len() > 1 {
+                    // Keep the first (oldest), remove the rest.
+                    for &id in &ids[1..] {
+                        state.move_object(id, Zone::Graveyard);
+                        took_action = true;
+                    }
+                }
+            }
+        }
+
         // Rule 704.5d: A token not on the battlefield ceases to exist.
         let dead_tokens: Vec<_> = state.objects.values()
             .filter(|o| o.is_token && o.zone != Zone::Battlefield)

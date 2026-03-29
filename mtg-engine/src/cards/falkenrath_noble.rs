@@ -26,11 +26,15 @@ impl CardBehavior for FalkenrathNoble {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
+        // Only trigger when a creature YOU control dies.
+        if dead_controller != controller {
+            return;
+        }
         let opponent = state.opponent(controller);
         // Opponent loses 1 life.
         let old = state.get_player(opponent).life;
