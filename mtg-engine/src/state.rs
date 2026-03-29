@@ -167,6 +167,7 @@ impl GameState {
             attached_to: None,
             zone_change_count: 0,
             is_token: false,
+            is_legendary: false,
             cast_with_flashback: false,
             instance_oracle_text: None,
             instance_continuous_effects: None,
@@ -209,6 +210,7 @@ impl GameState {
             attached_to: None,
             zone_change_count: 0,
             is_token: true,
+            is_legendary: false,
             cast_with_flashback: false,
             instance_oracle_text: None,
             instance_continuous_effects: None,
@@ -684,6 +686,9 @@ pub struct GameObject {
 
     /// Whether this object is a token (tokens cease to exist when not on the battlefield).
     pub is_token: bool,
+    /// Whether this permanent is legendary (for the legend rule SBA).
+    #[serde(default)]
+    pub is_legendary: bool,
 
     /// Whether this spell was cast using flashback (exiled instead of going to graveyard).
     #[serde(default)]
