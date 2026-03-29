@@ -44,7 +44,7 @@ impl CardBehavior for SlayerOfTheWicked {
         } else if targets.len() == 1 {
             // Auto-destroy the only target.
             if let Target::Object(id) = targets[0] {
-                state.destroy_creature(id);
+                crate::destruction::try_destroy(state, id, registry);
                 state.log(LogLevel::Event, "Slayer of the Wicked destroyed a creature".into());
             }
         } else {

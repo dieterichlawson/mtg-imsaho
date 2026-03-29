@@ -989,33 +989,35 @@ fn regeneration_shields_expire_at_cleanup() {
         "Unused regeneration shields should expire at cleanup");
 }
 
-/// destroy_creature helper respects regeneration.
+/// try_destroy respects regeneration.
 #[test]
-fn destroy_creature_respects_regeneration() {
+fn try_destroy_respects_regeneration() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(creature).unwrap().regeneration_shields = 1;
 
-    let destroyed = state.destroy_creature(creature);
+    let destroyed = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
 
-    assert!(!destroyed, "destroy_creature should return false when regeneration saves");
+    assert!(!destroyed, "try_destroy should return false when regeneration saves");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
     assert!(state.get_object(creature).unwrap().tapped);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
 }
 
-/// destroy_creature without shields actually destroys.
+/// try_destroy without shields actually destroys.
 #[test]
-fn destroy_creature_without_shield_kills() {
+fn try_destroy_without_shield_kills() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
 
-    let destroyed = state.destroy_creature(creature);
+    let destroyed = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
 
-    assert!(destroyed, "destroy_creature should return true when no shields");
+    assert!(destroyed, "try_destroy should return true when no shields");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
 }
 

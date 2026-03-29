@@ -49,7 +49,7 @@ impl CardBehavior for SmiteTheMonstrous {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {
-                    state.destroy_creature(*target_id);
+                    crate::destruction::try_destroy(state, *target_id, registry);
                 }
             }
         }

@@ -51,8 +51,8 @@ impl CardBehavior for Bramblecrush {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield && obj.power.is_some() {
-                    // Creatures are destroyed (can be regenerated).
-                    state.destroy_creature(*target_id);
+                    // Creatures are destroyed (indestructible / regeneration apply).
+                    crate::destruction::try_destroy(state, *target_id, registry);
                 } else if obj.zone == Zone::Battlefield {
                     // Non-creature permanents are just moved to graveyard.
                     state.move_object(*target_id, Zone::Graveyard);

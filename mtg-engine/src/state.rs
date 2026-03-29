@@ -595,34 +595,6 @@ impl GameState {
         false
     }
 
-    /// Attempt to destroy a creature. If it has a regeneration shield, the
-    /// destruction is replaced: tap, remove damage, remove from combat, consume shield.
-    /// Returns true if the creature was actually destroyed, false if it regenerated.
-    pub fn destroy_creature(&mut self, id: ObjectId) -> bool {
-        let shields = self.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
-        if shields > 0 {
-            if let Some(obj) = self.get_object_mut(id) {
-                obj.tapped = true;
-                obj.damage_marked = 0;
-                obj.dealt_deathtouch_damage = false;
-                obj.regeneration_shields -= 1;
-            }
-            if let Some(ref mut combat) = self.combat {
-                combat.attackers.remove(&id);
-                combat.blocker_assignments.remove(&id);
-                for blockers in combat.blocker_assignments.values_mut() {
-                    blockers.retain(|&b| b != id);
-                }
-            }
-            self.log(LogLevel::Event, format!("{} regenerated",
-                self.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
-            false
-        } else {
-            self.move_object(id, Zone::Graveyard);
-            true
-        }
-    }
-
     /// Move a resolving spell to the appropriate zone.
     /// Flashback spells go to exile; others go to graveyard.
     pub fn move_spell_after_resolve(&mut self, object_id: ObjectId) {

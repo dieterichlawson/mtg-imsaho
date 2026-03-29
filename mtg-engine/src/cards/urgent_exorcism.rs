@@ -53,10 +53,10 @@ impl CardBehavior for UrgentExorcism {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {
-                    state.move_object(*target_id, Zone::Graveyard);
+                    crate::destruction::try_destroy(state, *target_id, registry);
                 }
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }
