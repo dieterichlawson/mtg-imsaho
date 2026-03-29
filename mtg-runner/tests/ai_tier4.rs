@@ -14,6 +14,7 @@ use std::fs;
 
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
 use mtg_engine::state::GameState;
@@ -760,12 +761,17 @@ fn ai_tier4_feeling_of_dread() {
     state.is_first_turn = false;
     state.players[1].land_plays_remaining = 0;
 
-    // P0: big 5/5 creature threatening lethal
+    // P0: two threatening creatures (combined damage is lethal)
     let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
-    let big = state.create_object(tusker_id, PlayerId(0), Zone::Battlefield, Some(5), Some(5));
-    state.get_object_mut(big).unwrap().name = "Kalonian Tusker".into();
-    state.get_object_mut(big).unwrap().summoning_sick = false;
-    state.get_object_mut(big).unwrap().colors = vec![Color::Green];
+    let big1 = state.create_object(tusker_id, PlayerId(0), Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(big1).unwrap().name = "Kalonian Tusker".into();
+    state.get_object_mut(big1).unwrap().summoning_sick = false;
+    state.get_object_mut(big1).unwrap().colors = vec![Color::Green];
+
+    let big2 = state.create_object(tusker_id, PlayerId(0), Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(big2).unwrap().name = "Kalonian Tusker".into();
+    state.get_object_mut(big2).unwrap().summoning_sick = false;
+    state.get_object_mut(big2).unwrap().colors = vec![Color::Green];
 
     // P1 (AI): Feeling of Dread in hand
     let fod_id = reg.get_id_by_name("Feeling of Dread").unwrap();
@@ -787,12 +793,14 @@ fn ai_tier4_feeling_of_dread() {
     let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
-        "AI should cast Feeling of Dread to tap the 5/5, not {:?}", action);
+        "AI should cast Feeling of Dread to tap opponent's creatures, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Feeling of Dread");
-    // Verify outcome: opponent's 5/5 should be tapped.
-    assert!(final_state.get_object(big).unwrap().tapped,
-        "Feeling of Dread should tap the target creature");
-    eprintln!("OK: AI cast Feeling of Dread — 5/5 is now tapped");
+    // Verify outcome: both opponent creatures should be tapped (UpToTargets(2)).
+    assert!(final_state.get_object(big1).unwrap().tapped,
+        "Feeling of Dread should tap the first creature");
+    assert!(final_state.get_object(big2).unwrap().tapped,
+        "Feeling of Dread should tap the second creature");
+    eprintln!("OK: AI cast Feeling of Dread — both creatures are now tapped");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -854,10 +862,13 @@ fn ai_tier4_nightbirds_clutches() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Nightbird's Clutches to clear the blocker, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Nightbird's Clutches");
-    // Verify outcome: opponent's blocker should be tapped.
-    assert!(final_state.get_object(blocker).unwrap().tapped,
-        "Nightbird's Clutches should tap the target creature");
-    eprintln!("OK: AI cast Nightbird's Clutches — blocker is now tapped");
+    // Verify outcome: opponent's blocker can't block this turn.
+    assert!(final_state.until_end_of_turn_cant_block.contains(&blocker),
+        "Nightbird's Clutches should prevent the creature from blocking this turn");
+    let eligible = combat::eligible_blockers_with_registry(&final_state, PlayerId(1), &reg);
+    assert!(!eligible.contains(&blocker),
+        "Blocker should not appear in eligible blockers after Nightbird's Clutches");
+    eprintln!("OK: AI cast Nightbird's Clutches — blocker can't block this turn");
 }
 
 // ═══════════════════════════════════════════════════════════════════

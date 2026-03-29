@@ -598,7 +598,7 @@ fn ai_tier2_rebuke_kills_attacker() {
 fn ai_tier2_brimstone_volley_lethal() {
     let reg = CardRegistry::with_all_cards();
     let mut state = GameState::new(2);
-    state.players[0].life = 3;
+    state.players[0].life = 5; // morbid deals 5, exactly lethal
     state.players[1].life = 15;
     state.turn_number = 8;
     state.active_player = PlayerId(1);
@@ -606,6 +606,7 @@ fn ai_tier2_brimstone_volley_lethal() {
     state.step = Step::PrecombatMain;
     state.is_first_turn = false;
     state.players[1].land_plays_remaining = 0;
+    state.creature_died_this_turn = true; // enable morbid
 
     let bv_id = reg.get_id_by_name("Brimstone Volley").unwrap();
     let bv = state.create_object(bv_id, PlayerId(1), Zone::Hand, None, None);
@@ -631,10 +632,11 @@ fn ai_tier2_brimstone_volley_lethal() {
         assert!(targets.iter().any(|t| matches!(t, mtg_engine::actions::Target::Player(p) if *p == PlayerId(0))),
             "Should target opponent for lethal");
     }
-    // Verify opponent is dead
-    assert!(final_state.players[0].life <= 0,
-        "Opponent should be at 0 or less life after Brimstone Volley, got {}", final_state.players[0].life);
-    eprintln!("OK: AI cast Brimstone Volley at opponent for lethal");
+    // Verify opponent is dead (morbid Brimstone Volley deals 5)
+    assert!(final_state.get_player(PlayerId(0)).life <= 0,
+        "Opponent should be at 0 or less life after morbid Brimstone Volley, got {}",
+        final_state.get_player(PlayerId(0)).life);
+    eprintln!("OK: AI cast Brimstone Volley (morbid) at opponent for lethal — 5 damage");
 }
 
 // ═══════════════════════════════════════════════════════════════════

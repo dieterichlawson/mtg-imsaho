@@ -734,14 +734,13 @@ fn ai_tier3_intangible_virtue() {
     state.is_first_turn = false;
     state.players[0].land_plays_remaining = 0;
 
-    // P0 has two creatures
-    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    for _ in 0..2 {
-        let id = state.create_object(bears_id, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
-        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
-        state.get_object_mut(id).unwrap().summoning_sick = false;
-        state.get_object_mut(id).unwrap().colors = vec![Color::Green];
-    }
+    // P0 has two Spirit tokens (1/1 flying)
+    let token1 = state.create_token("Spirit", PlayerId(0), 1, 1, vec![Color::White],
+        vec![CardType::Creature], vec![Keyword::Flying]);
+    state.get_object_mut(token1).unwrap().summoning_sick = false;
+    let token2 = state.create_token("Spirit", PlayerId(0), 1, 1, vec![Color::White],
+        vec![CardType::Creature], vec![Keyword::Flying]);
+    state.get_object_mut(token2).unwrap().summoning_sick = false;
 
     let iv_id = reg.get_id_by_name("Intangible Virtue").unwrap();
     let iv = state.create_object(iv_id, PlayerId(0), Zone::Hand, None, None);
@@ -771,7 +770,19 @@ fn ai_tier3_intangible_virtue() {
         .collect();
     assert_eq!(virtues.len(), 1,
         "Expected Intangible Virtue on battlefield, found {}", virtues.len());
-    eprintln!("OK: AI cast Intangible Virtue — resolved on battlefield");
+
+    // Verify tokens got +1/+1 (effective 2/2) and have vigilance
+    for &tid in &[token1, token2] {
+        let eff_pow = final_state.effective_power(tid, &reg).unwrap();
+        let eff_tou = final_state.effective_toughness(tid, &reg).unwrap();
+        assert_eq!(eff_pow, 2,
+            "Token should have effective power 2 (+1 from Intangible Virtue), got {}", eff_pow);
+        assert_eq!(eff_tou, 2,
+            "Token should have effective toughness 2 (+1 from Intangible Virtue), got {}", eff_tou);
+        assert!(final_state.has_keyword(tid, Keyword::Vigilance, &reg),
+            "Token should have vigilance from Intangible Virtue");
+    }
+    eprintln!("OK: AI cast Intangible Virtue — tokens are 2/2 with vigilance");
 }
 
 // ═══════════════════════════════════════════════════════════════════
