@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, ActivatedAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -42,5 +42,29 @@ impl CardBehavior for SkeletalGrimace {
             }
         }
         state.move_object(object_id, Zone::Graveyard);
+    }
+
+    /// The aura grants "{B}: Regenerate" to the enchanted creature.
+    /// `object_id` is the creature this is attached to.
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+        // Only grant regenerate to the enchanted creature (must have power, i.e. be a creature),
+        // not to the aura itself.
+        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield && o.power.is_some()).unwrap_or(false) {
+            vec![ActivatedAbilityDef {
+                ability_index: 0,
+                description: "{B}: Regenerate".into(),
+                cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Black)]),
+                requires_tap: false,
+            }]
+        } else {
+            vec![]
+        }
+    }
+
+    /// Apply the regeneration effect: add a regeneration shield.
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.regeneration_shields += 1;
+        }
     }
 }

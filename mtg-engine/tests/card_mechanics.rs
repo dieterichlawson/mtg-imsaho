@@ -1036,3 +1036,88 @@ fn regeneration_saves_from_deathtouch() {
         "Regeneration should save from deathtouch damage");
     assert_eq!(state.get_object(creature).unwrap().damage_marked, 0);
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Skeletal Grimace — activated ability + regeneration
+// ══════════════════════════════════════════════════════════════════
+
+/// Skeletal Grimace grants {B}: Regenerate as an activated ability.
+#[test]
+fn skeletal_grimace_grants_regenerate_ability() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create a creature and attach Skeletal Grimace.
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
+    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
+    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Creature should have +1/+1 from the aura.
+    assert_eq!(state.effective_power(creature, &reg), Some(3));
+    assert_eq!(state.effective_toughness(creature, &reg), Some(3));
+
+    // Activate the regenerate ability: pay {B}, get a shield.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let legal = engine::legal_actions(&state, &reg);
+    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. }));
+    assert!(activate.is_some(), "Should be able to activate {{B}}: Regenerate");
+
+    state = engine::submit_action(&state, activate.unwrap(), &reg);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1,
+        "Activating should add a regeneration shield");
+}
+
+/// Skeletal Grimace regeneration saves creature from lethal damage.
+#[test]
+fn skeletal_grimace_regeneration_saves_from_lethal() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
+    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
+    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Activate regenerate.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let legal = engine::legal_actions(&state, &reg);
+    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
+    state = engine::submit_action(&state, &activate, &reg);
+
+    // Verify shield is active before dealing damage.
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1,
+        "Shield should be active before damage");
+    assert_eq!(state.effective_toughness(creature, &reg), Some(3),
+        "Effective toughness should be 3 with aura");
+
+    // Now deal lethal damage (effective toughness is 3 with the aura).
+    state.get_object_mut(creature).unwrap().damage_marked = 3;
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    // Should have regenerated, not died.
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Creature with Skeletal Grimace regeneration should survive lethal");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0,
+        "Damage should be removed after regeneration");
+    assert!(state.get_object(creature).unwrap().tapped,
+        "Regenerated creature should be tapped");
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "Shield should be consumed");
+}
