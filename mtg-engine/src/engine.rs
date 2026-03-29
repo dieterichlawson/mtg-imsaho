@@ -1444,16 +1444,11 @@ fn run_game_loop_inner<F>(
                 }
             }
 
-            Action::DeclareAttackers { attackers } => {
-                if attackers.is_empty() {
-                    // No attackers: skip to end of combat.
-                    state.step = Step::EndCombat;
-                    state.priority_player = Some(state.active_player);
-                    combat::end_combat(state);
-                } else {
-                    // After declaring attackers, give priority to active player.
-                    state.priority_player = Some(state.active_player);
-                }
+            Action::DeclareAttackers { .. } => {
+                // After declaring attackers (even zero), give priority to active player.
+                // The step will advance naturally through DeclareBlockers, CombatDamage,
+                // and EndCombat — no skipping. advance_step handles empty combat gracefully.
+                state.priority_player = Some(state.active_player);
             }
 
             Action::DeclareBlockers { .. } => {
