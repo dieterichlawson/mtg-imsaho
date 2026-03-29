@@ -1,6 +1,7 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Elder Cathar — {2}{W} 2/2 Human Soldier.
@@ -29,20 +30,37 @@ impl CardBehavior for ElderCathar {
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        // Find a creature we control on the battlefield.
-        let target = state.objects.values()
+        // Find creatures we control on the battlefield.
+        let targets: Vec<Target> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some() && o.id != object_id)
-            .map(|o| o.id)
-            .next();
-        if let Some(target_id) = target {
-            let is_human = state.get_object(target_id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                .unwrap_or(false);
-            let count = if is_human { 2 } else { 1 };
-            state.add_counters(target_id, CounterType::PlusOnePlusOne, count);
-            state.log(crate::state::LogLevel::Event,
-                format!("Elder Cathar's death granted {} +1/+1 counter{}", count, if count > 1 { "s" } else { "" }));
+            .map(|o| Target::Object(o.id))
+            .collect();
+
+        if targets.is_empty() {
+            // No creatures to put counters on.
+        } else if targets.len() == 1 {
+            // Auto-add counters to the only creature.
+            if let Target::Object(id) = targets[0] {
+                let is_human = state.get_object(id)
+                    .and_then(|o| registry.card_data(o.card_id))
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false);
+                let count = if is_human { 2 } else { 1 };
+                state.add_counters(id, CounterType::PlusOnePlusOne, count);
+                state.log(LogLevel::Event,
+                    format!("Elder Cathar's death granted {} +1/+1 counter{}", count, if count > 1 { "s" } else { "" }));
+            }
+        } else {
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: object_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Elder Cathar: put +1/+1 counter(s) on target creature you control".into(),
+                    options: targets,
+                    optional: false,
+                    effect: PendingEffect::AddCounters { count: 1, human_bonus: true },
+                },
+            });
         }
     }
 }
