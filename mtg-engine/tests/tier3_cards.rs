@@ -511,13 +511,23 @@ fn village_cannibals_ignores_non_human_death() {
 // Anthem enchantment
 // ══════════════════════════════════════════════════════════════════
 
-/// Intangible Virtue gives creatures you control +1/+1.
+/// Intangible Virtue gives creature tokens you control +1/+1 and vigilance.
 #[test]
 fn intangible_virtue_buffs_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let creature = ready_creature(&mut state, P0, 2, 2);
+    // Create a token creature (Intangible Virtue only buffs tokens).
+    let token = state.create_token(
+        "Spirit", P0, 2, 2,
+        vec![Color::White],
+        vec![CardType::Creature],
+        vec![],
+    );
+    state.get_object_mut(token).unwrap().summoning_sick = false;
+
+    // Also create a non-token creature that should NOT be buffed.
+    let non_token = ready_creature(&mut state, P0, 2, 2);
 
     // Cast Intangible Virtue.
     let iv_id = reg.get_id_by_name("Intangible Virtue").unwrap();
@@ -532,10 +542,22 @@ fn intangible_virtue_buffs_creatures() {
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.get_object(iv).unwrap().zone, Zone::Battlefield);
-    assert_eq!(state.effective_power(creature, &reg), Some(3),
-        "Creature should get +1 power from Intangible Virtue");
-    assert_eq!(state.effective_toughness(creature, &reg), Some(3),
-        "Creature should get +1 toughness from Intangible Virtue");
+    // Token should get +1/+1.
+    assert_eq!(state.effective_power(token, &reg), Some(3),
+        "Token should get +1 power from Intangible Virtue");
+    assert_eq!(state.effective_toughness(token, &reg), Some(3),
+        "Token should get +1 toughness from Intangible Virtue");
+    // Token should have vigilance.
+    assert!(state.has_keyword(token, Keyword::Vigilance, &reg),
+        "Token should have vigilance from Intangible Virtue");
+    // Non-token should NOT be buffed.
+    assert_eq!(state.effective_power(non_token, &reg), Some(2),
+        "Non-token should NOT get buffed by Intangible Virtue");
+    assert_eq!(state.effective_toughness(non_token, &reg), Some(2),
+        "Non-token should NOT get buffed by Intangible Virtue");
+    // Non-token should NOT have vigilance.
+    assert!(!state.has_keyword(non_token, Keyword::Vigilance, &reg),
+        "Non-token should NOT have vigilance from Intangible Virtue");
 }
 
 // ══════════════════════════════════════════════════════════════════

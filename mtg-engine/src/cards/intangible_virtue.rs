@@ -2,7 +2,6 @@ use crate::cards::{CardBehavior, CardData};
 use crate::types::*;
 
 /// Intangible Virtue — {1}{W} enchantment. Creature tokens you control get +1/+1 and have vigilance.
-/// Simplified: uses "Creatures you control get +1/+1." so the anthem parsing works.
 pub struct IntangibleVirtue;
 
 impl CardBehavior for IntangibleVirtue {
@@ -18,7 +17,7 @@ impl CardBehavior for IntangibleVirtue {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Creatures you control get +1/+1.".into(),
+            oracle_text: "Creature tokens you control get +1/+1 and have vigilance.".into(),
             keywords: vec![],
             flashback_cost: None,
         }

@@ -358,6 +358,24 @@ impl GameState {
             }
         }
 
+        // Opponent debuff effects (e.g., One-Eyed Scarecrow).
+        let creature = self.get_object(id)?;
+        for debuffer in self.objects.values() {
+            if debuffer.zone == Zone::Battlefield && debuffer.controller != creature.controller {
+                if let Some(behavior) = registry.get(debuffer.card_id) {
+                    let data = behavior.card_data();
+                    if data.oracle_text.contains("your opponents control get") {
+                        // Check if the condition matches (e.g., "with flying").
+                        if data.oracle_text.contains("with flying") {
+                            if self.has_keyword(id, crate::types::Keyword::Flying, registry) {
+                                power += parse_anthem_power(&data.oracle_text);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         Some(power)
     }
 
@@ -424,14 +442,21 @@ impl GameState {
             None => return 0,
         };
         let controller = creature.controller;
+        let creature_is_token = creature.is_token;
         let mut bonus = 0;
 
         for obj in self.objects.values() {
             if obj.zone == Zone::Battlefield && obj.controller == controller && obj.id != creature_id {
                 if let Some(behavior) = registry.get(obj.card_id) {
                     let data = behavior.card_data();
-                    // Simple check: "Creatures you control get +N/+M"
-                    if data.oracle_text.contains("Creatures you control get") {
+                    // Simple check: "Creatures you control get +N/+M" or "Creature tokens you control get +N/+M"
+                    if data.oracle_text.contains("Creatures you control get")
+                        || data.oracle_text.contains("Creature tokens you control get")
+                    {
+                        // Token-only anthem check.
+                        if data.oracle_text.contains("tokens") && !creature_is_token {
+                            continue;
+                        }
                         bonus += parse_anthem_power(&data.oracle_text);
                     }
                 }
@@ -446,13 +471,20 @@ impl GameState {
             None => return 0,
         };
         let controller = creature.controller;
+        let creature_is_token = creature.is_token;
         let mut bonus = 0;
 
         for obj in self.objects.values() {
             if obj.zone == Zone::Battlefield && obj.controller == controller && obj.id != creature_id {
                 if let Some(behavior) = registry.get(obj.card_id) {
                     let data = behavior.card_data();
-                    if data.oracle_text.contains("Creatures you control get") {
+                    if data.oracle_text.contains("Creatures you control get")
+                        || data.oracle_text.contains("Creature tokens you control get")
+                    {
+                        // Token-only anthem check.
+                        if data.oracle_text.contains("tokens") && !creature_is_token {
+                            continue;
+                        }
                         bonus += parse_anthem_toughness(&data.oracle_text);
                     }
                 }
@@ -531,6 +563,24 @@ impl GameState {
         for grant in &self.until_end_of_turn_keywords {
             if grant.target == creature_id && grant.keyword == keyword {
                 return true;
+            }
+        }
+
+        // 4. Anthem-style keyword grants (e.g., "have vigilance").
+        if keyword == crate::types::Keyword::Vigilance {
+            let creature_is_token = obj.is_token;
+            for perm in self.objects.values() {
+                if perm.zone == Zone::Battlefield && perm.controller == obj.controller && perm.id != creature_id {
+                    if let Some(behavior) = registry.get(perm.card_id) {
+                        let data = behavior.card_data();
+                        if data.oracle_text.contains("have vigilance") {
+                            let token_only = data.oracle_text.contains("tokens");
+                            if !token_only || creature_is_token {
+                                return true;
+                            }
+                        }
+                    }
+                }
             }
         }
 
