@@ -438,9 +438,11 @@ fn desperate_ravings_draws_two_discards_one() {
         "Desperate Ravings should result in net +1 hand size (draw 2, discard 1, minus the spell)");
 }
 
-/// Forbidden Alchemy draws 1 and mills 3.
+/// Forbidden Alchemy reveals top 4, player picks 1 for hand, rest go to graveyard.
 #[test]
 fn forbidden_alchemy_draws_and_mills() {
+    use mtg_engine::actions::ResolvedChoice;
+
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -469,21 +471,32 @@ fn forbidden_alchemy_draws_and_mills() {
     );
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
-    // Cast from hand (-1), draw 1 (+1) => net 0 from hand_before, but the drawn card is from library.
-    assert_eq!(hand_after, hand_before + 1,
-        "Forbidden Alchemy should draw 1 card (net +1 after spell leaves hand)");
+    // Should now be awaiting a ChooseFromRevealed choice with 4 revealed cards.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting a choice");
 
-    // 3 cards should have been milled.
+    // Choose the first revealed card (lib_cards[0]) to put into hand.
+    let keep_card = lib_cards[0];
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(keep_card) },
+        &reg,
+    );
+
+    let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
+    // Cast from hand (-1), chose 1 to hand (+1) => net 0 from hand_before, but the chosen card is from library.
+    assert_eq!(hand_after, hand_before + 1,
+        "Forbidden Alchemy should put 1 card into hand (net +1 after spell leaves hand)");
+
+    // 3 cards should have been sent to graveyard (the other revealed cards).
     let gy_lib_cards = lib_cards.iter()
         .filter(|&&id| state.get_object(id).unwrap().zone == Zone::Graveyard)
         .count();
     assert_eq!(gy_lib_cards, 3,
-        "Forbidden Alchemy should mill 3 cards");
+        "Forbidden Alchemy should put 3 revealed cards into graveyard");
 
-    // Library should have 1 remaining (5 - 1 drawn - 3 milled).
+    // Library should have 1 remaining (5 - 4 revealed; 1 untouched).
     assert_eq!(state.get_player(P0).library_order.len(), 1,
-        "Library should have 1 card remaining after draw 1 + mill 3 from 5");
+        "Library should have 1 card remaining after revealing 4 from 5");
 }
 
 /// Feeling of Dread taps a target creature.
