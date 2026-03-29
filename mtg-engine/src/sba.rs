@@ -95,12 +95,23 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
         // Rules 704.5g/h: lethal damage or deathtouch — use destruction pipeline.
         for id in destroyed_ids {
             if let Some(reg) = registry {
+                use crate::destruction::DestroyResult;
                 // Full pipeline: indestructible check + regeneration.
-                let died = crate::destruction::try_destroy(state, id, reg);
-                took_action = true;
-                if !died {
-                    // try_destroy already handled regeneration/indestructible.
-                    continue;
+                match crate::destruction::try_destroy(state, id, reg) {
+                    DestroyResult::Died => {
+                        took_action = true;
+                    }
+                    DestroyResult::Regenerated => {
+                        // State changed (damage cleared, tapped), so next
+                        // SBA pass won't re-identify this creature.
+                        took_action = true;
+                        continue;
+                    }
+                    DestroyResult::Indestructible => {
+                        // No state change — don't set took_action to avoid
+                        // infinite loop (creature still has lethal damage).
+                        continue;
+                    }
                 }
             } else {
                 // No registry (legacy tests): skip indestructible check,

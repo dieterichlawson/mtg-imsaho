@@ -10,31 +10,42 @@ use crate::ids::ObjectId;
 use crate::state::{GameState, LogLevel};
 use crate::types::{Keyword, Zone};
 
-/// Attempt to destroy a permanent. Returns true if it actually died.
+/// Result of attempting to destroy a permanent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DestroyResult {
+    /// Permanent was destroyed (moved to graveyard).
+    Died,
+    /// Destruction prevented by indestructible (no state change).
+    Indestructible,
+    /// Destruction replaced by regeneration (state changed: tapped, damage cleared).
+    Regenerated,
+}
+
+/// Attempt to destroy a permanent.
 ///
 /// Pipeline:
-/// 1. Indestructible — prevents destruction entirely.
+/// 1. Indestructible — prevents destruction entirely (no state change).
 /// 2. Regeneration shields — replaces destruction (tap, remove damage, consume shield).
 /// 3. Falls through — permanent is destroyed (moved to graveyard).
 ///
 /// Called by destroy spells (Doom Blade, etc.) and by SBAs for lethal damage / deathtouch.
 /// NOT called for 0-toughness deaths (rule 704.5f) — those are not destruction.
-pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> bool {
+pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> DestroyResult {
     // Indestructible prevents destruction.
     if state.has_keyword(id, Keyword::Indestructible, registry) {
-        return false;
+        return DestroyResult::Indestructible;
     }
 
     // Regeneration replaces destruction.
     let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
     if shields > 0 {
         regenerate(state, id);
-        return false;
+        return DestroyResult::Regenerated;
     }
 
     // Actually destroy.
     destroy(state, id);
-    true
+    DestroyResult::Died
 }
 
 /// Sacrifice a permanent. Bypasses indestructible and regeneration.

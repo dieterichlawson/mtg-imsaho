@@ -992,15 +992,16 @@ fn regeneration_shields_expire_at_cleanup() {
 /// try_destroy respects regeneration.
 #[test]
 fn try_destroy_respects_regeneration() {
+    use mtg_engine::destruction::DestroyResult;
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(creature).unwrap().regeneration_shields = 1;
 
-    let destroyed = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
+    let result = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
 
-    assert!(!destroyed, "try_destroy should return false when regeneration saves");
+    assert_eq!(result, DestroyResult::Regenerated);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
     assert!(state.get_object(creature).unwrap().tapped);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
@@ -1009,16 +1010,127 @@ fn try_destroy_respects_regeneration() {
 /// try_destroy without shields actually destroys.
 #[test]
 fn try_destroy_without_shield_kills() {
+    use mtg_engine::destruction::DestroyResult;
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
 
-    let destroyed = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
+    let result = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
 
-    assert!(destroyed, "try_destroy should return true when no shields");
+    assert_eq!(result, DestroyResult::Died);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+}
+
+/// Indestructible prevents destruction from try_destroy (spell effects).
+#[test]
+fn indestructible_prevents_spell_destruction() {
+    use mtg_engine::destruction::DestroyResult;
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 4, 4);
+    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
+
+    let result = mtg_engine::destruction::try_destroy(&mut state, creature, &reg);
+
+    assert_eq!(result, DestroyResult::Indestructible);
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
+}
+
+/// Indestructible prevents destruction from lethal damage in SBAs.
+#[test]
+fn indestructible_survives_lethal_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 4, 4);
+    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
+    state.get_object_mut(creature).unwrap().damage_marked = 10;
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Indestructible creature should survive lethal damage");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 10,
+        "Damage should remain marked (not removed)");
+}
+
+/// Indestructible does NOT prevent death from 0 toughness (rule 704.5f).
+#[test]
+fn indestructible_does_not_prevent_zero_toughness() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 4, 0);
+    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+        "Indestructible should NOT prevent death from 0 toughness");
+}
+
+/// Indestructible survives deathtouch damage.
+#[test]
+fn indestructible_survives_deathtouch() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 4, 4);
+    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
+    state.get_object_mut(creature).unwrap().damage_marked = 1;
+    state.get_object_mut(creature).unwrap().dealt_deathtouch_damage = true;
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Indestructible creature should survive deathtouch damage");
+}
+
+/// Sacrifice bypasses indestructible.
+#[test]
+fn sacrifice_bypasses_indestructible() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 4, 4);
+    state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
+
+    let sacrificed = mtg_engine::destruction::sacrifice(&mut state, creature);
+
+    assert!(sacrificed, "Sacrifice should succeed even with indestructible");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+}
+
+/// Sacrifice bypasses regeneration shields.
+#[test]
+fn sacrifice_bypasses_regeneration() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 3, 3);
+    state.get_object_mut(creature).unwrap().regeneration_shields = 2;
+
+    let sacrificed = mtg_engine::destruction::sacrifice(&mut state, creature);
+
+    assert!(sacrificed, "Sacrifice should succeed even with regeneration shields");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "Shields should be cleared when leaving battlefield");
+}
+
+/// Sacrifice sets creature_died_this_turn for morbid.
+#[test]
+fn sacrifice_triggers_morbid() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    assert!(!state.creature_died_this_turn);
+
+    mtg_engine::destruction::sacrifice(&mut state, creature);
+
+    assert!(state.creature_died_this_turn,
+        "Sacrifice should set creature_died_this_turn for morbid");
 }
 
 /// Regeneration saves from deathtouch damage.
