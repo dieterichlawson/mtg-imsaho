@@ -17,7 +17,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
-use mtg_engine::state::GameState;
+use mtg_engine::state::{AwaitingAction, GameState};
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
 
@@ -86,6 +86,25 @@ fn run_ai_decision(
                 mtg_engine::stack::resolve_top_of_stack(&mut current, registry);
                 mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
                 mtg_engine::triggers::process_triggers(&mut current, registry);
+
+                // Handle any resolution choice set by the spell/trigger.
+                while let Some(AwaitingAction::ResolutionChoice { player: choice_player, .. }) = &current.awaiting_action {
+                    if *choice_player == player_id {
+                        // AI's choice -- make another API call.
+                        let choice_legal = engine::legal_actions(&current, registry);
+                        let choice_view = GameView::for_player(&current, player_id, registry);
+                        let choice_action = player.choose_action(&choice_view, &choice_legal);
+                        eprintln!("  AI made resolution choice");
+                        current = engine::submit_action(&current, &choice_action, registry);
+                        // Continue processing SBAs/triggers after the choice.
+                        mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
+                        mtg_engine::triggers::process_triggers(&mut current, registry);
+                    } else {
+                        // Opponent's choice -- return to test to handle deterministically.
+                        break;
+                    }
+                }
+
                 return (action, current);
             }
             Action::ActivateManaAbility { object_id, .. } => {
@@ -527,10 +546,11 @@ fn ai_tier4_rolling_temblor() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario 8: Cast Unburial Rites to reanimate a 5/5
+// Scenario 8: Cast Unburial Rites to reanimate a creature
 //
-// P0 (AI), a 5/5 creature in graveyard, Unburial Rites in hand,
-// 5 Swamps. Cost is {4}{B}. Should cast to return the 5/5.
+// P0 (AI), TWO creatures in graveyard (Kindercatch 6/6 and Grizzly
+// Bears 2/2), Unburial Rites in hand, 5 Swamps. Cost is {4}{B}.
+// With 2+ targets, the choice system triggers and the AI picks one.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -547,11 +567,16 @@ fn ai_tier4_unburial_rites() {
     state.is_first_turn = false;
     state.players[0].land_plays_remaining = 0;
 
-    // P0 (AI): Kindercatch (6/6) in graveyard as reanimate target
+    // P0 (AI): TWO creatures in graveyard so the choice system triggers
     let kc_id = reg.get_id_by_name("Kindercatch").unwrap();
     let kc = state.create_object(kc_id, PlayerId(0), Zone::Graveyard, Some(6), Some(6));
     state.get_object_mut(kc).unwrap().name = "Kindercatch".into();
     state.get_object_mut(kc).unwrap().colors = vec![Color::Green];
+
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let bears = state.create_object(bears_id, PlayerId(0), Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
+    state.get_object_mut(bears).unwrap().colors = vec![Color::Green];
 
     // P0 (AI): Unburial Rites in hand
     let ur_id = reg.get_id_by_name("Unburial Rites").unwrap();
@@ -575,10 +600,14 @@ fn ai_tier4_unburial_rites() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Unburial Rites to reanimate, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Unburial Rites");
-    // Verify outcome: Kindercatch should be on the battlefield now.
-    assert_eq!(final_state.get_object(kc).unwrap().zone, Zone::Battlefield,
-        "Unburial Rites should return Kindercatch to the battlefield");
-    eprintln!("OK: AI cast Unburial Rites — Kindercatch 6/6 reanimated");
+    // Verify outcome: one creature on the battlefield (AI chose which to reanimate).
+    let kc_zone = final_state.get_object(kc).unwrap().zone;
+    let bears_zone = final_state.get_object(bears).unwrap().zone;
+    assert!(kc_zone == Zone::Battlefield || bears_zone == Zone::Battlefield,
+        "Unburial Rites should return one creature to the battlefield (Kindercatch={:?}, Bears={:?})",
+        kc_zone, bears_zone);
+    eprintln!("OK: AI cast Unburial Rites — reanimated creature (Kindercatch={:?}, Bears={:?})",
+        kc_zone, bears_zone);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -694,7 +723,9 @@ fn ai_tier4_desperate_ravings() {
 // Scenario 11: Cast Forbidden Alchemy for card selection
 //
 // P0 (AI) main phase, Forbidden Alchemy in hand, 3 Islands.
-// Cost is {2}{U}. Should cast for card selection (draw 1, mill 3).
+// Cost is {2}{U}. The library has 15 cards. After resolve, 4 cards
+// are revealed and the AI chooses which to keep (via ResolutionChoice).
+// Verify 1 card in hand and the rest in graveyard.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -725,6 +756,7 @@ fn ai_tier4_forbidden_alchemy() {
     }
 
     add_libraries(&mut state, &reg);
+    let lib_before = state.get_player(PlayerId(0)).library_order.len();
     save_scenario(&state, "ai_forbidden_alchemy");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_forbidden_alchemy.log");
@@ -733,10 +765,16 @@ fn ai_tier4_forbidden_alchemy() {
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Forbidden Alchemy for card selection, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Forbidden Alchemy");
-    // Verify outcome: drew 1 card (hand had 1, now has 1 after cast), library shrunk by 4 (1 draw + 3 mill).
-    let lib_size = final_state.get_player(PlayerId(0)).library_order.len();
-    assert!(lib_size <= 11, "Should have drawn+milled 4 cards, library = {}", lib_size);
-    eprintln!("OK: AI cast Forbidden Alchemy — library now {}", lib_size);
+
+    // Verify outcome: AI chose 1 card to keep (in hand), 3 went to graveyard.
+    // Hand had Forbidden Alchemy (cast it → 0 cards), then 1 chosen → 1 in hand.
+    let hand_size = final_state.objects_in_zone(Zone::Hand, PlayerId(0)).len();
+    assert!(hand_size >= 1, "AI should have chosen 1 card to keep, hand = {}", hand_size);
+    // Library should shrink by 4 (4 revealed, 1 kept, 3 milled).
+    let lib_after = final_state.get_player(PlayerId(0)).library_order.len();
+    assert_eq!(lib_before - lib_after, 4,
+        "Should have removed 4 cards from library (before={}, after={})", lib_before, lib_after);
+    eprintln!("OK: AI cast Forbidden Alchemy — chose 1 card, library {} → {}", lib_before, lib_after);
 }
 
 // ═══════════════════════════════════════════════════════════════════

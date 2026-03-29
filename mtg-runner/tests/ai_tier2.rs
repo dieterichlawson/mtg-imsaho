@@ -8,11 +8,11 @@
 
 use std::fs;
 
-use mtg_engine::actions::Action;
+use mtg_engine::actions::{Action, ResolvedChoice};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
-use mtg_engine::state::{CombatState, GameState};
+use mtg_engine::state::{AwaitingAction, CombatState, GameState};
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
 
@@ -81,6 +81,25 @@ fn run_ai_decision(
                 mtg_engine::stack::resolve_top_of_stack(&mut current, registry);
                 mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
                 mtg_engine::triggers::process_triggers(&mut current, registry);
+
+                // Handle any resolution choice set by the spell/trigger.
+                while let Some(AwaitingAction::ResolutionChoice { player: choice_player, .. }) = &current.awaiting_action {
+                    if *choice_player == player_id {
+                        // AI's choice -- make another API call.
+                        let choice_legal = engine::legal_actions(&current, registry);
+                        let choice_view = GameView::for_player(&current, player_id, registry);
+                        let choice_action = player.choose_action(&choice_view, &choice_legal);
+                        eprintln!("  AI made resolution choice");
+                        current = engine::submit_action(&current, &choice_action, registry);
+                        // Continue processing SBAs/triggers after the choice.
+                        mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
+                        mtg_engine::triggers::process_triggers(&mut current, registry);
+                    } else {
+                        // Opponent's choice -- return to test to handle deterministically.
+                        break;
+                    }
+                }
+
                 return (action, current);
             }
             Action::ActivateManaAbility { object_id, .. } => {
@@ -805,7 +824,9 @@ fn ai_tier2_urgent_exorcism_kills_spirit() {
 // Scenario: Frightful Delusion counters a threatening spell
 //
 // P0 casts Kalonian Tusker (3/3). P1 (AI) at 6 life has Frightful
-// Delusion and 3 Islands. Letting a 3/3 resolve is dangerous.
+// Delusion and 3 Islands. P0 has {1} in mana pool so the "pay {1}?"
+// choice is not auto-resolved. Opponent declines to pay, so the
+// spell is countered.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -829,6 +850,9 @@ fn ai_tier2_frightful_delusion_counters() {
     state.get_object_mut(tusker).unwrap().colors = vec![Color::Green];
     state.stack.push(tusker);
 
+    // P0: give mana in pool so "pay {1}?" is a real choice (not auto-resolved)
+    state.players[0].mana_pool.add(ManaType::Colorless, 1);
+
     // P1 (AI): Frightful Delusion + 3 Islands
     let fd_id = reg.get_id_by_name("Frightful Delusion").unwrap();
     let fd = state.create_object(fd_id, PlayerId(1), Zone::Hand, None, None);
@@ -846,15 +870,24 @@ fn ai_tier2_frightful_delusion_counters() {
     save_scenario(&state, "ai_frightful_delusion");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_frightful_delusion.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Frightful Delusion, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Frightful Delusion");
-    // Verify the countered spell went to graveyard (not exile -- Frightful Delusion is a normal counter)
+
+    // After run_ai_decision, the opponent (P0) has a "pay {1}?" choice.
+    assert!(matches!(&final_state.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice { player, .. }) if *player == PlayerId(0)),
+        "Should have a ResolutionChoice for the opponent");
+    // Opponent chooses not to pay -- spell is countered.
+    final_state = engine::submit_action(&final_state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) }, &reg);
+    mtg_engine::sba::check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+
     assert_eq!(final_state.get_object(tusker).unwrap().zone, Zone::Graveyard,
         "Kalonian Tusker should be in graveyard after being countered by Frightful Delusion");
-    eprintln!("OK: AI cast Frightful Delusion to counter the 3/3");
+    eprintln!("OK: AI cast Frightful Delusion to counter the 3/3 (opponent declined to pay)");
 }
 
 // ═══════════════════════════════════════════════════════════════════

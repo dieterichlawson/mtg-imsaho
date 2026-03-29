@@ -18,7 +18,7 @@ use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
-use mtg_engine::state::{CombatState, GameState};
+use mtg_engine::state::{AwaitingAction, CombatState, GameState};
 use mtg_engine::types::*;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::triggers;
@@ -87,6 +87,25 @@ fn run_ai_decision(
                 mtg_engine::stack::resolve_top_of_stack(&mut current, registry);
                 mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
                 mtg_engine::triggers::process_triggers(&mut current, registry);
+
+                // Handle any resolution choice set by the spell/trigger.
+                while let Some(AwaitingAction::ResolutionChoice { player: choice_player, .. }) = &current.awaiting_action {
+                    if *choice_player == player_id {
+                        // AI's choice -- make another API call.
+                        let choice_legal = engine::legal_actions(&current, registry);
+                        let choice_view = GameView::for_player(&current, player_id, registry);
+                        let choice_action = player.choose_action(&choice_view, &choice_legal);
+                        eprintln!("  AI made resolution choice");
+                        current = engine::submit_action(&current, &choice_action, registry);
+                        // Continue processing SBAs/triggers after the choice.
+                        mtg_engine::sba::check_state_based_actions_with_registry(&mut current, Some(registry));
+                        mtg_engine::triggers::process_triggers(&mut current, registry);
+                    } else {
+                        // Opponent's choice -- return to test to handle deterministically.
+                        break;
+                    }
+                }
+
                 return (action, current);
             }
             Action::ActivateManaAbility { object_id, .. } => {
@@ -384,10 +403,12 @@ fn ai_tier3_village_bell_ringer_flash() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Pitchburn Devils — cast a 3/3 creature
+// Scenario: Pitchburn Devils — cast a 3/3 creature, then test the
+// dies trigger with multiple targets (opponent + opponent creature).
 //
-// P0 (AI) has Pitchburn Devils in hand + 5 Mountains. It's main
-// phase with nothing else to do. Should cast the 3/3 creature.
+// P0 (AI) has Pitchburn Devils in hand + 5 Mountains. P1 has a
+// creature on the battlefield so there are 2+ damage targets when
+// the Devils die. The AI chooses where to deal 3 damage.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -403,6 +424,13 @@ fn ai_tier3_pitchburn_devils() {
     state.step = Step::PrecombatMain;
     state.is_first_turn = false;
     state.players[0].land_plays_remaining = 0;
+
+    // P1: a creature on the battlefield so the dies trigger has 2+ targets
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let opp_creature = state.create_object(bears_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(opp_creature).unwrap().name = "Grizzly Bears".into();
+    state.get_object_mut(opp_creature).unwrap().summoning_sick = false;
+    state.get_object_mut(opp_creature).unwrap().colors = vec![Color::Green];
 
     // P0 (AI): Pitchburn Devils in hand + 5 Mountains
     let pd_id = reg.get_id_by_name("Pitchburn Devils").unwrap();
@@ -435,16 +463,34 @@ fn ai_tier3_pitchburn_devils() {
     };
     eprintln!("OK: AI cast Pitchburn Devils — resolved on battlefield");
 
-    // Kill Pitchburn Devils to test dies trigger
+    // Kill Pitchburn Devils to test dies trigger with multiple targets
     final_state.events.clear();
     final_state.get_object_mut(pd_id).unwrap().damage_marked = 3;
     let opp_life_before = final_state.get_player(PlayerId(1)).life;
     check_state_based_actions_with_registry(&mut final_state, Some(&reg));
     triggers::process_triggers(&mut final_state, &reg);
+
+    // The trigger should set a ResolutionChoice for P0 (AI) with 2+ targets.
+    assert!(matches!(&final_state.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice { player, .. }) if *player == PlayerId(0)),
+        "Should have a ResolutionChoice for the AI (P0)");
+
+    // AI chooses where to deal 3 damage.
+    let choice_legal = engine::legal_actions(&final_state, &reg);
+    let choice_view = GameView::for_player(&final_state, PlayerId(0), &reg);
+    let choice_action = player.choose_action(&choice_view, &choice_legal);
+    eprintln!("  AI chose damage target: {:?}", choice_action);
+    final_state = engine::submit_action(&final_state, &choice_action, &reg);
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+
+    // Verify the AI's chosen target took 3 damage (either opponent lost life or creature died).
     let opp_life_after = final_state.get_player(PlayerId(1)).life;
-    assert_eq!(opp_life_before - opp_life_after, 3,
-        "Pitchburn Devils should deal 3 damage to opponent on death");
-    eprintln!("OK: Pitchburn Devils died → 3 damage to opponent");
+    let creature_dead = final_state.get_object(opp_creature).unwrap().zone == Zone::Graveyard;
+    assert!(opp_life_before - opp_life_after == 3 || creature_dead,
+        "Pitchburn Devils should deal 3 damage to the AI's chosen target");
+    eprintln!("OK: Pitchburn Devils died → AI chose damage target (opponent life: {} → {}, creature dead: {})",
+        opp_life_before, opp_life_after, creature_dead);
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -710,8 +756,9 @@ fn ai_tier3_rage_thrower() {
 // ═══════════════════════════════════════════════════════════════════
 // Scenario: Slayer of the Wicked — cast to destroy opponent's Zombie
 //
-// P0 (AI) has Slayer + 4 Plains. Opponent has Walking Corpse (Zombie).
-// Should cast Slayer to trigger ETB and destroy the Zombie.
+// P0 (AI) has Slayer + 4 Plains. Opponent has TWO Walking Corpses
+// (Zombies) so the ETB trigger has 2+ targets and uses the choice
+// system. AI chooses which Zombie to destroy.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -728,12 +775,17 @@ fn ai_tier3_slayer_of_the_wicked() {
     state.is_first_turn = false;
     state.players[0].land_plays_remaining = 0;
 
-    // Opponent has a Walking Corpse (Zombie)
+    // Opponent has TWO Walking Corpses (Zombies) so there are 2+ ETB targets
     let wc_id = reg.get_id_by_name("Walking Corpse").unwrap();
-    let wc = state.create_object(wc_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(wc).unwrap().name = "Walking Corpse".into();
-    state.get_object_mut(wc).unwrap().summoning_sick = false;
-    state.get_object_mut(wc).unwrap().colors = vec![Color::Black];
+    let wc1 = state.create_object(wc_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(wc1).unwrap().name = "Walking Corpse".into();
+    state.get_object_mut(wc1).unwrap().summoning_sick = false;
+    state.get_object_mut(wc1).unwrap().colors = vec![Color::Black];
+
+    let wc2 = state.create_object(wc_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(wc2).unwrap().name = "Walking Corpse".into();
+    state.get_object_mut(wc2).unwrap().summoning_sick = false;
+    state.get_object_mut(wc2).unwrap().colors = vec![Color::Black];
 
     let sw_id = reg.get_id_by_name("Slayer of the Wicked").unwrap();
     let sw = state.create_object(sw_id, PlayerId(0), Zone::Hand, None, None);
@@ -764,11 +816,14 @@ fn ai_tier3_slayer_of_the_wicked() {
     assert_eq!(slayers.len(), 1,
         "Expected Slayer of the Wicked on battlefield, found {}", slayers.len());
 
-    // Verify ETB trigger: Walking Corpse (Zombie) should be in graveyard
-    let corpse = final_state.get_object(wc).unwrap();
-    assert_eq!(corpse.zone, Zone::Graveyard,
-        "Slayer ETB should have destroyed Walking Corpse, but it's in {:?}", corpse.zone);
-    eprintln!("OK: AI cast Slayer of the Wicked — on battlefield, Walking Corpse destroyed");
+    // Verify ETB trigger: one Walking Corpse destroyed, one still alive
+    let wc1_zone = final_state.get_object(wc1).unwrap().zone;
+    let wc2_zone = final_state.get_object(wc2).unwrap().zone;
+    let one_destroyed = (wc1_zone == Zone::Graveyard) ^ (wc2_zone == Zone::Graveyard);
+    assert!(one_destroyed,
+        "Slayer ETB should have destroyed exactly one Walking Corpse (wc1={:?}, wc2={:?})",
+        wc1_zone, wc2_zone);
+    eprintln!("OK: AI cast Slayer of the Wicked — on battlefield, one Walking Corpse destroyed");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -966,9 +1021,12 @@ fn ai_tier3_lumberknot() {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario: Elder Cathar — cast the creature
+// Scenario: Elder Cathar — cast the creature, then test the dies
+// trigger with multiple targets (two buddy creatures).
 //
-// P0 (AI) has Elder Cathar + 3 Plains. Should cast the 2/2.
+// P0 (AI) has Elder Cathar + 3 Plains and TWO buddy creatures on
+// the battlefield. When Elder Cathar dies, the AI chooses which
+// buddy gets the +1/+1 counter.
 // ═══════════════════════════════════════════════════════════════════
 
 #[test]
@@ -984,6 +1042,12 @@ fn ai_tier3_elder_cathar() {
     state.step = Step::PrecombatMain;
     state.is_first_turn = false;
     state.players[0].land_plays_remaining = 0;
+
+    // P0 (AI): Two buddy creatures so the dies trigger has 2+ targets
+    let buddy1 = state.create_token("Buddy", PlayerId(0), 1, 1, vec![], vec![CardType::Creature], vec![]);
+    state.get_object_mut(buddy1).unwrap().summoning_sick = false;
+    let buddy2 = state.create_token("Buddy", PlayerId(0), 1, 1, vec![], vec![CardType::Creature], vec![]);
+    state.get_object_mut(buddy2).unwrap().summoning_sick = false;
 
     let ec_id = reg.get_id_by_name("Elder Cathar").unwrap();
     let ec = state.create_object(ec_id, PlayerId(0), Zone::Hand, Some(2), Some(2));
@@ -1007,7 +1071,7 @@ fn ai_tier3_elder_cathar() {
     assert_eq!(spell_name(&final_state, &action), "Elder Cathar");
 
     // Verify outcome: Elder Cathar on the battlefield
-    let ec_id = {
+    let ec_obj_id = {
         let cathars: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
             .into_iter()
             .filter(|o| o.name == "Elder Cathar")
@@ -1018,15 +1082,34 @@ fn ai_tier3_elder_cathar() {
     };
     eprintln!("OK: AI cast Elder Cathar — resolved on battlefield");
 
-    // Add a buddy creature to receive the counter, then kill Elder Cathar
+    // Kill Elder Cathar to trigger the dies ability with 2+ targets
     final_state.events.clear();
-    let buddy = final_state.create_token("Buddy", PlayerId(0), 1, 1, vec![], vec![CardType::Creature], vec![]);
-    final_state.get_object_mut(ec_id).unwrap().damage_marked = 2;
+    final_state.get_object_mut(ec_obj_id).unwrap().damage_marked = 2;
     check_state_based_actions_with_registry(&mut final_state, Some(&reg));
     triggers::process_triggers(&mut final_state, &reg);
-    assert!(final_state.get_counter_count(buddy, CounterType::PlusOnePlusOne) >= 1,
-        "Elder Cathar should grant +1/+1 counter on death");
-    eprintln!("OK: Elder Cathar died → buddy got +1/+1 counter");
+
+    // The trigger should set a ResolutionChoice for P0 (AI) with 2+ targets.
+    assert!(matches!(&final_state.awaiting_action,
+        Some(AwaitingAction::ResolutionChoice { player, .. }) if *player == PlayerId(0)),
+        "Should have a ResolutionChoice for the AI (P0)");
+
+    // AI chooses which buddy gets the counter.
+    let choice_legal = engine::legal_actions(&final_state, &reg);
+    let choice_view = GameView::for_player(&final_state, PlayerId(0), &reg);
+    let choice_action = player.choose_action(&choice_view, &choice_legal);
+    eprintln!("  AI chose counter target: {:?}", choice_action);
+    final_state = engine::submit_action(&final_state, &choice_action, &reg);
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+
+    // Verify one buddy got a +1/+1 counter
+    let b1_counters = final_state.get_counter_count(buddy1, CounterType::PlusOnePlusOne);
+    let b2_counters = final_state.get_counter_count(buddy2, CounterType::PlusOnePlusOne);
+    assert!(b1_counters >= 1 || b2_counters >= 1,
+        "Elder Cathar should grant +1/+1 counter on death (buddy1={}, buddy2={})",
+        b1_counters, b2_counters);
+    eprintln!("OK: Elder Cathar died → AI chose counter target (buddy1={}, buddy2={})",
+        b1_counters, b2_counters);
 }
 
 // ═══════════════════════════════════════════════════════════════════
