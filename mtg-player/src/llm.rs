@@ -114,6 +114,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Rolling Temblor ({2}{R} sorcery, flashback {4}{R}{R}): 2 damage to each creature without flying.
 - Unburial Rites ({4}{B} sorcery, flashback {3}{W}): Return a creature from your graveyard to the battlefield.
 - Desperate Ravings ({1}{R} instant, flashback {2}{U}): Draw 2 cards, discard 1.
+- Skeletal Grimace ({1}{B} aura): Enchanted creature gets +1/+1 and has "{B}: Regenerate this creature." Activate the regeneration ability (shows as "Activate <creature name>") to protect the creature from destruction — it gets a regeneration shield that saves it from the next lethal damage or destroy effect. Activate it BEFORE the creature would die!
 
 ## Flashback
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. Tap lands to get mana, then the Flashback option appears.

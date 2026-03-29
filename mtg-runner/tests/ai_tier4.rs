@@ -107,6 +107,13 @@ fn run_ai_decision(
 
                 return (action, current);
             }
+            Action::ActivateAbility { object_id, .. } => {
+                let name = current.get_object(*object_id)
+                    .map(|o| o.name.as_str()).unwrap_or("?");
+                eprintln!("  AI activated ability on {} at action #{}", name, i + 1);
+                current = engine::submit_action(&current, &action, registry);
+                return (action, current);
+            }
             Action::ActivateManaAbility { object_id, .. } => {
                 let name = current.get_object(*object_id)
                     .map(|o| o.name.as_str()).unwrap_or("?");
@@ -1032,4 +1039,97 @@ fn ai_tier4_moan_flashback() {
     assert_eq!(final_state.get_object(moan).unwrap().zone, Zone::Exile,
         "Flashback spell should be exiled");
     eprintln!("OK: AI flashed back Moan — two Zombie tokens created, spell exiled");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Skeletal Grimace regeneration in response to Doom Blade
+//
+// P0 has cast Doom Blade targeting P1's creature (on the stack).
+// P1 (AI) has a 2/2 creature enchanted with Skeletal Grimace (+1/+1)
+// and an untapped Swamp for {B}. P1 also has a Grizzly Bears in hand
+// (uncastable — no green mana) so there are other actions available.
+// Correct play: activate regeneration to save the creature.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier4_skeletal_grimace_regenerate() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 14;
+    state.turn_number = 7;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(1)); // AI has priority to respond
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+    state.players[1].land_plays_remaining = 0;
+
+    // P1 (AI): a 2/2 creature on the battlefield
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let creature = state.create_object(bears_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(creature).unwrap().name = "Runeclaw Bear".into();
+    state.get_object_mut(creature).unwrap().summoning_sick = false;
+    state.get_object_mut(creature).unwrap().colors = vec![Color::Green];
+
+    // P1 (AI): Skeletal Grimace attached to creature
+    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
+    let sg = state.create_object(sg_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
+    state.get_object_mut(sg).unwrap().attached_to = Some(creature);
+    state.get_object_mut(sg).unwrap().summoning_sick = false;
+
+    // P1 (AI): 1 Swamp (untapped) for {B} regeneration cost
+    let swamp_id = reg.get_id_by_name("Swamp").unwrap();
+    let swamp = state.create_object(swamp_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(swamp).unwrap().name = "Swamp".into();
+    state.get_object_mut(swamp).unwrap().summoning_sick = false;
+
+    // P0: 2 Swamps (tapped, already used for Doom Blade)
+    for _ in 0..2 {
+        let id = state.create_object(swamp_id, PlayerId(0), Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Swamp".into();
+        state.get_object_mut(id).unwrap().tapped = true;
+    }
+
+    // P0 has cast Doom Blade targeting P1's creature — put it on the stack.
+    let db_id = reg.get_id_by_name("Doom Blade").unwrap();
+    let doom_blade = state.create_object(db_id, PlayerId(0), Zone::Stack, None, None);
+    state.get_object_mut(doom_blade).unwrap().name = "Doom Blade".into();
+    state.get_object_mut(doom_blade).unwrap().targets = vec![mtg_engine::actions::Target::Object(creature)];
+    state.stack.push(doom_blade);
+
+    // Give P1 another card in hand (not castable) to give choices.
+    let bear2 = state.create_object(bears_id, PlayerId(1), Zone::Hand, Some(2), Some(2));
+    state.get_object_mut(bear2).unwrap().name = "Grizzly Bears".into();
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_skeletal_grimace_regen");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_skeletal_grimace_regen.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    // AI should activate regeneration ability.
+    assert!(matches!(&action, Action::ActivateAbility { .. }),
+        "AI should activate regenerate to save creature from Doom Blade, not {:?}", action);
+
+    // Verify the creature now has a regeneration shield.
+    assert_eq!(final_state.get_object(creature).unwrap().regeneration_shields, 1,
+        "Creature should have a regeneration shield");
+
+    // Now resolve Doom Blade — creature should survive via regeneration.
+    let mut post_resolve = final_state.clone();
+    // Pass priority for both players to let Doom Blade resolve.
+    post_resolve.consecutive_passes = 2;
+    mtg_engine::stack::resolve_top_of_stack(&mut post_resolve, &reg);
+    mtg_engine::sba::check_state_based_actions_with_registry(&mut post_resolve, Some(&reg));
+
+    assert_eq!(post_resolve.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Creature should survive Doom Blade thanks to regeneration");
+    assert!(post_resolve.get_object(creature).unwrap().tapped,
+        "Regenerated creature should be tapped");
+    assert_eq!(post_resolve.get_object(creature).unwrap().regeneration_shields, 0,
+        "Regeneration shield should be consumed");
+    eprintln!("OK: AI activated regenerate → creature survived Doom Blade (tapped, shield consumed)");
 }
