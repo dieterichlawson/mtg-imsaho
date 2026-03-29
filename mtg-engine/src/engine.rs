@@ -1294,6 +1294,13 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             state.until_end_of_turn_keywords.clear();
             state.until_end_of_turn_cant_block.clear();
 
+            // Clear unused regeneration shields.
+            for obj in state.objects.values_mut() {
+                if obj.zone == Zone::Battlefield {
+                    obj.regeneration_shields = 0;
+                }
+            }
+
             // Empty mana pools.
             for player in &mut state.players {
                 player.mana_pool.empty();

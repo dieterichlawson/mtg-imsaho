@@ -1,6 +1,6 @@
 use crate::cards::CardRegistry;
 use crate::events::{GameEvent, LossReason};
-use crate::state::{GameResult, GameState};
+use crate::state::{GameResult, GameState, LogLevel};
 use crate::types::Zone;
 
 /// Perform state-based actions without a registry (for backward compat with tests).
@@ -73,13 +73,44 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             .collect();
 
         for id in creatures_to_kill {
-            let (cid, ctrl) = state.get_object(id)
-                .map(|o| (o.card_id, o.controller))
-                .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
-            state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl });
-            state.move_object(id, Zone::Graveyard);
-            state.creature_died_this_turn = true;
-            took_action = true;
+            let obj = state.get_object(id);
+            let shields = obj.map(|o| o.regeneration_shields).unwrap_or(0);
+            let effective_t = registry
+                .and_then(|r| state.effective_toughness(id, r))
+                .or_else(|| obj.and_then(|o| o.toughness));
+            let zero_toughness = effective_t.map(|t| t <= 0).unwrap_or(false);
+
+            // Regeneration replaces destruction from lethal damage or deathtouch,
+            // but NOT from 0-or-less toughness (rule 704.5f vs 704.5g).
+            if shields > 0 && !zero_toughness {
+                // Regenerate: tap, remove damage, consume one shield.
+                if let Some(obj) = state.get_object_mut(id) {
+                    obj.tapped = true;
+                    obj.damage_marked = 0;
+                    obj.dealt_deathtouch_damage = false;
+                    obj.regeneration_shields -= 1;
+                }
+                // Remove from combat if applicable.
+                if let Some(ref mut combat) = state.combat {
+                    combat.attackers.remove(&id);
+                    combat.blocker_assignments.remove(&id);
+                    for blockers in combat.blocker_assignments.values_mut() {
+                        blockers.retain(|&b| b != id);
+                    }
+                }
+                state.log(LogLevel::Event, format!("{} regenerated",
+                    state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
+                took_action = true;
+            } else {
+                // Actually dies.
+                let (cid, ctrl) = state.get_object(id)
+                    .map(|o| (o.card_id, o.controller))
+                    .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
+                state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl });
+                state.move_object(id, Zone::Graveyard);
+                state.creature_died_this_turn = true;
+                took_action = true;
+            }
         }
 
         // Rule 704.5m: Aura not attached to anything goes to graveyard.
