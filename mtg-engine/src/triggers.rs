@@ -23,12 +23,10 @@ pub fn process_triggers(state: &mut GameState, registry: &CardRegistry) {
                     behavior.on_enter_battlefield(state, obj_id, registry);
                 }
             }
-            GameEvent::CreatureDied { object } => {
+            GameEvent::CreatureDied { object, card_id, controller } => {
                 let dead_id = *object;
-                let (dead_card_id, dead_controller) = match state.get_object(dead_id) {
-                    Some(o) => (o.card_id, o.controller),
-                    None => continue,
-                };
+                let dead_card_id = *card_id;
+                let dead_controller = *controller;
 
                 // 1. Self-dies trigger: the creature that died.
                 if let Some(behavior) = registry.get(dead_card_id) {

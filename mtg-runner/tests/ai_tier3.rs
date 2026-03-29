@@ -20,6 +20,8 @@ use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
 use mtg_engine::state::{CombatState, GameState};
 use mtg_engine::types::*;
+use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::triggers;
 use mtg_engine::view::GameView;
 
 use mtg_player::llm::LlmPlayer;
@@ -259,7 +261,7 @@ fn ai_tier3_doomed_traveler() {
 
     // P0 (AI): Doomed Traveler in hand + 1 Plains
     let dt_id = reg.get_id_by_name("Doomed Traveler").unwrap();
-    let dt = state.create_object(dt_id, PlayerId(0), Zone::Hand, None, None);
+    let dt = state.create_object(dt_id, PlayerId(0), Zone::Hand, Some(1), Some(1));
     state.get_object_mut(dt).unwrap().name = "Doomed Traveler".into();
 
     let plains_id = reg.get_id_by_name("Plains").unwrap();
@@ -271,20 +273,30 @@ fn ai_tier3_doomed_traveler() {
     save_scenario(&state, "ai_doomed_traveler");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_doomed_traveler.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Doomed Traveler, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Doomed Traveler");
 
     // Verify outcome: Doomed Traveler resolved onto the battlefield
-    let travelers: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
-        .into_iter()
-        .filter(|o| o.name == "Doomed Traveler")
-        .collect();
-    assert_eq!(travelers.len(), 1,
-        "Expected Doomed Traveler on battlefield, found {}", travelers.len());
+    let dt_id = {
+        let v: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+            .into_iter().filter(|o| o.name == "Doomed Traveler").collect();
+        assert_eq!(v.len(), 1, "Expected Doomed Traveler on battlefield");
+        v[0].id
+    };
     eprintln!("OK: AI cast Doomed Traveler — resolved on battlefield");
+
+    // Kill Doomed Traveler to test dies trigger
+    final_state.events.clear();
+    final_state.get_object_mut(dt_id).unwrap().damage_marked = 1;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    let spirits: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter().filter(|o| o.is_token && o.name == "Spirit").collect();
+    assert_eq!(spirits.len(), 1, "Doomed Traveler should create a Spirit token on death");
+    eprintln!("OK: Doomed Traveler died → Spirit token created");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -394,7 +406,7 @@ fn ai_tier3_pitchburn_devils() {
 
     // P0 (AI): Pitchburn Devils in hand + 5 Mountains
     let pd_id = reg.get_id_by_name("Pitchburn Devils").unwrap();
-    let pd = state.create_object(pd_id, PlayerId(0), Zone::Hand, None, None);
+    let pd = state.create_object(pd_id, PlayerId(0), Zone::Hand, Some(3), Some(3));
     state.get_object_mut(pd).unwrap().name = "Pitchburn Devils".into();
 
     let mtn_id = reg.get_id_by_name("Mountain").unwrap();
@@ -408,20 +420,31 @@ fn ai_tier3_pitchburn_devils() {
     save_scenario(&state, "ai_pitchburn_devils");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_pitchburn_devils.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Pitchburn Devils, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Pitchburn Devils");
 
     // Verify outcome: Pitchburn Devils on the battlefield
-    let devils: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
-        .into_iter()
-        .filter(|o| o.name == "Pitchburn Devils")
-        .collect();
-    assert_eq!(devils.len(), 1,
-        "Expected Pitchburn Devils on battlefield, found {}", devils.len());
+    let pd_id = {
+        let v: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+            .into_iter().filter(|o| o.name == "Pitchburn Devils").collect();
+        assert_eq!(v.len(), 1, "Expected Pitchburn Devils on battlefield");
+        v[0].id
+    };
     eprintln!("OK: AI cast Pitchburn Devils — resolved on battlefield");
+
+    // Kill Pitchburn Devils to test dies trigger
+    final_state.events.clear();
+    final_state.get_object_mut(pd_id).unwrap().damage_marked = 3;
+    let opp_life_before = final_state.get_player(PlayerId(1)).life;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    let opp_life_after = final_state.get_player(PlayerId(1)).life;
+    assert_eq!(opp_life_before - opp_life_after, 3,
+        "Pitchburn Devils should deal 3 damage to opponent on death");
+    eprintln!("OK: Pitchburn Devils died → 3 damage to opponent");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -448,7 +471,7 @@ fn ai_tier3_falkenrath_noble() {
 
     // P0 (AI): Falkenrath Noble in hand + 4 Swamps
     let fn_id = reg.get_id_by_name("Falkenrath Noble").unwrap();
-    let noble = state.create_object(fn_id, PlayerId(0), Zone::Hand, None, None);
+    let noble = state.create_object(fn_id, PlayerId(0), Zone::Hand, Some(2), Some(2));
     state.get_object_mut(noble).unwrap().name = "Falkenrath Noble".into();
 
     let swamp_id = reg.get_id_by_name("Swamp").unwrap();
@@ -462,7 +485,7 @@ fn ai_tier3_falkenrath_noble() {
     save_scenario(&state, "ai_falkenrath_noble");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_falkenrath_noble.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Falkenrath Noble, not {:?}", action);
@@ -478,6 +501,20 @@ fn ai_tier3_falkenrath_noble() {
     assert!(final_state.has_keyword(nobles[0].id, Keyword::Flying, &reg),
         "Falkenrath Noble should have flying");
     eprintln!("OK: AI cast Falkenrath Noble — on battlefield with flying");
+
+    // Create a creature and kill it to trigger Falkenrath Noble
+    final_state.events.clear();
+    let fodder = final_state.create_token("Fodder", PlayerId(0), 1, 1, vec![], vec![CardType::Creature], vec![]);
+    final_state.get_object_mut(fodder).unwrap().damage_marked = 1;
+    let p0_life_before = final_state.get_player(PlayerId(0)).life;
+    let p1_life_before = final_state.get_player(PlayerId(1)).life;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    assert_eq!(final_state.get_player(PlayerId(1)).life, p1_life_before - 1,
+        "Falkenrath Noble should drain 1 life from opponent when creature dies");
+    assert_eq!(final_state.get_player(PlayerId(0)).life, p0_life_before + 1,
+        "Falkenrath Noble should gain 1 life when creature dies");
+    eprintln!("OK: Creature died → Falkenrath Noble drained 1 life");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -568,7 +605,7 @@ fn ai_tier3_mausoleum_guard() {
     state.players[0].land_plays_remaining = 0;
 
     let mg_id = reg.get_id_by_name("Mausoleum Guard").unwrap();
-    let mg = state.create_object(mg_id, PlayerId(0), Zone::Hand, None, None);
+    let mg = state.create_object(mg_id, PlayerId(0), Zone::Hand, Some(2), Some(2));
     state.get_object_mut(mg).unwrap().name = "Mausoleum Guard".into();
 
     let plains_id = reg.get_id_by_name("Plains").unwrap();
@@ -582,20 +619,30 @@ fn ai_tier3_mausoleum_guard() {
     save_scenario(&state, "ai_mausoleum_guard");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_mausoleum_guard.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Mausoleum Guard, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Mausoleum Guard");
 
     // Verify outcome: Mausoleum Guard on the battlefield
-    let guards: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
-        .into_iter()
-        .filter(|o| o.name == "Mausoleum Guard")
-        .collect();
-    assert_eq!(guards.len(), 1,
-        "Expected Mausoleum Guard on battlefield, found {}", guards.len());
+    let mg_id = {
+        let v: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+            .into_iter().filter(|o| o.name == "Mausoleum Guard").collect();
+        assert_eq!(v.len(), 1, "Expected Mausoleum Guard on battlefield");
+        v[0].id
+    };
     eprintln!("OK: AI cast Mausoleum Guard — resolved on battlefield");
+
+    // Kill Mausoleum Guard to test dies trigger
+    final_state.events.clear();
+    final_state.get_object_mut(mg_id).unwrap().damage_marked = 2;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    let spirits: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+        .into_iter().filter(|o| o.is_token && o.name == "Spirit").collect();
+    assert_eq!(spirits.len(), 2, "Mausoleum Guard should create two Spirit tokens on death");
+    eprintln!("OK: Mausoleum Guard died → two Spirit tokens created");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -619,7 +666,7 @@ fn ai_tier3_rage_thrower() {
     state.players[0].land_plays_remaining = 0;
 
     let rt_id = reg.get_id_by_name("Rage Thrower").unwrap();
-    let rt = state.create_object(rt_id, PlayerId(0), Zone::Hand, None, None);
+    let rt = state.create_object(rt_id, PlayerId(0), Zone::Hand, Some(4), Some(2));
     state.get_object_mut(rt).unwrap().name = "Rage Thrower".into();
 
     let mtn_id = reg.get_id_by_name("Mountain").unwrap();
@@ -633,7 +680,7 @@ fn ai_tier3_rage_thrower() {
     save_scenario(&state, "ai_rage_thrower");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_rage_thrower.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Rage Thrower, not {:?}", action);
@@ -647,6 +694,17 @@ fn ai_tier3_rage_thrower() {
     assert_eq!(throwers.len(), 1,
         "Expected Rage Thrower on battlefield, found {}", throwers.len());
     eprintln!("OK: AI cast Rage Thrower — resolved on battlefield");
+
+    // Create a creature and kill it to trigger Rage Thrower
+    final_state.events.clear();
+    let fodder = final_state.create_token("Fodder", PlayerId(0), 1, 1, vec![], vec![CardType::Creature], vec![]);
+    final_state.get_object_mut(fodder).unwrap().damage_marked = 1;
+    let p1_life_before = final_state.get_player(PlayerId(1)).life;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    assert_eq!(final_state.get_player(PlayerId(1)).life, p1_life_before - 2,
+        "Rage Thrower should deal 2 damage when creature dies");
+    eprintln!("OK: Creature died → Rage Thrower dealt 2 damage");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -806,7 +864,7 @@ fn ai_tier3_unruly_mob() {
     state.players[0].land_plays_remaining = 0;
 
     let um_id = reg.get_id_by_name("Unruly Mob").unwrap();
-    let um = state.create_object(um_id, PlayerId(0), Zone::Hand, None, None);
+    let um = state.create_object(um_id, PlayerId(0), Zone::Hand, Some(1), Some(1));
     state.get_object_mut(um).unwrap().name = "Unruly Mob".into();
 
     let plains_id = reg.get_id_by_name("Plains").unwrap();
@@ -820,20 +878,30 @@ fn ai_tier3_unruly_mob() {
     save_scenario(&state, "ai_unruly_mob");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_unruly_mob.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Unruly Mob, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Unruly Mob");
 
     // Verify outcome: Unruly Mob on the battlefield
-    let mobs: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
-        .into_iter()
-        .filter(|o| o.name == "Unruly Mob")
-        .collect();
-    assert_eq!(mobs.len(), 1,
-        "Expected Unruly Mob on battlefield, found {}", mobs.len());
+    let mob_id = {
+        let v: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+            .into_iter().filter(|o| o.name == "Unruly Mob").collect();
+        assert_eq!(v.len(), 1, "Expected Unruly Mob on battlefield");
+        v[0].id
+    };
     eprintln!("OK: AI cast Unruly Mob — resolved on battlefield");
+
+    // Kill a friendly creature to trigger Unruly Mob
+    final_state.events.clear();
+    let fodder = final_state.create_token("Fodder", PlayerId(0), 1, 1, vec![], vec![CardType::Creature], vec![]);
+    final_state.get_object_mut(fodder).unwrap().damage_marked = 1;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    assert_eq!(final_state.get_counter_count(mob_id, CounterType::PlusOnePlusOne), 1,
+        "Unruly Mob should get +1/+1 counter when ally dies");
+    eprintln!("OK: Ally died → Unruly Mob gained +1/+1 counter");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -857,7 +925,7 @@ fn ai_tier3_lumberknot() {
     state.players[0].land_plays_remaining = 0;
 
     let lk_id = reg.get_id_by_name("Lumberknot").unwrap();
-    let lk = state.create_object(lk_id, PlayerId(0), Zone::Hand, None, None);
+    let lk = state.create_object(lk_id, PlayerId(0), Zone::Hand, Some(1), Some(1));
     state.get_object_mut(lk).unwrap().name = "Lumberknot".into();
 
     let forest_id = reg.get_id_by_name("Forest").unwrap();
@@ -871,20 +939,30 @@ fn ai_tier3_lumberknot() {
     save_scenario(&state, "ai_lumberknot");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_lumberknot.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Lumberknot, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Lumberknot");
 
     // Verify outcome: Lumberknot on the battlefield
-    let knots: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
-        .into_iter()
-        .filter(|o| o.name == "Lumberknot")
-        .collect();
-    assert_eq!(knots.len(), 1,
-        "Expected Lumberknot on battlefield, found {}", knots.len());
+    let lk_id = {
+        let v: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+            .into_iter().filter(|o| o.name == "Lumberknot").collect();
+        assert_eq!(v.len(), 1, "Expected Lumberknot on battlefield");
+        v[0].id
+    };
     eprintln!("OK: AI cast Lumberknot — resolved on battlefield");
+
+    // Kill any creature to trigger Lumberknot
+    final_state.events.clear();
+    let fodder = final_state.create_token("Fodder", PlayerId(1), 1, 1, vec![], vec![CardType::Creature], vec![]);
+    final_state.get_object_mut(fodder).unwrap().damage_marked = 1;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    assert_eq!(final_state.get_counter_count(lk_id, CounterType::PlusOnePlusOne), 1,
+        "Lumberknot should get +1/+1 counter when any creature dies");
+    eprintln!("OK: Creature died → Lumberknot gained +1/+1 counter");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -908,7 +986,7 @@ fn ai_tier3_elder_cathar() {
     state.players[0].land_plays_remaining = 0;
 
     let ec_id = reg.get_id_by_name("Elder Cathar").unwrap();
-    let ec = state.create_object(ec_id, PlayerId(0), Zone::Hand, None, None);
+    let ec = state.create_object(ec_id, PlayerId(0), Zone::Hand, Some(2), Some(2));
     state.get_object_mut(ec).unwrap().name = "Elder Cathar".into();
 
     let plains_id = reg.get_id_by_name("Plains").unwrap();
@@ -922,20 +1000,33 @@ fn ai_tier3_elder_cathar() {
     save_scenario(&state, "ai_elder_cathar");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_elder_cathar.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Elder Cathar, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Elder Cathar");
 
     // Verify outcome: Elder Cathar on the battlefield
-    let cathars: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
-        .into_iter()
-        .filter(|o| o.name == "Elder Cathar")
-        .collect();
-    assert_eq!(cathars.len(), 1,
-        "Expected Elder Cathar on battlefield, found {}", cathars.len());
+    let ec_id = {
+        let cathars: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+            .into_iter()
+            .filter(|o| o.name == "Elder Cathar")
+            .collect();
+        assert_eq!(cathars.len(), 1,
+            "Expected Elder Cathar on battlefield, found {}", cathars.len());
+        cathars[0].id
+    };
     eprintln!("OK: AI cast Elder Cathar — resolved on battlefield");
+
+    // Add a buddy creature to receive the counter, then kill Elder Cathar
+    final_state.events.clear();
+    let buddy = final_state.create_token("Buddy", PlayerId(0), 1, 1, vec![], vec![CardType::Creature], vec![]);
+    final_state.get_object_mut(ec_id).unwrap().damage_marked = 2;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    assert!(final_state.get_counter_count(buddy, CounterType::PlusOnePlusOne) >= 1,
+        "Elder Cathar should grant +1/+1 counter on death");
+    eprintln!("OK: Elder Cathar died → buddy got +1/+1 counter");
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -959,7 +1050,7 @@ fn ai_tier3_village_cannibals() {
     state.players[0].land_plays_remaining = 0;
 
     let vc_id = reg.get_id_by_name("Village Cannibals").unwrap();
-    let vc = state.create_object(vc_id, PlayerId(0), Zone::Hand, None, None);
+    let vc = state.create_object(vc_id, PlayerId(0), Zone::Hand, Some(2), Some(2));
     state.get_object_mut(vc).unwrap().name = "Village Cannibals".into();
 
     let swamp_id = reg.get_id_by_name("Swamp").unwrap();
@@ -973,18 +1064,33 @@ fn ai_tier3_village_cannibals() {
     save_scenario(&state, "ai_village_cannibals");
 
     let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_village_cannibals.log");
-    let (action, final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
+    let (action, mut final_state) = run_ai_decision(&state, PlayerId(0), &mut player, &reg);
 
     assert!(matches!(&action, Action::CastSpell { .. }),
         "AI should cast Village Cannibals, not {:?}", action);
     assert_eq!(spell_name(&final_state, &action), "Village Cannibals");
 
     // Verify outcome: Village Cannibals on the battlefield
-    let cannibals: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
-        .into_iter()
-        .filter(|o| o.name == "Village Cannibals")
-        .collect();
-    assert_eq!(cannibals.len(), 1,
-        "Expected Village Cannibals on battlefield, found {}", cannibals.len());
+    let vc_id = {
+        let cannibals: Vec<_> = final_state.objects_in_zone(Zone::Battlefield, PlayerId(0))
+            .into_iter()
+            .filter(|o| o.name == "Village Cannibals")
+            .collect();
+        assert_eq!(cannibals.len(), 1,
+            "Expected Village Cannibals on battlefield, found {}", cannibals.len());
+        cannibals[0].id
+    };
     eprintln!("OK: AI cast Village Cannibals — resolved on battlefield");
+
+    // Kill a Human creature to trigger Village Cannibals
+    final_state.events.clear();
+    let dt_card_id = reg.get_id_by_name("Doomed Traveler").unwrap();
+    let human = final_state.create_object(dt_card_id, PlayerId(0), Zone::Battlefield, Some(1), Some(1));
+    final_state.get_object_mut(human).unwrap().name = "Doomed Traveler".into();
+    final_state.get_object_mut(human).unwrap().damage_marked = 1;
+    check_state_based_actions_with_registry(&mut final_state, Some(&reg));
+    triggers::process_triggers(&mut final_state, &reg);
+    assert_eq!(final_state.get_counter_count(vc_id, CounterType::PlusOnePlusOne), 1,
+        "Village Cannibals should get +1/+1 counter when Human dies");
+    eprintln!("OK: Human died → Village Cannibals gained +1/+1 counter");
 }

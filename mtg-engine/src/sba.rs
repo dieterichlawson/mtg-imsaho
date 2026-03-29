@@ -73,7 +73,10 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             .collect();
 
         for id in creatures_to_kill {
-            state.events.push(GameEvent::CreatureDied { object: id });
+            let (cid, ctrl) = state.get_object(id)
+                .map(|o| (o.card_id, o.controller))
+                .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
+            state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl });
             state.move_object(id, Zone::Graveyard);
             state.creature_died_this_turn = true;
             took_action = true;

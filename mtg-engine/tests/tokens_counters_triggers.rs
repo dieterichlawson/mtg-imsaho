@@ -252,6 +252,8 @@ fn trigger_processing_doesnt_crash_without_cards() {
     let mut state = GameState::new(2);
     state.events.push(mtg_engine::events::GameEvent::CreatureDied {
         object: mtg_engine::ids::ObjectId(999),
+        card_id: mtg_engine::ids::CardId(0),
+        controller: mtg_engine::ids::PlayerId(0),
     });
 
     // Should not panic even with a nonexistent object.
@@ -272,7 +274,7 @@ fn dying_token_emits_creature_died() {
     check_state_based_actions_with_registry(&mut state, Some(&reg));
 
     let died = state.events.iter().any(|e|
-        matches!(e, mtg_engine::events::GameEvent::CreatureDied { object } if *object == token)
+        matches!(e, mtg_engine::events::GameEvent::CreatureDied { object, .. } if *object == token)
     );
     assert!(died, "Token dying should emit CreatureDied");
 }
