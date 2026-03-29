@@ -62,6 +62,12 @@ pub struct GameState {
     /// Index for trigger processing resumption after a resolution choice.
     #[serde(default)]
     pub trigger_event_index: usize,
+
+    /// Pending triggered abilities waiting to resolve, in APNAP order.
+    /// Active player's triggers at the front (bottom of "stack"),
+    /// non-active player's at the back (top). Resolved LIFO from the back.
+    #[serde(default)]
+    pub pending_triggers: Vec<crate::triggers::PendingTrigger>,
 }
 
 /// Log level for game log entries.
@@ -127,6 +133,7 @@ impl GameState {
             until_end_of_turn_cant_block: Vec::new(),
             creature_died_this_turn: false,
             trigger_event_index: 0,
+            pending_triggers: Vec::new(),
         }
     }
 

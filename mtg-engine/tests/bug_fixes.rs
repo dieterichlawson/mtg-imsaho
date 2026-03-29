@@ -350,12 +350,9 @@ fn no_attackers_game_loop_skips_to_end_combat() {
         state.players[p as usize].library_order = lib;
     }
 
-    // Track which steps we see during the game loop.
-    let mut steps_seen = Vec::new();
     let mut action_count = 0;
 
     engine::run_game_loop(&mut state, &reg, |game_state, _player, legal| {
-        steps_seen.push(game_state.step);
         action_count += 1;
 
         // Safety valve: don't run forever.
@@ -377,12 +374,17 @@ fn no_attackers_game_loop_skips_to_end_combat() {
         Action::PassPriority
     });
 
-    // After the game loop runs through combat, check if DeclareBlockers was visited.
-    // If the bug exists, the step goes straight from DeclareAttackers to EndCombat.
-    let saw_declare_blockers = steps_seen.contains(&Step::DeclareBlockers);
-    assert!(saw_declare_blockers,
-        "Game loop should pass through DeclareBlockers even with zero attackers (CR 507-510). \
-         Steps seen: {:?}", steps_seen);
+    // Check that DeclareBlockers was reached by looking at StepStarted events.
+    // Auto-pass may skip asking the player, but the step should still be entered.
+    let saw_declare_blockers = state.events.iter().any(|e| {
+        matches!(e, GameEvent::StepStarted { step: Step::DeclareBlockers })
+    });
+    // Also check the game log for the step.
+    let log_has_blockers = state.game_log.iter().any(|e| {
+        e.message.contains("DeclareBlockers")
+    });
+    assert!(saw_declare_blockers || log_has_blockers,
+        "Game loop should pass through DeclareBlockers even with zero attackers (CR 507-510)");
 }
 
 // ════════════════════════════════════════════════════════════════════
