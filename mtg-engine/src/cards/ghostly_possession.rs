@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Ghostly Possession — {2}{W} aura enchantment. Enchanted creature has flying.
-/// (Combat damage prevention is complex; just grant flying for now.)
+/// Grants flying and prevents all combat damage to and from the enchanted creature.
 pub struct GhostlyPossession;
 
 impl CardBehavior for GhostlyPossession {
