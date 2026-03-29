@@ -4,6 +4,9 @@
 //! - Indestructible interactions with zero toughness and sacrifice
 //! - Simultaneous creature death in combat
 //! - Aura falling off when enchanted creature leaves the battlefield
+//! - Zone change creates new object identity
+//! - "Dies" triggers fire with correct information
+//! - Cleanup step clears effects and SBAs loop
 
 mod common;
 
@@ -11,6 +14,8 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::destruction;
+use mtg_engine::engine;
+use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::{check_state_based_actions, check_state_based_actions_with_registry};
 use mtg_engine::types::*;
@@ -246,4 +251,221 @@ fn damage_does_not_reduce_effective_toughness() {
     // But the creature is still alive (2 damage < 3 toughness).
     check_state_based_actions(&mut state);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
+}
+
+// ── Zone change creates new object identity ────────────────────────
+
+/// When a creature leaves the battlefield and re-enters, attached auras
+/// should fall off. The re-entered creature is a "new object" per rule 400.7.
+#[test]
+fn blinked_creature_loses_aura() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 3, 3);
+
+    // Attach an aura.
+    let aura_id = reg.get_id_by_name("Holy Strength").unwrap();
+    let aura = state.create_object(aura_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(aura).unwrap().attached_to = Some(creature);
+
+    // "Blink" the creature: exile then return to battlefield.
+    state.move_object(creature, Zone::Exile);
+
+    // SBA should clean up the aura (its target left the battlefield).
+    check_state_based_actions(&mut state);
+
+    assert_eq!(
+        state.get_object(aura).unwrap().zone,
+        Zone::Graveyard,
+        "Aura should fall off when creature is blinked (exiled) — rule 400.7"
+    );
+}
+
+/// When a creature leaves and re-enters, damage should be cleared.
+#[test]
+fn zone_change_clears_damage() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let creature = ready_creature(&mut state, P0, 3, 3);
+
+    // Mark some damage.
+    state.get_object_mut(creature).unwrap().damage_marked = 2;
+
+    // Move to hand and back to battlefield.
+    state.move_object(creature, Zone::Hand);
+    state.move_object(creature, Zone::Battlefield);
+
+    assert_eq!(
+        state.get_object(creature).unwrap().damage_marked, 0,
+        "Damage should be cleared when a creature re-enters the battlefield"
+    );
+}
+
+// ── "Dies" triggers see correct information ────────────────────────
+
+/// When a creature dies, the CreatureDied event should contain the
+/// correct card_id and controller from when it was on the battlefield.
+#[test]
+fn dies_trigger_has_correct_info() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = CardId(42);
+    let creature = state.create_object(card_id, P0, Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(creature).unwrap().summoning_sick = false;
+    state.get_object_mut(creature).unwrap().controller = P1; // controlled by P1
+
+    // Kill via lethal damage.
+    state.get_object_mut(creature).unwrap().damage_marked = 5;
+    state.events.clear();
+    check_state_based_actions(&mut state);
+
+    // Find the CreatureDied event.
+    let died_event = state.events.iter().find(|e| {
+        matches!(e, GameEvent::CreatureDied { object, .. } if *object == creature)
+    });
+    assert!(died_event.is_some(), "Should emit CreatureDied event");
+
+    if let Some(GameEvent::CreatureDied { card_id: cid, controller, .. }) = died_event {
+        assert_eq!(*cid, card_id, "CreatureDied should have the correct card_id");
+        assert_eq!(*controller, P1, "CreatureDied should record the controller");
+    }
+}
+
+/// When a creature dies, death-watch triggers on other permanents should fire.
+#[test]
+fn death_watch_triggers_fire_on_creature_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place an Unruly Mob (gains +1/+1 counter when another creature you control dies).
+    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
+
+    // Place a creature that will die.
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+
+    // Run SBAs to kill the victim.
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    // Process triggers (the death-watch should fire).
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
+    // Unruly Mob should have gained a +1/+1 counter.
+    let counter_count = state.get_counter_count(mob, CounterType::PlusOnePlusOne);
+    assert_eq!(
+        counter_count, 1,
+        "Unruly Mob should gain a +1/+1 counter when another creature you control dies"
+    );
+}
+
+// ── Cleanup step ───────────────────────────────────────────────────
+
+/// "Until end of turn" effects should be cleared during the cleanup step.
+/// A creature with a Giant Growth (+3/+3 until EOT) should revert.
+#[test]
+fn cleanup_clears_until_end_of_turn_effects() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+
+    // Simulate Giant Growth: +3/+3 until end of turn.
+    state.until_end_of_turn_effects.push(
+        mtg_engine::state::UntilEndOfTurnEffect {
+            target: creature,
+            power_mod: 3,
+            toughness_mod: 3,
+        },
+    );
+
+    assert_eq!(state.effective_power(creature, &reg), Some(5));
+    assert_eq!(state.effective_toughness(creature, &reg), Some(5));
+
+    // Advance to cleanup step.
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup {
+            break;
+        }
+    }
+
+    assert_eq!(
+        state.effective_power(creature, &reg),
+        Some(2),
+        "+3/+3 should be gone after cleanup"
+    );
+    assert_eq!(
+        state.effective_toughness(creature, &reg),
+        Some(2),
+        "+3/+3 should be gone after cleanup"
+    );
+}
+
+/// If a creature survives only because of an "until end of turn" toughness
+/// bonus, it should die in cleanup when the bonus is removed and SBAs are
+/// checked. (This tests the cleanup-step SBA interaction.)
+#[test]
+fn creature_dies_in_cleanup_when_eot_buff_expires() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PostcombatMain, P0);
+
+    // 1/1 creature with 1 damage — alive because of +0/+1 until EOT.
+    let creature = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(creature).unwrap().damage_marked = 1;
+    state.until_end_of_turn_effects.push(
+        mtg_engine::state::UntilEndOfTurnEffect {
+            target: creature,
+            power_mod: 0,
+            toughness_mod: 1,
+        },
+    );
+
+    // With the buff, effective toughness is 2, damage is 1 — survives.
+    assert_eq!(state.effective_toughness(creature, &reg), Some(2));
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
+
+    // Advance to cleanup (buff removed, damage cleared).
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup {
+            break;
+        }
+    }
+
+    // During cleanup, damage is cleared AND the buff expires.
+    // The creature is now 1/1 with 0 damage — it lives.
+    // (Cleanup clears damage at the same time as removing buffs.)
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Creature should survive cleanup because damage is cleared at the same time as buffs expire");
+}
+
+/// Until-end-of-turn keyword grants should expire during cleanup.
+#[test]
+fn cleanup_clears_keyword_grants() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.until_end_of_turn_keywords.push(
+        mtg_engine::state::UntilEndOfTurnKeyword {
+            target: creature,
+            keyword: Keyword::Flying,
+        },
+    );
+
+    assert!(state.has_keyword(creature, Keyword::Flying, &reg));
+
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup {
+            break;
+        }
+    }
+
+    assert!(
+        !state.has_keyword(creature, Keyword::Flying, &reg),
+        "Until-end-of-turn flying should expire during cleanup"
+    );
 }

@@ -3,6 +3,9 @@
 //! When a spell's targets all become illegal before resolution, it should
 //! be countered by game rules ("fizzle"). These tests document the expected
 //! behavior and verify what currently happens.
+//!
+//! Also tests multi-target spell behavior: partial target illegality should
+//! still allow the spell to resolve for remaining legal targets (608.2c).
 
 mod common;
 
@@ -10,7 +13,7 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions;
+use mtg_engine::sba::{check_state_based_actions, check_state_based_actions_with_registry};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -177,5 +180,116 @@ fn aura_target_dies_before_resolution() {
         state.get_object(pacifism).unwrap().zone,
         Zone::Graveyard,
         "Aura with no legal target on resolution should go to graveyard"
+    );
+}
+
+// ── Hexproof gained before resolution ──────────────────────────────
+
+/// If a creature gains hexproof after a spell is cast targeting it,
+/// the spell should still resolve (hexproof is only checked on cast,
+/// not on resolution in the current engine). This documents the engine's
+/// current behavior.
+#[test]
+fn bolt_target_gains_hexproof_before_resolution() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+
+    // P0 casts Lightning Bolt targeting P1's creature.
+    let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)] },
+        &reg,
+    );
+
+    // Creature gains hexproof before bolt resolves.
+    state.until_end_of_turn_keywords.push(
+        mtg_engine::state::UntilEndOfTurnKeyword {
+            target: creature,
+            keyword: Keyword::Hexproof,
+        },
+    );
+
+    // Resolve the bolt — note that per MTG rules, the spell should fizzle
+    // because hexproof makes the target illegal. The current engine does
+    // NOT check target legality on resolution, so the bolt still deals damage.
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Current behavior: bolt still deals damage despite hexproof.
+    // When fizzle is implemented, this should change to:
+    //   assert_eq!(state.get_object(creature).unwrap().damage_marked, 0);
+    assert_eq!(
+        state.get_object(creature).unwrap().damage_marked, 3,
+        "Current engine behavior: bolt resolves despite hexproof gained after cast"
+    );
+}
+
+// ── Multi-target spells ────────────────────────────────────────────
+
+/// A two-target spell (Feeling of Dread: tap up to 2 creatures) should
+/// still tap the surviving target even if one target dies.
+#[test]
+fn multi_target_spell_with_one_target_dying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature_a = ready_creature(&mut state, P1, 3, 3);
+    let creature_b = ready_creature(&mut state, P1, 2, 2);
+
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: dread,
+            targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
+        },
+        &reg,
+    );
+
+    // Creature A dies before resolution.
+    state.move_object(creature_a, Zone::Graveyard);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Creature B should still be tapped (partial resolution).
+    assert!(
+        state.get_object(creature_b).unwrap().tapped,
+        "Feeling of Dread should still tap creature B even if creature A died (rule 608.2b)"
+    );
+}
+
+/// A two-target spell where BOTH targets die should have no effect.
+#[test]
+fn multi_target_spell_with_all_targets_dying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature_a = ready_creature(&mut state, P1, 3, 3);
+    let creature_b = ready_creature(&mut state, P1, 2, 2);
+
+    let dread = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: dread,
+            targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
+        },
+        &reg,
+    );
+
+    // Both creatures die before resolution.
+    state.move_object(creature_a, Zone::Graveyard);
+    state.move_object(creature_b, Zone::Graveyard);
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // With all targets illegal, the spell should fizzle (no effect).
+    // Feeling of Dread just goes to graveyard.
+    assert_eq!(
+        state.get_object(dread).unwrap().zone,
+        Zone::Graveyard,
+        "Spell with all targets dead should go to graveyard"
     );
 }
