@@ -872,7 +872,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 }
 
 /// Apply a pending effect from a resolution choice to a target.
-fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, effect: &crate::state::PendingEffect, _registry: &CardRegistry) {
+fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, effect: &crate::state::PendingEffect, registry: &CardRegistry) {
     use crate::actions::Target;
     use crate::state::PendingEffect;
 
@@ -904,8 +904,21 @@ fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, 
             state.log(LogLevel::Event, format!("{} returned to the battlefield", name));
             state.move_spell_after_resolve(*spell_id);
         }
-        (Target::Object(id), PendingEffect::AddCounters { count }) => {
-            state.add_counters(*id, crate::types::CounterType::PlusOnePlusOne, *count);
+        (Target::Object(id), PendingEffect::AddCounters { count, human_bonus }) => {
+            let mut final_count = *count;
+            if *human_bonus {
+                let is_human = state.get_object(*id)
+                    .and_then(|o| registry.card_data(o.card_id))
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false);
+                if is_human {
+                    final_count = count * 2;
+                }
+            }
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.add_counters(*id, crate::types::CounterType::PlusOnePlusOne, final_count);
+            state.log(LogLevel::Event,
+                format!("Added {} +1/+1 counter{} to {}", final_count, if final_count > 1 { "s" } else { "" }, name));
         }
         _ => {}
     }

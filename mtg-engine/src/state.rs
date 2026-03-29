@@ -815,7 +815,7 @@ pub enum PendingEffect {
     /// Move chosen creature from graveyard to battlefield.
     ReturnToBattlefield { spell_id: ObjectId },
     /// Put +1/+1 counters on chosen creature.
-    AddCounters { count: u32 },
+    AddCounters { count: u32, human_bonus: bool },
 }
 
 /// Game result.
