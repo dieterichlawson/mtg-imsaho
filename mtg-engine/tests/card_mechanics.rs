@@ -1,6 +1,7 @@
-//! Tests for all card fix implementations: morbid, leave-battlefield,
-//! forced attack, damage prevention, protection, token anthem, opponent
-//! debuff, per-instance aura, and can't-block restrictions.
+//! Tests for card mechanics: morbid, leave-battlefield triggers,
+//! forced attack, combat damage prevention, protection, token anthems,
+//! opponent debuffs, conditional auras, unblockable, can't-block,
+//! untap prevention.
 
 mod common;
 
@@ -13,6 +14,8 @@ use mtg_engine::ids::PlayerId;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
+
+use mtg_engine::ids::CardId;
 
 fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
@@ -520,4 +523,142 @@ fn elder_cathar_gives_one_counter_to_non_human() {
 
     assert_eq!(state.get_counter_count(bears, CounterType::PlusOnePlusOne), 1,
         "Non-Human should get only 1 +1/+1 counter from Elder Cathar");
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Invisible Stalker — can't be blocked
+// ══════════════════════════════════════════════════════════════════
+
+/// Invisible Stalker can't be blocked by any creature.
+#[test]
+fn invisible_stalker_unblockable() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let stalker_id = reg.get_id_by_name("Invisible Stalker").unwrap();
+    let stalker = state.create_object(stalker_id, P0, Zone::Battlefield, Some(1), Some(1));
+    state.get_object_mut(stalker).unwrap().name = "Invisible Stalker".into();
+    state.get_object_mut(stalker).unwrap().summoning_sick = false;
+
+    let blocker = ready_creature(&mut state, P1, 5, 5);
+
+    assert!(!combat::can_block_attacker(&state, blocker, stalker, &reg),
+        "No creature should be able to block Invisible Stalker");
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Vampire Interloper — can't block
+// ══════════════════════════════════════════════════════════════════
+
+/// Vampire Interloper can't be used as a blocker.
+#[test]
+fn vampire_interloper_cant_block() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let vi_id = reg.get_id_by_name("Vampire Interloper").unwrap();
+    let vi = state.create_object(vi_id, P1, Zone::Battlefield, Some(2), Some(1));
+    state.get_object_mut(vi).unwrap().name = "Vampire Interloper".into();
+    state.get_object_mut(vi).unwrap().summoning_sick = false;
+
+    let eligible = combat::eligible_blockers_with_registry(&state, P1, &reg);
+    assert!(!eligible.contains(&vi),
+        "Vampire Interloper should not be eligible to block");
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Claustrophobia — prevents untapping
+// ══════════════════════════════════════════════════════════════════
+
+/// Creature enchanted by Claustrophobia doesn't untap during untap step.
+#[test]
+fn claustrophobia_prevents_untap() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P1 has a creature with Claustrophobia attached.
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    state.get_object_mut(creature).unwrap().tapped = true;
+
+    let cl_id = reg.get_id_by_name("Claustrophobia").unwrap();
+    let cl = state.create_object(cl_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(cl).unwrap().name = "Claustrophobia".into();
+    state.get_object_mut(cl).unwrap().attached_to = Some(creature);
+    state.get_object_mut(cl).unwrap().summoning_sick = false;
+
+    // Advance to P1's untap step.
+    state.active_player = PlayerId(1);
+    state.step = Step::Cleanup; // will advance to P0's untap, then eventually P1's
+    // Directly simulate P1's untap step.
+    state.step = Step::Untap;
+    state.active_player = PlayerId(1);
+    engine::advance_step(&mut state, &reg); // This performs untap actions for P1's untap
+    // Actually advance_step moves to the NEXT step. Let me call perform_turn_based_actions
+    // by setting up the untap step properly.
+
+    // Simpler: just run the untap logic directly. Set up as P1's turn at untap.
+    let mut state2 = game_at_step(Step::PrecombatMain, PlayerId(1));
+    let creature2 = state2.create_object(CardId(99), PlayerId(1), Zone::Battlefield, Some(3), Some(3));
+    state2.get_object_mut(creature2).unwrap().summoning_sick = false;
+    state2.get_object_mut(creature2).unwrap().tapped = true;
+
+    let cl2 = state2.create_object(cl_id, P0, Zone::Battlefield, None, None);
+    state2.get_object_mut(cl2).unwrap().name = "Claustrophobia".into();
+    state2.get_object_mut(cl2).unwrap().attached_to = Some(creature2);
+    state2.get_object_mut(cl2).unwrap().summoning_sick = false;
+
+    // Also add a normal tapped creature (should untap normally).
+    let normal = state2.create_object(CardId(98), PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state2.get_object_mut(normal).unwrap().summoning_sick = false;
+    state2.get_object_mut(normal).unwrap().tapped = true;
+
+    // Simulate the untap step by going through a full turn cycle.
+    state2.step = Step::Cleanup;
+    state2.active_player = PlayerId(0);
+    // Advance until we hit P1's Draw step (which means untap just happened).
+    loop {
+        engine::advance_step(&mut state2, &reg);
+        if state2.active_player == PlayerId(1) && state2.step == Step::Draw {
+            break;
+        }
+    }
+
+    assert!(state2.get_object(creature2).unwrap().tapped,
+        "Creature with Claustrophobia should remain tapped after untap step");
+    assert!(!state2.get_object(normal).unwrap().tapped,
+        "Normal creature should untap normally");
+}
+
+// ══════════════════════════════════════════════════════════════════
+// Feeling of Dread — targets two creatures
+// ══════════════════════════════════════════════════════════════════
+
+/// Feeling of Dread can tap two creatures.
+#[test]
+fn feeling_of_dread_taps_two() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature1 = ready_creature(&mut state, P1, 3, 3);
+    let creature2 = ready_creature(&mut state, P1, 2, 2);
+
+    let fod_id = reg.get_id_by_name("Feeling of Dread").unwrap();
+    let fod = state.create_object(fod_id, P0, Zone::Hand, None, None);
+    state.get_object_mut(fod).unwrap().name = "Feeling of Dread".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: fod,
+            targets: vec![Target::Object(creature1), Target::Object(creature2)],
+        },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    assert!(state.get_object(creature1).unwrap().tapped,
+        "First target should be tapped");
+    assert!(state.get_object(creature2).unwrap().tapped,
+        "Second target should be tapped");
 }
