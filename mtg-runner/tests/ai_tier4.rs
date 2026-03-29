@@ -1133,3 +1133,98 @@ fn ai_tier4_skeletal_grimace_regenerate() {
         "Regeneration shield should be consumed");
     eprintln!("OK: AI activated regenerate → creature survived Doom Blade (tapped, shield consumed)");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Skeletal Grimace regeneration in response to Lightning Bolt
+//
+// P0 has cast Lightning Bolt targeting P1's 2/2 creature enchanted
+// with Skeletal Grimace (effective 3/3). Bolt deals 3 = lethal.
+// P1 (AI) has priority to respond with an untapped Swamp for {B}.
+// P1 also has a Grizzly Bears in hand (can't cast at instant speed).
+// Correct play: activate regeneration — the creature survives the
+// damage via the regeneration replacement in SBAs.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier4_skeletal_grimace_regen_vs_bolt() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 18;
+    state.players[1].life = 12;
+    state.turn_number = 6;
+    state.active_player = PlayerId(0);
+    state.priority_player = Some(PlayerId(1)); // AI has priority to respond
+    state.step = Step::PrecombatMain;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+    state.players[1].land_plays_remaining = 0;
+
+    // P1 (AI): a 2/2 creature on the battlefield
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let creature = state.create_object(bears_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(creature).unwrap().name = "Runeclaw Bear".into();
+    state.get_object_mut(creature).unwrap().summoning_sick = false;
+    state.get_object_mut(creature).unwrap().colors = vec![Color::Green];
+
+    // P1 (AI): Skeletal Grimace attached to creature
+    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
+    let sg = state.create_object(sg_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
+    state.get_object_mut(sg).unwrap().attached_to = Some(creature);
+    state.get_object_mut(sg).unwrap().summoning_sick = false;
+
+    // P1 (AI): 1 Swamp (untapped) for {B} regeneration cost
+    let swamp_id = reg.get_id_by_name("Swamp").unwrap();
+    let swamp = state.create_object(swamp_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(swamp).unwrap().name = "Swamp".into();
+    state.get_object_mut(swamp).unwrap().summoning_sick = false;
+
+    // P1 (AI): a Grizzly Bears in hand (sorcery-speed, can't help here)
+    let bear2 = state.create_object(bears_id, PlayerId(1), Zone::Hand, Some(2), Some(2));
+    state.get_object_mut(bear2).unwrap().name = "Grizzly Bears".into();
+
+    // P0: 1 Mountain (tapped, used for Lightning Bolt)
+    let mtn_id = reg.get_id_by_name("Mountain").unwrap();
+    let mtn = state.create_object(mtn_id, PlayerId(0), Zone::Battlefield, None, None);
+    state.get_object_mut(mtn).unwrap().name = "Mountain".into();
+    state.get_object_mut(mtn).unwrap().tapped = true;
+
+    // P0 has cast Lightning Bolt targeting P1's creature — on the stack.
+    let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();
+    let bolt = state.create_object(bolt_id, PlayerId(0), Zone::Stack, None, None);
+    state.get_object_mut(bolt).unwrap().name = "Lightning Bolt".into();
+    state.get_object_mut(bolt).unwrap().targets = vec![mtg_engine::actions::Target::Object(creature)];
+    state.stack.push(bolt);
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_skeletal_grimace_regen_bolt");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_skeletal_grimace_regen_bolt.log");
+    let (action, final_state) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    // AI should activate regeneration to save the creature from lethal damage.
+    assert!(matches!(&action, Action::ActivateAbility { .. }),
+        "AI should activate regenerate to save creature from Lightning Bolt, not {:?}", action);
+
+    // Verify the creature has a regeneration shield.
+    assert_eq!(final_state.get_object(creature).unwrap().regeneration_shields, 1,
+        "Creature should have a regeneration shield");
+
+    // Resolve Lightning Bolt — deals 3 damage to the 3/3 creature.
+    let mut post_resolve = final_state.clone();
+    post_resolve.consecutive_passes = 2;
+    mtg_engine::stack::resolve_top_of_stack(&mut post_resolve, &reg);
+    // SBAs: 3 damage on 3 toughness = lethal → regeneration replaces destruction.
+    mtg_engine::sba::check_state_based_actions_with_registry(&mut post_resolve, Some(&reg));
+
+    assert_eq!(post_resolve.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Creature should survive Lightning Bolt thanks to regeneration");
+    assert!(post_resolve.get_object(creature).unwrap().tapped,
+        "Regenerated creature should be tapped");
+    assert_eq!(post_resolve.get_object(creature).unwrap().damage_marked, 0,
+        "Damage should be removed by regeneration");
+    assert_eq!(post_resolve.get_object(creature).unwrap().regeneration_shields, 0,
+        "Regeneration shield should be consumed");
+    eprintln!("OK: AI activated regenerate → creature survived Lightning Bolt (3 damage on 3/3, regenerated)");
+}
