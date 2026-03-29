@@ -325,28 +325,64 @@ fn counterspell_fizzles_when_target_already_countered() {
 // Per rules 507-510, all steps should execute in sequence.
 // ════════════════════════════════════════════════════════════════════
 
-/// After declaring zero attackers, the step should advance through
-/// DeclareBlockers (which does nothing) rather than skipping to EndCombat.
+/// After declaring zero attackers, the game loop skips to EndCombat.
+/// This tests the game loop code path (not submit_action, which doesn't skip).
+/// The bug is in run_game_loop_inner's post-action handler for DeclareAttackers.
+///
+/// We test this by running the game loop with a callback that records what
+/// steps the game passes through.
 #[test]
-fn no_attackers_still_goes_through_declare_blockers() {
+fn no_attackers_game_loop_skips_to_end_combat() {
     let reg = registry();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
-    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+    let mut state = game_at_step(Step::BeginCombat, P0);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
-    ready_creature(&mut state, P0, 3, 3); // has creatures but chooses not to attack
+    ready_creature(&mut state, P0, 3, 3);
 
-    // Declare zero attackers.
-    state = engine::submit_action(
-        &state,
-        &Action::DeclareAttackers { attackers: vec![] },
-        &reg,
-    );
+    // Fill libraries so we don't hit empty-library SBA.
+    let land_id = reg.get_id_by_name("Forest").unwrap();
+    for p in 0..2u8 {
+        let mut lib = Vec::new();
+        for _ in 0..20 {
+            let id = state.create_object(land_id, mtg_engine::ids::PlayerId(p), Zone::Library, None, None);
+            lib.push(id);
+        }
+        state.players[p as usize].library_order = lib;
+    }
 
-    // Should be at DeclareBlockers, not EndCombat.
-    // (The engine currently skips to EndCombat — this test documents the bug.)
-    assert_ne!(state.step, Step::EndCombat,
-        "After zero attackers, should advance through DeclareBlockers, not skip to EndCombat (CR 507-510)");
+    // Track which steps we see during the game loop.
+    let mut steps_seen = Vec::new();
+    let mut action_count = 0;
+
+    engine::run_game_loop(&mut state, &reg, |game_state, _player, legal| {
+        steps_seen.push(game_state.step);
+        action_count += 1;
+
+        // Safety valve: don't run forever.
+        if action_count > 50 {
+            return Action::Concede;
+        }
+
+        // When asked to declare attackers, declare none.
+        if legal.combat_prompt.is_some() {
+            if game_state.step == Step::DeclareAttackers {
+                return Action::DeclareAttackers { attackers: vec![] };
+            }
+            if game_state.step == Step::DeclareBlockers {
+                return Action::DeclareBlockers { assignments: vec![] };
+            }
+        }
+
+        // Otherwise just pass priority to advance the game.
+        Action::PassPriority
+    });
+
+    // After the game loop runs through combat, check if DeclareBlockers was visited.
+    // If the bug exists, the step goes straight from DeclareAttackers to EndCombat.
+    let saw_declare_blockers = steps_seen.contains(&Step::DeclareBlockers);
+    assert!(saw_declare_blockers,
+        "Game loop should pass through DeclareBlockers even with zero attackers (CR 507-510). \
+         Steps seen: {:?}", steps_seen);
 }
 
 // ════════════════════════════════════════════════════════════════════
