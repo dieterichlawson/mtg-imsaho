@@ -443,6 +443,7 @@ impl LlmPlayer {
             Action::PassPriority => "Pass".into(),
             Action::PlayLand { object_id } => format!("Play {}", Self::obj_name(view, *object_id)),
             Action::ActivateManaAbility { object_id, .. } => format!("Tap {}", Self::obj_name(view, *object_id)),
+            Action::ActivateAbility { object_id, .. } => format!("Activate {}", Self::obj_name(view, *object_id)),
             Action::Concede => "Concede".into(),
             Action::DiscardCards { cards } => format!("Discard {} cards", cards.len()),
             Action::ResolveChoice { choice } => {

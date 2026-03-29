@@ -152,6 +152,42 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
     }
 
+    // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
+    // Check attached permanents too (auras granting abilities to creatures).
+    let mana_pool = &state.get_player(player).mana_pool;
+    for obj in state.objects_in_zone(Zone::Battlefield, player) {
+        // Check abilities on this permanent's card.
+        if let Some(behavior) = registry.get(obj.card_id) {
+            for ab in behavior.activated_abilities(state, obj.id) {
+                if mana::can_pay(mana_pool, &ab.cost) {
+                    if !ab.requires_tap || !obj.tapped {
+                        actions.push(Action::ActivateAbility {
+                            object_id: obj.id,
+                            ability_index: ab.ability_index,
+                        });
+                    }
+                }
+            }
+        }
+        // Check abilities granted by attached auras.
+        for attached in state.objects.values() {
+            if attached.zone == Zone::Battlefield && attached.attached_to == Some(obj.id) {
+                if let Some(behavior) = registry.get(attached.card_id) {
+                    for ab in behavior.activated_abilities(state, obj.id) {
+                        if mana::can_pay(mana_pool, &ab.cost) {
+                            if !ab.requires_tap || !obj.tapped {
+                                actions.push(Action::ActivateAbility {
+                                    object_id: obj.id,
+                                    ability_index: ab.ability_index,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // Sorcery-speed window: your main phase, stack empty, your turn.
     let is_sorcery_speed = state.step.is_main_phase()
         && state.stack.is_empty()
@@ -702,6 +738,63 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             let name = card_name(&new_state, registry, *object_id);
             new_state.log(LogLevel::Debug, format!("p{} tapped {} for mana", controller.0, name));
+        }
+
+        Action::ActivateAbility { object_id, ability_index } => {
+            let player = new_state.priority_player.unwrap();
+            let obj = new_state.get_object(*object_id).unwrap();
+            let card_id = obj.card_id;
+
+            // Find the ability — check the permanent's own card, then attached auras.
+            let ability = registry.get(card_id)
+                .and_then(|b| b.activated_abilities(&new_state, *object_id)
+                    .into_iter().find(|a| a.ability_index == *ability_index))
+                .or_else(|| {
+                    // Check attached auras.
+                    new_state.objects.values()
+                        .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
+                        .find_map(|a| {
+                            registry.get(a.card_id)
+                                .and_then(|b| b.activated_abilities(&new_state, *object_id)
+                                    .into_iter().find(|ab| ab.ability_index == *ability_index))
+                        })
+                });
+
+            if let Some(ab) = ability {
+                // Pay cost.
+                mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)
+                    .expect("legal_actions should have verified mana availability");
+
+                if ab.requires_tap {
+                    new_state.get_object_mut(*object_id).unwrap().tapped = true;
+                }
+
+                // Find which behavior to call (card itself or attached aura).
+                let behavior_card_id = if registry.get(card_id)
+                    .map(|b| !b.activated_abilities(&new_state, *object_id).is_empty())
+                    .unwrap_or(false)
+                {
+                    card_id
+                } else {
+                    // Must be from an attached aura.
+                    new_state.objects.values()
+                        .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
+                        .find(|a| {
+                            registry.get(a.card_id)
+                                .map(|b| !b.activated_abilities(&new_state, *object_id).is_empty())
+                                .unwrap_or(false)
+                        })
+                        .map(|a| a.card_id)
+                        .unwrap_or(card_id)
+                };
+
+                if let Some(behavior) = registry.get(behavior_card_id) {
+                    behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, registry);
+                }
+
+                let name = card_name(&new_state, registry, *object_id);
+                new_state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
+            }
         }
 
         Action::DeclareAttackers { attackers } => {
@@ -1364,7 +1457,7 @@ fn run_game_loop_inner<F>(
                 state.priority_player = None;
             }
 
-            Action::ActivateManaAbility { .. } => {
+            Action::ActivateManaAbility { .. } | Action::ActivateAbility { .. } => {
                 // Player retains priority. Don't change anything.
             }
 

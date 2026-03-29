@@ -124,6 +124,14 @@ pub struct ManaAbilityDef {
     pub requires_tap: bool,
 }
 
+/// A non-mana activated ability definition.
+pub struct ActivatedAbilityDef {
+    pub ability_index: usize,
+    pub description: String,
+    pub cost: ManaCost,
+    pub requires_tap: bool,
+}
+
 /// Describes what targets a spell needs when cast.
 #[derive(Debug, Clone)]
 pub enum TargetRequirement {
@@ -184,6 +192,14 @@ pub trait CardBehavior: Send + Sync {
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
         vec![]
     }
+
+    /// List of non-mana activated abilities this permanent has.
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+        vec![]
+    }
+
+    /// Called when a non-mana activated ability is activated.
+    fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
 
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.

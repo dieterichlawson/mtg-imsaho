@@ -880,6 +880,8 @@ impl CliPlayer {
             }
             Action::ActivateManaAbility { object_id, .. } =>
                 format!("Tap {} for mana", Self::perm_name(view, *object_id)),
+            Action::ActivateAbility { object_id, .. } =>
+                format!("Activate ability: {}", Self::perm_name(view, *object_id)),
             Action::DeclareAttackers { attackers } => {
                 if attackers.is_empty() { "Don't attack".into() }
                 else {
