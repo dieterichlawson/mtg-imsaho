@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -45,7 +45,7 @@ impl CardBehavior for DoomBlade {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {

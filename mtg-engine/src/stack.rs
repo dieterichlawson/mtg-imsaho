@@ -21,7 +21,7 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
 
     // Call the card's on_resolve behavior with targets.
     if let Some(behavior) = registry.get(card_id) {
-        behavior.on_resolve(state, object_id, &targets);
+        behavior.on_resolve(state, object_id, &targets, registry);
     }
 
     // If the card set an awaiting_action, it's mid-resolution (e.g., Unburial

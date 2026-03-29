@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::events::GameEvent;
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -31,7 +31,7 @@ impl CardBehavior for SwordsToPlowshares {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {

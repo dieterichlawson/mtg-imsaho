@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -26,7 +26,7 @@ impl CardBehavior for RollingTemblor {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let registry = crate::cards::CardRegistry::with_all_cards();
         let creatures: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())

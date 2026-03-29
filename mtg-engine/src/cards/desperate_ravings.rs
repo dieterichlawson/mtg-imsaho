@@ -1,7 +1,7 @@
 use rand::seq::SliceRandom;
 
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -28,7 +28,7 @@ impl CardBehavior for DesperateRavings {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
         crate::engine::draw_cards(state, controller, 2);
         // Discard a card at random.

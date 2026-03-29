@@ -205,7 +205,7 @@ pub trait CardBehavior: Send + Sync {
     /// `targets` contains the targets chosen at cast time.
     /// For permanents: default moves to battlefield.
     /// For instants/sorceries: override to apply effect.
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         let _ = targets; // default ignores targets
         // Default for permanents: move to battlefield.
         let card_data = self.card_data();

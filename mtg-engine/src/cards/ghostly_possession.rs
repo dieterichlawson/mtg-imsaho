@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -35,7 +35,7 @@ impl CardBehavior for GhostlyPossession {
         vec![Keyword::Flying]
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 state.move_object(object_id, Zone::Battlefield);

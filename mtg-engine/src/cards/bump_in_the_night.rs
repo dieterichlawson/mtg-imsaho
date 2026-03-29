@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::events::GameEvent;
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -30,7 +30,7 @@ impl CardBehavior for BumpInTheNight {
         TargetRequirement::PlayerOnly
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
             let old_life = state.get_player(*player_id).life;
             let new_life = old_life - 3;

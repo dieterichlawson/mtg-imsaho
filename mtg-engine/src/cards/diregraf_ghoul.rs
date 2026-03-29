@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::actions::Target;
 use crate::state::GameState;
@@ -25,7 +25,7 @@ impl CardBehavior for DiregrafGhoul {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         state.move_object(object_id, Zone::Battlefield);
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.tapped = true;

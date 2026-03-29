@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::events::{GameEvent, DamageTarget};
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -32,7 +32,7 @@ impl CardBehavior for BrimstoneVolley {
         TargetRequirement::AnyTarget
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         let damage: u32 = if state.creature_died_this_turn { 5 } else { 3 };
         if let Some(target) = targets.first() {
             match target {

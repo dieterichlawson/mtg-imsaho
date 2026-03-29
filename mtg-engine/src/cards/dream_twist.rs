@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -29,7 +29,7 @@ impl CardBehavior for DreamTwist {
         TargetRequirement::PlayerOnly
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
             crate::engine::mill_cards(state, *player_id, 3);
         }

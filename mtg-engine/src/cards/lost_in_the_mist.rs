@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, LogLevel};
 use crate::types::*;
@@ -46,7 +46,7 @@ impl CardBehavior for LostInTheMist {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         // Counter the spell (first target)
         if let Some(Target::Object(spell_id)) = targets.first() {
             if let Some(obj) = state.get_object(*spell_id) {

@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -32,7 +32,7 @@ impl CardBehavior for PreyUpon {
         )
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target]) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if targets.len() == 2 {
             if let (Target::Object(a), Target::Object(b)) = (&targets[0], &targets[1]) {
                 let caster = state.get_object(object_id).map(|o| o.controller);
@@ -45,8 +45,7 @@ impl CardBehavior for PreyUpon {
                     (*b, *a)
                 };
 
-                let registry = crate::cards::CardRegistry::with_all_cards();
-                crate::combat::fight(state, my_creature, their_creature, &registry);
+                crate::combat::fight(state, my_creature, their_creature, registry);
             }
         }
         state.move_spell_after_resolve(object_id);
