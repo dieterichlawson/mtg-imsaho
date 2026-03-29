@@ -167,6 +167,52 @@ fn flashback_spell_fizzle_goes_to_exile() {
         "Flashback spell that fizzles should still go to exile, not graveyard");
 }
 
+/// A flashback spell that fizzles should NOT emit SpellResolved.
+/// Before the fizzle fix, this would have emitted SpellResolved because
+/// on_resolve was always called — it just happened to not deal damage
+/// because the target was gone. The spell was treated as "resolved" when
+/// it should have been "countered by game rules."
+#[test]
+fn flashback_spell_fizzle_no_resolved_event() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let gf_id = reg.get_id_by_name("Geistflame").unwrap();
+    let geistflame = state.create_object(gf_id, P0, Zone::Graveyard, None, None);
+    state.get_object_mut(geistflame).unwrap().name = "Geistflame".into();
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+
+    let creature = ready_creature(&mut state, P1, 2, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: geistflame, targets: vec![Target::Object(creature)] },
+        &reg,
+    );
+
+    // Target dies before resolution.
+    state.move_object(creature, Zone::Graveyard);
+    state.events.clear();
+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Should NOT emit SpellResolved — the spell fizzled.
+    let has_resolved = state.events.iter().any(|e| {
+        matches!(e, GameEvent::SpellResolved { object } if *object == geistflame)
+    });
+    assert!(!has_resolved,
+        "Flashback spell that fizzles should NOT emit SpellResolved — \
+         it was countered by game rules, not resolved");
+
+    // Should still be in exile (flashback replacement applies to fizzled spells too).
+    assert_eq!(state.get_object(geistflame).unwrap().zone, Zone::Exile);
+
+    // P1 should not have taken damage.
+    assert_eq!(state.get_player(P1).life, 20);
+}
+
 // ════════════════════════════════════════════════════════════════════
 // Counterspell fizzle: target spell already left the stack
 // ════════════════════════════════════════════════════════════════════
