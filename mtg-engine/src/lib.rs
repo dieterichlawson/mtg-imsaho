@@ -11,3 +11,4 @@ pub mod engine;
 pub mod view;
 pub mod cards;
 pub mod triggers;
+pub mod destruction;
