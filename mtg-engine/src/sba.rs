@@ -49,60 +49,76 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             }
         }
 
-        // Rule 704.5f: Creature with 0 or less toughness goes to graveyard.
-        // Rule 704.5g: Creature with lethal damage is destroyed.
-        // Rule 704.5h: Creature dealt damage by a deathtouch source is destroyed.
+        // Identify creatures that need to leave the battlefield.
         let creature_ids: Vec<_> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
             .map(|o| o.id)
             .collect();
 
-        let creatures_to_kill: Vec<_> = creature_ids.into_iter()
-            .filter(|&id| {
-                let effective_t = registry
-                    .and_then(|r| state.effective_toughness(id, r))
-                    .or_else(|| state.get_object(id).and_then(|o| o.toughness));
-                let obj = state.get_object(id);
-                let damage = obj.map(|o| o.damage_marked).unwrap_or(0);
-                let deathtouch = obj.map(|o| o.dealt_deathtouch_damage).unwrap_or(false);
-                match effective_t {
-                    Some(t) => t <= 0 || (damage as i32) >= t || (deathtouch && damage > 0),
-                    None => false,
-                }
-            })
-            .collect();
+        // Classify each creature: zero toughness vs lethal damage/deathtouch.
+        let mut zero_toughness_ids = Vec::new();
+        let mut destroyed_ids = Vec::new();
 
-        for id in creatures_to_kill {
-            let obj = state.get_object(id);
-            let shields = obj.map(|o| o.regeneration_shields).unwrap_or(0);
+        for id in creature_ids {
             let effective_t = registry
                 .and_then(|r| state.effective_toughness(id, r))
-                .or_else(|| obj.and_then(|o| o.toughness));
-            let zero_toughness = effective_t.map(|t| t <= 0).unwrap_or(false);
+                .or_else(|| state.get_object(id).and_then(|o| o.toughness));
+            let obj = state.get_object(id);
+            let damage = obj.map(|o| o.damage_marked).unwrap_or(0);
+            let deathtouch = obj.map(|o| o.dealt_deathtouch_damage).unwrap_or(false);
+            match effective_t {
+                Some(t) if t <= 0 => {
+                    // Rule 704.5f: 0 or less toughness — not destruction,
+                    // indestructible and regeneration do NOT prevent this.
+                    zero_toughness_ids.push(id);
+                }
+                Some(t) if (damage as i32) >= t || (deathtouch && damage > 0) => {
+                    // Rules 704.5g/h: lethal damage or deathtouch — destruction,
+                    // checked via try_destroy (indestructible / regeneration apply).
+                    destroyed_ids.push(id);
+                }
+                _ => {}
+            }
+        }
 
-            // Regeneration replaces destruction from lethal damage or deathtouch,
-            // but NOT from 0-or-less toughness (rule 704.5f vs 704.5g).
-            if shields > 0 && !zero_toughness {
-                // Regenerate: tap, remove damage, consume one shield.
-                if let Some(obj) = state.get_object_mut(id) {
-                    obj.tapped = true;
-                    obj.damage_marked = 0;
-                    obj.dealt_deathtouch_damage = false;
-                    obj.regeneration_shields -= 1;
-                }
-                // Remove from combat if applicable.
-                if let Some(ref mut combat) = state.combat {
-                    combat.attackers.remove(&id);
-                    combat.blocker_assignments.remove(&id);
-                    for blockers in combat.blocker_assignments.values_mut() {
-                        blockers.retain(|&b| b != id);
-                    }
-                }
-                state.log(LogLevel::Event, format!("{} regenerated",
-                    state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
+        // Rule 704.5f: zero toughness goes directly to graveyard.
+        for id in zero_toughness_ids {
+            let (cid, ctrl) = state.get_object(id)
+                .map(|o| (o.card_id, o.controller))
+                .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
+            state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl });
+            state.move_object(id, Zone::Graveyard);
+            state.creature_died_this_turn = true;
+            took_action = true;
+        }
+
+        // Rules 704.5g/h: lethal damage or deathtouch — use destruction pipeline.
+        for id in destroyed_ids {
+            if let Some(reg) = registry {
+                // Full pipeline: indestructible check + regeneration.
+                let died = crate::destruction::try_destroy(state, id, reg);
                 took_action = true;
+                if !died {
+                    // try_destroy already handled regeneration/indestructible.
+                    continue;
+                }
             } else {
-                // Actually dies.
+                // No registry (legacy tests): skip indestructible check,
+                // but still handle regeneration shields inline.
+                let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
+                if shields > 0 {
+                    crate::destruction::remove_from_combat(state, id);
+                    if let Some(obj) = state.get_object_mut(id) {
+                        obj.tapped = true;
+                        obj.damage_marked = 0;
+                        obj.dealt_deathtouch_damage = false;
+                        obj.regeneration_shields -= 1;
+                    }
+                    state.log(LogLevel::Event, format!("{} regenerated",
+                        state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
+                    took_action = true;
+                    continue;
+                }
                 let (cid, ctrl) = state.get_object(id)
                     .map(|o| (o.card_id, o.controller))
                     .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
