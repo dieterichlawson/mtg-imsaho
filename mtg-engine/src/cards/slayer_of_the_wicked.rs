@@ -1,6 +1,7 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Slayer of the Wicked — {3}{W} 3/2 Human Soldier. ETB: destroy target Vampire, Werewolf, or Zombie.
@@ -27,19 +28,36 @@ impl CardBehavior for SlayerOfTheWicked {
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        // Find an opponent's Vampire/Werewolf/Zombie creature.
-        let targets: Vec<ObjectId> = state.objects.values()
+        // Find opponent's Vampire/Werewolf/Zombie creatures.
+        let targets: Vec<Target> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.controller != controller && o.power.is_some())
             .filter(|o| {
                 registry.card_data(o.card_id)
                     .map(|d| d.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie"))
                     .unwrap_or(false)
             })
-            .map(|o| o.id)
+            .map(|o| Target::Object(o.id))
             .collect();
-        if let Some(&target) = targets.first() {
-            state.move_object(target, Zone::Graveyard);
-            state.log(crate::state::LogLevel::Event, format!("Slayer of the Wicked destroyed a creature"));
+
+        if targets.is_empty() {
+            // No valid targets, do nothing.
+        } else if targets.len() == 1 {
+            // Auto-destroy the only target.
+            if let Target::Object(id) = targets[0] {
+                state.move_object(id, Zone::Graveyard);
+                state.log(LogLevel::Event, "Slayer of the Wicked destroyed a creature".into());
+            }
+        } else {
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: object_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Slayer of the Wicked: destroy target Vampire, Werewolf, or Zombie".into(),
+                    options: targets,
+                    optional: true,
+                    effect: PendingEffect::Destroy { source_name: "Slayer of the Wicked".into() },
+                },
+            });
         }
     }
 }
