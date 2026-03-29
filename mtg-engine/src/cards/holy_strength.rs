@@ -21,7 +21,10 @@ impl CardBehavior for HolyStrength {
             toughness: None,
             oracle_text: "Enchanted creature gets +1/+2.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT { power: 1, toughness: 2, scope: EffectScope::Attached },
+            ],
         }
     }
 

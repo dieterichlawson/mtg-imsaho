@@ -19,7 +19,10 @@ impl CardBehavior for InvisibleStalker {
             toughness: Some(1),
             oracle_text: "Hexproof. Invisible Stalker can't be blocked.".into(),
             keywords: vec![Keyword::Hexproof],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::CantBeBlocked { scope: EffectScope::OnSelf },
+            ],
         }
     }
 }

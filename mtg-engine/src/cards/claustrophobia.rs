@@ -24,7 +24,10 @@ impl CardBehavior for Claustrophobia {
             toughness: None,
             oracle_text: "Enchanted creature doesn't untap during its controller's untap step.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::PreventUntap { scope: EffectScope::Attached },
+            ],
         }
     }
 

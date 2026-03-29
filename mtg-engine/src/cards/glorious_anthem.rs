@@ -21,7 +21,10 @@ impl CardBehavior for GloriousAnthem {
             toughness: None,
             oracle_text: "Creatures you control get +1/+1.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Global(CreatureFilter::You) },
+            ],
         }
     }
 }

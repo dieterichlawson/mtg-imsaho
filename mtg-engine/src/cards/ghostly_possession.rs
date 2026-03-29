@@ -23,7 +23,11 @@ impl CardBehavior for GhostlyPossession {
             toughness: None,
             oracle_text: "Enchanted creature has flying. Prevent all combat damage that would be dealt to and dealt by enchanted creature.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::GrantKeyword { keyword: Keyword::Flying, scope: EffectScope::Attached },
+                ContinuousEffect::PreventCombatDamage { scope: EffectScope::Attached },
+            ],
         }
     }
 

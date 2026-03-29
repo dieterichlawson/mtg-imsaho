@@ -169,6 +169,7 @@ impl GameState {
             is_token: false,
             cast_with_flashback: false,
             instance_oracle_text: None,
+            instance_continuous_effects: None,
             counters: HashMap::new(),
             regeneration_shields: 0,
         };
@@ -210,6 +211,7 @@ impl GameState {
             is_token: true,
             cast_with_flashback: false,
             instance_oracle_text: None,
+            instance_continuous_effects: None,
             counters: HashMap::new(),
             regeneration_shields: 0,
         };
@@ -343,17 +345,135 @@ impl GameState {
         self.game_log.push(LogEntry { level, message: msg });
     }
 
+    /// Check if a creature matches a CreatureFilter, evaluated from the perspective
+    /// of the effect's source permanent.
+    fn matches_filter(
+        &self,
+        creature_id: ObjectId,
+        filter: &crate::types::CreatureFilter,
+        source_controller: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> bool {
+        use crate::types::CreatureFilter;
+        let creature = match self.get_object(creature_id) {
+            Some(o) => o,
+            None => return false,
+        };
+        match filter {
+            CreatureFilter::You => creature.controller == source_controller,
+            CreatureFilter::Opponents => creature.controller != source_controller,
+            CreatureFilter::YourTokens => creature.controller == source_controller && creature.is_token,
+            CreatureFilter::HasSubtype(subtype) => {
+                registry.card_data(creature.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                    .unwrap_or(false)
+            }
+            CreatureFilter::HasKeyword(kw) => self.has_keyword(creature_id, *kw, registry),
+            CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
+            CreatureFilter::Not(inner) => !self.matches_filter(creature_id, inner, source_controller, registry),
+        }
+    }
+
+    /// Check if a continuous effect applies to a given creature.
+    pub fn effect_applies_to(
+        &self,
+        creature_id: ObjectId,
+        scope: &crate::types::EffectScope,
+        source_id: ObjectId,
+        source_controller: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> bool {
+        use crate::types::EffectScope;
+        match scope {
+            EffectScope::OnSelf => creature_id == source_id,
+            EffectScope::Attached => {
+                self.get_object(source_id)
+                    .and_then(|o| o.attached_to)
+                    .map(|target| target == creature_id)
+                    .unwrap_or(false)
+            }
+            EffectScope::Global(filter) => {
+                creature_id != source_id && self.matches_filter(creature_id, filter, source_controller, registry)
+            }
+        }
+    }
+
+    /// Collect all (power_mod, toughness_mod) from continuous effects that apply to a creature.
+    fn continuous_pt_mods(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> (i32, i32) {
+        use crate::types::ContinuousEffect;
+        let mut power = 0;
+        let mut toughness = 0;
+        for source in self.objects.values() {
+            if source.zone != Zone::Battlefield {
+                continue;
+            }
+            // Check instance-level effects first (e.g., Bonds of Faith).
+            if let Some(ref instance_effects) = source.instance_continuous_effects {
+                for effect in instance_effects {
+                    if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
+                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                            power += p;
+                            toughness += t;
+                        }
+                    }
+                }
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                // Fall back to card-level effects.
+                for effect in &behavior.card_data().continuous_effects {
+                    if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
+                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                            power += p;
+                            toughness += t;
+                        }
+                    }
+                }
+            }
+        }
+        (power, toughness)
+    }
+
+    /// Check if a creature has a specific continuous effect applying to it.
+    pub fn has_continuous_effect(
+        &self,
+        creature_id: ObjectId,
+        predicate: &dyn Fn(&crate::types::ContinuousEffect) -> Option<&crate::types::EffectScope>,
+        registry: &crate::cards::CardRegistry,
+    ) -> bool {
+        for source in self.objects.values() {
+            if source.zone != Zone::Battlefield {
+                continue;
+            }
+            // Check instance-level effects first.
+            if let Some(ref instance_effects) = source.instance_continuous_effects {
+                for effect in instance_effects {
+                    if let Some(scope) = predicate(effect) {
+                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                            return true;
+                        }
+                    }
+                }
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                for effect in &behavior.card_data().continuous_effects {
+                    if let Some(scope) = predicate(effect) {
+                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        false
+    }
+
     /// Get the effective power of a creature, including continuous effects,
-    /// aura bonuses, and "until end of turn" effects.
+    /// counters, and "until end of turn" effects.
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
         let mut power = obj.power?;
 
-        // Aura/attachment bonuses.
-        power += self.aura_power_bonus(id, registry);
-
-        // Global continuous effects (e.g., Glorious Anthem).
-        power += self.anthem_power_bonus(id, registry);
+        // Continuous effects (auras, anthems, debuffs).
+        let (p_mod, _) = self.continuous_pt_mods(id, registry);
+        power += p_mod;
 
         // +1/+1 and -1/-1 counter bonuses.
         power += *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
@@ -366,24 +486,6 @@ impl GameState {
             }
         }
 
-        // Opponent debuff effects (e.g., One-Eyed Scarecrow).
-        let creature = self.get_object(id)?;
-        for debuffer in self.objects.values() {
-            if debuffer.zone == Zone::Battlefield && debuffer.controller != creature.controller {
-                if let Some(behavior) = registry.get(debuffer.card_id) {
-                    let data = behavior.card_data();
-                    if data.oracle_text.contains("your opponents control get") {
-                        // Check if the condition matches (e.g., "with flying").
-                        if data.oracle_text.contains("with flying") {
-                            if self.has_keyword(id, crate::types::Keyword::Flying, registry) {
-                                power += parse_anthem_power(&data.oracle_text);
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         Some(power)
     }
 
@@ -392,8 +494,8 @@ impl GameState {
         let obj = self.get_object(id)?;
         let mut toughness = obj.toughness?;
 
-        toughness += self.aura_toughness_bonus(id, registry);
-        toughness += self.anthem_toughness_bonus(id, registry);
+        let (_, t_mod) = self.continuous_pt_mods(id, registry);
+        toughness += t_mod;
 
         // +1/+1 and -1/-1 counter bonuses.
         toughness += *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
@@ -408,109 +510,22 @@ impl GameState {
         Some(toughness)
     }
 
-    /// Sum power bonuses from attached auras/equipment.
-    fn aura_power_bonus(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> i32 {
-        let mut bonus = 0;
-        for obj in self.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
-                if let Some(behavior) = registry.get(obj.card_id) {
-                    let data = behavior.card_data();
-                    if data.card_types.contains(&crate::types::CardType::Enchantment) {
-                        // Use instance oracle text if available, otherwise card data.
-                        let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
-                        bonus += parse_aura_power_bonus(oracle);
-                    }
-                }
-            }
-        }
-        bonus
-    }
-
-    fn aura_toughness_bonus(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> i32 {
-        let mut bonus = 0;
-        for obj in self.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
-                if let Some(behavior) = registry.get(obj.card_id) {
-                    let data = behavior.card_data();
-                    if data.card_types.contains(&crate::types::CardType::Enchantment) {
-                        // Use instance oracle text if available, otherwise card data.
-                        let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
-                        bonus += parse_aura_toughness_bonus(oracle);
-                    }
-                }
-            }
-        }
-        bonus
-    }
-
-    /// Sum power bonuses from anthem effects (permanents that boost all your creatures).
-    fn anthem_power_bonus(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> i32 {
-        let creature = match self.get_object(creature_id) {
-            Some(o) => o,
-            None => return 0,
-        };
-        let controller = creature.controller;
-        let creature_is_token = creature.is_token;
-        let mut bonus = 0;
-
-        for obj in self.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.controller == controller && obj.id != creature_id {
-                if let Some(behavior) = registry.get(obj.card_id) {
-                    let data = behavior.card_data();
-                    // Simple check: "Creatures you control get +N/+M" or "Creature tokens you control get +N/+M"
-                    if data.oracle_text.contains("Creatures you control get")
-                        || data.oracle_text.contains("Creature tokens you control get")
-                    {
-                        // Token-only anthem check.
-                        if data.oracle_text.contains("tokens") && !creature_is_token {
-                            continue;
-                        }
-                        bonus += parse_anthem_power(&data.oracle_text);
-                    }
-                }
-            }
-        }
-        bonus
-    }
-
-    fn anthem_toughness_bonus(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> i32 {
-        let creature = match self.get_object(creature_id) {
-            Some(o) => o,
-            None => return 0,
-        };
-        let controller = creature.controller;
-        let creature_is_token = creature.is_token;
-        let mut bonus = 0;
-
-        for obj in self.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.controller == controller && obj.id != creature_id {
-                if let Some(behavior) = registry.get(obj.card_id) {
-                    let data = behavior.card_data();
-                    if data.oracle_text.contains("Creatures you control get")
-                        || data.oracle_text.contains("Creature tokens you control get")
-                    {
-                        // Token-only anthem check.
-                        if data.oracle_text.contains("tokens") && !creature_is_token {
-                            continue;
-                        }
-                        bonus += parse_anthem_toughness(&data.oracle_text);
-                    }
-                }
-            }
-        }
-        bonus
-    }
-
     /// Check if a creature is prevented from attacking (e.g., by Pacifism).
     pub fn can_attack(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        // Check for attached auras that prevent attacking.
+        if self.has_continuous_effect(creature_id, &|e| {
+            use crate::types::ContinuousEffect;
+            match e {
+                ContinuousEffect::PreventAttack { scope } => Some(scope),
+                _ => None,
+            }
+        }, registry) {
+            return false;
+        }
+        // Legacy fallback: instance_oracle_text for conditional cards (Bonds of Faith).
         for obj in self.objects.values() {
             if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
-                if let Some(behavior) = registry.get(obj.card_id) {
-                    let data = behavior.card_data();
-                    // Use instance oracle text if available, otherwise card data.
-                    let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
-                    if oracle.contains("can't attack or block") {
+                if let Some(ref text) = obj.instance_oracle_text {
+                    if text.contains("can't attack or block") {
                         return false;
                     }
                 }
@@ -521,13 +536,20 @@ impl GameState {
 
     /// Check if a creature is prevented from blocking.
     pub fn can_block(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        if self.has_continuous_effect(creature_id, &|e| {
+            use crate::types::ContinuousEffect;
+            match e {
+                ContinuousEffect::PreventBlock { scope } => Some(scope),
+                _ => None,
+            }
+        }, registry) {
+            return false;
+        }
+        // Legacy fallback: instance_oracle_text for conditional cards (Bonds of Faith).
         for obj in self.objects.values() {
             if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
-                if let Some(behavior) = registry.get(obj.card_id) {
-                    let data = behavior.card_data();
-                    // Use instance oracle text if available, otherwise card data.
-                    let oracle = obj.instance_oracle_text.as_deref().unwrap_or(&data.oracle_text);
-                    if oracle.contains("can't attack or block") {
+                if let Some(ref text) = obj.instance_oracle_text {
+                    if text.contains("can't attack or block") {
                         return false;
                     }
                 }
@@ -537,7 +559,7 @@ impl GameState {
     }
 
     /// Check if a creature on the battlefield has a given keyword ability.
-    /// Checks static card keywords, aura-granted keywords, and until-EOT grants.
+    /// Checks static card keywords, continuous effect grants, aura grants, and until-EOT grants.
     pub fn has_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
         let obj = match self.get_object(creature_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
@@ -549,14 +571,27 @@ impl GameState {
             return true;
         }
 
-        // 1. Static keywords from card definition (for cards where keywords weren't populated).
+        // 1. Static keywords from card definition.
         if let Some(behavior) = registry.get(obj.card_id) {
             if behavior.card_data().keywords.contains(&keyword) {
                 return true;
             }
         }
 
-        // 2. Keywords granted by attached auras/equipment.
+        // 2. Keywords from continuous effects (auras with GrantKeyword, anthem keyword grants).
+        let has_grant = self.has_continuous_effect(creature_id, &|e| {
+            use crate::types::ContinuousEffect;
+            match e {
+                ContinuousEffect::GrantKeyword { keyword: kw, scope } if *kw == keyword => Some(scope),
+                _ => None,
+            }
+        }, registry);
+        if has_grant {
+            return true;
+        }
+
+        // 3. Legacy: keywords granted by attached auras via granted_keywords() trait method.
+        // (Kept for backwards compat until all cards use continuous_effects.)
         for attached in self.objects.values() {
             if attached.zone == Zone::Battlefield && attached.attached_to == Some(creature_id) {
                 if let Some(behavior) = registry.get(attached.card_id) {
@@ -567,28 +602,10 @@ impl GameState {
             }
         }
 
-        // 3. Temporary keyword grants (until end of turn).
+        // 4. Temporary keyword grants (until end of turn).
         for grant in &self.until_end_of_turn_keywords {
             if grant.target == creature_id && grant.keyword == keyword {
                 return true;
-            }
-        }
-
-        // 4. Anthem-style keyword grants (e.g., "have vigilance").
-        if keyword == crate::types::Keyword::Vigilance {
-            let creature_is_token = obj.is_token;
-            for perm in self.objects.values() {
-                if perm.zone == Zone::Battlefield && perm.controller == obj.controller && perm.id != creature_id {
-                    if let Some(behavior) = registry.get(perm.card_id) {
-                        let data = behavior.card_data();
-                        if data.oracle_text.contains("have vigilance") {
-                            let token_only = data.oracle_text.contains("tokens");
-                            if !token_only || creature_is_token {
-                                return true;
-                            }
-                        }
-                    }
-                }
             }
         }
 
@@ -629,40 +646,6 @@ impl GameState {
     }
 }
 
-/// Parse "+N/+M" from aura oracle text like "Enchanted creature gets +1/+2."
-fn parse_aura_power_bonus(oracle: &str) -> i32 {
-    parse_plus_minus(oracle, 0)
-}
-
-fn parse_aura_toughness_bonus(oracle: &str) -> i32 {
-    parse_plus_minus(oracle, 1)
-}
-
-fn parse_anthem_power(oracle: &str) -> i32 {
-    parse_plus_minus(oracle, 0)
-}
-
-fn parse_anthem_toughness(oracle: &str) -> i32 {
-    parse_plus_minus(oracle, 1)
-}
-
-/// Extract the Nth +X/-X value from text like "+1/+2" or "+3/+3".
-fn parse_plus_minus(text: &str, index: usize) -> i32 {
-    // Find patterns like +1/+2, -1/-1, +3/+3
-    for word in text.split_whitespace() {
-        if word.contains('/') {
-            let parts: Vec<&str> = word.trim_matches('.').split('/').collect();
-            if parts.len() == 2 {
-                if let Some(part) = parts.get(index) {
-                    if let Ok(val) = part.parse::<i32>() {
-                        return val;
-                    }
-                }
-            }
-        }
-    }
-    0
-}
 
 /// A single game object — an instance of a card on the battlefield, in hand, etc.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -710,6 +693,11 @@ pub struct GameObject {
     /// When set, aura parsing uses this instead of the card's static oracle text.
     #[serde(default)]
     pub instance_oracle_text: Option<String>,
+
+    /// Per-instance continuous effects that override the card's static effects.
+    /// Set by on_enter_battlefield for conditional cards (e.g., Bonds of Faith).
+    #[serde(default)]
+    pub instance_continuous_effects: Option<Vec<crate::types::ContinuousEffect>>,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
     pub counters: HashMap<crate::types::CounterType, u32>,

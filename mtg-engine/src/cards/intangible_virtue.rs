@@ -19,7 +19,11 @@ impl CardBehavior for IntangibleVirtue {
             toughness: None,
             oracle_text: "Creature tokens you control get +1/+1 and have vigilance.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Global(CreatureFilter::YourTokens) },
+                ContinuousEffect::GrantKeyword { keyword: Keyword::Vigilance, scope: EffectScope::Global(CreatureFilter::YourTokens) },
+            ],
         }
     }
 }

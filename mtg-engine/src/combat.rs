@@ -230,20 +230,31 @@ fn deal_damage_step(
 
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
 fn has_damage_prevention(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
-    state.objects.values().any(|a| {
-        a.zone == Zone::Battlefield && a.attached_to == Some(creature_id)
-            && registry.card_data(a.card_id)
-                .map(|d| d.oracle_text.contains("Prevent all combat damage"))
-                .unwrap_or(false)
-    })
+    state.has_continuous_effect(creature_id, &|e| {
+        match e {
+            crate::types::ContinuousEffect::PreventCombatDamage { scope } => Some(scope),
+            _ => None,
+        }
+    }, registry)
 }
 
 /// Check if a creature has protection from a specific subtype.
 fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, registry: &CardRegistry) -> bool {
-    state.get_object(creature_id)
-        .and_then(|o| registry.card_data(o.card_id))
-        .map(|d| d.oracle_text.contains(&format!("protection from {}", subtype)))
-        .unwrap_or(false)
+    for source in state.objects.values() {
+        if source.zone != crate::types::Zone::Battlefield {
+            continue;
+        }
+        if let Some(behavior) = registry.get(source.card_id) {
+            for effect in &behavior.card_data().continuous_effects {
+                if let crate::types::ContinuousEffect::ProtectionFromSubtype { subtype: prot_sub, scope } = effect {
+                    if prot_sub == subtype && state.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Check if a creature has a specific subtype (e.g., "Zombie").
@@ -268,7 +279,7 @@ fn deal_damage_to_creature(
     }
 
     // Protection: if target has protection from a type the source has, prevent damage.
-    if has_protection_from(state, target, "Zombies", registry) && is_subtype(state, source, "Zombie", registry) {
+    if has_protection_from(state, target, "Zombie", registry) && is_subtype(state, source, "Zombie", registry) {
         return;
     }
 
@@ -404,12 +415,14 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
 pub fn eligible_blockers_with_registry(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
     eligible_blockers(state, player).into_iter()
         .filter(|&id| state.can_block(id, registry))
-        // "Can't block" (e.g., Vampire Interloper) — check oracle text.
+        // "Can't block" (e.g., Vampire Interloper) — check continuous effects.
         .filter(|&id| {
-            state.get_object(id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| !d.oracle_text.contains("can't block"))
-                .unwrap_or(true)
+            !state.has_continuous_effect(id, &|e| {
+                match e {
+                    crate::types::ContinuousEffect::PreventBlock { scope } => Some(scope),
+                    _ => None,
+                }
+            }, registry)
         })
         // "Can't block this turn" (e.g., Nightbird's Clutches).
         .filter(|&id| !state.until_end_of_turn_cant_block.contains(&id))
@@ -450,20 +463,21 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
 
     // Menace: must be blocked by two or more creatures (handled at validation, not per-blocker).
 
-    // "Can't be blocked" (e.g., Invisible Stalker) — check oracle text.
-    if let Some(attacker_obj) = state.get_object(attacker_id) {
-        if let Some(data) = registry.card_data(attacker_obj.card_id) {
-            if data.oracle_text.contains("can't be blocked") {
-                return false;
-            }
+    // "Can't be blocked" (e.g., Invisible Stalker) — check continuous effects.
+    if state.has_continuous_effect(attacker_id, &|e| {
+        match e {
+            crate::types::ContinuousEffect::CantBeBlocked { scope } => Some(scope),
+            _ => None,
         }
+    }, registry) {
+        return false;
     }
 
     // Protection: a creature with protection from Zombies can't be blocked by Zombies.
-    if has_protection_from(state, blocker_id, "Zombies", registry) && is_subtype(state, attacker_id, "Zombie", registry) {
+    if has_protection_from(state, blocker_id, "Zombie", registry) && is_subtype(state, attacker_id, "Zombie", registry) {
         return false;
     }
-    if has_protection_from(state, attacker_id, "Zombies", registry) && is_subtype(state, blocker_id, "Zombie", registry) {
+    if has_protection_from(state, attacker_id, "Zombie", registry) && is_subtype(state, blocker_id, "Zombie", registry) {
         return false;
     }
 

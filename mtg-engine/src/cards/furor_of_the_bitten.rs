@@ -21,7 +21,11 @@ impl CardBehavior for FurorOfTheBitten {
             toughness: None,
             oracle_text: "Enchanted creature gets +2/+2 and attacks each combat if able.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached },
+                ContinuousEffect::ForceAttack { scope: EffectScope::Attached },
+            ],
         }
     }
 

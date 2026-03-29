@@ -21,7 +21,10 @@ impl CardBehavior for SensoryDeprivation {
             toughness: None,
             oracle_text: "Enchanted creature gets -3/-0.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT { power: -3, toughness: 0, scope: EffectScope::Attached },
+            ],
         }
     }
 

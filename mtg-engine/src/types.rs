@@ -303,7 +303,7 @@ pub enum Keyword {
 }
 
 /// Describes which creatures a continuous effect applies to.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CreatureFilter {
     /// All creatures you control.
     You,
@@ -322,7 +322,7 @@ pub enum CreatureFilter {
 }
 
 /// Where a continuous effect applies.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EffectScope {
     /// Affects only the permanent this effect is on (static keyword on a creature).
     OnSelf,
@@ -334,7 +334,7 @@ pub enum EffectScope {
 
 /// A declarative continuous effect on a card. The engine reads these
 /// instead of parsing oracle text strings.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ContinuousEffect {
     /// Modify power and/or toughness.
     ModifyPT { power: i32, toughness: i32, scope: EffectScope },

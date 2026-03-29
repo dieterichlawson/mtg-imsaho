@@ -20,7 +20,10 @@ impl CardBehavior for GraveBramble {
             toughness: Some(4),
             oracle_text: "Defender, protection from Zombies".into(),
             keywords: vec![Keyword::Defender],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf },
+            ],
         }
     }
 }

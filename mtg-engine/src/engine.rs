@@ -52,12 +52,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 // Find creatures that must attack (e.g., enchanted by Furor of the Bitten).
                 let must_attack: Vec<ObjectId> = eligible.iter()
                     .filter(|&&id| {
-                        state.objects.values().any(|a| {
-                            a.zone == Zone::Battlefield && a.attached_to == Some(id)
-                                && registry.card_data(a.card_id)
-                                    .map(|d| d.oracle_text.contains("attacks each combat if able"))
-                                    .unwrap_or(false)
-                        })
+                        state.has_continuous_effect(id, &|e| {
+                            match e {
+                                crate::types::ContinuousEffect::ForceAttack { scope } => Some(scope),
+                                _ => None,
+                            }
+                        }, registry)
                     })
                     .copied()
                     .collect();
@@ -824,15 +824,14 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     if new_state.has_keyword(creature.id, crate::types::Keyword::Defender, registry) {
                         continue;
                     }
-                    // Check attached auras for forced attack.
-                    let has_forced_aura = new_state.objects.values().any(|a| {
-                        a.zone == Zone::Battlefield && a.attached_to == Some(creature.id) && {
-                            registry.card_data(a.card_id)
-                                .map(|d| d.oracle_text.contains("attacks each combat if able"))
-                                .unwrap_or(false)
+                    // Check for forced attack effects (e.g., Furor of the Bitten).
+                    let must_attack = new_state.has_continuous_effect(creature.id, &|e| {
+                        match e {
+                            crate::types::ContinuousEffect::ForceAttack { scope } => Some(scope),
+                            _ => None,
                         }
-                    });
-                    if has_forced_aura {
+                    }, registry);
+                    if must_attack {
                         forced.push(creature.id);
                     }
                 }
@@ -1185,14 +1184,17 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
     match state.step {
         Step::Untap => {
             // Check which creatures are prevented from untapping (e.g., by Claustrophobia).
-            let locked_ids: Vec<ObjectId> = state.objects.values()
-                .filter(|o| o.zone == Zone::Battlefield && o.attached_to.is_some())
+            let locked_ids: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, active)
+                .iter()
                 .filter(|o| {
-                    registry.card_data(o.card_id)
-                        .map(|d| d.oracle_text.contains("doesn't untap"))
-                        .unwrap_or(false)
+                    state.has_continuous_effect(o.id, &|e| {
+                        match e {
+                            crate::types::ContinuousEffect::PreventUntap { scope } => Some(scope),
+                            _ => None,
+                        }
+                    }, registry)
                 })
-                .filter_map(|o| o.attached_to)
+                .map(|o| o.id)
                 .collect();
 
             // Untap all permanents the active player controls, except locked ones.

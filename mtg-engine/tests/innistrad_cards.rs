@@ -312,6 +312,7 @@ fn bonds_of_faith_prevents_attack_and_block() {
     state.priority_player = Some(P1);
 
     state = cast_and_resolve(&state, &reg, bof, vec![Target::Object(creature)]);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     assert!(!state.can_attack(creature, &reg), "Should not be able to attack");
     assert!(!state.can_block(creature, &reg), "Should not be able to block");
