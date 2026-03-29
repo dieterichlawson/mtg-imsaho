@@ -19,7 +19,7 @@ impl CardBehavior for SpectralRider {
             toughness: Some(2),
             oracle_text: "Intimidate".into(),
             keywords: vec![Keyword::Intimidate],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }

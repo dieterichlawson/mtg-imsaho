@@ -24,6 +24,7 @@ impl CardBehavior for GnawToTheBone {
             oracle_text: "You gain 2 life for each creature card in your graveyard.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Green)])),
+            continuous_effects: vec![],
         }
     }
 

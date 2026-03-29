@@ -19,7 +19,7 @@ impl CardBehavior for IntangibleVirtue {
             toughness: None,
             oracle_text: "Creature tokens you control get +1/+1 and have vigilance.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }

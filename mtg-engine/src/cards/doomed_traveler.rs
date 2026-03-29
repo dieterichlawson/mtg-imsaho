@@ -20,7 +20,7 @@ impl CardBehavior for DoomedTraveler {
             toughness: Some(1),
             oracle_text: "When Doomed Traveler dies, create a 1/1 white Spirit creature token with flying.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

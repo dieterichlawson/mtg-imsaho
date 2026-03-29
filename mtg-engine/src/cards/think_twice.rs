@@ -23,6 +23,7 @@ impl CardBehavior for ThinkTwice {
             oracle_text: "Draw a card.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Blue)])),
+            continuous_effects: vec![],
         }
     }
 

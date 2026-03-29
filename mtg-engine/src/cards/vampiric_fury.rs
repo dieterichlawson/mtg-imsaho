@@ -22,7 +22,7 @@ impl CardBehavior for VampiricFury {
             toughness: None,
             oracle_text: "Vampire creatures you control get +2/+0 and gain first strike until end of turn.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

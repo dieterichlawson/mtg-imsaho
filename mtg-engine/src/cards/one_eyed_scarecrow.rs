@@ -19,7 +19,7 @@ impl CardBehavior for OneEyedScarecrow {
             toughness: Some(3),
             oracle_text: "Defender. Creatures with flying your opponents control get -1/-0.".into(),
             keywords: vec![Keyword::Defender],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }

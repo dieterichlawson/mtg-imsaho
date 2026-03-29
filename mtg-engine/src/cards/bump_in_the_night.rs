@@ -23,6 +23,7 @@ impl CardBehavior for BumpInTheNight {
             oracle_text: "Target opponent loses 3 life.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(5), ManaSymbol::Colored(Color::Red)])),
+            continuous_effects: vec![],
         }
     }
 

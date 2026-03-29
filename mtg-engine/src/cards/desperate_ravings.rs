@@ -25,6 +25,7 @@ impl CardBehavior for DesperateRavings {
             oracle_text: "Draw two cards, then discard a card at random.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Blue)])),
+            continuous_effects: vec![],
         }
     }
 

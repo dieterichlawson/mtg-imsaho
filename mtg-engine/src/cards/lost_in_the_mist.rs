@@ -24,7 +24,7 @@ impl CardBehavior for LostInTheMist {
             toughness: None,
             oracle_text: "Counter target spell. Return target permanent to its owner's hand.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

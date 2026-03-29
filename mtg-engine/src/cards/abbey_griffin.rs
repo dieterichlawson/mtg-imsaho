@@ -19,7 +19,7 @@ impl CardBehavior for AbbeyGriffin {
             toughness: Some(2),
             oracle_text: "Flying, vigilance".into(),
             keywords: vec![Keyword::Flying, Keyword::Vigilance],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }

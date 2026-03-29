@@ -23,6 +23,7 @@ impl CardBehavior for NightbirdsClutches {
             oracle_text: "Up to two target creatures can't block this turn.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)])),
+            continuous_effects: vec![],
         }
     }
 

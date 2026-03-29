@@ -22,7 +22,7 @@ impl CardBehavior for VillageCannibals {
             toughness: Some(2),
             oracle_text: "Whenever another Human creature dies, put a +1/+1 counter on Village Cannibals.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

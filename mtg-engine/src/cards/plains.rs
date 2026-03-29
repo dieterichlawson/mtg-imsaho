@@ -17,7 +17,7 @@ impl CardBehavior for Plains {
             toughness: None,
             oracle_text: "{T}: Add {W}.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

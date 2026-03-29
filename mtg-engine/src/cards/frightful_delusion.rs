@@ -23,7 +23,7 @@ impl CardBehavior for FrightfulDelusion {
             toughness: None,
             oracle_text: "Counter target spell unless its controller pays {1}. That player discards a card.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

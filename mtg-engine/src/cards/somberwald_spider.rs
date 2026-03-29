@@ -23,7 +23,7 @@ impl CardBehavior for SomberwaldSpider {
             toughness: Some(4),
             oracle_text: "Reach\nMorbid — When Somberwald Spider enters the battlefield, if a creature died this turn, put two +1/+1 counters on Somberwald Spider.".into(),
             keywords: vec![Keyword::Reach],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

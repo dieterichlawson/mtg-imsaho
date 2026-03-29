@@ -20,7 +20,7 @@ impl CardBehavior for ChapelGeist {
             toughness: Some(3),
             oracle_text: "Flying".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }

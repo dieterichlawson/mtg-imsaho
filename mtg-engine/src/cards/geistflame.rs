@@ -22,6 +22,7 @@ impl CardBehavior for Geistflame {
             oracle_text: "Geistflame deals 1 damage to any target.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)])),
+            continuous_effects: vec![],
         }
     }
 

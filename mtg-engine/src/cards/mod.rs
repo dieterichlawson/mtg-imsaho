@@ -115,6 +115,9 @@ pub struct CardData {
     pub oracle_text: String,
     pub keywords: Vec<Keyword>,
     pub flashback_cost: Option<ManaCost>,
+    /// Declarative continuous effects this card has while on the battlefield.
+    /// The engine reads these instead of parsing oracle_text.
+    pub continuous_effects: Vec<ContinuousEffect>,
 }
 
 /// A mana ability definition.

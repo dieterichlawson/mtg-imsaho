@@ -302,6 +302,60 @@ pub enum Keyword {
     Indestructible,
 }
 
+/// Describes which creatures a continuous effect applies to.
+#[derive(Debug, Clone, PartialEq)]
+pub enum CreatureFilter {
+    /// All creatures you control.
+    You,
+    /// All creatures opponents control.
+    Opponents,
+    /// Token creatures you control.
+    YourTokens,
+    /// Creatures matching a subtype (e.g., "Human", "Zombie").
+    HasSubtype(String),
+    /// Creatures with a specific keyword.
+    HasKeyword(Keyword),
+    /// Intersection: all conditions must match.
+    And(Vec<CreatureFilter>),
+    /// Negation.
+    Not(Box<CreatureFilter>),
+}
+
+/// Where a continuous effect applies.
+#[derive(Debug, Clone, PartialEq)]
+pub enum EffectScope {
+    /// Affects only the permanent this effect is on (static keyword on a creature).
+    OnSelf,
+    /// Affects the creature this aura/equipment is attached to.
+    Attached,
+    /// Affects all creatures matching a filter (anthem-style).
+    Global(CreatureFilter),
+}
+
+/// A declarative continuous effect on a card. The engine reads these
+/// instead of parsing oracle text strings.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ContinuousEffect {
+    /// Modify power and/or toughness.
+    ModifyPT { power: i32, toughness: i32, scope: EffectScope },
+    /// Grant a keyword ability.
+    GrantKeyword { keyword: Keyword, scope: EffectScope },
+    /// Creature can't attack.
+    PreventAttack { scope: EffectScope },
+    /// Creature can't block.
+    PreventBlock { scope: EffectScope },
+    /// Creature can't be blocked.
+    CantBeBlocked { scope: EffectScope },
+    /// Prevent all combat damage dealt to and by creature.
+    PreventCombatDamage { scope: EffectScope },
+    /// Creature doesn't untap during controller's untap step.
+    PreventUntap { scope: EffectScope },
+    /// Creature attacks each combat if able.
+    ForceAttack { scope: EffectScope },
+    /// Protection from a subtype (prevents damage, blocking, targeting, enchanting).
+    ProtectionFromSubtype { subtype: String, scope: EffectScope },
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

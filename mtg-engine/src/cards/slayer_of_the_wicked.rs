@@ -22,7 +22,7 @@ impl CardBehavior for SlayerOfTheWicked {
             toughness: Some(2),
             oracle_text: "When Slayer of the Wicked enters the battlefield, you may destroy target Vampire, Werewolf, or Zombie.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

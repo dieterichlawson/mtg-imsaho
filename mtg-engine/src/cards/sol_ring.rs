@@ -20,7 +20,7 @@ impl CardBehavior for SolRing {
             toughness: None,
             oracle_text: "{T}: Add {C}{C}.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

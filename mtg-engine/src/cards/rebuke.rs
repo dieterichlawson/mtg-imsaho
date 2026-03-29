@@ -22,7 +22,7 @@ impl CardBehavior for Rebuke {
             toughness: None,
             oracle_text: "Destroy target attacking creature.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

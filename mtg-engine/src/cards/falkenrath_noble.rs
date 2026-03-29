@@ -22,7 +22,7 @@ impl CardBehavior for FalkenrathNoble {
             toughness: Some(2),
             oracle_text: "Flying\nWhenever a creature dies, target player loses 1 life and you gain 1 life.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

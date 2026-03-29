@@ -22,7 +22,7 @@ impl CardBehavior for MomentOfHeroism {
             toughness: None,
             oracle_text: "Target creature gets +2/+2 and gains lifelink until end of turn.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 

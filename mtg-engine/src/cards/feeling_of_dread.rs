@@ -23,6 +23,7 @@ impl CardBehavior for FeelingOfDread {
             oracle_text: "Tap up to two target creatures.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Blue)])),
+            continuous_effects: vec![],
         }
     }
 

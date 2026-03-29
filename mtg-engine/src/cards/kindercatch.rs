@@ -21,7 +21,7 @@ impl CardBehavior for Kindercatch {
             toughness: Some(6),
             oracle_text: String::new(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }

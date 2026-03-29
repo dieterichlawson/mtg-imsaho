@@ -19,7 +19,7 @@ impl CardBehavior for VampireInterloper {
             toughness: Some(1),
             oracle_text: "Flying. Vampire Interloper can't block.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }

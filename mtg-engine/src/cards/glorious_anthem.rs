@@ -21,7 +21,7 @@ impl CardBehavior for GloriousAnthem {
             toughness: None,
             oracle_text: "Creatures you control get +1/+1.".into(),
             keywords: vec![],
-            flashback_cost: None,
+            flashback_cost: None, continuous_effects: vec![],
         }
     }
 }
