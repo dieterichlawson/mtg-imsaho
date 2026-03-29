@@ -662,3 +662,242 @@ fn feeling_of_dread_taps_two() {
     assert!(state.get_object(creature2).unwrap().tapped,
         "Second target should be tapped");
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Mid-resolution choices
+// ══════════════════════════════════════════════════════════════════
+
+/// Frightful Delusion presents a choice when opponent has mana.
+#[test]
+fn frightful_delusion_choice_when_opponent_has_mana() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0 casts a creature.
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let bears = state.create_object(bears_id, P0, Zone::Hand, Some(2), Some(2));
+    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: bears, targets: vec![] },
+        &reg,
+    );
+
+    // P1 casts Frightful Delusion. Give P0 mana so they CAN pay.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1); // P0 has {1} to pay
+    let fd_id = reg.get_id_by_name("Frightful Delusion").unwrap();
+    let fd = state.create_object(fd_id, P1, Zone::Hand, None, None);
+    state.get_object_mut(fd).unwrap().name = "Frightful Delusion".into();
+    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 3);
+    state.priority_player = Some(P1);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(bears)] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Should have set an awaiting_action for P0 to choose.
+    assert!(state.awaiting_action.is_some(),
+        "Frightful Delusion should present a choice when opponent has mana");
+
+    // P0 chooses not to pay — spell gets countered.
+    let legal = engine::legal_actions(&state, &reg);
+    assert!(legal.actions.len() >= 2, "Should have pay/don't pay options");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::PayDecision(false) },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
+        "Bears should be countered when opponent doesn't pay");
+}
+
+/// Frightful Delusion auto-counters when opponent has no mana.
+#[test]
+fn frightful_delusion_auto_counters_without_mana() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let bears = state.create_object(bears_id, P0, Zone::Hand, Some(2), Some(2));
+    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: bears, targets: vec![] },
+        &reg,
+    );
+
+    // P0 has NO mana (pool empty after casting).
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0);
+
+    let fd_id = reg.get_id_by_name("Frightful Delusion").unwrap();
+    let fd = state.create_object(fd_id, P1, Zone::Hand, None, None);
+    state.get_object_mut(fd).unwrap().name = "Frightful Delusion".into();
+    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 3);
+    state.priority_player = Some(P1);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(bears)] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Should auto-counter (no choice needed).
+    assert!(state.awaiting_action.is_none(),
+        "Should auto-counter when opponent has no mana");
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
+        "Bears should be auto-countered");
+}
+
+/// Unburial Rites presents a choice when multiple creatures in graveyard.
+#[test]
+fn unburial_rites_choice_with_multiple_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put two creatures in P0's graveyard.
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let bears = state.create_object(bears_id, P0, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
+
+    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
+    let tusker = state.create_object(tusker_id, P0, Zone::Graveyard, Some(3), Some(3));
+    state.get_object_mut(tusker).unwrap().name = "Kalonian Tusker".into();
+
+    // Cast Unburial Rites.
+    let ur_id = reg.get_id_by_name("Unburial Rites").unwrap();
+    let ur = state.create_object(ur_id, P0, Zone::Hand, None, None);
+    state.get_object_mut(ur).unwrap().name = "Unburial Rites".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 5);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: ur, targets: vec![] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Should have a choice between the two creatures.
+    assert!(state.awaiting_action.is_some(),
+        "Unburial Rites should present a choice with 2 creatures");
+
+    // Choose to return the Tusker.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                Some(Target::Object(tusker))
+            ),
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(tusker).unwrap().zone, Zone::Battlefield,
+        "Chosen creature should return to battlefield");
+    assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
+        "Unchosen creature should stay in graveyard");
+}
+
+/// Pitchburn Devils choice with multiple targets.
+#[test]
+fn pitchburn_devils_choice_with_targets() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Pitchburn Devils on P0's battlefield.
+    let pd_id = reg.get_id_by_name("Pitchburn Devils").unwrap();
+    let pd = state.create_object(pd_id, P0, Zone::Battlefield, Some(3), Some(3));
+    state.get_object_mut(pd).unwrap().name = "Pitchburn Devils".into();
+    state.get_object_mut(pd).unwrap().summoning_sick = false;
+
+    // P1 has a creature (so there are multiple damage targets).
+    let blocker = ready_creature(&mut state, P1, 4, 4);
+
+    // Kill Pitchburn Devils.
+    state.events.clear();
+    state.get_object_mut(pd).unwrap().damage_marked = 3;
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    triggers::process_triggers(&mut state, &reg);
+
+    // Should have a choice (creature + both players = 3+ targets).
+    assert!(state.awaiting_action.is_some(),
+        "Pitchburn Devils should present a choice with multiple targets");
+
+    // Choose to damage the opponent's creature.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                Some(Target::Object(blocker))
+            ),
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 3,
+        "Chosen creature should take 3 damage");
+}
+
+/// Forbidden Alchemy choice from top 4 cards.
+#[test]
+fn forbidden_alchemy_choice_from_top_4() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Give P0 a library with 4+ known cards.
+    let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let forest_id = reg.get_id_by_name("Forest").unwrap();
+    let growth_id = reg.get_id_by_name("Giant Growth").unwrap();
+
+    let c1 = state.create_object(bolt_id, P0, Zone::Library, None, None);
+    state.get_object_mut(c1).unwrap().name = "Lightning Bolt".into();
+    let c2 = state.create_object(bears_id, P0, Zone::Library, Some(2), Some(2));
+    state.get_object_mut(c2).unwrap().name = "Grizzly Bears".into();
+    let c3 = state.create_object(forest_id, P0, Zone::Library, None, None);
+    state.get_object_mut(c3).unwrap().name = "Forest".into();
+    let c4 = state.create_object(growth_id, P0, Zone::Library, None, None);
+    state.get_object_mut(c4).unwrap().name = "Giant Growth".into();
+    state.players[0].library_order = vec![c1, c2, c3, c4];
+
+    // Cast Forbidden Alchemy.
+    let fa_id = reg.get_id_by_name("Forbidden Alchemy").unwrap();
+    let fa = state.create_object(fa_id, P0, Zone::Hand, None, None);
+    state.get_object_mut(fa).unwrap().name = "Forbidden Alchemy".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 3);
+
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: fa, targets: vec![] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Should present a choice of 4 cards.
+    assert!(state.awaiting_action.is_some(),
+        "Forbidden Alchemy should present a choice from top 4");
+
+    // Choose Lightning Bolt.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenCard(c1),
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(c1).unwrap().zone, Zone::Hand,
+        "Chosen card should be in hand");
+    assert_eq!(state.get_object(c2).unwrap().zone, Zone::Graveyard,
+        "Unchosen card should be in graveyard");
+    assert_eq!(state.get_object(c3).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(c4).unwrap().zone, Zone::Graveyard);
+}
