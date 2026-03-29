@@ -48,8 +48,7 @@ fn hand_filters_by_owner() {
 fn submit_action_preserves_original_state() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    let land = state.create_object(forest_id, P0, Zone::Hand, None, None);
+    let land = spell_in_hand(&mut state, &registry, "Forest", P0);
 
     let original_hand_size = state.objects_in_zone(Zone::Hand, P0).len();
 
@@ -103,10 +102,7 @@ fn creature_spell_goes_on_stack() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
-    let card_id = registry.get_id_by_name("Kalonian Tusker").unwrap();
-    let card_data = registry.card_data(card_id).unwrap();
-    let creature = state.create_object(card_id, P0, Zone::Hand, card_data.power, card_data.toughness);
+    let creature = castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
 
     let new_state = engine::submit_action(
         &state, &Action::CastSpell { object_id: creature, targets: vec![] }, &registry,
@@ -122,13 +118,9 @@ fn creature_resolves_with_summoning_sickness() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
-    let card_id = registry.get_id_by_name("Kalonian Tusker").unwrap();
-    let card_data = registry.card_data(card_id).unwrap();
-    let creature = state.create_object(card_id, P0, Zone::Hand, card_data.power, card_data.toughness);
+    let creature = castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
 
-    state = engine::submit_action(&state, &Action::CastSpell { object_id: creature, targets: vec![] }, &registry);
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, creature, vec![]);
 
     let obj = state.get_object(creature).unwrap();
     assert_eq!(obj.zone, Zone::Battlefield);
@@ -146,14 +138,12 @@ fn full_cast_and_resolve_sequence() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let forest_id = registry.get_id_by_name("Forest").unwrap();
-    let tusker_id = registry.get_id_by_name("Kalonian Tusker").unwrap();
-    let tusker_data = registry.card_data(tusker_id).unwrap();
 
     let forest1 = state.create_object(forest_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(forest1).unwrap().summoning_sick = false;
     let forest2 = state.create_object(forest_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(forest2).unwrap().summoning_sick = false;
-    let tusker = state.create_object(tusker_id, P0, Zone::Hand, tusker_data.power, tusker_data.toughness);
+    let tusker = spell_in_hand(&mut state, &registry, "Kalonian Tusker", P0);
 
     // Tap Forest 1.
     state = engine::submit_action(

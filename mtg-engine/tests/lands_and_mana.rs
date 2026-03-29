@@ -15,8 +15,7 @@ fn can_play_land_in_postcombat_main() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PostcombatMain, P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    state.create_object(forest_id, P0, Zone::Hand, None, None);
+    spell_in_hand(&mut state, &registry, "Forest", P0);
 
     let actions = engine::legal_actions(&state, &registry);
     assert!(actions.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })),
@@ -29,9 +28,8 @@ fn only_one_land_per_turn() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    let land1 = state.create_object(forest_id, P0, Zone::Hand, None, None);
-    state.create_object(forest_id, P0, Zone::Hand, None, None);
+    let land1 = spell_in_hand(&mut state, &registry, "Forest", P0);
+    spell_in_hand(&mut state, &registry, "Forest", P0);
 
     state = engine::submit_action(&state, &Action::PlayLand { object_id: land1 }, &registry);
 
@@ -65,8 +63,7 @@ fn playing_land_doesnt_use_stack() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    let land = state.create_object(forest_id, P0, Zone::Hand, None, None);
+    let land = spell_in_hand(&mut state, &registry, "Forest", P0);
 
     state = engine::submit_action(&state, &Action::PlayLand { object_id: land }, &registry);
 
@@ -80,8 +77,7 @@ fn can_tap_just_played_land() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    let land = state.create_object(forest_id, P0, Zone::Hand, None, None);
+    let land = spell_in_hand(&mut state, &registry, "Forest", P0);
 
     state = engine::submit_action(&state, &Action::PlayLand { object_id: land }, &registry);
 
@@ -100,8 +96,7 @@ fn cannot_play_land_during_opponent_turn() {
     let mut state = game_at_step(Step::PrecombatMain, P1);
     state.priority_player = Some(P0); // P0 has priority but it's P1's turn
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    state.create_object(forest_id, P0, Zone::Hand, None, None);
+    spell_in_hand(&mut state, &registry, "Forest", P0);
 
     let actions = engine::legal_actions(&state, &registry);
     assert!(!actions.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })),
@@ -114,8 +109,7 @@ fn cannot_play_land_during_combat() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::BeginCombat, P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    state.create_object(forest_id, P0, Zone::Hand, None, None);
+    spell_in_hand(&mut state, &registry, "Forest", P0);
 
     let actions = engine::legal_actions(&state, &registry);
     assert!(!actions.actions.iter().any(|a| matches!(a, Action::PlayLand { .. })),

@@ -4,9 +4,8 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::types::*;
 
@@ -143,17 +142,9 @@ fn diregraf_ghoul_enters_tapped() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ghoul_id = reg.get_id_by_name("Diregraf Ghoul").unwrap();
-    let ghoul = state.create_object(ghoul_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(ghoul).unwrap().name = "Diregraf Ghoul".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let ghoul = castable_spell(&mut state, &reg, "Diregraf Ghoul", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: ghoul, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, ghoul, vec![]);
 
     assert_eq!(state.get_object(ghoul).unwrap().zone, Zone::Battlefield);
     assert!(state.get_object(ghoul).unwrap().tapped,
@@ -172,16 +163,9 @@ fn rally_the_peasants_buffs_all_your_creatures() {
     let c2 = ready_creature(&mut state, P0, 1, 1);
     let opp = ready_creature(&mut state, P1, 3, 3);
 
-    let rally_id = reg.get_id_by_name("Rally the Peasants").unwrap();
-    let rally = state.create_object(rally_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 3);
+    let rally = castable_spell(&mut state, &reg, "Rally the Peasants", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: rally, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, rally, vec![]);
 
     assert_eq!(state.effective_power(c1, &reg), Some(4));
     assert_eq!(state.effective_power(c2, &reg), Some(3));
@@ -200,16 +184,9 @@ fn hysterical_blindness_debuffs_opponents() {
     let mine = ready_creature(&mut state, P0, 2, 2);
     let opp = ready_creature(&mut state, P1, 5, 5);
 
-    let hb_id = reg.get_id_by_name("Hysterical Blindness").unwrap();
-    let hb = state.create_object(hb_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 3);
+    let hb = castable_spell(&mut state, &reg, "Hysterical Blindness", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: hb, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, hb, vec![]);
 
     assert_eq!(state.effective_power(opp, &reg), Some(1),
         "Opponent's 5/5 should become 1/5 from -4/-0");
@@ -226,16 +203,9 @@ fn rangers_guile_gives_hexproof_and_pump() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let rg_id = reg.get_id_by_name("Ranger's Guile").unwrap();
-    let rg = state.create_object(rg_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    let rg = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: rg, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, rg, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(3));
     assert_eq!(state.effective_toughness(creature, &reg), Some(3));
@@ -251,16 +221,9 @@ fn spidery_grasp_untaps_and_buffs() {
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(creature).unwrap().tapped = true;
 
-    let sg_id = reg.get_id_by_name("Spidery Grasp").unwrap();
-    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 3);
+    let sg = castable_spell(&mut state, &reg, "Spidery Grasp", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
 
     assert!(!state.get_object(creature).unwrap().tapped, "Should be untapped");
     assert_eq!(state.effective_power(creature, &reg), Some(4));
@@ -278,16 +241,9 @@ fn dead_weight_kills_small_creature() {
 
     // 2/2 creature gets Dead Weight (-2/-2) → effective 0/0 → dies to SBA.
     let creature = ready_creature(&mut state, P1, 2, 2);
-    let dw_id = reg.get_id_by_name("Dead Weight").unwrap();
-    let dw = state.create_object(dw_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let dw = castable_spell(&mut state, &reg, "Dead Weight", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: dw, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, dw, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(0));
     assert_eq!(state.effective_toughness(creature, &reg), Some(0));
@@ -304,16 +260,9 @@ fn sensory_deprivation_reduces_power() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P1, 3, 3);
-    let sd_id = reg.get_id_by_name("Sensory Deprivation").unwrap();
-    let sd = state.create_object(sd_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    let sd = castable_spell(&mut state, &reg, "Sensory Deprivation", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sd, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sd, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(0));
     assert_eq!(state.effective_toughness(creature, &reg), Some(3),
@@ -327,16 +276,9 @@ fn spectral_flight_buffs_and_grants_flying() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let sf_id = reg.get_id_by_name("Spectral Flight").unwrap();
-    let sf = state.create_object(sf_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    let sf = castable_spell(&mut state, &reg, "Spectral Flight", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sf, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sf, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(4));
     assert_eq!(state.effective_toughness(creature, &reg), Some(4));
@@ -351,16 +293,9 @@ fn gruesome_deformity_grants_intimidate() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let gd_id = reg.get_id_by_name("Gruesome Deformity").unwrap();
-    let gd = state.create_object(gd_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let gd = castable_spell(&mut state, &reg, "Gruesome Deformity", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: gd, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, gd, vec![Target::Object(creature)]);
 
     assert!(state.has_keyword(creature, Keyword::Intimidate, &reg),
         "Gruesome Deformity should grant intimidate");
@@ -373,17 +308,10 @@ fn bonds_of_faith_prevents_attack_and_block() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
-    let bof_id = reg.get_id_by_name("Bonds of Faith").unwrap();
-    let bof = state.create_object(bof_id, P1, Zone::Hand, None, None);
-    state.get_player_mut(P1).mana_pool.add(ManaType::White, 2);
+    let bof = castable_spell(&mut state, &reg, "Bonds of Faith", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bof, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, bof, vec![Target::Object(creature)]);
 
     assert!(!state.can_attack(creature, &reg), "Should not be able to attack");
     assert!(!state.can_block(creature, &reg), "Should not be able to block");
@@ -398,16 +326,9 @@ fn claustrophobia_taps_creature() {
     let creature = ready_creature(&mut state, P1, 3, 3);
     assert!(!state.get_object(creature).unwrap().tapped);
 
-    let cl_id = reg.get_id_by_name("Claustrophobia").unwrap();
-    let cl = state.create_object(cl_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 3);
+    let cl = castable_spell(&mut state, &reg, "Claustrophobia", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: cl, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, cl, vec![Target::Object(creature)]);
 
     assert!(state.get_object(creature).unwrap().tapped,
         "Claustrophobia should tap the enchanted creature on entry");
@@ -422,16 +343,9 @@ fn skeletal_grimace_gives_plus_one_plus_one() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
-    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+    let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(3));
     assert_eq!(state.effective_toughness(creature, &reg), Some(3));
@@ -444,16 +358,9 @@ fn furor_of_the_bitten_gives_plus_two() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 1, 1);
-    let fb_id = reg.get_id_by_name("Furor of the Bitten").unwrap();
-    let fb = state.create_object(fb_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    let fb = castable_spell(&mut state, &reg, "Furor of the Bitten", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fb, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fb, vec![Target::Object(creature)]);
 
     assert_eq!(state.effective_power(creature, &reg), Some(3));
     assert_eq!(state.effective_toughness(creature, &reg), Some(3));
@@ -466,16 +373,9 @@ fn ghostly_possession_grants_flying() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let gp_id = reg.get_id_by_name("Ghostly Possession").unwrap();
-    let gp = state.create_object(gp_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 3);
+    let gp = castable_spell(&mut state, &reg, "Ghostly Possession", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: gp, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, gp, vec![Target::Object(creature)]);
 
     assert!(state.has_keyword(creature, Keyword::Flying, &reg),
         "Ghostly Possession should grant flying");
@@ -490,24 +390,14 @@ fn vampiric_fury_buffs_vampires() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Markov Patrician is a vampire.
-    let vamp_id = reg.get_id_by_name("Markov Patrician").unwrap();
-    let vamp = state.create_object(vamp_id, P0, Zone::Battlefield, Some(3), Some(1));
-    state.get_object_mut(vamp).unwrap().summoning_sick = false;
-    state.get_object_mut(vamp).unwrap().name = "Markov Patrician".into();
+    let vamp = named_creature(&mut state, &reg, "Markov Patrician", P0);
 
     // Non-vampire creature.
     let nonvamp = ready_creature(&mut state, P0, 2, 2);
 
-    let vf_id = reg.get_id_by_name("Vampiric Fury").unwrap();
-    let vf = state.create_object(vf_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 2);
+    let vf = castable_spell(&mut state, &reg, "Vampiric Fury", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: vf, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, vf, vec![]);
 
     // Vampire should get +2/+0 and first strike.
     assert_eq!(state.effective_power(vamp, &reg), Some(5));

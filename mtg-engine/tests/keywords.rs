@@ -24,10 +24,7 @@ fn flying_creature_cannot_be_blocked_by_ground_creature() {
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     // P0's attacker: Abbey Griffin (2/2 flying)
-    let griffin_id = reg.get_id_by_name("Abbey Griffin").unwrap();
-    let attacker = state.create_object(griffin_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Abbey Griffin".into();
+    let attacker = named_creature(&mut state, &reg, "Abbey Griffin", P0);
 
     // P1's blocker: vanilla ground creature
     let blocker = ready_creature(&mut state, P1, 3, 3);
@@ -42,15 +39,8 @@ fn flyer_can_block_flyer() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let griffin_id = reg.get_id_by_name("Abbey Griffin").unwrap();
-    let attacker = state.create_object(griffin_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Abbey Griffin".into();
-
-    let heron_id = reg.get_id_by_name("Moon Heron").unwrap();
-    let blocker = state.create_object(heron_id, P1, Zone::Battlefield, Some(3), Some(2));
-    state.get_object_mut(blocker).unwrap().summoning_sick = false;
-    state.get_object_mut(blocker).unwrap().name = "Moon Heron".into();
+    let attacker = named_creature(&mut state, &reg, "Abbey Griffin", P0);
+    let blocker = named_creature(&mut state, &reg, "Moon Heron", P1);
 
     assert!(combat::can_block_attacker(&state, blocker, attacker, &reg),
         "Flyer should be able to block another flyer");
@@ -62,15 +52,8 @@ fn reach_can_block_flying() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let heron_id = reg.get_id_by_name("Moon Heron").unwrap();
-    let attacker = state.create_object(heron_id, P0, Zone::Battlefield, Some(3), Some(2));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Moon Heron".into();
-
-    let spider_id = reg.get_id_by_name("Somberwald Spider").unwrap();
-    let blocker = state.create_object(spider_id, P1, Zone::Battlefield, Some(2), Some(4));
-    state.get_object_mut(blocker).unwrap().summoning_sick = false;
-    state.get_object_mut(blocker).unwrap().name = "Somberwald Spider".into();
+    let attacker = named_creature(&mut state, &reg, "Moon Heron", P0);
+    let blocker = named_creature(&mut state, &reg, "Somberwald Spider", P1);
 
     assert!(combat::can_block_attacker(&state, blocker, attacker, &reg),
         "Spider with reach should block a flyer");
@@ -96,10 +79,7 @@ fn vigilance_does_not_tap_on_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let griffin_id = reg.get_id_by_name("Abbey Griffin").unwrap();
-    let attacker = state.create_object(griffin_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Abbey Griffin".into();
+    let attacker = named_creature(&mut state, &reg, "Abbey Griffin", P0);
 
     combat::declare_attackers_with_registry(&mut state, &[(attacker, P1)], &reg);
 
@@ -128,10 +108,7 @@ fn defender_cannot_attack() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
 
-    let bramble_id = reg.get_id_by_name("Grave Bramble").unwrap();
-    let defender = state.create_object(bramble_id, P0, Zone::Battlefield, Some(3), Some(4));
-    state.get_object_mut(defender).unwrap().summoning_sick = false;
-    state.get_object_mut(defender).unwrap().name = "Grave Bramble".into();
+    let defender = named_creature(&mut state, &reg, "Grave Bramble", P0);
 
     let eligible = combat::eligible_attackers_with_registry(&state, P0, &reg);
     assert!(!eligible.contains(&defender),
@@ -144,10 +121,7 @@ fn defender_can_block() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let bramble_id = reg.get_id_by_name("Grave Bramble").unwrap();
-    let defender = state.create_object(bramble_id, P1, Zone::Battlefield, Some(3), Some(4));
-    state.get_object_mut(defender).unwrap().summoning_sick = false;
-    state.get_object_mut(defender).unwrap().name = "Grave Bramble".into();
+    let defender = named_creature(&mut state, &reg, "Grave Bramble", P1);
 
     let eligible = combat::eligible_blockers_with_registry(&state, P1, &reg);
     assert!(eligible.contains(&defender),
@@ -194,15 +168,10 @@ fn hexproof_prevents_opponent_targeting() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P1 has Invisible Stalker on battlefield.
-    let stalker_id = reg.get_id_by_name("Invisible Stalker").unwrap();
-    let stalker = state.create_object(stalker_id, P1, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(stalker).unwrap().name = "Invisible Stalker".into();
+    let stalker = named_creature(&mut state, &reg, "Invisible Stalker", P1);
 
     // P0 has Lightning Bolt in hand with mana to cast it.
-    let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();
-    let bolt = state.create_object(bolt_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(bolt).unwrap().name = "Lightning Bolt".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    let _bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
 
     let legal = engine::legal_actions(&state, &reg);
 
@@ -215,8 +184,7 @@ fn hexproof_prevents_opponent_targeting() {
         "Lightning Bolt should not be able to target a hexproof creature controlled by opponent");
 
     // But P0 CAN target their own hexproof creature (hexproof only stops opponents).
-    let stalker_p0 = state.create_object(stalker_id, P0, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(stalker_p0).unwrap().name = "Invisible Stalker".into();
+    let stalker_p0 = named_creature(&mut state, &reg, "Invisible Stalker", P0);
 
     let legal2 = engine::legal_actions(&state, &reg);
     let targets_own = legal2.actions.iter().any(|a| {
@@ -237,10 +205,7 @@ fn intimidate_blocks_different_color() {
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     // Spectral Rider is white with intimidate.
-    let rider_id = reg.get_id_by_name("Spectral Rider").unwrap();
-    let attacker = state.create_object(rider_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Spectral Rider".into();
+    let attacker = named_creature(&mut state, &reg, "Spectral Rider", P0);
     state.get_object_mut(attacker).unwrap().colors = vec![Color::White];
 
     // Green creature can't block it.
@@ -264,17 +229,11 @@ fn artifact_creature_blocks_intimidate() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let rider_id = reg.get_id_by_name("Spectral Rider").unwrap();
-    let attacker = state.create_object(rider_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Spectral Rider".into();
+    let attacker = named_creature(&mut state, &reg, "Spectral Rider", P0);
     state.get_object_mut(attacker).unwrap().colors = vec![Color::White];
 
     // One-Eyed Scarecrow is an artifact creature.
-    let scarecrow_id = reg.get_id_by_name("One-Eyed Scarecrow").unwrap();
-    let blocker = state.create_object(scarecrow_id, P1, Zone::Battlefield, Some(2), Some(3));
-    state.get_object_mut(blocker).unwrap().summoning_sick = false;
-    state.get_object_mut(blocker).unwrap().name = "One-Eyed Scarecrow".into();
+    let blocker = named_creature(&mut state, &reg, "One-Eyed Scarecrow", P1);
 
     assert!(combat::can_block_attacker(&state, blocker, attacker, &reg),
         "Artifact creature should be able to block an intimidate creature");
@@ -289,10 +248,7 @@ fn deathtouch_kills_with_one_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     // Typhoid Rats (1/1 deathtouch) attacks, blocked by a 5/5.
-    let rats_id = reg.get_id_by_name("Typhoid Rats").unwrap();
-    let attacker = state.create_object(rats_id, P0, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Typhoid Rats".into();
+    let attacker = named_creature(&mut state, &reg, "Typhoid Rats", P0);
 
     let blocker = ready_creature(&mut state, P1, 5, 5);
 
@@ -345,10 +301,7 @@ fn lifelink_gains_life_on_combat_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let patrician_id = reg.get_id_by_name("Markov Patrician").unwrap();
-    let attacker = state.create_object(patrician_id, P0, Zone::Battlefield, Some(3), Some(1));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Markov Patrician".into();
+    let attacker = named_creature(&mut state, &reg, "Markov Patrician", P0);
 
     combat::declare_attackers(&mut state, &[(attacker, P1)]);
     combat::declare_blockers(&mut state, &[]);
@@ -366,10 +319,7 @@ fn lifelink_gains_life_from_creature_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let patrician_id = reg.get_id_by_name("Markov Patrician").unwrap();
-    let attacker = state.create_object(patrician_id, P0, Zone::Battlefield, Some(3), Some(1));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Markov Patrician".into();
+    let attacker = named_creature(&mut state, &reg, "Markov Patrician", P0);
 
     let blocker = ready_creature(&mut state, P1, 1, 4);
 
@@ -435,16 +385,10 @@ fn first_strike_kills_before_normal_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     // Voiceless Spirit: 2/1 flying, first strike
-    let spirit_id = reg.get_id_by_name("Voiceless Spirit").unwrap();
-    let attacker = state.create_object(spirit_id, P0, Zone::Battlefield, Some(2), Some(1));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Voiceless Spirit".into();
+    let attacker = named_creature(&mut state, &reg, "Voiceless Spirit", P0);
 
-    // Blocker: 1/1 (would kill the 2/1 in simultaneous damage, but first strike prevents it)
-    let blocker_id = reg.get_id_by_name("Moon Heron").unwrap();
-    let blocker = state.create_object(blocker_id, P1, Zone::Battlefield, Some(3), Some(2));
-    state.get_object_mut(blocker).unwrap().summoning_sick = false;
-    state.get_object_mut(blocker).unwrap().name = "Moon Heron".into();
+    // Blocker: Moon Heron 3/2 (would kill the 2/1 in simultaneous damage, but first strike prevents it)
+    let blocker = named_creature(&mut state, &reg, "Moon Heron", P1);
 
     combat::declare_attackers(&mut state, &[(attacker, P1)]);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
@@ -471,10 +415,7 @@ fn flash_creature_castable_at_instant_speed() {
 
     // Give P1 priority during P0's turn and an Ambush Viper in hand.
     state.priority_player = Some(P1);
-    let viper_id = reg.get_id_by_name("Ambush Viper").unwrap();
-    let viper = state.create_object(viper_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(viper).unwrap().name = "Ambush Viper".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Green, 2);
+    let viper = castable_spell(&mut state, &reg, "Ambush Viper", P1);
 
     let legal = engine::legal_actions(&state, &reg);
 
@@ -492,10 +433,7 @@ fn normal_creature_not_castable_on_opponent_turn() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     state.priority_player = Some(P1);
-    let rats_id = reg.get_id_by_name("Typhoid Rats").unwrap();
-    let rats = state.create_object(rats_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(rats).unwrap().name = "Typhoid Rats".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Black, 1);
+    let rats = castable_spell(&mut state, &reg, "Typhoid Rats", P1);
 
     let legal = engine::legal_actions(&state, &reg);
 
@@ -514,10 +452,7 @@ fn blocker_validation_rejects_ground_blocking_flyer() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let heron_id = reg.get_id_by_name("Moon Heron").unwrap();
-    let attacker = state.create_object(heron_id, P0, Zone::Battlefield, Some(3), Some(2));
-    state.get_object_mut(attacker).unwrap().summoning_sick = false;
-    state.get_object_mut(attacker).unwrap().name = "Moon Heron".into();
+    let attacker = named_creature(&mut state, &reg, "Moon Heron", P0);
 
     let blocker = ready_creature(&mut state, P1, 2, 2);
 
@@ -541,16 +476,9 @@ fn aura_grants_keyword() {
 
     let creature = ready_creature(&mut state, P0, 2, 2);
 
-    let sf_id = reg.get_id_by_name("Spectral Flight").unwrap();
-    let sf = state.create_object(sf_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    let sf = castable_spell(&mut state, &reg, "Spectral Flight", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sf, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sf, vec![Target::Object(creature)]);
 
     assert!(state.has_keyword(creature, Keyword::Flying, &reg),
         "Creature with Spectral Flight should have flying");
@@ -569,16 +497,9 @@ fn spell_grants_keyword_until_eot() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let moh_id = reg.get_id_by_name("Moment of Heroism").unwrap();
-    let moh = state.create_object(moh_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    let moh = castable_spell(&mut state, &reg, "Moment of Heroism", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: moh, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, moh, vec![Target::Object(creature)]);
 
     assert!(state.has_keyword(creature, Keyword::Lifelink, &reg),
         "Creature should have lifelink after Moment of Heroism");

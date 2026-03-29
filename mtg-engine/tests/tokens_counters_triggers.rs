@@ -4,9 +4,8 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::state::GameState;
@@ -190,15 +189,8 @@ fn counters_stack_with_auras() {
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     // Attach Holy Strength (+1/+2).
-    let hs_id = reg.get_id_by_name("Holy Strength").unwrap();
-    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    let hs = castable_spell(&mut state, &reg, "Holy Strength", P0);
+    state = cast_and_resolve(&state, &reg, hs, vec![Target::Object(creature)]);
 
     // Add 2 +1/+1 counters.
     state.add_counters(creature, CounterType::PlusOnePlusOne, 2);

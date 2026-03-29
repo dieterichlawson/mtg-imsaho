@@ -25,16 +25,9 @@ fn midnight_haunting_creates_two_spirits() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card_id = reg.get_id_by_name("Midnight Haunting").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 3);
+    let card = castable_spell(&mut state, &reg, "Midnight Haunting", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![]);
 
     // Spell goes to graveyard.
     assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard);
@@ -59,16 +52,9 @@ fn moan_creates_two_zombies() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card_id = reg.get_id_by_name("Moan of the Unhallowed").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 4);
+    let card = castable_spell(&mut state, &reg, "Moan of the Unhallowed", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![]);
 
     assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard);
 
@@ -94,10 +80,7 @@ fn doomed_traveler_creates_spirit_on_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let dt_id = reg.get_id_by_name("Doomed Traveler").unwrap();
-    let dt = state.create_object(dt_id, P0, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(dt).unwrap().name = "Doomed Traveler".into();
-    state.get_object_mut(dt).unwrap().summoning_sick = false;
+    let dt = named_creature(&mut state, &reg, "Doomed Traveler", P0);
 
     // Kill it with lethal damage.
     state.get_object_mut(dt).unwrap().damage_marked = 1;
@@ -127,10 +110,7 @@ fn mausoleum_guard_creates_two_spirits_on_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let mg_id = reg.get_id_by_name("Mausoleum Guard").unwrap();
-    let mg = state.create_object(mg_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(mg).unwrap().name = "Mausoleum Guard".into();
-    state.get_object_mut(mg).unwrap().summoning_sick = false;
+    let mg = named_creature(&mut state, &reg, "Mausoleum Guard", P0);
 
     // Kill it with lethal damage.
     state.get_object_mut(mg).unwrap().damage_marked = 2;
@@ -175,16 +155,9 @@ fn village_bell_ringer_untaps_creatures() {
     state.get_object_mut(opp).unwrap().tapped = true;
 
     // Cast Village Bell-Ringer (flash creature, castable anytime).
-    let vbr_id = reg.get_id_by_name("Village Bell-Ringer").unwrap();
-    let vbr = state.create_object(vbr_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 3);
+    let vbr = castable_spell(&mut state, &reg, "Village Bell-Ringer", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: vbr, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, vbr, vec![]);
 
     // Process ETB triggers.
     triggers::process_triggers(&mut state, &reg);
@@ -205,22 +178,12 @@ fn slayer_of_the_wicked_destroys_zombie() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P1 has a Walking Corpse (Zombie) on the battlefield.
-    let wc_id = reg.get_id_by_name("Walking Corpse").unwrap();
-    let wc = state.create_object(wc_id, P1, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(wc).unwrap().name = "Walking Corpse".into();
-    state.get_object_mut(wc).unwrap().summoning_sick = false;
+    let wc = named_creature(&mut state, &reg, "Walking Corpse", P1);
 
     // Cast Slayer of the Wicked.
-    let slayer_id = reg.get_id_by_name("Slayer of the Wicked").unwrap();
-    let slayer = state.create_object(slayer_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 4);
+    let slayer = castable_spell(&mut state, &reg, "Slayer of the Wicked", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: slayer, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, slayer, vec![]);
 
     // Process ETB triggers.
     triggers::process_triggers(&mut state, &reg);
@@ -242,16 +205,9 @@ fn fiend_hunter_exiles_on_etb() {
     state.get_object_mut(victim).unwrap().name = "Big Creature".into();
 
     // Cast Fiend Hunter.
-    let fh_id = reg.get_id_by_name("Fiend Hunter").unwrap();
-    let fh = state.create_object(fh_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 3);
+    let fh = castable_spell(&mut state, &reg, "Fiend Hunter", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fh, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fh, vec![]);
 
     // Process ETB triggers.
     triggers::process_triggers(&mut state, &reg);
@@ -274,10 +230,7 @@ fn pitchburn_devils_deals_3_on_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let pd_id = reg.get_id_by_name("Pitchburn Devils").unwrap();
-    let pd = state.create_object(pd_id, P0, Zone::Battlefield, Some(3), Some(3));
-    state.get_object_mut(pd).unwrap().name = "Pitchburn Devils".into();
-    state.get_object_mut(pd).unwrap().summoning_sick = false;
+    let pd = named_creature(&mut state, &reg, "Pitchburn Devils", P0);
 
     // Kill it with lethal damage.
     state.get_object_mut(pd).unwrap().damage_marked = 3;
@@ -309,10 +262,7 @@ fn falkenrath_noble_drains_on_any_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Falkenrath Noble on P0's side.
-    let fn_id = reg.get_id_by_name("Falkenrath Noble").unwrap();
-    let noble = state.create_object(fn_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(noble).unwrap().name = "Falkenrath Noble".into();
-    state.get_object_mut(noble).unwrap().summoning_sick = false;
+    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
 
     // A creature on P1's side to kill.
     let victim = ready_creature(&mut state, P1, 1, 1);
@@ -339,10 +289,7 @@ fn rage_thrower_deals_2_on_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Rage Thrower on P0's side.
-    let rt_id = reg.get_id_by_name("Rage Thrower").unwrap();
-    let rt = state.create_object(rt_id, P0, Zone::Battlefield, Some(4), Some(2));
-    state.get_object_mut(rt).unwrap().name = "Rage Thrower".into();
-    state.get_object_mut(rt).unwrap().summoning_sick = false;
+    let _rt = named_creature(&mut state, &reg, "Rage Thrower", P0);
 
     // A creature on P1's side to kill.
     let victim = ready_creature(&mut state, P1, 1, 1);
@@ -371,10 +318,7 @@ fn unruly_mob_gains_counter_when_ally_dies() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Unruly Mob on P0's side.
-    let um_id = reg.get_id_by_name("Unruly Mob").unwrap();
-    let mob = state.create_object(um_id, P0, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(mob).unwrap().name = "Unruly Mob".into();
-    state.get_object_mut(mob).unwrap().summoning_sick = false;
+    let mob = named_creature(&mut state, &reg, "Unruly Mob", P0);
 
     // Another creature on P0's side to sacrifice.
     let ally = ready_creature(&mut state, P0, 1, 1);
@@ -401,10 +345,7 @@ fn lumberknot_gains_counter_on_any_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Lumberknot on P0's side.
-    let lk_id = reg.get_id_by_name("Lumberknot").unwrap();
-    let knot = state.create_object(lk_id, P0, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(knot).unwrap().name = "Lumberknot".into();
-    state.get_object_mut(knot).unwrap().summoning_sick = false;
+    let knot = named_creature(&mut state, &reg, "Lumberknot", P0);
 
     // A creature on P1's side to kill.
     let victim = ready_creature(&mut state, P1, 1, 1);
@@ -431,10 +372,7 @@ fn elder_cathar_grants_counter_on_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elder Cathar on P0's side.
-    let ec_id = reg.get_id_by_name("Elder Cathar").unwrap();
-    let cathar = state.create_object(ec_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(cathar).unwrap().name = "Elder Cathar".into();
-    state.get_object_mut(cathar).unwrap().summoning_sick = false;
+    let cathar = named_creature(&mut state, &reg, "Elder Cathar", P0);
 
     // Another creature on P0's side to receive the counter.
     let buddy = ready_creature(&mut state, P0, 2, 2);
@@ -461,16 +399,10 @@ fn village_cannibals_gains_counter_on_human_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Village Cannibals on P0's side.
-    let vc_id = reg.get_id_by_name("Village Cannibals").unwrap();
-    let cannibals = state.create_object(vc_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(cannibals).unwrap().name = "Village Cannibals".into();
-    state.get_object_mut(cannibals).unwrap().summoning_sick = false;
+    let cannibals = named_creature(&mut state, &reg, "Village Cannibals", P0);
 
     // A Human creature on P1's side (Doomed Traveler is Human).
-    let human_id = reg.get_id_by_name("Doomed Traveler").unwrap();
-    let human = state.create_object(human_id, P1, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(human).unwrap().name = "Doomed Traveler".into();
-    state.get_object_mut(human).unwrap().summoning_sick = false;
+    let human = named_creature(&mut state, &reg, "Doomed Traveler", P1);
 
     // Kill the Human.
     state.get_object_mut(human).unwrap().damage_marked = 1;
@@ -494,16 +426,10 @@ fn village_cannibals_ignores_non_human_death() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Village Cannibals on P0's side.
-    let vc_id = reg.get_id_by_name("Village Cannibals").unwrap();
-    let cannibals = state.create_object(vc_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(cannibals).unwrap().name = "Village Cannibals".into();
-    state.get_object_mut(cannibals).unwrap().summoning_sick = false;
+    let cannibals = named_creature(&mut state, &reg, "Village Cannibals", P0);
 
     // A non-Human creature (Walking Corpse is a Zombie, not Human).
-    let zombie_id = reg.get_id_by_name("Walking Corpse").unwrap();
-    let zombie = state.create_object(zombie_id, P1, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(zombie).unwrap().name = "Walking Corpse".into();
-    state.get_object_mut(zombie).unwrap().summoning_sick = false;
+    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P1);
 
     // Kill the Zombie.
     state.get_object_mut(zombie).unwrap().damage_marked = 2;
@@ -542,16 +468,9 @@ fn intangible_virtue_buffs_creatures() {
     let non_token = ready_creature(&mut state, P0, 2, 2);
 
     // Cast Intangible Virtue.
-    let iv_id = reg.get_id_by_name("Intangible Virtue").unwrap();
-    let iv = state.create_object(iv_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    let iv = castable_spell(&mut state, &reg, "Intangible Virtue", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: iv, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, iv, vec![]);
 
     assert_eq!(state.get_object(iv).unwrap().zone, Zone::Battlefield);
     // Token should get +1/+1.
@@ -608,16 +527,9 @@ fn tokens_cease_to_exist_when_killed() {
     );
 
     // Kill it by casting Lightning Bolt on it.
-    let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();
-    let bolt = state.create_object(bolt_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(token)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, bolt, vec![Target::Object(token)]);
 
     // Bolt deals 3 damage to the 1/1 token. Run SBAs to kill it.
     check_state_based_actions_with_registry(&mut state, Some(&reg));

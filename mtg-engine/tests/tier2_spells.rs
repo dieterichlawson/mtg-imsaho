@@ -22,17 +22,9 @@ fn bump_in_the_night_drains_3() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card_id = reg.get_id_by_name("Bump in the Night").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Bump in the Night".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let card = castable_spell(&mut state, &reg, "Bump in the Night", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![Target::Player(P1)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Player(P1)]);
 
     assert_eq!(state.get_player(P1).life, 17);
 }
@@ -43,17 +35,9 @@ fn geistflame_deals_1_damage() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P1, 2, 2);
-    let card_id = reg.get_id_by_name("Geistflame").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Geistflame".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    let card = castable_spell(&mut state, &reg, "Geistflame", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(creature)]);
 
     assert_eq!(state.get_object(creature).unwrap().damage_marked, 1);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
@@ -65,17 +49,9 @@ fn brimstone_volley_deals_3_to_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card_id = reg.get_id_by_name("Brimstone Volley").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Brimstone Volley".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 3);
+    let card = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![Target::Player(P1)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Player(P1)]);
 
     assert_eq!(state.get_player(P1).life, 17);
 }
@@ -89,10 +65,7 @@ fn dissipate_counters_and_exiles() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 casts a creature spell.
-    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
-    let tusker = state.create_object(tusker_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(tusker).unwrap().name = "Kalonian Tusker".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    let tusker = castable_spell(&mut state, &reg, "Kalonian Tusker", P0);
 
     state = engine::submit_action(
         &state,
@@ -101,18 +74,10 @@ fn dissipate_counters_and_exiles() {
     );
 
     // P1 casts Dissipate targeting the Tusker on the stack.
-    let diss_id = reg.get_id_by_name("Dissipate").unwrap();
-    let diss = state.create_object(diss_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(diss).unwrap().name = "Dissipate".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 3);
+    let diss = castable_spell(&mut state, &reg, "Dissipate", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: diss, targets: vec![Target::Object(tusker)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, diss, vec![Target::Object(tusker)]);
 
     assert_eq!(state.get_object(tusker).unwrap().zone, Zone::Exile,
         "Dissipate should exile the countered spell, not put it in graveyard");
@@ -126,15 +91,10 @@ fn frightful_delusion_counters_and_discards() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Give P0 a card in hand (to be discarded).
-    let mountain_id = reg.get_id_by_name("Mountain").unwrap();
-    let hand_card = state.create_object(mountain_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(hand_card).unwrap().name = "Mountain".into();
+    let hand_card = spell_in_hand(&mut state, &reg, "Mountain", P0);
 
     // P0 casts a creature.
-    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    let bears = state.create_object(bears_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
     state = engine::submit_action(
         &state,
@@ -143,18 +103,10 @@ fn frightful_delusion_counters_and_discards() {
     );
 
     // P1 casts Frightful Delusion.
-    let fd_id = reg.get_id_by_name("Frightful Delusion").unwrap();
-    let fd = state.create_object(fd_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(fd).unwrap().name = "Frightful Delusion".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 3);
+    let fd = castable_spell(&mut state, &reg, "Frightful Delusion", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(bears)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
 
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
         "Spell should be countered");
@@ -172,17 +124,9 @@ fn victim_of_night_kills_normal_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let bears = ready_creature(&mut state, P1, 2, 2);
-    let card_id = reg.get_id_by_name("Victim of Night").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Victim of Night".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+    let card = castable_spell(&mut state, &reg, "Victim of Night", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![Target::Object(bears)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(bears)]);
 
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard);
 }
@@ -193,15 +137,9 @@ fn victim_of_night_cant_target_vampire() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let vamp_id = reg.get_id_by_name("Markov Patrician").unwrap();
-    let vamp = state.create_object(vamp_id, P1, Zone::Battlefield, Some(3), Some(1));
-    state.get_object_mut(vamp).unwrap().name = "Markov Patrician".into();
-    state.get_object_mut(vamp).unwrap().summoning_sick = false;
+    let vamp = named_creature(&mut state, &reg, "Markov Patrician", P1);
 
-    let card_id = reg.get_id_by_name("Victim of Night").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Victim of Night".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+    let _card = castable_spell(&mut state, &reg, "Victim of Night", P0);
 
     let legal = engine::legal_actions(&state, &reg);
     let targets_vamp = legal.actions.iter().any(|a| {
@@ -221,10 +159,7 @@ fn smite_the_monstrous_kills_big_creature() {
     let big = ready_creature(&mut state, P1, 5, 5);
     let small = ready_creature(&mut state, P1, 2, 2);
 
-    let card_id = reg.get_id_by_name("Smite the Monstrous").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Smite the Monstrous".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 4);
+    let card = castable_spell(&mut state, &reg, "Smite the Monstrous", P0);
 
     // Should be able to target the 5/5 but not the 2/2.
     let legal = engine::legal_actions(&state, &reg);
@@ -239,12 +174,7 @@ fn smite_the_monstrous_kills_big_creature() {
     assert!(targets_big, "Should be able to target 5/5");
     assert!(!targets_small, "Should not be able to target 2/2");
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![Target::Object(big)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(big)]);
 
     assert_eq!(state.get_object(big).unwrap().zone, Zone::Graveyard);
 }
@@ -263,10 +193,7 @@ fn rebuke_destroys_attacking_creature() {
     state.priority_player = Some(P1);
 
     // P1 casts Rebuke.
-    let card_id = reg.get_id_by_name("Rebuke").unwrap();
-    let card = state.create_object(card_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Rebuke".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::White, 3);
+    let card = castable_spell(&mut state, &reg, "Rebuke", P1);
 
     // Rebuke should only target the attacking creature.
     let legal = engine::legal_actions(&state, &reg);
@@ -281,12 +208,7 @@ fn rebuke_destroys_attacking_creature() {
     assert!(targets_attacker, "Should target the attacking creature");
     assert!(!targets_non_attacker, "Should not target non-attacking creature");
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![Target::Object(attacker)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(attacker)]);
 
     assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Graveyard);
 }
@@ -301,17 +223,9 @@ fn silent_departure_bounces_creature() {
 
     let creature = ready_creature(&mut state, P1, 3, 3);
 
-    let card_id = reg.get_id_by_name("Silent Departure").unwrap();
-    let card = state.create_object(card_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(card).unwrap().name = "Silent Departure".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    let card = castable_spell(&mut state, &reg, "Silent Departure", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: card, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, card, vec![Target::Object(creature)]);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Hand,
         "Creature should be returned to hand");
@@ -327,32 +241,17 @@ fn naturalize_destroys_enchantment() {
 
     // Put an enchantment on the battlefield.
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let pac_id = reg.get_id_by_name("Pacifism").unwrap();
-    let pac = state.create_object(pac_id, P1, Zone::Hand, None, None);
-    state.get_player_mut(P1).mana_pool.add(ManaType::White, 2);
+    let pac = castable_spell(&mut state, &reg, "Pacifism", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: pac, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, pac, vec![Target::Object(creature)]);
     assert_eq!(state.get_object(pac).unwrap().zone, Zone::Battlefield);
 
     // P0 casts Naturalize on the Pacifism.
     state.priority_player = Some(P0);
-    let nat_id = reg.get_id_by_name("Naturalize").unwrap();
-    let nat = state.create_object(nat_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(nat).unwrap().name = "Naturalize".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    let nat = castable_spell(&mut state, &reg, "Naturalize", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: nat, targets: vec![Target::Object(pac)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, nat, vec![Target::Object(pac)]);
 
     assert_eq!(state.get_object(pac).unwrap().zone, Zone::Graveyard,
         "Naturalize should destroy the enchantment");
@@ -366,10 +265,7 @@ fn naturalize_cant_target_creature() {
 
     let creature = ready_creature(&mut state, P1, 3, 3);
 
-    let nat_id = reg.get_id_by_name("Naturalize").unwrap();
-    let nat = state.create_object(nat_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(nat).unwrap().name = "Naturalize".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    let _nat = castable_spell(&mut state, &reg, "Naturalize", P0);
 
     let legal = engine::legal_actions(&state, &reg);
     let targets_creature = legal.actions.iter().any(|a| {
@@ -390,17 +286,9 @@ fn bramblecrush_destroys_land() {
     state.get_object_mut(land).unwrap().name = "Forest".into();
     state.get_object_mut(land).unwrap().summoning_sick = false;
 
-    let bc_id = reg.get_id_by_name("Bramblecrush").unwrap();
-    let bc = state.create_object(bc_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(bc).unwrap().name = "Bramblecrush".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 4);
+    let bc = castable_spell(&mut state, &reg, "Bramblecrush", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bc, targets: vec![Target::Object(land)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, bc, vec![Target::Object(land)]);
 
     assert_eq!(state.get_object(land).unwrap().zone, Zone::Graveyard,
         "Bramblecrush should destroy the land");
@@ -414,10 +302,7 @@ fn bramblecrush_cant_target_creature() {
 
     let creature = ready_creature(&mut state, P1, 3, 3);
 
-    let bc_id = reg.get_id_by_name("Bramblecrush").unwrap();
-    let bc = state.create_object(bc_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(bc).unwrap().name = "Bramblecrush".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 4);
+    let _bc = castable_spell(&mut state, &reg, "Bramblecrush", P0);
 
     let legal = engine::legal_actions(&state, &reg);
     let targets_creature = legal.actions.iter().any(|a| {
@@ -434,22 +319,11 @@ fn urgent_exorcism_destroys_spirit() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Chapel Geist is a Spirit.
-    let geist_id = reg.get_id_by_name("Chapel Geist").unwrap();
-    let geist = state.create_object(geist_id, P1, Zone::Battlefield, Some(2), Some(3));
-    state.get_object_mut(geist).unwrap().name = "Chapel Geist".into();
-    state.get_object_mut(geist).unwrap().summoning_sick = false;
+    let geist = named_creature(&mut state, &reg, "Chapel Geist", P1);
 
-    let ue_id = reg.get_id_by_name("Urgent Exorcism").unwrap();
-    let ue = state.create_object(ue_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(ue).unwrap().name = "Urgent Exorcism".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    let ue = castable_spell(&mut state, &reg, "Urgent Exorcism", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: ue, targets: vec![Target::Object(geist)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, ue, vec![Target::Object(geist)]);
 
     assert_eq!(state.get_object(geist).unwrap().zone, Zone::Graveyard,
         "Urgent Exorcism should destroy a Spirit");
@@ -468,17 +342,9 @@ fn prey_upon_fight() {
     let theirs = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(theirs).unwrap().controller = P1;
 
-    let pu_id = reg.get_id_by_name("Prey Upon").unwrap();
-    let pu = state.create_object(pu_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(pu).unwrap().name = "Prey Upon".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    let pu = castable_spell(&mut state, &reg, "Prey Upon", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: pu, targets: vec![Target::Object(mine), Target::Object(theirs)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, pu, vec![Target::Object(mine), Target::Object(theirs)]);
 
     // 3/3 deals 3 to 2/2, 2/2 deals 2 to 3/3.
     assert_eq!(state.get_object(mine).unwrap().damage_marked, 2);
@@ -502,10 +368,7 @@ fn lost_in_the_mist_counters_and_bounces() {
     let creature = ready_creature(&mut state, P0, 3, 3);
 
     // P0 casts a spell.
-    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    let bears = state.create_object(bears_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
     state = engine::submit_action(
         &state,
@@ -514,18 +377,10 @@ fn lost_in_the_mist_counters_and_bounces() {
     );
 
     // P1 casts Lost in the Mist targeting the spell + the creature.
-    let litm_id = reg.get_id_by_name("Lost in the Mist").unwrap();
-    let litm = state.create_object(litm_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(litm).unwrap().name = "Lost in the Mist".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 5);
+    let litm = castable_spell(&mut state, &reg, "Lost in the Mist", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: litm, targets: vec![Target::Object(bears), Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, litm, vec![Target::Object(bears), Target::Object(creature)]);
 
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
         "Spell should be countered");

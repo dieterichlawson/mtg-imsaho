@@ -26,10 +26,7 @@ fn caster_retains_priority_after_casting() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
-    let card_id = registry.get_id_by_name("Kalonian Tusker").unwrap();
-    let card_data = registry.card_data(card_id).unwrap();
-    let creature = state.create_object(card_id, P0, Zone::Hand, card_data.power, card_data.toughness);
+    let creature = castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
 
     let new_state = engine::submit_action(
         &state, &Action::CastSpell { object_id: creature, targets: vec![] }, &registry,
@@ -67,8 +64,7 @@ fn player_retains_priority_after_playing_land() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    let land = state.create_object(forest_id, P0, Zone::Hand, None, None);
+    let land = spell_in_hand(&mut state, &registry, "Forest", P0);
 
     let new_state = engine::submit_action(
         &state, &Action::PlayLand { object_id: land }, &registry,
@@ -87,10 +83,7 @@ fn creatures_only_castable_at_sorcery_speed() {
 
     // During combat.
     let mut state = game_at_step(Step::BeginCombat, P0);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
-    let card_id = registry.get_id_by_name("Kalonian Tusker").unwrap();
-    let card_data = registry.card_data(card_id).unwrap();
-    state.create_object(card_id, P0, Zone::Hand, card_data.power, card_data.toughness);
+    castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
 
     let actions = engine::legal_actions(&state, &registry);
     assert!(!actions.actions.iter().any(|a| matches!(a, Action::CastSpell { .. })),
@@ -99,8 +92,7 @@ fn creatures_only_castable_at_sorcery_speed() {
     // During opponent's turn.
     let mut state2 = game_at_step(Step::PrecombatMain, P1);
     state2.priority_player = Some(P0);
-    state2.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
-    state2.create_object(card_id, P0, Zone::Hand, card_data.power, card_data.toughness);
+    castable_spell(&mut state2, &registry, "Kalonian Tusker", P0);
 
     let actions2 = engine::legal_actions(&state2, &registry);
     assert!(!actions2.actions.iter().any(|a| matches!(a, Action::CastSpell { .. })),
@@ -113,9 +105,7 @@ fn cannot_cast_without_mana() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let card_id = registry.get_id_by_name("Kalonian Tusker").unwrap();
-    let card_data = registry.card_data(card_id).unwrap();
-    state.create_object(card_id, P0, Zone::Hand, card_data.power, card_data.toughness);
+    spell_in_hand(&mut state, &registry, "Kalonian Tusker", P0);
 
     let actions = engine::legal_actions(&state, &registry);
     assert!(!actions.actions.iter().any(|a| matches!(a, Action::CastSpell { .. })),
@@ -129,9 +119,7 @@ fn cannot_cast_with_wrong_color() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 5);
-    let card_id = registry.get_id_by_name("Kalonian Tusker").unwrap();
-    let card_data = registry.card_data(card_id).unwrap();
-    state.create_object(card_id, P0, Zone::Hand, card_data.power, card_data.toughness);
+    spell_in_hand(&mut state, &registry, "Kalonian Tusker", P0);
 
     let actions = engine::legal_actions(&state, &registry);
     assert!(!actions.actions.iter().any(|a| matches!(a, Action::CastSpell { .. })),

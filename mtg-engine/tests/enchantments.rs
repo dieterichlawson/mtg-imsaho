@@ -17,17 +17,10 @@ fn holy_strength_buffs_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let hs_id = registry.get_id_by_name("Holy Strength").unwrap();
-    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+    let hs = castable_spell(&mut state, &registry, "Holy Strength", P0);
 
     // Cast Holy Strength targeting creature.
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
 
     // Aura should be on battlefield, attached to creature.
     assert_eq!(state.get_object(hs).unwrap().zone, Zone::Battlefield);
@@ -45,17 +38,10 @@ fn aura_falls_off_when_creature_dies() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let hs_id = registry.get_id_by_name("Holy Strength").unwrap();
-    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+    let hs = castable_spell(&mut state, &registry, "Holy Strength", P0);
 
     // Attach Holy Strength.
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
 
     // Kill the creature.
     state.move_object(creature, Zone::Graveyard);
@@ -72,9 +58,7 @@ fn pacifism_prevents_attacking() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
-    let pac_id = registry.get_id_by_name("Pacifism").unwrap();
-    let pac = state.create_object(pac_id, P1, Zone::Hand, None, None);
-    state.get_player_mut(P1).mana_pool.add(ManaType::White, 2);
+    let pac = castable_spell(&mut state, &registry, "Pacifism", P1);
     state.priority_player = Some(P1); // P1 casts it
 
     // Cast Pacifism on P0's creature.
@@ -104,17 +88,9 @@ fn glorious_anthem_buffs_all_creatures() {
     let opp_creature = ready_creature(&mut state, P1, 3, 3);
 
     // Put Glorious Anthem on battlefield.
-    let anthem_id = registry.get_id_by_name("Glorious Anthem").unwrap();
-    let anthem = state.create_object(anthem_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    let anthem = castable_spell(&mut state, &registry, "Glorious Anthem", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: anthem, targets: vec![] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, anthem, vec![]);
     assert_eq!(state.get_object(anthem).unwrap().zone, Zone::Battlefield);
 
     // Your creatures should get +1/+1.
@@ -135,17 +111,10 @@ fn giant_growth_until_end_of_turn() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let gg_id = registry.get_id_by_name("Giant Growth").unwrap();
-    let gg = state.create_object(gg_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    let gg = castable_spell(&mut state, &registry, "Giant Growth", P0);
 
     // Cast Giant Growth on creature.
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: gg, targets: vec![Target::Object(creature)] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, gg, vec![Target::Object(creature)]);
 
     // Should have +3/+3 (effective 5/5).
     assert_eq!(state.effective_power(creature, &registry), Some(5));
@@ -174,16 +143,9 @@ fn aura_toughness_bonus_prevents_death() {
 
     // 2/2 creature with Holy Strength = effective 3/4.
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let hs_id = registry.get_id_by_name("Holy Strength").unwrap();
-    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+    let hs = castable_spell(&mut state, &registry, "Holy Strength", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
 
     // Deal 3 damage — enough to kill a 2/2 but not a 3/4.
     state.get_object_mut(creature).unwrap().damage_marked = 3;
@@ -206,16 +168,9 @@ fn view_shows_effective_pt_with_aura() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 1);
-    let hs_id = registry.get_id_by_name("Holy Strength").unwrap();
-    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+    let hs = castable_spell(&mut state, &registry, "Holy Strength", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
 
     let view = GameView::for_player(&state, P0, &registry);
     let perm = view.battlefield.iter().find(|p| p.object_id == creature).unwrap();
@@ -233,16 +188,9 @@ fn view_shows_aura_attached_to_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let hs_id = registry.get_id_by_name("Holy Strength").unwrap();
-    let hs = state.create_object(hs_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
+    let hs = castable_spell(&mut state, &registry, "Holy Strength", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: hs, targets: vec![Target::Object(creature)] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
 
     let view = GameView::for_player(&state, P0, &registry);
     let aura = view.battlefield.iter().find(|p| p.object_id == hs).unwrap();
@@ -259,17 +207,9 @@ fn view_shows_effective_pt_with_anthem() {
 
     let creature = ready_creature(&mut state, P0, 2, 2);
 
-    let anthem_id = registry.get_id_by_name("Glorious Anthem").unwrap();
-    let anthem = state.create_object(anthem_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    let anthem = castable_spell(&mut state, &registry, "Glorious Anthem", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: anthem, targets: vec![] },
-        &registry,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, anthem, vec![]);
 
     let view = GameView::for_player(&state, P0, &registry);
     let perm = view.battlefield.iter().find(|p| p.object_id == creature).unwrap();

@@ -18,9 +18,8 @@ fn can_cast_instant_during_opponent_combat() {
     state.priority_player = Some(P0); // P0 has priority
 
     // P0 has a Mountain with {R} in pool and Lightning Bolt in hand.
-    let bolt_id = registry.get_id_by_name("Lightning Bolt").unwrap();
-    state.create_object(bolt_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    spell_in_hand(&mut state, &registry, "Lightning Bolt", P0);
+    add_mana_for(&mut state, &registry, "Lightning Bolt", P0);
 
     // P1 has an attacking creature.
     let _lion = ready_creature(&mut state, P1, 2, 1);
@@ -41,9 +40,8 @@ fn can_cast_instant_during_opponent_main_phase() {
     let mut state = game_at_step(Step::PrecombatMain, P1); // P1's turn
     state.priority_player = Some(P0); // P0 has priority
 
-    let bolt_id = registry.get_id_by_name("Lightning Bolt").unwrap();
-    state.create_object(bolt_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    spell_in_hand(&mut state, &registry, "Lightning Bolt", P0);
+    add_mana_for(&mut state, &registry, "Lightning Bolt", P0);
 
     // Need a valid target.
     ready_creature(&mut state, P1, 3, 3);
@@ -81,9 +79,8 @@ fn cannot_cast_sorcery_during_opponent_turn() {
     let mut state = game_at_step(Step::PrecombatMain, P1); // P1's turn
     state.priority_player = Some(P0);
 
-    let div_id = registry.get_id_by_name("Divination").unwrap();
-    state.create_object(div_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 3);
+    spell_in_hand(&mut state, &registry, "Divination", P0);
+    add_mana_for(&mut state, &registry, "Divination", P0);
 
     let legal = engine::legal_actions(&state, &registry);
     let can_cast = legal.actions.iter().any(|a| matches!(a, Action::CastSpell { .. }));
@@ -98,8 +95,7 @@ fn cannot_play_land_during_opponent_turn() {
     let mut state = game_at_step(Step::PrecombatMain, P1); // P1's turn
     state.priority_player = Some(P0);
 
-    let forest_id = registry.get_id_by_name("Forest").unwrap();
-    state.create_object(forest_id, P0, Zone::Hand, None, None);
+    spell_in_hand(&mut state, &registry, "Forest", P0);
 
     let legal = engine::legal_actions(&state, &registry);
     let can_play = legal.actions.iter().any(|a| matches!(a, Action::PlayLand { .. }));

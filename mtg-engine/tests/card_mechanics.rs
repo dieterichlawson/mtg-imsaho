@@ -10,12 +10,10 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::engine;
-use mtg_engine::ids::PlayerId;
+use mtg_engine::ids::{CardId, PlayerId};
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
-
-use mtg_engine::ids::CardId;
 
 fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
@@ -64,17 +62,9 @@ fn brimstone_volley_morbid_deals_5() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.creature_died_this_turn = true;
 
-    let bv_id = reg.get_id_by_name("Brimstone Volley").unwrap();
-    let bv = state.create_object(bv_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(bv).unwrap().name = "Brimstone Volley".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 3);
+    let bv = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bv, targets: vec![Target::Player(P1)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, bv, vec![Target::Player(P1)]);
 
     assert_eq!(state.get_player(P1).life, 15,
         "Brimstone Volley with morbid should deal 5 damage (20 - 5 = 15)");
@@ -87,17 +77,9 @@ fn brimstone_volley_no_morbid_deals_3() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     assert!(!state.creature_died_this_turn);
 
-    let bv_id = reg.get_id_by_name("Brimstone Volley").unwrap();
-    let bv = state.create_object(bv_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(bv).unwrap().name = "Brimstone Volley".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 3);
+    let bv = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bv, targets: vec![Target::Player(P1)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, bv, vec![Target::Player(P1)]);
 
     assert_eq!(state.get_player(P1).life, 17,
         "Brimstone Volley without morbid should deal 3 damage (20 - 3 = 17)");
@@ -110,17 +92,9 @@ fn somberwald_spider_morbid_counters() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.creature_died_this_turn = true;
 
-    let spider_id = reg.get_id_by_name("Somberwald Spider").unwrap();
-    let spider = state.create_object(spider_id, P0, Zone::Hand, Some(2), Some(4));
-    state.get_object_mut(spider).unwrap().name = "Somberwald Spider".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 5);
+    let spider = castable_spell(&mut state, &reg, "Somberwald Spider", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spider, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, spider, vec![]);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(spider, CounterType::PlusOnePlusOne), 2,
@@ -136,17 +110,9 @@ fn somberwald_spider_no_morbid_no_counters() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
     assert!(!state.creature_died_this_turn);
 
-    let spider_id = reg.get_id_by_name("Somberwald Spider").unwrap();
-    let spider = state.create_object(spider_id, P0, Zone::Hand, Some(2), Some(4));
-    state.get_object_mut(spider).unwrap().name = "Somberwald Spider".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 5);
+    let spider = castable_spell(&mut state, &reg, "Somberwald Spider", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: spider, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, spider, vec![]);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(spider, CounterType::PlusOnePlusOne), 0);
@@ -167,17 +133,9 @@ fn fiend_hunter_returns_exiled_on_death() {
     state.get_object_mut(target).unwrap().name = "Target Creature".into();
 
     // Cast Fiend Hunter (ETB exiles the target).
-    let fh_id = reg.get_id_by_name("Fiend Hunter").unwrap();
-    let fh = state.create_object(fh_id, P0, Zone::Hand, Some(1), Some(3));
-    state.get_object_mut(fh).unwrap().name = "Fiend Hunter".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 3);
+    let fh = castable_spell(&mut state, &reg, "Fiend Hunter", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fh, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fh, vec![]);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_object(target).unwrap().zone, Zone::Exile,
@@ -206,17 +164,9 @@ fn nightbirds_clutches_prevents_blocking() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let blocker = ready_creature(&mut state, P1, 3, 3);
-    let nc_id = reg.get_id_by_name("Nightbird's Clutches").unwrap();
-    let nc = state.create_object(nc_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(nc).unwrap().name = "Nightbird's Clutches".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 2);
+    let nc = castable_spell(&mut state, &reg, "Nightbird's Clutches", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: nc, targets: vec![Target::Object(blocker)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, nc, vec![Target::Object(blocker)]);
 
     assert!(state.until_end_of_turn_cant_block.contains(&blocker));
 
@@ -235,22 +185,12 @@ fn bonds_of_faith_buffs_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Savannah Lions is a Human (Cat Warrior — actually, let's use Elder Cathar which is Human Soldier).
-    let human_id = reg.get_id_by_name("Elder Cathar").unwrap();
-    let creature = state.create_object(human_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(creature).unwrap().name = "Elder Cathar".into();
-    state.get_object_mut(creature).unwrap().summoning_sick = false;
+    // Elder Cathar is a Human Soldier.
+    let creature = named_creature(&mut state, &reg, "Elder Cathar", P0);
 
-    let bof_id = reg.get_id_by_name("Bonds of Faith").unwrap();
-    let bof = state.create_object(bof_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    let bof = castable_spell(&mut state, &reg, "Bonds of Faith", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bof, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, bof, vec![Target::Object(creature)]);
     triggers::process_triggers(&mut state, &reg);
 
     // Human should get +2/+2.
@@ -268,16 +208,9 @@ fn bonds_of_faith_locks_non_human() {
     // Grizzly Bears is a Bear, not a Human.
     let bears = ready_creature(&mut state, P1, 2, 2);
 
-    let bof_id = reg.get_id_by_name("Bonds of Faith").unwrap();
-    let bof = state.create_object(bof_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    let bof = castable_spell(&mut state, &reg, "Bonds of Faith", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: bof, targets: vec![Target::Object(bears)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, bof, vec![Target::Object(bears)]);
     triggers::process_triggers(&mut state, &reg);
 
     assert!(!state.can_attack(bears, &reg), "Non-Human with Bonds should not attack");
@@ -365,16 +298,10 @@ fn grave_bramble_protection_prevents_zombie_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     // Attacker is a Zombie (Walking Corpse).
-    let wc_id = reg.get_id_by_name("Walking Corpse").unwrap();
-    let zombie = state.create_object(wc_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(zombie).unwrap().name = "Walking Corpse".into();
-    state.get_object_mut(zombie).unwrap().summoning_sick = false;
+    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
 
     // Blocker is Grave Bramble (protection from Zombies).
-    let gb_id = reg.get_id_by_name("Grave Bramble").unwrap();
-    let bramble = state.create_object(gb_id, P1, Zone::Battlefield, Some(3), Some(4));
-    state.get_object_mut(bramble).unwrap().name = "Grave Bramble".into();
-    state.get_object_mut(bramble).unwrap().summoning_sick = false;
+    let bramble = named_creature(&mut state, &reg, "Grave Bramble", P1);
 
     combat::declare_attackers(&mut state, &[(zombie, P1)]);
     combat::declare_blockers(&mut state, &[(bramble, zombie)]);
@@ -403,16 +330,9 @@ fn intangible_virtue_token_only() {
     let non_token = ready_creature(&mut state, P0, 2, 2);
 
     // Cast Intangible Virtue.
-    let iv_id = reg.get_id_by_name("Intangible Virtue").unwrap();
-    let iv = state.create_object(iv_id, P0, Zone::Hand, None, None);
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    let iv = castable_spell(&mut state, &reg, "Intangible Virtue", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: iv, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, iv, vec![]);
 
     // Token should get +1/+1 and vigilance.
     assert_eq!(state.effective_power(token, &reg), Some(2),
@@ -441,10 +361,7 @@ fn one_eyed_scarecrow_debuffs_opponent_flyers() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 has One-Eyed Scarecrow on battlefield.
-    let scarecrow_id = reg.get_id_by_name("One-Eyed Scarecrow").unwrap();
-    let scarecrow = state.create_object(scarecrow_id, P0, Zone::Battlefield, Some(2), Some(3));
-    state.get_object_mut(scarecrow).unwrap().name = "One-Eyed Scarecrow".into();
-    state.get_object_mut(scarecrow).unwrap().summoning_sick = false;
+    let _scarecrow = named_creature(&mut state, &reg, "One-Eyed Scarecrow", P0);
 
     // P1 has a flyer (Moon Heron 3/2 flying).
     let heron_id = reg.get_id_by_name("Moon Heron").unwrap();
@@ -484,16 +401,10 @@ fn elder_cathar_gives_two_counters_to_human() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Elder Cathar on battlefield.
-    let ec_id = reg.get_id_by_name("Elder Cathar").unwrap();
-    let ec = state.create_object(ec_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(ec).unwrap().name = "Elder Cathar".into();
-    state.get_object_mut(ec).unwrap().summoning_sick = false;
+    let ec = named_creature(&mut state, &reg, "Elder Cathar", P0);
 
     // A Human ally (Doomed Traveler).
-    let dt_id = reg.get_id_by_name("Doomed Traveler").unwrap();
-    let human = state.create_object(dt_id, P0, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(human).unwrap().name = "Doomed Traveler".into();
-    state.get_object_mut(human).unwrap().summoning_sick = false;
+    let human = named_creature(&mut state, &reg, "Doomed Traveler", P0);
 
     // Kill Elder Cathar.
     state.get_object_mut(ec).unwrap().damage_marked = 2;
@@ -509,10 +420,7 @@ fn elder_cathar_gives_one_counter_to_non_human() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let ec_id = reg.get_id_by_name("Elder Cathar").unwrap();
-    let ec = state.create_object(ec_id, P0, Zone::Battlefield, Some(2), Some(2));
-    state.get_object_mut(ec).unwrap().name = "Elder Cathar".into();
-    state.get_object_mut(ec).unwrap().summoning_sick = false;
+    let ec = named_creature(&mut state, &reg, "Elder Cathar", P0);
 
     // A non-Human ally (Grizzly Bears = Bear).
     let bears = ready_creature(&mut state, P0, 2, 2);
@@ -535,10 +443,7 @@ fn invisible_stalker_unblockable() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let stalker_id = reg.get_id_by_name("Invisible Stalker").unwrap();
-    let stalker = state.create_object(stalker_id, P0, Zone::Battlefield, Some(1), Some(1));
-    state.get_object_mut(stalker).unwrap().name = "Invisible Stalker".into();
-    state.get_object_mut(stalker).unwrap().summoning_sick = false;
+    let stalker = named_creature(&mut state, &reg, "Invisible Stalker", P0);
 
     let blocker = ready_creature(&mut state, P1, 5, 5);
 
@@ -556,10 +461,7 @@ fn vampire_interloper_cant_block() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
 
-    let vi_id = reg.get_id_by_name("Vampire Interloper").unwrap();
-    let vi = state.create_object(vi_id, P1, Zone::Battlefield, Some(2), Some(1));
-    state.get_object_mut(vi).unwrap().name = "Vampire Interloper".into();
-    state.get_object_mut(vi).unwrap().summoning_sick = false;
+    let vi = named_creature(&mut state, &reg, "Vampire Interloper", P1);
 
     let eligible = combat::eligible_blockers_with_registry(&state, P1, &reg);
     assert!(!eligible.contains(&vi),
@@ -642,20 +544,9 @@ fn feeling_of_dread_taps_two() {
     let creature1 = ready_creature(&mut state, P1, 3, 3);
     let creature2 = ready_creature(&mut state, P1, 2, 2);
 
-    let fod_id = reg.get_id_by_name("Feeling of Dread").unwrap();
-    let fod = state.create_object(fod_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(fod).unwrap().name = "Feeling of Dread".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::White, 2);
+    let fod = castable_spell(&mut state, &reg, "Feeling of Dread", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell {
-            object_id: fod,
-            targets: vec![Target::Object(creature1), Target::Object(creature2)],
-        },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fod, vec![Target::Object(creature1), Target::Object(creature2)]);
 
     assert!(state.get_object(creature1).unwrap().tapped,
         "First target should be tapped");
@@ -674,10 +565,7 @@ fn frightful_delusion_choice_when_opponent_has_mana() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 casts a creature.
-    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    let bears = state.create_object(bears_id, P0, Zone::Hand, Some(2), Some(2));
-    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
     state = engine::submit_action(
         &state,
@@ -687,18 +575,11 @@ fn frightful_delusion_choice_when_opponent_has_mana() {
 
     // P1 casts Frightful Delusion. Give P0 mana so they CAN pay.
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1); // P0 has {1} to pay
-    let fd_id = reg.get_id_by_name("Frightful Delusion").unwrap();
-    let fd = state.create_object(fd_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(fd).unwrap().name = "Frightful Delusion".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 3);
+    let fd = spell_in_hand(&mut state, &reg, "Frightful Delusion", P1);
+    add_mana_for(&mut state, &reg, "Frightful Delusion", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(bears)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
 
     // Should have set an awaiting_action for P0 to choose.
     assert!(state.awaiting_action.is_some(),
@@ -723,10 +604,7 @@ fn frightful_delusion_auto_counters_without_mana() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
-    let bears = state.create_object(bears_id, P0, Zone::Hand, Some(2), Some(2));
-    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 2);
+    let bears = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
 
     state = engine::submit_action(
         &state,
@@ -737,18 +615,11 @@ fn frightful_delusion_auto_counters_without_mana() {
     // P0 has NO mana (pool empty after casting).
     assert_eq!(state.get_player(P0).mana_pool.total(), 0);
 
-    let fd_id = reg.get_id_by_name("Frightful Delusion").unwrap();
-    let fd = state.create_object(fd_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(fd).unwrap().name = "Frightful Delusion".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 3);
+    let fd = spell_in_hand(&mut state, &reg, "Frightful Delusion", P1);
+    add_mana_for(&mut state, &reg, "Frightful Delusion", P1);
     state.priority_player = Some(P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(bears)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fd, vec![Target::Object(bears)]);
 
     // Should auto-counter (no choice needed).
     assert!(state.awaiting_action.is_none(),
@@ -773,17 +644,9 @@ fn unburial_rites_choice_with_multiple_creatures() {
     state.get_object_mut(tusker).unwrap().name = "Kalonian Tusker".into();
 
     // Cast Unburial Rites.
-    let ur_id = reg.get_id_by_name("Unburial Rites").unwrap();
-    let ur = state.create_object(ur_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(ur).unwrap().name = "Unburial Rites".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 5);
+    let ur = castable_spell(&mut state, &reg, "Unburial Rites", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: ur, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, ur, vec![]);
 
     // Should have a choice between the two creatures.
     assert!(state.awaiting_action.is_some(),
@@ -813,10 +676,7 @@ fn pitchburn_devils_choice_with_targets() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Pitchburn Devils on P0's battlefield.
-    let pd_id = reg.get_id_by_name("Pitchburn Devils").unwrap();
-    let pd = state.create_object(pd_id, P0, Zone::Battlefield, Some(3), Some(3));
-    state.get_object_mut(pd).unwrap().name = "Pitchburn Devils".into();
-    state.get_object_mut(pd).unwrap().summoning_sick = false;
+    let pd = named_creature(&mut state, &reg, "Pitchburn Devils", P0);
 
     // P1 has a creature (so there are multiple damage targets).
     let blocker = ready_creature(&mut state, P1, 4, 4);
@@ -869,17 +729,9 @@ fn forbidden_alchemy_choice_from_top_4() {
     state.players[0].library_order = vec![c1, c2, c3, c4];
 
     // Cast Forbidden Alchemy.
-    let fa_id = reg.get_id_by_name("Forbidden Alchemy").unwrap();
-    let fa = state.create_object(fa_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(fa).unwrap().name = "Forbidden Alchemy".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 3);
+    let fa = castable_spell(&mut state, &reg, "Forbidden Alchemy", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: fa, targets: vec![] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, fa, vec![]);
 
     // Should present a choice of 4 cards.
     assert!(state.awaiting_action.is_some(),
@@ -1163,17 +1015,9 @@ fn skeletal_grimace_grants_regenerate_ability() {
 
     // Create a creature and attach Skeletal Grimace.
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
-    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+    let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
 
     // Creature should have +1/+1 from the aura.
     assert_eq!(state.effective_power(creature, &reg), Some(3));
@@ -1197,17 +1041,9 @@ fn skeletal_grimace_regeneration_saves_from_lethal() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
-    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+    let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
 
     // Activate regenerate.
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
@@ -1245,18 +1081,10 @@ fn skeletal_grimace_regeneration_vs_doom_blade() {
     // P0's creature with Skeletal Grimace attached.
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(creature).unwrap().name = "Runeclaw Bear".into();
-    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
-    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+    let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
 
     // Cast and resolve Skeletal Grimace.
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
 
     // Activate regenerate.
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
@@ -1267,17 +1095,9 @@ fn skeletal_grimace_regeneration_vs_doom_blade() {
 
     // P1 casts Doom Blade targeting the creature.
     state.priority_player = Some(P1);
-    let db_id = reg.get_id_by_name("Doom Blade").unwrap();
-    let db = state.create_object(db_id, P1, Zone::Hand, None, None);
-    state.get_object_mut(db).unwrap().name = "Doom Blade".into();
-    state.get_player_mut(P1).mana_pool.add(ManaType::Black, 2);
+    let db = castable_spell(&mut state, &reg, "Doom Blade", P1);
 
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: db, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, db, vec![Target::Object(creature)]);
 
     // Creature should survive via regeneration.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
@@ -1297,18 +1117,10 @@ fn skeletal_grimace_regeneration_vs_deathtouch() {
     // P0's creature with Skeletal Grimace attached.
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(creature).unwrap().name = "Runeclaw Bear".into();
-    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
-    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
-    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
-    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+    let sg = castable_spell(&mut state, &reg, "Skeletal Grimace", P0);
 
     // Cast and resolve Skeletal Grimace.
-    state = engine::submit_action(
-        &state,
-        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
-        &reg,
-    );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    state = cast_and_resolve(&state, &reg, sg, vec![Target::Object(creature)]);
 
     // Activate regenerate.
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);

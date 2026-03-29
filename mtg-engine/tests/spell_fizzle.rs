@@ -13,7 +13,6 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::sba::{check_state_based_actions, check_state_based_actions_with_registry};
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
