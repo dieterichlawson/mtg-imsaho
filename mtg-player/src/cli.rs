@@ -1276,8 +1276,8 @@ impl CliPlayer {
     // ── Combat ─────────────────────────────────────────────────────
 
     fn choose_attackers(&self, view: &GameView, prompt: &CombatPrompt) -> Action {
-        let (eligible, defending) = match prompt {
-            CombatPrompt::ChooseAttackers { eligible, defending_player } => (eligible, *defending_player),
+        let (eligible, must_attack, defending) = match prompt {
+            CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player } => (eligible, must_attack, *defending_player),
             _ => unreachable!(),
         };
 
@@ -1300,9 +1300,14 @@ impl CliPlayer {
             Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
         r += 1;
         for (i, &id) in eligible.iter().enumerate() {
+            let forced = must_attack.contains(&id);
+            let tag = if forced { " [MUST ATTACK]" } else { "" };
+            let color = if forced { Color::Red } else { Color::Reset };
             let _ = execute!(out, cursor::MoveTo(col, r),
                 SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
-                SetAttribute(Attribute::Reset), Print(format!(": {}", Self::perm_name(view, id))));
+                SetAttribute(Attribute::Reset),
+                Print(format!(": {}", Self::perm_name(view, id))),
+                SetForegroundColor(color), Print(tag), ResetColor);
             r += 1;
         }
         let _ = execute!(out, cursor::MoveTo(col, r));

@@ -842,20 +842,34 @@ impl Player for LlmPlayer {
 impl LlmPlayer {
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
-            CombatPrompt::ChooseAttackers { eligible, defending_player } => {
+            CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player } => {
                 if eligible.is_empty() {
                     return Action::DeclareAttackers { attackers: vec![] };
                 }
 
                 let state = Self::format_state_compact(view);
-                let mut combat_text = String::from("Choose attackers: ");
+                let mut combat_text = String::new();
+                if !must_attack.is_empty() {
+                    combat_text.push_str("MUST ATTACK: ");
+                    for &id in must_attack.iter() {
+                        if let Some(idx) = eligible.iter().position(|&e| e == id) {
+                            let p = view.battlefield.iter().find(|p| p.object_id == id);
+                            let name = p.map(|p| format!("{} {}/{}", p.name, p.power.unwrap_or(0), p.toughness.unwrap_or(0)))
+                                .unwrap_or_else(|| format!("{}", id));
+                            combat_text.push_str(&format!("{}:{} ", idx, name));
+                        }
+                    }
+                    combat_text.push('\n');
+                }
+                combat_text.push_str("Choose attackers: ");
                 for (i, &id) in eligible.iter().enumerate() {
                     let p = view.battlefield.iter().find(|p| p.object_id == id);
                     let name = p.map(|p| format!("{} {}/{}", p.name, p.power.unwrap_or(0), p.toughness.unwrap_or(0)))
                         .unwrap_or_else(|| format!("{}", id));
-                    combat_text.push_str(&format!("{}:{} ", i, name));
+                    let forced = if must_attack.contains(&id) { " [MUST]" } else { "" };
+                    combat_text.push_str(&format!("{}:{}{} ", i, name, forced));
                 }
-                combat_text.push_str("\nNumbers, 'all', or 'none'");
+                combat_text.push_str("\nNumbers, 'all', or 'none' (forced attackers are auto-included)");
 
                 self.log("THINKING", "attackers...");
                 let response = self.call_api(&format!("{}\n{}", state, combat_text));

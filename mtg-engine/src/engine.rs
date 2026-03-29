@@ -46,12 +46,26 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     if let Some(awaiting) = &state.awaiting_action {
         return match awaiting {
             AwaitingAction::DeclareAttackers => {
-                let eligible = combat::eligible_attackers_with_registry(state, state.active_player, registry);
-                let defending = state.opponent(state.active_player);
+                let active = state.active_player;
+                let eligible = combat::eligible_attackers_with_registry(state, active, registry);
+                let defending = state.opponent(active);
+                // Find creatures that must attack (e.g., enchanted by Furor of the Bitten).
+                let must_attack: Vec<ObjectId> = eligible.iter()
+                    .filter(|&&id| {
+                        state.objects.values().any(|a| {
+                            a.zone == Zone::Battlefield && a.attached_to == Some(id)
+                                && registry.card_data(a.card_id)
+                                    .map(|d| d.oracle_text.contains("attacks each combat if able"))
+                                    .unwrap_or(false)
+                        })
+                    })
+                    .copied()
+                    .collect();
                 LegalActions {
                     actions: vec![],
                     combat_prompt: Some(crate::actions::CombatPrompt::ChooseAttackers {
                         eligible,
+                        must_attack,
                         defending_player: defending,
                     }),
                     castable_spells: vec![],

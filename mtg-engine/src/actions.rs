@@ -46,6 +46,8 @@ pub enum CombatPrompt {
     /// Choose a subset of these creatures to attack with.
     ChooseAttackers {
         eligible: Vec<ObjectId>,
+        /// Creatures that must attack this combat (e.g., Furor of the Bitten).
+        must_attack: Vec<ObjectId>,
         defending_player: PlayerId,
     },
     /// Choose blocking assignments.

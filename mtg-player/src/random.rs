@@ -57,7 +57,7 @@ impl RandomPlayer {
     pub fn choose_combat(&mut self, prompt: &CombatPrompt) -> Action {
         let mut rng = rand::thread_rng();
         match prompt {
-            CombatPrompt::ChooseAttackers { eligible, defending_player } => {
+            CombatPrompt::ChooseAttackers { eligible, defending_player, .. } => {
                 // Each eligible creature has a 50% chance of attacking.
                 let attackers: Vec<_> = eligible.iter()
                     .filter(|_| rng.gen_bool(0.5))
