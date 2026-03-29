@@ -1173,3 +1173,50 @@ fn skeletal_grimace_regeneration_vs_doom_blade() {
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
         "Shield should be consumed");
 }
+
+/// Skeletal Grimace regeneration saves creature from deathtouch damage.
+#[test]
+fn skeletal_grimace_regeneration_vs_deathtouch() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0's creature with Skeletal Grimace attached.
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(creature).unwrap().name = "Runeclaw Bear".into();
+    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
+    let sg = state.create_object(sg_id, P0, Zone::Hand, None, None);
+    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    // Cast and resolve Skeletal Grimace.
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: sg, targets: vec![Target::Object(creature)] },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Activate regenerate.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+    let legal = engine::legal_actions(&state, &reg);
+    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { .. })).unwrap().clone();
+    state = engine::submit_action(&state, &activate, &reg);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1);
+
+    // Simulate deathtouch damage (even 1 damage from deathtouch is lethal).
+    state.get_object_mut(creature).unwrap().damage_marked = 1;
+    state.get_object_mut(creature).unwrap().dealt_deathtouch_damage = true;
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    // Creature should survive via regeneration.
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Regeneration should save from deathtouch damage");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0,
+        "Damage should be removed after regeneration");
+    assert!(!state.get_object(creature).unwrap().dealt_deathtouch_damage,
+        "Deathtouch flag should be cleared after regeneration");
+    assert!(state.get_object(creature).unwrap().tapped,
+        "Regenerated creature should be tapped");
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "Shield should be consumed");
+}

@@ -17,7 +17,8 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
-use mtg_engine::state::{AwaitingAction, GameState};
+use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::state::{AwaitingAction, CombatState, GameState};
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
 
@@ -1227,4 +1228,120 @@ fn ai_tier4_skeletal_grimace_regen_vs_bolt() {
     assert_eq!(post_resolve.get_object(creature).unwrap().regeneration_shields, 0,
         "Regeneration shield should be consumed");
     eprintln!("OK: AI activated regenerate → creature survived Lightning Bolt (3 damage on 3/3, regenerated)");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Scenario: Skeletal Grimace regeneration vs deathtouch in combat
+//
+// P0's Typhoid Rats (1/1 deathtouch) is attacking. P1 (AI) has a 2/2
+// creature enchanted with Skeletal Grimace (effective 3/3) and an
+// untapped Swamp. P1 has priority during DeclareBlockers.
+// Correct play: activate regeneration, then block with the creature.
+// After combat damage, even 1 deathtouch damage is lethal, but
+// regeneration saves the creature. Typhoid Rats dies.
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+#[ignore]
+fn ai_tier4_skeletal_grimace_regen_vs_deathtouch() {
+    let reg = CardRegistry::with_all_cards();
+    let mut state = GameState::new(2);
+    state.players[0].life = 20;
+    state.players[1].life = 10;
+    state.turn_number = 5;
+    state.active_player = PlayerId(0);
+    state.step = Step::DeclareBlockers;
+    state.is_first_turn = false;
+    state.players[0].land_plays_remaining = 0;
+    state.players[1].land_plays_remaining = 0;
+
+    // P0: Typhoid Rats (1/1 deathtouch) attacking
+    let rats_id = reg.get_id_by_name("Typhoid Rats").unwrap();
+    let rats = state.create_object(rats_id, PlayerId(0), Zone::Battlefield, Some(1), Some(1));
+    state.get_object_mut(rats).unwrap().name = "Typhoid Rats".into();
+    state.get_object_mut(rats).unwrap().summoning_sick = false;
+    state.get_object_mut(rats).unwrap().tapped = true;
+    state.get_object_mut(rats).unwrap().colors = vec![Color::Black];
+    state.get_object_mut(rats).unwrap().keywords = vec![Keyword::Deathtouch];
+
+    let mut combat_state = CombatState::new();
+    combat_state.attackers.insert(rats, PlayerId(1));
+    combat_state.blocker_assignments.insert(rats, Vec::new());
+    state.combat = Some(combat_state);
+
+    // P1 (AI): 2/2 creature on the battlefield
+    let bears_id = reg.get_id_by_name("Grizzly Bears").unwrap();
+    let creature = state.create_object(bears_id, PlayerId(1), Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(creature).unwrap().name = "Runeclaw Bear".into();
+    state.get_object_mut(creature).unwrap().summoning_sick = false;
+    state.get_object_mut(creature).unwrap().colors = vec![Color::Green];
+
+    // P1 (AI): Skeletal Grimace attached to creature
+    let sg_id = reg.get_id_by_name("Skeletal Grimace").unwrap();
+    let sg = state.create_object(sg_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(sg).unwrap().name = "Skeletal Grimace".into();
+    state.get_object_mut(sg).unwrap().attached_to = Some(creature);
+    state.get_object_mut(sg).unwrap().summoning_sick = false;
+
+    // P1 (AI): 1 Swamp (untapped) for {B}
+    let swamp_id = reg.get_id_by_name("Swamp").unwrap();
+    let swamp = state.create_object(swamp_id, PlayerId(1), Zone::Battlefield, None, None);
+    state.get_object_mut(swamp).unwrap().name = "Swamp".into();
+    state.get_object_mut(swamp).unwrap().summoning_sick = false;
+
+    // P1 has priority during DeclareBlockers.
+    state.priority_player = Some(PlayerId(1));
+
+    state.log(mtg_engine::state::LogLevel::Event, "p0 declared attackers: Typhoid Rats".into());
+
+    add_libraries(&mut state, &reg);
+    save_scenario(&state, "ai_skeletal_grimace_regen_deathtouch");
+
+    let mut player = LlmPlayer::new("AI").with_log("/tmp/ai_skeletal_grimace_regen_deathtouch.log");
+
+    // First decision: AI should activate regeneration.
+    let (action, mut current) = run_ai_decision(&state, PlayerId(1), &mut player, &reg);
+
+    assert!(matches!(&action, Action::ActivateAbility { .. }),
+        "AI should activate regenerate before blocking deathtouch creature, not {:?}", action);
+    assert_eq!(current.get_object(creature).unwrap().regeneration_shields, 1,
+        "Creature should have a regeneration shield");
+    eprintln!("  AI activated regeneration shield");
+
+    // Second decision: AI should declare blockers (block Rats with creature).
+    // Pass priority to get to blocker declaration.
+    current.priority_player = Some(PlayerId(1));
+    let (action2, current2) = run_ai_decision(&current, PlayerId(1), &mut player, &reg);
+    current = current2;
+
+    if let Action::DeclareBlockers { assignments } = &action2 {
+        assert!(!assignments.is_empty(), "AI should block with the creature");
+        let blocks_rats = assignments.iter().any(|(blocker, attacker)| *blocker == creature && *attacker == rats);
+        assert!(blocks_rats, "AI should block Typhoid Rats with the enchanted creature");
+        current = engine::submit_action(&current, &action2, &reg);
+    } else if matches!(&action2, Action::PassPriority) {
+        // AI passed — manually set up the block and proceed.
+        current = engine::submit_action(&current, &Action::DeclareBlockers {
+            assignments: vec![(creature, rats)],
+        }, &reg);
+    } else {
+        panic!("Expected DeclareBlockers or PassPriority, got {:?}", action2);
+    }
+
+    // Resolve combat damage.
+    current.step = Step::CombatDamage;
+    combat::deal_combat_damage(&mut current, &reg);
+    check_state_based_actions_with_registry(&mut current, Some(&reg));
+
+    // Creature should survive via regeneration.
+    assert_eq!(current.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Creature should survive deathtouch damage thanks to regeneration");
+    assert!(current.get_object(creature).unwrap().tapped,
+        "Regenerated creature should be tapped");
+    assert_eq!(current.get_object(creature).unwrap().regeneration_shields, 0,
+        "Regeneration shield should be consumed");
+    // Typhoid Rats should be dead (took 3 damage from the 3/3).
+    assert_eq!(current.get_object(rats).unwrap().zone, Zone::Graveyard,
+        "Typhoid Rats should die from combat damage");
+    eprintln!("OK: AI activated regenerate → creature survived deathtouch, Rats died");
 }
