@@ -901,3 +901,138 @@ fn forbidden_alchemy_choice_from_top_4() {
     assert_eq!(state.get_object(c3).unwrap().zone, Zone::Graveyard);
     assert_eq!(state.get_object(c4).unwrap().zone, Zone::Graveyard);
 }
+
+// ══════════════════════════════════════════════════════════════════
+// Regeneration
+// ══════════════════════════════════════════════════════════════════
+
+/// A regeneration shield prevents death from lethal damage.
+#[test]
+fn regeneration_shield_prevents_lethal_damage_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(creature).unwrap().regeneration_shields = 1;
+    state.get_object_mut(creature).unwrap().damage_marked = 2; // lethal
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    // Should have regenerated, not died.
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Creature with regeneration shield should not die from lethal damage");
+    assert!(state.get_object(creature).unwrap().tapped,
+        "Regenerated creature should be tapped");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0,
+        "Regenerated creature should have damage removed");
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "One shield should be consumed");
+}
+
+/// Regeneration does NOT prevent death from 0 toughness.
+#[test]
+fn regeneration_does_not_prevent_zero_toughness_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Creature with 0 effective toughness (e.g., from -2/-2 aura on a 2/2).
+    let creature = ready_creature(&mut state, P0, 2, 0);
+    state.get_object_mut(creature).unwrap().regeneration_shields = 1;
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
+        "Regeneration should not save from 0 toughness");
+}
+
+/// Multiple regeneration shields stack — second lethal damage also regenerates.
+#[test]
+fn multiple_regeneration_shields() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(creature).unwrap().regeneration_shields = 2;
+    state.get_object_mut(creature).unwrap().damage_marked = 2;
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1,
+        "One shield consumed, one remaining");
+
+    // Deal lethal damage again.
+    state.get_object_mut(creature).unwrap().damage_marked = 2;
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Second shield should save from second lethal");
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
+}
+
+/// Regeneration shields expire at end of turn (cleanup step).
+#[test]
+fn regeneration_shields_expire_at_cleanup() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(creature).unwrap().regeneration_shields = 1;
+
+    // Advance to cleanup.
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup { break; }
+    }
+
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0,
+        "Unused regeneration shields should expire at cleanup");
+}
+
+/// destroy_creature helper respects regeneration.
+#[test]
+fn destroy_creature_respects_regeneration() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 3, 3);
+    state.get_object_mut(creature).unwrap().regeneration_shields = 1;
+
+    let destroyed = state.destroy_creature(creature);
+
+    assert!(!destroyed, "destroy_creature should return false when regeneration saves");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
+    assert!(state.get_object(creature).unwrap().tapped);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
+}
+
+/// destroy_creature without shields actually destroys.
+#[test]
+fn destroy_creature_without_shield_kills() {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 3, 3);
+    assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
+
+    let destroyed = state.destroy_creature(creature);
+
+    assert!(destroyed, "destroy_creature should return true when no shields");
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+}
+
+/// Regeneration saves from deathtouch damage.
+#[test]
+fn regeneration_saves_from_deathtouch() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 5, 5);
+    state.get_object_mut(creature).unwrap().regeneration_shields = 1;
+    state.get_object_mut(creature).unwrap().damage_marked = 1;
+    state.get_object_mut(creature).unwrap().dealt_deathtouch_damage = true;
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Regeneration should save from deathtouch damage");
+    assert_eq!(state.get_object(creature).unwrap().damage_marked, 0);
+}
