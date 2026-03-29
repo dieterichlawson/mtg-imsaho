@@ -92,6 +92,33 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     castable_spells: vec![],
                 }
             }
+            AwaitingAction::ResolutionChoice { choice, .. } => {
+                use crate::state::ResolutionChoiceKind;
+                use crate::actions::ResolvedChoice;
+                let actions = match choice {
+                    ResolutionChoiceKind::PayOrNot { .. } => {
+                        vec![
+                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+                        ]
+                    }
+                    ResolutionChoiceKind::ChooseTarget { options, optional, .. } => {
+                        let mut acts: Vec<Action> = options.iter()
+                            .map(|t| Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(t.clone())) })
+                            .collect();
+                        if *optional {
+                            acts.push(Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(None) });
+                        }
+                        acts
+                    }
+                    ResolutionChoiceKind::ChooseFromRevealed { revealed, .. } => {
+                        revealed.iter()
+                            .map(|&id| Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) })
+                            .collect()
+                    }
+                };
+                LegalActions { actions, combat_prompt: None, castable_spells: vec![] }
+            }
         };
     }
 
@@ -789,9 +816,99 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 });
             }
         }
+
+        Action::ResolveChoice { choice: resolved } => {
+            use crate::state::ResolutionChoiceKind;
+            use crate::actions::ResolvedChoice;
+            let awaiting = new_state.awaiting_action.take();
+            if let Some(AwaitingAction::ResolutionChoice { choice: kind, .. }) = awaiting {
+                match (&kind, resolved) {
+                    (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, .. },
+                     ResolvedChoice::PayDecision(pay)) => {
+                        if !*pay {
+                            let name = new_state.get_object(*spell_id).map(|o| o.name.clone()).unwrap_or_default();
+                            new_state.stack.retain(|&id| id != *spell_id);
+                            new_state.move_spell_after_resolve(*spell_id);
+                            new_state.log(LogLevel::Event, format!("{} was countered", name));
+                        } else {
+                            new_state.log(LogLevel::Event, "Paid {1} to prevent counter".into());
+                        }
+                        // Controller discards a card.
+                        let controller = new_state.get_object(*spell_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+                        let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
+                            .iter().map(|o| o.id).collect();
+                        if let Some(&card) = hand.first() {
+                            new_state.move_object(card, Zone::Graveyard);
+                            new_state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
+                        }
+                        new_state.move_spell_after_resolve(*source_spell_id);
+                    }
+                    (ResolutionChoiceKind::ChooseTarget { effect, .. },
+                     ResolvedChoice::ChosenTarget(target)) => {
+                        if let Some(t) = target {
+                            apply_pending_effect(&mut new_state, t, effect, registry);
+                        }
+                    }
+                    (ResolutionChoiceKind::ChooseFromRevealed { revealed, spell_id, .. },
+                     ResolvedChoice::ChosenCard(keep_id)) => {
+                        let keep_name = new_state.get_object(*keep_id).map(|o| o.name.clone()).unwrap_or_default();
+                        new_state.move_object(*keep_id, Zone::Hand);
+                        for &card_id in revealed {
+                            if card_id != *keep_id {
+                                new_state.move_object(card_id, Zone::Graveyard);
+                            }
+                        }
+                        new_state.log(LogLevel::Event, format!("Kept {}", keep_name));
+                        new_state.move_spell_after_resolve(*spell_id);
+                    }
+                    _ => {}
+                }
+            }
+            new_state.consecutive_passes = 0;
+        }
     }
 
     new_state
+}
+
+/// Apply a pending effect from a resolution choice to a target.
+fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, effect: &crate::state::PendingEffect, _registry: &CardRegistry) {
+    use crate::actions::Target;
+    use crate::state::PendingEffect;
+
+    match (target, effect) {
+        (Target::Object(id), PendingEffect::DealDamage { amount, source_name }) => {
+            if let Some(obj) = state.get_object_mut(*id) {
+                if obj.zone == Zone::Battlefield {
+                    obj.damage_marked += amount;
+                    let name = obj.name.clone();
+                    state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, name));
+                }
+            }
+        }
+        (Target::Player(pid), PendingEffect::DealDamage { amount, source_name }) => {
+            let old = state.get_player(*pid).life;
+            let new_life = old - *amount as i32;
+            state.get_player_mut(*pid).life = new_life;
+            state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
+            state.log(LogLevel::Event, format!("{} dealt {} damage to p{}", source_name, amount, pid.0));
+        }
+        (Target::Object(id), PendingEffect::Destroy { source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*id, Zone::Graveyard);
+            state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
+        }
+        (Target::Object(id), PendingEffect::ReturnToBattlefield { spell_id }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*id, Zone::Battlefield);
+            state.log(LogLevel::Event, format!("{} returned to the battlefield", name));
+            state.move_spell_after_resolve(*spell_id);
+        }
+        (Target::Object(id), PendingEffect::AddCounters { count }) => {
+            state.add_counters(*id, crate::types::CounterType::PlusOnePlusOne, *count);
+        }
+        _ => {}
+    }
 }
 
 /// Set up a new game: create objects, shuffle libraries, draw opening hands.
@@ -1166,6 +1283,8 @@ fn run_game_loop_inner<F>(
             *defending_player
         } else if let Some(AwaitingAction::DiscardToHandSize { player, .. }) = &state.awaiting_action {
             *player
+        } else if let Some(AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action {
+            *player
         } else {
             match state.priority_player {
                 Some(p) => p,
@@ -1242,6 +1361,12 @@ fn run_game_loop_inner<F>(
 
             Action::PlayLand { .. } | Action::CastSpell { .. } => {
                 // Player retains priority after these actions.
+            }
+
+            Action::ResolveChoice { .. } => {
+                // After resolving a choice, return priority to active player.
+                // Triggers may continue processing in the next loop iteration.
+                state.priority_player = Some(state.active_player);
             }
         }
     }

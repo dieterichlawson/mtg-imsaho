@@ -6,12 +6,13 @@ use crate::types::Zone;
 
 /// Process triggered abilities based on events in state.events.
 /// Called after submit_action and after SBAs to handle ETB, dies, and death-watch triggers.
-/// Triggers resolve immediately (simplified — does not use the stack).
+/// Triggers resolve immediately unless they set an awaiting_action (mid-resolution choice),
+/// in which case processing pauses and resumes from trigger_event_index next call.
 pub fn process_triggers(state: &mut GameState, registry: &CardRegistry) {
-    // Snapshot events to avoid borrow issues (triggers may push new events).
     let events = state.events.clone();
+    let start = state.trigger_event_index;
 
-    for event in &events {
+    for (i, event) in events.iter().enumerate().skip(start) {
         match event {
             GameEvent::EnteredBattlefield { object, .. } => {
                 let obj_id = *object;
@@ -56,5 +57,14 @@ pub fn process_triggers(state: &mut GameState, registry: &CardRegistry) {
             }
             _ => {}
         }
+
+        // If a trigger set an awaiting_action, pause and resume later.
+        if state.awaiting_action.is_some() {
+            state.trigger_event_index = i + 1;
+            return;
+        }
     }
+
+    // All events processed — reset index.
+    state.trigger_event_index = 0;
 }

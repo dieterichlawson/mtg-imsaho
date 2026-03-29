@@ -38,6 +38,20 @@ pub enum Action {
 
     /// Concede the game.
     Concede,
+
+    /// Respond to a mid-resolution choice.
+    ResolveChoice { choice: ResolvedChoice },
+}
+
+/// A player's response to a mid-resolution choice.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ResolvedChoice {
+    /// Pay or don't pay (Frightful Delusion).
+    PayDecision(bool),
+    /// Choose a target, or None if optional and declined.
+    ChosenTarget(Option<Target>),
+    /// Choose a card from a revealed set.
+    ChosenCard(ObjectId),
 }
 
 /// Prompt returned by legal_actions for combat.
@@ -101,6 +115,7 @@ impl std::fmt::Display for Action {
             Action::DiscardCards { cards } =>
                 write!(f, "Discard {} cards", cards.len()),
             Action::Concede => write!(f, "Concede"),
+            Action::ResolveChoice { choice } => write!(f, "Choice: {:?}", choice),
         }
     }
 }

@@ -58,6 +58,10 @@ pub struct GameState {
     /// Whether a creature has died this turn (for morbid).
     #[serde(default)]
     pub creature_died_this_turn: bool,
+
+    /// Index for trigger processing resumption after a resolution choice.
+    #[serde(default)]
+    pub trigger_event_index: usize,
 }
 
 /// Log level for game log entries.
@@ -122,6 +126,7 @@ impl GameState {
             until_end_of_turn_keywords: Vec::new(),
             until_end_of_turn_cant_block: Vec::new(),
             creature_died_this_turn: false,
+            trigger_event_index: 0,
         }
     }
 
@@ -768,6 +773,49 @@ pub enum AwaitingAction {
     DeclareAttackers,
     DeclareBlockers { defending_player: PlayerId },
     DiscardToHandSize { player: PlayerId, discard_count: usize },
+    /// A card or trigger needs a player to make a choice during resolution.
+    ResolutionChoice {
+        player: PlayerId,
+        source: ObjectId,
+        choice: ResolutionChoiceKind,
+    },
+}
+
+/// Describes what kind of mid-resolution choice is needed.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ResolutionChoiceKind {
+    /// Choose whether to pay a cost (Frightful Delusion's "pay {1}").
+    PayOrNot {
+        description: String,
+        spell_id: ObjectId,
+        source_spell_id: ObjectId,
+    },
+    /// Choose one target from a list (damage, destroy, return, counters).
+    ChooseTarget {
+        description: String,
+        options: Vec<crate::actions::Target>,
+        optional: bool,
+        effect: PendingEffect,
+    },
+    /// Choose one card from a revealed set to keep (Forbidden Alchemy).
+    ChooseFromRevealed {
+        description: String,
+        revealed: Vec<ObjectId>,
+        spell_id: ObjectId,
+    },
+}
+
+/// What happens to the chosen target when a ResolutionChoice is resolved.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum PendingEffect {
+    /// Deal N damage to the chosen target.
+    DealDamage { amount: u32, source_name: String },
+    /// Destroy the chosen permanent.
+    Destroy { source_name: String },
+    /// Move chosen creature from graveyard to battlefield.
+    ReturnToBattlefield { spell_id: ObjectId },
+    /// Put +1/+1 counters on chosen creature.
+    AddCounters { count: u32 },
 }
 
 /// Game result.

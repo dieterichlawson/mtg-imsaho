@@ -903,6 +903,23 @@ impl CliPlayer {
                 format!("Discard {}", names.join(", "))
             }
             Action::Concede => "Concede".into(),
+            Action::ResolveChoice { choice } => {
+                use mtg_engine::actions::ResolvedChoice;
+                match choice {
+                    ResolvedChoice::PayDecision(true) => "Pay {1}".into(),
+                    ResolvedChoice::PayDecision(false) => "Don't pay (spell is countered)".into(),
+                    ResolvedChoice::ChosenTarget(Some(t)) => {
+                        match t {
+                            mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+                            mtg_engine::actions::Target::Player(pid) => {
+                                if *pid == view.you { "You".into() } else { "Opponent".into() }
+                            }
+                        }
+                    }
+                    ResolvedChoice::ChosenTarget(None) => "Decline (do nothing)".into(),
+                    ResolvedChoice::ChosenCard(id) => Self::perm_name(view, *id),
+                }
+            }
         }
     }
 

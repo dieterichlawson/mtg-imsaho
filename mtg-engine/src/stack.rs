@@ -24,6 +24,13 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
         behavior.on_resolve(state, object_id, &targets);
     }
 
+    // If the card set an awaiting_action, it's mid-resolution (e.g., Unburial
+    // Rites waiting for player to choose a creature). Don't clean up yet —
+    // the ResolveChoice handler in submit_action will do that.
+    if state.awaiting_action.is_some() {
+        return;
+    }
+
     // If the card is still on the stack after resolution, move it to the
     // appropriate zone. Flashback spells go to exile; others to graveyard.
     if let Some(obj) = state.get_object(object_id) {
