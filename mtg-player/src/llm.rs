@@ -445,6 +445,23 @@ impl LlmPlayer {
             Action::ActivateManaAbility { object_id, .. } => format!("Tap {}", Self::obj_name(view, *object_id)),
             Action::Concede => "Concede".into(),
             Action::DiscardCards { cards } => format!("Discard {} cards", cards.len()),
+            Action::ResolveChoice { choice } => {
+                use mtg_engine::actions::ResolvedChoice;
+                match choice {
+                    ResolvedChoice::PayDecision(true) => "Pay {1}".into(),
+                    ResolvedChoice::PayDecision(false) => "Don't pay (countered)".into(),
+                    ResolvedChoice::ChosenTarget(Some(t)) => {
+                        match t {
+                            mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
+                            mtg_engine::actions::Target::Player(pid) => {
+                                if *pid == view.you { "You".into() } else { "Opponent".into() }
+                            }
+                        }
+                    }
+                    ResolvedChoice::ChosenTarget(None) => "Decline".into(),
+                    ResolvedChoice::ChosenCard(id) => Self::obj_name(view, *id),
+                }
+            }
             other => format!("{}", other),
         }
     }
