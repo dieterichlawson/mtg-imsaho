@@ -423,17 +423,22 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
 
     // Menace: must be blocked by two or more creatures (handled at validation, not per-blocker).
 
-    // "Can't be blocked except by flying/reach" (e.g., Orchard Spirit).
-    if state.has_continuous_effect(attacker_id, &|e| {
-        match e {
-            crate::types::ContinuousEffect::CantBeBlockedExceptFlying { scope } => Some(scope),
-            _ => None,
+    // Block restriction (e.g., Orchard Spirit: only flying/reach can block).
+    for source in state.objects.values() {
+        if source.zone != crate::types::Zone::Battlefield {
+            continue;
         }
-    }, registry) {
-        // Allow blocking only by creatures with flying or reach.
-        if !state.has_keyword(blocker_id, Keyword::Flying, registry)
-            && !state.has_keyword(blocker_id, Keyword::Reach, registry) {
-            return false;
+        if let Some(behavior) = registry.get(source.card_id) {
+            for effect in &behavior.card_data().continuous_effects {
+                if let crate::types::ContinuousEffect::BlockRestriction { allowed_blockers, scope } = effect {
+                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
+                        // This attacker has a block restriction. Check if the blocker passes the filter.
+                        if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
+                            return false;
+                        }
+                    }
+                }
+            }
         }
     }
 

@@ -393,7 +393,7 @@ impl GameState {
 
     /// Check if a creature matches a CreatureFilter, evaluated from the perspective
     /// of the effect's source permanent.
-    fn matches_filter(
+    pub fn matches_filter(
         &self,
         creature_id: ObjectId,
         filter: &crate::types::CreatureFilter,
@@ -416,6 +416,7 @@ impl GameState {
             }
             CreatureFilter::HasKeyword(kw) => self.has_keyword(creature_id, *kw, registry),
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
+            CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Not(inner) => !self.matches_filter(creature_id, inner, source_controller, registry),
         }
     }

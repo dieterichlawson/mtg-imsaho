@@ -317,6 +317,8 @@ pub enum CreatureFilter {
     HasKeyword(Keyword),
     /// Intersection: all conditions must match.
     And(Vec<CreatureFilter>),
+    /// Union: any condition matches.
+    Or(Vec<CreatureFilter>),
     /// Negation.
     Not(Box<CreatureFilter>),
 }
@@ -346,8 +348,9 @@ pub enum ContinuousEffect {
     PreventBlock { scope: EffectScope },
     /// Creature can't be blocked.
     CantBeBlocked { scope: EffectScope },
-    /// Creature can't be blocked except by creatures with flying or reach.
-    CantBeBlockedExceptFlying { scope: EffectScope },
+    /// Creature can only be blocked by creatures matching the filter.
+    /// Used for Orchard Spirit (flying/reach), Skulk (power < N), Shadow, Fear, etc.
+    BlockRestriction { allowed_blockers: CreatureFilter, scope: EffectScope },
     /// Prevent all combat damage dealt to and by creature.
     PreventCombatDamage { scope: EffectScope },
     /// Creature doesn't untap during controller's untap step.
