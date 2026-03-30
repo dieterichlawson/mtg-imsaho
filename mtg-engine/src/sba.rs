@@ -122,7 +122,7 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
                     if let Some(obj) = state.get_object_mut(id) {
                         obj.tapped = true;
                         obj.damage_marked = 0;
-                        obj.dealt_deathtouch_damage = false;
+                        obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
                         obj.regeneration_shields -= 1;
                     }
                     state.log(LogLevel::Event, format!("{} regenerated",

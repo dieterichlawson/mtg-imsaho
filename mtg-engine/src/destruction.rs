@@ -66,7 +66,7 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
     if let Some(obj) = state.get_object_mut(id) {
         obj.tapped = true;
         obj.damage_marked = 0;
-        obj.dealt_deathtouch_damage = false;
+        obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
         obj.regeneration_shields -= 1;
     }
     remove_from_combat(state, id);

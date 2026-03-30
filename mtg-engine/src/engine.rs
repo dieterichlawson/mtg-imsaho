@@ -1489,7 +1489,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             for id in damaged {
                 let obj = state.get_object_mut(id).expect("object must exist for damage clear");
                 obj.damage_marked = 0;
-                obj.dealt_deathtouch_damage = false;
+                obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
             }
 
             // Remove "until end of turn" effects.

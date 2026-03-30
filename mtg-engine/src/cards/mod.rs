@@ -109,6 +109,16 @@ pub mod spider_spawning;
 pub mod wreath_of_geists;
 pub mod geist_honored_monk;
 pub mod geistcatchers_rig;
+pub mod champion_of_the_parish;
+pub mod stromkirk_noble;
+pub mod stromkirk_patrol;
+pub mod bloodcrazed_neonate;
+pub mod falkenrath_marauders;
+pub mod rakish_heir;
+pub mod sturmgeist;
+pub mod curiosity;
+pub mod balefire_dragon;
+pub mod abattoir_ghoul;
 
 use std::collections::HashMap;
 
@@ -167,6 +177,8 @@ pub enum TriggerKind {
     AnyCreatureEnters,
     /// When this creature deals combat damage to a player.
     CombatDamageToPlayer,
+    /// Whenever any creature deals combat damage to a player (watches others).
+    AnyCombatDamageToPlayer,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -307,6 +319,11 @@ pub trait CardBehavior: Send + Sync {
     /// Called when this creature deals combat damage to a player.
     /// Used by Stromkirk Noble, Falkenrath Marauders, Sturmgeist, etc.
     fn on_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+
+    /// Called when ANY creature deals combat damage to a player.
+    /// `self_id` is this permanent (the watcher), `source_id` is the creature that dealt damage.
+    /// Used by Rakish Heir (watches Vampires) and Curiosity (watches enchanted creature).
+    fn on_any_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
@@ -506,6 +523,17 @@ impl CardRegistry {
         reg.register(Box::new(wreath_of_geists::WreathOfGeists));
         reg.register(Box::new(geist_honored_monk::GeistHonoredMonk));
         reg.register(Box::new(geistcatchers_rig::GeistcatchersRig));
+        // Innistrad Tier 6 creatures
+        reg.register(Box::new(champion_of_the_parish::ChampionOfTheParish));
+        reg.register(Box::new(stromkirk_noble::StromkirkNoble));
+        reg.register(Box::new(stromkirk_patrol::StromkirkPatrol));
+        reg.register(Box::new(bloodcrazed_neonate::BloodcrazedNeonate));
+        reg.register(Box::new(falkenrath_marauders::FalkenrathMarauders));
+        reg.register(Box::new(rakish_heir::RakishHeir));
+        reg.register(Box::new(sturmgeist::Sturmgeist));
+        reg.register(Box::new(curiosity::Curiosity));
+        reg.register(Box::new(balefire_dragon::BalefireDragon));
+        reg.register(Box::new(abattoir_ghoul::AbattoirGhoul));
         reg
     }
 }

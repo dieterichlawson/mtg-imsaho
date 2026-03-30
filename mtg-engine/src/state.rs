@@ -199,7 +199,7 @@ impl GameState {
             tapped: false,
             summoning_sick: zone == Zone::Battlefield,
             damage_marked: 0,
-            dealt_deathtouch_damage: false,
+            dealt_deathtouch_damage: false, damaged_by: Vec::new(),
             power,
             toughness,
             colors: Vec::new(),
@@ -259,7 +259,7 @@ impl GameState {
             tapped: false,
             summoning_sick: true,
             damage_marked: 0,
-            dealt_deathtouch_damage: false,
+            dealt_deathtouch_damage: false, damaged_by: Vec::new(),
             power: Some(power),
             toughness: Some(toughness),
             colors,
@@ -319,7 +319,7 @@ impl GameState {
                 obj.tapped = false;
                 obj.summoning_sick = false;
                 obj.damage_marked = 0;
-                obj.dealt_deathtouch_damage = false;
+                obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
                 obj.attached_to = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;
@@ -745,6 +745,10 @@ pub struct GameObject {
     pub tapped: bool,
     pub summoning_sick: bool,
     pub damage_marked: u32,
+    /// Which creatures have dealt damage to this creature this turn.
+    /// Used by Abattoir Ghoul ("when creature dealt damage by this dies").
+    #[serde(default)]
+    pub damaged_by: Vec<ObjectId>,
     /// Whether this creature has been dealt damage by a source with deathtouch.
     pub dealt_deathtouch_damage: bool,
 

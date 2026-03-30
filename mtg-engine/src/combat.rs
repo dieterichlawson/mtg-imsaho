@@ -267,6 +267,10 @@ fn deal_damage_to_creature(
         if has_deathtouch {
             obj.dealt_deathtouch_damage = true;
         }
+        // Track which creatures dealt damage to this creature (for Abattoir Ghoul).
+        if !obj.damaged_by.contains(&source) {
+            obj.damaged_by.push(source);
+        }
     }
     state.events.push(GameEvent::CombatDamageDealt {
         source,

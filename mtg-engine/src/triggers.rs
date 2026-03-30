@@ -50,6 +50,16 @@ pub enum PendingTrigger {
         amount: u32,
         description: String,
     },
+    /// A watcher observing another creature's combat damage to a player.
+    CombatDamageWatch {
+        watcher_id: ObjectId,
+        watcher_card_id: CardId,
+        controller: PlayerId,
+        source_id: ObjectId,
+        damaged_player: PlayerId,
+        amount: u32,
+        description: String,
+    },
     /// A permanent leaving the battlefield trigger.
     LeftBattlefield {
         object_id: ObjectId,
@@ -67,6 +77,7 @@ impl PendingTrigger {
             PendingTrigger::EnteredBattlefield { controller, .. } => *controller,
             PendingTrigger::EnterWatch { controller, .. } => *controller,
             PendingTrigger::CombatDamageToPlayer { controller, .. } => *controller,
+            PendingTrigger::CombatDamageWatch { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
         }
     }
@@ -112,6 +123,13 @@ impl PendingTrigger {
                     format!("{}'s combat damage trigger", card_name(*creature_card_id))
                 } else {
                     format!("{}'s combat damage trigger ({})", card_name(*creature_card_id), description)
+                }
+            }
+            PendingTrigger::CombatDamageWatch { watcher_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s triggered ability", card_name(*watcher_card_id))
+                } else {
+                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
                 }
             }
             PendingTrigger::LeftBattlefield { card_id, description, .. } => {
@@ -286,6 +304,33 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                                     }
                                 }
                             }
+
+                            // Combat damage watchers: notify other permanents.
+                            let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                                .filter(|o| o.zone == Zone::Battlefield && o.id != source_id)
+                                .map(|o| (o.id, o.card_id, o.controller))
+                                .collect();
+                            for (watcher_id, watcher_card_id, watcher_controller) in watchers {
+                                if registry.get(watcher_card_id).is_some() {
+                                    let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCombatDamageToPlayer);
+                                    if !desc.is_empty() {
+                                        let trigger = PendingTrigger::CombatDamageWatch {
+                                            watcher_id,
+                                            watcher_card_id,
+                                            controller: watcher_controller,
+                                            source_id,
+                                            damaged_player: *damaged_player,
+                                            amount: *amount,
+                                            description: desc,
+                                        };
+                                        if watcher_controller == active_player {
+                                            ap_triggers.push(trigger);
+                                        } else {
+                                            nap_triggers.push(trigger);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -354,10 +399,15 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::CombatDamageToPlayer { creature_id, creature_card_id, damaged_player, amount, .. } => {
-            // Creature may have died since the trigger was put on the stack, but
-            // the trigger still resolves (it's independent on the stack).
             if let Some(behavior) = registry.get(creature_card_id) {
                 behavior.on_combat_damage_to_player(state, creature_id, damaged_player, amount, registry);
+            }
+        }
+        PendingTrigger::CombatDamageWatch { watcher_id, watcher_card_id, source_id, damaged_player, amount, .. } => {
+            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(watcher_card_id) {
+                    behavior.on_any_combat_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
+                }
             }
         }
         PendingTrigger::LeftBattlefield { object_id, card_id, .. } => {
