@@ -31,6 +31,6 @@ impl CardBehavior for MidnightHaunting {
         for _ in 0..2 {
             state.create_token("Spirit", controller, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying]);
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

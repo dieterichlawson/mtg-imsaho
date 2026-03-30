@@ -22,7 +22,7 @@ impl CardBehavior for Claustrophobia {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchanted creature doesn't untap during its controller's untap step.".into(),
+            oracle_text: "When Claustrophobia enters the battlefield, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

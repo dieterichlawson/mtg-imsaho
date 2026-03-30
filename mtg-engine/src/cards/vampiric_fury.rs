@@ -26,12 +26,11 @@ impl CardBehavior for VampiricFury {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Find the controller of this spell.
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // Build a registry to look up subtypes.
-        let registry = CardRegistry::with_all_cards();
 
         // Collect vampire creature IDs controlled by this player.
         let vampire_ids: Vec<ObjectId> = state.objects.values()
@@ -65,6 +64,6 @@ impl CardBehavior for VampiricFury {
             );
         }
 
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

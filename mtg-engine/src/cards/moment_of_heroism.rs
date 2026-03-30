@@ -48,6 +48,6 @@ impl CardBehavior for MomentOfHeroism {
                 );
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

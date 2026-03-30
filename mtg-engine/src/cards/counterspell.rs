@@ -52,6 +52,6 @@ impl CardBehavior for Counterspell {
                 }
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }
