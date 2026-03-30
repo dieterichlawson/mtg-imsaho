@@ -32,9 +32,9 @@ impl CardBehavior for MausoleumGuard {
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         // Use controller (not owner) — if the creature was stolen, tokens go to the controller.
-        let owner = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
         for _ in 0..2 {
-            state.create_token("Spirit", owner, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying]);
+            state.create_token("Spirit", controller, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying]);
         }
     }
 }

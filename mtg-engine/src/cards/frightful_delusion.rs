@@ -75,6 +75,7 @@ impl CardBehavior for FrightfulDelusion {
                         .iter().map(|o| o.id).collect();
                     if hand.len() == 1 {
                         state.move_object(hand[0], Zone::Graveyard);
+                        state.events.push(crate::events::GameEvent::Discarded { player: controller, object: hand[0] });
                         state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
                     } else if !hand.is_empty() {
                         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {

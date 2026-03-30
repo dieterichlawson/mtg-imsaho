@@ -940,6 +940,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             new_state.move_spell_after_resolve(*spell_id);
                             new_state.log(LogLevel::Event, format!("{} was countered", name));
                         } else {
+                            // Deduct {1} from the player's mana pool.
+                            let controller = new_state.get_object(*spell_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+                            let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
+                            let _ = mana::auto_pay(&mut new_state.get_player_mut(controller).mana_pool, &cost);
                             new_state.log(LogLevel::Event, "Paid {1} to prevent counter".into());
                         }
                         // Controller discards a card — player chooses which.
@@ -948,6 +952,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             .iter().map(|o| o.id).collect();
                         if hand.len() == 1 {
                             new_state.move_object(hand[0], Zone::Graveyard);
+                            new_state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
                             new_state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
                         } else if !hand.is_empty() {
                             new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -975,6 +980,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                 .iter().map(|o| o.id).collect();
                             if hand.len() == 1 {
                                 new_state.move_object(hand[0], Zone::Graveyard);
+                                new_state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
                                 new_state.log(LogLevel::Event, format!("Drew and discarded a card"));
                             } else if !hand.is_empty() {
                                 new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {

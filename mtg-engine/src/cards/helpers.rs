@@ -112,7 +112,8 @@ pub fn present_target_choice(
     }
     if targets.len() == 1 && !optional {
         // Mandatory with exactly 1 target — auto-apply.
-        crate::engine::apply_pending_effect(state, &targets[0], &effect, &crate::cards::CardRegistry::with_all_cards());
+        let reg = crate::cards::CardRegistry::with_all_cards();
+        crate::engine::apply_pending_effect(state, &targets[0], &effect, &reg);
         return;
     }
     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {

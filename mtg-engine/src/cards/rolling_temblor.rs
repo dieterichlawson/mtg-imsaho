@@ -33,8 +33,15 @@ impl CardBehavior for RollingTemblor {
             .map(|o| o.id)
             .collect();
         for id in creatures {
-            if !state.has_keyword(id, Keyword::Flying, &registry) {
-                state.get_object_mut(id).unwrap().damage_marked += 2;
+            if !state.has_keyword(id, Keyword::Flying, registry) {
+                if let Some(obj) = state.get_object_mut(id) {
+                    obj.damage_marked += 2;
+                }
+                state.events.push(crate::events::GameEvent::CombatDamageDealt {
+                    source: object_id,
+                    target: crate::events::DamageTarget::Object(id),
+                    amount: 2,
+                });
             }
         }
         state.move_spell_after_resolve(object_id);

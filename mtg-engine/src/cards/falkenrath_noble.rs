@@ -38,8 +38,8 @@ impl CardBehavior for FalkenrathNoble {
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         // "This creature dies" — trigger fires even when Noble itself dies.
-        // Use the owner since the Noble is already in the graveyard.
-        let controller = state.get_object(object_id).map(|o| o.owner).unwrap_or(PlayerId(0));
+        // Use controller (last known information from when it was on the battlefield).
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
         drain(state, controller);
     }
 
