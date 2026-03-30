@@ -1268,13 +1268,20 @@ fn has_castable_with_potential_mana(
     }
 
     // Check if any spell in hand could be cast with this potential mana.
-    // For instant-speed spells, only count them as meaningful if there's
-    // something on the stack to respond to. This prevents prompting at
-    // every step just because the player has an instant + mana.
+    // For instant-speed spells, only count them as meaningful when something
+    // interesting is happening (stack items, active combat). This prevents
+    // prompting at every step just because the player has an instant + mana.
     let is_sorcery_speed = state.step.is_main_phase()
         && state.stack.is_empty()
         && state.active_player == player;
     let stack_has_items = !state.stack.is_empty();
+    // Instants are relevant during Declare Attackers / Declare Blockers
+    // (key combat trick windows), but not during Combat Damage / End Combat.
+    let in_key_combat_step = state.combat.as_ref()
+        .map(|c| !c.attackers.is_empty())
+        .unwrap_or(false)
+        && matches!(state.step, Step::DeclareAttackers | Step::DeclareBlockers);
+    let instants_relevant = stack_has_items || in_key_combat_step;
 
     for obj in state.objects_in_zone(Zone::Hand, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
@@ -1284,7 +1291,7 @@ fn has_castable_with_potential_mana(
             let is_instant = data.card_types.contains(&CardType::Instant);
             let has_flash = data.keywords.contains(&Keyword::Flash);
             let can_cast_timing = if is_instant || has_flash {
-                stack_has_items
+                instants_relevant
             } else if data.card_types.contains(&CardType::Sorcery)
                 || data.card_types.contains(&CardType::Creature)
                 || data.card_types.contains(&CardType::Enchantment)
