@@ -200,11 +200,6 @@ pub trait CardBehavior: Send + Sync {
         true
     }
 
-    /// Keywords this permanent grants to the creature it's attached to (for auras).
-    fn granted_keywords(&self) -> Vec<Keyword> {
-        vec![]
-    }
-
     /// Called when this permanent enters the battlefield (ETB trigger).
     fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 

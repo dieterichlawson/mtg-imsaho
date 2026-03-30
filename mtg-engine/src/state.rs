@@ -636,19 +636,7 @@ impl GameState {
             return true;
         }
 
-        // 3. Legacy: keywords granted by attached auras via granted_keywords() trait method.
-        // (Kept for backwards compat until all cards use continuous_effects.)
-        for attached in self.objects.values() {
-            if attached.zone == Zone::Battlefield && attached.attached_to == Some(creature_id) {
-                if let Some(behavior) = registry.get(attached.card_id) {
-                    if behavior.granted_keywords().contains(&keyword) {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        // 4. Temporary keyword grants (until end of turn).
+        // 3. Temporary keyword grants (until end of turn).
         for grant in &self.until_end_of_turn_keywords {
             if grant.target == creature_id && grant.keyword == keyword {
                 return true;

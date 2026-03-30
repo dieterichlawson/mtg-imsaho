@@ -36,10 +36,6 @@ impl CardBehavior for GhostlyPossession {
         TargetRequirement::Creature
     }
 
-    fn granted_keywords(&self) -> Vec<Keyword> {
-        vec![Keyword::Flying]
-    }
-
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         crate::cards::helpers::resolve_aura(state, object_id, targets);
     }
