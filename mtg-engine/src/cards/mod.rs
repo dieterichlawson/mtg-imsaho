@@ -264,6 +264,14 @@ pub trait CardBehavior: Send + Sync {
         true
     }
 
+    /// Dynamic power/toughness for cards whose P/T depends on game state.
+    /// Returns Some((power, toughness)) to override base P/T, or None for normal P/T.
+    /// Called by effective_power/effective_toughness during P/T computation.
+    /// Examples: Geist-Honored Monk (creatures you control), Wreath of Geists (creatures in graveyard).
+    fn dynamic_pt(&self, _state: &GameState, _object_id: ObjectId) -> Option<(i32, i32)> {
+        None
+    }
+
     /// Called when this permanent enters the battlefield (ETB trigger).
     fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 

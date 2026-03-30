@@ -464,13 +464,20 @@ impl GameState {
                     }
                 }
             } else if let Some(behavior) = registry.get(source.card_id) {
-                // Fall back to card-level effects.
+                // Card-level static effects.
                 for effect in &behavior.card_data().continuous_effects {
                     if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
                         if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
                             power += p;
                             toughness += t;
                         }
+                    }
+                }
+                // Dynamic P/T from auras (e.g., Wreath of Geists: +X/+X where X = creatures in graveyard).
+                if source.attached_to == Some(creature_id) {
+                    if let Some((p, t)) = behavior.dynamic_pt(self, source.id) {
+                        power += p;
+                        toughness += t;
                     }
                 }
             }
@@ -512,12 +519,22 @@ impl GameState {
     }
 
     /// Get the effective power of a creature, including continuous effects,
-    /// counters, and "until end of turn" effects.
+    /// dynamic P/T, counters, and "until end of turn" effects.
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
-        let mut power = obj.power?;
 
-        // Continuous effects (auras, anthems, debuffs).
+        // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
+        let mut power = if let Some(behavior) = registry.get(obj.card_id) {
+            if let Some((p, _)) = behavior.dynamic_pt(self, id) {
+                p
+            } else {
+                obj.power?
+            }
+        } else {
+            obj.power?
+        };
+
+        // Continuous effects (auras, anthems, debuffs — including dynamic aura P/T).
         let (p_mod, _) = self.continuous_pt_mods(id, registry);
         power += p_mod;
 
@@ -538,7 +555,17 @@ impl GameState {
     /// Get the effective toughness of a creature.
     pub fn effective_toughness(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
-        let mut toughness = obj.toughness?;
+
+        // Check if this creature's own card has dynamic P/T.
+        let mut toughness = if let Some(behavior) = registry.get(obj.card_id) {
+            if let Some((_, t)) = behavior.dynamic_pt(self, id) {
+                t
+            } else {
+                obj.toughness?
+            }
+        } else {
+            obj.toughness?
+        };
 
         let (_, t_mod) = self.continuous_pt_mods(id, registry);
         toughness += t_mod;
