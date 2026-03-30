@@ -23,14 +23,14 @@ pub fn game_at_step(step: Step, active: PlayerId) -> GameState {
 
 /// Place a creature on the battlefield that is ready to act (no summoning sickness).
 pub fn ready_creature(state: &mut GameState, owner: PlayerId, power: i32, toughness: i32) -> ObjectId {
-    let id = state.create_object(CardId(99), owner, Zone::Battlefield, Some(power), Some(toughness));
+    let id = state.create_object(CardId(9999), owner, Zone::Battlefield, Some(power), Some(toughness));
     state.get_object_mut(id).unwrap().summoning_sick = false;
     id
 }
 
 /// Place a creature on the battlefield with summoning sickness.
 pub fn sick_creature(state: &mut GameState, owner: PlayerId, power: i32, toughness: i32) -> ObjectId {
-    state.create_object(CardId(99), owner, Zone::Battlefield, Some(power), Some(toughness))
+    state.create_object(CardId(9999), owner, Zone::Battlefield, Some(power), Some(toughness))
 }
 
 /// Put a named card into a player's hand. Returns the object ID.

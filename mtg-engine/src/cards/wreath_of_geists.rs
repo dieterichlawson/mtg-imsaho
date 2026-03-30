@@ -1,0 +1,45 @@
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+/// Wreath of Geists — {G} Aura enchantment.
+/// Enchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.
+pub struct WreathOfGeists;
+
+impl CardBehavior for WreathOfGeists {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Wreath of Geists".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Colored(Color::Green),
+            ])),
+            card_types: vec![CardType::Enchantment],
+            supertypes: vec![],
+            subtypes: vec!["Aura".into()],
+            power: None,
+            toughness: None,
+            oracle_text: "Enchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.".into(),
+            keywords: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+        }
+    }
+
+    fn target_requirement(&self) -> TargetRequirement {
+        TargetRequirement::Creature
+    }
+
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+        // The controller of the aura determines whose graveyard to count.
+        let controller = state.get_object(object_id)?.controller;
+        let creature_count = state.objects.values()
+            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.power.is_some())
+            .count() as i32;
+        Some((creature_count, creature_count))
+    }
+
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+        crate::cards::helpers::resolve_aura(state, object_id, targets);
+    }
+}
