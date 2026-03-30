@@ -156,10 +156,19 @@ impl CliPlayer {
                 if srow >= stack_h as u16 { break; }
                 let who = if item.controller == view.you { "you" } else { "opp" };
                 let text = format!("{} ({})", item.name, who);
-                let truncated: String = text.chars().take(left_w.saturating_sub(1)).collect();
-                let _ = execute!(out, cursor::MoveTo(1, srow),
-                    Print(&truncated));
-                srow += 1;
+                // Wrap if too long for panel.
+                let max_w = left_w.saturating_sub(1);
+                let mut remaining = text.as_str();
+                while !remaining.is_empty() && (srow as usize) < stack_h {
+                    let end = remaining.char_indices()
+                        .nth(max_w)
+                        .map(|(i, _)| i)
+                        .unwrap_or(remaining.len());
+                    let (line, rest) = remaining.split_at(end);
+                    let _ = execute!(out, cursor::MoveTo(1, srow), Print(line));
+                    srow += 1;
+                    remaining = rest;
+                }
                 for target in &item.targets {
                     if srow >= stack_h as u16 { break; }
                     let target_name = match target {
@@ -189,13 +198,33 @@ impl CliPlayer {
             SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
         if !log.is_empty() {
             let log_visible = h.saturating_sub(log_start + 2);
-            let start = if log.len() > log_visible { log.len() - log_visible } else { 0 };
-            for (i, entry) in log[start..].iter().enumerate() {
+            let max_chars = left_w.saturating_sub(1);
+            // Wrap log entries that are too long for the panel.
+            let mut wrapped: Vec<&str> = Vec::new();
+            for entry in log.iter() {
+                let entry = entry.as_str();
+                if entry.chars().count() <= max_chars {
+                    wrapped.push(entry);
+                } else {
+                    // Simple char-boundary wrap (not word-aware, but avoids mid-char breaks).
+                    let mut remaining = entry;
+                    while !remaining.is_empty() {
+                        let end = remaining.char_indices()
+                            .nth(max_chars)
+                            .map(|(i, _)| i)
+                            .unwrap_or(remaining.len());
+                        let (line, rest) = remaining.split_at(end);
+                        wrapped.push(line);
+                        remaining = rest;
+                    }
+                }
+            }
+            let start = if wrapped.len() > log_visible { wrapped.len() - log_visible } else { 0 };
+            for (i, line) in wrapped[start..].iter().enumerate() {
                 let r = (log_start + 1 + i) as u16;
                 if r >= term_h - 1 { break; }
-                let truncated: String = entry.chars().take(left_w.saturating_sub(1)).collect();
                 let _ = execute!(out, cursor::MoveTo(1, r),
-                    SetAttribute(Attribute::Dim), Print(&truncated), SetAttribute(Attribute::Reset));
+                    SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
             }
         }
 
@@ -467,8 +496,7 @@ impl CliPlayer {
                 let flags = format!("{}{}",
                     if c.tapped { " [T]" } else { "" },
                     if c.summoning_sick { " [S]" } else { "" });
-                let id_tag = format!(" #{}", c.object_id.0);
-                let text = format!("  {}{}{}{}{}{}", c.name, pt, auras, dmg, flags, id_tag);
+                let text = format!("  {}{}{}{}{}", c.name, pt, auras, dmg, flags);
                 let truncated: String = text.chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
                     SetForegroundColor(color), Print(&truncated), ResetColor);
@@ -477,12 +505,12 @@ impl CliPlayer {
             for e in &enchantments {
                 if e.attached_to.is_some() { continue; }
                 let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(Color::Magenta), Print(format!("  {} #{}", e.name, e.object_id.0)), ResetColor);
+                    SetForegroundColor(Color::Magenta), Print(format!("  {}", e.name)), ResetColor);
                 *row += 1;
             }
             for a in &artifacts {
                 let t = if a.tapped { " [T]" } else { "" };
-                let _ = execute!(out, cursor::MoveTo(col, *row), Print(format!("  {}{} #{}", a.name, t, a.object_id.0)));
+                let _ = execute!(out, cursor::MoveTo(col, *row), Print(format!("  {}{}", a.name, t)));
                 *row += 1;
             }
         };
@@ -1065,7 +1093,7 @@ impl CliPlayer {
                 let _ = execute!(out,
                     SetAttribute(Attribute::Bold), Print(format!("  {:>2}", idx)),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{}{} #{}\n", perm.name, pt, flags, perm.object_id.0)));
+                    Print(format!(": {}{}{}\n", perm.name, pt, flags)));
                 idx += 1;
             }
 
@@ -1083,7 +1111,7 @@ impl CliPlayer {
                 let _ = execute!(out,
                     SetAttribute(Attribute::Bold), Print(format!("  {:>2}", idx)),
                     SetAttribute(Attribute::Reset),
-                    Print(format!(": {}{}{} #{}\n", perm.name, pt, flags, perm.object_id.0)));
+                    Print(format!(": {}{}{}\n", perm.name, pt, flags)));
                 idx += 1;
             }
 
@@ -1394,12 +1422,12 @@ impl CliPlayer {
 
         loop {
             let _ = execute!(stdout(), cursor::MoveTo(col, r));
-            let input = Self::read_line("  Attack (numbers/all/enter=none)> ");
+            let input = Self::read_line("  Attack (numbers/all/none)> ");
 
-            if input.is_empty() {
+            if input == "none" || input == "n" {
                 return Action::DeclareAttackers { attackers: vec![] };
             }
-            if input == "all" {
+            if input.is_empty() || input == "all" || input == "a" {
                 return Action::DeclareAttackers {
                     attackers: eligible.iter().map(|&id| (id, defending)).collect(),
                 };
@@ -1412,7 +1440,7 @@ impl CliPlayer {
                     attackers: indices.iter().map(|&i| (eligible[i], defending)).collect(),
                 };
             }
-            println!("  Invalid. Enter numbers like '0 2', 'all', or press enter.");
+            println!("  Invalid. Enter numbers like '0 2', 'all', 'a', or 'none'.");
         }
     }
 
