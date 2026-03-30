@@ -29,7 +29,7 @@ impl CardBehavior for RangersGuile {
         TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)

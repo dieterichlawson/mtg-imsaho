@@ -30,7 +30,7 @@ impl CardBehavior for VictimOfNight {
         TargetRequirement::CreatureWithFilter(TargetFilter::NotSubtypes(vec!["Vampire".into(), "Werewolf".into(), "Zombie".into()]))
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 let obj = match state.get_object(*id) {
@@ -38,7 +38,6 @@ impl CardBehavior for VictimOfNight {
                     None => return false,
                 };
                 if obj.zone != Zone::Battlefield || obj.power.is_none() { return false; }
-                let registry = crate::cards::CardRegistry::with_all_cards();
                 if let Some(data) = registry.card_data(obj.card_id) {
                     !data.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie")
                 } else {

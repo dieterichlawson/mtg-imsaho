@@ -275,7 +275,7 @@ pub trait CardBehavior: Send + Sync {
 
     /// Check if a specific target is valid for this spell.
     /// Called for each potential target when building legal actions.
-    fn is_valid_target(&self, _state: &GameState, _caster: PlayerId, _target: &Target) -> bool {
+    fn is_valid_target(&self, _state: &GameState, _caster: PlayerId, _target: &Target, _registry: &CardRegistry) -> bool {
         true
     }
 

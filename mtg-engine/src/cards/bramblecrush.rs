@@ -31,14 +31,13 @@ impl CardBehavior for Bramblecrush {
         TargetRequirement::PermanentWithFilter(TargetFilter::Noncreature)
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 let obj = match state.get_object(*id) {
                     Some(o) if o.zone == Zone::Battlefield => o,
                     _ => return false,
                 };
-                let registry = crate::cards::CardRegistry::with_all_cards();
                 registry.card_data(obj.card_id)
                     .map(|d| !d.card_types.contains(&CardType::Creature))
                     .unwrap_or(false)

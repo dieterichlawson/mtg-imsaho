@@ -30,7 +30,7 @@ impl CardBehavior for Counterspell {
         TargetRequirement::Spell
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)

@@ -376,7 +376,7 @@ fn generate_cast_actions_with_targets(
                 if obj.power.is_some() { // is a creature
                     if !can_be_targeted(state, obj.id, caster, registry) { continue; }
                     let target = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, caster, &target) {
+                    if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
@@ -387,7 +387,7 @@ fn generate_cast_actions_with_targets(
             for player in &state.players {
                 if !player.lost {
                     let target = Target::Player(player.id);
-                    if behavior.is_valid_target(state, caster, &target) {
+                    if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
@@ -403,7 +403,7 @@ fn generate_cast_actions_with_targets(
                 if obj.power.is_some() { // is a creature
                     if !can_be_targeted(state, obj.id, caster, registry) { continue; }
                     let target = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, caster, &target) {
+                    if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
@@ -418,7 +418,7 @@ fn generate_cast_actions_with_targets(
             for player in &state.players {
                 if !player.lost {
                     let target = Target::Player(player.id);
-                    if behavior.is_valid_target(state, caster, &target) {
+                    if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
@@ -438,7 +438,7 @@ fn generate_cast_actions_with_targets(
                 // Don't let a spell target itself on the stack.
                 if stack_obj_id == spell_id { continue; }
                 let target = Target::Object(stack_obj_id);
-                if behavior.is_valid_target(state, caster, &target) {
+                if behavior.is_valid_target(state, caster, &target, registry) {
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
@@ -454,7 +454,7 @@ fn generate_cast_actions_with_targets(
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 if !can_be_targeted(state, obj.id, caster, registry) { continue; }
                 let target = Target::Object(obj.id);
-                if behavior.is_valid_target(state, caster, &target) {
+                if behavior.is_valid_target(state, caster, &target, registry) {
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
@@ -528,7 +528,7 @@ fn valid_targets_for_req(
                 .filter(|o| o.power.is_some())
                 .filter(|o| can_be_targeted(state, o.id, caster, registry))
                 .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
         TargetRequirement::Spell => {
@@ -537,14 +537,14 @@ fn valid_targets_for_req(
                 .filter_map(|e| e.as_spell())
                 .filter(|&id| id != spell_id)
                 .map(|id| Target::Object(id))
-                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
         TargetRequirement::PermanentWithFilter(_) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| can_be_targeted(state, o.id, caster, registry))
                 .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
         TargetRequirement::AnyTarget => {
@@ -552,12 +552,12 @@ fn valid_targets_for_req(
                 .filter(|o| o.power.is_some())
                 .filter(|o| can_be_targeted(state, o.id, caster, registry))
                 .map(|o| Target::Object(o.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
             for p in &state.players {
                 if !p.lost {
                     let t = Target::Player(p.id);
-                    if behavior.is_valid_target(state, caster, &t) {
+                    if behavior.is_valid_target(state, caster, &t, registry) {
                         targets.push(t);
                     }
                 }
@@ -568,7 +568,7 @@ fn valid_targets_for_req(
             state.players.iter()
                 .filter(|p| !p.lost)
                 .map(|p| Target::Player(p.id))
-                .filter(|t| behavior.is_valid_target(state, caster, t))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
         _ => vec![],

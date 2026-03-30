@@ -30,16 +30,15 @@ impl CardBehavior for SmiteTheMonstrous {
         TargetRequirement::CreatureWithFilter(TargetFilter::PowerAtLeast(4))
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
-                state.get_object(*id)
-                    .map(|o| {
-                        o.zone == Zone::Battlefield
-                            && o.power.is_some()
-                            && o.power.unwrap_or(0) >= 4
-                    })
-                    .unwrap_or(false)
+                let obj = match state.get_object(*id) {
+                    Some(o) if o.zone == Zone::Battlefield && o.power.is_some() => o,
+                    _ => return false,
+                };
+                // Use effective power (accounts for buffs/debuffs/counters).
+                state.effective_power(obj.id, registry).unwrap_or(0) >= 4
             }
             Target::Player(_) => false,
         }
