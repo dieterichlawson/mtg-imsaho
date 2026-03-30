@@ -330,8 +330,12 @@ pub enum EffectScope {
     OnSelf,
     /// Affects the creature this aura/equipment is attached to.
     Attached,
-    /// Affects all creatures matching a filter (anthem-style).
+    /// Affects all creatures matching a filter, INCLUDING the source permanent.
+    /// Used for "Creatures you control get +1/+1" (Glorious Anthem).
     Global(CreatureFilter),
+    /// Affects all creatures matching a filter, EXCLUDING the source permanent.
+    /// Used for "Other Spirit creatures you control get +1/+0" (lords).
+    GlobalOther(CreatureFilter),
 }
 
 /// A declarative continuous effect on a card. The engine reads these

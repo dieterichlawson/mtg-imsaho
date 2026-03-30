@@ -25,7 +25,7 @@ impl CardBehavior for BattlegroundGeist {
                 ContinuousEffect::ModifyPT {
                     power: 1,
                     toughness: 0,
-                    scope: EffectScope::Global(CreatureFilter::And(vec![
+                    scope: EffectScope::GlobalOther(CreatureFilter::And(vec![
                         CreatureFilter::You,
                         CreatureFilter::HasSubtype("Spirit".into()),
                     ])),

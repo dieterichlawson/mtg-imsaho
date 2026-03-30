@@ -440,6 +440,9 @@ impl GameState {
                     .unwrap_or(false)
             }
             EffectScope::Global(filter) => {
+                self.matches_filter(creature_id, filter, source_controller, registry)
+            }
+            EffectScope::GlobalOther(filter) => {
                 creature_id != source_id && self.matches_filter(creature_id, filter, source_controller, registry)
             }
         }

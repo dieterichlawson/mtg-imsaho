@@ -25,7 +25,7 @@ impl CardBehavior for GallowsWarden {
                 ContinuousEffect::ModifyPT {
                     power: 0,
                     toughness: 1,
-                    scope: EffectScope::Global(CreatureFilter::And(vec![
+                    scope: EffectScope::GlobalOther(CreatureFilter::And(vec![
                         CreatureFilter::You,
                         CreatureFilter::HasSubtype("Spirit".into()),
                     ])),
