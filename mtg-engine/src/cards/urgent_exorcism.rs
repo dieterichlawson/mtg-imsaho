@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
+use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -27,7 +27,7 @@ impl CardBehavior for UrgentExorcism {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::PermanentWithFilter("Spirit or enchantment".into())
+        TargetRequirement::PermanentWithFilter(TargetFilter::SubtypeOrCardType { subtypes: vec!["Spirit".into()], card_types: vec![CardType::Enchantment] })
     }
 
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target) -> bool {

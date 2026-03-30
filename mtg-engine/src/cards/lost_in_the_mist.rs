@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
+use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, LogLevel};
 use crate::types::*;
@@ -31,7 +31,7 @@ impl CardBehavior for LostInTheMist {
     fn target_requirement(&self) -> TargetRequirement {
         TargetRequirement::TwoTargets(
             Box::new(TargetRequirement::Spell),
-            Box::new(TargetRequirement::PermanentWithFilter("any".into())),
+            Box::new(TargetRequirement::PermanentWithFilter(TargetFilter::Any)),
         )
     }
 

@@ -161,6 +161,70 @@ pub struct TriggeredAbilityDef {
     pub description: String,
 }
 
+/// Typed filter for creature or permanent targeting restrictions.
+/// Used instead of stringly-typed filters for compile-time safety.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TargetFilter {
+    /// No additional restriction beyond the base type.
+    Any,
+    /// Only creatures/permanents you control.
+    YouControl,
+    /// Only creatures/permanents you don't control.
+    YouDontControl,
+    /// Only nonblack creatures (Doom Blade).
+    Nonblack,
+    /// Only non-Vampire, non-Werewolf, non-Zombie (Victim of Night).
+    NotSubtypes(Vec<String>),
+    /// Only creatures with power >= N (Smite the Monstrous).
+    PowerAtLeast(i32),
+    /// Only attacking creatures (Rebuke).
+    Attacking,
+    /// Only noncreature permanents (Bramblecrush).
+    Noncreature,
+    /// Only permanents with specific card types (Naturalize: artifact or enchantment).
+    HasCardType(Vec<CardType>),
+    /// Only permanents with specific subtypes or card types (Urgent Exorcism: Spirit or enchantment).
+    SubtypeOrCardType { subtypes: Vec<String>, card_types: Vec<CardType> },
+}
+
+impl std::fmt::Display for TargetFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TargetFilter::Any => write!(f, "any"),
+            TargetFilter::YouControl => write!(f, "you control"),
+            TargetFilter::YouDontControl => write!(f, "you don't control"),
+            TargetFilter::Nonblack => write!(f, "nonblack"),
+            TargetFilter::NotSubtypes(types) => write!(f, "non-{}", types.join("/")),
+            TargetFilter::PowerAtLeast(n) => write!(f, "power {}+", n),
+            TargetFilter::Attacking => write!(f, "attacking"),
+            TargetFilter::Noncreature => write!(f, "noncreature"),
+            TargetFilter::HasCardType(types) => {
+                let names: Vec<&str> = types.iter().map(|t| match t {
+                    CardType::Artifact => "artifact",
+                    CardType::Enchantment => "enchantment",
+                    CardType::Creature => "creature",
+                    CardType::Instant => "instant",
+                    CardType::Sorcery => "sorcery",
+                    CardType::Land => "land",
+                    CardType::Planeswalker => "planeswalker",
+                }).collect();
+                write!(f, "{}", names.join(" or "))
+            }
+            TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
+                let mut parts: Vec<String> = subtypes.clone();
+                for t in card_types {
+                    parts.push(match t {
+                        CardType::Enchantment => "enchantment".into(),
+                        CardType::Artifact => "artifact".into(),
+                        _ => format!("{:?}", t).to_lowercase(),
+                    });
+                }
+                write!(f, "{}", parts.join(" or "))
+            }
+        }
+    }
+}
+
 /// Describes what targets a spell needs when cast.
 #[derive(Debug, Clone)]
 pub enum TargetRequirement {
@@ -171,13 +235,13 @@ pub enum TargetRequirement {
     /// Target a creature only (Giant Growth, Doom Blade)
     Creature,
     /// Target a creature matching a filter (Doom Blade: "nonblack creature")
-    CreatureWithFilter(String),
+    CreatureWithFilter(TargetFilter),
     /// Target a player only (Lava Axe)
     PlayerOnly,
     /// Target a spell on the stack (Counterspell)
     Spell,
     /// Target any permanent on the battlefield matching a filter (Naturalize, Bramblecrush)
-    PermanentWithFilter(String),
+    PermanentWithFilter(TargetFilter),
     /// Two separate targets (Prey Upon, Lost in the Mist). Engine generates Cartesian product.
     TwoTargets(Box<TargetRequirement>, Box<TargetRequirement>),
     /// Up to N targets matching the inner requirement (Travel Preparations).

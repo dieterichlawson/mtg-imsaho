@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
+use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -27,7 +27,7 @@ impl CardBehavior for SmiteTheMonstrous {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::CreatureWithFilter("power 4+".into())
+        TargetRequirement::CreatureWithFilter(TargetFilter::PowerAtLeast(4))
     }
 
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target) -> bool {

@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
+use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -27,8 +27,8 @@ impl CardBehavior for PreyUpon {
 
     fn target_requirement(&self) -> TargetRequirement {
         TargetRequirement::TwoTargets(
-            Box::new(TargetRequirement::CreatureWithFilter("you control".into())),
-            Box::new(TargetRequirement::CreatureWithFilter("you don't control".into())),
+            Box::new(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
+            Box::new(TargetRequirement::CreatureWithFilter(TargetFilter::YouDontControl)),
         )
     }
 
