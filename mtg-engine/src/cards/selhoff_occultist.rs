@@ -1,6 +1,7 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Selhoff Occultist — {2}{U} 2/3 Human Rogue.
@@ -35,20 +36,39 @@ impl CardBehavior for SelhoffOccultist {
         }
     }
 
-    /// When Selhoff Occultist itself dies, mill 1 from opponent.
+    /// When Selhoff Occultist itself dies, target player mills a card.
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        let owner = state.get_object(object_id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
-        let opponent = state.opponent(owner);
-        crate::engine::mill_cards(state, opponent, 1);
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        present_mill_choice(state, object_id, controller);
     }
 
-    /// When another creature dies, mill 1 from opponent.
+    /// When another creature dies, target player mills a card.
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
-        let opponent = state.opponent(controller);
-        crate::engine::mill_cards(state, opponent, 1);
+        present_mill_choice(state, self_id, controller);
     }
+}
+
+fn present_mill_choice(state: &mut GameState, source_id: ObjectId, controller: PlayerId) {
+    let options: Vec<Target> = state.players.iter()
+        .map(|p| Target::Player(p.id))
+        .collect();
+
+    if options.is_empty() {
+        return;
+    }
+
+    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+        player: controller,
+        source: source_id,
+        choice: ResolutionChoiceKind::ChooseTarget {
+            description: "Selhoff Occultist: target player mills a card".into(),
+            options,
+            optional: false,
+            effect: PendingEffect::Mill { count: 1, source_name: "Selhoff Occultist".into() },
+        },
+    });
 }
