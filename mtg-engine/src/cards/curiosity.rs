@@ -1,16 +1,11 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
-use crate::ids::ObjectId;
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
 
 /// Curiosity — {U} Aura. Enchant creature.
 /// Whenever enchanted creature deals damage to an opponent, you may draw a card.
-///
-/// TODO: The triggered ability is not yet implemented. It would need a hook to watch
-/// damage events from the enchanted creature (the source of the aura's attached_to).
-/// This requires an `on_enchanted_creature_deals_damage` watcher or similar mechanism.
-/// For now, only the aura attachment is implemented.
 pub struct Curiosity;
 
 impl CardBehavior for Curiosity {
@@ -29,8 +24,12 @@ impl CardBehavior for Curiosity {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
-            triggered_abilities: vec![],
-            // TODO: Add triggered ability when the watcher hook is available.
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::AnyCombatDamageToPlayer,
+                    description: "you may draw a card".into(),
+                },
+            ],
         }
     }
 
@@ -40,5 +39,30 @@ impl CardBehavior for Curiosity {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         crate::cards::helpers::resolve_aura(state, object_id, targets);
+    }
+
+    fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
+        // "Whenever enchanted creature deals damage to an opponent"
+        let aura = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => o,
+            _ => return,
+        };
+        let attached_to = match aura.attached_to {
+            Some(id) => id,
+            None => return,
+        };
+        // Only trigger if the source is the enchanted creature.
+        if source_id != attached_to {
+            return;
+        }
+        // Only trigger if damage was dealt to an opponent (not the controller).
+        let controller = aura.controller;
+        if damaged_player == controller {
+            return;
+        }
+        // "You may draw a card" — auto-draw in 2-player (always beneficial).
+        crate::engine::draw_cards(state, controller, 1);
+        state.log(crate::state::LogLevel::Event,
+            "Curiosity: drew a card".into());
     }
 }

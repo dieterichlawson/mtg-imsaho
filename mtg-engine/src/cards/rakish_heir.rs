@@ -5,11 +5,6 @@ use crate::types::*;
 
 /// Rakish Heir — {2}{R} 2/2 Vampire.
 /// Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on that Vampire.
-///
-/// TODO: The group trigger for OTHER Vampires you control is not yet implemented.
-/// Currently only triggers for Rakish Heir itself (it is a Vampire).
-/// A full implementation would need an `on_any_creature_combat_damage_to_player` watcher hook
-/// so Rakish Heir can observe combat damage events from all Vampires you control.
 pub struct RakishHeir;
 
 impl CardBehavior for RakishHeir {
@@ -34,15 +29,39 @@ impl CardBehavior for RakishHeir {
                     kind: TriggerKind::CombatDamageToPlayer,
                     description: "put a +1/+1 counter on this Vampire".into(),
                 },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::AnyCombatDamageToPlayer,
+                    description: "put a +1/+1 counter on that Vampire".into(),
+                },
             ],
         }
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        // Rakish Heir is a Vampire, so it triggers for its own combat damage.
-        // TODO: Also trigger for other Vampires you control (needs watcher hook).
+        // Rakish Heir is a Vampire — triggers for its own combat damage.
         if state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
+        }
+    }
+
+    fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {
+        // Whenever a Vampire YOU control deals combat damage to a player.
+        let controller = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            _ => return,
+        };
+        // Check if the source creature is a Vampire we control.
+        let source = match state.get_object(source_id) {
+            Some(o) if o.zone == Zone::Battlefield && o.controller == controller => o,
+            _ => return,
+        };
+        let is_vampire = registry.card_data(source.card_id)
+            .map(|d| d.subtypes.iter().any(|s| s == "Vampire"))
+            .unwrap_or(false)
+            || source.subtypes.iter().any(|s| s == "Vampire");
+        if is_vampire {
+            // Put a +1/+1 counter on THAT Vampire (the source, not Rakish Heir).
+            state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
         }
     }
 }
