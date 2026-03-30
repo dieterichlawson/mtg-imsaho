@@ -32,6 +32,24 @@ pub enum PendingTrigger {
         controller: PlayerId,
         description: String,
     },
+    /// A "whenever a creature enters the battlefield" ETB-watch trigger on another permanent.
+    EnterWatch {
+        watcher_id: ObjectId,
+        watcher_card_id: CardId,
+        controller: PlayerId,
+        entered_id: ObjectId,
+        entered_controller: PlayerId,
+        description: String,
+    },
+    /// A creature dealt combat damage to a player.
+    CombatDamageToPlayer {
+        creature_id: ObjectId,
+        creature_card_id: CardId,
+        controller: PlayerId,
+        damaged_player: PlayerId,
+        amount: u32,
+        description: String,
+    },
     /// A permanent leaving the battlefield trigger.
     LeftBattlefield {
         object_id: ObjectId,
@@ -47,6 +65,8 @@ impl PendingTrigger {
             PendingTrigger::SelfDies { controller, .. } => *controller,
             PendingTrigger::DeathWatch { controller, .. } => *controller,
             PendingTrigger::EnteredBattlefield { controller, .. } => *controller,
+            PendingTrigger::EnterWatch { controller, .. } => *controller,
+            PendingTrigger::CombatDamageToPlayer { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
         }
     }
@@ -78,6 +98,20 @@ impl PendingTrigger {
                     format!("{}'s ETB trigger", card_name(*card_id))
                 } else {
                     format!("{}'s ETB trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::EnterWatch { watcher_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s triggered ability", card_name(*watcher_card_id))
+                } else {
+                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
+                }
+            }
+            PendingTrigger::CombatDamageToPlayer { creature_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s combat damage trigger", card_name(*creature_card_id))
+                } else {
+                    format!("{}'s combat damage trigger ({})", card_name(*creature_card_id), description)
                 }
             }
             PendingTrigger::LeftBattlefield { card_id, description, .. } => {
@@ -121,6 +155,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     _ => continue,
                 };
                 // Only collect if the card has an on_enter_battlefield handler.
+                // Self ETB trigger.
                 if registry.get(card_id).is_some() {
                     let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield);
                     let trigger = PendingTrigger::EnteredBattlefield {
@@ -133,6 +168,34 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         ap_triggers.push(trigger);
                     } else {
                         nap_triggers.push(trigger);
+                    }
+                }
+
+                // ETB-watch: notify other permanents that a creature entered.
+                if state.get_object(*object).map(|o| o.power.is_some()).unwrap_or(false) {
+                    let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield && o.id != *object)
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+                    for (watcher_id, watcher_card_id, watcher_controller) in watchers {
+                        if registry.get(watcher_card_id).is_some() {
+                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureEnters);
+                            if !desc.is_empty() {
+                                let trigger = PendingTrigger::EnterWatch {
+                                    watcher_id,
+                                    watcher_card_id,
+                                    controller: watcher_controller,
+                                    entered_id: *object,
+                                    entered_controller: controller,
+                                    description: desc,
+                                };
+                                if watcher_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -197,6 +260,36 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     ap_triggers.push(trigger);
                 }
             }
+            GameEvent::CombatDamageDealt { source, target, amount } => {
+                // Only trigger for creature-to-player combat damage.
+                if let crate::events::DamageTarget::Player(damaged_player) = target {
+                    let source_id = *source;
+                    if let Some(obj) = state.get_object(source_id) {
+                        if obj.zone == Zone::Battlefield && obj.power.is_some() {
+                            let card_id = obj.card_id;
+                            let controller = obj.controller;
+                            if registry.get(card_id).is_some() {
+                                let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::CombatDamageToPlayer);
+                                if !desc.is_empty() {
+                                    let trigger = PendingTrigger::CombatDamageToPlayer {
+                                        creature_id: source_id,
+                                        creature_card_id: card_id,
+                                        controller,
+                                        damaged_player: *damaged_player,
+                                        amount: *amount,
+                                        description: desc,
+                                    };
+                                    if controller == active_player {
+                                        ap_triggers.push(trigger);
+                                    } else {
+                                        nap_triggers.push(trigger);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -251,6 +344,20 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, registry);
                 }
+            }
+        }
+        PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {
+            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(watcher_card_id) {
+                    behavior.on_any_creature_enters(state, watcher_id, entered_id, entered_controller, registry);
+                }
+            }
+        }
+        PendingTrigger::CombatDamageToPlayer { creature_id, creature_card_id, damaged_player, amount, .. } => {
+            // Creature may have died since the trigger was put on the stack, but
+            // the trigger still resolves (it's independent on the stack).
+            if let Some(behavior) = registry.get(creature_card_id) {
+                behavior.on_combat_damage_to_player(state, creature_id, damaged_player, amount, registry);
             }
         }
         PendingTrigger::LeftBattlefield { object_id, card_id, .. } => {

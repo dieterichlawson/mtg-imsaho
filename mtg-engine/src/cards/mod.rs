@@ -163,6 +163,10 @@ pub enum TriggerKind {
     SelfDies,
     /// Whenever another creature dies (death-watch).
     AnyCreatureDies,
+    /// Whenever another creature enters the battlefield (ETB-watch).
+    AnyCreatureEnters,
+    /// When this creature deals combat damage to a player.
+    CombatDamageToPlayer,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -295,6 +299,14 @@ pub trait CardBehavior: Send + Sync {
 
     /// Called when ANY creature dies. `self_id` is this permanent, `dead_id` is the deceased.
     fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _registry: &CardRegistry) {}
+
+    /// Called when ANY creature enters the battlefield. `self_id` is this permanent, `entered_id` is the new creature.
+    /// Similar to on_any_creature_dies but for ETB. Used by Champion of the Parish.
+    fn on_any_creature_enters(&self, _state: &mut GameState, _self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) {}
+
+    /// Called when this creature deals combat damage to a player.
+    /// Used by Stromkirk Noble, Falkenrath Marauders, Sturmgeist, etc.
+    fn on_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
