@@ -33,7 +33,7 @@ impl CardBehavior for ChampionOfTheParish {
         }
     }
 
-    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, _registry: &CardRegistry) {
+    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -42,10 +42,15 @@ impl CardBehavior for ChampionOfTheParish {
         if entered_controller != controller {
             return;
         }
-        // Check if the entered creature is a Human
-        let is_human = state.get_object(entered_id)
-            .map(|o| o.subtypes.iter().any(|s| s == "Human"))
-            .unwrap_or(false);
+        // Check if the entered creature is a Human (registry data or instance subtypes)
+        let card_id = state.get_object(entered_id).map(|o| o.card_id);
+        let is_human = card_id
+            .and_then(|cid| registry.card_data(cid))
+            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+            .unwrap_or(false)
+            || state.get_object(entered_id)
+                .map(|o| o.subtypes.iter().any(|s| s == "Human"))
+                .unwrap_or(false);
         if is_human {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }
