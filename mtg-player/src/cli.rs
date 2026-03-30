@@ -30,11 +30,17 @@ impl Drop for SpinnerHandle {
 }
 
 /// A player that interacts via a terminal UI.
+/// What step/turn the player wants to auto-pass until.
+#[derive(Clone, Debug)]
+enum PassMode {
+    /// Pass until our next Main Phase 1 on a later turn.
+    UntilNextTurn { activated_turn: u32 },
+}
+
 pub struct CliPlayer {
     name: String,
-    /// When set, auto-pass priority until our next turn.
-    /// Stores the turn number when 'f' was pressed.
-    pass_until_turn_after: Option<u32>,
+    /// When set, auto-pass priority until the specified condition.
+    pass_mode: Option<PassMode>,
     /// Filter string for the card reference panel.
     card_filter: String,
 }
@@ -43,14 +49,64 @@ impl CliPlayer {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            pass_until_turn_after: None,
+            pass_mode: None,
             card_filter: String::new(),
+        }
+    }
+
+    // ── Pass mode logic ─────────────────────────────────────────────
+
+    /// Check whether the current pass mode should break and return control
+    /// to the player. Returns true if the player should be prompted.
+    fn should_break_pass(
+        &self,
+        view: &GameView,
+        legal: &mtg_engine::engine::LegalActions,
+        mode: &PassMode,
+    ) -> bool {
+        match mode {
+            PassMode::UntilNextTurn { activated_turn } => {
+                // Break at our Main Phase 1 on a later turn.
+                if view.active_player == view.you
+                    && view.turn_number > *activated_turn
+                    && view.step == Step::PrecombatMain
+                {
+                    return true;
+                }
+
+                // Break if something is on the stack AND we have a meaningful
+                // response (not just pass/concede/mana abilities).
+                if !view.stack.is_empty() {
+                    let has_response = legal.actions.iter().any(|a| !matches!(a,
+                        Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
+                    ));
+                    if has_response {
+                        return true;
+                    }
+                }
+
+                // Break at opponent's DeclareAttackers only if they have creatures
+                // that could be attacking.
+                if view.active_player != view.you
+                    && view.step == Step::DeclareAttackers
+                {
+                    let opp_has_creatures = view.battlefield.iter().any(|p| {
+                        p.controller != view.you
+                            && p.card_types.contains(&CardType::Creature)
+                    });
+                    if opp_has_creatures {
+                        return true;
+                    }
+                }
+
+                false
+            }
         }
     }
 
     // ── Rendering ──────────────────────────────────────────────────
 
-    fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str) {
+    fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
         let mut out = stdout();
         let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
 
@@ -163,9 +219,13 @@ impl CliPlayer {
 
         // Turn/phase bar
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
+        let pass_label = pass_mode_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
         let status = format!(" Turn {} - {} | {}", view.turn_number, step_name, whose_turn);
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
+        if !pass_label.is_empty() {
+            let _ = execute!(out, SetForegroundColor(Color::Yellow), Print(&pass_label), ResetColor);
+        }
         row += 1;
 
         // Compute stats
@@ -691,7 +751,7 @@ impl CliPlayer {
 
         loop {
             // Re-render with current filter
-            Self::render(view, Some(actions), None, &view.display_log, &self.card_filter);
+            Self::render(view, Some(actions), None, &view.display_log, &self.card_filter, None);
 
             // Move actual cursor to the search box in the right gutter
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -1304,7 +1364,7 @@ impl CliPlayer {
             return Action::DeclareAttackers { attackers: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "");
+        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
 
         // Get mid_col for positioning
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -1366,7 +1426,7 @@ impl CliPlayer {
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "");
+        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
@@ -1435,6 +1495,7 @@ impl Player for CliPlayer {
         let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
 
         // Auto-pass when the only options are Pass and Concede.
+        // (The engine handles the smarter mana-ability check with potential mana.)
         let only_pass_concede = legal_actions.iter().all(|a| matches!(a,
             Action::PassPriority | Action::Concede
         ));
@@ -1442,21 +1503,12 @@ impl Player for CliPlayer {
             return Action::PassPriority;
         }
 
-        // "Pass until my turn" mode (F6-like).
-        if let Some(activated_turn) = self.pass_until_turn_after {
+        // Pass mode: auto-pass until a break condition is met.
+        if let Some(ref mode) = self.pass_mode.clone() {
             if has_pass {
-                // Break if it's our turn AND we're on a later turn than when we pressed 'f'.
-                let is_new_turn = view.active_player == view.you
-                    && view.turn_number > activated_turn;
-                // Break if something is on the stack (opponent cast a spell we can respond to).
-                let stack_has_spell = !view.stack.is_empty();
-                // Break when opponent declares attackers — we need to see
-                // what's attacking and may want to flash in blockers.
-                let opponent_attacking = view.active_player != view.you
-                    && view.step == mtg_engine::types::Step::DeclareAttackers;
-
-                if is_new_turn || stack_has_spell || opponent_attacking {
-                    self.pass_until_turn_after = None;
+                let should_break = self.should_break_pass(view, legal, mode);
+                if should_break {
+                    self.pass_mode = None;
                 } else {
                     return Action::PassPriority;
                 }
@@ -1498,7 +1550,10 @@ impl Player for CliPlayer {
         }
 
         loop {
-            Self::render(view, Some(&display_labels), None, &view.display_log, &self.card_filter);
+            let pass_label = self.pass_mode.as_ref().map(|m| match m {
+                PassMode::UntilNextTurn { .. } => "AUTO-PASS",
+            });
+            Self::render(view, Some(&display_labels), None, &view.display_log, &self.card_filter, pass_label);
 
             // Read input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -1593,9 +1648,11 @@ impl Player for CliPlayer {
                     continue;
                 }
                 "f" => {
-                    // Pass until my next turn (F6-like).
+                    // Pass until my next Main Phase 1 (F6-like).
                     if has_pass {
-                        self.pass_until_turn_after = Some(view.turn_number);
+                        self.pass_mode = Some(PassMode::UntilNextTurn {
+                            activated_turn: view.turn_number,
+                        });
                         return Action::PassPriority;
                     }
                     continue;
@@ -1682,7 +1739,7 @@ impl CliPlayer {
     /// Show the game state with a spinning indicator on the opponent's
     /// caret while the AI thinks. Drop the returned handle to stop.
     pub fn start_thinking(view: &GameView) -> SpinnerHandle {
-        Self::render(view, None, None, &view.display_log, "");
+        Self::render(view, None, None, &view.display_log, "", None);
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
@@ -1720,14 +1777,27 @@ impl CliPlayer {
 
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
-            CombatPrompt::ChooseAttackers { .. } => {
-                if self.pass_until_turn_after.is_some() {
-                    return Action::DeclareAttackers { attackers: vec![] };
+            CombatPrompt::ChooseAttackers { eligible, .. } => {
+                // In pass mode, skip attacking only if we have no eligible creatures.
+                // If we have creatures, break pass mode so the player can decide.
+                if self.pass_mode.is_some() {
+                    if eligible.is_empty() {
+                        return Action::DeclareAttackers { attackers: vec![] };
+                    }
+                    // We have creatures to attack with — break pass mode.
+                    self.pass_mode = None;
                 }
                 self.choose_attackers(view, prompt)
             }
-            CombatPrompt::ChooseBlockers { .. } => {
-                self.pass_until_turn_after = None;
+            CombatPrompt::ChooseBlockers { eligible_blockers, .. } => {
+                // Always break pass mode for blockers if we have eligible blockers.
+                if !eligible_blockers.is_empty() {
+                    self.pass_mode = None;
+                }
+                // If no eligible blockers, auto-declare zero blockers.
+                if eligible_blockers.is_empty() {
+                    return Action::DeclareBlockers { assignments: vec![] };
+                }
                 self.choose_blockers(view, prompt)
             }
         }
