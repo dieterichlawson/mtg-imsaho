@@ -275,7 +275,7 @@ fn falkenrath_noble_drains_on_any_death() {
     // Falkenrath Noble on P0's side.
     let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
 
-    // A creature on P0's side to kill (Noble triggers on your creatures dying).
+    // A creature on P0's side to kill (Noble triggers on any creature dying).
     let victim = ready_creature(&mut state, P0, 1, 1);
 
     // Kill the victim.

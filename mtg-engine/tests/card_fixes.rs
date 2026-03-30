@@ -79,6 +79,36 @@ fn fiend_hunter_presents_choice_with_multiple_targets() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// Ranger's Guile (#3): "target creature you control"
+// ════════════════════════════════════════════════════════════════════
+
+/// Ranger's Guile should NOT be castable targeting an opponent's creature.
+#[test]
+fn rangers_guile_cannot_target_opponent_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P1 has a creature. P0 has Ranger's Guile.
+    let _enemy = ready_creature(&mut state, P1, 3, 3);
+    let _rg = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+
+    // Ranger's Guile should NOT appear with an opponent's creature as target.
+    let targets_enemy = legal.actions.iter().any(|a| {
+        if let Action::CastSpell { targets, .. } = a {
+            targets.iter().any(|t| {
+                if let Target::Object(id) = t { *id == _enemy } else { false }
+            })
+        } else {
+            false
+        }
+    });
+    assert!(!targets_enemy,
+        "Ranger's Guile should not be able to target opponent's creature (Oracle: 'you control')");
+}
+
+// ════════════════════════════════════════════════════════════════════
 // Morkrut Banshee (#4): can target itself
 // ════════════════════════════════════════════════════════════════════
 
