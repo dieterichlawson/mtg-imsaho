@@ -49,12 +49,10 @@ fn fiend_hunter_can_target_own_creature() {
     // has a valid target (doesn't just do nothing).
     let own_creature_zone = state.get_object(own_creature).unwrap().zone;
 
-    // If the hunter presented a choice, awaiting_action would be set.
-    // If it auto-targeted, own_creature would be exiled or not depending on bug.
-    // Correct behavior: choice is presented (awaiting_action is Some).
-    assert!(state.awaiting_action.is_some() || own_creature_zone == Zone::Exile,
-        "Fiend Hunter should be able to target own creatures. \
-         Zone: {:?}, awaiting: {:?}", own_creature_zone, state.awaiting_action.is_some());
+    // Fiend Hunter should present an optional choice including own creature.
+    assert!(state.awaiting_action.is_some(),
+        "Fiend Hunter should present a choice (not auto-target). \
+         Own creature zone: {:?}", own_creature_zone);
 }
 
 /// Fiend Hunter should present a choice when multiple targets exist.
@@ -243,11 +241,14 @@ fn murder_of_crows_presents_draw_choice() {
     let awaiting = state.awaiting_action.is_some();
     let hand_count = state.objects_in_zone(Zone::Hand, P0).len();
 
-    // After correct implementation: either awaiting a draw choice,
-    // or drew and now awaiting a discard choice.
-    assert!(awaiting || hand_count > 1,
-        "Murder of Crows should present a choice (draw or discard). \
-         Awaiting: {}, hand: {}", awaiting, hand_count);
+    // After fix: Murder of Crows draws a card, then presents a discard
+    // choice since the player now has 2+ cards in hand.
+    assert!(awaiting,
+        "Murder of Crows should present a discard choice after drawing. \
+         Hand: {}", hand_count);
+    // Hand should have the original card + the drawn card = 2 cards.
+    assert_eq!(hand_count, 2,
+        "Should have 2 cards in hand (original + drawn) before discarding");
 }
 
 // ════════════════════════════════════════════════════════════════════
