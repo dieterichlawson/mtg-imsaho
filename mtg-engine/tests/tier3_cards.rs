@@ -255,7 +255,7 @@ fn pitchburn_devils_deals_3_on_death() {
         "Opponent should lose 3 life from Pitchburn Devils dying");
 }
 
-/// Falkenrath Noble drains 1 life whenever a creature you control dies.
+/// Falkenrath Noble drains 1 life whenever any creature dies.
 #[test]
 fn falkenrath_noble_drains_on_any_death() {
     let reg = registry();

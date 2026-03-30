@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
+use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::{GameState, UntilEndOfTurnKeyword};
 use crate::types::*;
@@ -26,7 +26,18 @@ impl CardBehavior for RangersGuile {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::Creature
+        TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)
+    }
+
+    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target) -> bool {
+        match target {
+            Target::Object(id) => {
+                state.get_object(*id)
+                    .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
+                    .unwrap_or(false)
+            }
+            _ => false,
+        }
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
@@ -47,6 +58,6 @@ impl CardBehavior for RangersGuile {
                 );
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

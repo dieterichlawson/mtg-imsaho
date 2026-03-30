@@ -390,22 +390,21 @@ fn no_attackers_game_loop_skips_to_end_combat() {
 // ════════════════════════════════════════════════════════════════════
 // Bug #11: Falkenrath Noble Trigger Scope
 //
-// Falkenrath Noble's actual Oracle text: "Whenever another creature
-// you control dies, each opponent loses 1 life and you gain 1 life."
-// Current implementation triggers on ANY creature death (including
-// opponent's creatures).
+// Falkenrath Noble's Oracle text: "Whenever this creature or another
+// creature dies, target player loses 1 life and you gain 1 life."
+// Triggers on ANY creature death including itself.
 // ════════════════════════════════════════════════════════════════════
 
-/// Falkenrath Noble should NOT trigger when an opponent's creature dies.
+/// Falkenrath Noble SHOULD trigger when an opponent's creature dies.
+/// Oracle: "Whenever this creature or another creature dies" — any creature.
 #[test]
-fn falkenrath_noble_ignores_opponent_creature_death() {
+fn falkenrath_noble_triggers_on_opponent_creature_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // P0 controls Falkenrath Noble.
-    let noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
+    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
 
-    // P1 has a creature that will die.
+    // P1's creature dies.
     let enemy = ready_creature(&mut state, P1, 1, 1);
     state.get_object_mut(enemy).unwrap().damage_marked = 2;
 
@@ -415,11 +414,11 @@ fn falkenrath_noble_ignores_opponent_creature_death() {
     check_state_based_actions_with_registry(&mut state, Some(&reg));
     triggers::process_triggers(&mut state, &reg);
 
-    // Noble should NOT have triggered — opponent's creature died, not yours.
-    assert_eq!(state.get_player(P0).life, p0_life_before,
-        "Falkenrath Noble should NOT gain life when opponent's creature dies");
-    assert_eq!(state.get_player(P1).life, p1_life_before,
-        "Falkenrath Noble should NOT drain opponent when opponent's creature dies");
+    // Noble SHOULD trigger — "another creature dies" includes opponent's creatures.
+    assert_eq!(state.get_player(P0).life, p0_life_before + 1,
+        "Falkenrath Noble should gain 1 life when any creature dies");
+    assert_eq!(state.get_player(P1).life, p1_life_before - 1,
+        "Falkenrath Noble should drain opponent when any creature dies");
 }
 
 /// Falkenrath Noble SHOULD trigger when your own creature dies.
@@ -428,7 +427,6 @@ fn falkenrath_noble_triggers_on_own_creature_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // P0 controls Falkenrath Noble and a creature that will die.
     let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
     let ally = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(ally).unwrap().damage_marked = 2;
@@ -439,22 +437,21 @@ fn falkenrath_noble_triggers_on_own_creature_death() {
     check_state_based_actions_with_registry(&mut state, Some(&reg));
     triggers::process_triggers(&mut state, &reg);
 
-    // Noble SHOULD trigger — your creature died.
     assert_eq!(state.get_player(P0).life, p0_life_before + 1,
         "Falkenrath Noble should gain 1 life when your creature dies");
     assert_eq!(state.get_player(P1).life, p1_life_before - 1,
-        "Falkenrath Noble should drain opponent 1 life when your creature dies");
+        "Falkenrath Noble should drain opponent when your creature dies");
 }
 
-/// Falkenrath Noble should NOT trigger on itself dying (it says "another").
+/// Falkenrath Noble SHOULD trigger on itself dying.
+/// Oracle: "Whenever THIS CREATURE or another creature dies" — includes self.
 #[test]
-fn falkenrath_noble_does_not_trigger_on_self_death() {
+fn falkenrath_noble_triggers_on_self_death() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // P0 controls Falkenrath Noble — it will die.
-    let _noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
-    state.get_object_mut(_noble).unwrap().damage_marked = 5;
+    let noble = named_creature(&mut state, &reg, "Falkenrath Noble", P0);
+    state.get_object_mut(noble).unwrap().damage_marked = 5;
 
     let p0_life_before = state.get_player(P0).life;
     let p1_life_before = state.get_player(P1).life;
@@ -462,11 +459,11 @@ fn falkenrath_noble_does_not_trigger_on_self_death() {
     check_state_based_actions_with_registry(&mut state, Some(&reg));
     triggers::process_triggers(&mut state, &reg);
 
-    // Noble should NOT trigger on its own death.
-    assert_eq!(state.get_player(P0).life, p0_life_before,
-        "Falkenrath Noble should NOT trigger on its own death");
-    assert_eq!(state.get_player(P1).life, p1_life_before,
-        "Falkenrath Noble should NOT drain on its own death");
+    // Noble SHOULD trigger on its own death ("this creature ... dies").
+    assert_eq!(state.get_player(P0).life, p0_life_before + 1,
+        "Falkenrath Noble should trigger on its own death");
+    assert_eq!(state.get_player(P1).life, p1_life_before - 1,
+        "Falkenrath Noble should drain opponent on its own death");
 }
 
 // ════════════════════════════════════════════════════════════════════
