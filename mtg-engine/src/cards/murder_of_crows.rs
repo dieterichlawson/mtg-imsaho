@@ -37,16 +37,36 @@ impl CardBehavior for MurderOfCrows {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
+
+        // TODO: The draw should be optional ("you may draw a card") and the discard
+        // should be player-chosen. Currently auto-draw and auto-discard because we
+        // don't have a "discard 1 from N" choice mechanism yet.
+
         // Draw a card.
         crate::engine::draw_cards(state, controller, 1);
-        // Discard a card (the last card drawn, i.e. any card in hand — pick the first).
-        let to_discard: Option<ObjectId> = state.objects.values()
+
+        // Discard: pick the first non-land card in hand, or fall back to the last card.
+        let hand: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Hand && o.owner == controller)
             .map(|o| o.id)
-            .next();
-        if let Some(discard_id) = to_discard {
-            state.move_object(discard_id, Zone::Graveyard);
-            state.log(crate::state::LogLevel::Event, format!("Murder of Crows: p{} drew and discarded a card", controller.0));
+            .collect();
+
+        if hand.is_empty() {
+            return;
         }
+
+        let to_discard = hand.iter()
+            .find(|&&id| {
+                state.get_object(id)
+                    .map(|o| !o.card_types.contains(&CardType::Land))
+                    .unwrap_or(true)
+            })
+            .copied()
+            .unwrap_or(*hand.last().unwrap());
+
+        state.move_object(to_discard, Zone::Graveyard);
+        let name = state.get_object(to_discard).map(|o| o.name.clone()).unwrap_or_default();
+        state.log(crate::state::LogLevel::Event,
+            format!("Murder of Crows: p{} drew a card and discarded {}", controller.0, name));
     }
 }
