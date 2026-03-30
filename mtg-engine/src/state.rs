@@ -865,6 +865,12 @@ pub enum ResolutionChoiceKind {
         optional: bool,
         effect: PendingEffect,
     },
+    /// Choose a card from hand to discard (Murder of Crows, future discard effects).
+    ChooseCardFromHand {
+        description: String,
+        player: PlayerId,
+        cards: Vec<ObjectId>,
+    },
     /// Choose one card from a revealed set to keep (Forbidden Alchemy).
     ChooseFromRevealed {
         description: String,

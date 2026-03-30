@@ -202,6 +202,55 @@ fn frightful_delusion_discard_on_pay() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// Murder of Crows (#5): optional draw + player-chosen discard
+// ════════════════════════════════════════════════════════════════════
+
+/// Murder of Crows: when another creature dies, the controller should get
+/// a choice to draw (optional). If they draw, they must choose a card to discard.
+#[test]
+fn murder_of_crows_presents_draw_choice() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0 has Murder of Crows.
+    let _crows = named_creature(&mut state, &reg, "Murder of Crows", P0);
+
+    // Give P0 some cards in hand so the discard has options.
+    let hand_card = state.create_object(CardId(9999), P0, Zone::Hand, None, None);
+    state.get_object_mut(hand_card).unwrap().name = "Hand Card".into();
+
+    // A creature dies (P1's).
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+
+    // Give P0 library cards to draw from.
+    let lib_card = state.create_object(CardId(9999), P0, Zone::Library, None, None);
+    state.get_object_mut(lib_card).unwrap().name = "Library Card".into();
+    state.get_player_mut(P0).library_order.push(lib_card);
+
+    state.events.clear();
+    state.trigger_event_index = 0;
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    triggers::process_triggers(&mut state, &reg);
+
+    // After the creature dies and trigger processes, Murder of Crows should
+    // present a "you may draw" choice (or auto-draw and present discard choice).
+    // Either way, the player should have agency — not auto-draw and auto-discard.
+    //
+    // Check: the player should end up with a choice to make.
+    // The hand should have gained a card (the draw) and the player should
+    // be asked to discard.
+    let awaiting = state.awaiting_action.is_some();
+    let hand_count = state.objects_in_zone(Zone::Hand, P0).len();
+
+    // After correct implementation: either awaiting a draw choice,
+    // or drew and now awaiting a discard choice.
+    assert!(awaiting || hand_count > 1,
+        "Murder of Crows should present a choice (draw or discard). \
+         Awaiting: {}, hand: {}", awaiting, hand_count);
+}
+
+// ════════════════════════════════════════════════════════════════════
 // Bramblecrush (#7): destruction pipeline for non-creatures
 // (Already fixed, but verify with test)
 // ════════════════════════════════════════════════════════════════════

@@ -111,6 +111,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         }
                         acts
                     }
+                    ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => {
+                        cards.iter()
+                            .map(|&id| Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) })
+                            .collect()
+                    }
                     ResolutionChoiceKind::ChooseFromRevealed { revealed, .. } => {
                         revealed.iter()
                             .map(|&id| Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) })
@@ -946,6 +951,16 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         if let Some(t) = target {
                             apply_pending_effect(&mut new_state, t, effect, registry);
                         }
+                    }
+                    (ResolutionChoiceKind::ChooseCardFromHand { .. },
+                     ResolvedChoice::ChosenCard(discard_id)) => {
+                        let name = new_state.get_object(*discard_id).map(|o| o.name.clone()).unwrap_or_default();
+                        new_state.move_object(*discard_id, Zone::Graveyard);
+                        new_state.events.push(GameEvent::Discarded {
+                            player: new_state.get_object(*discard_id).map(|o| o.owner).unwrap_or(PlayerId(0)),
+                            object: *discard_id,
+                        });
+                        new_state.log(LogLevel::Event, format!("Discarded {}", name));
                     }
                     (ResolutionChoiceKind::ChooseFromRevealed { revealed, spell_id, .. },
                      ResolvedChoice::ChosenCard(keep_id)) => {
