@@ -380,7 +380,7 @@ impl CliPlayer {
             }
             let has_pass = labels.first().map(|l| l == "Pass priority").unwrap_or(false);
             let hints = if has_pass {
-                "  [enter=pass] [f=pass turn] [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
+                "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
             } else {
                 "  [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
             };
