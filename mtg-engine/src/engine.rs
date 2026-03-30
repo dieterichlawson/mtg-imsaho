@@ -1018,6 +1018,24 @@ fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, 
             state.log(LogLevel::Event,
                 format!("Added {} +1/+1 counter{} to {}", final_count, if final_count > 1 { "s" } else { "" }, name));
         }
+        (Target::Object(id), PendingEffect::DebuffUntilEOT { power, toughness, source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
+                target: *id,
+                power_mod: *power,
+                toughness_mod: *toughness,
+            });
+            state.log(LogLevel::Event, format!("{} gave {} {}/{} until end of turn", source_name, name, power, toughness));
+        }
+        (Target::Object(id), PendingEffect::CantBlockThisTurn { source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.until_end_of_turn_cant_block.push(*id);
+            state.log(LogLevel::Event, format!("{} prevents {} from blocking this turn", source_name, name));
+        }
+        (Target::Player(pid), PendingEffect::Mill { count, source_name }) => {
+            mill_cards(state, *pid, *count as usize);
+            state.log(LogLevel::Event, format!("{} milled {} card(s) from p{}", source_name, count, pid.0));
+        }
         _ => {}
     }
 }

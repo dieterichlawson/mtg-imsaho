@@ -346,6 +346,8 @@ pub enum ContinuousEffect {
     PreventBlock { scope: EffectScope },
     /// Creature can't be blocked.
     CantBeBlocked { scope: EffectScope },
+    /// Creature can't be blocked except by creatures with flying or reach.
+    CantBeBlockedExceptFlying { scope: EffectScope },
     /// Prevent all combat damage dealt to and by creature.
     PreventCombatDamage { scope: EffectScope },
     /// Creature doesn't untap during controller's untap step.

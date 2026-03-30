@@ -880,6 +880,12 @@ pub enum PendingEffect {
     ReturnToBattlefield { spell_id: ObjectId },
     /// Put +1/+1 counters on chosen creature.
     AddCounters { count: u32, human_bonus: bool },
+    /// Apply -N/-M until end of turn to the chosen creature.
+    DebuffUntilEOT { power: i32, toughness: i32, source_name: String },
+    /// Target creature can't block this turn.
+    CantBlockThisTurn { source_name: String },
+    /// Target player mills N cards.
+    Mill { count: u32, source_name: String },
 }
 
 /// Game result.
