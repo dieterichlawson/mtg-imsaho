@@ -1,4 +1,5 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::events::{DamageTarget, GameEvent};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -25,7 +26,7 @@ impl CardBehavior for RageThrower {
             flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
-                    description: "deal 2 damage to opponent".into(),
+                    description: "deal 2 damage to target player".into(),
                 },
             ],
         }
@@ -36,10 +37,18 @@ impl CardBehavior for RageThrower {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
+        // "Deals 2 damage to target player" — auto-target opponent in 2-player.
+        // Uses damage (not life loss) so it interacts correctly with damage prevention.
         let opponent = state.opponent(controller);
         let old = state.get_player(opponent).life;
-        state.get_player_mut(opponent).life = old - 2;
-        state.events.push(crate::events::GameEvent::LifeChanged { player: opponent, old, new_life: old - 2 });
+        let new_life = old - 2;
+        state.get_player_mut(opponent).life = new_life;
+        state.events.push(GameEvent::CombatDamageDealt {
+            source: self_id,
+            target: DamageTarget::Player(opponent),
+            amount: 2,
+        });
+        state.events.push(GameEvent::LifeChanged { player: opponent, old, new_life });
         state.log(crate::state::LogLevel::Event, format!("Rage Thrower dealt 2 damage to p{}", opponent.0));
     }
 }

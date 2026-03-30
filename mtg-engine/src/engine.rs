@@ -111,6 +111,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         }
                         acts
                     }
+                    ResolutionChoiceKind::YesNo { .. } => {
+                        vec![
+                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+                        ]
+                    }
                     ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => {
                         cards.iter()
                             .map(|&id| Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) })
@@ -936,15 +942,53 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         } else {
                             new_state.log(LogLevel::Event, "Paid {1} to prevent counter".into());
                         }
-                        // Controller discards a card.
+                        // Controller discards a card — player chooses which.
                         let controller = new_state.get_object(*spell_id).map(|o| o.controller).unwrap_or(PlayerId(0));
                         let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
                             .iter().map(|o| o.id).collect();
-                        if let Some(&card) = hand.first() {
-                            new_state.move_object(card, Zone::Graveyard);
+                        if hand.len() == 1 {
+                            new_state.move_object(hand[0], Zone::Graveyard);
                             new_state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
+                        } else if !hand.is_empty() {
+                            new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                                player: controller,
+                                source: *source_spell_id,
+                                choice: ResolutionChoiceKind::ChooseCardFromHand {
+                                    description: "Frightful Delusion: choose a card to discard".into(),
+                                    player: controller,
+                                    cards: hand,
+                                },
+                            });
+                            // Don't move_spell_after_resolve yet — discard pending.
+                            return new_state;
                         }
                         new_state.move_spell_after_resolve(*source_spell_id);
+                    }
+                    (ResolutionChoiceKind::YesNo { source_card, .. },
+                     ResolvedChoice::PayDecision(yes)) => {
+                        if *yes {
+                            // "You may draw a card. If you do, discard a card."
+                            let controller = new_state.get_object(*source_card)
+                                .map(|o| o.controller).unwrap_or(PlayerId(0));
+                            draw_cards(&mut new_state, controller, 1);
+                            let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
+                                .iter().map(|o| o.id).collect();
+                            if hand.len() == 1 {
+                                new_state.move_object(hand[0], Zone::Graveyard);
+                                new_state.log(LogLevel::Event, format!("Drew and discarded a card"));
+                            } else if !hand.is_empty() {
+                                new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                                    player: controller,
+                                    source: *source_card,
+                                    choice: ResolutionChoiceKind::ChooseCardFromHand {
+                                        description: "Murder of Crows: choose a card to discard".into(),
+                                        player: controller,
+                                        cards: hand,
+                                    },
+                                });
+                            }
+                        }
+                        // If no, nothing happens.
                     }
                     (ResolutionChoiceKind::ChooseTarget { effect, .. },
                      ResolvedChoice::ChosenTarget(target)) => {

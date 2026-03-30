@@ -70,12 +70,23 @@ impl CardBehavior for FrightfulDelusion {
                     state.move_spell_after_resolve(*target_id);
                     state.log(LogLevel::Event, format!("{} was countered", name));
 
-                    // Force discard.
+                    // Force discard — player chooses which card.
                     let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
                         .iter().map(|o| o.id).collect();
-                    if let Some(&card) = hand.first() {
-                        state.move_object(card, Zone::Graveyard);
+                    if hand.len() == 1 {
+                        state.move_object(hand[0], Zone::Graveyard);
                         state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
+                    } else if !hand.is_empty() {
+                        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                            player: controller,
+                            source: object_id,
+                            choice: ResolutionChoiceKind::ChooseCardFromHand {
+                                description: "Frightful Delusion: choose a card to discard".into(),
+                                player: controller,
+                                cards: hand,
+                            },
+                        });
+                        return; // Don't clean up yet — discard choice pending
                     }
                 }
             }

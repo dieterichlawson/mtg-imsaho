@@ -205,6 +205,7 @@ impl GameState {
             colors: Vec::new(),
             keywords: Vec::new(),
             card_types: Vec::new(),
+            subtypes: Vec::new(),
             targets: Vec::new(),
             attached_to: None,
             zone_change_count: 0,
@@ -232,6 +233,21 @@ impl GameState {
         card_types: Vec<crate::types::CardType>,
         keywords: Vec<crate::types::Keyword>,
     ) -> ObjectId {
+        self.create_token_with_subtypes(name, owner, power, toughness, colors, card_types, keywords, vec![])
+    }
+
+    /// Create a token on the battlefield with specific creature subtypes.
+    pub fn create_token_with_subtypes(
+        &mut self,
+        name: &str,
+        owner: PlayerId,
+        power: i32,
+        toughness: i32,
+        colors: Vec<crate::types::Color>,
+        card_types: Vec<crate::types::CardType>,
+        keywords: Vec<crate::types::Keyword>,
+        subtypes: Vec<String>,
+    ) -> ObjectId {
         let id = self.next_id();
         let obj = GameObject {
             id,
@@ -249,6 +265,7 @@ impl GameState {
             colors,
             keywords,
             card_types,
+            subtypes,
             targets: Vec::new(),
             attached_to: None,
             zone_change_count: 0,
@@ -410,9 +427,11 @@ impl GameState {
             CreatureFilter::Opponents => creature.controller != source_controller,
             CreatureFilter::YourTokens => creature.controller == source_controller && creature.is_token,
             CreatureFilter::HasSubtype(subtype) => {
+                // Check card data subtypes first, then object-level subtypes (for tokens).
                 registry.card_data(creature.card_id)
                     .map(|d| d.subtypes.iter().any(|s| s == subtype))
                     .unwrap_or(false)
+                || creature.subtypes.iter().any(|s| s == subtype)
             }
             CreatureFilter::HasKeyword(kw) => self.has_keyword(creature_id, *kw, registry),
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
@@ -737,6 +756,9 @@ pub struct GameObject {
     pub keywords: Vec<crate::types::Keyword>,
     /// Card types on this object (populated from card_data, set directly for tokens).
     pub card_types: Vec<crate::types::CardType>,
+    /// Subtypes on this object (for tokens — regular cards use CardData.subtypes via registry).
+    #[serde(default)]
+    pub subtypes: Vec<String>,
 
     // Targets chosen when this spell was cast (only relevant while on the stack).
     pub targets: Vec<crate::actions::Target>,
@@ -864,6 +886,13 @@ pub enum ResolutionChoiceKind {
         options: Vec<crate::actions::Target>,
         optional: bool,
         effect: PendingEffect,
+    },
+    /// A yes/no choice ("you may" abilities).
+    /// If yes, the card's trigger continues with its effect.
+    /// If no, nothing happens.
+    YesNo {
+        description: String,
+        source_card: ObjectId,
     },
     /// Choose a card from hand to discard (Murder of Crows, future discard effects).
     ChooseCardFromHand {

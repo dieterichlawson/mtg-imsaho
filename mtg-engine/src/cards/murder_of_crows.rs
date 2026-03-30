@@ -39,41 +39,14 @@ impl CardBehavior for MurderOfCrows {
         };
 
         // "You may draw a card. If you do, discard a card."
-        // Draw the card (the "may" makes this optional, but in almost all cases
-        // you want to draw — and the player can always choose to discard the
-        // drawn card to break even). Auto-draw, then present discard choice.
-        crate::engine::draw_cards(state, controller, 1);
-
-        // Present discard choice from hand.
-        let hand: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Hand && o.owner == controller)
-            .map(|o| o.id)
-            .collect();
-
-        if hand.is_empty() {
-            return;
-        }
-
-        if hand.len() == 1 {
-            // Only one card in hand — auto-discard it.
-            let card = hand[0];
-            let name = state.get_object(card).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(card, Zone::Graveyard);
-            state.log(crate::state::LogLevel::Event,
-                format!("Murder of Crows: p{} drew and discarded {}", controller.0, name));
-        } else {
-            // Multiple cards — let the player choose which to discard.
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: self_id,
-                choice: ResolutionChoiceKind::ChooseCardFromHand {
-                    description: "Murder of Crows: choose a card to discard".into(),
-                    player: controller,
-                    cards: hand,
-                },
-            });
-            state.log(crate::state::LogLevel::Event,
-                format!("Murder of Crows: p{} drew a card, must discard one", controller.0));
-        }
+        // Present yes/no choice. If yes, the engine draws and presents discard.
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description: "Murder of Crows: draw a card? (you must then discard one)".into(),
+                source_card: self_id,
+            },
+        });
     }
 }

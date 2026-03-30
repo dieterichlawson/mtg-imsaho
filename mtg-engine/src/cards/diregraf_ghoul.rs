@@ -1,10 +1,11 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::actions::Target;
 use crate::state::GameState;
 use crate::types::*;
 
 /// Diregraf Ghoul — 2/2 for {B}. Enters the battlefield tapped.
+/// Note: "enters tapped" is a static/replacement ability, NOT a triggered ability.
 pub struct DiregrafGhoul;
 
 impl CardBehavior for DiregrafGhoul {
@@ -21,12 +22,7 @@ impl CardBehavior for DiregrafGhoul {
             toughness: Some(2),
             oracle_text: "Diregraf Ghoul enters the battlefield tapped.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EntersBattlefield,
-                    description: "enters the battlefield tapped".into(),
-                },
-            ],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

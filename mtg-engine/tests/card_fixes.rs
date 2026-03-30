@@ -231,24 +231,13 @@ fn murder_of_crows_presents_draw_choice() {
     check_state_based_actions_with_registry(&mut state, Some(&reg));
     triggers::process_triggers(&mut state, &reg);
 
-    // After the creature dies and trigger processes, Murder of Crows should
-    // present a "you may draw" choice (or auto-draw and present discard choice).
-    // Either way, the player should have agency — not auto-draw and auto-discard.
-    //
-    // Check: the player should end up with a choice to make.
-    // The hand should have gained a card (the draw) and the player should
-    // be asked to discard.
-    let awaiting = state.awaiting_action.is_some();
+    // Murder of Crows should present a "you may draw" yes/no choice.
+    assert!(state.awaiting_action.is_some(),
+        "Murder of Crows should present a yes/no draw choice");
+    // Hand should still have 1 card (draw hasn't happened yet — waiting for choice).
     let hand_count = state.objects_in_zone(Zone::Hand, P0).len();
-
-    // After fix: Murder of Crows draws a card, then presents a discard
-    // choice since the player now has 2+ cards in hand.
-    assert!(awaiting,
-        "Murder of Crows should present a discard choice after drawing. \
-         Hand: {}", hand_count);
-    // Hand should have the original card + the drawn card = 2 cards.
-    assert_eq!(hand_count, 2,
-        "Should have 2 cards in hand (original + drawn) before discarding");
+    assert_eq!(hand_count, 1,
+        "Draw should NOT have happened yet (waiting for 'you may' choice)");
 }
 
 // ════════════════════════════════════════════════════════════════════

@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::events::GameEvent;
-use crate::ids::ObjectId;
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
 
@@ -29,6 +29,14 @@ impl CardBehavior for BumpInTheNight {
 
     fn target_requirement(&self) -> TargetRequirement {
         TargetRequirement::PlayerOnly
+    }
+
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        // "Target opponent" — can only target opponents, not yourself.
+        match target {
+            Target::Player(pid) => *pid != caster,
+            _ => false,
+        }
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
