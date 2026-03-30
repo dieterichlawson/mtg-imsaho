@@ -94,6 +94,21 @@ pub mod forbidden_alchemy;
 pub mod rolling_temblor;
 pub mod unburial_rites;
 pub mod desperate_ravings;
+pub mod festerhide_boar;
+pub mod hollowhenge_scavenger;
+pub mod morkrut_banshee;
+pub mod crossway_vampire;
+pub mod armored_skaab;
+pub mod ancient_grudge;
+pub mod battleground_geist;
+pub mod gallows_warden;
+pub mod orchard_spirit;
+pub mod selhoff_occultist;
+pub mod murder_of_crows;
+pub mod spider_spawning;
+pub mod wreath_of_geists;
+pub mod geist_honored_monk;
+pub mod geistcatchers_rig;
 
 use std::collections::HashMap;
 
@@ -462,6 +477,23 @@ impl CardRegistry {
         reg.register(Box::new(rolling_temblor::RollingTemblor));
         reg.register(Box::new(unburial_rites::UnburialRites));
         reg.register(Box::new(desperate_ravings::DesperateRavings));
+        // Innistrad Tier 5 creatures
+        reg.register(Box::new(festerhide_boar::FesterhideBoar));
+        reg.register(Box::new(hollowhenge_scavenger::HollowhengeScavenger));
+        reg.register(Box::new(morkrut_banshee::MorkrutBanshee));
+        reg.register(Box::new(crossway_vampire::CrosswayVampire));
+        reg.register(Box::new(armored_skaab::ArmoredSkaab));
+        reg.register(Box::new(ancient_grudge::AncientGrudge));
+        reg.register(Box::new(battleground_geist::BattlegroundGeist));
+        reg.register(Box::new(gallows_warden::GallowsWarden));
+        reg.register(Box::new(orchard_spirit::OrchardSpirit));
+        reg.register(Box::new(selhoff_occultist::SelhoffOccultist));
+        // Innistrad Tier 5 (dynamic P/T, death triggers, tokens)
+        reg.register(Box::new(murder_of_crows::MurderOfCrows));
+        reg.register(Box::new(spider_spawning::SpiderSpawning));
+        reg.register(Box::new(wreath_of_geists::WreathOfGeists));
+        reg.register(Box::new(geist_honored_monk::GeistHonoredMonk));
+        reg.register(Box::new(geistcatchers_rig::GeistcatchersRig));
         reg
     }
 }
