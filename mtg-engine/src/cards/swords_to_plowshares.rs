@@ -23,7 +23,7 @@ impl CardBehavior for SwordsToPlowshares {
             toughness: None,
             oracle_text: "Exile target creature. Its controller gains life equal to its power.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

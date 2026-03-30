@@ -25,6 +25,7 @@ impl CardBehavior for DeadWeight {
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: -2, toughness: -2, scope: EffectScope::Attached },
             ],
+            triggered_abilities: vec![],
         }
     }
 

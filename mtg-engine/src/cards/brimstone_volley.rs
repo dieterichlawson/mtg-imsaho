@@ -23,7 +23,7 @@ impl CardBehavior for BrimstoneVolley {
             toughness: None,
             oracle_text: "Brimstone Volley deals 3 damage to any target.\nMorbid — Brimstone Volley deals 5 damage instead if a creature died this turn.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

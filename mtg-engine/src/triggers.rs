@@ -11,34 +11,32 @@ use crate::types::Zone;
 pub enum PendingTrigger {
     /// A creature's own "when this dies" trigger.
     SelfDies {
-        /// The creature that died (now in graveyard).
         dead_id: ObjectId,
-        /// The card ID for looking up behavior.
         dead_card_id: CardId,
-        /// Who controlled the creature when it died.
         controller: PlayerId,
+        description: String,
     },
     /// A "whenever a creature dies" death-watch trigger on another permanent.
     DeathWatch {
-        /// The permanent with the triggered ability.
         watcher_id: ObjectId,
         watcher_card_id: CardId,
-        /// Who controls the watcher.
         controller: PlayerId,
-        /// The creature that died.
         dead_id: ObjectId,
         dead_controller: PlayerId,
+        description: String,
     },
     /// A creature entering the battlefield trigger.
     EnteredBattlefield {
         object_id: ObjectId,
         card_id: CardId,
         controller: PlayerId,
+        description: String,
     },
     /// A permanent leaving the battlefield trigger.
     LeftBattlefield {
         object_id: ObjectId,
         card_id: CardId,
+        description: String,
     },
 }
 
@@ -53,7 +51,7 @@ impl PendingTrigger {
         }
     }
 
-    /// Display name for the stack view.
+    /// Display name for the stack view, including what the trigger does.
     pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
         let card_name = |card_id: CardId| {
             registry.card_data(card_id)
@@ -61,19 +59,48 @@ impl PendingTrigger {
                 .unwrap_or_else(|| "Unknown".into())
         };
         match self {
-            PendingTrigger::SelfDies { dead_card_id, .. } =>
-                format!("{}'s dies trigger", card_name(*dead_card_id)),
-            PendingTrigger::DeathWatch { watcher_card_id, .. } =>
-                format!("{}'s triggered ability", card_name(*watcher_card_id)),
-            PendingTrigger::EnteredBattlefield { card_id, .. } =>
-                format!("{}'s ETB trigger", card_name(*card_id)),
-            PendingTrigger::LeftBattlefield { card_id, .. } =>
-                format!("{}'s LTB trigger", card_name(*card_id)),
+            PendingTrigger::SelfDies { dead_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s dies trigger", card_name(*dead_card_id))
+                } else {
+                    format!("{}'s dies trigger ({})", card_name(*dead_card_id), description)
+                }
+            }
+            PendingTrigger::DeathWatch { watcher_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s triggered ability", card_name(*watcher_card_id))
+                } else {
+                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
+                }
+            }
+            PendingTrigger::EnteredBattlefield { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s ETB trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s ETB trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::LeftBattlefield { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s LTB trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s LTB trigger ({})", card_name(*card_id), description)
+                }
+            }
         }
     }
 }
 
-/// Collect triggered abilities from events and add them to state.pending_triggers
+/// Look up the description for a trigger from the card's TriggeredAbilityDef.
+fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind) -> String {
+    registry.card_data(card_id)
+        .and_then(|d| d.triggered_abilities.iter()
+            .find(|t| &t.kind == kind)
+            .map(|t| t.description.clone()))
+        .unwrap_or_default()
+}
+
+/// Collect triggered abilities from events and add them to the stack
 /// in APNAP order (active player first on bottom, non-active player on top).
 ///
 /// Does NOT resolve them — the game loop resolves them one at a time,
@@ -95,10 +122,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                 };
                 // Only collect if the card has an on_enter_battlefield handler.
                 if registry.get(card_id).is_some() {
+                    let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield);
                     let trigger = PendingTrigger::EnteredBattlefield {
                         object_id: *object,
                         card_id,
                         controller,
+                        description: desc,
                     };
                     if controller == active_player {
                         ap_triggers.push(trigger);
@@ -114,10 +143,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
 
                 // 1. Self-dies trigger.
                 if registry.get(dead_card_id).is_some() {
+                    let desc = trigger_description(registry, dead_card_id, &crate::cards::TriggerKind::SelfDies);
                     let trigger = PendingTrigger::SelfDies {
                         dead_id,
                         dead_card_id,
                         controller: dead_controller,
+                        description: desc,
                     };
                     if dead_controller == active_player {
                         ap_triggers.push(trigger);
@@ -133,12 +164,14 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     .collect();
                 for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                     if registry.get(watcher_card_id).is_some() {
+                        let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies);
                         let trigger = PendingTrigger::DeathWatch {
                             watcher_id,
                             watcher_card_id,
                             controller: watcher_controller,
                             dead_id,
                             dead_controller,
+                            description: desc,
                         };
                         if watcher_controller == active_player {
                             ap_triggers.push(trigger);
@@ -154,9 +187,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     None => continue,
                 };
                 if registry.get(card_id).is_some() {
+                    let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::LeavesBattlefield);
                     let trigger = PendingTrigger::LeftBattlefield {
                         object_id: *object,
                         card_id,
+                        description: desc,
                     };
                     // LTB triggers go on AP side (they're usually self-referential).
                     ap_triggers.push(trigger);
@@ -218,7 +253,7 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 }
             }
         }
-        PendingTrigger::LeftBattlefield { object_id, card_id } => {
+        PendingTrigger::LeftBattlefield { object_id, card_id, .. } => {
             if let Some(behavior) = registry.get(card_id) {
                 behavior.on_leave_battlefield(state, object_id, registry);
             }

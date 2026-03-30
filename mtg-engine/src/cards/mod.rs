@@ -118,6 +118,9 @@ pub struct CardData {
     /// Declarative continuous effects this card has while on the battlefield.
     /// The engine reads these instead of parsing oracle_text.
     pub continuous_effects: Vec<ContinuousEffect>,
+    /// Triggered abilities this card has. The engine uses these to know which
+    /// events this card cares about and to display trigger descriptions on the stack.
+    pub triggered_abilities: Vec<TriggeredAbilityDef>,
 }
 
 /// A mana ability definition.
@@ -134,6 +137,28 @@ pub struct ActivatedAbilityDef {
     pub description: String,
     pub cost: ManaCost,
     pub requires_tap: bool,
+}
+
+/// What kind of event triggers an ability.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TriggerKind {
+    /// When this permanent enters the battlefield.
+    EntersBattlefield,
+    /// When this creature dies (battlefield → graveyard).
+    SelfDies,
+    /// Whenever another creature dies (death-watch).
+    AnyCreatureDies,
+    /// When this permanent leaves the battlefield.
+    LeavesBattlefield,
+}
+
+/// A triggered ability definition on a card.
+#[derive(Debug, Clone)]
+pub struct TriggeredAbilityDef {
+    /// What event triggers this ability.
+    pub kind: TriggerKind,
+    /// Human-readable description of what the trigger does (for stack/log display).
+    pub description: String,
 }
 
 /// Describes what targets a spell needs when cast.

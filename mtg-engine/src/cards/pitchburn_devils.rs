@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::events::GameEvent;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
@@ -23,7 +23,12 @@ impl CardBehavior for PitchburnDevils {
             toughness: Some(3),
             oracle_text: "When Pitchburn Devils dies, it deals 3 damage to any target.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::SelfDies,
+                    description: "deal 3 damage to any target".into(),
+                },
+            ],
         }
     }
 

@@ -28,6 +28,7 @@ impl CardBehavior for Pacifism {
                 ContinuousEffect::PreventAttack { scope: EffectScope::Attached },
                 ContinuousEffect::PreventBlock { scope: EffectScope::Attached },
             ],
+            triggered_abilities: vec![],
         }
     }
 

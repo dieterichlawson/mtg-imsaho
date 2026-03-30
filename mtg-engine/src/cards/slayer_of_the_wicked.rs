@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
@@ -22,7 +22,12 @@ impl CardBehavior for SlayerOfTheWicked {
             toughness: Some(2),
             oracle_text: "When Slayer of the Wicked enters the battlefield, you may destroy target Vampire, Werewolf, or Zombie.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EntersBattlefield,
+                    description: "destroy target Vampire, Werewolf, or Zombie".into(),
+                },
+            ],
         }
     }
 

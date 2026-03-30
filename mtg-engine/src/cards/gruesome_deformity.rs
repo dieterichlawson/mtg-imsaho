@@ -25,6 +25,7 @@ impl CardBehavior for GruesomeDeformity {
             continuous_effects: vec![
                 ContinuousEffect::GrantKeyword { keyword: Keyword::Intimidate, scope: EffectScope::Attached },
             ],
+            triggered_abilities: vec![],
         }
     }
 

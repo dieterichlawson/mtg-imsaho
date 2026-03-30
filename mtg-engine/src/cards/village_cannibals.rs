@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -22,7 +22,12 @@ impl CardBehavior for VillageCannibals {
             toughness: Some(2),
             oracle_text: "Whenever another Human creature dies, put a +1/+1 counter on Village Cannibals.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::AnyCreatureDies,
+                    description: "put a +1/+1 counter on Village Cannibals".into(),
+                },
+            ],
         }
     }
 

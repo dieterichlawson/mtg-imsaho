@@ -26,6 +26,7 @@ impl CardBehavior for FurorOfTheBitten {
                 ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached },
                 ContinuousEffect::ForceAttack { scope: EffectScope::Attached },
             ],
+            triggered_abilities: vec![],
         }
     }
 

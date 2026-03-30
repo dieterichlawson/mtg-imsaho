@@ -28,6 +28,7 @@ impl CardBehavior for GhostlyPossession {
                 ContinuousEffect::GrantKeyword { keyword: Keyword::Flying, scope: EffectScope::Attached },
                 ContinuousEffect::PreventCombatDamage { scope: EffectScope::Attached },
             ],
+            triggered_abilities: vec![],
         }
     }
 

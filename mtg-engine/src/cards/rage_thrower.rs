@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -22,7 +22,12 @@ impl CardBehavior for RageThrower {
             toughness: Some(2),
             oracle_text: "Whenever another creature dies, Rage Thrower deals 2 damage to target player or planeswalker.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::AnyCreatureDies,
+                    description: "deal 2 damage to opponent".into(),
+                },
+            ],
         }
     }
 

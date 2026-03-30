@@ -22,7 +22,7 @@ impl CardBehavior for Counterspell {
             toughness: None,
             oracle_text: "Counter target spell.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

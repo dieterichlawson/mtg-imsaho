@@ -24,7 +24,7 @@ impl CardBehavior for BondsOfFaith {
             toughness: None,
             oracle_text: "Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

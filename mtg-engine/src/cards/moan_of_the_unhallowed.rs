@@ -24,7 +24,7 @@ impl CardBehavior for MoanOfTheUnhallowed {
             oracle_text: "Create two 2/2 black Zombie creature tokens.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(5), ManaSymbol::Colored(Color::Black), ManaSymbol::Colored(Color::Black)])),
-            continuous_effects: vec![],
+            continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

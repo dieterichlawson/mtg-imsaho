@@ -17,7 +17,7 @@ impl CardBehavior for Island {
             toughness: None,
             oracle_text: "{T}: Add {U}.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

@@ -25,6 +25,7 @@ impl CardBehavior for HolyStrength {
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 2, scope: EffectScope::Attached },
             ],
+            triggered_abilities: vec![],
         }
     }
 

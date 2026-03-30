@@ -22,7 +22,7 @@ impl CardBehavior for SpideryGrasp {
             toughness: None,
             oracle_text: "Untap target creature. It gets +2/+4 and gains reach until end of turn.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

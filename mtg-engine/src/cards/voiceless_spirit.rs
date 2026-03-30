@@ -19,7 +19,7 @@ impl CardBehavior for VoicelessSpirit {
             toughness: Some(1),
             oracle_text: "Flying, first strike".into(),
             keywords: vec![Keyword::Flying, Keyword::FirstStrike],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 }

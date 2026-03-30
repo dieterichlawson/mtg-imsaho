@@ -17,7 +17,7 @@ impl CardBehavior for Forest {
             toughness: None,
             oracle_text: "{T}: Add {G}.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
         }
     }
 

@@ -27,6 +27,7 @@ impl CardBehavior for SpectralFlight {
                 ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached },
                 ContinuousEffect::GrantKeyword { keyword: Keyword::Flying, scope: EffectScope::Attached },
             ],
+            triggered_abilities: vec![],
         }
     }
 

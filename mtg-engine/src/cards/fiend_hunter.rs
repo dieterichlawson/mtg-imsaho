@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -26,7 +26,16 @@ impl CardBehavior for FiendHunter {
             toughness: Some(3),
             oracle_text: "When Fiend Hunter enters the battlefield, you may exile another target creature. When Fiend Hunter leaves the battlefield, return the exiled card to the battlefield under its owner's control.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EntersBattlefield,
+                    description: "exile another target creature".into(),
+                },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::LeavesBattlefield,
+                    description: "return exiled card to the battlefield".into(),
+                },
+            ],
         }
     }
 

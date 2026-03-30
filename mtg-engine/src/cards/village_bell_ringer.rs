@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -21,7 +21,12 @@ impl CardBehavior for VillageBellRinger {
             toughness: Some(4),
             oracle_text: "Flash\nWhen Village Bell-Ringer enters the battlefield, untap all creatures you control.".into(),
             keywords: vec![Keyword::Flash],
-            flashback_cost: None, continuous_effects: vec![],
+            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EntersBattlefield,
+                    description: "untap all creatures you control".into(),
+                },
+            ],
         }
     }
 
