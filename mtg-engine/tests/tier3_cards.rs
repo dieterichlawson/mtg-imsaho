@@ -209,8 +209,19 @@ fn fiend_hunter_exiles_on_etb() {
 
     state = cast_and_resolve(&state, &reg, fh, vec![]);
 
-    // Process ETB triggers.
+    // Process ETB triggers — Fiend Hunter presents a choice.
     triggers::process_triggers(&mut state, &reg);
+
+    // Choose to exile the victim.
+    if state.awaiting_action.is_some() {
+        state = engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(victim))),
+            },
+            &reg,
+        );
+    }
 
     assert_eq!(state.get_object(fh).unwrap().zone, Zone::Battlefield,
         "Fiend Hunter should be on the battlefield");

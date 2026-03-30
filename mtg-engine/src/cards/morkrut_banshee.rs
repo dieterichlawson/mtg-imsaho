@@ -39,41 +39,14 @@ impl CardBehavior for MorkrutBanshee {
             return;
         }
 
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-
-        // Can target ANY creature (including your own).
-        let targets: Vec<Target> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != object_id)
-            .map(|o| Target::Object(o.id))
-            .collect();
-
-        if targets.is_empty() {
-            // No valid targets, do nothing.
-        } else if targets.len() == 1 {
-            // Auto-apply to the only target.
-            if let Target::Object(target_id) = targets[0] {
-                let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.until_end_of_turn_effects.push(
-                    crate::state::UntilEndOfTurnEffect {
-                        target: target_id,
-                        power_mod: -4,
-                        toughness_mod: -4,
-                    }
-                );
-                state.log(LogLevel::Event,
-                    format!("Morkrut Banshee's morbid — {} gets -4/-4 until end of turn", name));
-            }
-        } else {
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: object_id,
-                choice: ResolutionChoiceKind::ChooseTarget {
-                    description: "Morkrut Banshee: target creature gets -4/-4 until end of turn".into(),
-                    options: targets,
-                    optional: false,
-                    effect: PendingEffect::DebuffUntilEOT { power: -4, toughness: -4, source_name: "Morkrut Banshee".into() },
-                },
-            });
-        }
+        let controller = crate::cards::helpers::controller_of(state, object_id);
+        // "Target creature" — can target ANY creature including itself.
+        let targets = crate::cards::helpers::creature_targets(state);
+        crate::cards::helpers::present_target_choice(
+            state, object_id, controller, targets,
+            PendingEffect::DebuffUntilEOT { power: -4, toughness: -4, source_name: "Morkrut Banshee".into() },
+            "Morkrut Banshee: target creature gets -4/-4 until end of turn",
+            false, // mandatory, not "you may"
+        );
     }
 }

@@ -890,6 +890,8 @@ pub enum PendingEffect {
     CantBlockThisTurn { source_name: String },
     /// Target player mills N cards.
     Mill { count: u32, source_name: String },
+    /// Exile the chosen creature and store its ID on the source permanent.
+    ExileAndStore { source_id: ObjectId, source_name: String },
 }
 
 /// Game result.

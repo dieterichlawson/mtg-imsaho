@@ -138,12 +138,25 @@ fn fiend_hunter_returns_exiled_on_death() {
     state = cast_and_resolve(&state, &reg, fh, vec![]);
     triggers::process_triggers(&mut state, &reg);
 
+    // Fiend Hunter now presents a choice — choose to exile the target.
+    if state.awaiting_action.is_some() {
+        state = engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(target))),
+            },
+            &reg,
+        );
+    }
+
     assert_eq!(state.get_object(target).unwrap().zone, Zone::Exile,
         "Target should be exiled by Fiend Hunter ETB");
     assert_eq!(state.get_object(fh).unwrap().zone, Zone::Battlefield);
 
     // Now kill the Fiend Hunter.
     state.get_object_mut(fh).unwrap().damage_marked = 3;
+    state.events.clear();
+    state.trigger_event_index = 0;
     check_state_based_actions_with_registry(&mut state, Some(&reg));
     triggers::process_triggers(&mut state, &reg);
 

@@ -1036,6 +1036,15 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             mill_cards(state, *pid, *count as usize);
             state.log(LogLevel::Event, format!("{} milled {} card(s) from p{}", source_name, count, pid.0));
         }
+        (Target::Object(id), PendingEffect::ExileAndStore { source_id, source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*id, Zone::Exile);
+            // Store the exiled creature's ID on the source permanent for LTB retrieval.
+            if let Some(source_obj) = state.get_object_mut(*source_id) {
+                source_obj.card_state.insert("exiled_creature".into(), *id);
+            }
+            state.log(LogLevel::Event, format!("{} exiled {}", source_name, name));
+        }
         _ => {}
     }
 }

@@ -1,6 +1,7 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Fiend Hunter — {1}{W}{W} 1/3 Human Cleric.
@@ -28,7 +29,7 @@ impl CardBehavior for FiendHunter {
             flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
-                    description: "exile another target creature".into(),
+                    description: "you may exile another target creature".into(),
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::LeavesBattlefield,
@@ -39,25 +40,19 @@ impl CardBehavior for FiendHunter {
     }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        // Find opponent's strongest creature.
-        let target = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller != controller && o.power.is_some() && o.id != object_id)
-            .max_by_key(|o| o.power.unwrap_or(0))
-            .map(|o| o.id);
-        if let Some(target_id) = target {
-            let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(target_id, Zone::Exile);
-            // Store exiled creature ID in card_state for retrieval on LTB.
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.card_state.insert("exiled_creature".into(), target_id);
-            }
-            state.log(crate::state::LogLevel::Event, format!("Fiend Hunter exiled {}", name));
-        }
+        let controller = crate::cards::helpers::controller_of(state, object_id);
+        // "Another target creature" — any creature except Fiend Hunter itself.
+        // Can target own creatures (Oracle doesn't restrict to opponents).
+        let targets = crate::cards::helpers::creature_targets_except(state, object_id);
+        // "You may" — always present choice, even with 1 target.
+        crate::cards::helpers::present_optional_target_choice(
+            state, object_id, controller, targets,
+            PendingEffect::ExileAndStore { source_id: object_id, source_name: "Fiend Hunter".into() },
+            "Fiend Hunter: you may exile another target creature",
+        );
     }
 
     fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        // Retrieve the exiled creature's ID from card_state.
         let exiled_id = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exiled_creature").copied());
         if let Some(target_id) = exiled_id {
