@@ -213,6 +213,7 @@ impl GameState {
             cast_with_flashback: false,
             instance_oracle_text: None,
             instance_continuous_effects: None,
+            card_state: HashMap::new(),
             counters: HashMap::new(),
             regeneration_shields: 0,
         };
@@ -256,6 +257,7 @@ impl GameState {
             cast_with_flashback: false,
             instance_oracle_text: None,
             instance_continuous_effects: None,
+            card_state: HashMap::new(),
             counters: HashMap::new(),
             regeneration_shields: 0,
         };
@@ -745,6 +747,11 @@ pub struct GameObject {
     /// Set by on_enter_battlefield for conditional cards (e.g., Bonds of Faith).
     #[serde(default)]
     pub instance_continuous_effects: Option<Vec<crate::types::ContinuousEffect>>,
+
+    /// Card-specific persistent state (e.g., Fiend Hunter stores the exiled creature ID).
+    /// Keyed by purpose string, value is an ObjectId.
+    #[serde(default)]
+    pub card_state: HashMap<String, ObjectId>,
 
     /// Counters on this permanent (+1/+1, -1/-1, etc.).
     pub counters: HashMap<crate::types::CounterType, u32>,

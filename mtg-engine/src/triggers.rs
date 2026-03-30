@@ -225,7 +225,7 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     if !is_trigger {
         return false;
     }
-    let entry = state.stack.pop().unwrap();
+    let entry = state.stack.pop().expect("stack must have trigger entry");
     let trigger = match entry {
         crate::state::StackEntry::Trigger(t) => t,
         _ => unreachable!(),

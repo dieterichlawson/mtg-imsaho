@@ -131,13 +131,14 @@ fn try_destroy_blocked_by_indestructible() {
 /// both should die simultaneously when SBAs are checked.
 #[test]
 fn mutually_lethal_combat_both_die() {
+    let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
     let attacker = ready_creature(&mut state, P0, 3, 3);
     let blocker = ready_creature(&mut state, P1, 3, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
-    combat::deal_combat_damage(&mut state, &registry());
+    combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 3);
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 3);

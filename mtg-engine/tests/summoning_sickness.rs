@@ -65,12 +65,13 @@ fn re_entering_battlefield_resets_summoning_sickness() {
 /// Summoning sickness prevents attacking but NOT blocking.
 #[test]
 fn sick_creature_cant_attack_but_can_block() {
+    let reg = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
     let creature = sick_creature(&mut state, P0, 2, 2);
 
-    assert!(!combat::eligible_attackers(&state, P0).contains(&creature),
+    assert!(!combat::eligible_attackers(&state, P0, &reg).contains(&creature),
         "Sick creature should not be able to attack");
-    assert!(combat::eligible_blockers(&state, P0).contains(&creature),
+    assert!(combat::eligible_blockers(&state, P0, &reg).contains(&creature),
         "Sick creature should be able to block");
 }
 

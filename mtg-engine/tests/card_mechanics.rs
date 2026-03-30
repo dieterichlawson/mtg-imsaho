@@ -170,7 +170,7 @@ fn nightbirds_clutches_prevents_blocking() {
 
     assert!(state.until_end_of_turn_cant_block.contains(&blocker));
 
-    let eligible = combat::eligible_blockers_with_registry(&state, P1, &reg);
+    let eligible = combat::eligible_blockers(&state, P1, &reg);
     assert!(!eligible.contains(&blocker),
         "Creature targeted by Nightbird's Clutches should not be eligible to block");
 }
@@ -275,7 +275,7 @@ fn ghostly_possession_prevents_damage() {
     state.get_object_mut(gp).unwrap().attached_to = Some(blocker);
     state.get_object_mut(gp).unwrap().summoning_sick = false;
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -303,7 +303,7 @@ fn grave_bramble_protection_prevents_zombie_damage() {
     // Blocker is Grave Bramble (protection from Zombies).
     let bramble = named_creature(&mut state, &reg, "Grave Bramble", P1);
 
-    combat::declare_attackers(&mut state, &[(zombie, P1)]);
+    combat::declare_attackers(&mut state, &[(zombie, P1)], &reg);
     combat::declare_blockers(&mut state, &[(bramble, zombie)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -463,7 +463,7 @@ fn vampire_interloper_cant_block() {
 
     let vi = named_creature(&mut state, &reg, "Vampire Interloper", P1);
 
-    let eligible = combat::eligible_blockers_with_registry(&state, P1, &reg);
+    let eligible = combat::eligible_blockers(&state, P1, &reg);
     assert!(!eligible.contains(&vi),
         "Vampire Interloper should not be eligible to block");
 }

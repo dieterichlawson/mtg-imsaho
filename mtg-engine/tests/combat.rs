@@ -21,17 +21,18 @@ fn registry() -> CardRegistry {
 /// no combat damage.
 #[test]
 fn blocked_creature_with_removed_blocker_deals_no_damage() {
+    let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
     let attacker = ready_creature(&mut state, P0, 5, 5);
     let blocker = ready_creature(&mut state, P1, 1, 1);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
 
     // Blocker is removed before damage (e.g., by a spell).
     state.move_object(blocker, Zone::Graveyard);
 
-    combat::deal_combat_damage(&mut state, &registry());
+    combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, 20,
         "Blocked creature with removed blocker deals no damage (rules 509.1h, 510.1c)");
@@ -40,11 +41,12 @@ fn blocked_creature_with_removed_blocker_deals_no_damage() {
 /// Rule 302.6: Summoning sickness does NOT prevent blocking.
 #[test]
 fn summoning_sick_creature_can_block() {
+    let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
     let blocker = sick_creature(&mut state, P1, 3, 3);
     assert!(state.get_object(blocker).unwrap().summoning_sick);
 
-    let blockers = combat::eligible_blockers(&state, P1);
+    let blockers = combat::eligible_blockers(&state, P1, &reg);
     assert!(blockers.contains(&blocker),
         "Summoning sick creature should be able to block (rule 302.6)");
 }
@@ -52,10 +54,11 @@ fn summoning_sick_creature_can_block() {
 /// Rule 302.6: Summoning sickness DOES prevent attacking.
 #[test]
 fn summoning_sick_creature_cannot_attack() {
+    let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
     let creature = sick_creature(&mut state, P0, 2, 2);
 
-    let attackers = combat::eligible_attackers(&state, P0);
+    let attackers = combat::eligible_attackers(&state, P0, &reg);
     assert!(!attackers.contains(&creature),
         "Summoning sick creature should not be able to attack (rule 302.6)");
 }
@@ -63,11 +66,12 @@ fn summoning_sick_creature_cannot_attack() {
 /// Rule 508.1f: Attacking causes tapping — it's not a cost.
 #[test]
 fn attacking_taps_the_creature() {
+    let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P0);
     let attacker = ready_creature(&mut state, P0, 3, 3);
     assert!(!state.get_object(attacker).unwrap().tapped);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
 
     assert!(state.get_object(attacker).unwrap().tapped,
         "Creature should be tapped after declaring as attacker (rule 508.1f)");
@@ -76,11 +80,12 @@ fn attacking_taps_the_creature() {
 /// Tapped creatures can't block.
 #[test]
 fn tapped_creature_cannot_block() {
+    let reg = registry();
     let mut state = game_at_step(Step::DeclareBlockers, P0);
     let creature = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(creature).unwrap().tapped = true;
 
-    let blockers = combat::eligible_blockers(&state, P1);
+    let blockers = combat::eligible_blockers(&state, P1, &reg);
     assert!(!blockers.contains(&creature),
         "Tapped creature should not be able to block");
 }
@@ -89,14 +94,15 @@ fn tapped_creature_cannot_block() {
 /// attacker deals damage to each blocker.
 #[test]
 fn multiple_blockers_all_deal_damage_to_attacker() {
+    let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
     let attacker = ready_creature(&mut state, P0, 5, 5);
     let blocker_a = ready_creature(&mut state, P1, 2, 2);
     let blocker_b = ready_creature(&mut state, P1, 3, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker_a, attacker), (blocker_b, attacker)]);
-    combat::deal_combat_damage(&mut state, &registry());
+    combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 5,
         "Attacker should take 2+3=5 damage from both blockers");
@@ -107,12 +113,13 @@ fn multiple_blockers_all_deal_damage_to_attacker() {
 /// Creature with 0 power deals no combat damage.
 #[test]
 fn zero_power_creature_deals_no_damage() {
+    let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
     let attacker = ready_creature(&mut state, P0, 0, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[]);
-    combat::deal_combat_damage(&mut state, &registry());
+    combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, 20,
         "0-power creature should deal no combat damage");
@@ -141,17 +148,18 @@ fn declaring_zero_attackers_is_legal() {
 /// Full combat: two attackers, one blocked, one gets through.
 #[test]
 fn full_combat_with_partial_block() {
+    let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
     let attacker_a = ready_creature(&mut state, P0, 3, 3);
     let attacker_b = ready_creature(&mut state, P0, 2, 1);
     let blocker = ready_creature(&mut state, P1, 3, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker_a, P1), (attacker_b, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker_a, P1), (attacker_b, P1)], &reg);
     assert!(state.get_object(attacker_a).unwrap().tapped);
     assert!(state.get_object(attacker_b).unwrap().tapped);
 
     combat::declare_blockers(&mut state, &[(blocker, attacker_a)]);
-    combat::deal_combat_damage(&mut state, &registry());
+    combat::deal_combat_damage(&mut state, &reg);
 
     // Attacker A and blocker trade.
     assert_eq!(state.get_object(attacker_a).unwrap().damage_marked, 3);
@@ -170,13 +178,14 @@ fn full_combat_with_partial_block() {
 /// if the blocker's power is less than the attacker's toughness.
 #[test]
 fn attacker_survives_small_blocker() {
+    let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
     let attacker = ready_creature(&mut state, P0, 5, 5);
     let blocker = ready_creature(&mut state, P1, 1, 1);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
-    combat::deal_combat_damage(&mut state, &registry());
+    combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 1);
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 5);

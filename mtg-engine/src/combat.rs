@@ -7,7 +7,7 @@ use crate::types::{Keyword, Zone};
 
 /// Set up attackers. Validates and taps them.
 /// Creatures with vigilance don't tap when attacking.
-pub fn declare_attackers_with_registry(
+pub fn declare_attackers(
     state: &mut GameState,
     attackers: &[(ObjectId, PlayerId)],
     registry: &CardRegistry,
@@ -34,28 +34,6 @@ pub fn declare_attackers_with_registry(
     state.combat = Some(combat);
 }
 
-/// Legacy wrapper without registry (taps all attackers).
-pub fn declare_attackers(
-    state: &mut GameState,
-    attackers: &[(ObjectId, PlayerId)],
-) {
-    let mut combat = CombatState::new();
-
-    for &(attacker_id, defending_player) in attackers {
-        if let Some(obj) = state.get_object_mut(attacker_id) {
-            obj.tapped = true;
-            state.events.push(GameEvent::Tapped { object: attacker_id });
-        }
-        combat.attackers.insert(attacker_id, defending_player);
-        combat.blocker_assignments.insert(attacker_id, Vec::new());
-    }
-
-    state.events.push(GameEvent::AttackersDeclared {
-        attackers: attackers.to_vec(),
-    });
-
-    state.combat = Some(combat);
-}
 
 /// Set up blockers. Validates assignments.
 pub fn declare_blockers(
@@ -298,7 +276,7 @@ fn deal_damage_to_creature(
 
     // Lifelink: source's controller gains life.
     if state.has_keyword(source, Keyword::Lifelink, registry) {
-        let controller = state.get_object(source).unwrap().controller;
+        let controller = state.get_object(source).expect("damage source must exist").controller;
         let old_life = state.get_player(controller).life;
         let new_life = old_life + amount as i32;
         state.get_player_mut(controller).life = new_life;
@@ -346,7 +324,7 @@ fn deal_damage_to_player(
 
     // Lifelink: source's controller gains life.
     if state.has_keyword(source, Keyword::Lifelink, registry) {
-        let controller = state.get_object(source).unwrap().controller;
+        let controller = state.get_object(source).expect("damage source must exist").controller;
         let old = state.get_player(controller).life;
         let new = old + amount as i32;
         state.get_player_mut(controller).life = new;
@@ -364,22 +342,8 @@ pub fn end_combat(state: &mut GameState) {
 }
 
 /// Get all creatures a player controls that are eligible to attack.
-pub fn eligible_attackers(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
-    state.objects.values()
-        .filter(|o| {
-            o.zone == Zone::Battlefield
-                && o.controller == player
-                && o.power.is_some()
-                && !o.tapped
-                && !o.summoning_sick
-        })
-        .map(|o| o.id)
-        .collect()
-}
-
-/// Get all creatures a player controls that are eligible to attack,
-/// also checking keywords (defender, haste) and continuous effects (Pacifism).
-pub fn eligible_attackers_with_registry(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
+/// Checks keywords (defender, haste) and continuous effects (Pacifism).
+pub fn eligible_attackers(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
     state.objects.values()
         .filter(|o| {
             o.zone == Zone::Battlefield
@@ -398,7 +362,8 @@ pub fn eligible_attackers_with_registry(state: &GameState, player: PlayerId, reg
 }
 
 /// Get all creatures a player controls that are eligible to block.
-pub fn eligible_blockers(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
+/// Checks continuous effects (Pacifism, can't block, etc.).
+pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
     state.objects.values()
         .filter(|o| {
             o.zone == Zone::Battlefield
@@ -407,13 +372,8 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId) -> Vec<ObjectId> {
                 && !o.tapped
         })
         .map(|o| o.id)
-        .collect()
-}
-
-/// Get all creatures a player controls that are eligible to block,
-/// also checking continuous effects (e.g., Pacifism).
-pub fn eligible_blockers_with_registry(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
-    eligible_blockers(state, player).into_iter()
+        .collect::<Vec<_>>()
+        .into_iter()
         .filter(|&id| state.can_block(id, registry))
         // "Can't block" (e.g., Vampire Interloper) — check continuous effects.
         .filter(|&id| {
@@ -500,7 +460,7 @@ mod tests {
         state.get_object_mut(attacker).unwrap().summoning_sick = false;
 
         let defending = PlayerId(1);
-        declare_attackers(&mut state, &[(attacker, defending)]);
+        declare_attackers(&mut state, &[(attacker, defending)], &registry);
         declare_blockers(&mut state, &[]);
         deal_combat_damage(&mut state, &registry);
 
@@ -521,7 +481,7 @@ mod tests {
         );
 
         let defending = PlayerId(1);
-        declare_attackers(&mut state, &[(attacker, defending)]);
+        declare_attackers(&mut state, &[(attacker, defending)], &registry);
         declare_blockers(&mut state, &[(blocker, attacker)]);
         deal_combat_damage(&mut state, &registry);
 
@@ -549,7 +509,8 @@ mod tests {
         state.get_object_mut(c).unwrap().summoning_sick = false;
         state.get_object_mut(c).unwrap().tapped = true;
 
-        let eligible = eligible_attackers(&state, p0);
+        let registry = CardRegistry::with_all_cards();
+        let eligible = eligible_attackers(&state, p0, &registry);
         assert_eq!(eligible.len(), 1);
         assert_eq!(eligible[0], a);
     }

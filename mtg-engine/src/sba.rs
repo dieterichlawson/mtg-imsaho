@@ -146,7 +146,7 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
                 o.zone == Zone::Battlefield
                     && o.attached_to.is_some()
                     && {
-                        let target_id = o.attached_to.unwrap();
+                        let target_id = o.attached_to.expect("aura must have attached_to");
                         state.get_object(target_id)
                             .map(|t| t.zone != Zone::Battlefield)
                             .unwrap_or(true) // target doesn't exist

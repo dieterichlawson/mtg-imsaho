@@ -189,7 +189,7 @@ fn rebuke_destroys_attacking_creature() {
     let non_attacker = ready_creature(&mut state, P0, 2, 2);
 
     // Declare attacker.
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     state.priority_player = Some(P1);
 
     // P1 casts Rebuke.

@@ -47,7 +47,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         return match awaiting {
             AwaitingAction::DeclareAttackers => {
                 let active = state.active_player;
-                let eligible = combat::eligible_attackers_with_registry(state, active, registry);
+                let eligible = combat::eligible_attackers(state, active, registry);
                 let defending = state.opponent(active);
                 // Find creatures that must attack (e.g., enchanted by Furor of the Bitten).
                 let must_attack: Vec<ObjectId> = eligible.iter()
@@ -72,7 +72,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 }
             }
             AwaitingAction::DeclareBlockers { defending_player } => {
-                let eligible_blockers = combat::eligible_blockers_with_registry(state, *defending_player, registry);
+                let eligible_blockers = combat::eligible_blockers(state, *defending_player, registry);
                 let attacker_ids = state.combat.as_ref()
                     .map(|c| c.attackers.keys().copied().collect())
                     .unwrap_or_default();
@@ -660,7 +660,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::PlayLand { object_id } => {
-            let player = new_state.priority_player.unwrap();
+            let player = new_state.priority_player.expect("PlayLand requires priority");
             new_state.move_object(*object_id, Zone::Battlefield);
             // Remove from library order if somehow there (shouldn't be, it's in hand).
             new_state.get_player_mut(player).land_plays_remaining -= 1;
@@ -679,7 +679,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::CastSpell { object_id, targets } => {
-            let player = new_state.priority_player.unwrap();
+            let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback: card is being cast from the graveyard.
             let is_flashback = new_state.get_object(*object_id)
@@ -687,12 +687,12 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 .unwrap_or(false);
 
             // Pay the appropriate mana cost.
-            let card_id = new_state.get_object(*object_id).unwrap().card_id;
-            let data = registry.get(card_id).unwrap().card_data();
+            let card_id = new_state.get_object(*object_id).expect("CastSpell object must exist").card_id;
+            let data = registry.get(card_id).expect("card must be in registry").card_data();
             let cost = if is_flashback {
                 data.flashback_cost.expect("flashback cast on card without flashback_cost")
             } else {
-                data.cost.unwrap()
+                data.cost.expect("non-flashback spell must have a mana cost")
             };
             mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
                 .expect("legal_actions should have verified mana availability");
@@ -700,7 +700,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             // Move to stack and store targets.
             new_state.move_object(*object_id, Zone::Stack);
             {
-                let obj = new_state.get_object_mut(*object_id).unwrap();
+                let obj = new_state.get_object_mut(*object_id).expect("spell must exist after moving to stack");
                 obj.targets = targets.clone();
                 if is_flashback {
                     obj.cast_with_flashback = true;
@@ -720,7 +720,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::ActivateManaAbility { object_id, ability_index } => {
-            let obj = new_state.get_object(*object_id).unwrap();
+            let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
             let card_id = obj.card_id;
             let controller = obj.controller;
 
@@ -728,7 +728,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 let abilities = behavior.mana_abilities(&new_state, *object_id);
                 if let Some(ability) = abilities.get(*ability_index) {
                     if ability.requires_tap {
-                        new_state.get_object_mut(*object_id).unwrap().tapped = true;
+                        new_state.get_object_mut(*object_id).expect("object must exist for tapping").tapped = true;
                         new_state.events.push(GameEvent::Tapped { object: *object_id });
                     }
                     for &(mana_type, amount) in &ability.produced {
@@ -747,8 +747,8 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::ActivateAbility { object_id, ability_index } => {
-            let player = new_state.priority_player.unwrap();
-            let obj = new_state.get_object(*object_id).unwrap();
+            let player = new_state.priority_player.expect("ActivateAbility requires priority");
+            let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
             let card_id = obj.card_id;
 
             // Find the ability — check the permanent's own card, then attached auras.
@@ -772,7 +772,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     .expect("legal_actions should have verified mana availability");
 
                 if ab.requires_tap {
-                    new_state.get_object_mut(*object_id).unwrap().tapped = true;
+                    new_state.get_object_mut(*object_id).expect("object must exist for tapping").tapped = true;
                 }
 
                 // Find which behavior to call (card itself or attached aura).
@@ -812,7 +812,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     .collect();
                 new_state.log(LogLevel::Event, format!("p{} declared attackers: {}", new_state.active_player.0, names.join(", ")));
             }
-            combat::declare_attackers_with_registry(&mut new_state, attackers, registry);
+            combat::declare_attackers(&mut new_state, attackers, registry);
 
             // Collect forced attackers (creatures with "attacks each combat if able" aura).
             let forced_ids: Vec<crate::ids::ObjectId> = {
@@ -1042,7 +1042,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
             let card_id = registry.get_id_by_name(card_name)
                 .unwrap_or_else(|| panic!("Unknown card: {}", card_name));
 
-            let card_data = registry.card_data(card_id).unwrap();
+            let card_data = registry.card_data(card_id).expect("card must be in registry");
 
             // Derive colors from mana cost.
             let colors: Vec<Color> = card_data.cost.as_ref()
@@ -1067,7 +1067,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
                     card_data.power,
                     card_data.toughness,
                 );
-                let obj = state.get_object_mut(obj_id).unwrap();
+                let obj = state.get_object_mut(obj_id).expect("object must exist for library draw");
                 obj.colors = colors.clone();
                 obj.name = card_name.clone();
                 obj.keywords = card_data.keywords.clone();
@@ -1211,7 +1211,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 .collect();
 
             for id in to_untap {
-                state.get_object_mut(id).unwrap().tapped = false;
+                state.get_object_mut(id).expect("object must exist for untap").tapped = false;
                 state.events.push(GameEvent::Untapped { object: id });
             }
 
@@ -1223,7 +1223,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 .collect();
 
             for id in creatures {
-                state.get_object_mut(id).unwrap().summoning_sick = false;
+                state.get_object_mut(id).expect("object must exist for summoning sickness clear").summoning_sick = false;
             }
 
             // Reset land plays.
@@ -1292,7 +1292,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 .collect();
 
             for id in damaged {
-                let obj = state.get_object_mut(id).unwrap();
+                let obj = state.get_object_mut(id).expect("object must exist for damage clear");
                 obj.damage_marked = 0;
                 obj.dealt_deathtouch_damage = false;
             }

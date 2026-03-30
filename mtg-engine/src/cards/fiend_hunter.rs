@@ -1,4 +1,3 @@
-use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -49,19 +48,18 @@ impl CardBehavior for FiendHunter {
         if let Some(target_id) = target {
             let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(target_id, Zone::Exile);
-            // Store exiled ID in targets (persists after leaving battlefield, unlike attached_to).
+            // Store exiled creature ID in card_state for retrieval on LTB.
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.targets = vec![Target::Object(target_id)];
+                obj.card_state.insert("exiled_creature".into(), target_id);
             }
             state.log(crate::state::LogLevel::Event, format!("Fiend Hunter exiled {}", name));
         }
     }
 
     fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        // Retrieve the exiled creature's ID from the targets field.
+        // Retrieve the exiled creature's ID from card_state.
         let exiled_id = state.get_object(object_id)
-            .and_then(|o| o.targets.first().cloned())
-            .and_then(|t| if let Target::Object(id) = t { Some(id) } else { None });
+            .and_then(|o| o.card_state.get("exiled_creature").copied());
         if let Some(target_id) = exiled_id {
             if state.get_object(target_id).map(|o| o.zone == Zone::Exile).unwrap_or(false) {
                 let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();

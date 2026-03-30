@@ -81,7 +81,7 @@ fn vigilance_does_not_tap_on_attack() {
 
     let attacker = named_creature(&mut state, &reg, "Abbey Griffin", P0);
 
-    combat::declare_attackers_with_registry(&mut state, &[(attacker, P1)], &reg);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
 
     assert!(!state.get_object(attacker).unwrap().tapped,
         "Creature with vigilance should not be tapped after attacking");
@@ -94,7 +94,7 @@ fn non_vigilance_taps_on_attack() {
     let mut state = game_at_step(Step::DeclareAttackers, P0);
     let attacker = ready_creature(&mut state, P0, 3, 3);
 
-    combat::declare_attackers_with_registry(&mut state, &[(attacker, P1)], &reg);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
 
     assert!(state.get_object(attacker).unwrap().tapped,
         "Creature without vigilance should tap when attacking");
@@ -110,7 +110,7 @@ fn defender_cannot_attack() {
 
     let defender = named_creature(&mut state, &reg, "Grave Bramble", P0);
 
-    let eligible = combat::eligible_attackers_with_registry(&state, P0, &reg);
+    let eligible = combat::eligible_attackers(&state, P0, &reg);
     assert!(!eligible.contains(&defender),
         "Creature with defender should not be eligible to attack");
 }
@@ -123,7 +123,7 @@ fn defender_can_block() {
 
     let defender = named_creature(&mut state, &reg, "Grave Bramble", P1);
 
-    let eligible = combat::eligible_blockers_with_registry(&state, P1, &reg);
+    let eligible = combat::eligible_blockers(&state, P1, &reg);
     assert!(eligible.contains(&defender),
         "Creature with defender should still be eligible to block");
 }
@@ -143,7 +143,7 @@ fn haste_overrides_summoning_sickness() {
     assert!(state.get_object(creature).unwrap().summoning_sick);
 
     // Without haste, should not be eligible.
-    let eligible = combat::eligible_attackers_with_registry(&state, P0, &reg);
+    let eligible = combat::eligible_attackers(&state, P0, &reg);
     assert!(!eligible.contains(&creature));
 
     // Mark it as having haste via until-end-of-turn keyword.
@@ -154,7 +154,7 @@ fn haste_overrides_summoning_sickness() {
         }
     );
 
-    let eligible = combat::eligible_attackers_with_registry(&state, P0, &reg);
+    let eligible = combat::eligible_attackers(&state, P0, &reg);
     assert!(eligible.contains(&creature),
         "Creature with haste should be able to attack despite summoning sickness");
 }
@@ -252,7 +252,7 @@ fn deathtouch_kills_with_one_damage() {
 
     let blocker = ready_creature(&mut state, P1, 5, 5);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -283,7 +283,7 @@ fn deathtouch_trample_assigns_minimum() {
 
     let blocker = ready_creature(&mut state, P1, 2, 4);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -303,7 +303,7 @@ fn lifelink_gains_life_on_combat_damage() {
 
     let attacker = named_creature(&mut state, &reg, "Markov Patrician", P0);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -323,7 +323,7 @@ fn lifelink_gains_life_from_creature_damage() {
 
     let blocker = ready_creature(&mut state, P1, 1, 4);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -347,7 +347,7 @@ fn trample_excess_damage_to_player() {
 
     let blocker = ready_creature(&mut state, P1, 2, 2);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -366,7 +366,7 @@ fn without_trample_no_excess_damage() {
     let attacker = ready_creature(&mut state, P0, 5, 5);
     let blocker = ready_creature(&mut state, P1, 2, 2);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -390,7 +390,7 @@ fn first_strike_kills_before_normal_damage() {
     // Blocker: Moon Heron 3/2 (would kill the 2/1 in simultaneous damage, but first strike prevents it)
     let blocker = named_creature(&mut state, &reg, "Moon Heron", P1);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -456,7 +456,7 @@ fn blocker_validation_rejects_ground_blocking_flyer() {
 
     let blocker = ready_creature(&mut state, P1, 2, 2);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)]);
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
     // Try to illegally block — should be filtered out.
     combat::declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &reg);
     combat::deal_combat_damage(&mut state, &reg);
