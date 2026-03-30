@@ -145,7 +145,7 @@ fn scripted_counterspell() {
         tusker_data.power, tusker_data.toughness,
     );
     state.get_object_mut(tusker).unwrap().name = "Kalonian Tusker".into();
-    state.stack.push(tusker);
+    state.stack.push(mtg_engine::state::StackEntry::Spell(tusker));
 
     // P1: 3 Islands (untapped)
     let mut islands = Vec::new();

@@ -653,7 +653,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
     match action {
         Action::PassPriority => {
-            let player = new_state.priority_player.unwrap();
+            let player = new_state.priority_player.unwrap_or(new_state.active_player);
             new_state.events.push(GameEvent::PriorityPassed { player });
             new_state.log(LogLevel::Debug, format!("p{} passes priority", player.0));
             new_state.consecutive_passes += 1;
@@ -1384,6 +1384,8 @@ fn run_game_loop_inner<F>(
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
     let num_players = state.players.len() as u32;
+    let mut auto_pass_count = 0u32;
+    const MAX_AUTO_PASSES: u32 = 100;
 
     loop {
         if state.is_game_over() {
@@ -1432,7 +1434,30 @@ fn run_game_loop_inner<F>(
             continue;
         }
 
-        let action = choose_action(state, acting_player, &legal);
+        // Auto-pass: if the player has no meaningful actions (just PassPriority
+        // and Concede), no combat prompt, and no awaiting action, auto-pass.
+        // This avoids asking the player to "pass priority" dozens of times
+        // when triggers are resolving and they have no responses.
+        let has_meaningful_action = legal.combat_prompt.is_some()
+            || state.awaiting_action.is_some()
+            || legal.actions.iter().any(|a| !matches!(a, Action::PassPriority | Action::Concede));
+
+        let action = if has_meaningful_action {
+            auto_pass_count = 0;
+            choose_action(state, acting_player, &legal)
+        } else if state.priority_player.is_some() {
+            auto_pass_count += 1;
+            if auto_pass_count > MAX_AUTO_PASSES {
+                // Safety: break infinite auto-pass loops.
+                advance_step(state, registry);
+                auto_pass_count = 0;
+                continue;
+            }
+            Action::PassPriority
+        } else {
+            advance_step(state, registry);
+            continue;
+        };
 
         *state = submit_action(state, &action, registry);
 
@@ -1452,9 +1477,8 @@ fn run_game_loop_inner<F>(
                         state.priority_player = None;
                         advance_step(state, registry);
                     }
-                } else {
+                } else if let Some(current) = state.priority_player {
                     // Pass to next player.
-                    let current = state.priority_player.unwrap();
                     state.priority_player = Some(state.next_player(current));
                 }
             }
