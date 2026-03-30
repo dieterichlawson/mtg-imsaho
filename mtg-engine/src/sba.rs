@@ -83,10 +83,10 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
 
         // Rule 704.5f: zero toughness goes directly to graveyard.
         for id in zero_toughness_ids {
-            let (cid, ctrl) = state.get_object(id)
-                .map(|o| (o.card_id, o.controller))
-                .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
-            state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl });
+            let (cid, ctrl, damaged_by) = state.get_object(id)
+                .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
+                .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
+            state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by });
             state.move_object(id, Zone::Graveyard);
             state.creature_died_this_turn = true;
             took_action = true;
@@ -130,10 +130,10 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
                     took_action = true;
                     continue;
                 }
-                let (cid, ctrl) = state.get_object(id)
-                    .map(|o| (o.card_id, o.controller))
-                    .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
-                state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl });
+                let (cid, ctrl, damaged_by) = state.get_object(id)
+                    .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
+                    .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
+                state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by });
                 state.move_object(id, Zone::Graveyard);
                 state.creature_died_this_turn = true;
                 took_action = true;

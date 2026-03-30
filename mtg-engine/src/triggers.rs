@@ -23,6 +23,8 @@ pub enum PendingTrigger {
         controller: PlayerId,
         dead_id: ObjectId,
         dead_controller: PlayerId,
+        /// What damaged this creature before it died (captured before zone change clears it).
+        dead_damaged_by: Vec<ObjectId>,
         description: String,
     },
     /// A creature entering the battlefield trigger.
@@ -217,10 +219,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
-            GameEvent::CreatureDied { object, card_id, controller } => {
+            GameEvent::CreatureDied { object, card_id, controller, damaged_by } => {
                 let dead_id = *object;
                 let dead_card_id = *card_id;
                 let dead_controller = *controller;
+                let dead_damaged_by = damaged_by.clone();
 
                 // 1. Self-dies trigger.
                 if registry.get(dead_card_id).is_some() {
@@ -252,6 +255,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                             controller: watcher_controller,
                             dead_id,
                             dead_controller,
+                            dead_damaged_by: dead_damaged_by.clone(),
                             description: desc,
                         };
                         if watcher_controller == active_player {
@@ -383,11 +387,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 behavior.on_dies(state, dead_id, registry);
             }
         }
-        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, .. } => {
+        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, .. } => {
             // Verify the watcher is still on the battlefield.
             if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, registry);
+                    behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, registry);
                 }
             }
         }

@@ -34,16 +34,14 @@ impl CardBehavior for AbattoirGhoul {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
         // Check if the dead creature was dealt damage by Abattoir Ghoul this turn.
-        let was_damaged_by_me = state.get_object(dead_id)
-            .map(|o| o.damaged_by.contains(&self_id))
-            .unwrap_or(false);
-        if !was_damaged_by_me {
+        // Use the captured damaged_by (before zone change cleared it).
+        if !dead_damaged_by.contains(&self_id) {
             return;
         }
         // Gain life equal to that creature's toughness.

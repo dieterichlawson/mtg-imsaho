@@ -78,10 +78,10 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
 fn destroy(state: &mut GameState, id: ObjectId) {
     let is_creature = state.get_object(id).map(|o| o.power.is_some()).unwrap_or(false);
     if is_creature {
-        let (cid, ctrl) = state.get_object(id)
-            .map(|o| (o.card_id, o.controller))
-            .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0)));
-        state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl });
+        let (cid, ctrl, damaged_by) = state.get_object(id)
+            .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
+            .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
+        state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by });
         state.creature_died_this_turn = true;
     }
     state.move_object(id, Zone::Graveyard);

@@ -26,7 +26,7 @@ pub enum GameEvent {
     BlockersDeclared { assignments: Vec<(ObjectId, ObjectId)> },
     CombatDamageDealt { source: ObjectId, target: DamageTarget, amount: u32 },
     LifeChanged { player: PlayerId, old: i32, new_life: i32 },
-    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId },
+    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId> },
     PlayerLost { player: PlayerId, reason: LossReason },
     GameEnded { result: GameResult },
     PriorityPassed { player: PlayerId },
