@@ -25,7 +25,7 @@ pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target]
             return true;
         }
     }
-    state.move_object(aura_id, Zone::Graveyard);
+    state.move_spell_after_resolve(aura_id);
     false
 }
 

@@ -1059,6 +1059,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let old = state.get_player(*pid).life;
             let new_life = old - *amount as i32;
             state.get_player_mut(*pid).life = new_life;
+            state.events.push(GameEvent::CombatDamageDealt {
+                source: crate::ids::ObjectId(0),
+                target: crate::events::DamageTarget::Player(*pid),
+                amount: *amount,
+            });
             state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
             state.log(LogLevel::Event, format!("{} dealt {} damage to p{}", source_name, amount, pid.0));
         }
@@ -1238,6 +1243,91 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize) {
     if milled > 0 {
         state.log(LogLevel::Event, format!("p{} milled {} card{}", player.0, milled, if milled == 1 { "" } else { "s" }));
     }
+}
+
+/// Check if a player could cast any spell if they tapped all available mana sources.
+/// Used by the auto-pass check to avoid skipping turns where mana abilities are
+/// the only listed actions but the player has castable spells.
+fn has_castable_with_potential_mana(
+    state: &GameState,
+    player: PlayerId,
+    registry: &CardRegistry,
+) -> bool {
+    // Build potential mana pool: current pool + all activatable mana abilities.
+    let mut potential = state.get_player(player).mana_pool.clone();
+    for obj in state.objects_in_zone(Zone::Battlefield, player) {
+        if let Some(behavior) = registry.get(obj.card_id) {
+            for ma in behavior.mana_abilities(state, obj.id) {
+                if !ma.requires_tap || !obj.tapped {
+                    for &(mana_type, amount) in &ma.produced {
+                        potential.add(mana_type, amount);
+                    }
+                }
+            }
+        }
+    }
+
+    // Check if any spell in hand could be cast with this potential mana.
+    // For instant-speed spells, only count them as meaningful if there's
+    // something on the stack to respond to. This prevents prompting at
+    // every step just because the player has an instant + mana.
+    let is_sorcery_speed = state.step.is_main_phase()
+        && state.stack.is_empty()
+        && state.active_player == player;
+    let stack_has_items = !state.stack.is_empty();
+
+    for obj in state.objects_in_zone(Zone::Hand, player) {
+        if let Some(behavior) = registry.get(obj.card_id) {
+            let data = behavior.card_data();
+            // Check timing — for instants, only consider them when the stack
+            // has items (responding to something). Otherwise auto-pass.
+            let is_instant = data.card_types.contains(&CardType::Instant);
+            let has_flash = data.keywords.contains(&Keyword::Flash);
+            let can_cast_timing = if is_instant || has_flash {
+                stack_has_items
+            } else if data.card_types.contains(&CardType::Sorcery)
+                || data.card_types.contains(&CardType::Creature)
+                || data.card_types.contains(&CardType::Enchantment)
+                || data.card_types.contains(&CardType::Artifact)
+            {
+                is_sorcery_speed
+            } else {
+                false
+            };
+            if !can_cast_timing { continue; }
+
+            // Check if potential mana could pay the cost.
+            if let Some(cost) = &data.cost {
+                if !mana::can_pay(&potential, cost) {
+                    continue;
+                }
+            }
+
+            // Check if the spell has valid targets (or needs none).
+            let target_req = behavior.target_requirement();
+            let cast_actions = generate_cast_actions_with_targets(
+                state, player, obj.id, &target_req, behavior,
+            );
+            if !cast_actions.is_empty() {
+                return true;
+            }
+        }
+    }
+
+    // Also check activated abilities that cost mana.
+    for obj in state.objects_in_zone(Zone::Battlefield, player) {
+        if let Some(behavior) = registry.get(obj.card_id) {
+            for ab in behavior.activated_abilities(state, obj.id) {
+                if mana::can_pay(&potential, &ab.cost) {
+                    if !ab.requires_tap || !obj.tapped {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    false
 }
 
 /// Advance the game by one step. Performs turn-based actions for the new step.
@@ -1543,15 +1633,15 @@ fn run_game_loop_inner<F>(
             }
         }
 
-        // Auto-pass: if the player has no meaningful actions (just PassPriority,
-        // Concede, and mana abilities), no combat prompt, and no awaiting action,
-        // auto-pass. This avoids asking the player to "pass priority" dozens of
-        // times when triggers are resolving and they have no responses.
+        // Auto-pass: if the player has no meaningful actions, auto-pass.
+        // Mana abilities alone aren't meaningful UNLESS the player could cast
+        // something after tapping — compute potential mana to check.
         let has_meaningful_action = legal.combat_prompt.is_some()
             || state.awaiting_action.is_some()
             || legal.actions.iter().any(|a| !matches!(a,
                 Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
-            ));
+            ))
+            || has_castable_with_potential_mana(state, acting_player, registry);
 
         let action = if has_meaningful_action {
             auto_pass_count = 0;
