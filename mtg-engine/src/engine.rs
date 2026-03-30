@@ -970,7 +970,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 }
 
 /// Apply a pending effect from a resolution choice to a target.
-fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, effect: &crate::state::PendingEffect, registry: &CardRegistry) {
+pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, effect: &crate::state::PendingEffect, registry: &CardRegistry) {
     use crate::actions::Target;
     use crate::state::PendingEffect;
 
