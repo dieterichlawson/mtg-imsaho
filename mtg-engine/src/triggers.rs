@@ -49,7 +49,26 @@ impl PendingTrigger {
             PendingTrigger::SelfDies { controller, .. } => *controller,
             PendingTrigger::DeathWatch { controller, .. } => *controller,
             PendingTrigger::EnteredBattlefield { controller, .. } => *controller,
-            PendingTrigger::LeftBattlefield { .. } => PlayerId(255), // ETB/LTB triggers are handled by the card
+            PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
+        }
+    }
+
+    /// Display name for the stack view.
+    pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
+        let card_name = |card_id: CardId| {
+            registry.card_data(card_id)
+                .map(|d| d.name)
+                .unwrap_or_else(|| "Unknown".into())
+        };
+        match self {
+            PendingTrigger::SelfDies { dead_card_id, .. } =>
+                format!("{}'s dies trigger", card_name(*dead_card_id)),
+            PendingTrigger::DeathWatch { watcher_card_id, .. } =>
+                format!("{}'s triggered ability", card_name(*watcher_card_id)),
+            PendingTrigger::EnteredBattlefield { card_id, .. } =>
+                format!("{}'s ETB trigger", card_name(*card_id)),
+            PendingTrigger::LeftBattlefield { card_id, .. } =>
+                format!("{}'s LTB trigger", card_name(*card_id)),
         }
     }
 }
@@ -148,21 +167,33 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
     }
 
     // APNAP: Active player's triggers go on stack first (bottom),
-    // non-active player's go on top. Since pending_triggers is a Vec
-    // and we resolve from the back (LIFO), AP goes first in the Vec.
-    state.pending_triggers.extend(ap_triggers);
-    state.pending_triggers.extend(nap_triggers);
+    // non-active player's go on top. LIFO = NAP resolves first.
+    use crate::state::StackEntry;
+    for t in ap_triggers {
+        state.stack.push(StackEntry::Trigger(t));
+    }
+    for t in nap_triggers {
+        state.stack.push(StackEntry::Trigger(t));
+    }
 
     // Mark all events as processed.
     state.trigger_event_index = events.len();
 }
 
-/// Resolve the next pending trigger (the last one in the list = top of "stack").
-/// Returns true if a trigger was resolved, false if the queue is empty.
+/// Resolve the top trigger from the stack.
+/// Returns true if a trigger was resolved, false if the top of stack is not a trigger.
 pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> bool {
-    let trigger = match state.pending_triggers.pop() {
-        Some(t) => t,
-        None => return false,
+    // Check if the top of stack is a trigger.
+    let is_trigger = state.stack.last()
+        .map(|e| matches!(e, crate::state::StackEntry::Trigger(_)))
+        .unwrap_or(false);
+    if !is_trigger {
+        return false;
+    }
+    let entry = state.stack.pop().unwrap();
+    let trigger = match entry {
+        crate::state::StackEntry::Trigger(t) => t,
+        _ => unreachable!(),
     };
 
     match trigger {
@@ -197,12 +228,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     true
 }
 
-/// Legacy: process all triggers synchronously (used by tests that don't go
-/// through the game loop). Collects and immediately resolves all triggers.
+/// Process all triggers synchronously: collect from events, push to stack,
+/// and resolve all triggers in LIFO order. Used by tests and code that
+/// doesn't go through the full game loop.
 pub fn process_triggers(state: &mut GameState, registry: &CardRegistry) {
     collect_triggers(state, registry);
 
-    // Resolve all pending triggers in LIFO order.
+    // Resolve all triggers from the stack in LIFO order.
     while resolve_next_trigger(state, registry) {
         // If a trigger set an awaiting_action, pause and let the caller handle it.
         if state.awaiting_action.is_some() {

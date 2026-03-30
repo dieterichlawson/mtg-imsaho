@@ -5,6 +5,41 @@ use serde::{Serialize, Deserialize};
 use crate::ids::{ObjectId, PlayerId, CardId};
 use crate::types::{Zone, Step, ManaPool};
 
+/// An entry on the stack — either a spell or a triggered ability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum StackEntry {
+    /// A spell (instant, sorcery, creature, etc.) on the stack.
+    Spell(ObjectId),
+    /// A triggered ability on the stack. Resolves by calling the card behavior.
+    Trigger(crate::triggers::PendingTrigger),
+}
+
+impl StackEntry {
+    /// Get the ObjectId if this is a spell.
+    pub fn as_spell(&self) -> Option<ObjectId> {
+        match self {
+            StackEntry::Spell(id) => Some(*id),
+            StackEntry::Trigger(_) => None,
+        }
+    }
+
+    /// Get the trigger if this is a triggered ability.
+    pub fn as_trigger(&self) -> Option<&crate::triggers::PendingTrigger> {
+        match self {
+            StackEntry::Trigger(t) => Some(t),
+            StackEntry::Spell(_) => None,
+        }
+    }
+
+    /// Description for display purposes.
+    pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
+        match self {
+            StackEntry::Spell(id) => format!("Spell({})", id.0),
+            StackEntry::Trigger(t) => t.display_name(registry),
+        }
+    }
+}
+
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -22,8 +57,8 @@ pub struct GameState {
     pub priority_player: Option<PlayerId>,
     pub step: Step,
 
-    /// The stack. Last element is top of stack.
-    pub stack: Vec<ObjectId>,
+    /// The stack. Last element is top of stack. Contains spells and triggered abilities.
+    pub stack: Vec<StackEntry>,
 
     /// Combat state, present only during combat phase.
     pub combat: Option<CombatState>,

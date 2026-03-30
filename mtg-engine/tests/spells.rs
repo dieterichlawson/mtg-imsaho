@@ -115,7 +115,7 @@ fn sorcery_cannot_be_cast_with_nonempty_stack() {
 
     // Put something on the stack.
     let dummy = state.create_object(CardId(99), P0, Zone::Stack, None, None);
-    state.stack.push(dummy);
+    state.stack.push(mtg_engine::state::StackEntry::Spell(dummy));
 
     let legal = engine::legal_actions(&state, &registry);
     let has_div = legal.actions.iter().any(|a| matches!(a, Action::CastSpell { .. }));
@@ -252,7 +252,7 @@ fn counterspell_legal_when_spell_on_stack() {
     // Put a spell on the stack.
     let bolt_id = registry.get_id_by_name("Lightning Bolt").unwrap();
     let bolt = state.create_object(bolt_id, P0, Zone::Stack, None, None);
-    state.stack.push(bolt);
+    state.stack.push(mtg_engine::state::StackEntry::Spell(bolt));
 
     // P1 has Counterspell and mana.
     state.priority_player = Some(P1);

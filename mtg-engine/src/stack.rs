@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
-use crate::state::{GameState, LogLevel};
+use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
 /// Check if a target is still legal at resolution time.
@@ -21,17 +21,30 @@ fn is_target_legal(state: &GameState, target: &Target) -> bool {
     }
 }
 
-/// Resolve the top item on the stack.
+/// Resolve the top item on the stack (spell or trigger).
 ///
-/// Per CR 608.2b: if a spell has targets and ALL targets are illegal when
-/// it tries to resolve, the spell is countered by game rules (fizzled).
-/// on_resolve is NOT called and SpellResolved is NOT emitted.
+/// For spells: checks target legality (CR 608.2b fizzle), calls on_resolve.
+/// For triggers: delegates to triggers::resolve_next_trigger.
 pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
-    let object_id = match state.stack.pop() {
-        Some(id) => id,
+    let entry = match state.stack.last() {
+        Some(e) => e.clone(),
         None => return,
     };
 
+    match entry {
+        StackEntry::Trigger(_) => {
+            // Trigger resolution is handled by the triggers module.
+            crate::triggers::resolve_next_trigger(state, registry);
+        }
+        StackEntry::Spell(object_id) => {
+            state.stack.pop(); // Remove the spell from the stack.
+            resolve_spell(state, registry, object_id);
+        }
+    }
+}
+
+/// Resolve a spell from the stack.
+fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crate::ids::ObjectId) {
     let (card_id, targets) = match state.get_object(object_id) {
         Some(obj) => (obj.card_id, obj.targets.clone()),
         None => return,

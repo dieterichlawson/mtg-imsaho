@@ -141,7 +141,7 @@ fn counterspell_target_removed_from_stack() {
 
     // Bolt is somehow removed from the stack before Counterspell resolves
     // (e.g., another Counterspell countered it first).
-    state.stack.retain(|&id| id != bolt);
+    state.stack.retain(|e| e.as_spell() != Some(bolt));
     state.move_object(bolt, Zone::Graveyard);
 
     // Resolve the Counterspell — its target (bolt) is no longer on the stack.

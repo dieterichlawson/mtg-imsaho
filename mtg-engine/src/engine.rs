@@ -425,7 +425,11 @@ fn generate_cast_actions_with_targets(
         }
         TargetRequirement::Spell => {
             let mut actions = Vec::new();
-            for &stack_obj_id in &state.stack {
+            for entry in &state.stack {
+                let stack_obj_id = match entry.as_spell() {
+                    Some(id) => id,
+                    None => continue, // Skip triggers — can't target with Counterspell
+                };
                 // Don't let a spell target itself on the stack.
                 if stack_obj_id == spell_id { continue; }
                 let target = Target::Object(stack_obj_id);
@@ -523,9 +527,11 @@ fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::Spell => {
+            // Only spells on the stack can be targeted (not triggered abilities).
             state.stack.iter()
-                .filter(|&&id| id != spell_id)
-                .map(|&id| Target::Object(id))
+                .filter_map(|e| e.as_spell())
+                .filter(|&id| id != spell_id)
+                .map(|id| Target::Object(id))
                 .filter(|t| behavior.is_valid_target(state, caster, t))
                 .collect()
         }
@@ -700,7 +706,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     obj.cast_with_flashback = true;
                 }
             }
-            new_state.stack.push(*object_id);
+            new_state.stack.push(crate::state::StackEntry::Spell(*object_id));
 
             new_state.events.push(GameEvent::SpellCast {
                 player,
@@ -919,7 +925,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                      ResolvedChoice::PayDecision(pay)) => {
                         if !*pay {
                             let name = new_state.get_object(*spell_id).map(|o| o.name.clone()).unwrap_or_default();
-                            new_state.stack.retain(|&id| id != *spell_id);
+                            new_state.stack.retain(|e| e.as_spell() != Some(*spell_id));
                             new_state.move_spell_after_resolve(*spell_id);
                             new_state.log(LogLevel::Event, format!("{} was countered", name));
                         } else {

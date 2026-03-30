@@ -66,7 +66,7 @@ impl CardBehavior for FrightfulDelusion {
 
                     // Can't pay -- auto-counter.
                     let name = obj.name.clone();
-                    state.stack.retain(|&id| id != *target_id);
+                    state.stack.retain(|e| e.as_spell() != Some(*target_id));
                     state.move_spell_after_resolve(*target_id);
                     state.log(LogLevel::Event, format!("{} was countered", name));
 

@@ -52,7 +52,7 @@ impl CardBehavior for LostInTheMist {
             if let Some(obj) = state.get_object(*spell_id) {
                 if obj.zone == Zone::Stack {
                     let name = obj.name.clone();
-                    state.stack.retain(|&id| id != *spell_id);
+                    state.stack.retain(|e| e.as_spell() != Some(*spell_id));
                     state.move_spell_after_resolve(*spell_id);
                     state.log(LogLevel::Event, format!("{} was countered", name));
                 }

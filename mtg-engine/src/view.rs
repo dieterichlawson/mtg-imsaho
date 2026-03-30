@@ -150,17 +150,30 @@ impl GameView {
         // Stack.
         let stack = state.stack.iter()
             .rev() // top of stack first
-            .filter_map(|&obj_id| {
-                let obj = state.get_object(obj_id)?;
-                Some(StackItemView {
-                    object_id: obj.id,
-                    card_id: obj.card_id,
-                    name: registry.card_data(obj.card_id)
-                        .map(|d| d.name)
-                        .unwrap_or_else(|| "Unknown".into()),
-                    controller: obj.controller,
-                    targets: obj.targets.clone(),
-                })
+            .filter_map(|entry| {
+                match entry {
+                    crate::state::StackEntry::Spell(obj_id) => {
+                        let obj = state.get_object(*obj_id)?;
+                        Some(StackItemView {
+                            object_id: obj.id,
+                            card_id: obj.card_id,
+                            name: registry.card_data(obj.card_id)
+                                .map(|d| d.name)
+                                .unwrap_or_else(|| "Unknown".into()),
+                            controller: obj.controller,
+                            targets: obj.targets.clone(),
+                        })
+                    }
+                    crate::state::StackEntry::Trigger(trigger) => {
+                        Some(StackItemView {
+                            object_id: ObjectId(0), // triggers don't have an object ID
+                            card_id: CardId(0),
+                            name: trigger.display_name(registry),
+                            controller: trigger.controller(),
+                            targets: vec![],
+                        })
+                    }
+                }
             })
             .collect();
 

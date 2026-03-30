@@ -47,7 +47,7 @@ impl CardBehavior for Dissipate {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Stack {
                     let name = obj.name.clone();
-                    state.stack.retain(|&id| id != *target_id);
+                    state.stack.retain(|e| e.as_spell() != Some(*target_id));
                     state.move_object(*target_id, Zone::Exile);
                     state.log(LogLevel::Event, format!("{} was countered and exiled", name));
                 }

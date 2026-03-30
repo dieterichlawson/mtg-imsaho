@@ -240,7 +240,7 @@ fn counterspell_fizzle_no_resolved_event() {
     );
 
     // Bolt removed from stack before Counterspell resolves.
-    state.stack.retain(|&id| id != bolt);
+    state.stack.retain(|e| e.as_spell() != Some(bolt));
     state.move_object(bolt, Zone::Graveyard);
     state.events.clear();
 

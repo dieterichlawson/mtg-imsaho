@@ -306,7 +306,7 @@ fn counterspell_fizzles_when_target_already_countered() {
     );
 
     // Bolt is removed by some other effect before Counterspell resolves.
-    state.stack.retain(|&id| id != bolt);
+    state.stack.retain(|e| e.as_spell() != Some(bolt));
     state.move_object(bolt, Zone::Graveyard);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
