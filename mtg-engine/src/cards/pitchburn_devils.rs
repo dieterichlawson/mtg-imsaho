@@ -33,55 +33,14 @@ impl CardBehavior for PitchburnDevils {
     }
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        let opponent = state.opponent(controller);
-
-        let mut options: Vec<Target> = Vec::new();
-        // Add opponent creatures.
-        for obj in state.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.power.is_some() && obj.controller == opponent {
-                options.push(Target::Object(obj.id));
-            }
-        }
-        // Add opponent player.
-        options.push(Target::Player(opponent));
-        // Add own creatures (Pitchburn can target any target).
-        for obj in state.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.power.is_some() && obj.controller == controller && obj.id != object_id {
-                options.push(Target::Object(obj.id));
-            }
-        }
-        // Add self as player target.
-        options.push(Target::Player(controller));
-
-        if options.len() <= 1 {
-            // Auto-resolve: damage the only target.
-            if let Some(target) = options.first() {
-                match target {
-                    Target::Player(pid) => {
-                        let old = state.get_player(*pid).life;
-                        state.get_player_mut(*pid).life = old - 3;
-                        state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life: old - 3 });
-                    }
-                    Target::Object(id) => {
-                        if let Some(obj) = state.get_object_mut(*id) {
-                            obj.damage_marked += 3;
-                        }
-                    }
-                }
-                state.log(LogLevel::Event, "Pitchburn Devils dealt 3 damage".into());
-            }
-        } else {
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: object_id,
-                choice: ResolutionChoiceKind::ChooseTarget {
-                    description: "Pitchburn Devils: deal 3 damage to any target".into(),
-                    options,
-                    optional: false,
-                    effect: PendingEffect::DealDamage { amount: 3, source_name: "Pitchburn Devils".into() },
-                },
-            });
-        }
+        let controller = crate::cards::helpers::controller_of(state, object_id);
+        // "Any target" — all creatures + all players.
+        let targets = crate::cards::helpers::any_targets(state);
+        crate::cards::helpers::present_target_choice(
+            state, object_id, controller, targets,
+            PendingEffect::DealDamage { amount: 3, source_name: "Pitchburn Devils".into() },
+            "Pitchburn Devils: deal 3 damage to any target",
+            false, // mandatory
+        );
     }
 }

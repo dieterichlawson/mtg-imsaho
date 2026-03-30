@@ -31,12 +31,13 @@ impl CardBehavior for SwordsToPlowshares {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {
                     let controller = obj.controller;
-                    let power = obj.power.unwrap_or(0).max(0) as i32;
+                    // Use effective power (accounts for buffs/debuffs/counters).
+                    let power = state.effective_power(*target_id, registry).unwrap_or(0).max(0);
 
                     // Exile the creature.
                     state.move_object(*target_id, Zone::Exile);
@@ -55,6 +56,6 @@ impl CardBehavior for SwordsToPlowshares {
                 }
             }
         }
-        state.move_object(object_id, Zone::Graveyard);
+        state.move_spell_after_resolve(object_id);
     }
 }

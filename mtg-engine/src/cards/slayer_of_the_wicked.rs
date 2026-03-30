@@ -32,10 +32,10 @@ impl CardBehavior for SlayerOfTheWicked {
     }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        // Find opponent's Vampire/Werewolf/Zombie creatures.
+        let controller = crate::cards::helpers::controller_of(state, object_id);
+        // "Target Vampire, Werewolf, or Zombie" — any controller, not just opponent.
         let targets: Vec<Target> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller != controller && o.power.is_some())
+            .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != object_id)
             .filter(|o| {
                 registry.card_data(o.card_id)
                     .map(|d| d.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie"))
@@ -43,26 +43,11 @@ impl CardBehavior for SlayerOfTheWicked {
             })
             .map(|o| Target::Object(o.id))
             .collect();
-
-        if targets.is_empty() {
-            // No valid targets, do nothing.
-        } else if targets.len() == 1 {
-            // Auto-destroy the only target.
-            if let Target::Object(id) = targets[0] {
-                crate::destruction::try_destroy(state, id, registry);
-                state.log(LogLevel::Event, "Slayer of the Wicked destroyed a creature".into());
-            }
-        } else {
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: object_id,
-                choice: ResolutionChoiceKind::ChooseTarget {
-                    description: "Slayer of the Wicked: destroy target Vampire, Werewolf, or Zombie".into(),
-                    options: targets,
-                    optional: true,
-                    effect: PendingEffect::Destroy { source_name: "Slayer of the Wicked".into() },
-                },
-            });
-        }
+        // "You may" — always present choice.
+        crate::cards::helpers::present_optional_target_choice(
+            state, object_id, controller, targets,
+            PendingEffect::Destroy { source_name: "Slayer of the Wicked".into() },
+            "Slayer of the Wicked: you may destroy target Vampire, Werewolf, or Zombie",
+        );
     }
 }

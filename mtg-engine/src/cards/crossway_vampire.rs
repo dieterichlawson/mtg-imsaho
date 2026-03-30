@@ -34,35 +34,14 @@ impl CardBehavior for CrosswayVampire {
     }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-
-        // Can target any creature (though in practice you'd target an opponent's creature).
-        let targets: Vec<Target> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != object_id)
-            .map(|o| Target::Object(o.id))
-            .collect();
-
-        if targets.is_empty() {
-            // No valid targets, do nothing.
-        } else if targets.len() == 1 {
-            // Auto-apply to the only target.
-            if let Target::Object(target_id) = targets[0] {
-                state.until_end_of_turn_cant_block.push(target_id);
-                let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.log(LogLevel::Event,
-                    format!("{} can't block this turn (Crossway Vampire)", name));
-            }
-        } else {
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: object_id,
-                choice: ResolutionChoiceKind::ChooseTarget {
-                    description: "Crossway Vampire: target creature can't block this turn".into(),
-                    options: targets,
-                    optional: false,
-                    effect: PendingEffect::CantBlockThisTurn { source_name: "Crossway Vampire".into() },
-                },
-            });
-        }
+        let controller = crate::cards::helpers::controller_of(state, object_id);
+        // "Target creature" — any creature, including self (Oracle doesn't say "another").
+        let targets = crate::cards::helpers::creature_targets(state);
+        crate::cards::helpers::present_target_choice(
+            state, object_id, controller, targets,
+            crate::state::PendingEffect::CantBlockThisTurn { source_name: "Crossway Vampire".into() },
+            "Crossway Vampire: target creature can't block this turn",
+            false, // mandatory
+        );
     }
 }

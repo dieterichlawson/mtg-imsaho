@@ -185,8 +185,20 @@ fn slayer_of_the_wicked_destroys_zombie() {
 
     state = cast_and_resolve(&state, &reg, slayer, vec![]);
 
-    // Process ETB triggers.
+    // Process ETB triggers — Slayer presents an optional choice.
     triggers::process_triggers(&mut state, &reg);
+
+    // Choose to destroy the Walking Corpse.
+    if state.awaiting_action.is_some() {
+        state = engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(wc))),
+            },
+            &reg,
+        );
+        check_state_based_actions_with_registry(&mut state, Some(&reg));
+    }
 
     assert_eq!(state.get_object(slayer).unwrap().zone, Zone::Battlefield,
         "Slayer should be on the battlefield");
