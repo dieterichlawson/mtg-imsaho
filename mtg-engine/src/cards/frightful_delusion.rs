@@ -87,7 +87,9 @@ impl CardBehavior for FrightfulDelusion {
                                 cards: hand,
                             },
                         });
-                        return; // Don't clean up yet — discard choice pending
+                        // Move spell to graveyard before the discard choice.
+                        state.move_spell_after_resolve(object_id);
+                        return;
                     }
                 }
             }

@@ -964,7 +964,8 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                     cards: hand,
                                 },
                             });
-                            // Don't move_spell_after_resolve yet — discard pending.
+                            // Move the spell to graveyard before the discard choice.
+                            new_state.move_spell_after_resolve(*source_spell_id);
                             return new_state;
                         }
                         new_state.move_spell_after_resolve(*source_spell_id);
@@ -1045,6 +1046,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 if obj.zone == Zone::Battlefield {
                     obj.damage_marked += amount;
                     let name = obj.name.clone();
+                    state.events.push(GameEvent::CombatDamageDealt {
+                        source: crate::ids::ObjectId(0), // source creature may not be available
+                        target: crate::events::DamageTarget::Object(*id),
+                        amount: *amount,
+                    });
                     state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, name));
                 }
             }
@@ -1526,13 +1532,26 @@ fn run_game_loop_inner<F>(
             continue;
         }
 
-        // Auto-pass: if the player has no meaningful actions (just PassPriority
-        // and Concede), no combat prompt, and no awaiting action, auto-pass.
-        // This avoids asking the player to "pass priority" dozens of times
-        // when triggers are resolving and they have no responses.
+        // Auto-declare zero attackers when there are no eligible creatures.
+        if let Some(crate::actions::CombatPrompt::ChooseAttackers {
+            ref eligible, ref must_attack, ..
+        }) = legal.combat_prompt {
+            if eligible.is_empty() && must_attack.is_empty() {
+                *state = submit_action(state, &Action::DeclareAttackers { attackers: vec![] }, registry);
+                state.priority_player = Some(state.active_player);
+                continue;
+            }
+        }
+
+        // Auto-pass: if the player has no meaningful actions (just PassPriority,
+        // Concede, and mana abilities), no combat prompt, and no awaiting action,
+        // auto-pass. This avoids asking the player to "pass priority" dozens of
+        // times when triggers are resolving and they have no responses.
         let has_meaningful_action = legal.combat_prompt.is_some()
             || state.awaiting_action.is_some()
-            || legal.actions.iter().any(|a| !matches!(a, Action::PassPriority | Action::Concede));
+            || legal.actions.iter().any(|a| !matches!(a,
+                Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
+            ));
 
         let action = if has_meaningful_action {
             auto_pass_count = 0;
