@@ -52,21 +52,18 @@ impl CardBehavior for BurningVengeance {
             return;
         }
 
-        // Deal 2 damage to opponent (auto-target in simplified engine).
-        let opponent = state.opponent(controller);
-        let old_life = state.get_player(opponent).life;
-        let new_life = old_life - 2;
-        state.get_player_mut(opponent).life = new_life;
-        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-            source: self_id,
-            target: crate::events::DamageTarget::Player(opponent),
-            amount: 2,
-        });
-        state.events.push(crate::events::GameEvent::LifeChanged {
-            player: opponent,
-            old: old_life,
-            new_life,
-        });
+        // "Burning Vengeance deals 2 damage to any target" — present choice.
+        let targets = crate::cards::helpers::any_targets(state);
+        crate::cards::helpers::present_target_choice(
+            state, self_id, controller, targets,
+            crate::state::PendingEffect::DealDamage {
+                amount: 2,
+                source_id: self_id,
+                source_name: "Burning Vengeance".into(),
+            },
+            "Burning Vengeance: deal 2 damage to any target",
+            false,
+        );
         state.log(crate::state::LogLevel::Event,
             format!("Burning Vengeance deals 2 damage to opponent (flashback spell cast)"));
     }

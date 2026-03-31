@@ -54,6 +54,11 @@ impl CardBehavior for BalefireDragon {
                 obj.damage_marked += amount;
                 obj.damaged_by.push(self_id);
             }
+            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                source: self_id,
+                target: crate::events::DamageTarget::Object(creature_id),
+                amount,
+            });
         }
     }
 }

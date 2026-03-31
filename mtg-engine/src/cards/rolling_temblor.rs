@@ -37,7 +37,7 @@ impl CardBehavior for RollingTemblor {
                 if let Some(obj) = state.get_object_mut(id) {
                     obj.damage_marked += 2;
                 }
-                state.events.push(crate::events::GameEvent::CombatDamageDealt {
+                state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                     source: object_id,
                     target: crate::events::DamageTarget::Object(id),
                     amount: 2,
