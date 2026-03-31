@@ -132,6 +132,11 @@ pub mod curse_of_the_bloody_tome;
 pub mod curse_of_oblivion;
 pub mod curse_of_the_nightly_hunt;
 pub mod curse_of_deaths_hold;
+// Tier 8: Sacrifice-as-cost and additional casting costs
+pub mod altars_reap;
+pub mod infernal_plunge;
+pub mod tribute_to_hunger;
+pub mod divine_reckoning;
 
 use std::collections::HashMap;
 
@@ -652,6 +657,11 @@ impl CardRegistry {
         reg.register(Box::new(curse_of_oblivion::CurseOfOblivion));
         reg.register(Box::new(curse_of_the_nightly_hunt::CurseOfTheNightlyHunt));
         reg.register(Box::new(curse_of_deaths_hold::CurseOfDeathsHold));
+        // Innistrad Tier 8 cards
+        reg.register(Box::new(altars_reap::AltarsReap));
+        reg.register(Box::new(infernal_plunge::InfernalPlunge));
+        reg.register(Box::new(tribute_to_hunger::TributeToHunger));
+        reg.register(Box::new(divine_reckoning::DivineReckoning));
         reg
     }
 }
