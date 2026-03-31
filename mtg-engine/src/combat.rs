@@ -222,12 +222,17 @@ fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, 
         if source.zone != crate::types::Zone::Battlefield {
             continue;
         }
-        if let Some(behavior) = registry.get(source.card_id) {
-            for effect in &behavior.card_data().continuous_effects {
-                if let crate::types::ContinuousEffect::ProtectionFromSubtype { subtype: prot_sub, scope } = effect {
-                    if prot_sub == subtype && state.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                        return true;
-                    }
+        let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
+            instance_effects.clone()
+        } else if let Some(behavior) = registry.get(source.card_id) {
+            behavior.card_data().continuous_effects
+        } else {
+            continue;
+        };
+        for effect in &effects {
+            if let crate::types::ContinuousEffect::ProtectionFromSubtype { subtype: prot_sub, scope } = effect {
+                if prot_sub == subtype && state.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                    return true;
                 }
             }
         }
@@ -235,12 +240,82 @@ fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, 
     false
 }
 
+/// Get all subtypes of a creature (from both card data and object-level subtypes).
+fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
+    let mut subtypes = Vec::new();
+    if let Some(obj) = state.get_object(creature_id) {
+        subtypes.extend(obj.subtypes.iter().cloned());
+        if let Some(data) = registry.card_data(obj.card_id) {
+            for s in &data.subtypes {
+                if !subtypes.contains(s) {
+                    subtypes.push(s.clone());
+                }
+            }
+        }
+    }
+    subtypes
+}
+
 /// Check if a creature has a specific subtype (e.g., "Zombie").
 fn is_subtype(state: &GameState, creature_id: ObjectId, subtype: &str, registry: &CardRegistry) -> bool {
     state.get_object(creature_id)
-        .and_then(|o| registry.card_data(o.card_id))
-        .map(|d| d.subtypes.iter().any(|s| s == subtype))
+        .map(|o| {
+            o.subtypes.iter().any(|s| s == subtype)
+            || registry.card_data(o.card_id)
+                .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                .unwrap_or(false)
+        })
         .unwrap_or(false)
+}
+
+/// Check if creature_a has protection from creature_b.
+/// Checks all protection-from-subtype effects and until-EOT protection grants.
+fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker: ObjectId, registry: &CardRegistry) -> bool {
+    let attacker_subtypes = get_subtypes(state, attacker, registry);
+
+    // Check static protection-from-subtype effects.
+    for subtype in &attacker_subtypes {
+        if has_protection_from(state, protected, subtype, registry) {
+            return true;
+        }
+    }
+
+    // Check static ProtectionFrom (filter-based) effects.
+    for source in state.objects.values() {
+        if source.zone != crate::types::Zone::Battlefield {
+            continue;
+        }
+        let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
+            instance_effects.clone()
+        } else if let Some(behavior) = registry.get(source.card_id) {
+            behavior.card_data().continuous_effects
+        } else {
+            continue;
+        };
+        for effect in &effects {
+            if let crate::types::ContinuousEffect::ProtectionFrom { filter, scope } = effect {
+                if state.effect_applies_to(protected, scope, source.id, source.controller, registry) {
+                    if state.matches_filter(attacker, filter, source.controller, registry) {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check until-end-of-turn protection grants.
+    for prot in &state.until_end_of_turn_protection {
+        if prot.target == protected {
+            // Check if the attacker matches the filter.
+            // Use controller of the protected creature for filter context.
+            let controller = state.get_object(protected).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+            if state.matches_filter(attacker, &prot.filter, controller, registry) {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 /// Deal damage from a source creature to a target creature. Handles lifelink.
@@ -256,8 +331,8 @@ fn deal_damage_to_creature(
         return;
     }
 
-    // Protection: if target has protection from a type the source has, prevent damage.
-    if has_protection_from(state, target, "Zombie", registry) && is_subtype(state, source, "Zombie", registry) {
+    // Protection: if target has protection from the source creature, prevent damage.
+    if has_protection_from_creature(state, target, source, registry) {
         return;
     }
 
@@ -464,11 +539,11 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
         return false;
     }
 
-    // Protection: a creature with protection from Zombies can't be blocked by Zombies.
-    if has_protection_from(state, blocker_id, "Zombie", registry) && is_subtype(state, attacker_id, "Zombie", registry) {
+    // Protection: a creature with protection from another creature can't be blocked by / can't block it.
+    if has_protection_from_creature(state, attacker_id, blocker_id, registry) {
         return false;
     }
-    if has_protection_from(state, attacker_id, "Zombie", registry) && is_subtype(state, blocker_id, "Zombie", registry) {
+    if has_protection_from_creature(state, blocker_id, attacker_id, registry) {
         return false;
     }
 

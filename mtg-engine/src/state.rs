@@ -90,6 +90,11 @@ pub struct GameState {
     /// Temporary "can't block" restrictions that expire at end of turn.
     pub until_end_of_turn_cant_block: Vec<ObjectId>,
 
+    /// Temporary protection grants that expire at end of turn.
+    /// Each entry grants a creature protection from creatures matching a filter.
+    #[serde(default)]
+    pub until_end_of_turn_protection: Vec<UntilEndOfTurnProtection>,
+
     /// Temporary control changes that revert at end of turn.
     /// Each entry is (object_id, original_controller).
     #[serde(default)]
@@ -162,6 +167,14 @@ pub struct UntilEndOfTurnKeyword {
     pub keyword: crate::types::Keyword,
 }
 
+/// A temporary protection grant that expires at cleanup.
+/// Grants protection from creatures matching a filter.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UntilEndOfTurnProtection {
+    pub target: ObjectId,
+    pub filter: crate::types::CreatureFilter,
+}
+
 impl GameState {
     /// Create a new game state for a given number of players.
     pub fn new(num_players: u8) -> Self {
@@ -188,6 +201,7 @@ impl GameState {
             until_end_of_turn_effects: Vec::new(),
             until_end_of_turn_keywords: Vec::new(),
             until_end_of_turn_cant_block: Vec::new(),
+            until_end_of_turn_protection: Vec::new(),
             until_end_of_turn_control_changes: Vec::new(),
             until_end_of_turn_flashback: Vec::new(),
             creature_died_this_turn: false,
@@ -779,6 +793,12 @@ impl GameState {
             return true;
         }
 
+        // 2b. Conditional keywords (e.g., haste if opponent controls a Human).
+        let has_conditional = self.has_conditional_keyword(creature_id, keyword, registry);
+        if has_conditional {
+            return true;
+        }
+
         // 3. Temporary keyword grants (until end of turn).
         for grant in &self.until_end_of_turn_keywords {
             if grant.target == creature_id && grant.keyword == keyword {
@@ -787,6 +807,65 @@ impl GameState {
         }
 
         false
+    }
+
+    /// Check if a creature has a conditional keyword that is currently active.
+    fn has_conditional_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
+        use crate::types::{ContinuousEffect, EffectCondition};
+        for source in self.objects.values() {
+            if source.zone != Zone::Battlefield {
+                continue;
+            }
+            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
+                instance_effects.clone()
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                behavior.card_data().continuous_effects
+            } else {
+                continue;
+            };
+            for effect in &effects {
+                if let ContinuousEffect::ConditionalKeyword { keyword: kw, condition, scope } = effect {
+                    if *kw != keyword {
+                        continue;
+                    }
+                    if !self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        continue;
+                    }
+                    if self.check_condition(condition, source.controller, registry) {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// Evaluate an EffectCondition for a given controller.
+    fn check_condition(&self, condition: &crate::types::EffectCondition, controller: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
+        use crate::types::EffectCondition;
+        match condition {
+            EffectCondition::YouControlSubtype(subtype) => {
+                self.objects.values().any(|o| {
+                    o.zone == Zone::Battlefield && o.controller == controller && (
+                        o.subtypes.iter().any(|s| s == subtype)
+                        || registry.card_data(o.card_id)
+                            .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                            .unwrap_or(false)
+                    )
+                })
+            }
+            EffectCondition::OpponentControlsSubtype(subtype) => {
+                let opponent = self.opponent(controller);
+                self.objects.values().any(|o| {
+                    o.zone == Zone::Battlefield && o.controller == opponent && (
+                        o.subtypes.iter().any(|s| s == subtype)
+                        || registry.card_data(o.card_id)
+                            .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                            .unwrap_or(false)
+                    )
+                })
+            }
+        }
     }
 
     /// Move a resolving spell to the appropriate zone.
