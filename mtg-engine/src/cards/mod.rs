@@ -263,6 +263,11 @@ pub mod make_a_wish;
 pub mod moonmist;
 pub mod runic_repetition;
 
+// Innistrad enchantments
+pub mod full_moons_rise;
+pub mod stony_silence;
+pub mod witchbane_orb;
+
 
 use std::collections::HashMap;
 
@@ -918,6 +923,11 @@ impl CardRegistry {
         reg.register(Box::new(make_a_wish::MakeAWish));
         reg.register(Box::new(moonmist::Moonmist));
         reg.register(Box::new(runic_repetition::RunicRepetition));
+
+        // Innistrad enchantments and artifacts
+        reg.register(Box::new(full_moons_rise::FullMoonsRise));
+        reg.register(Box::new(stony_silence::StonySilence));
+        reg.register(Box::new(witchbane_orb::WitchbaneOrb));
 
         reg
     }

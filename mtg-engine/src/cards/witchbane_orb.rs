@@ -1,0 +1,62 @@
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+/// Witchbane Orb — {4} Artifact.
+/// When Witchbane Orb enters the battlefield, destroy all Curses attached to you.
+/// You have hexproof.
+///
+/// Known limitation: player hexproof is not implemented (would need a new engine
+/// system). The ETB curse destruction is implemented.
+pub struct WitchbaneOrb;
+
+impl CardBehavior for WitchbaneOrb {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Witchbane Orb".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(4),
+            ])),
+            card_types: vec![CardType::Artifact],
+            supertypes: vec![],
+            subtypes: vec![],
+            power: None,
+            toughness: None,
+            oracle_text: "When Witchbane Orb enters the battlefield, destroy all Curses attached to you.\nYou have hexproof.".into(),
+            keywords: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EntersBattlefield,
+                    description: "Witchbane Orb: destroy all Curses attached to you".into(),
+                },
+            ],
+        }
+    }
+
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+
+        // Find all curses attached to the controller.
+        let curses: Vec<ObjectId> = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                    && o.attached_to_player == Some(controller)
+                    && registry.card_data(o.card_id)
+                        .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
+                        .unwrap_or(false)
+            })
+            .map(|o| o.id)
+            .collect();
+
+        for curse_id in &curses {
+            let name = state.get_object(*curse_id).map(|o| o.name.clone()).unwrap_or_default();
+            crate::destruction::try_destroy(state, *curse_id, registry);
+            state.log(crate::state::LogLevel::Event,
+                format!("Witchbane Orb destroyed {}", name));
+        }
+    }
+}
