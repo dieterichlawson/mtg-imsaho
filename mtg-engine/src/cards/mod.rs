@@ -150,6 +150,12 @@ pub mod infernal_plunge;
 pub mod tribute_to_hunger;
 pub mod divine_reckoning;
 
+// Tier 8: Sacrifice-based abilities + graveyard exile costs
+pub mod skirsdag_cultist;
+pub mod stitchers_apprentice;
+pub mod corpse_lunge;
+pub mod harvest_pyre;
+
 
 use std::collections::HashMap;
 
@@ -687,6 +693,12 @@ impl CardRegistry {
         reg.register(Box::new(infernal_plunge::InfernalPlunge));
         reg.register(Box::new(tribute_to_hunger::TributeToHunger));
         reg.register(Box::new(divine_reckoning::DivineReckoning));
+
+        // Innistrad Tier 8 cards
+        reg.register(Box::new(skirsdag_cultist::SkirsdagCultist));
+        reg.register(Box::new(stitchers_apprentice::StitchersApprentice));
+        reg.register(Box::new(corpse_lunge::CorpseLunge));
+        reg.register(Box::new(harvest_pyre::HarvestPyre));
 
         reg
     }
