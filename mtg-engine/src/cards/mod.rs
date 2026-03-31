@@ -267,6 +267,25 @@ pub mod runic_repetition;
 pub mod full_moons_rise;
 pub mod stony_silence;
 pub mod witchbane_orb;
+// Tier 15: Medium-complexity Innistrad cards
+pub mod curse_of_stalked_prey;
+pub mod dearly_departed;
+pub mod mentor_of_the_meek;
+pub mod kessig_cagebreakers;
+pub mod galvanic_juggernaut;
+pub mod creepy_doll;
+pub mod bitterheart_witch;
+pub mod gutter_grime;
+pub mod heretics_punishment;
+pub mod undead_alchemist;
+pub mod creeping_renaissance;
+pub mod cellar_door;
+pub mod skaab_ruinator;
+pub mod manor_gargoyle;
+pub mod tree_of_redemption;
+pub mod unbreathing_horde;
+pub mod back_from_the_brink;
+
 
 
 use std::collections::HashMap;
@@ -939,6 +958,25 @@ impl CardRegistry {
         reg.register(Box::new(full_moons_rise::FullMoonsRise));
         reg.register(Box::new(stony_silence::StonySilence));
         reg.register(Box::new(witchbane_orb::WitchbaneOrb));
+        // Tier 15: Medium-complexity Innistrad cards
+        reg.register(Box::new(curse_of_stalked_prey::CurseOfStalkedPrey));
+        reg.register(Box::new(dearly_departed::DearlyDeparted));
+        reg.register(Box::new(mentor_of_the_meek::MentorOfTheMeek));
+        reg.register(Box::new(kessig_cagebreakers::KessigCagebreakers));
+        reg.register(Box::new(galvanic_juggernaut::GalvanicJuggernaut));
+        reg.register(Box::new(creepy_doll::CreepyDoll));
+        reg.register(Box::new(bitterheart_witch::BitterheartWitch));
+        reg.register(Box::new(gutter_grime::GutterGrime));
+        reg.register(Box::new(heretics_punishment::HereticsPunishment));
+        reg.register(Box::new(undead_alchemist::UndeadAlchemist));
+        reg.register(Box::new(creeping_renaissance::CreepingRenaissance));
+        reg.register(Box::new(cellar_door::CellarDoor));
+        reg.register(Box::new(skaab_ruinator::SkaabRuinator));
+        reg.register(Box::new(manor_gargoyle::ManorGargoyle));
+        reg.register(Box::new(tree_of_redemption::TreeOfRedemption));
+        reg.register(Box::new(unbreathing_horde::UnbreathingHorde));
+        reg.register(Box::new(back_from_the_brink::BackFromTheBrink));
+
 
         reg
     }
