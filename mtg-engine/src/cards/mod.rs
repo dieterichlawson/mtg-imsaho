@@ -178,6 +178,11 @@ pub mod ashmouth_hound;
 pub mod hamlet_captain;
 pub mod spare_from_evil;
 pub mod burning_vengeance;
+pub mod traitorous_blood;
+pub mod blasphemous_act;
+pub mod cackling_counterpart;
+pub mod sever_the_bloodline;
+pub mod angelic_overseer;
 
 // Tier 9: Equipment and artifacts
 pub mod runechanters_pike;
@@ -776,6 +781,11 @@ impl CardRegistry {
         reg.register(Box::new(hamlet_captain::HamletCaptain));
         reg.register(Box::new(spare_from_evil::SpareFromEvil));
         reg.register(Box::new(burning_vengeance::BurningVengeance));
+        reg.register(Box::new(traitorous_blood::TraiterousBlood));
+        reg.register(Box::new(blasphemous_act::BlasphemousAct));
+        reg.register(Box::new(cackling_counterpart::CacklingCounterpart));
+        reg.register(Box::new(sever_the_bloodline::SeverTheBloodline));
+        reg.register(Box::new(angelic_overseer::AngelicOverseer));
 
         // Innistrad Tier 9 cards (equipment + artifacts)
         reg.register(Box::new(runechanters_pike::RunechantersPike));
