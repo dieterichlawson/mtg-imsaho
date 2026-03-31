@@ -498,6 +498,8 @@ fn back_from_the_brink_creates_token_copy() {
         .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Kalonian Tusker")
         .count();
     assert_eq!(token_copies, 1, "Should have created a token copy");
+}
+
 // ── Delver of Secrets ──────────────────────────────────────────
 
 #[test]

@@ -300,6 +300,25 @@ fn burning_vengeance_triggers_on_flashback() {
     state.events.push(GameEvent::SpellCast { player: P0, object: spell });
     triggers::process_triggers(&mut state, &reg);
 
+    // Burning Vengeance now presents a target choice. Resolve it by targeting P1.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting target choice");
+    if let Some(ref choice) = state.awaiting_action {
+        // Apply the effect directly for the test.
+        let effect = match choice {
+            mtg_engine::state::AwaitingAction::ResolutionChoice { choice, .. } => {
+                match choice {
+                    mtg_engine::state::ResolutionChoiceKind::ChooseTarget { effect, .. } => Some(effect.clone()),
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        state.awaiting_action = None;
+        if let Some(effect) = effect {
+            mtg_engine::engine::apply_pending_effect(&mut state, &mtg_engine::actions::Target::Player(P1), &effect, &reg);
+        }
+    }
+
     // Opponent should have lost 2 life.
     assert_eq!(state.get_player(P1).life, 18,
         "Burning Vengeance should deal 2 damage to opponent on flashback cast");
