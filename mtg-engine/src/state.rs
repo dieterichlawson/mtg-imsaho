@@ -283,7 +283,46 @@ impl GameState {
     }
 
     /// Create a token on the battlefield with specific creature subtypes.
+    /// If Parallel Lives is on the battlefield under the same controller,
+    /// an additional copy of the token is created.
     pub fn create_token_with_subtypes(
+        &mut self,
+        name: &str,
+        owner: PlayerId,
+        power: i32,
+        toughness: i32,
+        colors: Vec<crate::types::Color>,
+        card_types: Vec<crate::types::CardType>,
+        keywords: Vec<crate::types::Keyword>,
+        subtypes: Vec<String>,
+    ) -> ObjectId {
+        // Check for Parallel Lives (doubling effect).
+        let parallel_lives_count = self.objects.values()
+            .filter(|o| o.zone == Zone::Battlefield && o.controller == owner && o.name == "Parallel Lives")
+            .count();
+        // Each Parallel Lives doubles, so 1 PL = 2x, 2 PL = 4x, etc.
+        // We create (2^N - 1) extra tokens.
+        let extra_copies = if parallel_lives_count > 0 {
+            (1u32 << parallel_lives_count) - 1
+        } else {
+            0
+        };
+
+        // Create the primary token.
+        let id = self.create_token_internal(name, owner, power, toughness,
+            colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone());
+
+        // Create extra copies for Parallel Lives.
+        for _ in 0..extra_copies {
+            self.create_token_internal(name, owner, power, toughness,
+                colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone());
+        }
+
+        id
+    }
+
+    /// Internal token creation without Parallel Lives doubling.
+    fn create_token_internal(
         &mut self,
         name: &str,
         owner: PlayerId,

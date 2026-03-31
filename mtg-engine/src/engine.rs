@@ -36,6 +36,83 @@ pub struct LegalActions {
     pub castable_spells: Vec<crate::actions::CastableSpell>,
 }
 
+/// Compute the effective mana cost of a spell after applying cost reduction effects.
+/// Returns a reduced ManaCost (generic portion lowered, colored requirements unchanged).
+pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id: CardId, base_cost: &ManaCost, caster: PlayerId) -> ManaCost {
+    use crate::types::{ContinuousEffect, SpellFilter};
+
+    // Check if the card has a custom cost modification (e.g., Blasphemous Act).
+    if let Some(behavior) = registry.get(card_id) {
+        if let Some(modified) = behavior.modified_cost(state, registry) {
+            return modified;
+        }
+    }
+
+    let card_data = registry.card_data(card_id);
+    let is_creature = card_data.as_ref()
+        .map(|d| d.card_types.contains(&CardType::Creature))
+        .unwrap_or(false);
+    let subtypes: Vec<String> = card_data.as_ref()
+        .map(|d| d.subtypes.clone())
+        .unwrap_or_default();
+
+    // Gather all ReduceCost effects from permanents the caster controls.
+    let mut total_reduction: u32 = 0;
+    for obj in state.objects.values() {
+        if obj.zone != Zone::Battlefield || obj.controller != caster {
+            continue;
+        }
+        if let Some(behavior) = registry.get(obj.card_id) {
+            for effect in &behavior.card_data().continuous_effects {
+                if let ContinuousEffect::ReduceCost { reduction, filter } = effect {
+                    let applies = match filter {
+                        SpellFilter::CreatureSpells => is_creature,
+                        SpellFilter::CreatureWithSubtype(sub) => {
+                            is_creature && subtypes.iter().any(|s| s == sub)
+                        }
+                    };
+                    if applies {
+                        total_reduction += reduction;
+                    }
+                }
+            }
+        }
+    }
+
+    // Check for Rooftop Storm: Zombie creature spells cost {0}.
+    if is_creature && subtypes.iter().any(|s| s == "Zombie") {
+        let has_rooftop_storm = state.objects.values().any(|o| {
+            o.zone == Zone::Battlefield && o.controller == caster && o.name == "Rooftop Storm"
+        });
+        if has_rooftop_storm {
+            return ManaCost::free();
+        }
+    }
+
+    if total_reduction == 0 {
+        return base_cost.clone();
+    }
+
+    // Apply reduction to generic mana first, keeping colored requirements.
+    let mut remaining_reduction = total_reduction;
+    let mut new_symbols = Vec::new();
+    for sym in &base_cost.symbols {
+        match sym {
+            ManaSymbol::Generic(n) => {
+                if remaining_reduction >= *n {
+                    remaining_reduction -= *n;
+                    // Reduced to zero, omit this symbol.
+                } else {
+                    new_symbols.push(ManaSymbol::Generic(*n - remaining_reduction));
+                    remaining_reduction = 0;
+                }
+            }
+            other => new_symbols.push(other.clone()),
+        }
+    }
+    ManaCost::new(new_symbols)
+}
+
 /// Compute all legal actions for the player who currently needs to act.
 pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions {
     if state.is_game_over() {
@@ -265,6 +342,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
     }
 
+    // Collect names banned by Nevermore (spells with that name can't be cast).
+    let nevermore_banned: Vec<String> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.name == "Nevermore")
+        .filter_map(|o| {
+            o.instance_oracle_text.as_ref()
+                .and_then(|t| t.strip_prefix("nevermore:"))
+                .map(|s| s.to_string())
+        })
+        .collect();
+
     // Cast spells from hand.
     // Deduplicate untargeted spells — only show one "Cast Kalonian Tusker" even if you have 3.
     // Targeted spells still get one entry per valid target.
@@ -272,6 +359,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     for obj in state.objects_in_zone(Zone::Hand, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
+
+            // Check Nevermore: spells with the banned name can't be cast.
+            if nevermore_banned.iter().any(|n| *n == data.name) {
+                continue;
+            }
 
             // Determine if this spell can be cast right now.
             let is_instant = data.card_types.contains(&CardType::Instant);
@@ -294,10 +386,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 continue;
             }
 
-            // Check mana (use modified cost if available, e.g. Blasphemous Act).
-            let effective_cost = behavior.modified_cost(state, registry).or_else(|| data.cost.clone());
-            if let Some(ref cost) = effective_cost {
-                if !mana::can_pay(&player_state.mana_pool, cost) {
+            // Check mana (applying cost reduction effects).
+            if let Some(cost) = &data.cost {
+                let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
+                if !mana::can_pay(&player_state.mana_pool, &effective_cost) {
                     continue;
                 }
             }
@@ -335,9 +427,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
 
-            let fb_cost = match &data.flashback_cost {
-                Some(c) => c,
-                None => continue,
+            // Check for flashback cost: either printed on the card or dynamically granted.
+            let dynamic_fb = state.until_end_of_turn_flashback.iter()
+                .find(|(id, _)| *id == obj.id)
+                .map(|(_, c)| c.clone());
+            let fb_cost = match dynamic_fb {
+                Some(ref c) => c,
+                None => match &data.flashback_cost {
+                    Some(c) => c,
+                    None => continue,
+                },
             };
 
             let is_instant = data.card_types.contains(&CardType::Instant);
@@ -816,18 +915,51 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 .map(|o| o.zone == Zone::Graveyard)
                 .unwrap_or(false);
 
-            // Pay the appropriate mana cost (use modified cost if available).
+            // Pay the appropriate mana cost (applying cost reduction for non-flashback).
             let card_id = new_state.get_object(*object_id).expect("CastSpell object must exist").card_id;
-            let behavior = registry.get(card_id).expect("card must be in registry");
-            let data = behavior.card_data();
+            let data = registry.get(card_id).expect("card must be in registry").card_data();
             let cost = if is_flashback {
-                data.flashback_cost.expect("flashback cast on card without flashback_cost")
+                // Check until_end_of_turn_flashback for dynamically granted flashback.
+                let dynamic_fb = new_state.until_end_of_turn_flashback.iter()
+                    .find(|(id, _)| *id == *object_id)
+                    .map(|(_, c)| c.clone());
+                dynamic_fb.unwrap_or_else(|| {
+                    data.flashback_cost.expect("flashback cast on card without flashback_cost")
+                })
             } else {
-                behavior.modified_cost(&new_state, registry)
-                    .unwrap_or_else(|| data.cost.expect("non-flashback spell must have a mana cost"))
+                let base_cost = data.cost.expect("non-flashback spell must have a mana cost");
+                effective_spell_cost(&new_state, registry, card_id, &base_cost, player)
             };
-            mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
-                .expect("legal_actions should have verified mana availability");
+
+            // Handle X-cost spells: compute X from remaining mana after paying colored requirements.
+            let has_x = cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+            let x_value = if has_x {
+                // Non-X cost components (colored + generic).
+                let non_x_cost = ManaCost::new(
+                    cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                );
+                let pool = &new_state.get_player(player).mana_pool;
+                let total_mana = pool.total();
+                let non_x_amount = non_x_cost.mana_value();
+                let x = total_mana.saturating_sub(non_x_amount);
+                Some(x)
+            } else {
+                None
+            };
+
+            if has_x {
+                // Pay non-X cost first.
+                let non_x_cost = ManaCost::new(
+                    cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                );
+                mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
+                    .expect("legal_actions should have verified mana availability");
+                // Pay remaining mana as X (drain the pool).
+                new_state.get_player_mut(player).mana_pool.empty();
+            } else {
+                mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
+                    .expect("legal_actions should have verified mana availability");
+            }
 
             // Move to stack and store targets.
             new_state.move_object(*object_id, Zone::Stack);
@@ -836,6 +968,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 obj.targets = targets.clone();
                 if is_flashback {
                     obj.cast_with_flashback = true;
+                }
+                if let Some(x) = x_value {
+                    obj.x_value = Some(x);
                 }
             }
             new_state.stack.push(crate::state::StackEntry::Spell(*object_id));
@@ -1457,7 +1592,28 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
                 drawn += 1;
             }
             None => {
-                // Drew from empty library — SBA will catch it.
+                // Check for Laboratory Maniac: if the player controls one,
+                // they win the game instead of losing from empty library draw.
+                let has_lab_maniac = state.objects.values().any(|o| {
+                    o.zone == Zone::Battlefield
+                        && o.controller == player
+                        && o.name == "Laboratory Maniac"
+                });
+                if has_lab_maniac {
+                    // Player wins the game instead of drawing from empty library.
+                    // Clear the has_drawn_from_empty flag so SBA doesn't kill them.
+                    state.get_player_mut(player).has_drawn_from_empty = false;
+                    let opponent = state.opponent(player);
+                    state.players[opponent.0 as usize].lost = true;
+                    state.events.push(GameEvent::PlayerLost {
+                        player: opponent,
+                        reason: crate::events::LossReason::LifeReachedZero, // closest reason
+                    });
+                    state.result = Some(crate::state::GameResult::Winner(player));
+                    state.log(LogLevel::Milestone,
+                        format!("p{} wins the game with Laboratory Maniac!", player.0));
+                }
+                // Otherwise SBA will catch the empty library draw.
                 break;
             }
         }

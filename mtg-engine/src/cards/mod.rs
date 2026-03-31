@@ -223,6 +223,18 @@ pub mod sharpened_pitchfork;
 pub mod butchers_cleaver;
 pub mod wooden_stake;
 
+// Tier 14: Advanced Innistrad cards
+pub mod devils_play;
+pub mod kessig_wolf_run;
+pub mod snapcaster_mage;
+pub mod past_in_flames;
+pub mod heartless_summoning;
+pub mod rooftop_storm;
+pub mod olivia_voldaren;
+pub mod laboratory_maniac;
+pub mod parallel_lives;
+pub mod nevermore;
+
 
 use std::collections::HashMap;
 
@@ -839,6 +851,18 @@ impl CardRegistry {
         reg.register(Box::new(grizzled_outcasts::GrizzledOutcasts));
         reg.register(Box::new(ulvenwald_mystics::UlvenwaldMystics));
         reg.register(Box::new(kruin_outlaw::KruinOutlaw));
+        // Innistrad Tier 14: Advanced cards
+        reg.register(Box::new(devils_play::DevilsPlay));
+        reg.register(Box::new(kessig_wolf_run::KessigWolfRun));
+        reg.register(Box::new(snapcaster_mage::SnapcasterMage));
+        reg.register(Box::new(past_in_flames::PastInFlames));
+        reg.register(Box::new(heartless_summoning::HeartlessSummoning));
+        reg.register(Box::new(rooftop_storm::RooftopStorm));
+        reg.register(Box::new(olivia_voldaren::OliviaVoldaren));
+        reg.register(Box::new(laboratory_maniac::LaboratoryManiac));
+        reg.register(Box::new(parallel_lives::ParallelLives));
+        reg.register(Box::new(nevermore::Nevermore));
+
 
         reg
     }
