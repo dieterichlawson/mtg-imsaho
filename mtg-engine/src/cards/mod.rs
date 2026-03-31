@@ -565,6 +565,17 @@ pub trait CardBehavior: Send + Sync {
         let card_data = self.card_data();
         if card_data.card_types.iter().any(|t| t.is_permanent()) {
             state.move_object(object_id, Zone::Battlefield);
+            // If this is a planeswalker, set starting loyalty counters.
+            if let Some(loyalty) = self.starting_loyalty() {
+                // For X-cost planeswalkers, the x_value is already set on the object.
+                let x = state.get_object(object_id).and_then(|o| o.x_value).unwrap_or(0);
+                let total = if card_data.cost.as_ref().map(|c| c.symbols.iter().any(|s| matches!(s, crate::types::ManaSymbol::X))).unwrap_or(false) {
+                    x
+                } else {
+                    loyalty
+                };
+                state.add_counters(object_id, crate::types::CounterType::Loyalty, total);
+            }
         }
     }
 }
