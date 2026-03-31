@@ -31,7 +31,7 @@ impl CardBehavior for MoanOfTheUnhallowed {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
         for _ in 0..2 {
-            state.create_token("Zombie", controller, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![]);
+            state.create_token_with_subtypes("Zombie", controller, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![], vec!["Zombie".into()]);
         }
         state.move_spell_after_resolve(object_id);
     }

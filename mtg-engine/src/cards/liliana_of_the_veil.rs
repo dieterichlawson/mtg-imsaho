@@ -23,7 +23,7 @@ impl CardBehavior for LilianaOfTheVeil {
                 ManaSymbol::Colored(Color::Black),
             ])),
             card_types: vec![CardType::Planeswalker],
-            supertypes: vec![],
+            supertypes: vec![Supertype::Legendary],
             subtypes: vec!["Liliana".into()],
             power: None,
             toughness: None,

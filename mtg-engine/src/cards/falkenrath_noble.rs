@@ -18,7 +18,7 @@ impl CardBehavior for FalkenrathNoble {
             ])),
             card_types: vec![CardType::Creature],
             supertypes: vec![],
-            subtypes: vec!["Vampire".into(), "Noble".into()],
+            subtypes: vec!["Vampire".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "Flying\nWhenever this creature or another creature dies, target player loses 1 life and you gain 1 life.".into(),

@@ -66,7 +66,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             description: "Sacrifice another creature: Untap Grimgrin, +1/+1 counter".into(),
             cost: ManaCost::free(),
             requires_tap: false,
-            sacrifice_cost: SacrificeCost::SacrificeCreature,
+            sacrifice_cost: SacrificeCost::None,
             target_requirement: None,
             once_per_turn: false,
             sorcery_speed_only: false,

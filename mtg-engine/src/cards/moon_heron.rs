@@ -14,7 +14,7 @@ impl CardBehavior for MoonHeron {
             ])),
             card_types: vec![CardType::Creature],
             supertypes: vec![],
-            subtypes: vec!["Spirit".into(), "Bird".into()],
+            subtypes: vec!["Spirit".into()],
             power: Some(3),
             toughness: Some(2),
             oracle_text: "Flying".into(),

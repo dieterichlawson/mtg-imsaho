@@ -32,6 +32,10 @@ impl CardBehavior for WoodenStake {
                     kind: TriggerKind::Blocks,
                     description: "destroy that Vampire".into(),
                 },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::BecomesBlocked,
+                    description: "destroy that Vampire".into(),
+                },
             ],
         }
     }
@@ -93,6 +97,22 @@ impl CardBehavior for WoodenStake {
             let name = state.get_object(other_creature).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", name));
             crate::destruction::try_destroy(state, other_creature, registry);
+        }
+    }
+
+    fn on_becomes_blocked(&self, state: &mut GameState, _self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) {
+        // Same check: if the blocker is a Vampire, destroy it.
+        let is_vampire = state.get_object(blocker_id)
+            .and_then(|o| registry.card_data(o.card_id))
+            .map(|d| d.subtypes.iter().any(|s| s == "Vampire"))
+            .unwrap_or(false)
+            || state.get_object(blocker_id)
+                .map(|o| o.subtypes.iter().any(|s| s == "Vampire"))
+                .unwrap_or(false);
+        if is_vampire {
+            let name = state.get_object(blocker_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", name));
+            crate::destruction::try_destroy(state, blocker_id, registry);
         }
     }
 }

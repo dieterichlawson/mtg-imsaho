@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData};
 use crate::types::*;
 
-/// Voiceless Spirit — 2/1 for {2}{W}. Flying, first strike.
+/// Voiceless Spirit — 2/1 for {2}{W}. Flying.
 pub struct VoicelessSpirit;
 
 impl CardBehavior for VoicelessSpirit {

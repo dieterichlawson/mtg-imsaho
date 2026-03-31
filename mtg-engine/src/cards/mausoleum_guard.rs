@@ -16,7 +16,7 @@ impl CardBehavior for MausoleumGuard {
             ])),
             card_types: vec![CardType::Creature],
             supertypes: vec![],
-            subtypes: vec!["Human".into(), "Scout".into()],
+            subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "When Mausoleum Guard dies, create two 1/1 white Spirit creature tokens with flying.".into(),
