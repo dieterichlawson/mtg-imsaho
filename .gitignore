@@ -1,3 +1,5 @@
 /target
 *.txt
-.claude/
+# Claude Code: commit commands/skills and project settings, ignore local/personal files
+.claude/settings.local.json
+.claude/worktrees/
