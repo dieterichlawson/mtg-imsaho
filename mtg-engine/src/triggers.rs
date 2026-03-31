@@ -73,6 +73,20 @@ pub enum PendingTrigger {
         amount: u32,
         description: String,
     },
+    /// An upkeep trigger on a permanent.
+    UpkeepTrigger {
+        object_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        description: String,
+    },
+    /// An end-step trigger on a permanent.
+    EndStepTrigger {
+        object_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        description: String,
+    },
     /// A permanent leaving the battlefield trigger.
     LeftBattlefield {
         object_id: ObjectId,
@@ -92,6 +106,8 @@ impl PendingTrigger {
             PendingTrigger::CombatDamageToPlayer { controller, .. } => *controller,
             PendingTrigger::CombatDamageWatch { controller, .. } => *controller,
             PendingTrigger::DamageToPlayerWatch { controller, .. } => *controller,
+            PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
+            PendingTrigger::EndStepTrigger { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
         }
     }
@@ -145,6 +161,20 @@ impl PendingTrigger {
                     format!("{}'s triggered ability", card_name(*watcher_card_id))
                 } else {
                     format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
+                }
+            }
+            PendingTrigger::UpkeepTrigger { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s upkeep trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s upkeep trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::EndStepTrigger { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s end step trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s end step trigger ({})", card_name(*card_id), description)
                 }
             }
             PendingTrigger::LeftBattlefield { card_id, description, .. } => {
@@ -407,6 +437,46 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
+            GameEvent::StepStarted { step } => {
+                let trigger_kind = match step {
+                    crate::types::Step::Upkeep => Some(crate::cards::TriggerKind::Upkeep),
+                    crate::types::Step::EndStep => Some(crate::cards::TriggerKind::EndStep),
+                    _ => None,
+                };
+                if let Some(kind) = trigger_kind {
+                    let permanents: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield)
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+                    for (obj_id, card_id, controller) in permanents {
+                        if registry.get(card_id).is_some() {
+                            let desc = trigger_description(registry, card_id, &kind);
+                            if !desc.is_empty() {
+                                let trigger = match kind {
+                                    crate::cards::TriggerKind::Upkeep => PendingTrigger::UpkeepTrigger {
+                                        object_id: obj_id,
+                                        card_id,
+                                        controller,
+                                        description: desc,
+                                    },
+                                    crate::cards::TriggerKind::EndStep => PendingTrigger::EndStepTrigger {
+                                        object_id: obj_id,
+                                        card_id,
+                                        controller,
+                                        description: desc,
+                                    },
+                                    _ => unreachable!(),
+                                };
+                                if controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -486,6 +556,20 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
+                }
+            }
+        }
+        PendingTrigger::UpkeepTrigger { object_id, card_id, .. } => {
+            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_upkeep(state, object_id, registry);
+                }
+            }
+        }
+        PendingTrigger::EndStepTrigger { object_id, card_id, .. } => {
+            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_end_step(state, object_id, registry);
                 }
             }
         }

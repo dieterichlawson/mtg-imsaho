@@ -181,6 +181,10 @@ pub enum TriggerKind {
     AnyCombatDamageToPlayer,
     /// Whenever any creature deals damage (combat or non-combat) to a player.
     AnyDamageToPlayer,
+    /// At the beginning of each upkeep.
+    Upkeep,
+    /// At the beginning of each end step.
+    EndStep,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -332,6 +336,12 @@ pub trait CardBehavior: Send + Sync {
     /// Called when ANY creature deals damage (combat or non-combat) to a player.
     /// Used by Curiosity (watches enchanted creature).
     fn on_any_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+
+    /// Called at the beginning of the upkeep step for each permanent with an upkeep trigger.
+    fn on_upkeep(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called at the beginning of the end step for each permanent with an end-step trigger.
+    fn on_end_step(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}

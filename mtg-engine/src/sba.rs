@@ -146,10 +146,12 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
         }
 
         // Rule 704.5m: Aura not attached to anything goes to graveyard.
+        // Curses attached to players (attached_to_player) are exempt.
         let unattached_auras: Vec<_> = state.objects.values()
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && o.attached_to.is_some()
+                    && o.attached_to_player.is_none() // player-attached curses are fine
                     && {
                         let target_id = o.attached_to.expect("aura must have attached_to");
                         state.get_object(target_id)

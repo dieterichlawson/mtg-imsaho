@@ -208,6 +208,7 @@ impl GameState {
             subtypes: Vec::new(),
             targets: Vec::new(),
             attached_to: None,
+            attached_to_player: None,
             zone_change_count: 0,
             is_token: false,
             is_legendary: false,
@@ -268,6 +269,7 @@ impl GameState {
             subtypes,
             targets: Vec::new(),
             attached_to: None,
+            attached_to_player: None,
             zone_change_count: 0,
             is_token: true,
             is_legendary: false,
@@ -769,6 +771,8 @@ pub struct GameObject {
 
     // Aura/equipment: what this is attached to.
     pub attached_to: Option<ObjectId>,
+    // Curse aura: attached to a player (instead of an object).
+    pub attached_to_player: Option<PlayerId>,
 
     // Tracks zone changes for staleness detection (XMage pattern).
     pub zone_change_count: u32,
