@@ -36,6 +36,10 @@ impl CardBehavior for CivilizedScholar {
             additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
+                    kind: TriggerKind::Attacks,
+                    description: "mark as attacked this turn".into(),
+                },
+                TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
                     description: "transform back if didn't attack".into(),
                 },

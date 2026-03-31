@@ -32,6 +32,10 @@ impl CardBehavior for GeistOfSaintTraft {
                     kind: TriggerKind::Attacks,
                     description: "create a 4/4 Angel token tapped and attacking".into(),
                 },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EndStep,
+                    description: "exile the Angel token".into(),
+                },
             ],
         }
     }
