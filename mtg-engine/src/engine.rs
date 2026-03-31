@@ -1340,6 +1340,29 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.get_player_mut(owner).library_order.insert(0, *id);
             state.log(LogLevel::Event, format!("{}: put {} on top of library", source_name, name));
         }
+        (Target::Object(id), PendingEffect::SacrificeAndGainLife { beneficiary, spell_id }) => {
+            // Get the creature's toughness before sacrificing.
+            let toughness = state.effective_toughness(*id, registry)
+                .or_else(|| state.get_object(*id).and_then(|o| o.toughness))
+                .unwrap_or(0);
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+
+            crate::destruction::sacrifice(state, *id, registry);
+
+            // Gain life equal to the creature's toughness.
+            if toughness > 0 {
+                let old = state.get_player(*beneficiary).life;
+                let new_life = old + toughness;
+                state.get_player_mut(*beneficiary).life = new_life;
+                state.events.push(GameEvent::LifeChanged { player: *beneficiary, old, new_life });
+                state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {}, p{} gained {} life",
+                    name, beneficiary.0, toughness));
+            } else {
+                state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {}", name));
+            }
+
+            state.move_spell_after_resolve(*spell_id);
+        }
         _ => {}
     }
 }

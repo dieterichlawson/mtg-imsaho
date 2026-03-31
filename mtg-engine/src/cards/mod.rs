@@ -144,6 +144,12 @@ pub mod feral_ridgewolf;
 pub mod darkthicket_wolf;
 pub mod lantern_spirit;
 pub mod avacynian_priest;
+// Tier 8: Sacrifice-as-cost and additional casting costs
+pub mod altars_reap;
+pub mod infernal_plunge;
+pub mod tribute_to_hunger;
+pub mod divine_reckoning;
+
 
 use std::collections::HashMap;
 
@@ -676,6 +682,12 @@ impl CardRegistry {
         reg.register(Box::new(darkthicket_wolf::DarkthicketWolf));
         reg.register(Box::new(lantern_spirit::LanternSpirit));
         reg.register(Box::new(avacynian_priest::AvacynianPriest));
+        // Innistrad Tier 8 cards
+        reg.register(Box::new(altars_reap::AltarsReap));
+        reg.register(Box::new(infernal_plunge::InfernalPlunge));
+        reg.register(Box::new(tribute_to_hunger::TributeToHunger));
+        reg.register(Box::new(divine_reckoning::DivineReckoning));
+
         reg
     }
 }

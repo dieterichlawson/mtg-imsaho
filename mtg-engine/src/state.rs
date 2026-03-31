@@ -1053,6 +1053,9 @@ pub enum PendingEffect {
     ReturnToHand { source_name: String },
     /// Put the chosen object on top of its owner's library.
     PutOnTopOfLibrary { source_name: String },
+    /// Sacrifice the chosen creature and gain life equal to its toughness (Tribute to Hunger).
+    /// `beneficiary` gains the life; `spell_id` is cleaned up after resolution.
+    SacrificeAndGainLife { beneficiary: PlayerId, spell_id: ObjectId },
 }
 
 /// Game result.
