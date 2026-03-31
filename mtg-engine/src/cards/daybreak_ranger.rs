@@ -31,7 +31,7 @@ impl CardBehavior for DaybreakRanger {
             ])),
             card_types: vec![CardType::Creature],
             supertypes: vec![],
-            subtypes: vec!["Human".into(), "Archer".into(), "Werewolf".into()],
+            subtypes: vec!["Human".into(), "Archer".into(), "Ranger".into(), "Werewolf".into()],
             power: Some(2),
             toughness: Some(2),
             oracle_text: "{T}: Daybreak Ranger deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Daybreak Ranger.".into(),

@@ -420,6 +420,8 @@ pub enum TriggerKind {
     BecomesBlocked,
     /// Whenever any creature attacks — watcher on other permanents (like AnyCreatureDies).
     AnyCreatureAttacks,
+    /// At the beginning of end of combat step.
+    EndCombat,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -581,6 +583,9 @@ pub trait CardBehavior: Send + Sync {
 
     /// Called at the beginning of the end step for each permanent with an end-step trigger.
     fn on_end_step(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called at the beginning of the end of combat step.
+    fn on_end_combat(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Called when a player casts an instant or sorcery spell.
     /// `caster` is the player who cast the spell, `spell_id` is the spell object.

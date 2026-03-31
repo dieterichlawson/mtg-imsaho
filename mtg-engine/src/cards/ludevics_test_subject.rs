@@ -23,7 +23,7 @@ impl CardBehavior for LudevicsTestSubject {
             ])),
             card_types: vec![CardType::Creature],
             supertypes: vec![],
-            subtypes: vec!["Lizard".into()],
+            subtypes: vec!["Lizard".into(), "Egg".into()],
             power: Some(0),
             toughness: Some(3),
             oracle_text: "Defender\n{1}{U}: Put a hatchling counter on Ludevic's Test Subject. Then if there are five or more hatchling counters on it, remove all of them and transform Ludevic's Test Subject.".into(),
