@@ -294,8 +294,9 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 continue;
             }
 
-            // Check mana.
-            if let Some(cost) = &data.cost {
+            // Check mana (use modified cost if available, e.g. Blasphemous Act).
+            let effective_cost = behavior.modified_cost(state, registry).or_else(|| data.cost.clone());
+            if let Some(ref cost) = effective_cost {
                 if !mana::can_pay(&player_state.mana_pool, cost) {
                     continue;
                 }
@@ -815,13 +816,15 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 .map(|o| o.zone == Zone::Graveyard)
                 .unwrap_or(false);
 
-            // Pay the appropriate mana cost.
+            // Pay the appropriate mana cost (use modified cost if available).
             let card_id = new_state.get_object(*object_id).expect("CastSpell object must exist").card_id;
-            let data = registry.get(card_id).expect("card must be in registry").card_data();
+            let behavior = registry.get(card_id).expect("card must be in registry");
+            let data = behavior.card_data();
             let cost = if is_flashback {
                 data.flashback_cost.expect("flashback cast on card without flashback_cost")
             } else {
-                data.cost.expect("non-flashback spell must have a mana cost")
+                behavior.modified_cost(&new_state, registry)
+                    .unwrap_or_else(|| data.cost.expect("non-flashback spell must have a mana cost"))
             };
             mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
                 .expect("legal_actions should have verified mana availability");
