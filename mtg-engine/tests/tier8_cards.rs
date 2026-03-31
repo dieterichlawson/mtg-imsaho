@@ -1,28 +1,21 @@
-//! Tests for Innistrad Tier 8 cards (sacrifice-as-cost abilities).
-//! Tests for Innistrad Tier 8 cards (sacrifice-as-cost and additional casting costs).
-
-//! Tests for Innistrad Tier 8 cards (sacrifice-based abilities + graveyard exile costs).
-
+//! Tests for Innistrad Tier 8 cards.
 
 mod common;
 
 use common::*;
 use mtg_engine::actions::{Action, Target};
-
-use mtg_engine::cards::CardRegistry;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::CardId;
-
+use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::triggers;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
 }
 
-// ── Selfless Cathar ─────────────────────────────────────────────────
-
-/// Selfless Cathar: sacrifice gives all your creatures +1/+1 until end of turn.
 #[test]
+
 fn selfless_cathar_pump_all_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -40,29 +33,6 @@ fn selfless_cathar_pump_all_creatures() {
             object_id: cathar,
             ability_index: 0,
             targets: vec![],
-// ── Skirsdag Cultist ─────────────────────────────────────────────
-
-/// Skirsdag Cultist activated ability deals 2 damage to a target creature.
-#[test]
-fn skirsdag_cultist_deals_2_damage_to_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
-    // Need a creature to sacrifice (can sacrifice itself or another creature).
-    let _fodder = ready_creature(&mut state, P0, 1, 1);
-    let target = ready_creature(&mut state, P1, 3, 3);
-
-    // Add red mana for the activation cost.
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
-
-    let state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: cultist,
-            ability_index: 0,
-            targets: vec![Target::Object(target)],
-
         },
         &reg,
     );
@@ -78,11 +48,8 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
     assert_eq!(new_state.effective_power(bear, &reg).unwrap(), 3);
     assert_eq!(new_state.effective_toughness(bear, &reg).unwrap(), 3);
 }
-
-// ── Silverchase Fox ─────────────────────────────────────────────────
-
-/// Silverchase Fox: sacrifice to exile target enchantment.
 #[test]
+
 fn silverchase_fox_exiles_enchantment() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -120,11 +87,8 @@ fn silverchase_fox_exiles_enchantment() {
         "Target enchantment should be exiled"
     );
 }
-
-// ── Brain Weevil ────────────────────────────────────────────────────
-
-/// Brain Weevil: sacrifice to make target player discard two cards.
 #[test]
+
 fn brain_weevil_forces_discard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -143,27 +107,6 @@ fn brain_weevil_forces_discard() {
         &state,
         &Action::ActivateAbility {
             object_id: weevil,
-    // Target creature should have taken 2 damage.
-    let obj = state.get_object(target).unwrap();
-    assert_eq!(obj.damage_marked, 2, "Target should have 2 damage marked");
-}
-
-/// Skirsdag Cultist deals 2 damage to a player.
-#[test]
-fn skirsdag_cultist_deals_2_damage_to_player() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
-    let _fodder = ready_creature(&mut state, P0, 1, 1);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
-
-    let state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: cultist,
-
             ability_index: 0,
             targets: vec![Target::Player(P1)],
         },
@@ -181,9 +124,8 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
     let hand_after = new_state.objects_in_zone(Zone::Hand, P1).len();
     assert_eq!(hand_after, 1, "P1 should have 1 card left after discarding 2");
 }
-
-/// Brain Weevil has intimidate.
 #[test]
+
 fn brain_weevil_has_intimidate() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -191,11 +133,8 @@ fn brain_weevil_has_intimidate() {
     let weevil = named_creature(&mut state, &reg, "Brain Weevil", P0);
     assert!(state.has_keyword(weevil, Keyword::Intimidate, &reg));
 }
-
-// ── Disciple of Griselbrand ────────────────────────────────────────
-
-/// Disciple of Griselbrand: sacrifice a creature to gain life equal to its toughness.
 #[test]
+
 fn disciple_of_griselbrand_gains_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -213,52 +152,6 @@ fn disciple_of_griselbrand_gains_life() {
         &state,
         &Action::ActivateAbility {
             object_id: disciple,
-    assert_eq!(state.get_player(P1).life, 18, "Opponent should be at 18 life");
-}
-
-/// Skirsdag Cultist requires tap, red mana, and a creature to sacrifice.
-#[test]
-fn skirsdag_cultist_cannot_activate_without_creature() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Cultist is the only creature. It will be sacrificed as part of the cost,
-    // but we need at least one creature to sacrifice. Since the cultist itself
-    // counts, the ability should still be available.
-    let _cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
-
-    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
-
-    let actions = mtg_engine::engine::legal_actions(&state, &reg);
-    let has_activate = actions.actions.iter().any(|a| matches!(a, Action::ActivateAbility { .. }));
-    assert!(has_activate, "Should be able to activate (cultist counts as sacrifice fodder)");
-}
-
-// ── Stitcher's Apprentice ────────────────────────────────────────
-
-/// Stitcher's Apprentice creates a 2/2 token then sacrifices a creature.
-#[test]
-fn stitchers_apprentice_creates_token_then_sacrifices() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let apprentice = named_creature(&mut state, &reg, "Stitcher's Apprentice", P0);
-
-    // Add mana for the activation cost ({1}{U}).
-    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-
-    // Count creatures before activation.
-    let creatures_before: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
-        .collect();
-    assert_eq!(creatures_before.len(), 1, "Only the apprentice on the battlefield");
-
-    let state = mtg_engine::engine::submit_action(
-        &state,
-        &Action::ActivateAbility {
-            object_id: apprentice,
-
             ability_index: 0,
             targets: vec![],
         },
@@ -270,10 +163,9 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
     let life_after = new_state.get_player(P0).life;
     let gained = life_after - life_before;
     assert!(gained > 0, "Should have gained life, gained {}", gained);
-// ── Altar's Reap ──────────────────────────────────────────────────
-
-/// Altar's Reap sacrifices a creature and draws two cards.
+}
 #[test]
+
 fn altars_reap_sacrifices_and_draws_two() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -299,11 +191,8 @@ fn altars_reap_sacrifices_and_draws_two() {
     assert_eq!(hand_after, 2,
         "Should have drawn 2 cards");
 }
-
-// ── Infernal Plunge ───────────────────────────────────────────────
-
-/// Infernal Plunge sacrifices a creature and adds {R}{R}{R}.
 #[test]
+
 fn infernal_plunge_sacrifices_and_adds_rrr() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -322,12 +211,8 @@ fn infernal_plunge_sacrifices_and_adds_rrr() {
     assert_eq!(state.get_player(P0).mana_pool.get(ManaType::Red), 3,
         "Should have 3 red mana in pool after Infernal Plunge");
 }
-
-// ── Tribute to Hunger ─────────────────────────────────────────────
-
-/// Tribute to Hunger: opponent sacrifices a creature, caster gains life.
-/// With exactly one opponent creature, it auto-sacrifices.
 #[test]
+
 fn tribute_to_hunger_opponent_sacs_and_gain_life() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -350,9 +235,8 @@ fn tribute_to_hunger_opponent_sacs_and_gain_life() {
     assert_eq!(state.get_player(P0).life, initial_life + 4,
         "Should have gained life equal to sacrificed creature's toughness");
 }
-
-/// Tribute to Hunger with no opponent creatures does nothing extra.
 #[test]
+
 fn tribute_to_hunger_no_creatures_does_nothing() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -366,11 +250,8 @@ fn tribute_to_hunger_no_creatures_does_nothing() {
     assert_eq!(state.get_player(P0).life, initial_life,
         "No life gain when opponent has no creatures");
 }
-
-// ── Divine Reckoning ──────────────────────────────────────────────
-
-/// Divine Reckoning: each player keeps one creature, the rest are sacrificed.
 #[test]
+
 fn divine_reckoning_keeps_one_per_player() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -401,9 +282,8 @@ fn divine_reckoning_keeps_one_per_player() {
     assert_eq!(p1_creatures.len(), 1, "P1 should have exactly 1 creature");
     assert_eq!(p1_creatures[0].id, c5, "P1 should keep the highest-toughness creature");
 }
-
-/// Divine Reckoning with 0 or 1 creature per player does nothing.
 #[test]
+
 fn divine_reckoning_with_one_creature_keeps_it() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -425,15 +305,110 @@ fn divine_reckoning_with_one_creature_keeps_it() {
         .count();
     assert_eq!(p1_creatures, 0, "P1 should have no creatures");
 }
-
-/// Divine Reckoning has flashback {5}{W}{W}.
 #[test]
+
 fn divine_reckoning_has_flashback() {
     let reg = registry();
     let card_id = reg.get_id_by_name("Divine Reckoning").unwrap();
     let data = reg.card_data(card_id).unwrap();
     assert!(data.flashback_cost.is_some(), "Divine Reckoning should have flashback");
     assert_eq!(data.flashback_cost.unwrap().mana_value(), 7, "Flashback should cost 5WW = 7 MV");
+}
+#[test]
+
+fn skirsdag_cultist_deals_2_damage_to_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    // Need a creature to sacrifice (can sacrifice itself or another creature).
+    let _fodder = ready_creature(&mut state, P0, 1, 1);
+    let target = ready_creature(&mut state, P1, 3, 3);
+
+    // Add red mana for the activation cost.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: cultist,
+            ability_index: 0,
+            targets: vec![Target::Object(target)],
+        },
+        &reg,
+    );
+
+    // Target creature should have taken 2 damage.
+    let obj = state.get_object(target).unwrap();
+    assert_eq!(obj.damage_marked, 2, "Target should have 2 damage marked");
+}
+#[test]
+
+fn skirsdag_cultist_deals_2_damage_to_player() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+    let _fodder = ready_creature(&mut state, P0, 1, 1);
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: cultist,
+            ability_index: 0,
+            targets: vec![Target::Player(P1)],
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_player(P1).life, 18, "Opponent should be at 18 life");
+}
+#[test]
+
+fn skirsdag_cultist_cannot_activate_without_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Cultist is the only creature. It will be sacrificed as part of the cost,
+    // but we need at least one creature to sacrifice. Since the cultist itself
+    // counts, the ability should still be available.
+    let _cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let actions = mtg_engine::engine::legal_actions(&state, &reg);
+    let has_activate = actions.actions.iter().any(|a| matches!(a, Action::ActivateAbility { .. }));
+    assert!(has_activate, "Should be able to activate (cultist counts as sacrifice fodder)");
+}
+#[test]
+
+fn stitchers_apprentice_creates_token_then_sacrifices() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let apprentice = named_creature(&mut state, &reg, "Stitcher's Apprentice", P0);
+
+    // Add mana for the activation cost ({1}{U}).
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Count creatures before activation.
+    let creatures_before: Vec<_> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+        .collect();
+    assert_eq!(creatures_before.len(), 1, "Only the apprentice on the battlefield");
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: apprentice,
+            ability_index: 0,
+            targets: vec![],
+        },
+        &reg,
+    );
 
     // After activation: a 2/2 token was created, then a creature was sacrificed.
     // The auto-sacrifice picks the first creature, which could be the token or
@@ -452,9 +427,8 @@ fn divine_reckoning_has_flashback() {
     // Note: tokens cease to exist when they go to graveyard (SBA), but before SBA we still see it.
     assert!(graveyard.len() >= 1, "A creature should have been sacrificed");
 }
-
-/// Stitcher's Apprentice creates a 2/2 Homunculus token.
 #[test]
+
 fn stitchers_apprentice_token_is_2_2_homunculus() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -485,11 +459,8 @@ fn stitchers_apprentice_token_is_2_2_homunculus() {
     assert_eq!(token.toughness, Some(2), "Token should have toughness 2");
     assert_eq!(token.name, "Homunculus", "Token should be named Homunculus");
 }
-
-// ── Corpse Lunge ─────────────────────────────────────────────────
-
-/// Corpse Lunge exiles a creature from graveyard and deals damage equal to its power.
 #[test]
+
 fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -514,9 +485,8 @@ fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 4, "Target should have 4 damage from Corpse Lunge");
 }
-
-/// Corpse Lunge with no creature in graveyard deals no damage.
 #[test]
+
 fn corpse_lunge_no_graveyard_creature_deals_no_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -529,9 +499,8 @@ fn corpse_lunge_no_graveyard_creature_deals_no_damage() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 0, "No damage should be dealt without graveyard creature");
 }
-
-/// Corpse Lunge picks the highest-power creature from graveyard.
 #[test]
+
 fn corpse_lunge_picks_highest_power_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -554,11 +523,8 @@ fn corpse_lunge_picks_highest_power_creature() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 5, "Should deal 5 damage (power of exiled 5/5)");
 }
-
-// ── Harvest Pyre ─────────────────────────────────────────────────
-
-/// Harvest Pyre exiles all graveyard cards and deals damage equal to the count.
 #[test]
+
 fn harvest_pyre_deals_damage_equal_to_exiled_count() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -584,9 +550,8 @@ fn harvest_pyre_deals_damage_equal_to_exiled_count() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 4, "Target should have 4 damage from Harvest Pyre");
 }
-
-/// Harvest Pyre with empty graveyard deals 0 damage.
 #[test]
+
 fn harvest_pyre_empty_graveyard_deals_no_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -599,9 +564,8 @@ fn harvest_pyre_empty_graveyard_deals_no_damage() {
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 0, "No damage should be dealt with empty graveyard");
 }
-
-/// Harvest Pyre only exiles the caster's graveyard cards, not the opponent's.
 #[test]
+
 fn harvest_pyre_only_exiles_own_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -637,5 +601,4 @@ fn harvest_pyre_only_exiles_own_graveyard() {
     // Target should have 3 damage.
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 3, "Target should have 3 damage");
-
 }
