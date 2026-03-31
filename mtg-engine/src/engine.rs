@@ -1059,7 +1059,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let old = state.get_player(*pid).life;
             let new_life = old - *amount as i32;
             state.get_player_mut(*pid).life = new_life;
-            state.events.push(GameEvent::CombatDamageDealt {
+            state.events.push(GameEvent::NonCombatDamageDealt {
                 source: crate::ids::ObjectId(0),
                 target: crate::events::DamageTarget::Player(*pid),
                 amount: *amount,

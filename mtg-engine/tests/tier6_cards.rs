@@ -56,6 +56,30 @@ fn abattoir_ghoul_no_life_if_not_damaged_by_ghoul() {
     assert_eq!(state.get_player(P0).life, 20, "should NOT gain life");
 }
 
+/// Abattoir Ghoul uses last-known toughness (including +1/+1 counters).
+#[test]
+fn abattoir_ghoul_uses_last_known_toughness_with_counters() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ghoul = named_creature(&mut state, &reg, "Abattoir Ghoul", P0);
+    let victim = ready_creature(&mut state, P1, 2, 3); // base 2/3
+
+    // Give the victim a +1/+1 counter (effective toughness = 4).
+    state.add_counters(victim, CounterType::PlusOnePlusOne, 1);
+
+    // Ghoul damaged it.
+    state.get_object_mut(victim).unwrap().damaged_by.push(ghoul);
+    // Mark lethal damage (4 toughness with counter, 4 damage).
+    state.get_object_mut(victim).unwrap().damage_marked = 4;
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    triggers::process_triggers(&mut state, &reg);
+
+    // Should gain 4 life (last-known toughness with counter), not 3 (base).
+    assert_eq!(state.get_player(P0).life, 24, "should gain life = last-known toughness including counters");
+}
+
 // ── Champion of the Parish ────────────────────────────────────────
 
 /// Champion of the Parish gets a +1/+1 counter when another Human enters.
