@@ -22,7 +22,7 @@ impl CardBehavior for FullMoonsRise {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Werewolf and Wolf creatures you control get +1/+0 and have trample.\nSacrifice Full Moon's Rise: Regenerate all Werewolf and Wolf creatures you control.".into(),
+            oracle_text: "Werewolf creatures you control get +1/+0 and have trample.\nSacrifice this enchantment: Regenerate all Werewolf creatures you control.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
@@ -31,20 +31,14 @@ impl CardBehavior for FullMoonsRise {
                     toughness: 0,
                     scope: EffectScope::Global(CreatureFilter::And(vec![
                         CreatureFilter::You,
-                        CreatureFilter::Or(vec![
-                            CreatureFilter::HasSubtype("Werewolf".into()),
-                            CreatureFilter::HasSubtype("Wolf".into()),
-                        ]),
+                        CreatureFilter::HasSubtype("Werewolf".into()),
                     ])),
                 },
                 ContinuousEffect::GrantKeyword {
                     keyword: Keyword::Trample,
                     scope: EffectScope::Global(CreatureFilter::And(vec![
                         CreatureFilter::You,
-                        CreatureFilter::Or(vec![
-                            CreatureFilter::HasSubtype("Werewolf".into()),
-                            CreatureFilter::HasSubtype("Wolf".into()),
-                        ]),
+                        CreatureFilter::HasSubtype("Werewolf".into()),
                     ])),
                 },
             ],
@@ -87,7 +81,7 @@ impl CardBehavior for FullMoonsRise {
                     let all_subtypes: Vec<&str> = o.subtypes.iter().map(|s| s.as_str())
                         .chain(subtypes.iter().map(|s| s.as_str()))
                         .collect();
-                    all_subtypes.iter().any(|&s| s == "Werewolf" || s == "Wolf")
+                    all_subtypes.iter().any(|&s| s == "Werewolf")
                 }
             })
             .map(|o| o.id)
@@ -99,6 +93,6 @@ impl CardBehavior for FullMoonsRise {
             }
         }
         state.log(crate::state::LogLevel::Event,
-            "Full Moon's Rise: all Wolf and Werewolf creatures gain regeneration".into());
+            "Full Moon's Rise: all Werewolf creatures gain regeneration".into());
     }
 }

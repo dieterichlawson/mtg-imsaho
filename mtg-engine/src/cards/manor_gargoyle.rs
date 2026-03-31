@@ -5,11 +5,9 @@ use crate::state::{GameState, UntilEndOfTurnKeyword};
 use crate::types::*;
 
 /// Manor Gargoyle — {5} 4/4 Artifact Creature — Gargoyle.
-/// Defender, Indestructible.
+/// Defender.
+/// Manor Gargoyle has indestructible as long as it has defender.
 /// {1}: Until end of turn, Manor Gargoyle loses defender and gains flying.
-///
-/// Simplified: the activated ability grants flying until end of turn.
-/// Losing defender is tracked by granting a special state.
 pub struct ManorGargoyle;
 
 impl CardBehavior for ManorGargoyle {
@@ -24,10 +22,16 @@ impl CardBehavior for ManorGargoyle {
             subtypes: vec!["Gargoyle".into()],
             power: Some(4),
             toughness: Some(4),
-            oracle_text: "Defender, indestructible\n{1}: Until end of turn, Manor Gargoyle loses defender and gains flying.".into(),
-            keywords: vec![Keyword::Defender, Keyword::Indestructible],
+            oracle_text: "Defender\nManor Gargoyle has indestructible as long as it has defender.\n{1}: Until end of turn, Manor Gargoyle loses defender and gains flying.".into(),
+            keywords: vec![Keyword::Defender],
             flashback_cost: None,
-            continuous_effects: vec![],
+            continuous_effects: vec![
+                ContinuousEffect::ConditionalKeyword {
+                    keyword: Keyword::Indestructible,
+                    condition: EffectCondition::SelfHasKeyword(Keyword::Defender),
+                    scope: EffectScope::OnSelf,
+                },
+            ],
             additional_cost: None,
             triggered_abilities: vec![],
         }
@@ -58,11 +62,22 @@ impl CardBehavior for ManorGargoyle {
             target: object_id,
             keyword: Keyword::Flying,
         });
-        // Lose defender: remove it from the object's keywords.
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.keywords.retain(|k| *k != Keyword::Defender);
-        }
+        // Lose defender until end of turn (which also loses indestructible
+        // since "has indestructible as long as it has defender").
+        state.until_end_of_turn_removed_keywords.push(UntilEndOfTurnKeyword {
+            target: object_id,
+            keyword: Keyword::Defender,
+        });
         state.log(crate::state::LogLevel::Event,
             "Manor Gargoyle loses defender and gains flying until end of turn".to_string());
+    }
+
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        match target {
+            Target::Object(id) => state.get_object(*id)
+                .map(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                .unwrap_or(false),
+            _ => false,
+        }
     }
 }

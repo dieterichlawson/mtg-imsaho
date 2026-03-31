@@ -26,12 +26,17 @@ When multiple cards are given, run the full procedure for EACH card and compile 
 - Record: name, mana cost, type line, Oracle text, power/toughness (if creature)
 - **IMPORTANT**: Creature types have been updated over time. "Hound" became "Dog", "Bird" may have changed subtypes. Always use the API result.
 
-### 3. Search for rulings
+### 3. Search for rulings and errata
+- **IMPORTANT**: Scryfall is the AUTHORITATIVE source for current Oracle text, errata, and type lines. The Scryfall API always returns the latest Oracle text with all errata applied. NEVER use your training data over Scryfall — cards have been errata'd (e.g., "Hound" → "Dog", "sacrifice" → "destroy", type line changes, flashback cost corrections).
 - **Primary method**: Use the Scryfall API for rulings:
   ```
-  curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('rulings_uri',''))"
+  curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('rulings_uri',''))"
   ```
   Then fetch the rulings URI to get judge rulings.
+- **For DFCs (double-faced cards)**: Use the `card_faces` array from the Scryfall response:
+  ```
+  curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'Face {i}: Name={f[\"name\"]}, Oracle={f.get(\"oracle_text\",\"\")}, P/T={f.get(\"power\",\"\")} / {f.get(\"toughness\",\"\")}') for i,f in enumerate(d.get('card_faces',[]))]"
+  ```
 - **Fallback**: Search `{card name} mtg rulings` via WebSearch.
 - Pay special attention to rulings about:
   - Timing (when effects happen)

@@ -584,20 +584,19 @@ fn unholy_fiend_drains_life_at_end_step() {
 // ── Screeching Bat ──────────────────────────────────────────
 
 #[test]
-fn screeching_bat_transforms_with_activated_ability() {
+fn screeching_bat_transforms_at_upkeep_with_mana() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut state = game_at_step(Step::Upkeep, P0);
 
     let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
-    assert_eq!(state.get_object(bat).unwrap().power, Some(2));
     assert!(!state.get_object(bat).unwrap().is_transformed);
 
-    // Add mana for the transform ability: {2}{B}{B}.
+    // Add mana for the upkeep transform cost: {2}{B}{B}.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, bat, 0, &[], &reg);
+    behavior.on_upkeep(&mut state, bat, &reg);
 
     assert!(state.get_object(bat).unwrap().is_transformed);
     assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");

@@ -380,6 +380,9 @@ pub enum EffectCondition {
     YouControlSubtype(String),
     /// An opponent controls a permanent with this subtype.
     OpponentControlsSubtype(String),
+    /// This permanent has the specified keyword (for conditional abilities like
+    /// "has indestructible as long as it has defender").
+    SelfHasKeyword(Keyword),
 }
 
 /// Filter for which spells a cost reduction applies to.

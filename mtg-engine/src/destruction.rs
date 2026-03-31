@@ -48,6 +48,16 @@ pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry)
     DestroyResult::Died
 }
 
+/// Destroy a permanent, bypassing regeneration ("can't be regenerated").
+/// Still respects indestructible.
+pub fn try_destroy_no_regen(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> DestroyResult {
+    if state.has_keyword(id, Keyword::Indestructible, registry) {
+        return DestroyResult::Indestructible;
+    }
+    destroy(state, id, Some(registry));
+    DestroyResult::Died
+}
+
 /// Sacrifice a permanent. Bypasses indestructible and regeneration.
 /// Returns true if the permanent existed and was sacrificed.
 pub fn sacrifice(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> bool {

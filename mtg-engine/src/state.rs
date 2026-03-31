@@ -95,6 +95,11 @@ pub struct GameState {
     #[serde(default)]
     pub until_end_of_turn_protection: Vec<UntilEndOfTurnProtection>,
 
+    /// Keywords temporarily removed until end of turn (e.g., Manor Gargoyle loses defender).
+    /// At cleanup, these keywords are restored on their objects.
+    #[serde(default)]
+    pub until_end_of_turn_removed_keywords: Vec<UntilEndOfTurnKeyword>,
+
     /// Temporary control changes that revert at end of turn.
     /// Each entry is (object_id, original_controller).
     #[serde(default)]
@@ -202,6 +207,7 @@ impl GameState {
             until_end_of_turn_keywords: Vec::new(),
             until_end_of_turn_cant_block: Vec::new(),
             until_end_of_turn_protection: Vec::new(),
+            until_end_of_turn_removed_keywords: Vec::new(),
             until_end_of_turn_control_changes: Vec::new(),
             until_end_of_turn_flashback: Vec::new(),
             creature_died_this_turn: false,
@@ -832,6 +838,12 @@ impl GameState {
             _ => return false,
         };
 
+        // Check if this keyword was temporarily removed until end of turn.
+        if self.until_end_of_turn_removed_keywords.iter()
+            .any(|r| r.target == creature_id && r.keyword == keyword) {
+            return false;
+        }
+
         // 0. Keywords stored directly on the object (tokens, or populated at creation).
         if obj.keywords.contains(&keyword) {
             return true;
@@ -904,7 +916,7 @@ impl GameState {
                     if !self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
                         continue;
                     }
-                    if self.check_condition(condition, source.controller, registry) {
+                    if self.check_condition(condition, source.id, source.controller, registry) {
                         return true;
                     }
                 }
@@ -914,7 +926,7 @@ impl GameState {
     }
 
     /// Evaluate an EffectCondition for a given controller.
-    fn check_condition(&self, condition: &crate::types::EffectCondition, controller: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
+    fn check_condition(&self, condition: &crate::types::EffectCondition, source_id: ObjectId, controller: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
         use crate::types::EffectCondition;
         match condition {
             EffectCondition::YouControlSubtype(subtype) => {
@@ -937,6 +949,28 @@ impl GameState {
                             .unwrap_or(false)
                     )
                 })
+            }
+            EffectCondition::SelfHasKeyword(kw) => {
+                // Check if the source permanent has the specified keyword.
+                // Careful: don't recurse if checking indestructible conditioned on defender —
+                // we check base keywords directly to avoid infinite recursion.
+                self.get_object(source_id)
+                    .map(|o| {
+                        // Check object-level keywords.
+                        if o.keywords.contains(kw) {
+                            // But also check if it was temporarily removed.
+                            !self.until_end_of_turn_removed_keywords.iter()
+                                .any(|r| r.target == source_id && r.keyword == *kw)
+                        } else {
+                            // Check card_data keywords.
+                            registry.card_data(o.card_id)
+                                .map(|d| d.keywords.contains(kw))
+                                .unwrap_or(false)
+                                && !self.until_end_of_turn_removed_keywords.iter()
+                                    .any(|r| r.target == source_id && r.keyword == *kw)
+                        }
+                    })
+                    .unwrap_or(false)
             }
         }
     }

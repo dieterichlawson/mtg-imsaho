@@ -1,11 +1,10 @@
-use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
 /// Screeching Bat {2}{B} 2/2 Bat with Flying // Stalking Vampire 5/5 Vampire.
-/// {2}{B}{B}: Transform Screeching Bat. (Activatable in either direction.)
+/// Both faces: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform."
 pub struct ScreechingBat;
 
 impl CardBehavior for ScreechingBat {
@@ -21,12 +20,17 @@ impl CardBehavior for ScreechingBat {
             subtypes: vec!["Bat".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Flying\n{2}{B}{B}: Transform Screeching Bat. Activate only as a sorcery.".into(),
+            oracle_text: "Flying\nAt the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Screeching Bat.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "you may pay {2}{B}{B} to transform".into(),
+                },
+            ],
         }
     }
 
@@ -39,12 +43,17 @@ impl CardBehavior for ScreechingBat {
             subtypes: vec!["Vampire".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "{2}{B}{B}: Transform Stalking Vampire. Activate only as a sorcery.".into(),
+            oracle_text: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Stalking Vampire.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "you may pay {2}{B}{B} to transform".into(),
+                },
+            ],
         })
     }
 
@@ -56,35 +65,33 @@ impl CardBehavior for ScreechingBat {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
-        match state.get_object(object_id) {
-            Some(o) if o.zone == Zone::Battlefield => {}
-            _ => return vec![],
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+        let controller = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            _ => return,
         };
-        vec![ActivatedAbilityDef {
-            ability_index: 0,
-            description: "{2}{B}{B}: Transform".into(),
-            cost: ManaCost::new(vec![
-                ManaSymbol::Generic(2),
-                ManaSymbol::Colored(Color::Black),
-                ManaSymbol::Colored(Color::Black),
-            ]),
-            requires_tap: false,
-            sacrifice_cost: SacrificeCost::None,
-            target_requirement: None,
-            once_per_turn: false,
-            sorcery_speed_only: true,
-        }]
-    }
-
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        let is_transformed = state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false);
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.is_transformed = !is_transformed;
-            let name = if obj.is_transformed { "Stalking Vampire" } else { "Screeching Bat" };
-            obj.name = name.into();
+        if state.active_player != controller {
+            return;
+        }
+        // "You may pay {2}{B}{B}. If you do, transform."
+        // Auto-pay if the controller has enough mana (simplified "you may").
+        let pool = &state.get_player(controller).mana_pool;
+        let cost = ManaCost::new(vec![
+            ManaSymbol::Generic(2),
+            ManaSymbol::Colored(Color::Black),
+            ManaSymbol::Colored(Color::Black),
+        ]);
+        if crate::mana::can_pay(pool, &cost) {
+            crate::mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &cost).ok();
+            let is_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
+            if let Some(obj) = state.get_object_mut(self_id) {
+                obj.is_transformed = !is_transformed;
+                let name = if obj.is_transformed { "Stalking Vampire" } else { "Screeching Bat" };
+                obj.name = name.into();
+            }
+            let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event,
-                format!("{} transforms into {}", if is_transformed { "Stalking Vampire" } else { "Screeching Bat" }, name));
+                format!("Transforms into {}", new_name));
         }
     }
 

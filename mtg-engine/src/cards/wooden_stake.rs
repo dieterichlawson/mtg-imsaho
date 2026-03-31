@@ -96,7 +96,7 @@ impl CardBehavior for WoodenStake {
         if is_vampire {
             let name = state.get_object(other_creature).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", name));
-            crate::destruction::try_destroy(state, other_creature, registry);
+            crate::destruction::try_destroy_no_regen(state, other_creature, registry);
         }
     }
 
@@ -112,7 +112,7 @@ impl CardBehavior for WoodenStake {
         if is_vampire {
             let name = state.get_object(blocker_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", name));
-            crate::destruction::try_destroy(state, blocker_id, registry);
+            crate::destruction::try_destroy_no_regen(state, blocker_id, registry);
         }
     }
 }
