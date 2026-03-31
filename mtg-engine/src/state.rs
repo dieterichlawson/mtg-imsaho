@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::ids::{ObjectId, PlayerId, CardId};
-use crate::types::{Zone, Step, ManaPool};
+use crate::types::{Zone, Step, ManaPool, ManaCost};
 
 /// An entry on the stack — either a spell or a triggered ability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -90,6 +90,16 @@ pub struct GameState {
     /// Temporary "can't block" restrictions that expire at end of turn.
     pub until_end_of_turn_cant_block: Vec<ObjectId>,
 
+    /// Temporary control changes that revert at end of turn.
+    /// Each entry is (object_id, original_controller).
+    #[serde(default)]
+    pub until_end_of_turn_control_changes: Vec<(ObjectId, PlayerId)>,
+
+    /// Temporary flashback grants that expire at end of turn.
+    /// Each entry is (object_id, flashback_cost).
+    #[serde(default)]
+    pub until_end_of_turn_flashback: Vec<(ObjectId, ManaCost)>,
+
     /// Whether a creature has died this turn (for morbid).
     #[serde(default)]
     pub creature_died_this_turn: bool,
@@ -166,6 +176,8 @@ impl GameState {
             until_end_of_turn_effects: Vec::new(),
             until_end_of_turn_keywords: Vec::new(),
             until_end_of_turn_cant_block: Vec::new(),
+            until_end_of_turn_control_changes: Vec::new(),
+            until_end_of_turn_flashback: Vec::new(),
             creature_died_this_turn: false,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
@@ -973,6 +985,8 @@ pub enum PendingEffect {
     ExileCurseOfOblivion { remaining: u32 },
     /// Return the chosen object to its owner's hand.
     ReturnToHand { source_name: String },
+    /// Put the chosen object on top of its owner's library.
+    PutOnTopOfLibrary { source_name: String },
 }
 
 /// Game result.

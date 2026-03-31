@@ -230,6 +230,10 @@ pub enum TriggerKind {
     EndStep,
     /// Whenever a player casts an instant or sorcery spell (spell-cast watcher).
     SpellCast,
+    /// When this creature attacks.
+    Attacks,
+    /// When this creature blocks.
+    Blocks,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -391,6 +395,16 @@ pub trait CardBehavior: Send + Sync {
     /// Called when a player casts an instant or sorcery spell.
     /// `caster` is the player who cast the spell, `spell_id` is the spell object.
     fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called when this creature attacks (declared as an attacker).
+    fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called when this creature blocks (declared as a blocker).
+    fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) {}
+
+    /// Return a modified mana cost for this spell, or None to use the normal cost.
+    /// Used for cost reduction (e.g., Blasphemous Act costs {1} less per creature).
+    fn modified_cost(&self, _state: &GameState, _registry: &CardRegistry) -> Option<ManaCost> { None }
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}

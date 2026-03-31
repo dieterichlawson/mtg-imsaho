@@ -365,6 +365,30 @@ pub enum ContinuousEffect {
     ForceAttack { scope: EffectScope },
     /// Protection from a subtype (prevents damage, blocking, targeting, enchanting).
     ProtectionFromSubtype { subtype: String, scope: EffectScope },
+    /// Protection from creatures matching a filter.
+    ProtectionFrom { filter: CreatureFilter, scope: EffectScope },
+    /// Conditional keyword: granted only when a condition is met.
+    ConditionalKeyword { keyword: Keyword, condition: EffectCondition, scope: EffectScope },
+    /// Reduce cost of spells matching a filter.
+    ReduceCost { reduction: u32, filter: SpellFilter },
+}
+
+/// Condition for conditional effects.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum EffectCondition {
+    /// You control a permanent with this subtype.
+    YouControlSubtype(String),
+    /// An opponent controls a permanent with this subtype.
+    OpponentControlsSubtype(String),
+}
+
+/// Filter for which spells a cost reduction applies to.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum SpellFilter {
+    /// All creature spells.
+    CreatureSpells,
+    /// Creature spells with a specific subtype.
+    CreatureWithSubtype(String),
 }
 
 #[cfg(test)]

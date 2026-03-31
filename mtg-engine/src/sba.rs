@@ -1,5 +1,6 @@
 use crate::cards::CardRegistry;
 use crate::events::{GameEvent, LossReason};
+use crate::ids::ObjectId;
 use crate::state::{GameResult, GameState, LogLevel};
 use crate::types::Zone;
 
@@ -147,11 +148,13 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
 
         // Rule 704.5m: Aura not attached to anything goes to graveyard.
         // Curses attached to players (attached_to_player) are exempt.
+        // Equipment stays on the battlefield when unattached (detaches instead).
         let unattached_auras: Vec<_> = state.objects.values()
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && o.attached_to.is_some()
                     && o.attached_to_player.is_none() // player-attached curses are fine
+                    && !o.is_equipment // equipment stays on battlefield when unattached
                     && {
                         let target_id = o.attached_to.expect("aura must have attached_to");
                         state.get_object(target_id)
@@ -161,6 +164,28 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             })
             .map(|o| o.id)
             .collect();
+
+        // Equipment attached to creatures that left the battlefield: detach (don't destroy).
+        let detach_equipment: Vec<ObjectId> = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                    && o.is_equipment
+                    && o.attached_to.is_some()
+                    && {
+                        let target_id = o.attached_to.expect("equipment must have attached_to");
+                        state.get_object(target_id)
+                            .map(|t| t.zone != Zone::Battlefield)
+                            .unwrap_or(true)
+                    }
+            })
+            .map(|o| o.id)
+            .collect();
+        for id in detach_equipment {
+            if let Some(obj) = state.get_object_mut(id) {
+                obj.attached_to = None;
+            }
+            took_action = true;
+        }
 
         for id in unattached_auras {
             state.move_object(id, Zone::Graveyard);
