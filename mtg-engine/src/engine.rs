@@ -194,7 +194,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
         }
 
-        for (_source_card_id, ab) in abilities {
+        for (source_card_id, ab) in abilities {
             // Check mana cost.
             if !mana::can_pay(mana_pool, &ab.cost) { continue; }
             // Check tap cost.
@@ -222,13 +222,17 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // Generate actions based on targeting.
             if let Some(ref _target_req) = ab.target_requirement {
                 // Targeted ability: generate one action per valid target.
-                let targets = generate_ability_targets(state, obj_id, &ab, player, registry);
-                for target in targets {
-                    actions.push(Action::ActivateAbility {
-                        object_id: obj_id,
-                        ability_index: ab.ability_index,
-                        targets: vec![target],
-                    });
+                // Use the card behavior for is_valid_target filtering.
+                let behavior = registry.get(source_card_id);
+                if let Some(behavior) = behavior {
+                    let targets = generate_ability_targets(state, obj_id, &ab, player, registry, behavior);
+                    for target in targets {
+                        actions.push(Action::ActivateAbility {
+                            object_id: obj_id,
+                            ability_index: ab.ability_index,
+                            targets: vec![target],
+                        });
+                    }
                 }
             } else {
                 // Untargeted ability.
@@ -656,6 +660,7 @@ fn generate_ability_targets(
     ab: &crate::cards::ActivatedAbilityDef,
     controller: PlayerId,
     registry: &CardRegistry,
+    behavior: &dyn crate::cards::CardBehavior,
 ) -> Vec<crate::actions::Target> {
     use crate::actions::Target;
     use crate::cards::TargetRequirement;
@@ -671,12 +676,14 @@ fn generate_ability_targets(
                 .filter(|o| o.power.is_some())
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
         }
         TargetRequirement::PlayerOnly => {
             state.players.iter()
                 .filter(|p| !p.lost)
                 .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
         }
         TargetRequirement::AnyTarget => {
@@ -684,10 +691,14 @@ fn generate_ability_targets(
                 .filter(|o| o.power.is_some())
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
             for p in &state.players {
                 if !p.lost {
-                    targets.push(Target::Player(p.id));
+                    let t = Target::Player(p.id);
+                    if behavior.is_valid_target(state, controller, &t, registry) {
+                        targets.push(t);
+                    }
                 }
             }
             targets
@@ -697,6 +708,7 @@ fn generate_ability_targets(
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .filter(|o| matches_target_filter(o, filter))
                 .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
         }
         _ => vec![],

@@ -137,6 +137,13 @@ pub mod selfless_cathar;
 pub mod silverchase_fox;
 pub mod brain_weevil;
 pub mod disciple_of_griselbrand;
+// Tier 10: Activated abilities
+pub mod manor_skeleton;
+pub mod kessig_wolf;
+pub mod feral_ridgewolf;
+pub mod darkthicket_wolf;
+pub mod lantern_spirit;
+pub mod avacynian_priest;
 
 use std::collections::HashMap;
 
@@ -662,6 +669,13 @@ impl CardRegistry {
         reg.register(Box::new(silverchase_fox::SilverchaseFox));
         reg.register(Box::new(brain_weevil::BrainWeevil));
         reg.register(Box::new(disciple_of_griselbrand::DiscipleOfGriselbrand));
+        // Innistrad Tier 10: Activated abilities
+        reg.register(Box::new(manor_skeleton::ManorSkeleton));
+        reg.register(Box::new(kessig_wolf::KessigWolf));
+        reg.register(Box::new(feral_ridgewolf::FeralRidgewolf));
+        reg.register(Box::new(darkthicket_wolf::DarkthicketWolf));
+        reg.register(Box::new(lantern_spirit::LanternSpirit));
+        reg.register(Box::new(avacynian_priest::AvacynianPriest));
         reg
     }
 }
