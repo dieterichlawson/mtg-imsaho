@@ -1,0 +1,54 @@
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData, CardRegistry, ActivatedAbilityDef, SacrificeCost, TargetRequirement, TargetFilter};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+/// Silverchase Fox — {1}{W} 2/2 Fox.
+/// {1}{W}, Sacrifice Silverchase Fox: Exile target enchantment.
+pub struct SilverchaseFox;
+
+impl CardBehavior for SilverchaseFox {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Silverchase Fox".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(1),
+                ManaSymbol::Colored(Color::White),
+            ])),
+            card_types: vec![CardType::Creature],
+            supertypes: vec![],
+            subtypes: vec!["Fox".into()],
+            power: Some(2),
+            toughness: Some(2),
+            oracle_text: "{1}{W}, Sacrifice Silverchase Fox: Exile target enchantment.".into(),
+            keywords: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+        }
+    }
+
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+        vec![ActivatedAbilityDef {
+            ability_index: 0,
+            description: "{1}{W}, Sacrifice: Exile target enchantment".into(),
+            cost: ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::White)]),
+            requires_tap: false,
+            sacrifice_cost: SacrificeCost::SacrificeThis,
+            target_requirement: Some(TargetRequirement::PermanentWithFilter(
+                TargetFilter::HasCardType(vec![CardType::Enchantment]),
+            )),
+            once_per_turn: false,
+            sorcery_speed_only: false,
+        }]
+    }
+
+    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+        if let Some(Target::Object(target_id)) = targets.first() {
+            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
+                state.move_object(*target_id, Zone::Exile);
+                state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {}", name));
+            }
+        }
+    }
+}

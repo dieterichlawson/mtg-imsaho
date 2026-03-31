@@ -132,6 +132,11 @@ pub mod curse_of_the_bloody_tome;
 pub mod curse_of_oblivion;
 pub mod curse_of_the_nightly_hunt;
 pub mod curse_of_deaths_hold;
+// Tier 8: Sacrifice-as-cost
+pub mod selfless_cathar;
+pub mod silverchase_fox;
+pub mod brain_weevil;
+pub mod disciple_of_griselbrand;
 
 use std::collections::HashMap;
 
@@ -652,6 +657,11 @@ impl CardRegistry {
         reg.register(Box::new(curse_of_oblivion::CurseOfOblivion));
         reg.register(Box::new(curse_of_the_nightly_hunt::CurseOfTheNightlyHunt));
         reg.register(Box::new(curse_of_deaths_hold::CurseOfDeathsHold));
+        // Innistrad Tier 8: Sacrifice-as-cost
+        reg.register(Box::new(selfless_cathar::SelflessCathar));
+        reg.register(Box::new(silverchase_fox::SilverchaseFox));
+        reg.register(Box::new(brain_weevil::BrainWeevil));
+        reg.register(Box::new(disciple_of_griselbrand::DiscipleOfGriselbrand));
         reg
     }
 }
