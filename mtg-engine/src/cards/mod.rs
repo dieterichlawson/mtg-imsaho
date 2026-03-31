@@ -179,6 +179,14 @@ pub mod hamlet_captain;
 pub mod spare_from_evil;
 pub mod burning_vengeance;
 
+// Tier 9: Equipment and artifacts
+pub mod runechanters_pike;
+pub mod trepanation_blade;
+pub mod blazing_torch;
+pub mod demonmail_hauberk;
+pub mod inquisitors_flail;
+pub mod travelers_amulet;
+
 
 // Tier 10: Complex creatures and utility lands
 pub mod elder_of_laurels;
@@ -768,6 +776,14 @@ impl CardRegistry {
         reg.register(Box::new(hamlet_captain::HamletCaptain));
         reg.register(Box::new(spare_from_evil::SpareFromEvil));
         reg.register(Box::new(burning_vengeance::BurningVengeance));
+
+        // Innistrad Tier 9 cards (equipment + artifacts)
+        reg.register(Box::new(runechanters_pike::RunechantersPike));
+        reg.register(Box::new(trepanation_blade::TrepanationBlade));
+        reg.register(Box::new(blazing_torch::BlazingTorch));
+        reg.register(Box::new(demonmail_hauberk::DemonmailHauberk));
+        reg.register(Box::new(inquisitors_flail::InquisitorsFlail));
+        reg.register(Box::new(travelers_amulet::TravelersAmulet));
 
 
         // Innistrad Tier 10 cards
