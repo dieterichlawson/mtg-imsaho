@@ -515,7 +515,13 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
                 }
             }
         } else if let Some(behavior) = registry.get(source.card_id) {
-            for effect in &behavior.card_data().continuous_effects {
+            // Use back face effects when transformed (for DFCs like werewolves).
+            let effects = if source.is_transformed {
+                behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+            } else {
+                behavior.card_data().continuous_effects
+            };
+            for effect in &effects {
                 if let crate::types::ContinuousEffect::BlockRestriction { allowed_blockers, scope } = effect {
                     if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
                         // This attacker has a block restriction. Check if the blocker passes the filter.

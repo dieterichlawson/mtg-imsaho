@@ -517,11 +517,24 @@ impl GameState {
             CreatureFilter::Opponents => creature.controller != source_controller,
             CreatureFilter::YourTokens => creature.controller == source_controller && creature.is_token,
             CreatureFilter::HasSubtype(subtype) => {
-                // Check card data subtypes first, then object-level subtypes (for tokens).
-                registry.card_data(creature.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                    .unwrap_or(false)
-                || creature.subtypes.iter().any(|s| s == subtype)
+                // For transformed DFCs, use back face subtypes instead of front face.
+                if creature.is_transformed {
+                    if let Some(behavior) = registry.get(creature.card_id) {
+                        if let Some(back) = behavior.back_face_data() {
+                            if back.subtypes.iter().any(|s| s == subtype) {
+                                return true;
+                            }
+                        }
+                    }
+                } else {
+                    // Check card data subtypes first, then object-level subtypes (for tokens).
+                    if registry.card_data(creature.card_id)
+                        .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                        .unwrap_or(false) {
+                        return true;
+                    }
+                }
+                creature.subtypes.iter().any(|s| s == subtype)
             }
             CreatureFilter::HasKeyword(kw) => self.has_keyword(creature_id, *kw, registry),
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
@@ -594,8 +607,13 @@ impl GameState {
                     }
                 }
             } else if let Some(behavior) = registry.get(source.card_id) {
-                // Card-level static effects.
-                for effect in &behavior.card_data().continuous_effects {
+                // Card-level static effects (use back face if transformed).
+                let effects = if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                };
+                for effect in &effects {
                     if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
                         if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
                             power += p;
@@ -636,7 +654,13 @@ impl GameState {
                     }
                 }
             } else if let Some(behavior) = registry.get(source.card_id) {
-                for effect in &behavior.card_data().continuous_effects {
+                // Use back face effects when transformed.
+                let effects = if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                };
+                for effect in &effects {
                     if let Some(scope) = predicate(effect) {
                         if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
                             return true;
@@ -774,9 +798,15 @@ impl GameState {
             return true;
         }
 
-        // 1. Static keywords from card definition.
+        // 1. Static keywords from card definition (or back face if transformed).
         if let Some(behavior) = registry.get(obj.card_id) {
-            if behavior.card_data().keywords.contains(&keyword) {
+            if obj.is_transformed {
+                if let Some(back) = behavior.back_face_data() {
+                    if back.keywords.contains(&keyword) {
+                        return true;
+                    }
+                }
+            } else if behavior.card_data().keywords.contains(&keyword) {
                 return true;
             }
         }
@@ -819,7 +849,11 @@ impl GameState {
             let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
                 instance_effects.clone()
             } else if let Some(behavior) = registry.get(source.card_id) {
-                behavior.card_data().continuous_effects
+                if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                }
             } else {
                 continue;
             };
