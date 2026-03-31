@@ -169,6 +169,16 @@ pub mod grasp_of_phantoms;
 pub mod night_terrors;
 pub mod memorys_journey;
 pub mod woodland_sleuth;
+// Tier 12: Miscellaneous Innistrad cards
+pub mod scourge_of_geier_reach;
+pub mod army_of_the_damned;
+pub mod night_revelers;
+pub mod elite_inquisitor;
+pub mod ashmouth_hound;
+pub mod hamlet_captain;
+pub mod spare_from_evil;
+pub mod burning_vengeance;
+
 
 // Tier 10: Complex creatures and utility lands
 pub mod elder_of_laurels;
@@ -735,6 +745,16 @@ impl CardRegistry {
         reg.register(Box::new(night_terrors::NightTerrors));
         reg.register(Box::new(memorys_journey::MemorysJourney));
         reg.register(Box::new(woodland_sleuth::WoodlandSleuth));
+        // Innistrad Tier 12 cards
+        reg.register(Box::new(scourge_of_geier_reach::ScourgeOfGeierReach));
+        reg.register(Box::new(army_of_the_damned::ArmyOfTheDamned));
+        reg.register(Box::new(night_revelers::NightRevelers));
+        reg.register(Box::new(elite_inquisitor::EliteInquisitor));
+        reg.register(Box::new(ashmouth_hound::AshmouthHound));
+        reg.register(Box::new(hamlet_captain::HamletCaptain));
+        reg.register(Box::new(spare_from_evil::SpareFromEvil));
+        reg.register(Box::new(burning_vengeance::BurningVengeance));
+
 
         // Innistrad Tier 10 cards
         reg.register(Box::new(elder_of_laurels::ElderOfLaurels));

@@ -102,6 +102,21 @@ pub enum PendingTrigger {
         card_id: CardId,
         description: String,
     },
+    /// A creature's "when this attacks" trigger.
+    AttacksTrigger {
+        object_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        description: String,
+    },
+    /// A creature's "when this blocks" trigger.
+    BlocksTrigger {
+        object_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        blocked_attacker: ObjectId,
+        description: String,
+    },
 }
 
 impl PendingTrigger {
@@ -119,6 +134,8 @@ impl PendingTrigger {
             PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
             PendingTrigger::EndStepTrigger { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
+            PendingTrigger::AttacksTrigger { controller, .. } => *controller,
+            PendingTrigger::BlocksTrigger { controller, .. } => *controller,
         }
     }
 
@@ -199,6 +216,20 @@ impl PendingTrigger {
                     format!("{}'s LTB trigger", card_name(*card_id))
                 } else {
                     format!("{}'s LTB trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::AttacksTrigger { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s attack trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s attack trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::BlocksTrigger { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s block trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s block trigger ({})", card_name(*card_id), description)
                 }
             }
         }
@@ -527,6 +558,55 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
+            GameEvent::AttackersDeclared { attackers } => {
+                for (attacker_id, _defending_player) in attackers {
+                    let (card_id, controller) = match state.get_object(*attacker_id) {
+                        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
+                        _ => continue,
+                    };
+                    if registry.get(card_id).is_some() {
+                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Attacks);
+                        if !desc.is_empty() {
+                            let trigger = PendingTrigger::AttacksTrigger {
+                                object_id: *attacker_id,
+                                card_id,
+                                controller,
+                                description: desc,
+                            };
+                            if controller == active_player {
+                                ap_triggers.push(trigger);
+                            } else {
+                                nap_triggers.push(trigger);
+                            }
+                        }
+                    }
+                }
+            }
+            GameEvent::BlockersDeclared { assignments } => {
+                for (blocker_id, attacker_id) in assignments {
+                    let (card_id, controller) = match state.get_object(*blocker_id) {
+                        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
+                        _ => continue,
+                    };
+                    if registry.get(card_id).is_some() {
+                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Blocks);
+                        if !desc.is_empty() {
+                            let trigger = PendingTrigger::BlocksTrigger {
+                                object_id: *blocker_id,
+                                card_id,
+                                controller,
+                                blocked_attacker: *attacker_id,
+                                description: desc,
+                            };
+                            if controller == active_player {
+                                ap_triggers.push(trigger);
+                            } else {
+                                nap_triggers.push(trigger);
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -633,6 +713,20 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         PendingTrigger::LeftBattlefield { object_id, card_id, .. } => {
             if let Some(behavior) = registry.get(card_id) {
                 behavior.on_leave_battlefield(state, object_id, registry);
+            }
+        }
+        PendingTrigger::AttacksTrigger { object_id, card_id, .. } => {
+            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_attacks(state, object_id, registry);
+                }
+            }
+        }
+        PendingTrigger::BlocksTrigger { object_id, card_id, blocked_attacker, .. } => {
+            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_blocks(state, object_id, blocked_attacker, registry);
+                }
             }
         }
     }
