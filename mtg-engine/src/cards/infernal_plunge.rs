@@ -44,11 +44,10 @@ impl CardBehavior for InfernalPlunge {
 
         if let Some(sac_id) = creature_to_sac {
             crate::destruction::sacrifice(state, sac_id, registry);
+            // Add {R}{R}{R} to controller's mana pool.
+            state.get_player_mut(controller).mana_pool.add(ManaType::Red, 3);
         }
-
-        // Add {R}{R}{R} to controller's mana pool.
-        state.get_player_mut(controller).mana_pool.add(ManaType::Red, 3);
-
+        // If no creature to sacrifice, the spell fizzles (no effect).
         state.move_spell_after_resolve(object_id);
     }
 }

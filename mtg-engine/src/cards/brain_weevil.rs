@@ -40,26 +40,39 @@ impl CardBehavior for BrainWeevil {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Player(target_player)) = targets.first() {
             let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
                 .iter()
                 .map(|o| o.id)
                 .collect();
 
-            // Discard up to 2 cards (random selection for now).
-            let to_discard = hand.len().min(2);
-            for i in 0..to_discard {
-                let card_id = hand[i];
-                state.move_object(card_id, Zone::Graveyard);
-                state.events.push(crate::events::GameEvent::Discarded {
+            if hand.is_empty() {
+                return;
+            }
+            // If 2 or fewer cards, discard all (no choice needed).
+            if hand.len() <= 2 {
+                for &card_id in &hand {
+                    state.move_object(card_id, Zone::Graveyard);
+                    state.events.push(crate::events::GameEvent::Discarded {
+                        player: *target_player,
+                        object: card_id,
+                    });
+                }
+                state.log(crate::state::LogLevel::Event,
+                    format!("Brain Weevil: p{} discarded {} card(s)", target_player.0, hand.len()));
+            } else {
+                // Target player chooses which card to discard (first of two).
+                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                     player: *target_player,
-                    object: card_id,
+                    source: object_id,
+                    choice: crate::state::ResolutionChoiceKind::ChooseCardFromHand {
+                        description: "Brain Weevil: choose a card to discard (1 of 2)".into(),
+                        player: *target_player,
+                        cards: hand,
+                    },
                 });
             }
-
-            state.log(crate::state::LogLevel::Event,
-                format!("Brain Weevil: p{} discarded {} card(s)", target_player.0, to_discard));
         }
     }
 }

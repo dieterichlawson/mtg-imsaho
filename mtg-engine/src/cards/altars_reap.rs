@@ -45,9 +45,9 @@ impl CardBehavior for AltarsReap {
 
         if let Some(sac_id) = creature_to_sac {
             crate::destruction::sacrifice(state, sac_id, registry);
+            crate::engine::draw_cards(state, controller, 2);
         }
-
-        crate::engine::draw_cards(state, controller, 2);
+        // If no creature to sacrifice, the spell fizzles (no effect).
         state.move_spell_after_resolve(object_id);
     }
 }

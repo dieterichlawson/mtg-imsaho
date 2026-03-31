@@ -38,8 +38,9 @@ impl CardBehavior for HarvestPyre {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Exile all cards from the caster's graveyard (maximize damage).
-        // "Any number" means we exile as many as possible for maximum effect.
+        // KNOWN LIMITATION: Oracle says "exile any number of cards" — the player
+        // should choose how many. The engine lacks a "choose a number" UI, so we
+        // exile all cards for maximum damage (the most common strategic choice).
         let graveyard_cards: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.id != object_id)
             .map(|o| o.id)

@@ -95,13 +95,12 @@ fn brain_weevil_forces_discard() {
 
     let weevil = named_creature(&mut state, &reg, "Brain Weevil", P0);
 
-    // Give P1 some cards in hand.
+    // Give P1 exactly 2 cards in hand (auto-discards all when <= 2).
     let _c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
     let _c2 = spell_in_hand(&mut state, &reg, "Lightning Bolt", P1);
-    let _c3 = spell_in_hand(&mut state, &reg, "Giant Growth", P1);
 
     let hand_before = state.objects_in_zone(Zone::Hand, P1).len();
-    assert_eq!(hand_before, 3);
+    assert_eq!(hand_before, 2);
 
     let new_state = mtg_engine::engine::submit_action(
         &state,
@@ -120,9 +119,9 @@ fn brain_weevil_forces_discard() {
         "Brain Weevil should be sacrificed"
     );
 
-    // P1 should have discarded 2 cards (3 - 2 = 1 remaining).
+    // P1 should have discarded 2 cards (2 - 2 = 0 remaining).
     let hand_after = new_state.objects_in_zone(Zone::Hand, P1).len();
-    assert_eq!(hand_after, 1, "P1 should have 1 card left after discarding 2");
+    assert_eq!(hand_after, 0, "P1 should have 0 cards left after discarding 2");
 }
 #[test]
 
