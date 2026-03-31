@@ -90,8 +90,9 @@ impl CardBehavior for OliviaVoldaren {
 
         match ability_index {
             0 => {
-                // {1}{R}: Deal 1 damage to target creature. Make it a Vampire. +1/+1 counter on Olivia.
+                // {1}{R}: Deal 1 damage to ANOTHER target creature. Make it a Vampire. +1/+1 counter on Olivia.
                 if let Some(Target::Object(target_id)) = targets.first() {
+                    if *target_id == object_id { return; } // "another" — can't target self
                     if let Some(target_obj) = state.get_object(*target_id) {
                         if target_obj.zone == Zone::Battlefield {
                             // Deal 1 damage.

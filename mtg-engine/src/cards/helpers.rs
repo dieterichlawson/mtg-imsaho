@@ -52,7 +52,8 @@ pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Targ
                 if let Some(obj) = state.get_object_mut(*target_id) {
                     if obj.zone == Zone::Battlefield {
                         obj.damage_marked += amount;
-                        state.events.push(GameEvent::CombatDamageDealt {
+                        obj.damaged_by.push(spell_id);
+                        state.events.push(GameEvent::NonCombatDamageDealt {
                             source: spell_id,
                             target: DamageTarget::Object(*target_id),
                             amount,
@@ -64,7 +65,7 @@ pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Targ
                 let old_life = state.get_player(*player_id).life;
                 let new_life = old_life - (amount as i32);
                 state.get_player_mut(*player_id).life = new_life;
-                state.events.push(GameEvent::CombatDamageDealt {
+                state.events.push(GameEvent::NonCombatDamageDealt {
                     source: spell_id,
                     target: DamageTarget::Player(*player_id),
                     amount,
