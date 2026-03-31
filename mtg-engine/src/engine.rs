@@ -692,13 +692,29 @@ fn generate_ability_targets(
             }
             targets
         }
-        TargetRequirement::PermanentWithFilter(_) => {
+        TargetRequirement::PermanentWithFilter(filter) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .filter(|o| matches_target_filter(o, filter))
                 .map(|o| Target::Object(o.id))
                 .collect()
         }
         _ => vec![],
+    }
+}
+
+/// Check if a battlefield object matches a TargetFilter.
+/// Used by generate_ability_targets to filter targets for activated abilities.
+fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter) -> bool {
+    use crate::cards::TargetFilter;
+    match filter {
+        TargetFilter::Any => true,
+        TargetFilter::HasCardType(types) => {
+            types.iter().any(|t| obj.card_types.contains(t))
+        }
+        TargetFilter::Noncreature => obj.power.is_none(),
+        TargetFilter::Nonblack => !obj.colors.contains(&crate::types::Color::Black),
+        _ => true, // Other filters not yet needed for abilities.
     }
 }
 
