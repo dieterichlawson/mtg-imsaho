@@ -794,9 +794,9 @@ fn geist_creates_angel_on_attack() {
 }
 
 #[test]
-fn geist_angel_exiled_at_end_step() {
+fn geist_angel_exiled_at_end_of_combat() {
     let reg = registry();
-    let mut state = game_at_step(Step::EndStep, P0);
+    let mut state = game_at_step(Step::EndCombat, P0);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     let geist = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
@@ -812,8 +812,8 @@ fn geist_angel_exiled_at_end_step() {
         .map(|o| o.id)
         .unwrap();
 
-    // End step — angel should be exiled.
-    behavior.on_end_step(&mut state, geist, &reg);
+    // End of combat — angel should be exiled.
+    behavior.on_end_combat(&mut state, geist, &reg);
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile);
 }
 

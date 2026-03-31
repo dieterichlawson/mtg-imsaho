@@ -33,7 +33,7 @@ impl CardBehavior for GeistOfSaintTraft {
                     description: "create a 4/4 Angel token tapped and attacking".into(),
                 },
                 TriggeredAbilityDef {
-                    kind: TriggerKind::EndStep,
+                    kind: TriggerKind::EndCombat,
                     description: "exile the Angel token".into(),
                 },
             ],
@@ -86,8 +86,8 @@ impl CardBehavior for GeistOfSaintTraft {
             "Geist of Saint Traft: created a 4/4 Angel token tapped and attacking".into());
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
-        // Exile the angel token at end of combat (simplified: at end step).
+    fn on_end_combat(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+        // Exile the angel token at end of combat.
         let angel_id = state.get_object(self_id)
             .and_then(|o| o.card_state.get("angel_token").copied());
 

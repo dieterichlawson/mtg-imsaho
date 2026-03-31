@@ -1,3 +1,5 @@
+use rand::seq::SliceRandom;
+
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -56,7 +58,9 @@ impl CardBehavior for MoldgrafMonstrosity {
             .collect();
 
         // Return up to 2 random creatures to the battlefield.
-        // Use a simple deterministic selection (first 2) since we don't have rng here.
+        let mut creatures_in_gy = creatures_in_gy;
+        let mut rng = rand::thread_rng();
+        creatures_in_gy.shuffle(&mut rng);
         let to_return: Vec<ObjectId> = creatures_in_gy.into_iter().take(2).collect();
         for cid in &to_return {
             let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();

@@ -82,6 +82,13 @@ pub enum PendingTrigger {
         spell_id: ObjectId,
         description: String,
     },
+    /// An end-of-combat trigger on a permanent.
+    EndCombatTrigger {
+        object_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        description: String,
+    },
     /// An upkeep trigger on a permanent.
     UpkeepTrigger {
         object_id: ObjectId,
@@ -148,6 +155,7 @@ impl PendingTrigger {
             PendingTrigger::CombatDamageWatch { controller, .. } => *controller,
             PendingTrigger::DamageToPlayerWatch { controller, .. } => *controller,
             PendingTrigger::SpellCastWatch { controller, .. } => *controller,
+            PendingTrigger::EndCombatTrigger { controller, .. } => *controller,
             PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
             PendingTrigger::EndStepTrigger { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
@@ -214,6 +222,13 @@ impl PendingTrigger {
                     format!("{}'s triggered ability", card_name(*watcher_card_id))
                 } else {
                     format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
+                }
+            }
+            PendingTrigger::EndCombatTrigger { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s end of combat trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s end of combat trigger ({})", card_name(*card_id), description)
                 }
             }
             PendingTrigger::UpkeepTrigger { card_id, description, .. } => {
@@ -520,6 +535,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
             GameEvent::StepStarted { step } => {
                 let trigger_kind = match step {
                     crate::types::Step::Upkeep => Some(crate::cards::TriggerKind::Upkeep),
+                    crate::types::Step::EndCombat => Some(crate::cards::TriggerKind::EndCombat),
                     crate::types::Step::EndStep => Some(crate::cards::TriggerKind::EndStep),
                     _ => None,
                 };
@@ -534,6 +550,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                             if !desc.is_empty() {
                                 let trigger = match kind {
                                     crate::cards::TriggerKind::Upkeep => PendingTrigger::UpkeepTrigger {
+                                        object_id: obj_id,
+                                        card_id,
+                                        controller,
+                                        description: desc,
+                                    },
+                                    crate::cards::TriggerKind::EndCombat => PendingTrigger::EndCombatTrigger {
                                         object_id: obj_id,
                                         card_id,
                                         controller,
@@ -838,6 +860,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
+                }
+            }
+        }
+        PendingTrigger::EndCombatTrigger { object_id, card_id, .. } => {
+            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_end_combat(state, object_id, registry);
                 }
             }
         }

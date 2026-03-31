@@ -156,6 +156,7 @@ impl CardBehavior for CivilizedScholar {
             .unwrap_or(false);
         if !attacked {
             if let Some(obj) = state.get_object_mut(self_id) {
+                obj.tapped = true; // "tap Homicidal Brute, then transform it"
                 obj.is_transformed = false;
                 obj.name = "Civilized Scholar".into();
             }

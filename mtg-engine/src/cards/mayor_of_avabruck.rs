@@ -83,6 +83,10 @@ impl CardBehavior for MayorOfAvabruck {
             additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "transform if a player cast 2+ spells last turn".into(),
+                },
+                TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
                     description: "create a 2/2 Wolf token".into(),
                 },
