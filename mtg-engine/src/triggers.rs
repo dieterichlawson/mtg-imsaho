@@ -237,12 +237,23 @@ impl PendingTrigger {
 }
 
 /// Look up the description for a trigger from the card's TriggeredAbilityDef.
-fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind) -> String {
-    registry.card_data(card_id)
-        .and_then(|d| d.triggered_abilities.iter()
-            .find(|t| &t.kind == kind)
-            .map(|t| t.description.clone()))
-        .unwrap_or_default()
+/// For transformed DFCs, also check the back face's triggered abilities.
+fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
+    if let Some(behavior) = registry.get(card_id) {
+        // Check front face triggers.
+        if let Some(t) = behavior.card_data().triggered_abilities.iter().find(|t| &t.kind == kind) {
+            return t.description.clone();
+        }
+        // For transformed DFCs, also check back face triggers.
+        if is_transformed {
+            if let Some(back) = behavior.back_face_data() {
+                if let Some(t) = back.triggered_abilities.iter().find(|t| &t.kind == kind) {
+                    return t.description.clone();
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 /// Collect triggered abilities from events and add them to the stack
@@ -268,7 +279,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                 // Only collect if the card has an on_enter_battlefield handler.
                 // Self ETB trigger.
                 if registry.get(card_id).is_some() {
-                    let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield);
+                    let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield, false);
                     let trigger = PendingTrigger::EnteredBattlefield {
                         object_id: *object,
                         card_id,
@@ -290,7 +301,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         .collect();
                     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                         if registry.get(watcher_card_id).is_some() {
-                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureEnters);
+                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureEnters, false);
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::EnterWatch {
                                     watcher_id,
@@ -319,7 +330,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
 
                 // 1. Self-dies trigger.
                 if registry.get(dead_card_id).is_some() {
-                    let desc = trigger_description(registry, dead_card_id, &crate::cards::TriggerKind::SelfDies);
+                    let desc = trigger_description(registry, dead_card_id, &crate::cards::TriggerKind::SelfDies, false);
                     let trigger = PendingTrigger::SelfDies {
                         dead_id,
                         dead_card_id,
@@ -340,7 +351,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     .collect();
                 for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                     if registry.get(watcher_card_id).is_some() {
-                        let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies);
+                        let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, false);
                         let trigger = PendingTrigger::DeathWatch {
                             watcher_id,
                             watcher_card_id,
@@ -365,7 +376,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     None => continue,
                 };
                 if registry.get(card_id).is_some() {
-                    let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::LeavesBattlefield);
+                    let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::LeavesBattlefield, false);
                     let trigger = PendingTrigger::LeftBattlefield {
                         object_id: *object,
                         card_id,
@@ -386,7 +397,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
 
                             // Source's own combat damage trigger (requires registered card).
                             if registry.get(card_id).is_some() {
-                                let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::CombatDamageToPlayer);
+                                let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::CombatDamageToPlayer, false);
                                 if !desc.is_empty() {
                                     let trigger = PendingTrigger::CombatDamageToPlayer {
                                         creature_id: source_id,
@@ -413,7 +424,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                             for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                                 if registry.get(watcher_card_id).is_some() {
                                     // AnyCombatDamageToPlayer watchers.
-                                    let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCombatDamageToPlayer);
+                                    let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCombatDamageToPlayer, false);
                                     if !desc.is_empty() {
                                         let trigger = PendingTrigger::CombatDamageWatch {
                                             watcher_id,
@@ -431,7 +442,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                                         }
                                     }
                                     // AnyDamageToPlayer watchers (combat damage is also damage).
-                                    let desc2 = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer);
+                                    let desc2 = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer, false);
                                     if !desc2.is_empty() {
                                         let trigger = PendingTrigger::DamageToPlayerWatch {
                                             watcher_id,
@@ -464,7 +475,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         .collect();
                     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                         if registry.get(watcher_card_id).is_some() {
-                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer);
+                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer, false);
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::DamageToPlayerWatch {
                                     watcher_id,
@@ -492,13 +503,13 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     _ => None,
                 };
                 if let Some(kind) = trigger_kind {
-                    let permanents: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                    let permanents: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
                         .filter(|o| o.zone == Zone::Battlefield)
-                        .map(|o| (o.id, o.card_id, o.controller))
+                        .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
                         .collect();
-                    for (obj_id, card_id, controller) in permanents {
+                    for (obj_id, card_id, controller, is_transformed) in permanents {
                         if registry.get(card_id).is_some() {
-                            let desc = trigger_description(registry, card_id, &kind);
+                            let desc = trigger_description(registry, card_id, &kind, is_transformed);
                             if !desc.is_empty() {
                                 let trigger = match kind {
                                     crate::cards::TriggerKind::Upkeep => PendingTrigger::UpkeepTrigger {
@@ -538,7 +549,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         .collect();
                     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                         if registry.get(watcher_card_id).is_some() {
-                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::SpellCast);
+                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::SpellCast, false);
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::SpellCastWatch {
                                     watcher_id,
@@ -565,7 +576,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         _ => continue,
                     };
                     if registry.get(card_id).is_some() {
-                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Attacks);
+                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Attacks, false);
                         if !desc.is_empty() {
                             let trigger = PendingTrigger::AttacksTrigger {
                                 object_id: *attacker_id,
@@ -587,7 +598,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         .collect();
                     for (eq_id, eq_card_id, eq_controller) in attached {
                         if registry.get(eq_card_id).is_some() {
-                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Attacks);
+                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Attacks, false);
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::AttacksTrigger {
                                     object_id: eq_id,
@@ -612,7 +623,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         _ => continue,
                     };
                     if registry.get(card_id).is_some() {
-                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Blocks);
+                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Blocks, false);
                         if !desc.is_empty() {
                             let trigger = PendingTrigger::BlocksTrigger {
                                 object_id: *blocker_id,
@@ -635,7 +646,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         .collect();
                     for (eq_id, eq_card_id, eq_controller) in attached {
                         if registry.get(eq_card_id).is_some() {
-                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks);
+                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks, false);
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::BlocksTrigger {
                                     object_id: eq_id,
