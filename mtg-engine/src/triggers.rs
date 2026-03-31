@@ -605,6 +605,30 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                             }
                         }
                     }
+                    // Also check equipment/auras attached to the blocker.
+                    let attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield && o.attached_to == Some(*blocker_id))
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+                    for (eq_id, eq_card_id, eq_controller) in attached {
+                        if registry.get(eq_card_id).is_some() {
+                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks);
+                            if !desc.is_empty() {
+                                let trigger = PendingTrigger::BlocksTrigger {
+                                    object_id: eq_id,
+                                    card_id: eq_card_id,
+                                    controller: eq_controller,
+                                    blocked_attacker: *attacker_id,
+                                    description: desc,
+                                };
+                                if eq_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             _ => {}

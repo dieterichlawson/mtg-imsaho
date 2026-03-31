@@ -188,6 +188,14 @@ pub mod gavony_township;
 pub mod nephalia_drownyard;
 pub mod stensia_bloodhall;
 
+// Tier 9: Equipment
+pub mod cobbled_wings;
+pub mod mask_of_avacyn;
+pub mod silver_inlaid_dagger;
+pub mod sharpened_pitchfork;
+pub mod butchers_cleaver;
+pub mod wooden_stake;
+
 
 use std::collections::HashMap;
 
@@ -474,6 +482,12 @@ pub trait CardBehavior: Send + Sync {
 
     /// Called when this creature blocks (declared as a blocker).
     fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called when the equipped creature blocks or is blocked by another creature.
+    /// Used by equipment like Wooden Stake. `self_id` is the equipment,
+    /// `equipped_creature` is the creature wearing this equipment,
+    /// `other_creature` is the creature on the other side of the block.
+    fn on_equipment_block_trigger(&self, _state: &mut GameState, _self_id: ObjectId, _equipped_creature: ObjectId, _other_creature: ObjectId, _registry: &CardRegistry) {}
 
     /// Return a modified mana cost for this spell, or None to use the normal cost.
     /// Used for cost reduction (e.g., Blasphemous Act costs {1} less per creature).
@@ -763,6 +777,14 @@ impl CardRegistry {
         reg.register(Box::new(gavony_township::GavonyTownship));
         reg.register(Box::new(nephalia_drownyard::NephaliaDrownyard));
         reg.register(Box::new(stensia_bloodhall::StensiaBloodhall));
+
+        // Innistrad Tier 9: Equipment
+        reg.register(Box::new(cobbled_wings::CobbledWings));
+        reg.register(Box::new(mask_of_avacyn::MaskOfAvacyn));
+        reg.register(Box::new(silver_inlaid_dagger::SilverInlaidDagger));
+        reg.register(Box::new(sharpened_pitchfork::SharpenedPitchfork));
+        reg.register(Box::new(butchers_cleaver::ButchersCleaver));
+        reg.register(Box::new(wooden_stake::WoodenStake));
 
         reg
     }

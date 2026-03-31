@@ -1,0 +1,100 @@
+use crate::actions::Target;
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
+use crate::ids::{ObjectId, PlayerId};
+use crate::state::GameState;
+use crate::types::*;
+
+/// Butcher's Cleaver — {3} Artifact — Equipment.
+/// Equipped creature gets +3/+0.
+/// As long as equipped creature is a Human, it has lifelink.
+/// Equip {3}.
+pub struct ButchersCleaver;
+
+impl ButchersCleaver {
+    fn update_effects(&self, state: &mut GameState, object_id: ObjectId, creature_id: ObjectId, registry: &CardRegistry) {
+        let is_human = state.get_object(creature_id)
+            .and_then(|o| registry.card_data(o.card_id))
+            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+            .unwrap_or(false);
+
+        let effects = if is_human {
+            vec![
+                ContinuousEffect::ModifyPT { power: 3, toughness: 0, scope: EffectScope::Attached },
+                ContinuousEffect::GrantKeyword { keyword: Keyword::Lifelink, scope: EffectScope::Attached },
+            ]
+        } else {
+            vec![
+                ContinuousEffect::ModifyPT { power: 3, toughness: 0, scope: EffectScope::Attached },
+            ]
+        };
+
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.instance_continuous_effects = Some(effects);
+        }
+    }
+}
+
+impl CardBehavior for ButchersCleaver {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Butcher's Cleaver".into(),
+            cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3)])),
+            card_types: vec![CardType::Artifact],
+            supertypes: vec![],
+            subtypes: vec!["Equipment".into()],
+            power: None,
+            toughness: None,
+            oracle_text: "Equipped creature gets +3/+0. As long as equipped creature is a Human, it has lifelink.\nEquip {3}".into(),
+            keywords: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![
+                ContinuousEffect::ModifyPT { power: 3, toughness: 0, scope: EffectScope::Attached },
+            ],
+            additional_cost: None,
+            triggered_abilities: vec![],
+        }
+    }
+
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            vec![ActivatedAbilityDef {
+                ability_index: 0,
+                description: "Equip {3}".into(),
+                cost: ManaCost::new(vec![ManaSymbol::Generic(3)]),
+                requires_tap: false,
+                sacrifice_cost: SacrificeCost::None,
+                target_requirement: Some(TargetRequirement::Creature),
+                once_per_turn: false,
+                sorcery_speed_only: true,
+            }]
+        } else {
+            vec![]
+        }
+    }
+
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        match target {
+            Target::Object(id) => state.get_object(*id)
+                .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
+                .unwrap_or(false),
+            Target::Player(_) => false,
+        }
+    }
+
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+        if let Some(Target::Object(creature_id)) = targets.first() {
+            let creature_id = *creature_id;
+            if let Some(obj) = state.get_object_mut(object_id) {
+                obj.attached_to = Some(creature_id);
+            }
+            self.update_effects(state, object_id, creature_id, registry);
+        }
+    }
+
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield);
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.is_equipment = true;
+        }
+    }
+}
