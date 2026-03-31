@@ -18,7 +18,7 @@ impl CardBehavior for AshmouthHound {
             ])),
             card_types: vec![CardType::Creature],
             supertypes: vec![],
-            subtypes: vec!["Elemental".into(), "Hound".into()],
+            subtypes: vec!["Elemental".into(), "Dog".into()],
             power: Some(2),
             toughness: Some(1),
             oracle_text: "Whenever Ashmouth Hound blocks or becomes blocked by a creature, Ashmouth Hound deals 1 damage to that creature.".into(),

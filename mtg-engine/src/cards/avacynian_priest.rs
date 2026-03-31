@@ -54,11 +54,13 @@ impl CardBehavior for AvacynianPriest {
             Target::Object(id) => {
                 state.get_object(*id)
                     .map(|o| {
+                        let is_human = registry.card_data(o.card_id)
+                            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                            .unwrap_or(false)
+                            || o.subtypes.iter().any(|s| s == "Human");
                         o.zone == Zone::Battlefield
                             && o.power.is_some()
-                            && !registry.card_data(o.card_id)
-                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                                .unwrap_or(false)
+                            && !is_human
                     })
                     .unwrap_or(false)
             }

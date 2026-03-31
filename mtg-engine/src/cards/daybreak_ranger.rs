@@ -91,7 +91,7 @@ impl CardBehavior for DaybreakRanger {
                 cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Red)]),
                 requires_tap: true,
                 sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouDontControl)),
+                target_requirement: Some(TargetRequirement::Creature),
                 once_per_turn: false,
                 sorcery_speed_only: false,
             }]
@@ -147,8 +147,14 @@ impl CardBehavior for DaybreakRanger {
                 if let Some(obj) = state.get_object_mut(*target_id) {
                     if obj.zone == Zone::Battlefield {
                         obj.damage_marked += 2;
+                        obj.damaged_by.push(object_id);
                     }
                 }
+                state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                    source: object_id,
+                    target: crate::events::DamageTarget::Object(*target_id),
+                    amount: 2,
+                });
                 state.log(crate::state::LogLevel::Event,
                     format!("Daybreak Ranger deals 2 damage to {}", target_name));
             }
