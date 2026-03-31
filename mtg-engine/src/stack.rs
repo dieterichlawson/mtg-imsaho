@@ -7,11 +7,17 @@ use crate::types::Zone;
 /// Check if a target is still legal at resolution time.
 fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement) -> bool {
     use crate::cards::TargetRequirement;
+    // Unwrap nested requirements (UpToTargets, TwoTargets).
+    let inner_req = match target_req {
+        TargetRequirement::UpToTargets(_, inner) => inner.as_ref(),
+        TargetRequirement::TwoTargets(inner, _) => inner.as_ref(),
+        other => other,
+    };
     match target {
         Target::Object(id) => {
             match state.get_object(*id) {
                 Some(obj) => {
-                    match target_req {
+                    match inner_req {
                         TargetRequirement::GraveyardCard => obj.zone == Zone::Graveyard,
                         TargetRequirement::ExileCard => obj.zone == Zone::Exile,
                         _ => obj.zone == Zone::Battlefield || obj.zone == Zone::Stack,

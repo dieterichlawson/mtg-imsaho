@@ -1,14 +1,11 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
 /// Graveyard Shovel — {2} Artifact.
 /// {2}, {T}: Exile target card from a graveyard. If it was a creature card, you gain 2 life.
-///
-/// Simplified: auto-selects a card from any graveyard (preferring creature cards for
-/// life gain) since the engine doesn't have a "target card in a graveyard" mechanism.
 pub struct GraveyardShovel;
 
 impl CardBehavior for GraveyardShovel {
@@ -37,7 +34,6 @@ impl CardBehavior for GraveyardShovel {
         if obj.zone != Zone::Battlefield || obj.tapped {
             return vec![];
         }
-        // Check if there's any card in any graveyard.
         let has_graveyard_card = state.objects.values()
             .any(|o| o.zone == Zone::Graveyard);
         if !has_graveyard_card {
@@ -49,23 +45,26 @@ impl CardBehavior for GraveyardShovel {
             cost: ManaCost::new(vec![ManaSymbol::Generic(2)]),
             requires_tap: true,
             sacrifice_cost: SacrificeCost::None,
-            target_requirement: None,
+            target_requirement: Some(TargetRequirement::GraveyardCard),
             once_per_turn: false,
             sorcery_speed_only: false,
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Auto-target: find a card in any graveyard (prefer creature cards for life gain).
-        let target_card = state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard)
-            .max_by_key(|o| if o.power.is_some() { 1 } else { 0 })
-            .map(|o| (o.id, o.power.is_some(), o.name.clone()));
+        if let Some(Target::Object(target_id)) = targets.first() {
+            let is_creature = state.get_object(*target_id)
+                .map(|o| {
+                    registry.card_data(o.card_id)
+                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                        .unwrap_or(o.power.is_some())
+                })
+                .unwrap_or(false);
+            let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
 
-        if let Some((card_id, is_creature, name)) = target_card {
-            state.move_object(card_id, Zone::Exile);
+            state.move_object(*target_id, Zone::Exile);
             state.log(crate::state::LogLevel::Event,
                 format!("Graveyard Shovel exiled {} from graveyard", name));
 

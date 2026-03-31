@@ -883,6 +883,20 @@ fn generate_ability_targets(
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
         }
+        TargetRequirement::GraveyardCard => {
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Graveyard)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+                .collect()
+        }
+        TargetRequirement::ExileCard => {
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Exile && o.owner == controller)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+                .collect()
+        }
         _ => vec![],
     }
 }

@@ -110,7 +110,7 @@ fn ghoulcallers_chant_returns_creature_from_graveyard() {
     state.move_object(gy_creature, Zone::Graveyard);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-    let new_state = cast_and_resolve(&state, &reg, chant, vec![]);
+    let new_state = cast_and_resolve(&state, &reg, chant, vec![mtg_engine::actions::Target::Object(gy_creature)]);
 
     // Creature should be back in hand.
     assert_eq!(new_state.get_object(gy_creature).unwrap().zone, Zone::Hand);
@@ -128,7 +128,10 @@ fn ghoulcallers_chant_returns_two_zombies() {
     state.move_object(zombie2, Zone::Graveyard);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
-    let new_state = cast_and_resolve(&state, &reg, chant, vec![]);
+    let new_state = cast_and_resolve(&state, &reg, chant, vec![
+        mtg_engine::actions::Target::Object(zombie1),
+        mtg_engine::actions::Target::Object(zombie2),
+    ]);
 
     // Both Zombies should be back in hand.
     assert_eq!(new_state.get_object(zombie1).unwrap().zone, Zone::Hand);
@@ -339,7 +342,10 @@ fn memorys_journey_shuffles_cards_into_library() {
     state.move_object(gy2, Zone::Graveyard);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
-    let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Player(P1)]);
+    let new_state = cast_and_resolve(&state, &reg, journey, vec![
+        Target::Object(gy1),
+        Target::Object(gy2),
+    ]);
 
     // Both cards should be in library now.
     assert_eq!(new_state.get_object(gy1).unwrap().zone, Zone::Library);
