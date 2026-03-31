@@ -26,21 +26,10 @@ impl CardBehavior for RakishHeir {
             continuous_effects: vec![],
             triggered_abilities: vec![
                 TriggeredAbilityDef {
-                    kind: TriggerKind::CombatDamageToPlayer,
-                    description: "put a +1/+1 counter on this Vampire".into(),
-                },
-                TriggeredAbilityDef {
                     kind: TriggerKind::AnyCombatDamageToPlayer,
                     description: "put a +1/+1 counter on that Vampire".into(),
                 },
             ],
-        }
-    }
-
-    fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        // Rakish Heir is a Vampire — triggers for its own combat damage.
-        if state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }
     }
 
@@ -60,7 +49,7 @@ impl CardBehavior for RakishHeir {
             .unwrap_or(false)
             || source.subtypes.iter().any(|s| s == "Vampire");
         if is_vampire {
-            // Put a +1/+1 counter on THAT Vampire (the source, not Rakish Heir).
+            // Put a +1/+1 counter on THAT Vampire (the source).
             state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
         }
     }
