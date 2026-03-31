@@ -290,6 +290,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         if obj.zone == Zone::Battlefield && obj.power.is_some() {
                             let card_id = obj.card_id;
                             let controller = obj.controller;
+
+                            // Source's own combat damage trigger (requires registered card).
                             if registry.get(card_id).is_some() {
                                 let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::CombatDamageToPlayer);
                                 if !desc.is_empty() {
@@ -309,7 +311,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                                 }
                             }
 
-                            // Combat damage watchers: notify other permanents.
+                            // Combat damage watchers: notify other permanents
+                            // (fires regardless of whether the source is registered).
                             let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
                                 .filter(|o| o.zone == Zone::Battlefield && o.id != source_id)
                                 .map(|o| (o.id, o.card_id, o.controller))
