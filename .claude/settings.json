@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl:*)",
+      "Bash(cargo:*)",
+      "Bash(git:*)",
+      "Bash(python3:*)",
+      "Bash(ls:*)",
+      "Bash(grep:*)",
+      "Bash(cat:*)",
+      "Bash(wc:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(echo:*)",
+      "Bash(sed:*)",
+      "Bash(find:*)",
+      "Bash(mkdir:*)",
+      "Bash(sort:*)",
+      "Bash(sleep:*)",
+      "WebSearch"
+    ]
+  }
+}

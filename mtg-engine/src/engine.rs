@@ -245,6 +245,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         && state.stack.is_empty()
         && state.active_player == player;
 
+    // Check for Stony Silence: artifact activated abilities can't be activated.
+    let stony_silence_active = state.objects.values().any(|o| {
+        o.zone == Zone::Battlefield && o.name == "Stony Silence"
+    });
+
     // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
     // Check attached permanents too (auras granting abilities to creatures).
     let mana_pool = &state.get_player(player).mana_pool;
@@ -253,6 +258,15 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         let obj_tapped = obj.tapped;
         let obj_card_id = obj.card_id;
         let activated_this_turn = obj.abilities_activated_this_turn.clone();
+
+        // Stony Silence: skip artifact activated abilities.
+        if stony_silence_active {
+            let is_artifact = registry.card_data(obj_card_id)
+                .map(|d| d.card_types.contains(&CardType::Artifact))
+                .unwrap_or(false)
+                || obj.card_types.contains(&CardType::Artifact);
+            if is_artifact { continue; }
+        }
 
         // Collect abilities from this permanent's card and attached auras.
         let mut abilities: Vec<(crate::ids::CardId, crate::cards::ActivatedAbilityDef)> = Vec::new();
@@ -454,15 +468,24 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
 
-            // Check for flashback cost: either printed on the card or dynamically granted.
+            // Check for flashback cost, dynamic flashback, or "cast from graveyard" ability.
             let dynamic_fb = state.until_end_of_turn_flashback.iter()
                 .find(|(id, _)| *id == obj.id)
                 .map(|(_, c)| c.clone());
+            let cast_from_gy = behavior.can_cast_from_graveyard();
             let fb_cost = match dynamic_fb {
                 Some(ref c) => c,
                 None => match &data.flashback_cost {
                     Some(c) => c,
-                    None => continue,
+                    None => if cast_from_gy {
+                        // Cast from graveyard uses normal mana cost.
+                        match &data.cost {
+                            Some(c) => c,
+                            None => continue,
+                        }
+                    } else {
+                        continue;
+                    },
                 },
             };
 

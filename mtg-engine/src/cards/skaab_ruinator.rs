@@ -32,6 +32,8 @@ impl CardBehavior for SkaabRuinator {
         }
     }
 
+    fn can_cast_from_graveyard(&self) -> bool { true }
+
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 

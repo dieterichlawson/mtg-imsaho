@@ -536,6 +536,10 @@ pub trait CardBehavior: Send + Sync {
         true
     }
 
+    /// Whether this card can be cast from the graveyard (not flashback — stays in graveyard after).
+    /// Used by Skaab Ruinator.
+    fn can_cast_from_graveyard(&self) -> bool { false }
+
     /// Dynamic power/toughness for cards whose P/T depends on game state.
     /// Returns Some((power, toughness)) to override base P/T, or None for normal P/T.
     /// Called by effective_power/effective_toughness during P/T computation.
