@@ -109,10 +109,12 @@ impl CardBehavior for HereticsPunishment {
             }
         }
 
-        // Put revealed cards on the bottom of library (in order).
-        let player = state.get_player_mut(controller);
-        let removed: Vec<ObjectId> = player.library_order.drain(..reveal_count).collect();
-        player.library_order.extend(removed);
+        // Mill the revealed cards (move to graveyard per current Oracle errata).
+        let to_mill: Vec<ObjectId> = state.get_player_mut(controller)
+            .library_order.drain(..reveal_count).collect();
+        for card_id in to_mill {
+            state.move_object(card_id, Zone::Graveyard);
+        }
 
         state.log(crate::state::LogLevel::Event,
             format!("Heretic's Punishment revealed {} cards, dealt {} damage", reveal_count, max_mv));

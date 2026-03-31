@@ -565,9 +565,9 @@ fn cloistered_youth_transforms_at_upkeep() {
 }
 
 #[test]
-fn unholy_fiend_drains_life_at_upkeep() {
+fn unholy_fiend_drains_life_at_end_step() {
     let reg = registry();
-    let mut state = game_at_step(Step::Upkeep, P0);
+    let mut state = game_at_step(Step::EndStep, P0);
 
     let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
     // Pre-transform.
@@ -576,7 +576,7 @@ fn unholy_fiend_drains_life_at_upkeep() {
 
     let life_before = state.players[0].life;
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, youth, &reg);
+    behavior.on_end_step(&mut state, youth, &reg);
 
     assert_eq!(state.players[0].life, life_before - 1);
 }

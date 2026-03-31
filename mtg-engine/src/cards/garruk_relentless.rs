@@ -24,7 +24,7 @@ impl CardBehavior for GarrukRelentless {
                 ManaSymbol::Colored(Color::Green),
             ])),
             card_types: vec![CardType::Planeswalker],
-            supertypes: vec![],
+            supertypes: vec![Supertype::Legendary],
             subtypes: vec!["Garruk".into()],
             power: None,
             toughness: None,

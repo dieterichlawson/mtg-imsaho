@@ -33,7 +33,11 @@ impl CardBehavior for CloisteredYouth {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
-                    description: "may transform / lose 1 life".into(),
+                    description: "may transform".into(),
+                },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EndStep,
+                    description: "lose 1 life".into(),
                 },
             ],
         }
@@ -48,7 +52,7 @@ impl CardBehavior for CloisteredYouth {
             subtypes: vec!["Horror".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "At the beginning of your upkeep, you lose 1 life.".into(),
+            oracle_text: "At the beginning of your end step, you lose 1 life.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -74,16 +78,30 @@ impl CardBehavior for CloisteredYouth {
             return;
         }
         if !is_transformed {
-            // Transform from Cloistered Youth to Unholy Fiend.
+            // Transform from Cloistered Youth to Unholy Fiend at upkeep.
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.is_transformed = true;
                 obj.name = "Unholy Fiend".into();
             }
             state.log(crate::state::LogLevel::Event,
                 "Cloistered Youth transforms into Unholy Fiend".into());
-        } else {
-            // Unholy Fiend: lose 1 life.
-            state.get_player_mut(controller).life -= 1;
+        }
+    }
+
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+        let (controller, is_transformed) = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
+            _ => return,
+        };
+        if state.active_player != controller {
+            return;
+        }
+        if is_transformed {
+            // Unholy Fiend: lose 1 life at end step.
+            let old = state.get_player(controller).life;
+            let new_life = old - 1;
+            state.get_player_mut(controller).life = new_life;
+            state.events.push(crate::events::GameEvent::LifeChanged { player: controller, old, new_life });
             state.log(crate::state::LogLevel::Event,
                 format!("Unholy Fiend: p{} loses 1 life", controller.0));
         }
