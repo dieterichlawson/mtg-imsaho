@@ -25,8 +25,10 @@ pub enum GameEvent {
     AttackersDeclared { attackers: Vec<(ObjectId, PlayerId)> },
     BlockersDeclared { assignments: Vec<(ObjectId, ObjectId)> },
     CombatDamageDealt { source: ObjectId, target: DamageTarget, amount: u32 },
+    /// Non-combat damage dealt (e.g., triggered abilities, spells).
+    NonCombatDamageDealt { source: ObjectId, target: DamageTarget, amount: u32 },
     LifeChanged { player: PlayerId, old: i32, new_life: i32 },
-    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId> },
+    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32 },
     PlayerLost { player: PlayerId, reason: LossReason },
     GameEnded { result: GameResult },
     PriorityPassed { player: PlayerId },

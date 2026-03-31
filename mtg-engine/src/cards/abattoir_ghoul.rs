@@ -34,7 +34,7 @@ impl CardBehavior for AbattoirGhoul {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], dead_toughness: i32, _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -44,8 +44,8 @@ impl CardBehavior for AbattoirGhoul {
         if !dead_damaged_by.contains(&self_id) {
             return;
         }
-        // Gain life equal to that creature's toughness.
-        let toughness = state.effective_toughness(dead_id, registry).unwrap_or(0).max(0);
+        // Gain life equal to that creature's toughness (last-known information).
+        let toughness = dead_toughness.max(0);
         if toughness > 0 {
             let old = state.get_player(controller).life;
             let new_life = old + toughness;

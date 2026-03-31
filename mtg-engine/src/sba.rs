@@ -86,7 +86,11 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             let (cid, ctrl, damaged_by) = state.get_object(id)
                 .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
                 .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
-            state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by });
+            let last_known_toughness = registry
+                .and_then(|r| state.effective_toughness(id, r))
+                .or_else(|| state.get_object(id).and_then(|o| o.toughness))
+                .unwrap_or(0);
+            state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness });
             state.move_object(id, Zone::Graveyard);
             state.creature_died_this_turn = true;
             took_action = true;
@@ -133,7 +137,8 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
                 let (cid, ctrl, damaged_by) = state.get_object(id)
                     .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
                     .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
-                state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by });
+                let last_known_toughness = state.get_object(id).and_then(|o| o.toughness).unwrap_or(0);
+                state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness });
                 state.move_object(id, Zone::Graveyard);
                 state.creature_died_this_turn = true;
                 took_action = true;

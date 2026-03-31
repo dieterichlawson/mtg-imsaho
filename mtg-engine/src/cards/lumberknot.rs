@@ -32,7 +32,7 @@ impl CardBehavior for Lumberknot {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
         if state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }

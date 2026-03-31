@@ -23,8 +23,9 @@ pub enum PendingTrigger {
         controller: PlayerId,
         dead_id: ObjectId,
         dead_controller: PlayerId,
-        /// What damaged this creature before it died (captured before zone change clears it).
+        /// Last-known information captured before zone change clears battlefield state.
         dead_damaged_by: Vec<ObjectId>,
+        dead_toughness: i32,
         description: String,
     },
     /// A creature entering the battlefield trigger.
@@ -62,6 +63,16 @@ pub enum PendingTrigger {
         amount: u32,
         description: String,
     },
+    /// A watcher observing any damage (combat or non-combat) to a player.
+    DamageToPlayerWatch {
+        watcher_id: ObjectId,
+        watcher_card_id: CardId,
+        controller: PlayerId,
+        source_id: ObjectId,
+        damaged_player: PlayerId,
+        amount: u32,
+        description: String,
+    },
     /// A permanent leaving the battlefield trigger.
     LeftBattlefield {
         object_id: ObjectId,
@@ -80,6 +91,7 @@ impl PendingTrigger {
             PendingTrigger::EnterWatch { controller, .. } => *controller,
             PendingTrigger::CombatDamageToPlayer { controller, .. } => *controller,
             PendingTrigger::CombatDamageWatch { controller, .. } => *controller,
+            PendingTrigger::DamageToPlayerWatch { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
         }
     }
@@ -127,7 +139,8 @@ impl PendingTrigger {
                     format!("{}'s combat damage trigger ({})", card_name(*creature_card_id), description)
                 }
             }
-            PendingTrigger::CombatDamageWatch { watcher_card_id, description, .. } => {
+            PendingTrigger::CombatDamageWatch { watcher_card_id, description, .. }
+            | PendingTrigger::DamageToPlayerWatch { watcher_card_id, description, .. } => {
                 if description.is_empty() {
                     format!("{}'s triggered ability", card_name(*watcher_card_id))
                 } else {
@@ -219,11 +232,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
-            GameEvent::CreatureDied { object, card_id, controller, damaged_by } => {
+            GameEvent::CreatureDied { object, card_id, controller, damaged_by, last_known_toughness } => {
                 let dead_id = *object;
                 let dead_card_id = *card_id;
                 let dead_controller = *controller;
                 let dead_damaged_by = damaged_by.clone();
+                let dead_toughness = *last_known_toughness;
 
                 // 1. Self-dies trigger.
                 if registry.get(dead_card_id).is_some() {
@@ -256,6 +270,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                             dead_id,
                             dead_controller,
                             dead_damaged_by: dead_damaged_by.clone(),
+                            dead_toughness,
                             description: desc,
                         };
                         if watcher_controller == active_player {
@@ -311,14 +326,15 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                                 }
                             }
 
-                            // Combat damage watchers: notify other permanents
-                            // (fires regardless of whether the source is registered).
+                            // Combat damage watchers and any-damage watchers.
+                            // Includes self — cards like Rakish Heir watch their own damage.
                             let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
-                                .filter(|o| o.zone == Zone::Battlefield && o.id != source_id)
+                                .filter(|o| o.zone == Zone::Battlefield)
                                 .map(|o| (o.id, o.card_id, o.controller))
                                 .collect();
                             for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                                 if registry.get(watcher_card_id).is_some() {
+                                    // AnyCombatDamageToPlayer watchers.
                                     let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCombatDamageToPlayer);
                                     if !desc.is_empty() {
                                         let trigger = PendingTrigger::CombatDamageWatch {
@@ -336,6 +352,55 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                                             nap_triggers.push(trigger);
                                         }
                                     }
+                                    // AnyDamageToPlayer watchers (combat damage is also damage).
+                                    let desc2 = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer);
+                                    if !desc2.is_empty() {
+                                        let trigger = PendingTrigger::DamageToPlayerWatch {
+                                            watcher_id,
+                                            watcher_card_id,
+                                            controller: watcher_controller,
+                                            source_id,
+                                            damaged_player: *damaged_player,
+                                            amount: *amount,
+                                            description: desc2,
+                                        };
+                                        if watcher_controller == active_player {
+                                            ap_triggers.push(trigger);
+                                        } else {
+                                            nap_triggers.push(trigger);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            GameEvent::NonCombatDamageDealt { source, target, amount } => {
+                // AnyDamageToPlayer watchers for non-combat damage.
+                if let crate::events::DamageTarget::Player(damaged_player) = target {
+                    let source_id = *source;
+                    let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield)
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+                    for (watcher_id, watcher_card_id, watcher_controller) in watchers {
+                        if registry.get(watcher_card_id).is_some() {
+                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer);
+                            if !desc.is_empty() {
+                                let trigger = PendingTrigger::DamageToPlayerWatch {
+                                    watcher_id,
+                                    watcher_card_id,
+                                    controller: watcher_controller,
+                                    source_id,
+                                    damaged_player: *damaged_player,
+                                    amount: *amount,
+                                    description: desc,
+                                };
+                                if watcher_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
                                 }
                             }
                         }
@@ -390,11 +455,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 behavior.on_dies(state, dead_id, registry);
             }
         }
-        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, .. } => {
+        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, dead_toughness, .. } => {
             // Verify the watcher is still on the battlefield.
             if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, registry);
+                    behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, registry);
                 }
             }
         }
@@ -414,6 +479,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_combat_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
+                }
+            }
+        }
+        PendingTrigger::DamageToPlayerWatch { watcher_id, watcher_card_id, source_id, damaged_player, amount, .. } => {
+            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(watcher_card_id) {
+                    behavior.on_any_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
                 }
             }
         }

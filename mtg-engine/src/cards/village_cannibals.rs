@@ -31,7 +31,7 @@ impl CardBehavior for VillageCannibals {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
         if state.get_object(self_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
             return;
         }

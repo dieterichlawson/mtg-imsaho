@@ -247,6 +247,7 @@ fn trigger_processing_doesnt_crash_without_cards() {
         card_id: mtg_engine::ids::CardId(0),
         controller: mtg_engine::ids::PlayerId(0),
         damaged_by: Vec::new(),
+        last_known_toughness: 0,
     });
 
     // Should not panic even with a nonexistent object.

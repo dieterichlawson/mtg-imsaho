@@ -179,6 +179,8 @@ pub enum TriggerKind {
     CombatDamageToPlayer,
     /// Whenever any creature deals combat damage to a player (watches others).
     AnyCombatDamageToPlayer,
+    /// Whenever any creature deals damage (combat or non-combat) to a player.
+    AnyDamageToPlayer,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -310,9 +312,9 @@ pub trait CardBehavior: Send + Sync {
     fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Called when ANY creature dies. `self_id` is this permanent, `dead_id` is the deceased.
-    /// `dead_damaged_by` contains the IDs of objects that damaged the dead creature this turn
-    /// (captured before the zone change clears it).
-    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _registry: &CardRegistry) {}
+    /// `dead_damaged_by` and `dead_toughness` are last-known information captured before
+    /// the zone change clears battlefield state.
+    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {}
 
     /// Called when ANY creature enters the battlefield. `self_id` is this permanent, `entered_id` is the new creature.
     /// Similar to on_any_creature_dies but for ETB. Used by Champion of the Parish.
@@ -324,8 +326,12 @@ pub trait CardBehavior: Send + Sync {
 
     /// Called when ANY creature deals combat damage to a player.
     /// `self_id` is this permanent (the watcher), `source_id` is the creature that dealt damage.
-    /// Used by Rakish Heir (watches Vampires) and Curiosity (watches enchanted creature).
+    /// Used by Rakish Heir (watches Vampires).
     fn on_any_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+
+    /// Called when ANY creature deals damage (combat or non-combat) to a player.
+    /// Used by Curiosity (watches enchanted creature).
+    fn on_any_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
