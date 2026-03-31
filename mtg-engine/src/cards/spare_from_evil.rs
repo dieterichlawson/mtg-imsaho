@@ -1,0 +1,64 @@
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+/// Spare from Evil — {1}{W} instant.
+/// Creatures you control gain protection from non-Human creatures until end of turn.
+pub struct SpareFromEvil;
+
+impl CardBehavior for SpareFromEvil {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Spare from Evil".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(1),
+                ManaSymbol::Colored(Color::White),
+            ])),
+            card_types: vec![CardType::Instant],
+            supertypes: vec![],
+            subtypes: vec![],
+            power: None,
+            toughness: None,
+            oracle_text: "Creatures you control gain protection from non-Human creatures until end of turn.".into(),
+            keywords: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![],
+        }
+    }
+
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
+
+        // Collect creature IDs controlled by this player.
+        let creature_ids: Vec<ObjectId> = state.objects.values()
+            .filter(|obj| {
+                obj.zone == Zone::Battlefield
+                    && obj.controller == controller
+                    && obj.power.is_some()
+            })
+            .map(|obj| obj.id)
+            .collect();
+
+        // Grant protection from non-Human creatures until end of turn.
+        let filter = CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into())));
+        for id in &creature_ids {
+            state.until_end_of_turn_protection.push(
+                crate::state::UntilEndOfTurnProtection {
+                    target: *id,
+                    filter: filter.clone(),
+                }
+            );
+        }
+
+        if !creature_ids.is_empty() {
+            state.log(crate::state::LogLevel::Event,
+                format!("Spare from Evil: {} creatures gain protection from non-Human creatures until end of turn", creature_ids.len()));
+        }
+
+        state.move_spell_after_resolve(object_id);
+    }
+}

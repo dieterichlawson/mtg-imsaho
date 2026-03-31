@@ -1,0 +1,42 @@
+use crate::cards::{CardBehavior, CardData};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+/// Scourge of Geier Reach — {3}{R}{R} 3/3 Elemental.
+/// Scourge of Geier Reach gets +1/+1 for each creature your opponents control.
+pub struct ScourgeOfGeierReach;
+
+impl CardBehavior for ScourgeOfGeierReach {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Scourge of Geier Reach".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(3),
+                ManaSymbol::Colored(Color::Red),
+                ManaSymbol::Colored(Color::Red),
+            ])),
+            card_types: vec![CardType::Creature],
+            supertypes: vec![],
+            subtypes: vec!["Elemental".into()],
+            power: Some(3),
+            toughness: Some(3),
+            oracle_text: "Scourge of Geier Reach gets +1/+1 for each creature your opponents control.".into(),
+            keywords: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![],
+        }
+    }
+
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+        let controller = state.get_object(object_id)?.controller;
+        let opponent = state.opponent(controller);
+        let opponent_creatures = state.objects.values()
+            .filter(|o| o.zone == Zone::Battlefield && o.controller == opponent && o.power.is_some())
+            .count() as i32;
+        // Base 3/3 + N/N where N = opponent creature count.
+        Some((3 + opponent_creatures, 3 + opponent_creatures))
+    }
+}

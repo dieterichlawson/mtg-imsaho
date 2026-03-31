@@ -256,18 +256,6 @@ fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistr
     subtypes
 }
 
-/// Check if a creature has a specific subtype (e.g., "Zombie").
-fn is_subtype(state: &GameState, creature_id: ObjectId, subtype: &str, registry: &CardRegistry) -> bool {
-    state.get_object(creature_id)
-        .map(|o| {
-            o.subtypes.iter().any(|s| s == subtype)
-            || registry.card_data(o.card_id)
-                .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                .unwrap_or(false)
-        })
-        .unwrap_or(false)
-}
-
 /// Check if creature_a has protection from creature_b.
 /// Checks all protection-from-subtype effects and until-EOT protection grants.
 fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker: ObjectId, registry: &CardRegistry) -> bool {
