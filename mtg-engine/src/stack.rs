@@ -5,19 +5,22 @@ use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
 /// Check if a target is still legal at resolution time.
-fn is_target_legal(state: &GameState, target: &Target) -> bool {
+fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement) -> bool {
+    use crate::cards::TargetRequirement;
     match target {
         Target::Object(id) => {
             match state.get_object(*id) {
                 Some(obj) => {
-                    // Creature/permanent targets must be on the battlefield.
-                    // Stack targets (for counterspells) must be on the stack.
-                    obj.zone == Zone::Battlefield || obj.zone == Zone::Stack
+                    match target_req {
+                        TargetRequirement::GraveyardCard => obj.zone == Zone::Graveyard,
+                        TargetRequirement::ExileCard => obj.zone == Zone::Exile,
+                        _ => obj.zone == Zone::Battlefield || obj.zone == Zone::Stack,
+                    }
                 }
-                None => false, // Object doesn't exist.
+                None => false,
             }
         }
-        Target::Player(_) => true, // Players are always legal targets in 2-player.
+        Target::Player(_) => true,
     }
 }
 
@@ -54,8 +57,11 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
 
     // CR 608.2b: Check target legality. If the spell has targets and ALL
     // are illegal, it's countered by game rules (fizzled).
+    let target_req = registry.get(card_id)
+        .map(|b| b.target_requirement())
+        .unwrap_or(crate::cards::TargetRequirement::None);
     if !targets.is_empty() {
-        let any_legal = targets.iter().any(|t| is_target_legal(state, t));
+        let any_legal = targets.iter().any(|t| is_target_legal(state, t, &target_req));
         if !any_legal {
             state.log(LogLevel::Event, format!("{} fizzled (all targets illegal)", name));
             // Move to graveyard (or exile for flashback) without resolving.

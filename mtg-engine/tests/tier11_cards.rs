@@ -248,7 +248,7 @@ fn purify_the_grave_exiles_card_from_graveyard() {
     state.move_object(gy_card, Zone::Graveyard);
 
     let purify = castable_spell(&mut state, &reg, "Purify the Grave", P0);
-    let new_state = cast_and_resolve(&state, &reg, purify, vec![]);
+    let new_state = cast_and_resolve(&state, &reg, purify, vec![mtg_engine::actions::Target::Object(gy_card)]);
 
     assert_eq!(new_state.get_object(gy_card).unwrap().zone, Zone::Exile);
 }

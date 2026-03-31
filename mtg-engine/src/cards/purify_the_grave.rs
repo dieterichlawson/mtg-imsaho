@@ -31,40 +31,16 @@ impl CardBehavior for PurifyTheGrave {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        // Target any card in a graveyard. We use Creature as an approximation — the engine
-        // primarily deals with creature targets. For now, we auto-exile in on_resolve.
-        TargetRequirement::None
+        TargetRequirement::GraveyardCard
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        let opponent = state.opponent(controller);
-
-        // Exile a card from opponent's graveyard (auto-select first card found).
-        let target_card = state.objects_in_zone(Zone::Graveyard, opponent)
-            .iter()
-            .map(|o| o.id)
-            .next();
-
-        if let Some(target_id) = target_card {
-            let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(target_id, Zone::Exile);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+        if let Some(Target::Object(target_id)) = targets.first() {
+            let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*target_id, Zone::Exile);
             state.log(crate::state::LogLevel::Event,
                 format!("Purify the Grave exiled {} from graveyard", name));
-        } else {
-            // If opponent's graveyard is empty, try our own.
-            let own_target = state.objects_in_zone(Zone::Graveyard, controller)
-                .iter()
-                .map(|o| o.id)
-                .next();
-            if let Some(target_id) = own_target {
-                let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.move_object(target_id, Zone::Exile);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Purify the Grave exiled {} from graveyard", name));
-            }
         }
-
         state.move_spell_after_resolve(object_id);
     }
 }

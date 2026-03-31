@@ -559,7 +559,7 @@ fn runic_repetition_returns_flashback_card_from_exile() {
     state.get_object_mut(tt).unwrap().name = "Think Twice".into();
 
     let spell = castable_spell(&mut state, &reg, "Runic Repetition", P0);
-    state = cast_and_resolve(&state, &reg, spell, vec![]);
+    state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(tt)]);
 
     assert_eq!(state.get_object(tt).unwrap().zone, Zone::Hand, "Should return flashback card to hand");
 }

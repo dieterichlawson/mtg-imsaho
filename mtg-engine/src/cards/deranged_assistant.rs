@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, ManaAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -48,5 +48,16 @@ impl CardBehavior for DerangedAssistant {
         } else {
             vec![]
         }
+    }
+
+    fn on_activate_mana_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {
+        let controller = match state.get_object(object_id) {
+            Some(o) => o.controller,
+            None => return,
+        };
+        // Mill a card as part of the mana ability cost.
+        crate::engine::mill_cards(state, controller, 1);
+        state.log(crate::state::LogLevel::Event,
+            "Deranged Assistant: milled a card".into());
     }
 }

@@ -660,6 +660,12 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
+        TargetRequirement::GraveyardCard | TargetRequirement::ExileCard => {
+            let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
+            targets.into_iter()
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t] })
+                .collect()
+        }
         TargetRequirement::TwoTargets(ref req1, ref req2) => {
             // Generate Cartesian product of valid targets for each requirement.
             let targets1 = valid_targets_for_req(state, caster, spell_id, req1, behavior, registry);
@@ -765,6 +771,22 @@ fn valid_targets_for_req(
             state.players.iter()
                 .filter(|p| !p.lost)
                 .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCard => {
+            // All cards in all graveyards.
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Graveyard)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::ExileCard => {
+            // All cards in exile owned by the caster.
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Exile && o.owner == caster)
+                .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
@@ -1056,6 +1078,8 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             amount,
                         });
                     }
+                    // Call card-specific mana ability callback (e.g., Deranged Assistant mills).
+                    behavior.on_activate_mana_ability(&mut new_state, *object_id, *ability_index, registry);
                 }
             }
 

@@ -520,6 +520,10 @@ pub enum TargetRequirement {
     TwoTargets(Box<TargetRequirement>, Box<TargetRequirement>),
     /// Up to N targets matching the inner requirement (Travel Preparations).
     UpToTargets(usize, Box<TargetRequirement>),
+    /// Target a card in any player's graveyard (Purify the Grave).
+    GraveyardCard,
+    /// Target a card in exile (Runic Repetition).
+    ExileCard,
 }
 
 /// The trait that every card implements.
@@ -636,6 +640,10 @@ pub trait CardBehavior: Send + Sync {
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
         vec![]
     }
+
+    /// Called after a mana ability is activated. Used for mana abilities with side effects
+    /// (e.g., Deranged Assistant mills a card when tapped for mana).
+    fn on_activate_mana_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
 
     /// List of non-mana activated abilities this permanent has.
     fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
