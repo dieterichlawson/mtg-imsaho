@@ -156,6 +156,14 @@ pub mod stitchers_apprentice;
 pub mod corpse_lunge;
 pub mod harvest_pyre;
 
+// Tier 10: Complex creatures and utility lands
+pub mod elder_of_laurels;
+pub mod mindshrieker;
+pub mod skirsdag_high_priest;
+pub mod gavony_township;
+pub mod nephalia_drownyard;
+pub mod stensia_bloodhall;
+
 
 use std::collections::HashMap;
 
@@ -699,6 +707,14 @@ impl CardRegistry {
         reg.register(Box::new(stitchers_apprentice::StitchersApprentice));
         reg.register(Box::new(corpse_lunge::CorpseLunge));
         reg.register(Box::new(harvest_pyre::HarvestPyre));
+
+        // Innistrad Tier 10 cards
+        reg.register(Box::new(elder_of_laurels::ElderOfLaurels));
+        reg.register(Box::new(mindshrieker::Mindshrieker));
+        reg.register(Box::new(skirsdag_high_priest::SkirsdagHighPriest));
+        reg.register(Box::new(gavony_township::GavonyTownship));
+        reg.register(Box::new(nephalia_drownyard::NephaliaDrownyard));
+        reg.register(Box::new(stensia_bloodhall::StensiaBloodhall));
 
         reg
     }
