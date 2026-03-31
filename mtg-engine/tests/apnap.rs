@@ -15,12 +15,64 @@ use common::*;
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::GameEvent;
+use mtg_engine::ids::PlayerId;
 use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::state::GameState;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
+}
+
+/// Process triggers, resolving any "target player" choices by targeting
+/// the opponent. Needed because Rage Thrower now correctly presents a
+/// choice instead of auto-targeting.
+fn process_triggers_with_choices(state: &mut GameState, reg: &CardRegistry) {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    use mtg_engine::actions::Target;
+
+    triggers::collect_triggers(state, reg);
+    let mut safety = 0;
+    loop {
+        if safety > 50 { break; }
+        safety += 1;
+
+        // Try to resolve next trigger.
+        if !triggers::resolve_next_trigger(state, reg) {
+            // No more triggers on stack.
+            break;
+        }
+
+        // If a trigger paused for a choice, auto-resolve it.
+        if state.awaiting_action.is_some() {
+            let (target, effect) = match &state.awaiting_action {
+                Some(AwaitingAction::ResolutionChoice { player, choice, .. }) => {
+                    let controller = *player;
+                    match choice {
+                        ResolutionChoiceKind::ChooseTarget { options, effect, .. } => {
+                            let opponent = state.opponent(controller);
+                            let target = options.iter()
+                                .find(|t| matches!(t, Target::Player(p) if *p == opponent))
+                                .or_else(|| options.first())
+                                .cloned();
+                            (target, Some(effect.clone()))
+                        }
+                        _ => (None, None),
+                    }
+                }
+                _ => (None, None),
+            };
+            state.awaiting_action = None;
+            if let (Some(target), Some(effect)) = (target, effect) {
+                mtg_engine::engine::apply_pending_effect(state, &target, &effect, reg);
+            }
+        }
+
+        // Collect any new triggers caused by the resolution.
+        triggers::collect_triggers(state, reg);
+    }
+    state.trigger_event_index = 0;
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -58,7 +110,7 @@ fn non_active_player_triggers_resolve_first() {
 
     state.events.clear();
     check_state_based_actions_with_registry(&mut state, Some(&reg));
-    triggers::process_triggers(&mut state, &reg);
+    process_triggers_with_choices(&mut state, &reg);
 
     // Both effects should have happened.
     // Noble (P1's): P0 loses 1, P1 gains 1.
@@ -114,7 +166,7 @@ fn same_player_multiple_triggers_all_fire() {
 
     state.events.clear();
     check_state_based_actions_with_registry(&mut state, Some(&reg));
-    triggers::process_triggers(&mut state, &reg);
+    process_triggers_with_choices(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, p1_life_before - 2,
         "Rage Thrower should deal 2 damage to P1");
@@ -154,7 +206,7 @@ fn apnap_lifo_order_with_life_totals() {
 
     state.events.clear();
     check_state_based_actions_with_registry(&mut state, Some(&reg));
-    triggers::process_triggers(&mut state, &reg);
+    process_triggers_with_choices(&mut state, &reg);
 
     // With LIFO: Noble first (P1: 2→3), then Thrower (P1: 3→1).
     assert_eq!(state.get_player(P1).life, 1,

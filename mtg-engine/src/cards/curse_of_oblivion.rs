@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Curse of Oblivion — {3}{B} Enchantment — Aura Curse.
@@ -56,20 +56,39 @@ impl CardBehavior for CurseOfOblivion {
         if state.active_player != cursed_player {
             return;
         }
-        // Exile up to 2 cards from their graveyard.
-        // Auto-choose: exile the first 2 found.
-        let to_exile: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, cursed_player)
+        // "That player exiles two cards from their graveyard."
+        // The cursed player chooses which cards to exile.
+        let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, cursed_player)
             .iter()
-            .take(2)
-            .map(|o| o.id)
+            .map(|o| Target::Object(o.id))
             .collect();
-        let count = to_exile.len();
-        for id in to_exile {
-            state.move_object(id, Zone::Exile);
+        if gy_cards.is_empty() {
+            return;
         }
-        if count > 0 {
+        // If 2 or fewer cards, just exile them all — no choice needed.
+        if gy_cards.len() <= 2 {
+            let to_exile: Vec<ObjectId> = gy_cards.iter()
+                .map(|t| match t { Target::Object(id) => *id, _ => unreachable!() })
+                .collect();
+            let count = to_exile.len();
+            for id in to_exile {
+                state.move_object(id, Zone::Exile);
+            }
             state.log(crate::state::LogLevel::Event,
                 format!("Curse of Oblivion: p{} exiled {} card(s) from graveyard", cursed_player.0, count));
+            return;
         }
+        // Present choice: cursed player picks a card to exile (will need to pick again for second).
+        // For now, present as a mandatory single-target choice.
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: cursed_player,
+            source: self_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "Curse of Oblivion: choose a card to exile from your graveyard".into(),
+                options: gy_cards,
+                optional: false,
+                effect: PendingEffect::ExileCurseOfOblivion { remaining: 1 },
+            },
+        });
     }
 }

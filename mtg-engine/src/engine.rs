@@ -1122,6 +1122,43 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             }
             state.log(LogLevel::Event, format!("{} exiled {}", source_name, name));
         }
+        (Target::Player(pid), PendingEffect::DrawAndLoseLife { source_name }) => {
+            draw_cards(state, *pid, 1);
+            let old = state.get_player(*pid).life;
+            let new_life = old - 1;
+            state.get_player_mut(*pid).life = new_life;
+            state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
+            state.log(LogLevel::Event, format!("{}: p{} drew a card and lost 1 life", source_name, pid.0));
+        }
+        (Target::Object(id), PendingEffect::DestroyCreature { source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            crate::destruction::try_destroy(state, *id, registry);
+            state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
+        }
+        (Target::Object(id), PendingEffect::ExileCurseOfOblivion { remaining }) => {
+            let owner = state.get_object(*id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
+            state.move_object(*id, Zone::Exile);
+            state.log(LogLevel::Event, format!("Curse of Oblivion: exiled a card from p{}'s graveyard", owner.0));
+            // If more cards to exile, present another choice.
+            if *remaining > 0 {
+                let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, owner)
+                    .iter()
+                    .map(|o| Target::Object(o.id))
+                    .collect();
+                if !gy_cards.is_empty() {
+                    state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                        player: owner,
+                        source: crate::ids::ObjectId(0), // curse source
+                        choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                            description: "Curse of Oblivion: choose another card to exile".into(),
+                            options: gy_cards,
+                            optional: false,
+                            effect: PendingEffect::ExileCurseOfOblivion { remaining: remaining - 1 },
+                        },
+                    });
+                }
+            }
+        }
         _ => {}
     }
 }

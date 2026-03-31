@@ -952,6 +952,13 @@ pub enum PendingEffect {
     Mill { count: u32, source_name: String },
     /// Exile the chosen creature and store its ID on the source permanent.
     ExileAndStore { source_id: ObjectId, source_name: String },
+    /// Target player draws a card and loses 1 life (Bloodgift Demon).
+    DrawAndLoseLife { source_name: String },
+    /// Destroy target creature matching a filter (Reaper from the Abyss).
+    DestroyCreature { source_name: String },
+    /// Exile the chosen card from graveyard (Curse of Oblivion).
+    /// If remaining > 0, presents another exile choice after this one.
+    ExileCurseOfOblivion { remaining: u32 },
 }
 
 /// Game result.

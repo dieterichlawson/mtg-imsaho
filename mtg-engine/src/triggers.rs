@@ -73,6 +73,15 @@ pub enum PendingTrigger {
         amount: u32,
         description: String,
     },
+    /// A spell-cast watcher trigger.
+    SpellCastWatch {
+        watcher_id: ObjectId,
+        watcher_card_id: CardId,
+        controller: PlayerId,
+        caster: PlayerId,
+        spell_id: ObjectId,
+        description: String,
+    },
     /// An upkeep trigger on a permanent.
     UpkeepTrigger {
         object_id: ObjectId,
@@ -106,6 +115,7 @@ impl PendingTrigger {
             PendingTrigger::CombatDamageToPlayer { controller, .. } => *controller,
             PendingTrigger::CombatDamageWatch { controller, .. } => *controller,
             PendingTrigger::DamageToPlayerWatch { controller, .. } => *controller,
+            PendingTrigger::SpellCastWatch { controller, .. } => *controller,
             PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
             PendingTrigger::EndStepTrigger { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
@@ -157,6 +167,13 @@ impl PendingTrigger {
             }
             PendingTrigger::CombatDamageWatch { watcher_card_id, description, .. }
             | PendingTrigger::DamageToPlayerWatch { watcher_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s triggered ability", card_name(*watcher_card_id))
+                } else {
+                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
+                }
+            }
+            PendingTrigger::SpellCastWatch { watcher_card_id, description, .. } => {
                 if description.is_empty() {
                     format!("{}'s triggered ability", card_name(*watcher_card_id))
                 } else {
@@ -477,6 +494,39 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
+            GameEvent::SpellCast { player: caster, object: spell_id } => {
+                // Check if the spell is an instant or sorcery.
+                let is_instant_sorcery = state.get_object(*spell_id)
+                    .and_then(|o| registry.card_data(o.card_id))
+                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, crate::types::CardType::Instant | crate::types::CardType::Sorcery)))
+                    .unwrap_or(false);
+                if is_instant_sorcery {
+                    let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield)
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+                    for (watcher_id, watcher_card_id, watcher_controller) in watchers {
+                        if registry.get(watcher_card_id).is_some() {
+                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::SpellCast);
+                            if !desc.is_empty() {
+                                let trigger = PendingTrigger::SpellCastWatch {
+                                    watcher_id,
+                                    watcher_card_id,
+                                    controller: watcher_controller,
+                                    caster: *caster,
+                                    spell_id: *spell_id,
+                                    description: desc,
+                                };
+                                if watcher_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -570,6 +620,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_end_step(state, object_id, registry);
+                }
+            }
+        }
+        PendingTrigger::SpellCastWatch { watcher_id, watcher_card_id, caster, spell_id, .. } => {
+            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(watcher_card_id) {
+                    behavior.on_spell_cast(state, watcher_id, caster, spell_id, registry);
                 }
             }
         }

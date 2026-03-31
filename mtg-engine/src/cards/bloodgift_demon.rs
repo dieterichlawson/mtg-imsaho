@@ -1,6 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
+use crate::actions::Target;
 use crate::types::*;
 
 /// Bloodgift Demon — {3}{B}{B} 5/4 flying Demon.
@@ -39,18 +40,26 @@ impl CardBehavior for BloodgiftDemon {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
-        // Only trigger on your upkeep.
         if state.active_player != controller {
             return;
         }
-        // "Target player draws a card and loses 1 life"
-        // Auto-target self in 2-player (usually want to draw for yourself).
-        crate::engine::draw_cards(state, controller, 1);
-        let old = state.get_player(controller).life;
-        let new_life = old - 1;
-        state.get_player_mut(controller).life = new_life;
-        state.events.push(crate::events::GameEvent::LifeChanged { player: controller, old, new_life });
-        state.log(crate::state::LogLevel::Event,
-            format!("Bloodgift Demon: p{} drew a card and lost 1 life", controller.0));
+        // "Target player" — present choice between all players.
+        let targets: Vec<Target> = state.players.iter()
+            .filter(|p| !p.lost)
+            .map(|p| Target::Player(p.id))
+            .collect();
+        if targets.is_empty() {
+            return;
+        }
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "Bloodgift Demon: choose a player to draw a card and lose 1 life".into(),
+                options: targets,
+                optional: false,
+                effect: PendingEffect::DrawAndLoseLife { source_name: "Bloodgift Demon".into() },
+            },
+        });
     }
 }

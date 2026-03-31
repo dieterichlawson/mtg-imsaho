@@ -1,6 +1,7 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Reaper from the Abyss — {3}{B}{B}{B} 6/6 flying Demon.
@@ -45,10 +46,8 @@ impl CardBehavior for ReaperFromTheAbyss {
         if !state.creature_died_this_turn {
             return;
         }
-        // Destroy target non-Demon creature.
-        // Auto-target: pick an opponent's non-Demon creature if possible.
-        let opponent = state.opponent(controller);
-        let target = state.objects.values()
+        // Collect non-Demon creatures as targets.
+        let targets: Vec<Target> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != self_id)
             .filter(|o| {
                 let is_demon = registry.card_data(o.card_id)
@@ -57,14 +56,14 @@ impl CardBehavior for ReaperFromTheAbyss {
                     || o.subtypes.iter().any(|s| s == "Demon");
                 !is_demon
             })
-            // Prefer opponent's creatures.
-            .min_by_key(|o| if o.controller == opponent { 0 } else { 1 })
-            .map(|o| o.id);
-        if let Some(target_id) = target {
-            let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::try_destroy(state, target_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Reaper from the Abyss: destroyed {}", name));
-        }
+            .map(|o| Target::Object(o.id))
+            .collect();
+        // Present choice to controller.
+        crate::cards::helpers::present_target_choice(
+            state, self_id, controller, targets,
+            PendingEffect::DestroyCreature { source_name: "Reaper from the Abyss".into() },
+            "Reaper from the Abyss: destroy target non-Demon creature",
+            false,
+        );
     }
 }

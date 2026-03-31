@@ -198,6 +198,8 @@ pub enum TriggerKind {
     Upkeep,
     /// At the beginning of each end step.
     EndStep,
+    /// Whenever a player casts an instant or sorcery spell (spell-cast watcher).
+    SpellCast,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -355,6 +357,10 @@ pub trait CardBehavior: Send + Sync {
 
     /// Called at the beginning of the end step for each permanent with an end-step trigger.
     fn on_end_step(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called when a player casts an instant or sorcery spell.
+    /// `caster` is the player who cast the spell, `spell_id` is the spell object.
+    fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}

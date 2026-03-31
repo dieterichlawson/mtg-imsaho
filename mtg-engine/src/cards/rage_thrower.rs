@@ -1,7 +1,7 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::events::{DamageTarget, GameEvent};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::GameState;
+use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Rage Thrower — {5}{R} 4/2 Human Shaman.
@@ -23,7 +23,9 @@ impl CardBehavior for RageThrower {
             toughness: Some(2),
             oracle_text: "Whenever another creature dies, Rage Thrower deals 2 damage to target player or planeswalker.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None,
+            continuous_effects: vec![],
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "deal 2 damage to target player".into(),
@@ -37,18 +39,16 @@ impl CardBehavior for RageThrower {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
-        // "Deals 2 damage to target player" — auto-target opponent in 2-player.
-        // Uses damage (not life loss) so it interacts correctly with damage prevention.
-        let opponent = state.opponent(controller);
-        let old = state.get_player(opponent).life;
-        let new_life = old - 2;
-        state.get_player_mut(opponent).life = new_life;
-        state.events.push(GameEvent::NonCombatDamageDealt {
-            source: self_id,
-            target: DamageTarget::Player(opponent),
-            amount: 2,
-        });
-        state.events.push(GameEvent::LifeChanged { player: opponent, old, new_life });
-        state.log(crate::state::LogLevel::Event, format!("Rage Thrower dealt 2 damage to p{}", opponent.0));
+        // "Target player" — present choice between all players.
+        let targets: Vec<Target> = state.players.iter()
+            .filter(|p| !p.lost)
+            .map(|p| Target::Player(p.id))
+            .collect();
+        crate::cards::helpers::present_target_choice(
+            state, self_id, controller, targets,
+            PendingEffect::DealDamage { amount: 2, source_id: self_id, source_name: "Rage Thrower".into() },
+            "Rage Thrower: deal 2 damage to target player",
+            false,
+        );
     }
 }

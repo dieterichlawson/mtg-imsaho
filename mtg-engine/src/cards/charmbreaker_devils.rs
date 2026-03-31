@@ -1,5 +1,7 @@
+use rand::seq::SliceRandom;
+
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::ObjectId;
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
 
@@ -32,6 +34,10 @@ impl CardBehavior for CharmbreakerDevils {
                     kind: TriggerKind::Upkeep,
                     description: "return a random instant or sorcery from graveyard to hand".into(),
                 },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::SpellCast,
+                    description: "Charmbreaker Devils gets +4/+0 until end of turn".into(),
+                },
             ],
         }
     }
@@ -45,7 +51,7 @@ impl CardBehavior for CharmbreakerDevils {
             return;
         }
         // Find instant or sorcery cards in graveyard.
-        let candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
+        let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| {
                 registry.card_data(o.card_id)
@@ -54,8 +60,10 @@ impl CardBehavior for CharmbreakerDevils {
             })
             .map(|o| o.id)
             .collect();
-        if let Some(&chosen) = candidates.first() {
-            // "At random" — pick the first one found (deterministic fallback).
+        if !candidates.is_empty() {
+            let mut rng = rand::thread_rng();
+            candidates.shuffle(&mut rng);
+            let chosen = candidates[0];
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand);
             state.log(crate::state::LogLevel::Event,
@@ -63,7 +71,22 @@ impl CardBehavior for CharmbreakerDevils {
         }
     }
 
-    // Note: The "whenever you cast an instant or sorcery spell, +4/+0" trigger
-    // requires a SpellCast watcher (not yet in the engine). This ability is
-    // tracked as a known limitation until a SpellCast trigger system is added.
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {
+        let controller = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            _ => return,
+        };
+        // Only trigger on your own spells.
+        if caster != controller {
+            return;
+        }
+        // +4/+0 until end of turn.
+        state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
+            target: self_id,
+            power_mod: 4,
+            toughness_mod: 0,
+        });
+        state.log(crate::state::LogLevel::Event,
+            "Charmbreaker Devils: +4/+0 until end of turn".into());
+    }
 }

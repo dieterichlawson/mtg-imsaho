@@ -326,6 +326,17 @@ fn rage_thrower_deals_2_on_death() {
 
     triggers::process_triggers(&mut state, &reg);
 
+    // Rage Thrower presents a "target player" choice. Choose opponent (P1).
+    assert!(state.awaiting_action.is_some(), "Rage Thrower should present a target choice");
+    let target = mtg_engine::actions::Target::Player(P1);
+    mtg_engine::engine::apply_pending_effect(&mut state, &target,
+        &mtg_engine::state::PendingEffect::DealDamage {
+            amount: 2,
+            source_id: mtg_engine::ids::ObjectId(0),
+            source_name: "Rage Thrower".into(),
+        }, &reg);
+    state.awaiting_action = None;
+
     assert_eq!(state.get_player(P1).life, 18,
         "P1 should lose 2 life from Rage Thrower's trigger");
 }

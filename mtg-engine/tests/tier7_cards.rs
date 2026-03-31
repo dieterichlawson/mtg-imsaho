@@ -80,6 +80,16 @@ fn bloodgift_demon_draws_and_loses_life() {
     state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
     triggers::process_triggers(&mut state, &reg);
 
+    // Bloodgift Demon now presents a player choice. Choose P0 (self).
+    assert!(state.awaiting_action.is_some(), "Should be awaiting player choice");
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(mtg_engine::actions::Target::Player(P0))),
+        },
+        &reg,
+    );
+
     let hand = state.objects.values()
         .filter(|o| o.zone == Zone::Hand && o.owner == P0)
         .count();
