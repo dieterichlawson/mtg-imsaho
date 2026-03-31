@@ -114,3 +114,16 @@ pub fn named_creature(
     obj.summoning_sick = false;
     id
 }
+
+/// Place a named equipment card on the battlefield (unattached). Returns the object ID.
+pub fn named_equipment(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    name: &str,
+    owner: PlayerId,
+) -> ObjectId {
+    let id = named_creature(state, registry, name, owner);
+    let obj = state.get_object_mut(id).unwrap();
+    obj.is_equipment = true;
+    id
+}
