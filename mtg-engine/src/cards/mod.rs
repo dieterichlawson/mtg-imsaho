@@ -156,6 +156,14 @@ pub mod stitchers_apprentice;
 pub mod corpse_lunge;
 pub mod harvest_pyre;
 
+// Tier 9: Equipment and artifacts
+pub mod runechanters_pike;
+pub mod trepanation_blade;
+pub mod blazing_torch;
+pub mod demonmail_hauberk;
+pub mod inquisitors_flail;
+pub mod travelers_amulet;
+
 // Tier 10: Complex creatures and utility lands
 pub mod elder_of_laurels;
 pub mod mindshrieker;
@@ -707,6 +715,14 @@ impl CardRegistry {
         reg.register(Box::new(stitchers_apprentice::StitchersApprentice));
         reg.register(Box::new(corpse_lunge::CorpseLunge));
         reg.register(Box::new(harvest_pyre::HarvestPyre));
+
+        // Innistrad Tier 9 cards (equipment + artifacts)
+        reg.register(Box::new(runechanters_pike::RunechantersPike));
+        reg.register(Box::new(trepanation_blade::TrepanationBlade));
+        reg.register(Box::new(blazing_torch::BlazingTorch));
+        reg.register(Box::new(demonmail_hauberk::DemonmailHauberk));
+        reg.register(Box::new(inquisitors_flail::InquisitorsFlail));
+        reg.register(Box::new(travelers_amulet::TravelersAmulet));
 
         // Innistrad Tier 10 cards
         reg.register(Box::new(elder_of_laurels::ElderOfLaurels));
