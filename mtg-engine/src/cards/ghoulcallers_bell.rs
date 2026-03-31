@@ -1,0 +1,56 @@
+use crate::actions::Target;
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+/// Ghoulcaller's Bell — {1} Artifact.
+/// {T}: Each player mills a card.
+pub struct GhoulcallersBell;
+
+impl CardBehavior for GhoulcallersBell {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Ghoulcaller's Bell".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(1),
+            ])),
+            card_types: vec![CardType::Artifact],
+            supertypes: vec![],
+            subtypes: vec![],
+            power: None,
+            toughness: None,
+            oracle_text: "{T}: Each player mills a card.".into(),
+            keywords: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+        }
+    }
+
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+        let obj = match state.get_object(object_id) {
+            Some(o) => o,
+            None => return vec![],
+        };
+        if obj.zone == Zone::Battlefield && !obj.tapped {
+            vec![ActivatedAbilityDef {
+                ability_index: 0,
+                description: "{T}: Each player mills a card".into(),
+                cost: ManaCost::free(),
+                requires_tap: true,
+                sacrifice_cost: SacrificeCost::None,
+                target_requirement: None,
+                once_per_turn: false,
+                sorcery_speed_only: false,
+            }]
+        } else {
+            vec![]
+        }
+    }
+
+    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+        let player_ids: Vec<crate::ids::PlayerId> = state.players.iter().map(|p| p.id).collect();
+        for pid in player_ids {
+            crate::engine::mill_cards(state, pid, 1);
+        }
+    }
+}

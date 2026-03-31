@@ -247,6 +247,14 @@ pub mod ghost_quarter;
 pub mod shimmering_grotto;
 pub mod moorland_haunt;
 
+// Innistrad mana creatures
+pub mod avacyns_pilgrim;
+pub mod deranged_assistant;
+
+// Innistrad artifacts
+pub mod ghoulcallers_bell;
+pub mod graveyard_shovel;
+
 
 use std::collections::HashMap;
 
@@ -886,6 +894,14 @@ impl CardRegistry {
         reg.register(Box::new(ghost_quarter::GhostQuarter));
         reg.register(Box::new(shimmering_grotto::ShimmeringGrotto));
         reg.register(Box::new(moorland_haunt::MoorlandHaunt));
+
+        // Innistrad mana creatures
+        reg.register(Box::new(avacyns_pilgrim::AvacynsPilgrim));
+        reg.register(Box::new(deranged_assistant::DerangedAssistant));
+
+        // Innistrad artifacts
+        reg.register(Box::new(ghoulcallers_bell::GhoulcallersBell));
+        reg.register(Box::new(graveyard_shovel::GraveyardShovel));
 
         reg
     }
