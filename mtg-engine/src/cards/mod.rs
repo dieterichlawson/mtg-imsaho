@@ -198,6 +198,20 @@ pub mod stensia_bloodhall;
 
 // Tier 9: Equipment
 pub mod cobbled_wings;
+
+// Innistrad Werewolf DFCs
+pub mod reckless_waif;
+pub mod gatstaf_shepherd;
+pub mod village_ironsmith;
+pub mod mayor_of_avabruck;
+pub mod daybreak_ranger;
+pub mod villagers_of_estwald;
+pub mod hanweir_watchkeep;
+pub mod instigator_gang;
+pub mod tormented_pariah;
+pub mod grizzled_outcasts;
+pub mod ulvenwald_mystics;
+pub mod kruin_outlaw;
 pub mod mask_of_avacyn;
 pub mod silver_inlaid_dagger;
 pub mod sharpened_pitchfork;
@@ -801,6 +815,20 @@ impl CardRegistry {
         reg.register(Box::new(sharpened_pitchfork::SharpenedPitchfork));
         reg.register(Box::new(butchers_cleaver::ButchersCleaver));
         reg.register(Box::new(wooden_stake::WoodenStake));
+
+        // Innistrad Werewolf DFCs
+        reg.register(Box::new(reckless_waif::RecklessWaif));
+        reg.register(Box::new(gatstaf_shepherd::GatstafShepherd));
+        reg.register(Box::new(village_ironsmith::VillageIronsmith));
+        reg.register(Box::new(mayor_of_avabruck::MayorOfAvabruck));
+        reg.register(Box::new(daybreak_ranger::DaybreakRanger));
+        reg.register(Box::new(villagers_of_estwald::VillagersOfEstwald));
+        reg.register(Box::new(hanweir_watchkeep::HanweirWatchkeep));
+        reg.register(Box::new(instigator_gang::InstigatorGang));
+        reg.register(Box::new(tormented_pariah::TormentedPariah));
+        reg.register(Box::new(grizzled_outcasts::GrizzledOutcasts));
+        reg.register(Box::new(ulvenwald_mystics::UlvenwaldMystics));
+        reg.register(Box::new(kruin_outlaw::KruinOutlaw));
 
         reg
     }

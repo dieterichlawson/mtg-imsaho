@@ -1,0 +1,124 @@
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::ids::ObjectId;
+use crate::state::GameState;
+use crate::types::*;
+
+/// Instigator Gang {3}{R} 2/3 Human Werewolf — attacking creatures +1/+0
+/// // Wildblood Pack 5/5 Werewolf with Trample — attacking creatures +3/+0
+pub struct InstigatorGang;
+
+impl InstigatorGang {
+    fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
+        let is_transformed = state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false);
+        let total_spells_last_turn: u32 = state.spells_cast_last_turn.values().sum();
+        if !is_transformed {
+            total_spells_last_turn == 0 && !state.is_first_turn
+        } else {
+            state.spells_cast_last_turn.values().any(|&count| count >= 2)
+        }
+    }
+}
+
+impl CardBehavior for InstigatorGang {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Instigator Gang".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(3),
+                ManaSymbol::Colored(Color::Red),
+            ])),
+            card_types: vec![CardType::Creature],
+            supertypes: vec![],
+            subtypes: vec!["Human".into(), "Werewolf".into()],
+            power: Some(2),
+            toughness: Some(3),
+            oracle_text: "Attacking creatures you control get +1/+0.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Instigator Gang.".into(),
+            keywords: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "transform".into(),
+                },
+            ],
+        }
+    }
+
+    fn back_face_data(&self) -> Option<CardData> {
+        Some(CardData {
+            name: "Wildblood Pack".into(),
+            cost: None,
+            card_types: vec![CardType::Creature],
+            supertypes: vec![],
+            subtypes: vec!["Werewolf".into()],
+            power: Some(5),
+            toughness: Some(5),
+            oracle_text: "Trample\nAttacking creatures you control get +3/+0.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Wildblood Pack.".into(),
+            keywords: vec![Keyword::Trample],
+            flashback_cost: None,
+            continuous_effects: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![],
+        })
+    }
+
+    fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
+        Self::werewolf_should_transform(state, object_id)
+    }
+
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+            Some((5, 5))
+        } else {
+            None
+        }
+    }
+
+    /// Instigator Gang / Wildblood Pack: buff attacking creatures when attacks are declared.
+    /// Front face: +1/+0, back face: +3/+0.
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+        let (controller, is_transformed) = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
+            _ => return,
+        };
+        let bonus = if is_transformed { 3 } else { 1 };
+        // Buff all attacking creatures you control (including self).
+        let attackers: Vec<ObjectId> = state.combat.as_ref()
+            .map(|c| c.attackers.keys()
+                .filter(|id| state.get_object(**id).map(|o| o.controller == controller).unwrap_or(false))
+                .copied()
+                .collect())
+            .unwrap_or_default();
+        for id in &attackers {
+            state.until_end_of_turn_effects.push(
+                crate::state::UntilEndOfTurnEffect {
+                    target: *id,
+                    power_mod: bonus,
+                    toughness_mod: 0,
+                }
+            );
+        }
+        if !attackers.is_empty() {
+            let face = if is_transformed { "Wildblood Pack" } else { "Instigator Gang" };
+            state.log(crate::state::LogLevel::Event,
+                format!("{}: {} attacking creatures get +{}/+0", face, attackers.len(), bonus));
+        }
+    }
+
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+        if state.get_object(self_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+            return;
+        }
+        if self.should_transform(state, self_id, registry) {
+            if let Some(obj) = state.get_object_mut(self_id) {
+                obj.is_transformed = !obj.is_transformed;
+                let name = if obj.is_transformed { "Wildblood Pack" } else { "Instigator Gang" };
+                obj.name = name.into();
+                state.log(crate::state::LogLevel::Event,
+                    format!("Instigator Gang transforms into {}", name));
+            }
+        }
+    }
+}
