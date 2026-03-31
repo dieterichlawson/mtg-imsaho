@@ -1,0 +1,55 @@
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData, TargetRequirement, TargetFilter, CardRegistry};
+use crate::ids::{ObjectId, PlayerId};
+use crate::state::GameState;
+use crate::types::*;
+
+/// Cackling Counterpart — {1}{U}{U} Instant.
+/// Create a token that's a copy of target creature you control.
+/// Flashback {5}{U}{U}.
+pub struct CacklingCounterpart;
+
+impl CardBehavior for CacklingCounterpart {
+    fn card_data(&self) -> CardData {
+        CardData {
+            name: "Cackling Counterpart".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(1),
+                ManaSymbol::Colored(Color::Blue),
+                ManaSymbol::Colored(Color::Blue),
+            ])),
+            card_types: vec![CardType::Instant],
+            supertypes: vec![],
+            subtypes: vec![],
+            power: None,
+            toughness: None,
+            oracle_text: "Create a token that's a copy of target creature you control.\nFlashback {5}{U}{U}".into(),
+            keywords: vec![],
+            flashback_cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(5),
+                ManaSymbol::Colored(Color::Blue),
+                ManaSymbol::Colored(Color::Blue),
+            ])),
+            continuous_effects: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![],
+        }
+    }
+
+    fn target_requirement(&self) -> TargetRequirement {
+        TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)
+    }
+
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        if let Some(Target::Object(target_id)) = targets.first() {
+            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+                let token_id = state.create_token_copy(*target_id, controller, registry);
+                let name = state.get_object(token_id).map(|o| o.name.clone()).unwrap_or_default();
+                state.log(crate::state::LogLevel::Event,
+                    format!("Cackling Counterpart creates a token copy of {}", name));
+            }
+        }
+        state.move_spell_after_resolve(object_id);
+    }
+}
