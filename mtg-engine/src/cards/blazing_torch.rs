@@ -47,10 +47,13 @@ impl CardBehavior for BlazingTorch {
         }
     }
 
-    fn is_valid_target(&self, _state: &GameState, _caster: PlayerId, _target: &Target, _registry: &CardRegistry) -> bool {
-        // Both equip (Creature filter) and damage ability (AnyTarget) accept all targets
-        // within their TargetRequirement filters.
-        true
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        match target {
+            Target::Object(id) => state.get_object(*id)
+                .map(|o| o.zone == Zone::Battlefield)
+                .unwrap_or(false),
+            Target::Player(pid) => !state.get_player(*pid).lost,
+        }
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
