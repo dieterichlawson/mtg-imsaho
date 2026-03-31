@@ -1159,6 +1159,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 }
             }
         }
+        (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*id, Zone::Hand);
+            state.log(LogLevel::Event, format!("{}: returned {} to hand", source_name, name));
+        }
         _ => {}
     }
 }

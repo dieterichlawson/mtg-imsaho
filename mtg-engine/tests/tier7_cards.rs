@@ -217,3 +217,137 @@ fn curse_of_deaths_hold_debuffs_opponent_creatures() {
     assert_eq!(opp_toughness, 2, "Opponent's creature should have -1 toughness");
     assert_eq!(own_power, 3, "Own creature should be unaffected");
 }
+
+// ── Angel of Flight Alabaster ─────────────────────────────────────
+
+/// Angel returns a Spirit from graveyard on upkeep (single target auto-applies).
+#[test]
+fn angel_of_flight_alabaster_returns_spirit() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let _angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
+
+    // Put a Spirit in graveyard.
+    let spirit = named_creature(&mut state, &reg, "Chapel Geist", P0);
+    state.move_object(spirit, Zone::Graveyard);
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    triggers::process_triggers(&mut state, &reg);
+
+    // Single Spirit → auto-applied (mandatory with 1 target).
+    assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Hand,
+        "Spirit should be returned to hand");
+}
+
+// ── Charmbreaker Devils ───────────────────────────────────────────
+
+/// Charmbreaker Devils gets +4/+0 when you cast an instant or sorcery.
+#[test]
+fn charmbreaker_devils_plus4_on_spell_cast() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let devils = named_creature(&mut state, &reg, "Charmbreaker Devils", P0);
+
+    // Put an instant spell on the stack and fire SpellCast event.
+    let bolt_id = reg.get_id_by_name("Lightning Bolt").unwrap();
+    let spell = state.create_object(bolt_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(spell).unwrap().name = "Lightning Bolt".into();
+    state.events.push(mtg_engine::events::GameEvent::SpellCast {
+        player: P0,
+        object: spell,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    let power = state.effective_power(devils, &reg).unwrap();
+    assert_eq!(power, 8, "Charmbreaker Devils should be 4+4=8 power after spell cast");
+}
+
+// ── Curse of the Bloody Tome ──────────────────────────────────────
+
+/// Curse mills 2 from enchanted player on their upkeep.
+#[test]
+fn curse_of_bloody_tome_mills_on_upkeep() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+
+    let curse_card_id = reg.get_id_by_name("Curse of the Bloody Tome").unwrap();
+    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(curse).unwrap().name = "Curse of the Bloody Tome".into();
+    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+
+    // Put cards in P1's library.
+    for _ in 0..4 {
+        let c = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Library, None, None);
+        state.get_player_mut(P1).library_order.push(c);
+    }
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    triggers::process_triggers(&mut state, &reg);
+
+    let gy = state.objects.values()
+        .filter(|o| o.zone == Zone::Graveyard && o.owner == P1)
+        .count();
+    assert_eq!(gy, 2, "Should mill 2 cards from P1's library");
+}
+
+// ── Curse of Oblivion ─────────────────────────────────────────────
+
+/// Curse exiles 2 cards from enchanted player's graveyard (auto when ≤2).
+#[test]
+fn curse_of_oblivion_exiles_from_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P1);
+
+    let curse_card_id = reg.get_id_by_name("Curse of Oblivion").unwrap();
+    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(curse).unwrap().name = "Curse of Oblivion".into();
+    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+
+    // Put 2 cards in P1's graveyard (auto-exiles when ≤2).
+    let g1 = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
+    let g2 = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
+
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
+    triggers::process_triggers(&mut state, &reg);
+
+    assert_eq!(state.get_object(g1).unwrap().zone, Zone::Exile);
+    assert_eq!(state.get_object(g2).unwrap().zone, Zone::Exile);
+}
+
+// ── Curse of the Nightly Hunt ─────────────────────────────────────
+
+/// Curse forces enchanted player's creatures to attack.
+#[test]
+fn curse_of_nightly_hunt_forces_attack() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P1); // P1's turn
+
+    // P0 controls curse attached to P1.
+    let curse_card_id = reg.get_id_by_name("Curse of the Nightly Hunt").unwrap();
+    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(curse).unwrap().name = "Curse of the Nightly Hunt".into();
+    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+
+    // P1's creature should be forced to attack.
+    let creature = ready_creature(&mut state, P1, 2, 2);
+
+    let has_force = state.has_continuous_effect(creature, &|e| {
+        match e {
+            ContinuousEffect::ForceAttack { scope } => Some(scope),
+            _ => None,
+        }
+    }, &reg);
+    assert!(has_force, "P1's creature should be forced to attack by curse");
+
+    // P0's creature should NOT be forced.
+    let own_creature = ready_creature(&mut state, P0, 2, 2);
+    let own_forced = state.has_continuous_effect(own_creature, &|e| {
+        match e {
+            ContinuousEffect::ForceAttack { scope } => Some(scope),
+            _ => None,
+        }
+    }, &reg);
+    assert!(!own_forced, "P0's creature should NOT be forced to attack");
+}

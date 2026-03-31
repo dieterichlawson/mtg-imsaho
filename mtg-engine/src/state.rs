@@ -959,6 +959,8 @@ pub enum PendingEffect {
     /// Exile the chosen card from graveyard (Curse of Oblivion).
     /// If remaining > 0, presents another exile choice after this one.
     ExileCurseOfOblivion { remaining: u32 },
+    /// Return the chosen object to its owner's hand.
+    ReturnToHand { source_name: String },
 }
 
 /// Game result.
