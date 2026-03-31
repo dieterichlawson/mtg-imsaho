@@ -59,11 +59,16 @@ impl CardBehavior for StitchersApprentice {
         state.log(LogLevel::Event, format!("Stitcher's Apprentice created a 2/2 Homunculus token"));
 
         // Then sacrifice a creature you control.
-        // Auto-sacrifice the first eligible creature (matches engine's current sacrifice pattern).
-        let creature = state.objects_in_zone(Zone::Battlefield, controller)
+        // Auto-sacrifice: prefer non-token creatures, then tokens (player should choose).
+        let creatures: Vec<_> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .find(|o| o.power.is_some())
-            .map(|o| o.id);
+            .filter(|o| o.power.is_some())
+            .map(|o| (o.id, o.is_token))
+            .collect();
+        let creature = creatures.iter()
+            .find(|(_, is_token)| !is_token)
+            .or_else(|| creatures.first())
+            .map(|(id, _)| *id);
         if let Some(cid) = creature {
             let name = state.get_object(cid).map(|o| o.name.clone()).unwrap_or_default();
             crate::destruction::sacrifice(state, cid, registry);
