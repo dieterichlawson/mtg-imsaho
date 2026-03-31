@@ -235,6 +235,39 @@ pub mod laboratory_maniac;
 pub mod parallel_lives;
 pub mod nevermore;
 
+// Innistrad dual lands (checklands)
+pub mod clifftop_retreat;
+pub mod hinterland_harbor;
+pub mod isolated_chapel;
+pub mod sulfur_falls;
+pub mod woodland_cemetery;
+
+// Innistrad utility lands
+pub mod ghost_quarter;
+pub mod shimmering_grotto;
+pub mod moorland_haunt;
+
+// Innistrad mana creatures
+pub mod avacyns_pilgrim;
+pub mod deranged_assistant;
+
+// Innistrad artifacts
+pub mod ghoulcallers_bell;
+pub mod graveyard_shovel;
+
+// Innistrad sorceries/instants
+pub mod paraselene;
+pub mod into_the_maw_of_hell;
+pub mod maw_of_the_mire;
+pub mod make_a_wish;
+pub mod moonmist;
+pub mod runic_repetition;
+
+// Innistrad enchantments
+pub mod full_moons_rise;
+pub mod stony_silence;
+pub mod witchbane_orb;
+
 
 use std::collections::HashMap;
 
@@ -874,6 +907,38 @@ impl CardRegistry {
         reg.register(Box::new(parallel_lives::ParallelLives));
         reg.register(Box::new(nevermore::Nevermore));
 
+        // Innistrad dual lands (checklands)
+        reg.register(Box::new(clifftop_retreat::ClifftopRetreat));
+        reg.register(Box::new(hinterland_harbor::HinterlandHarbor));
+        reg.register(Box::new(isolated_chapel::IsolatedChapel));
+        reg.register(Box::new(sulfur_falls::SulfurFalls));
+        reg.register(Box::new(woodland_cemetery::WoodlandCemetery));
+
+        // Innistrad utility lands
+        reg.register(Box::new(ghost_quarter::GhostQuarter));
+        reg.register(Box::new(shimmering_grotto::ShimmeringGrotto));
+        reg.register(Box::new(moorland_haunt::MoorlandHaunt));
+
+        // Innistrad mana creatures
+        reg.register(Box::new(avacyns_pilgrim::AvacynsPilgrim));
+        reg.register(Box::new(deranged_assistant::DerangedAssistant));
+
+        // Innistrad artifacts
+        reg.register(Box::new(ghoulcallers_bell::GhoulcallersBell));
+        reg.register(Box::new(graveyard_shovel::GraveyardShovel));
+
+        // Innistrad sorceries/instants
+        reg.register(Box::new(paraselene::Paraselene));
+        reg.register(Box::new(into_the_maw_of_hell::IntoTheMawOfHell));
+        reg.register(Box::new(maw_of_the_mire::MawOfTheMire));
+        reg.register(Box::new(make_a_wish::MakeAWish));
+        reg.register(Box::new(moonmist::Moonmist));
+        reg.register(Box::new(runic_repetition::RunicRepetition));
+
+        // Innistrad enchantments and artifacts
+        reg.register(Box::new(full_moons_rise::FullMoonsRise));
+        reg.register(Box::new(stony_silence::StonySilence));
+        reg.register(Box::new(witchbane_orb::WitchbaneOrb));
 
         reg
     }
