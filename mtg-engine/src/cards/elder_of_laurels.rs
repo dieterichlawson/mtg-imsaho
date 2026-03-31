@@ -40,7 +40,7 @@ impl CardBehavior for ElderOfLaurels {
                     ManaSymbol::Generic(3),
                     ManaSymbol::Colored(Color::Green),
                 ]),
-                requires_tap: false,
+                requires_tap: true,
                 sacrifice_cost: SacrificeCost::None,
                 target_requirement: Some(TargetRequirement::Creature),
                 once_per_turn: false,

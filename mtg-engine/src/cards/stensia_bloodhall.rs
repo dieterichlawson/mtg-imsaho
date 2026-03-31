@@ -72,7 +72,7 @@ impl CardBehavior for StensiaBloodhall {
             let old_life = state.get_player(*player_id).life;
             let new_life = old_life - 2;
             state.get_player_mut(*player_id).life = new_life;
-            state.events.push(crate::events::GameEvent::CombatDamageDealt {
+            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                 source: object_id,
                 target: crate::events::DamageTarget::Player(*player_id),
                 amount: 2,

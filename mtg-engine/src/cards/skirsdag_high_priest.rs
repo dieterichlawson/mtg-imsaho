@@ -44,7 +44,7 @@ impl CardBehavior for SkirsdagHighPriest {
         let controller = obj.controller;
         let other_untapped_creatures = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped && !o.summoning_sick)
+            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
             .count();
         if other_untapped_creatures < 2 {
             return vec![];
@@ -67,7 +67,7 @@ impl CardBehavior for SkirsdagHighPriest {
         // Tap two other untapped creatures we control.
         let to_tap: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped && !o.summoning_sick)
+            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
             .take(2)
             .map(|o| o.id)
             .collect();
