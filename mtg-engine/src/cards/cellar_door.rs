@@ -21,7 +21,7 @@ impl CardBehavior for CellarDoor {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{3}, {T}: Target player mills a card. If a creature card is milled this way, create a 2/2 black Zombie creature token.".into(),
+            oracle_text: "{3}, {T}: Target player mills the bottom card of their library. If a creature card is milled this way, create a 2/2 black Zombie creature token.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -59,13 +59,14 @@ impl CardBehavior for CellarDoor {
             None => return,
         };
         if let Some(Target::Player(player_id)) = targets.first() {
-            // Mill one card.
+            // Mill the BOTTOM card of the library.
             let player = state.get_player(*player_id);
             if player.library_order.is_empty() {
                 return;
             }
-            let milled_id = player.library_order[0];
-            state.get_player_mut(*player_id).library_order.remove(0);
+            let last_idx = player.library_order.len() - 1;
+            let milled_id = player.library_order[last_idx];
+            state.get_player_mut(*player_id).library_order.remove(last_idx);
             state.move_object(milled_id, Zone::Graveyard);
 
             // Check if it was a creature.
