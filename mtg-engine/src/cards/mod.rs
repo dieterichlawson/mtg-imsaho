@@ -235,6 +235,13 @@ pub mod laboratory_maniac;
 pub mod parallel_lives;
 pub mod nevermore;
 
+// Innistrad dual lands (checklands)
+pub mod clifftop_retreat;
+pub mod hinterland_harbor;
+pub mod isolated_chapel;
+pub mod sulfur_falls;
+pub mod woodland_cemetery;
+
 
 use std::collections::HashMap;
 
@@ -863,6 +870,12 @@ impl CardRegistry {
         reg.register(Box::new(parallel_lives::ParallelLives));
         reg.register(Box::new(nevermore::Nevermore));
 
+        // Innistrad dual lands (checklands)
+        reg.register(Box::new(clifftop_retreat::ClifftopRetreat));
+        reg.register(Box::new(hinterland_harbor::HinterlandHarbor));
+        reg.register(Box::new(isolated_chapel::IsolatedChapel));
+        reg.register(Box::new(sulfur_falls::SulfurFalls));
+        reg.register(Box::new(woodland_cemetery::WoodlandCemetery));
 
         reg
     }
