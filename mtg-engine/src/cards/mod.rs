@@ -255,6 +255,14 @@ pub mod deranged_assistant;
 pub mod ghoulcallers_bell;
 pub mod graveyard_shovel;
 
+// Innistrad sorceries/instants
+pub mod paraselene;
+pub mod into_the_maw_of_hell;
+pub mod maw_of_the_mire;
+pub mod make_a_wish;
+pub mod moonmist;
+pub mod runic_repetition;
+
 
 use std::collections::HashMap;
 
@@ -902,6 +910,14 @@ impl CardRegistry {
         // Innistrad artifacts
         reg.register(Box::new(ghoulcallers_bell::GhoulcallersBell));
         reg.register(Box::new(graveyard_shovel::GraveyardShovel));
+
+        // Innistrad sorceries/instants
+        reg.register(Box::new(paraselene::Paraselene));
+        reg.register(Box::new(into_the_maw_of_hell::IntoTheMawOfHell));
+        reg.register(Box::new(maw_of_the_mire::MawOfTheMire));
+        reg.register(Box::new(make_a_wish::MakeAWish));
+        reg.register(Box::new(moonmist::Moonmist));
+        reg.register(Box::new(runic_repetition::RunicRepetition));
 
         reg
     }
