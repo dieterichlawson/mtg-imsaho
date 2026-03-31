@@ -440,7 +440,18 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
         if source.zone != crate::types::Zone::Battlefield {
             continue;
         }
-        if let Some(behavior) = registry.get(source.card_id) {
+        // Check instance-level effects first (e.g., equipment with BlockRestriction).
+        if let Some(ref instance_effects) = source.instance_continuous_effects {
+            for effect in instance_effects {
+                if let crate::types::ContinuousEffect::BlockRestriction { allowed_blockers, scope } = effect {
+                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
+                        if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
+                            return false;
+                        }
+                    }
+                }
+            }
+        } else if let Some(behavior) = registry.get(source.card_id) {
             for effect in &behavior.card_data().continuous_effects {
                 if let crate::types::ContinuousEffect::BlockRestriction { allowed_blockers, scope } = effect {
                     if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {

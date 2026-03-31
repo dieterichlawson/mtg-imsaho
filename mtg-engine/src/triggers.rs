@@ -102,6 +102,14 @@ pub enum PendingTrigger {
         card_id: CardId,
         description: String,
     },
+    /// A creature (or equipment's creature) attacks trigger.
+    AttacksTrigger {
+        attacker_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        defending_player: PlayerId,
+        description: String,
+    },
 }
 
 impl PendingTrigger {
@@ -119,6 +127,7 @@ impl PendingTrigger {
             PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
             PendingTrigger::EndStepTrigger { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
+            PendingTrigger::AttacksTrigger { controller, .. } => *controller,
         }
     }
 
@@ -199,6 +208,13 @@ impl PendingTrigger {
                     format!("{}'s LTB trigger", card_name(*card_id))
                 } else {
                     format!("{}'s LTB trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::AttacksTrigger { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s attack trigger", card_name(*card_id))
+                } else {
+                    format!("{}'s attack trigger ({})", card_name(*card_id), description)
                 }
             }
         }
@@ -454,6 +470,58 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
+            GameEvent::AttackersDeclared { attackers } => {
+                for &(attacker_id, defending_player) in attackers {
+                    let (card_id, controller) = match state.get_object(attacker_id) {
+                        Some(o) if o.zone == Zone::Battlefield && o.power.is_some() => (o.card_id, o.controller),
+                        _ => continue,
+                    };
+
+                    // Self attack trigger (creature itself has Attacks trigger).
+                    if registry.get(card_id).is_some() {
+                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Attacks);
+                        if !desc.is_empty() {
+                            let trigger = PendingTrigger::AttacksTrigger {
+                                attacker_id,
+                                card_id,
+                                controller,
+                                defending_player,
+                                description: desc,
+                            };
+                            if controller == active_player {
+                                ap_triggers.push(trigger);
+                            } else {
+                                nap_triggers.push(trigger);
+                            }
+                        }
+                    }
+
+                    // Equipment attack triggers: check for equipment attached to this attacker.
+                    let equipment_list: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield && o.is_equipment && o.attached_to == Some(attacker_id))
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+                    for (equip_id, equip_card_id, equip_controller) in equipment_list {
+                        if registry.get(equip_card_id).is_some() {
+                            let desc = trigger_description(registry, equip_card_id, &crate::cards::TriggerKind::Attacks);
+                            if !desc.is_empty() {
+                                let trigger = PendingTrigger::AttacksTrigger {
+                                    attacker_id: equip_id,
+                                    card_id: equip_card_id,
+                                    controller: equip_controller,
+                                    defending_player,
+                                    description: desc,
+                                };
+                                if equip_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             GameEvent::StepStarted { step } => {
                 let trigger_kind = match step {
                     crate::types::Step::Upkeep => Some(crate::cards::TriggerKind::Upkeep),
@@ -633,6 +701,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         PendingTrigger::LeftBattlefield { object_id, card_id, .. } => {
             if let Some(behavior) = registry.get(card_id) {
                 behavior.on_leave_battlefield(state, object_id, registry);
+            }
+        }
+        PendingTrigger::AttacksTrigger { attacker_id, card_id, defending_player: _, .. } => {
+            if state.get_object(attacker_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_attacks(state, attacker_id, registry);
+                }
             }
         }
     }
