@@ -119,6 +119,19 @@ pub mod sturmgeist;
 pub mod curiosity;
 pub mod balefire_dragon;
 pub mod abattoir_ghoul;
+// Tier 7: Upkeep/end-step triggers + curses
+pub mod boneyard_wurm;
+pub mod splinterfright;
+pub mod bloodgift_demon;
+pub mod angel_of_flight_alabaster;
+pub mod endless_ranks_of_the_dead;
+pub mod charmbreaker_devils;
+pub mod reaper_from_the_abyss;
+pub mod curse_of_the_pierced_heart;
+pub mod curse_of_the_bloody_tome;
+pub mod curse_of_oblivion;
+pub mod curse_of_the_nightly_hunt;
+pub mod curse_of_deaths_hold;
 
 use std::collections::HashMap;
 
@@ -552,6 +565,19 @@ impl CardRegistry {
         reg.register(Box::new(curiosity::Curiosity));
         reg.register(Box::new(balefire_dragon::BalefireDragon));
         reg.register(Box::new(abattoir_ghoul::AbattoirGhoul));
+        // Innistrad Tier 7 cards
+        reg.register(Box::new(boneyard_wurm::BoneyardWurm));
+        reg.register(Box::new(splinterfright::Splinterfright));
+        reg.register(Box::new(bloodgift_demon::BloodgiftDemon));
+        reg.register(Box::new(angel_of_flight_alabaster::AngelOfFlightAlabaster));
+        reg.register(Box::new(endless_ranks_of_the_dead::EndlessRanksOfTheDead));
+        reg.register(Box::new(charmbreaker_devils::CharmbrekerDevils));
+        reg.register(Box::new(reaper_from_the_abyss::ReaperFromTheAbyss));
+        reg.register(Box::new(curse_of_the_pierced_heart::CurseOfThePiercedHeart));
+        reg.register(Box::new(curse_of_the_bloody_tome::CurseOfTheBloodyTome));
+        reg.register(Box::new(curse_of_oblivion::CurseOfOblivion));
+        reg.register(Box::new(curse_of_the_nightly_hunt::CurseOfTheNightlyHunt));
+        reg.register(Box::new(curse_of_deaths_hold::CurseOfDeathsHold));
         reg
     }
 }

@@ -29,6 +29,20 @@ pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target]
     false
 }
 
+/// Resolve a curse aura: attach to a target player and move to battlefield.
+pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Target]) -> bool {
+    if let Some(Target::Player(player_id)) = targets.first() {
+        state.move_object(curse_id, Zone::Battlefield);
+        if let Some(obj) = state.get_object_mut(curse_id) {
+            obj.attached_to_player = Some(*player_id);
+            obj.summoning_sick = false;
+        }
+        return true;
+    }
+    state.move_spell_after_resolve(curse_id);
+    false
+}
+
 /// Resolve a damage spell: deal `amount` damage to the first target
 /// (creature or player), then move the spell to the appropriate zone.
 pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Target], amount: u32) {
