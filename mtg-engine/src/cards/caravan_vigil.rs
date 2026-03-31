@@ -56,12 +56,12 @@ impl CardBehavior for CaravanVigil {
             state.get_player_mut(controller).library_order.retain(|&id| id != land_id);
 
             if state.creature_died_this_turn {
-                // Morbid: put onto the battlefield.
+                // Morbid: "You may put that card onto the battlefield instead."
+                // Auto-choose battlefield (strictly better in almost all cases).
                 state.move_object(land_id, Zone::Battlefield);
                 state.log(crate::state::LogLevel::Event,
-                    format!("Caravan Vigil (morbid): {} put onto the battlefield", name));
+                    format!("Caravan Vigil (morbid): {} enters the battlefield", name));
             } else {
-                // Normal: put into hand.
                 state.move_object(land_id, Zone::Hand);
                 state.log(crate::state::LogLevel::Event,
                     format!("Caravan Vigil: {} put into hand", name));
