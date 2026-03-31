@@ -132,6 +132,11 @@ pub mod curse_of_the_bloody_tome;
 pub mod curse_of_oblivion;
 pub mod curse_of_the_nightly_hunt;
 pub mod curse_of_deaths_hold;
+// Tier 8: Sacrifice-based abilities + graveyard exile costs
+pub mod skirsdag_cultist;
+pub mod stitchers_apprentice;
+pub mod corpse_lunge;
+pub mod harvest_pyre;
 
 use std::collections::HashMap;
 
@@ -652,6 +657,11 @@ impl CardRegistry {
         reg.register(Box::new(curse_of_oblivion::CurseOfOblivion));
         reg.register(Box::new(curse_of_the_nightly_hunt::CurseOfTheNightlyHunt));
         reg.register(Box::new(curse_of_deaths_hold::CurseOfDeathsHold));
+        // Innistrad Tier 8 cards
+        reg.register(Box::new(skirsdag_cultist::SkirsdagCultist));
+        reg.register(Box::new(stitchers_apprentice::StitchersApprentice));
+        reg.register(Box::new(corpse_lunge::CorpseLunge));
+        reg.register(Box::new(harvest_pyre::HarvestPyre));
         reg
     }
 }
