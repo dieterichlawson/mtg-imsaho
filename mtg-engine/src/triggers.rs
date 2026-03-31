@@ -102,6 +102,17 @@ pub enum PendingTrigger {
         card_id: CardId,
         description: String,
     },
+    /// A block trigger on equipment: equipped creature blocks or is blocked by another creature.
+    /// `equipment_id` is the equipment, `equipped_creature` is the equipped creature,
+    /// `other_creature` is the creature on the other side of the block.
+    EquipmentBlockTrigger {
+        equipment_id: ObjectId,
+        equipment_card_id: CardId,
+        controller: PlayerId,
+        equipped_creature: ObjectId,
+        other_creature: ObjectId,
+        description: String,
+    },
 }
 
 impl PendingTrigger {
@@ -119,6 +130,7 @@ impl PendingTrigger {
             PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
             PendingTrigger::EndStepTrigger { controller, .. } => *controller,
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
+            PendingTrigger::EquipmentBlockTrigger { controller, .. } => *controller,
         }
     }
 
@@ -199,6 +211,13 @@ impl PendingTrigger {
                     format!("{}'s LTB trigger", card_name(*card_id))
                 } else {
                     format!("{}'s LTB trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::EquipmentBlockTrigger { equipment_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s block trigger", card_name(*equipment_card_id))
+                } else {
+                    format!("{}'s block trigger ({})", card_name(*equipment_card_id), description)
                 }
             }
         }
@@ -527,6 +546,51 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
             }
+            GameEvent::BlockersDeclared { assignments } => {
+                // Check for equipment with block triggers (e.g., Wooden Stake).
+                // For each blocker-attacker pair, check if either creature has equipment
+                // that has a Blocks triggered ability.
+                let assignments = assignments.clone();
+                for &(blocker_id, attacker_id) in &assignments {
+                    // Collect equipment attached to either creature.
+                    let equipment: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| {
+                            o.zone == Zone::Battlefield
+                                && o.is_equipment
+                                && (o.attached_to == Some(blocker_id) || o.attached_to == Some(attacker_id))
+                        })
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+
+                    for (eq_id, eq_card_id, eq_controller) in equipment {
+                        if registry.get(eq_card_id).is_some() {
+                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks);
+                            if !desc.is_empty() {
+                                // Determine which creature is equipped and which is "other".
+                                let attached_to = state.get_object(eq_id).and_then(|o| o.attached_to);
+                                let (equipped, other) = if attached_to == Some(blocker_id) {
+                                    (blocker_id, attacker_id)
+                                } else {
+                                    (attacker_id, blocker_id)
+                                };
+                                let trigger = PendingTrigger::EquipmentBlockTrigger {
+                                    equipment_id: eq_id,
+                                    equipment_card_id: eq_card_id,
+                                    controller: eq_controller,
+                                    equipped_creature: equipped,
+                                    other_creature: other,
+                                    description: desc,
+                                };
+                                if eq_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -633,6 +697,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         PendingTrigger::LeftBattlefield { object_id, card_id, .. } => {
             if let Some(behavior) = registry.get(card_id) {
                 behavior.on_leave_battlefield(state, object_id, registry);
+            }
+        }
+        PendingTrigger::EquipmentBlockTrigger { equipment_id, equipment_card_id, equipped_creature, other_creature, .. } => {
+            if state.get_object(equipment_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(equipment_card_id) {
+                    behavior.on_equipment_block_trigger(state, equipment_id, equipped_creature, other_creature, registry);
+                }
             }
         }
     }

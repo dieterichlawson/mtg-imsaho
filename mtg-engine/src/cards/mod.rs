@@ -451,6 +451,12 @@ pub trait CardBehavior: Send + Sync {
     /// Called when this creature blocks (declared as a blocker).
     fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) {}
 
+    /// Called when the equipped creature blocks or is blocked by another creature.
+    /// Used by equipment like Wooden Stake. `self_id` is the equipment,
+    /// `equipped_creature` is the creature wearing this equipment,
+    /// `other_creature` is the creature on the other side of the block.
+    fn on_equipment_block_trigger(&self, _state: &mut GameState, _self_id: ObjectId, _equipped_creature: ObjectId, _other_creature: ObjectId, _registry: &CardRegistry) {}
+
     /// Return a modified mana cost for this spell, or None to use the normal cost.
     /// Used for cost reduction (e.g., Blasphemous Act costs {1} less per creature).
     fn modified_cost(&self, _state: &GameState, _registry: &CardRegistry) -> Option<ManaCost> { None }
