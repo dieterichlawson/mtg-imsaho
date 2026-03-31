@@ -235,6 +235,25 @@ pub mod laboratory_maniac;
 pub mod parallel_lives;
 pub mod nevermore;
 
+// Tier 15: Hard/complex Innistrad cards — non-werewolf DFCs, planeswalkers, unique effects
+pub mod delver_of_secrets;
+pub mod cloistered_youth;
+pub mod civilized_scholar;
+pub mod screeching_bat;
+pub mod ludevics_test_subject;
+pub mod thraben_sentry;
+pub mod bloodline_keeper;
+pub mod mikaeus_the_lunarch;
+pub mod grimgrin_corpse_born;
+pub mod geist_of_saint_traft;
+pub mod evil_twin;
+pub mod moldgraf_monstrosity;
+pub mod liliana_of_the_veil;
+pub mod garruk_relentless;
+pub mod essence_of_the_wild;
+pub mod mirror_mad_phantasm;
+pub mod grimoire_of_the_dead;
+
 
 use std::collections::HashMap;
 
@@ -874,6 +893,24 @@ impl CardRegistry {
         reg.register(Box::new(parallel_lives::ParallelLives));
         reg.register(Box::new(nevermore::Nevermore));
 
+        // Tier 15: Hard/complex Innistrad cards
+        reg.register(Box::new(delver_of_secrets::DelverOfSecrets));
+        reg.register(Box::new(cloistered_youth::CloisteredYouth));
+        reg.register(Box::new(civilized_scholar::CivilizedScholar));
+        reg.register(Box::new(screeching_bat::ScreechingBat));
+        reg.register(Box::new(ludevics_test_subject::LudevicsTestSubject));
+        reg.register(Box::new(thraben_sentry::ThrabenSentry));
+        reg.register(Box::new(bloodline_keeper::BloodlineKeeper));
+        reg.register(Box::new(mikaeus_the_lunarch::MikaeusTheLunarch));
+        reg.register(Box::new(grimgrin_corpse_born::GrimgrinCorpseBorn));
+        reg.register(Box::new(geist_of_saint_traft::GeistOfSaintTraft));
+        reg.register(Box::new(evil_twin::EvilTwin));
+        reg.register(Box::new(moldgraf_monstrosity::MoldgrafMonstrosity));
+        reg.register(Box::new(liliana_of_the_veil::LilianaOfTheVeil));
+        reg.register(Box::new(garruk_relentless::GarrukRelentless));
+        reg.register(Box::new(essence_of_the_wild::EssenceOfTheWild));
+        reg.register(Box::new(mirror_mad_phantasm::MirrorMadPhantasm));
+        reg.register(Box::new(grimoire_of_the_dead::GrimoireOfTheDead));
 
         reg
     }
