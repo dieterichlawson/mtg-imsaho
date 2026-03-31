@@ -345,6 +345,10 @@ pub enum TriggerKind {
     Attacks,
     /// When this creature blocks.
     Blocks,
+    /// When this creature becomes blocked (attacked and something blocked it).
+    BecomesBlocked,
+    /// Whenever any creature attacks — watcher on other permanents (like AnyCreatureDies).
+    AnyCreatureAttacks,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
 }
@@ -521,6 +525,13 @@ pub trait CardBehavior: Send + Sync {
 
     /// Called when this creature blocks (declared as a blocker).
     fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called when this creature becomes blocked (it attacked and a creature blocked it).
+    fn on_becomes_blocked(&self, _state: &mut GameState, _self_id: ObjectId, _blocker_id: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called when ANY creature attacks — watcher for permanents that care about attacks.
+    /// `self_id` is this watcher permanent, `attacker_id` is the attacking creature.
+    fn on_any_creature_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _attacker_id: ObjectId, _attacker_controller: PlayerId, _registry: &CardRegistry) {}
 
     /// Called when the equipped creature blocks or is blocked by another creature.
     /// Used by equipment like Wooden Stake. `self_id` is the equipment,

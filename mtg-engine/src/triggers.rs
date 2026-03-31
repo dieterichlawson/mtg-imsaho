@@ -117,6 +117,23 @@ pub enum PendingTrigger {
         blocked_attacker: ObjectId,
         description: String,
     },
+    /// A watcher observing any creature attacking.
+    AttackWatch {
+        watcher_id: ObjectId,
+        watcher_card_id: CardId,
+        controller: PlayerId,
+        attacker_id: ObjectId,
+        attacker_controller: PlayerId,
+        description: String,
+    },
+    /// A creature's "when this becomes blocked" trigger (attacker that gets blocked).
+    BecomesBlockedTrigger {
+        object_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        blocker_id: ObjectId,
+        description: String,
+    },
 }
 
 impl PendingTrigger {
@@ -136,6 +153,8 @@ impl PendingTrigger {
             PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
             PendingTrigger::AttacksTrigger { controller, .. } => *controller,
             PendingTrigger::BlocksTrigger { controller, .. } => *controller,
+            PendingTrigger::AttackWatch { controller, .. } => *controller,
+            PendingTrigger::BecomesBlockedTrigger { controller, .. } => *controller,
         }
     }
 
@@ -218,14 +237,16 @@ impl PendingTrigger {
                     format!("{}'s LTB trigger ({})", card_name(*card_id), description)
                 }
             }
-            PendingTrigger::AttacksTrigger { card_id, description, .. } => {
+            PendingTrigger::AttacksTrigger { card_id, description, .. }
+            | PendingTrigger::AttackWatch { watcher_card_id: card_id, description, .. } => {
                 if description.is_empty() {
                     format!("{}'s attack trigger", card_name(*card_id))
                 } else {
                     format!("{}'s attack trigger ({})", card_name(*card_id), description)
                 }
             }
-            PendingTrigger::BlocksTrigger { card_id, description, .. } => {
+            PendingTrigger::BlocksTrigger { card_id, description, .. }
+            | PendingTrigger::BecomesBlockedTrigger { card_id, description, .. } => {
                 if description.is_empty() {
                     format!("{}'s block trigger", card_name(*card_id))
                 } else {
@@ -614,6 +635,32 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                             }
                         }
                     }
+
+                    // Attack-watchers: notify other permanents (like AnyCreatureDies watchers).
+                    let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield && o.id != *attacker_id)
+                        .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
+                        .collect();
+                    for (w_id, w_card_id, w_controller, w_transformed) in watchers {
+                        if registry.get(w_card_id).is_some() {
+                            let desc = trigger_description(registry, w_card_id, &crate::cards::TriggerKind::AnyCreatureAttacks, w_transformed);
+                            if !desc.is_empty() {
+                                let trigger = PendingTrigger::AttackWatch {
+                                    watcher_id: w_id,
+                                    watcher_card_id: w_card_id,
+                                    controller: w_controller,
+                                    attacker_id: *attacker_id,
+                                    attacker_controller: controller,
+                                    description: desc,
+                                };
+                                if w_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
+                    }
                 }
             }
             GameEvent::BlockersDeclared { assignments } => {
@@ -653,6 +700,53 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                                     card_id: eq_card_id,
                                     controller: eq_controller,
                                     blocked_attacker: *attacker_id,
+                                    description: desc,
+                                };
+                                if eq_controller == active_player {
+                                    ap_triggers.push(trigger);
+                                } else {
+                                    nap_triggers.push(trigger);
+                                }
+                            }
+                        }
+                    }
+
+                    // BecomesBlocked: the attacker gets a "becomes blocked" trigger.
+                    let (att_card_id, att_controller) = match state.get_object(*attacker_id) {
+                        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
+                        _ => continue,
+                    };
+                    if registry.get(att_card_id).is_some() {
+                        let desc = trigger_description(registry, att_card_id, &crate::cards::TriggerKind::BecomesBlocked, false);
+                        if !desc.is_empty() {
+                            let trigger = PendingTrigger::BecomesBlockedTrigger {
+                                object_id: *attacker_id,
+                                card_id: att_card_id,
+                                controller: att_controller,
+                                blocker_id: *blocker_id,
+                                description: desc,
+                            };
+                            if att_controller == active_player {
+                                ap_triggers.push(trigger);
+                            } else {
+                                nap_triggers.push(trigger);
+                            }
+                        }
+                    }
+                    // Check equipment/auras on the attacker for BecomesBlocked triggers.
+                    let att_attached: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                        .filter(|o| o.zone == Zone::Battlefield && o.attached_to == Some(*attacker_id))
+                        .map(|o| (o.id, o.card_id, o.controller))
+                        .collect();
+                    for (eq_id, eq_card_id, eq_controller) in att_attached {
+                        if registry.get(eq_card_id).is_some() {
+                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::BecomesBlocked, false);
+                            if !desc.is_empty() {
+                                let trigger = PendingTrigger::BecomesBlockedTrigger {
+                                    object_id: eq_id,
+                                    card_id: eq_card_id,
+                                    controller: eq_controller,
+                                    blocker_id: *blocker_id,
                                     description: desc,
                                 };
                                 if eq_controller == active_player {
@@ -784,6 +878,20 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_blocks(state, object_id, blocked_attacker, registry);
+                }
+            }
+        }
+        PendingTrigger::AttackWatch { watcher_id, watcher_card_id, attacker_id, attacker_controller, .. } => {
+            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(watcher_card_id) {
+                    behavior.on_any_creature_attacks(state, watcher_id, attacker_id, attacker_controller, registry);
+                }
+            }
+        }
+        PendingTrigger::BecomesBlockedTrigger { object_id, card_id, blocker_id, .. } => {
+            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_becomes_blocked(state, object_id, blocker_id, registry);
                 }
             }
         }

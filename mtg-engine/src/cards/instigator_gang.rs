@@ -1,10 +1,10 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::ObjectId;
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
 
-/// Instigator Gang {3}{R} 2/3 Human Werewolf — attacking creatures +1/+0
-/// // Wildblood Pack 5/5 Werewolf with Trample — attacking creatures +3/+0
+/// Instigator Gang {3}{R} 2/3 Human Werewolf — attacking creatures you control get +1/+0
+/// // Wildblood Pack 5/5 Werewolf with Trample — attacking creatures you control get +3/+0
 pub struct InstigatorGang;
 
 impl InstigatorGang {
@@ -42,6 +42,11 @@ impl CardBehavior for InstigatorGang {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
                 },
+                // Watch ALL creatures attacking (not just self).
+                TriggeredAbilityDef {
+                    kind: TriggerKind::AnyCreatureAttacks,
+                    description: "attacking creatures you control get +1/+0".into(),
+                },
             ],
         }
     }
@@ -60,7 +65,12 @@ impl CardBehavior for InstigatorGang {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::AnyCreatureAttacks,
+                    description: "attacking creatures you control get +3/+0".into(),
+                },
+            ],
         })
     }
 
@@ -76,35 +86,27 @@ impl CardBehavior for InstigatorGang {
         }
     }
 
-    /// Instigator Gang / Wildblood Pack: buff attacking creatures when attacks are declared.
-    /// Front face: +1/+0, back face: +3/+0.
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_any_creature_attacks(&self, state: &mut GameState, self_id: ObjectId, attacker_id: ObjectId, attacker_controller: PlayerId, _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
         };
+        // Only buff creatures you control.
+        if attacker_controller != controller {
+            return;
+        }
         let bonus = if is_transformed { 3 } else { 1 };
-        // Buff all attacking creatures you control (including self).
-        let attackers: Vec<ObjectId> = state.combat.as_ref()
-            .map(|c| c.attackers.keys()
-                .filter(|id| state.get_object(**id).map(|o| o.controller == controller).unwrap_or(false))
-                .copied()
-                .collect())
-            .unwrap_or_default();
-        for id in &attackers {
-            state.until_end_of_turn_effects.push(
-                crate::state::UntilEndOfTurnEffect {
-                    target: *id,
-                    power_mod: bonus,
-                    toughness_mod: 0,
-                }
-            );
-        }
-        if !attackers.is_empty() {
-            let face = if is_transformed { "Wildblood Pack" } else { "Instigator Gang" };
-            state.log(crate::state::LogLevel::Event,
-                format!("{}: {} attacking creatures get +{}/+0", face, attackers.len(), bonus));
-        }
+        state.until_end_of_turn_effects.push(
+            crate::state::UntilEndOfTurnEffect {
+                target: attacker_id,
+                power_mod: bonus,
+                toughness_mod: 0,
+            }
+        );
+        let face = if is_transformed { "Wildblood Pack" } else { "Instigator Gang" };
+        let name = state.get_object(attacker_id).map(|o| o.name.clone()).unwrap_or_default();
+        state.log(crate::state::LogLevel::Event,
+            format!("{}: {} gets +{}/+0", face, name, bonus));
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {

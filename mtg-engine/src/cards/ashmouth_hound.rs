@@ -29,27 +29,40 @@ impl CardBehavior for AshmouthHound {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Blocks,
-                    description: "deal 1 damage to blocked/blocking creature".into(),
+                    description: "deal 1 damage to blocked creature".into(),
+                },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::BecomesBlocked,
+                    description: "deal 1 damage to blocking creature".into(),
                 },
             ],
         }
     }
 
     fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, blocked_attacker: ObjectId, _registry: &CardRegistry) {
-        // Deal 1 damage to the creature Ashmouth Hound is blocking.
-        if let Some(obj) = state.get_object_mut(blocked_attacker) {
-            if obj.zone == Zone::Battlefield {
-                obj.damage_marked += 1;
-                obj.damaged_by.push(self_id);
-                let name = obj.name.clone();
-                state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                    source: self_id,
-                    target: crate::events::DamageTarget::Object(blocked_attacker),
-                    amount: 1,
-                });
-                state.log(crate::state::LogLevel::Event,
-                    format!("Ashmouth Hound deals 1 damage to {}", name));
-            }
+        // When Ashmouth Hound blocks: deal 1 damage to the creature it's blocking.
+        deal_1_damage(state, self_id, blocked_attacker);
+    }
+
+    fn on_becomes_blocked(&self, state: &mut GameState, self_id: ObjectId, blocker_id: ObjectId, _registry: &CardRegistry) {
+        // When Ashmouth Hound becomes blocked: deal 1 damage to the blocking creature.
+        deal_1_damage(state, self_id, blocker_id);
+    }
+}
+
+fn deal_1_damage(state: &mut GameState, source: ObjectId, target: ObjectId) {
+    if let Some(obj) = state.get_object_mut(target) {
+        if obj.zone == Zone::Battlefield {
+            obj.damage_marked += 1;
+            obj.damaged_by.push(source);
+            let name = obj.name.clone();
+            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                source,
+                target: crate::events::DamageTarget::Object(target),
+                amount: 1,
+            });
+            state.log(crate::state::LogLevel::Event,
+                format!("Ashmouth Hound deals 1 damage to {}", name));
         }
     }
 }
