@@ -331,3 +331,271 @@ fn burning_vengeance_ignores_non_flashback() {
     assert_eq!(state.get_player(P1).life, 20,
         "Burning Vengeance should NOT trigger on normal spell casts");
 }
+
+// ── Traitorous Blood ───────────────────────────────────────────
+
+/// Traitorous Blood steals a creature, untaps it, and grants haste + trample.
+#[test]
+fn traitorous_blood_steals_untaps_and_grants_keywords() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create a tapped creature controlled by opponent.
+    let enemy = ready_creature(&mut state, P1, 4, 4);
+    state.get_object_mut(enemy).unwrap().tapped = true;
+    state.get_object_mut(enemy).unwrap().name = "Enemy Beast".into();
+
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(enemy)]);
+
+    // Creature should now be controlled by P0.
+    let obj = state.get_object(enemy).unwrap();
+    assert_eq!(obj.controller, P0, "Traitorous Blood should change controller to caster");
+    assert!(!obj.tapped, "Traitorous Blood should untap the creature");
+
+    // Should have haste and trample.
+    assert!(state.has_keyword(enemy, Keyword::Haste, &reg),
+        "Traitorous Blood should grant haste");
+    assert!(state.has_keyword(enemy, Keyword::Trample, &reg),
+        "Traitorous Blood should grant trample");
+}
+
+/// Traitorous Blood control change reverts at end of turn.
+#[test]
+fn traitorous_blood_reverts_at_end_of_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enemy = ready_creature(&mut state, P1, 4, 4);
+    state.get_object_mut(enemy).unwrap().name = "Enemy Beast".into();
+
+    let spell = castable_spell(&mut state, &reg, "Traitorous Blood", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(enemy)]);
+
+    // Verify steal happened.
+    assert_eq!(state.get_object(enemy).unwrap().controller, P0);
+
+    // The control change should be tracked for revert.
+    assert!(!state.until_end_of_turn_control_changes.is_empty(),
+        "Control change should be recorded for end-of-turn revert");
+    let (obj_id, original_controller) = state.until_end_of_turn_control_changes[0];
+    assert_eq!(obj_id, enemy);
+    assert_eq!(original_controller, P1, "Original controller should be recorded as P1");
+}
+
+// ── Blasphemous Act ────────────────────────────────────────────
+
+/// Blasphemous Act deals 13 damage to each creature.
+#[test]
+fn blasphemous_act_deals_13_damage_to_all_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let c1 = ready_creature(&mut state, P0, 2, 14);
+    let c2 = ready_creature(&mut state, P1, 3, 3);
+
+    // Add tons of mana to afford it even with no cost reduction.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 8);
+
+    let spell = spell_in_hand(&mut state, &reg, "Blasphemous Act", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    // c1 has 14 toughness, should have 13 damage.
+    assert_eq!(state.get_object(c1).unwrap().damage_marked, 13,
+        "Blasphemous Act should deal 13 damage to creature");
+
+    // c2 had 3 toughness with 13 damage, should be dead after SBAs.
+    assert_eq!(state.get_object(c2).unwrap().damage_marked, 13,
+        "Blasphemous Act should deal 13 damage to opponent's creature too");
+}
+
+/// Blasphemous Act cost reduction works.
+#[test]
+fn blasphemous_act_cost_reduction() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // No creatures: costs {8}{R} = 9 mana.
+    let ba = reg.get(reg.get_id_by_name("Blasphemous Act").unwrap()).unwrap();
+    assert!(ba.modified_cost(&state, &reg).is_none(),
+        "With 0 creatures, no cost modification needed");
+
+    // Add 5 creatures: should cost {3}{R} = 4 mana.
+    for _ in 0..5 {
+        ready_creature(&mut state, P0, 1, 1);
+    }
+    let modified = ba.modified_cost(&state, &reg).unwrap();
+    assert_eq!(modified.mana_value(), 4, "With 5 creatures, Blasphemous Act should cost {{3}}{{R}}");
+
+    // Add 8+ creatures: should cost {R} = 1 mana.
+    for _ in 0..5 {
+        ready_creature(&mut state, P1, 1, 1);
+    }
+    let modified = ba.modified_cost(&state, &reg).unwrap();
+    assert_eq!(modified.mana_value(), 1, "With 10 creatures, Blasphemous Act should cost just {{R}}");
+}
+
+/// Blasphemous Act can be cast cheaply with many creatures.
+#[test]
+fn blasphemous_act_castable_with_cost_reduction() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Add 8 creatures so cost is just {R}.
+    for _ in 0..4 {
+        ready_creature(&mut state, P0, 1, 1);
+    }
+    for _ in 0..4 {
+        ready_creature(&mut state, P1, 1, 1);
+    }
+
+    // Give P0 just 1 red mana.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let spell = spell_in_hand(&mut state, &reg, "Blasphemous Act", P0);
+
+    // Should be able to cast with just {R}.
+    let legal = mtg_engine::engine::legal_actions(&state, &reg);
+    let has_cast = legal.actions.iter().any(|a| matches!(a, mtg_engine::actions::Action::CastSpell { object_id, .. } if *object_id == spell));
+    assert!(has_cast, "Blasphemous Act should be castable for {{R}} with 8 creatures on the battlefield");
+}
+
+// ── Cackling Counterpart ───────────────────────────────────────
+
+/// Cackling Counterpart creates a token copy of target creature you control.
+#[test]
+fn cackling_counterpart_creates_token_copy() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let original = named_creature(&mut state, &reg, "Chapel Geist", P0);
+
+    let spell = castable_spell(&mut state, &reg, "Cackling Counterpart", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(original)]);
+
+    // Should now have 2 Chapel Geists on the battlefield.
+    let geists: Vec<_> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.name == "Chapel Geist" && o.controller == P0)
+        .collect();
+    assert_eq!(geists.len(), 2, "Should have original + token copy of Chapel Geist");
+
+    // The token should be a token.
+    let token = geists.iter().find(|o| o.is_token).expect("One should be a token");
+    assert_eq!(token.power, Some(2));
+    assert_eq!(token.toughness, Some(3));
+}
+
+/// Cackling Counterpart has flashback.
+#[test]
+fn cackling_counterpart_has_flashback() {
+    let reg = registry();
+    let card_id = reg.get_id_by_name("Cackling Counterpart").unwrap();
+    let data = reg.card_data(card_id).unwrap();
+    assert!(data.flashback_cost.is_some(), "Cackling Counterpart should have flashback");
+    assert_eq!(data.flashback_cost.unwrap().mana_value(), 7, "Flashback cost should be {{5}}{{U}}{{U}} = 7");
+}
+
+// ── Sever the Bloodline ────────────────────────────────────────
+
+/// Sever the Bloodline exiles target creature and all others with the same name.
+#[test]
+fn sever_the_bloodline_exiles_all_with_same_name() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create 3 creatures with the same name.
+    let z1 = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(z1).unwrap().name = "Zombie Token".into();
+    let z2 = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(z2).unwrap().name = "Zombie Token".into();
+    let z3 = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(z3).unwrap().name = "Zombie Token".into();
+    // And one with a different name.
+    let bear = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(bear).unwrap().name = "Bear".into();
+
+    let spell = castable_spell(&mut state, &reg, "Sever the Bloodline", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(z1)]);
+
+    // All 3 Zombie Tokens should be exiled.
+    assert_eq!(state.get_object(z1).unwrap().zone, Zone::Exile, "Target should be exiled");
+    assert_eq!(state.get_object(z2).unwrap().zone, Zone::Exile, "Same-name creature should be exiled");
+    assert_eq!(state.get_object(z3).unwrap().zone, Zone::Exile, "Own creature with same name should be exiled too");
+
+    // Bear should be unaffected.
+    assert_eq!(state.get_object(bear).unwrap().zone, Zone::Battlefield, "Differently-named creature should be unaffected");
+}
+
+/// Sever the Bloodline has flashback.
+#[test]
+fn sever_the_bloodline_has_flashback() {
+    let reg = registry();
+    let card_id = reg.get_id_by_name("Sever the Bloodline").unwrap();
+    let data = reg.card_data(card_id).unwrap();
+    assert!(data.flashback_cost.is_some(), "Sever the Bloodline should have flashback");
+    assert_eq!(data.flashback_cost.unwrap().mana_value(), 7, "Flashback cost should be {{5}}{{B}}{{B}} = 7");
+}
+
+// ── Angelic Overseer ───────────────────────────────────────────
+
+/// Angelic Overseer has flying always.
+#[test]
+fn angelic_overseer_has_flying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let angel = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+    assert!(state.has_keyword(angel, Keyword::Flying, &reg),
+        "Angelic Overseer should always have flying");
+}
+
+/// Angelic Overseer gets hexproof and indestructible when you control a Human.
+#[test]
+fn angelic_overseer_hexproof_indestructible_with_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let angel = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+
+    // Without a Human: no hexproof or indestructible.
+    assert!(!state.has_keyword(angel, Keyword::Hexproof, &reg),
+        "Angelic Overseer should not have hexproof without a Human");
+    assert!(!state.has_keyword(angel, Keyword::Indestructible, &reg),
+        "Angelic Overseer should not be indestructible without a Human");
+
+    // Add a Human.
+    let human = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+
+    // Now should have hexproof and indestructible.
+    assert!(state.has_keyword(angel, Keyword::Hexproof, &reg),
+        "Angelic Overseer should have hexproof when you control a Human");
+    assert!(state.has_keyword(angel, Keyword::Indestructible, &reg),
+        "Angelic Overseer should be indestructible when you control a Human");
+
+    // Remove the Human.
+    state.move_object(human, Zone::Graveyard);
+    assert!(!state.has_keyword(angel, Keyword::Hexproof, &reg),
+        "Angelic Overseer should lose hexproof when Human leaves");
+    assert!(!state.has_keyword(angel, Keyword::Indestructible, &reg),
+        "Angelic Overseer should lose indestructible when Human leaves");
+}
+
+/// Angelic Overseer survives destroy effects when indestructible.
+#[test]
+fn angelic_overseer_survives_destroy_with_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let angel = named_creature(&mut state, &reg, "Angelic Overseer", P0);
+    let _human = named_creature(&mut state, &reg, "Champion of the Parish", P0);
+
+    // Try to destroy the angel.
+    let result = mtg_engine::destruction::try_destroy(&mut state, angel, &reg);
+    assert_eq!(result, mtg_engine::destruction::DestroyResult::Indestructible,
+        "Angelic Overseer should be indestructible when you control a Human");
+
+    // Angel should still be on the battlefield.
+    assert_eq!(state.get_object(angel).unwrap().zone, Zone::Battlefield,
+        "Angelic Overseer should survive destruction");
+}
