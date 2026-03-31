@@ -1044,6 +1044,28 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             }
         }
 
+        Action::ActivateLoyaltyAbility { object_id, ability_index } => {
+            let player = new_state.priority_player.expect("ActivateLoyaltyAbility requires priority");
+            if let Some(behavior) = registry.get(
+                new_state.get_object(*object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
+            ) {
+                let abilities = behavior.loyalty_abilities();
+                if let Some(ab) = abilities.iter().find(|a| a.ability_index == *ability_index) {
+                    // Pay loyalty cost.
+                    let loyalty = new_state.get_object(*object_id)
+                        .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne))
+                        .copied()
+                        .unwrap_or(0);
+                    // For loyalty abilities, use a dedicated loyalty counter (TODO: separate counter type).
+                    // For now, track loyalty in card_state as a workaround.
+                    let _ = loyalty; // placeholder
+                    behavior.on_loyalty_ability(&mut new_state, *object_id, *ability_index, registry);
+                    let name = card_name(&new_state, registry, *object_id);
+                    new_state.log(LogLevel::Event, format!("p{} activated loyalty ability on {}: {}", player.0, name, ab.description));
+                }
+            }
+        }
+
         Action::ResolveChoice { choice: resolved } => {
             use crate::state::ResolutionChoiceKind;
             use crate::actions::ResolvedChoice;
@@ -1877,7 +1899,7 @@ fn run_game_loop_inner<F>(
                 state.priority_player = None;
             }
 
-            Action::ActivateManaAbility { .. } | Action::ActivateAbility { .. } => {
+            Action::ActivateManaAbility { .. } | Action::ActivateAbility { .. } | Action::ActivateLoyaltyAbility { .. } => {
                 // Player retains priority. Don't change anything.
             }
 

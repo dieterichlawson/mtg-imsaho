@@ -104,6 +104,18 @@ pub struct GameState {
     #[serde(default)]
     pub creature_died_this_turn: bool,
 
+    /// Day/night state for werewolf transform tracking.
+    #[serde(default)]
+    pub day_night: Option<DayNight>,
+
+    /// Number of spells cast this turn by each player (for werewolf transforms).
+    #[serde(default)]
+    pub spells_cast_this_turn: HashMap<PlayerId, u32>,
+
+    /// Spells cast last turn (saved at turn start for werewolf condition checking).
+    #[serde(default)]
+    pub spells_cast_last_turn: HashMap<PlayerId, u32>,
+
     /// Index for trigger processing resumption after a resolution choice.
     #[serde(default)]
     pub trigger_event_index: usize,
@@ -179,6 +191,9 @@ impl GameState {
             until_end_of_turn_control_changes: Vec::new(),
             until_end_of_turn_flashback: Vec::new(),
             creature_died_this_turn: false,
+            day_night: None,
+            spells_cast_this_turn: HashMap::new(),
+            spells_cast_last_turn: HashMap::new(),
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
         }
@@ -231,6 +246,8 @@ impl GameState {
             counters: HashMap::new(),
             regeneration_shields: 0,
             is_equipment: false,
+            is_transformed: false,
+            x_value: None,
             abilities_activated_this_turn: std::collections::HashSet::new(),
         };
         self.objects.insert(id, obj);
@@ -294,6 +311,8 @@ impl GameState {
             counters: HashMap::new(),
             regeneration_shields: 0,
             is_equipment: false,
+            is_transformed: false,
+            x_value: None,
             abilities_activated_this_turn: std::collections::HashSet::new(),
         };
         self.objects.insert(id, obj);
@@ -301,6 +320,45 @@ impl GameState {
             object: id,
             controller: owner,
         });
+        id
+    }
+
+    /// Create a token that copies all characteristics of a source permanent.
+    /// Used by Cackling Counterpart, Evil Twin, etc.
+    pub fn create_token_copy(
+        &mut self,
+        source_id: ObjectId,
+        owner: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) -> ObjectId {
+        let source = self.get_object(source_id);
+        let (name, power, toughness, card_id) = match source {
+            Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id),
+            None => return ObjectId(0),
+        };
+        let (colors, keywords, card_types, subtypes) = registry.card_data(card_id)
+            .map(|d| (
+                Vec::new(), // colors TODO
+                d.keywords.clone(),
+                d.card_types.clone(),
+                d.subtypes.clone(),
+            ))
+            .unwrap_or_default();
+
+        let id = self.create_token_with_subtypes(
+            &name,
+            owner,
+            power.unwrap_or(0),
+            toughness.unwrap_or(0),
+            colors,
+            card_types,
+            keywords,
+            subtypes.iter().map(|s| s.to_string()).collect(),
+        );
+        // Copy the card_id so the token gets the same CardBehavior.
+        if let Some(obj) = self.get_object_mut(id) {
+            obj.card_id = card_id;
+        }
         id
     }
 
@@ -846,6 +904,14 @@ pub struct GameObject {
     #[serde(default)]
     pub is_equipment: bool,
 
+    /// Whether this double-faced card is on its back face.
+    #[serde(default)]
+    pub is_transformed: bool,
+
+    /// Chosen X value for X-cost spells (stored while on the stack).
+    #[serde(default)]
+    pub x_value: Option<u32>,
+
     /// Activated abilities used this turn (for once-per-turn tracking).
     #[serde(default)]
     pub abilities_activated_this_turn: std::collections::HashSet<usize>,
@@ -994,6 +1060,13 @@ pub enum PendingEffect {
 pub enum GameResult {
     Winner(PlayerId),
     Draw,
+}
+
+/// Day/night state for werewolf transform tracking.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DayNight {
+    Day,
+    Night,
 }
 
 #[cfg(test)]

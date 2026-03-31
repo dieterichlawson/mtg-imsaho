@@ -207,6 +207,14 @@ pub struct ActivatedAbilityDef {
     pub sorcery_speed_only: bool,
 }
 
+/// A loyalty ability on a planeswalker.
+pub struct LoyaltyAbilityDef {
+    pub ability_index: usize,
+    /// Loyalty change: positive adds, negative removes, zero is free.
+    pub loyalty_change: i32,
+    pub description: String,
+}
+
 /// What kind of event triggers an ability.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TriggerKind {
@@ -396,6 +404,15 @@ pub trait CardBehavior: Send + Sync {
     /// `caster` is the player who cast the spell, `spell_id` is the spell object.
     fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {}
 
+    /// Loyalty abilities for planeswalkers.
+    fn loyalty_abilities(&self) -> Vec<LoyaltyAbilityDef> { vec![] }
+
+    /// Called when a loyalty ability is activated.
+    fn on_loyalty_ability(&self, _state: &mut GameState, _self_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
+
+    /// Starting loyalty for planeswalkers.
+    fn starting_loyalty(&self) -> Option<u32> { None }
+
     /// Called when this creature attacks (declared as an attacker).
     fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
 
@@ -405,6 +422,12 @@ pub trait CardBehavior: Send + Sync {
     /// Return a modified mana cost for this spell, or None to use the normal cost.
     /// Used for cost reduction (e.g., Blasphemous Act costs {1} less per creature).
     fn modified_cost(&self, _state: &GameState, _registry: &CardRegistry) -> Option<ManaCost> { None }
+
+    /// For double-faced cards: return the back face data if this card has one.
+    fn back_face_data(&self) -> Option<CardData> { None }
+
+    /// For DFCs: check if the transform condition is met (called during upkeep for werewolves).
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool { false }
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
