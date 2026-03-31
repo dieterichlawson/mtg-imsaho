@@ -321,8 +321,16 @@ fn deal_damage_to_player(
     });
 
     let name = state.get_object(source)
-        .and_then(|o| registry.card_data(o.card_id))
-        .map(|d| d.name)
+        .map(|o| {
+            // Use object name directly (works for tokens); fall back to registry.
+            if !o.name.is_empty() {
+                o.name.clone()
+            } else {
+                registry.card_data(o.card_id)
+                    .map(|d| d.name)
+                    .unwrap_or_else(|| "?".into())
+            }
+        })
         .unwrap_or_else(|| "?".into());
     state.log(LogLevel::Event, format!("p{} took {} combat damage ({}) from {}", player.0, amount, new_life, name));
 
