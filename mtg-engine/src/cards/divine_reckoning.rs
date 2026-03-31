@@ -23,7 +23,7 @@ impl CardBehavior for DivineReckoning {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Each player chooses a creature they control, then sacrifices the rest.\nFlashback {5}{W}{W}".into(),
+            oracle_text: "Each player chooses a creature they control, then destroys the rest.\nFlashback {5}{W}{W}".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),
@@ -64,14 +64,14 @@ impl CardBehavior for DivineReckoning {
             let keeper_name = state.get_object(keeper).map(|o| o.name.clone()).unwrap_or_default();
             state.log(LogLevel::Event, format!("p{} keeps {}", player_id.0, keeper_name));
 
-            // Sacrifice everything else.
-            let to_sac: Vec<ObjectId> = creatures.iter()
+            // Destroy the rest (not sacrifice — respects indestructible).
+            let to_destroy: Vec<ObjectId> = creatures.iter()
                 .filter(|&&(id, _)| id != keeper)
                 .map(|&(id, _)| id)
                 .collect();
 
-            for sac_id in to_sac {
-                crate::destruction::sacrifice(state, sac_id, registry);
+            for id in to_destroy {
+                crate::destruction::try_destroy(state, id, registry);
             }
         }
 
