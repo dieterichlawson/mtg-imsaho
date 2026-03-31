@@ -275,3 +275,113 @@ fn sturmgeist_pt_equals_hand_size() {
     assert_eq!(power, 4, "Sturmgeist power should equal hand size");
     assert_eq!(toughness, 4, "Sturmgeist toughness should equal hand size");
 }
+
+// ── Falkenrath Marauders ──────────────────────────────────────────
+
+/// Falkenrath Marauders gets TWO +1/+1 counters on combat damage.
+#[test]
+fn falkenrath_marauders_two_counters_on_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let marauders = named_creature(&mut state, &reg, "Falkenrath Marauders", P0);
+
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: marauders,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 2,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    let counters = *state.get_object(marauders).unwrap()
+        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
+    assert_eq!(counters, 2, "Falkenrath Marauders should get TWO +1/+1 counters");
+}
+
+// ── Balefire Dragon ───────────────────────────────────────────────
+
+/// Balefire Dragon deals combat damage amount to all opponent's creatures.
+#[test]
+fn balefire_dragon_sweeps_opponent_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let dragon = named_creature(&mut state, &reg, "Balefire Dragon", P0);
+    let opp_creature1 = ready_creature(&mut state, P1, 3, 4);
+    let opp_creature2 = ready_creature(&mut state, P1, 2, 2);
+    let own_creature = ready_creature(&mut state, P0, 1, 1); // should NOT be damaged
+
+    // Dragon deals 6 combat damage to P1.
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: dragon,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 6,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    // Opponent's creatures should each have 6 damage.
+    assert_eq!(state.get_object(opp_creature1).unwrap().damage_marked, 6);
+    assert_eq!(state.get_object(opp_creature2).unwrap().damage_marked, 6);
+    // Own creature should be untouched.
+    assert_eq!(state.get_object(own_creature).unwrap().damage_marked, 0);
+}
+
+// ── Curiosity ─────────────────────────────────────────────────────
+
+/// Curiosity draws a card when enchanted creature deals combat damage to opponent.
+#[test]
+fn curiosity_draw_on_enchanted_creature_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    // Create a creature and attach Curiosity to it.
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let curiosity_card_id = reg.get_id_by_name("Curiosity").unwrap();
+    let curiosity = state.create_object(curiosity_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(curiosity).unwrap().name = "Curiosity".into();
+    state.get_object_mut(curiosity).unwrap().attached_to = Some(creature);
+
+    // Give P0 a card in library to draw.
+    let lib_card = state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Library, None, None);
+    state.get_player_mut(P0).library_order.push(lib_card);
+
+    let hand_before = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0)
+        .count();
+
+    // Enchanted creature deals combat damage to opponent.
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: creature,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 2,
+    });
+
+    triggers::process_triggers(&mut state, &reg);
+
+    let hand_after = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0)
+        .count();
+    assert_eq!(hand_after, hand_before + 1, "Should have drawn 1 card from Curiosity");
+}
+
+// ── Stromkirk Patrol ──────────────────────────────────────────────
+
+/// Stromkirk Patrol gets +1/+1 counter on combat damage.
+#[test]
+fn stromkirk_patrol_counter_on_combat_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    let patrol = named_creature(&mut state, &reg, "Stromkirk Patrol", P0);
+
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: patrol,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 4,
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    let counters = *state.get_object(patrol).unwrap()
+        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
+    assert_eq!(counters, 1, "Stromkirk Patrol should get a +1/+1 counter");
+}
