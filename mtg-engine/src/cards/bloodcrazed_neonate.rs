@@ -27,6 +27,7 @@ impl CardBehavior for BloodcrazedNeonate {
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack { scope: EffectScope::OnSelf },
             ],
+            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,

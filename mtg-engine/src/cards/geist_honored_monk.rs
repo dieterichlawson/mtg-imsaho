@@ -24,7 +24,8 @@ impl CardBehavior for GeistHonoredMonk {
             toughness: Some(0),
             oracle_text: "Vigilance\nGeist-Honored Monk's power and toughness are each equal to the number of creatures you control.\nWhen Geist-Honored Monk enters the battlefield, create two 1/1 white Spirit creature tokens with flying.".into(),
             keywords: vec![Keyword::Vigilance],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "create two 1/1 white Spirit tokens with flying".into(),

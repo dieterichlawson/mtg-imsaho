@@ -29,6 +29,7 @@ impl CardBehavior for StromkirkNoble {
                     scope: EffectScope::OnSelf,
                 },
             ],
+            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,

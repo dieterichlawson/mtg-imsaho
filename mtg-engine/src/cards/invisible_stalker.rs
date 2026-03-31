@@ -23,7 +23,7 @@ impl CardBehavior for InvisibleStalker {
             continuous_effects: vec![
                 ContinuousEffect::CantBeBlocked { scope: EffectScope::OnSelf },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

@@ -25,6 +25,7 @@ impl CardBehavior for AbattoirGhoul {
             keywords: vec![Keyword::FirstStrike],
             flashback_cost: None,
             continuous_effects: vec![],
+            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,

@@ -23,7 +23,8 @@ impl CardBehavior for FesterhideBoar {
             toughness: Some(3),
             oracle_text: "Trample\nMorbid — When Festerhide Boar enters the battlefield, if a creature died this turn, put two +1/+1 counters on Festerhide Boar.".into(),
             keywords: vec![Keyword::Trample],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "if morbid, put two +1/+1 counters on it".into(),

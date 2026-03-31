@@ -23,7 +23,8 @@ impl CardBehavior for SelhoffOccultist {
             toughness: Some(3),
             oracle_text: "Whenever Selhoff Occultist or another creature dies, target player mills a card.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "target player mills a card".into(),

@@ -24,7 +24,7 @@ impl CardBehavior for IntangibleVirtue {
                 ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Global(CreatureFilter::YourTokens) },
                 ContinuousEffect::GrantKeyword { keyword: Keyword::Vigilance, scope: EffectScope::Global(CreatureFilter::YourTokens) },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

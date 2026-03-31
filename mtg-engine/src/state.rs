@@ -218,6 +218,8 @@ impl GameState {
             card_state: HashMap::new(),
             counters: HashMap::new(),
             regeneration_shields: 0,
+            is_equipment: false,
+            abilities_activated_this_turn: std::collections::HashSet::new(),
         };
         self.objects.insert(id, obj);
         id
@@ -279,6 +281,8 @@ impl GameState {
             card_state: HashMap::new(),
             counters: HashMap::new(),
             regeneration_shields: 0,
+            is_equipment: false,
+            abilities_activated_this_turn: std::collections::HashSet::new(),
         };
         self.objects.insert(id, obj);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
@@ -825,6 +829,14 @@ pub struct GameObject {
     /// Number of regeneration shields (consumed instead of destruction).
     #[serde(default)]
     pub regeneration_shields: u32,
+
+    /// Whether this permanent is equipment (stays on battlefield when unattached).
+    #[serde(default)]
+    pub is_equipment: bool,
+
+    /// Activated abilities used this turn (for once-per-turn tracking).
+    #[serde(default)]
+    pub abilities_activated_this_turn: std::collections::HashSet<usize>,
 }
 
 /// A player's state.

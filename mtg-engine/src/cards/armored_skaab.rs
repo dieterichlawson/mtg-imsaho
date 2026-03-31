@@ -22,7 +22,8 @@ impl CardBehavior for ArmoredSkaab {
             toughness: Some(4),
             oracle_text: "When Armored Skaab enters the battlefield, mill four cards.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "mill four cards".into(),

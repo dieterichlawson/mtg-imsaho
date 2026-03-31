@@ -23,7 +23,7 @@ impl CardBehavior for RollingTemblor {
             oracle_text: "Rolling Temblor deals 2 damage to each creature without flying.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(4), ManaSymbol::Colored(Color::Red), ManaSymbol::Colored(Color::Red)])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

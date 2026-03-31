@@ -19,7 +19,7 @@ impl CardBehavior for GrizzlyBears {
             toughness: Some(2),
             oracle_text: String::new(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

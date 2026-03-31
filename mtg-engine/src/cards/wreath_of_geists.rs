@@ -22,7 +22,7 @@ impl CardBehavior for WreathOfGeists {
             toughness: None,
             oracle_text: "Enchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

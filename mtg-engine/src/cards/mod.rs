@@ -159,6 +159,8 @@ pub struct CardData {
     /// Triggered abilities this card has. The engine uses these to know which
     /// events this card cares about and to display trigger descriptions on the stack.
     pub triggered_abilities: Vec<TriggeredAbilityDef>,
+    /// Additional cost required to cast this spell (beyond mana).
+    pub additional_cost: Option<AdditionalCost>,
 }
 
 /// A mana ability definition.
@@ -169,12 +171,40 @@ pub struct ManaAbilityDef {
     pub requires_tap: bool,
 }
 
+/// What sacrifice cost an activated ability requires.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SacrificeCost {
+    /// No sacrifice required.
+    None,
+    /// Sacrifice the permanent with this ability.
+    SacrificeThis,
+    /// Sacrifice any creature you control.
+    SacrificeCreature,
+}
+
+/// An additional cost required to cast a spell (beyond mana).
+#[derive(Debug, Clone)]
+pub enum AdditionalCost {
+    /// Sacrifice a creature you control (Altar's Reap, Infernal Plunge).
+    SacrificeCreature,
+    /// Exile N creature cards from your graveyard (Makeshift Mauler, Stitched Drake).
+    ExileCreaturesFromGraveyard(usize),
+}
+
 /// A non-mana activated ability definition.
 pub struct ActivatedAbilityDef {
     pub ability_index: usize,
     pub description: String,
     pub cost: ManaCost,
     pub requires_tap: bool,
+    /// Sacrifice cost required in addition to mana.
+    pub sacrifice_cost: SacrificeCost,
+    /// Target requirement for this ability (None = untargeted).
+    pub target_requirement: Option<TargetRequirement>,
+    /// Can only be activated once per turn.
+    pub once_per_turn: bool,
+    /// Can only be activated at sorcery speed.
+    pub sorcery_speed_only: bool,
 }
 
 /// What kind of event triggers an ability.
@@ -376,7 +406,8 @@ pub trait CardBehavior: Send + Sync {
     }
 
     /// Called when a non-mana activated ability is activated.
-    fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
+    /// `targets` contains targets chosen by the player (empty if untargeted).
+    fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.

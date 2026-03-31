@@ -24,7 +24,7 @@ impl CardBehavior for GraveBramble {
             continuous_effects: vec![
                 ContinuousEffect::ProtectionFromSubtype { subtype: "Zombie".into(), scope: EffectScope::OnSelf },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

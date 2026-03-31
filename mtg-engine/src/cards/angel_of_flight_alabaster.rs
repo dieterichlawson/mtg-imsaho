@@ -25,6 +25,7 @@ impl CardBehavior for AngelOfFlightAlabaster {
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],
+            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,

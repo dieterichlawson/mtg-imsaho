@@ -28,6 +28,7 @@ impl CardBehavior for ReaperFromTheAbyss {
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],
+            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,

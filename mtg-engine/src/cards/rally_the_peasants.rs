@@ -23,7 +23,7 @@ impl CardBehavior for RallyThePeasants {
             oracle_text: "Creatures you control get +2/+0 until end of turn.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Red)])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

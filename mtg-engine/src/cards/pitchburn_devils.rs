@@ -23,7 +23,8 @@ impl CardBehavior for PitchburnDevils {
             toughness: Some(3),
             oracle_text: "When Pitchburn Devils dies, it deals 3 damage to any target.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "deal 3 damage to any target".into(),

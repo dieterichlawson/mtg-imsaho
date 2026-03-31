@@ -25,7 +25,8 @@ impl CardBehavior for HollowhengeScavenger {
             toughness: Some(5),
             oracle_text: "Morbid — When Hollowhenge Scavenger enters the battlefield, if a creature died this turn, you gain 5 life.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "if morbid, gain 5 life".into(),

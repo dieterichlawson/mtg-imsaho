@@ -34,7 +34,7 @@ impl CardBehavior for CurseOfDeathsHold {
                     scope: EffectScope::Global(CreatureFilter::AttachedPlayer),
                 },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 

@@ -24,7 +24,7 @@ impl CardBehavior for UnburialRites {
             oracle_text: "Return target creature card from your graveyard to the battlefield.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::White)])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

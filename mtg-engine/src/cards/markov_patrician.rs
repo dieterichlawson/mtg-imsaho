@@ -19,7 +19,7 @@ impl CardBehavior for MarkovPatrician {
             toughness: Some(1),
             oracle_text: "Lifelink".into(),
             keywords: vec![Keyword::Lifelink],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

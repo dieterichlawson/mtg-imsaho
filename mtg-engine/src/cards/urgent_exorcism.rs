@@ -22,7 +22,7 @@ impl CardBehavior for UrgentExorcism {
             toughness: None,
             oracle_text: "Destroy target Spirit or enchantment.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

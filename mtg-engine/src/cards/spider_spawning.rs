@@ -27,7 +27,7 @@ impl CardBehavior for SpiderSpawning {
                 ManaSymbol::Generic(6),
                 ManaSymbol::Colored(Color::Black),
             ])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

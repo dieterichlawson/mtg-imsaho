@@ -19,7 +19,7 @@ impl CardBehavior for CoralMerfolk {
             toughness: Some(1),
             oracle_text: String::new(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

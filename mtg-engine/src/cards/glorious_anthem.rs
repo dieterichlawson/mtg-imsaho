@@ -25,7 +25,7 @@ impl CardBehavior for GloriousAnthem {
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Global(CreatureFilter::You) },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

@@ -30,7 +30,7 @@ impl CardBehavior for OrchardSpirit {
                     scope: EffectScope::OnSelf,
                 },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

@@ -31,7 +31,7 @@ impl CardBehavior for BattlegroundGeist {
                     ])),
                 },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

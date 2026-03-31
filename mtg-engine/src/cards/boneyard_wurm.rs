@@ -25,7 +25,7 @@ impl CardBehavior for BoneyardWurm {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 

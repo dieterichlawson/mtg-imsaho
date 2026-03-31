@@ -22,7 +22,7 @@ impl CardBehavior for DreamTwist {
             oracle_text: "Target player mills three cards.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::Blue)])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

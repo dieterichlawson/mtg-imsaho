@@ -23,7 +23,8 @@ impl CardBehavior for MurderOfCrows {
             toughness: Some(4),
             oracle_text: "Flying\nWhenever another creature dies, you may draw a card. If you do, discard a card.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "you may draw a card, then discard a card".into(),

@@ -21,7 +21,7 @@ impl CardBehavior for PreyUpon {
             toughness: None,
             oracle_text: "Target creature you control fights target creature you don't control.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

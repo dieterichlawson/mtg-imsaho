@@ -25,7 +25,7 @@ impl CardBehavior for SensoryDeprivation {
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: -3, toughness: 0, scope: EffectScope::Attached },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 

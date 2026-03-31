@@ -163,46 +163,83 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
     }
 
-    // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
-    // Check attached permanents too (auras granting abilities to creatures).
-    let mana_pool = &state.get_player(player).mana_pool;
-    for obj in state.objects_in_zone(Zone::Battlefield, player) {
-        // Check abilities on this permanent's card.
-        if let Some(behavior) = registry.get(obj.card_id) {
-            for ab in behavior.activated_abilities(state, obj.id) {
-                if mana::can_pay(mana_pool, &ab.cost) {
-                    if !ab.requires_tap || !obj.tapped {
-                        actions.push(Action::ActivateAbility {
-                            object_id: obj.id,
-                            ability_index: ab.ability_index,
-                        });
-                    }
-                }
-            }
-        }
-        // Check abilities granted by attached auras.
-        for attached in state.objects.values() {
-            if attached.zone == Zone::Battlefield && attached.attached_to == Some(obj.id) {
-                if let Some(behavior) = registry.get(attached.card_id) {
-                    for ab in behavior.activated_abilities(state, obj.id) {
-                        if mana::can_pay(mana_pool, &ab.cost) {
-                            if !ab.requires_tap || !obj.tapped {
-                                actions.push(Action::ActivateAbility {
-                                    object_id: obj.id,
-                                    ability_index: ab.ability_index,
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     // Sorcery-speed window: your main phase, stack empty, your turn.
     let is_sorcery_speed = state.step.is_main_phase()
         && state.stack.is_empty()
         && state.active_player == player;
+
+    // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
+    // Check attached permanents too (auras granting abilities to creatures).
+    let mana_pool = &state.get_player(player).mana_pool;
+    for obj in state.objects_in_zone(Zone::Battlefield, player) {
+        let obj_id = obj.id;
+        let obj_tapped = obj.tapped;
+        let obj_card_id = obj.card_id;
+        let activated_this_turn = obj.abilities_activated_this_turn.clone();
+
+        // Collect abilities from this permanent's card and attached auras.
+        let mut abilities: Vec<(crate::ids::CardId, crate::cards::ActivatedAbilityDef)> = Vec::new();
+        if let Some(behavior) = registry.get(obj_card_id) {
+            for ab in behavior.activated_abilities(state, obj_id) {
+                abilities.push((obj_card_id, ab));
+            }
+        }
+        for attached in state.objects.values() {
+            if attached.zone == Zone::Battlefield && attached.attached_to == Some(obj_id) {
+                if let Some(behavior) = registry.get(attached.card_id) {
+                    for ab in behavior.activated_abilities(state, obj_id) {
+                        abilities.push((attached.card_id, ab));
+                    }
+                }
+            }
+        }
+
+        for (_source_card_id, ab) in abilities {
+            // Check mana cost.
+            if !mana::can_pay(mana_pool, &ab.cost) { continue; }
+            // Check tap cost.
+            if ab.requires_tap && obj_tapped { continue; }
+            // Check once-per-turn.
+            if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }
+            // Check sorcery speed.
+            if ab.sorcery_speed_only && !is_sorcery_speed { continue; }
+            // Check sacrifice cost.
+            use crate::cards::SacrificeCost;
+            match &ab.sacrifice_cost {
+                SacrificeCost::None => {}
+                SacrificeCost::SacrificeThis => {
+                    // Object must be on the battlefield (it is, we're iterating battlefield).
+                }
+                SacrificeCost::SacrificeCreature => {
+                    // Must control at least one creature to sacrifice.
+                    let has_creature = state.objects_in_zone(Zone::Battlefield, player)
+                        .iter()
+                        .any(|o| o.power.is_some());
+                    if !has_creature { continue; }
+                }
+            }
+
+            // Generate actions based on targeting.
+            if let Some(ref _target_req) = ab.target_requirement {
+                // Targeted ability: generate one action per valid target.
+                let targets = generate_ability_targets(state, obj_id, &ab, player, registry);
+                for target in targets {
+                    actions.push(Action::ActivateAbility {
+                        object_id: obj_id,
+                        ability_index: ab.ability_index,
+                        targets: vec![target],
+                    });
+                }
+            } else {
+                // Untargeted ability.
+                actions.push(Action::ActivateAbility {
+                    object_id: obj_id,
+                    ability_index: ab.ability_index,
+                    targets: vec![],
+                });
+            }
+        }
+    }
 
     // Instant-speed window: anytime you have priority (which is already true here).
     let player_state = state.get_player(player);
@@ -612,6 +649,59 @@ fn build_cast_target_spec(
     }
 }
 
+/// Generate valid targets for a targeted activated ability.
+fn generate_ability_targets(
+    state: &GameState,
+    _source_id: ObjectId,
+    ab: &crate::cards::ActivatedAbilityDef,
+    controller: PlayerId,
+    registry: &CardRegistry,
+) -> Vec<crate::actions::Target> {
+    use crate::actions::Target;
+    use crate::cards::TargetRequirement;
+
+    let target_req = match &ab.target_requirement {
+        Some(req) => req,
+        None => return vec![],
+    };
+
+    match target_req {
+        TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_) => {
+            state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| o.power.is_some())
+                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .map(|o| Target::Object(o.id))
+                .collect()
+        }
+        TargetRequirement::PlayerOnly => {
+            state.players.iter()
+                .filter(|p| !p.lost)
+                .map(|p| Target::Player(p.id))
+                .collect()
+        }
+        TargetRequirement::AnyTarget => {
+            let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| o.power.is_some())
+                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .map(|o| Target::Object(o.id))
+                .collect();
+            for p in &state.players {
+                if !p.lost {
+                    targets.push(Target::Player(p.id));
+                }
+            }
+            targets
+        }
+        TargetRequirement::PermanentWithFilter(_) => {
+            state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .map(|o| Target::Object(o.id))
+                .collect()
+        }
+        _ => vec![],
+    }
+}
+
 // Attacker/blocker enumeration removed — players now construct combat
 // actions from CombatPrompt data. The engine validates on submission.
 
@@ -757,7 +847,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.log(LogLevel::Debug, format!("p{} tapped {} for mana", controller.0, name));
         }
 
-        Action::ActivateAbility { object_id, ability_index } => {
+        Action::ActivateAbility { object_id, ability_index, targets } => {
             let player = new_state.priority_player.expect("ActivateAbility requires priority");
             let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
             let card_id = obj.card_id;
@@ -778,12 +868,40 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 });
 
             if let Some(ab) = ability {
-                // Pay cost.
+                // Pay mana cost.
                 mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)
                     .expect("legal_actions should have verified mana availability");
 
+                // Pay tap cost.
                 if ab.requires_tap {
                     new_state.get_object_mut(*object_id).expect("object must exist for tapping").tapped = true;
+                }
+
+                // Pay sacrifice cost.
+                use crate::cards::SacrificeCost;
+                match &ab.sacrifice_cost {
+                    SacrificeCost::None => {}
+                    SacrificeCost::SacrificeThis => {
+                        crate::destruction::sacrifice(&mut new_state, *object_id, registry);
+                    }
+                    SacrificeCost::SacrificeCreature => {
+                        // For now, auto-sacrifice the first eligible creature.
+                        // TODO: Present choice to player when there are multiple options.
+                        let creature = new_state.objects_in_zone(Zone::Battlefield, player)
+                            .iter()
+                            .find(|o| o.power.is_some())
+                            .map(|o| o.id);
+                        if let Some(cid) = creature {
+                            crate::destruction::sacrifice(&mut new_state, cid, registry);
+                        }
+                    }
+                }
+
+                // Track once-per-turn.
+                if ab.once_per_turn {
+                    if let Some(obj) = new_state.get_object_mut(*object_id) {
+                        obj.abilities_activated_this_turn.insert(*ability_index);
+                    }
                 }
 
                 // Find which behavior to call (card itself or attached aura).
@@ -806,7 +924,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 };
 
                 if let Some(behavior) = registry.get(behavior_card_id) {
-                    behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, registry);
+                    behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, targets, registry);
                 }
 
                 let name = card_name(&new_state, registry, *object_id);

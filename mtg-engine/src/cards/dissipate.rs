@@ -23,7 +23,7 @@ impl CardBehavior for Dissipate {
             toughness: None,
             oracle_text: "Counter target spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

@@ -24,7 +24,8 @@ impl CardBehavior for CrosswayVampire {
             toughness: Some(2),
             oracle_text: "When Crossway Vampire enters the battlefield, target creature can't block this turn.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "target creature can't block this turn".into(),

@@ -23,7 +23,7 @@ impl CardBehavior for TravelPreparations {
             oracle_text: "Put a +1/+1 counter on each of up to two target creatures.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(1), ManaSymbol::Colored(Color::White)])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

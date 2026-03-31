@@ -25,6 +25,7 @@ impl CardBehavior for FalkenrathMarauders {
             keywords: vec![Keyword::Flying, Keyword::Haste],
             flashback_cost: None,
             continuous_effects: vec![],
+            additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,

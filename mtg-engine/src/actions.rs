@@ -28,7 +28,7 @@ pub enum Action {
     ActivateManaAbility { object_id: ObjectId, ability_index: usize },
 
     /// Activate a non-mana ability (doesn't use the stack for now, player retains priority).
-    ActivateAbility { object_id: ObjectId, ability_index: usize },
+    ActivateAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target> },
 
     /// Declare which creatures are attacking and who they're attacking.
     DeclareAttackers { attackers: Vec<(ObjectId, PlayerId)> },
@@ -111,8 +111,13 @@ impl std::fmt::Display for Action {
             }
             Action::ActivateManaAbility { object_id, ability_index } =>
                 write!(f, "Activate mana ability {} on {}", ability_index, object_id),
-            Action::ActivateAbility { object_id, ability_index } =>
-                write!(f, "Activate ability {} on {}", ability_index, object_id),
+            Action::ActivateAbility { object_id, ability_index, targets } => {
+                if targets.is_empty() {
+                    write!(f, "Activate ability {} on {}", ability_index, object_id)
+                } else {
+                    write!(f, "Activate ability {} on {} targeting {:?}", ability_index, object_id, targets)
+                }
+            }
             Action::DeclareAttackers { attackers } =>
                 write!(f, "Declare {} attackers", attackers.len()),
             Action::DeclareBlockers { assignments } =>

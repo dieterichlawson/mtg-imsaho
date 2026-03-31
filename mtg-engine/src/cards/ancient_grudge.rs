@@ -23,7 +23,7 @@ impl CardBehavior for AncientGrudge {
             oracle_text: "Destroy target artifact.\nFlashback {G}".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::Green)])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

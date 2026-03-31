@@ -23,7 +23,8 @@ impl CardBehavior for Lumberknot {
             toughness: Some(1),
             oracle_text: "Hexproof\nWhenever a creature dies, put a +1/+1 counter on Lumberknot.".into(),
             keywords: vec![Keyword::Hexproof],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "put a +1/+1 counter on Lumberknot".into(),

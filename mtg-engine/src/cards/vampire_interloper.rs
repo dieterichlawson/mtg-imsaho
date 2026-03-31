@@ -23,7 +23,7 @@ impl CardBehavior for VampireInterloper {
             continuous_effects: vec![
                 ContinuousEffect::PreventBlock { scope: EffectScope::OnSelf },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 }

@@ -25,7 +25,7 @@ impl CardBehavior for ForbiddenAlchemy {
             oracle_text: "Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(6), ManaSymbol::Colored(Color::Black)])),
-            continuous_effects: vec![], triggered_abilities: vec![],
+            continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 

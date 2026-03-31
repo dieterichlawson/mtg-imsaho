@@ -26,7 +26,7 @@ impl CardBehavior for SkeletalGrimace {
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Attached },
             ],
-            triggered_abilities: vec![],
+            additional_cost: None, triggered_abilities: vec![],
         }
     }
 
@@ -49,6 +49,10 @@ impl CardBehavior for SkeletalGrimace {
                 description: "{B}: Regenerate".into(),
                 cost: ManaCost::new(vec![ManaSymbol::Colored(Color::Black)]),
                 requires_tap: false,
+                sacrifice_cost: crate::cards::SacrificeCost::None,
+                target_requirement: None,
+                once_per_turn: false,
+                sorcery_speed_only: false,
             }]
         } else {
             vec![]
@@ -56,7 +60,7 @@ impl CardBehavior for SkeletalGrimace {
     }
 
     /// Apply the regeneration effect: add a regeneration shield.
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.regeneration_shields += 1;
         }

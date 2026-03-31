@@ -22,7 +22,7 @@ impl CardBehavior for DiregrafGhoul {
             toughness: Some(2),
             oracle_text: "Diregraf Ghoul enters the battlefield tapped.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 
