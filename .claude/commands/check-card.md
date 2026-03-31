@@ -46,7 +46,35 @@ When multiple cards are given, run the full procedure for EACH card and compile 
   - "Another" vs "a" (self-exclusion)
   - "Each opponent" vs "target player"
 
-### 4. Identify relevant rules
+### 4. Research community knowledge (for complex cards)
+
+Skip this step for vanilla creatures, simple keyword creatures, and basic spells. For anything with triggered abilities, activated abilities, unusual timing, replacement effects, or multi-step resolution:
+
+- **Search for known interactions and gotchas**: Use WebSearch to find discussions about this card's tricky interactions:
+  ```
+  {card name} MTG rulings interactions
+  {card name} MTG rules corner cases
+  ```
+- **Check MTG rules forums and wikis**: Look for:
+  - Reddit threads (r/mtgrules, r/magicTCG) discussing the card
+  - MTG Salvation wiki entries
+  - Judges' Corner or similar rules Q&A about this card
+  - Stack Overflow or similar Q&A about this card's rules
+- **For cards with similar mechanics, search for the mechanic itself**:
+  - For equipment: "MTG equipment rules when creature dies", "equip timing rules"
+  - For DFCs/transform: "MTG transform rules trigger timing", "transformed creature keywords"
+  - For curses: "MTG curse rules enchant player", "curse SBA rules"
+  - For "whenever... dies" triggers: "MTG death trigger timing simultaneous", "dies trigger zone"
+  - For replacement effects: "MTG replacement effect ordering", "if would instead"
+- **Record any surprising findings**: If community discussions reveal interactions you didn't think of, note them for step 5. Common surprises:
+  - Cards that interact differently than their text suggests at first read
+  - Timing windows that matter (e.g., "at the beginning of" vs "whenever")
+  - "Last known information" rules for dead creatures
+  - Whether an ability is a "may" or mandatory
+  - Whether tokens have creature types (they do, if specified)
+  - Whether a card targets or just "chooses" (targeting can be responded to, choosing can't)
+
+### 5. Identify relevant rules
 - Which comprehensive rules apply to this card?
 - For creatures: summoning sickness, combat rules
 - For instants/sorceries: stack rules, timing restrictions
@@ -55,7 +83,7 @@ When multiple cards are given, run the full procedure for EACH card and compile 
 - For continuous effects: layer system implications
 - For "enters the battlefield" / "dies": zone transition rules
 
-### 5. Think about tricky interactions
+### 6. Think about tricky interactions
 This is the most important step. Consider:
 
 **With the stack:**
@@ -77,7 +105,7 @@ This is the most important step. Consider:
 - **Wreath of Geists + creature entering graveyard**: The +X/+X updates dynamically as creatures enter the graveyard. A creature enchanted by Wreath that fights and kills another creature should get bigger mid-combat (though SBAs only check after).
 - **Geist-Honored Monk + its own tokens**: When the Monk ETBs and creates two Spirit tokens, its P/T should count itself plus the two tokens (= 3/3 minimum). The dynamic_pt must see the tokens that were just created.
 
-### 6. Check the code
+### 7. Check the code
 Read the card's implementation file. Verify:
 
 **Card data:**
@@ -104,7 +132,7 @@ Read the card's implementation file. Verify:
 - [ ] Spell cleanup: uses `move_spell_after_resolve()` (not `move_object(Zone::Graveyard)`)
 - [ ] Dynamic P/T: uses `dynamic_pt` trait method if P/T depends on game state
 
-### 7. Check test coverage
+### 8. Check test coverage
 Search for tests related to this card in `mtg-engine/tests/`. Check:
 
 **Basic functionality:**
@@ -122,14 +150,14 @@ Search for tests related to this card in `mtg-engine/tests/`. Check:
 - [ ] For auras: is there a test for the aura falling off when the creature dies?
 - [ ] For flashback: is there a test for casting from graveyard AND being exiled after?
 
-**Corner cases from step 5:**
-- [ ] Are any of the tricky interactions from step 5 tested?
+**Corner cases from step 6:**
+- [ ] Are any of the tricky interactions from step 6 tested?
 - [ ] If not, which ones SHOULD be tested? (List them.)
 
 **Missing tests:**
 - List any tests that should exist but don't, with a brief description of what they would verify.
 
-### 8. Check UI presentation
+### 9. Check UI presentation
 Examine how this card's choices and effects appear to players.
 
 **For the CLI player** (mtg-player/src/cli.rs):
@@ -155,7 +183,7 @@ Examine how this card's choices and effects appear to players.
 - Missing card knowledge: if the AI doesn't have this card in its system prompt, can it still figure out what to do from the action list and game state?
 - Resolution choices: if the card uses `AwaitingAction::ResolutionChoice`, does the choice description make sense to a human reading the CLI or an AI reading the prompt?
 
-### 9. Simplicity check
+### 10. Simplicity check
 - Is the implementation as simple as it can be?
 - Does it use the shared helpers where applicable?
   - **Spell resolution**: `resolve_aura()`, `resolve_damage()`, `resolve_destroy()`
@@ -164,7 +192,7 @@ Examine how this card's choices and effects appear to players.
 - Does it use declarative data (continuous_effects, triggered_abilities) instead of imperative code where possible?
 - Is there duplicated logic that could be extracted?
 
-### 10. Shortcut check
+### 11. Shortcut check
 - Is anything auto-targeted that should be player-chosen?
 - Is anything mandatory that should be optional ("you may")?
 - Is any effect missing (e.g., +2/+2 declared but not applied)?
@@ -187,14 +215,14 @@ Examine how this card's choices and effects appear to players.
 **Engine limitation to flag (not a card bug):**
 - If a card's behavior is limited by a trait signature or engine API (e.g., `is_valid_target` historically couldn't use effective_power because it had no registry parameter), flag it as an engine limitation rather than a card bug. The fix may require changing the trait, not just the card.
 
-### 11. Verify test correctness
+### 12. Verify test correctness
 This is separate from test coverage (step 7). For EXISTING tests:
 - [ ] Do the test assertions match the CURRENT Oracle text? (Tests may have been written against old/wrong Oracle text and never updated.)
 - [ ] Does the test verify the mechanism, not just the outcome? (e.g., a spell fizzle test should check that SpellResolved is NOT emitted, not just that no damage was dealt.)
 - [ ] If the card was recently fixed, were all related tests updated to match the fix?
 - [ ] Are there tests that enshrine wrong behavior? (e.g., testing that a trigger does NOT fire when it should)
 
-### 12. Final report
+### 13. Final report
 Output a structured report:
 
 ```
