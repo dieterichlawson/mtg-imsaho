@@ -164,6 +164,14 @@ pub mod gavony_township;
 pub mod nephalia_drownyard;
 pub mod stensia_bloodhall;
 
+// Tier 9: Equipment
+pub mod cobbled_wings;
+pub mod mask_of_avacyn;
+pub mod silver_inlaid_dagger;
+pub mod sharpened_pitchfork;
+pub mod butchers_cleaver;
+pub mod wooden_stake;
+
 
 use std::collections::HashMap;
 
@@ -721,6 +729,14 @@ impl CardRegistry {
         reg.register(Box::new(gavony_township::GavonyTownship));
         reg.register(Box::new(nephalia_drownyard::NephaliaDrownyard));
         reg.register(Box::new(stensia_bloodhall::StensiaBloodhall));
+
+        // Innistrad Tier 9: Equipment
+        reg.register(Box::new(cobbled_wings::CobbledWings));
+        reg.register(Box::new(mask_of_avacyn::MaskOfAvacyn));
+        reg.register(Box::new(silver_inlaid_dagger::SilverInlaidDagger));
+        reg.register(Box::new(sharpened_pitchfork::SharpenedPitchfork));
+        reg.register(Box::new(butchers_cleaver::ButchersCleaver));
+        reg.register(Box::new(wooden_stake::WoodenStake));
 
         reg
     }
