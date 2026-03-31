@@ -156,6 +156,20 @@ pub mod stitchers_apprentice;
 pub mod corpse_lunge;
 pub mod harvest_pyre;
 
+// Tier 11: Graveyard interaction cards
+pub mod makeshift_mauler;
+pub mod stitched_drake;
+pub mod skaab_goliath;
+pub mod ghoulcallers_chant;
+pub mod ghoulraiser;
+pub mod caravan_vigil;
+pub mod mulch;
+pub mod purify_the_grave;
+pub mod grasp_of_phantoms;
+pub mod night_terrors;
+pub mod memorys_journey;
+pub mod woodland_sleuth;
+
 // Tier 10: Complex creatures and utility lands
 pub mod elder_of_laurels;
 pub mod mindshrieker;
@@ -707,6 +721,20 @@ impl CardRegistry {
         reg.register(Box::new(stitchers_apprentice::StitchersApprentice));
         reg.register(Box::new(corpse_lunge::CorpseLunge));
         reg.register(Box::new(harvest_pyre::HarvestPyre));
+
+        // Innistrad Tier 11: Graveyard interaction cards
+        reg.register(Box::new(makeshift_mauler::MakeshiftMauler));
+        reg.register(Box::new(stitched_drake::StitchedDrake));
+        reg.register(Box::new(skaab_goliath::SkaabGoliath));
+        reg.register(Box::new(ghoulcallers_chant::GhoulcallersChant));
+        reg.register(Box::new(ghoulraiser::Ghoulraiser));
+        reg.register(Box::new(caravan_vigil::CaravanVigil));
+        reg.register(Box::new(mulch::Mulch));
+        reg.register(Box::new(purify_the_grave::PurifyTheGrave));
+        reg.register(Box::new(grasp_of_phantoms::GraspOfPhantoms));
+        reg.register(Box::new(night_terrors::NightTerrors));
+        reg.register(Box::new(memorys_journey::MemorysJourney));
+        reg.register(Box::new(woodland_sleuth::WoodlandSleuth));
 
         // Innistrad Tier 10 cards
         reg.register(Box::new(elder_of_laurels::ElderOfLaurels));
