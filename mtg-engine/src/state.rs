@@ -439,6 +439,13 @@ impl GameState {
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Not(inner) => !self.matches_filter(creature_id, inner, source_controller, registry),
+            CreatureFilter::AttachedPlayer => {
+                // This filter requires knowing the source object's attached_to_player.
+                // It's resolved in effect_applies_to which has source_id.
+                // If called directly from matches_filter without source context,
+                // fall back to Opponents (the common case for curses).
+                creature.controller != source_controller
+            }
         }
     }
 
@@ -461,6 +468,16 @@ impl GameState {
                     .unwrap_or(false)
             }
             EffectScope::Global(filter) => {
+                // For AttachedPlayer filter, use the source's attached_to_player.
+                if matches!(filter, crate::types::CreatureFilter::AttachedPlayer) {
+                    let attached_player = self.get_object(source_id)
+                        .and_then(|o| o.attached_to_player);
+                    if let Some(player) = attached_player {
+                        let creature = self.get_object(creature_id);
+                        return creature.map(|c| c.controller == player).unwrap_or(false);
+                    }
+                    return false;
+                }
                 self.matches_filter(creature_id, filter, source_controller, registry)
             }
             EffectScope::GlobalOther(filter) => {

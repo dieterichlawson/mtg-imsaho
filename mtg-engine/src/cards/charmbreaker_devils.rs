@@ -8,9 +8,9 @@ use crate::types::*;
 /// from your graveyard to your hand.
 /// Whenever you cast an instant or sorcery spell, Charmbreaker Devils gets +4/+0
 /// until end of turn.
-pub struct CharmbrekerDevils;
+pub struct CharmbreakerDevils;
 
-impl CardBehavior for CharmbrekerDevils {
+impl CardBehavior for CharmbreakerDevils {
     fn card_data(&self) -> CardData {
         CardData {
             name: "Charmbreaker Devils".into(),

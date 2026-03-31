@@ -321,6 +321,8 @@ pub enum CreatureFilter {
     Or(Vec<CreatureFilter>),
     /// Negation.
     Not(Box<CreatureFilter>),
+    /// Creatures controlled by the player this curse/aura is attached to.
+    AttachedPlayer,
 }
 
 /// Where a continuous effect applies.

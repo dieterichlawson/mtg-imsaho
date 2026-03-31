@@ -571,7 +571,7 @@ impl CardRegistry {
         reg.register(Box::new(bloodgift_demon::BloodgiftDemon));
         reg.register(Box::new(angel_of_flight_alabaster::AngelOfFlightAlabaster));
         reg.register(Box::new(endless_ranks_of_the_dead::EndlessRanksOfTheDead));
-        reg.register(Box::new(charmbreaker_devils::CharmbrekerDevils));
+        reg.register(Box::new(charmbreaker_devils::CharmbreakerDevils));
         reg.register(Box::new(reaper_from_the_abyss::ReaperFromTheAbyss));
         reg.register(Box::new(curse_of_the_pierced_heart::CurseOfThePiercedHeart));
         reg.register(Box::new(curse_of_the_bloody_tome::CurseOfTheBloodyTome));

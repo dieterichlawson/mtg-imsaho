@@ -25,12 +25,10 @@ impl CardBehavior for CurseOfTheNightlyHunt {
             oracle_text: "Enchant player\nCreatures enchanted player controls attack each combat if able.".into(),
             keywords: vec![],
             flashback_cost: None,
-            // ForceAttack on opponent's creatures (the cursed player).
-            // Opponents filter matches creatures NOT controlled by the curse's controller
-            // (i.e., the cursed opponent's creatures).
+            // Force attack on the cursed player's creatures.
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack {
-                    scope: EffectScope::Global(CreatureFilter::Opponents),
+                    scope: EffectScope::Global(CreatureFilter::AttachedPlayer),
                 },
             ],
             triggered_abilities: vec![],

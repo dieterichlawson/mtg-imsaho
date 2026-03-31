@@ -26,13 +26,12 @@ impl CardBehavior for CurseOfDeathsHold {
             oracle_text: "Enchant player\nCreatures enchanted player controls get -1/-1.".into(),
             keywords: vec![],
             flashback_cost: None,
-            // Opponents filter: from the curse controller's perspective, the
-            // enchanted player's creatures are "opponents'" creatures.
+            // Debuff creatures controlled by the cursed player.
             continuous_effects: vec![
                 ContinuousEffect::ModifyPT {
                     power: -1,
                     toughness: -1,
-                    scope: EffectScope::Global(CreatureFilter::Opponents),
+                    scope: EffectScope::Global(CreatureFilter::AttachedPlayer),
                 },
             ],
             triggered_abilities: vec![],
