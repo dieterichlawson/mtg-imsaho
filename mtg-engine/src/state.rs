@@ -916,7 +916,7 @@ pub enum ResolutionChoiceKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PendingEffect {
     /// Deal N damage to the chosen target.
-    DealDamage { amount: u32, source_name: String },
+    DealDamage { amount: u32, source_id: ObjectId, source_name: String },
     /// Destroy the chosen permanent.
     Destroy { source_name: String },
     /// Move chosen creature from graveyard to battlefield.

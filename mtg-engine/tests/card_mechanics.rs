@@ -957,12 +957,13 @@ fn indestructible_survives_deathtouch() {
 /// Sacrifice bypasses indestructible.
 #[test]
 fn sacrifice_bypasses_indestructible() {
+    let reg = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 4, 4);
     state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
 
-    let sacrificed = mtg_engine::destruction::sacrifice(&mut state, creature);
+    let sacrificed = mtg_engine::destruction::sacrifice(&mut state, creature, &reg);
 
     assert!(sacrificed, "Sacrifice should succeed even with indestructible");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
@@ -971,12 +972,13 @@ fn sacrifice_bypasses_indestructible() {
 /// Sacrifice bypasses regeneration shields.
 #[test]
 fn sacrifice_bypasses_regeneration() {
+    let reg = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(creature).unwrap().regeneration_shields = 2;
 
-    let sacrificed = mtg_engine::destruction::sacrifice(&mut state, creature);
+    let sacrificed = mtg_engine::destruction::sacrifice(&mut state, creature, &reg);
 
     assert!(sacrificed, "Sacrifice should succeed even with regeneration shields");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
@@ -987,12 +989,13 @@ fn sacrifice_bypasses_regeneration() {
 /// Sacrifice sets creature_died_this_turn for morbid.
 #[test]
 fn sacrifice_triggers_morbid() {
+    let reg = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
     assert!(!state.creature_died_this_turn);
 
-    mtg_engine::destruction::sacrifice(&mut state, creature);
+    mtg_engine::destruction::sacrifice(&mut state, creature, &reg);
 
     assert!(state.creature_died_this_turn,
         "Sacrifice should set creature_died_this_turn for morbid");

@@ -43,7 +43,7 @@ impl CardBehavior for RageThrower {
         let old = state.get_player(opponent).life;
         let new_life = old - 2;
         state.get_player_mut(opponent).life = new_life;
-        state.events.push(GameEvent::CombatDamageDealt {
+        state.events.push(GameEvent::NonCombatDamageDealt {
             source: self_id,
             target: DamageTarget::Player(opponent),
             amount: 2,

@@ -53,7 +53,7 @@ impl CardBehavior for GeistcatchersRig {
                     description: "Geistcatcher's Rig: deal 4 damage to target creature with flying".into(),
                     options: targets,
                     optional: true,
-                    effect: PendingEffect::DealDamage { amount: 4, source_name: "Geistcatcher's Rig".into() },
+                    effect: PendingEffect::DealDamage { amount: 4, source_id: object_id, source_name: "Geistcatcher's Rig".into() },
                 },
             });
         }

@@ -38,7 +38,7 @@ impl CardBehavior for PitchburnDevils {
         let targets = crate::cards::helpers::any_targets(state);
         crate::cards::helpers::present_target_choice(
             state, object_id, controller, targets,
-            PendingEffect::DealDamage { amount: 3, source_name: "Pitchburn Devils".into() },
+            PendingEffect::DealDamage { amount: 3, source_id: object_id, source_name: "Pitchburn Devils".into() },
             "Pitchburn Devils: deal 3 damage to any target",
             false, // mandatory
         );

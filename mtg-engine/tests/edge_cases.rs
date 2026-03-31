@@ -93,7 +93,7 @@ fn sacrifice_bypasses_indestructible() {
     );
     assert!(state.has_keyword(creature, Keyword::Indestructible, &reg));
 
-    let result = destruction::sacrifice(&mut state, creature);
+    let result = destruction::sacrifice(&mut state, creature, &reg);
     assert!(result, "Sacrifice should succeed even on indestructible creature");
     assert_eq!(
         state.get_object(creature).unwrap().zone,

@@ -1041,13 +1041,14 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
     use crate::state::PendingEffect;
 
     match (target, effect) {
-        (Target::Object(id), PendingEffect::DealDamage { amount, source_name }) => {
+        (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name }) => {
             if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
                     obj.damage_marked += amount;
+                    obj.damaged_by.push(*source_id);
                     let name = obj.name.clone();
-                    state.events.push(GameEvent::CombatDamageDealt {
-                        source: crate::ids::ObjectId(0), // source creature may not be available
+                    state.events.push(GameEvent::NonCombatDamageDealt {
+                        source: *source_id,
                         target: crate::events::DamageTarget::Object(*id),
                         amount: *amount,
                     });
@@ -1055,12 +1056,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 }
             }
         }
-        (Target::Player(pid), PendingEffect::DealDamage { amount, source_name }) => {
+        (Target::Player(pid), PendingEffect::DealDamage { amount, source_id, source_name }) => {
             let old = state.get_player(*pid).life;
             let new_life = old - *amount as i32;
             state.get_player_mut(*pid).life = new_life;
             state.events.push(GameEvent::NonCombatDamageDealt {
-                source: crate::ids::ObjectId(0),
+                source: *source_id,
                 target: crate::events::DamageTarget::Player(*pid),
                 amount: *amount,
             });

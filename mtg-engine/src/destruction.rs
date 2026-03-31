@@ -50,14 +50,14 @@ pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry)
 
 /// Sacrifice a permanent. Bypasses indestructible and regeneration.
 /// Returns true if the permanent existed and was sacrificed.
-pub fn sacrifice(state: &mut GameState, id: ObjectId) -> bool {
+pub fn sacrifice(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> bool {
     let exists = state.get_object(id)
         .map(|o| o.zone == Zone::Battlefield)
         .unwrap_or(false);
     if !exists {
         return false;
     }
-    destroy(state, id, None);
+    destroy(state, id, Some(registry));
     true
 }
 
