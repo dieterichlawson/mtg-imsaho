@@ -242,6 +242,11 @@ pub mod isolated_chapel;
 pub mod sulfur_falls;
 pub mod woodland_cemetery;
 
+// Innistrad utility lands
+pub mod ghost_quarter;
+pub mod shimmering_grotto;
+pub mod moorland_haunt;
+
 
 use std::collections::HashMap;
 
@@ -876,6 +881,11 @@ impl CardRegistry {
         reg.register(Box::new(isolated_chapel::IsolatedChapel));
         reg.register(Box::new(sulfur_falls::SulfurFalls));
         reg.register(Box::new(woodland_cemetery::WoodlandCemetery));
+
+        // Innistrad utility lands
+        reg.register(Box::new(ghost_quarter::GhostQuarter));
+        reg.register(Box::new(shimmering_grotto::ShimmeringGrotto));
+        reg.register(Box::new(moorland_haunt::MoorlandHaunt));
 
         reg
     }
