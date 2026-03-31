@@ -212,6 +212,38 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             }
         }
 
+        // Rule 704.5i: A planeswalker with 0 or less loyalty goes to graveyard.
+        let pw_zero_loyalty: Vec<_> = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                    && o.card_types.contains(&crate::types::CardType::Planeswalker)
+                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
+            })
+            .map(|o| o.id)
+            .collect();
+        // Also check via registry for non-token planeswalkers.
+        let pw_zero_loyalty_registry: Vec<_> = if let Some(reg) = registry {
+            state.objects.values()
+                .filter(|o| {
+                    o.zone == Zone::Battlefield
+                        && !o.card_types.contains(&crate::types::CardType::Planeswalker)
+                        && reg.card_data(o.card_id)
+                            .map(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
+                            .unwrap_or(false)
+                        && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
+                })
+                .map(|o| o.id)
+                .collect()
+        } else {
+            vec![]
+        };
+        for id in pw_zero_loyalty.into_iter().chain(pw_zero_loyalty_registry) {
+            state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
+                state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
+            state.move_object(id, Zone::Graveyard);
+            took_action = true;
+        }
+
         // Rule 704.5k: Legend rule — if a player controls two or more legendary
         // permanents with the same name, all are put into the graveyard.
         // (Simplified: keep the newest, remove the rest.)

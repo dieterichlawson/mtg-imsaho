@@ -286,6 +286,25 @@ pub mod tree_of_redemption;
 pub mod unbreathing_horde;
 pub mod back_from_the_brink;
 
+// Tier 15: Hard/complex Innistrad cards — non-werewolf DFCs, planeswalkers, unique effects
+pub mod delver_of_secrets;
+pub mod cloistered_youth;
+pub mod civilized_scholar;
+pub mod screeching_bat;
+pub mod ludevics_test_subject;
+pub mod thraben_sentry;
+pub mod bloodline_keeper;
+pub mod mikaeus_the_lunarch;
+pub mod grimgrin_corpse_born;
+pub mod geist_of_saint_traft;
+pub mod evil_twin;
+pub mod moldgraf_monstrosity;
+pub mod liliana_of_the_veil;
+pub mod garruk_relentless;
+pub mod essence_of_the_wild;
+pub mod mirror_mad_phantasm;
+pub mod grimoire_of_the_dead;
+
 
 
 use std::collections::HashMap;
@@ -628,6 +647,17 @@ pub trait CardBehavior: Send + Sync {
         let card_data = self.card_data();
         if card_data.card_types.iter().any(|t| t.is_permanent()) {
             state.move_object(object_id, Zone::Battlefield);
+            // If this is a planeswalker, set starting loyalty counters.
+            if let Some(loyalty) = self.starting_loyalty() {
+                // For X-cost planeswalkers, the x_value is already set on the object.
+                let x = state.get_object(object_id).and_then(|o| o.x_value).unwrap_or(0);
+                let total = if card_data.cost.as_ref().map(|c| c.symbols.iter().any(|s| matches!(s, crate::types::ManaSymbol::X))).unwrap_or(false) {
+                    x
+                } else {
+                    loyalty
+                };
+                state.add_counters(object_id, crate::types::CounterType::Loyalty, total);
+            }
         }
     }
 }
@@ -976,6 +1006,25 @@ impl CardRegistry {
         reg.register(Box::new(tree_of_redemption::TreeOfRedemption));
         reg.register(Box::new(unbreathing_horde::UnbreathingHorde));
         reg.register(Box::new(back_from_the_brink::BackFromTheBrink));
+
+        // Tier 15: Hard/complex Innistrad cards
+        reg.register(Box::new(delver_of_secrets::DelverOfSecrets));
+        reg.register(Box::new(cloistered_youth::CloisteredYouth));
+        reg.register(Box::new(civilized_scholar::CivilizedScholar));
+        reg.register(Box::new(screeching_bat::ScreechingBat));
+        reg.register(Box::new(ludevics_test_subject::LudevicsTestSubject));
+        reg.register(Box::new(thraben_sentry::ThrabenSentry));
+        reg.register(Box::new(bloodline_keeper::BloodlineKeeper));
+        reg.register(Box::new(mikaeus_the_lunarch::MikaeusTheLunarch));
+        reg.register(Box::new(grimgrin_corpse_born::GrimgrinCorpseBorn));
+        reg.register(Box::new(geist_of_saint_traft::GeistOfSaintTraft));
+        reg.register(Box::new(evil_twin::EvilTwin));
+        reg.register(Box::new(moldgraf_monstrosity::MoldgrafMonstrosity));
+        reg.register(Box::new(liliana_of_the_veil::LilianaOfTheVeil));
+        reg.register(Box::new(garruk_relentless::GarrukRelentless));
+        reg.register(Box::new(essence_of_the_wild::EssenceOfTheWild));
+        reg.register(Box::new(mirror_mad_phantasm::MirrorMadPhantasm));
+        reg.register(Box::new(grimoire_of_the_dead::GrimoireOfTheDead));
 
 
         reg

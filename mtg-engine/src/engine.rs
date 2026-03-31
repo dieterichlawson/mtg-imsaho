@@ -322,6 +322,33 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
     }
 
+    // Planeswalker loyalty abilities: sorcery speed, once per turn per planeswalker.
+    if is_sorcery_speed {
+        for obj in state.objects_in_zone(Zone::Battlefield, player) {
+            let obj_id = obj.id;
+            let obj_card_id = obj.card_id;
+            let already_used = obj.abilities_activated_this_turn.contains(&999); // sentinel
+            if already_used { continue; }
+
+            if let Some(behavior) = registry.get(obj_card_id) {
+                let loyalty_abs = behavior.loyalty_abilities();
+                if loyalty_abs.is_empty() { continue; }
+
+                let current_loyalty = state.get_counter_count(obj_id, CounterType::Loyalty);
+                for ab in &loyalty_abs {
+                    // Check if we can pay the cost.
+                    if ab.loyalty_change < 0 && ((-ab.loyalty_change) as u32) > current_loyalty {
+                        continue; // Not enough loyalty
+                    }
+                    actions.push(Action::ActivateLoyaltyAbility {
+                        object_id: obj_id,
+                        ability_index: ab.ability_index,
+                    });
+                }
+            }
+        }
+    }
+
     // Instant-speed window: anytime you have priority (which is already true here).
     let player_state = state.get_player(player);
 
@@ -1217,14 +1244,21 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             ) {
                 let abilities = behavior.loyalty_abilities();
                 if let Some(ab) = abilities.iter().find(|a| a.ability_index == *ability_index) {
-                    // Pay loyalty cost.
-                    let loyalty = new_state.get_object(*object_id)
-                        .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne))
-                        .copied()
-                        .unwrap_or(0);
-                    // For loyalty abilities, use a dedicated loyalty counter (TODO: separate counter type).
-                    // For now, track loyalty in card_state as a workaround.
-                    let _ = loyalty; // placeholder
+                    // Pay loyalty cost: add or remove loyalty counters.
+                    let change = ab.loyalty_change;
+                    if change > 0 {
+                        new_state.add_counters(*object_id, CounterType::Loyalty, change as u32);
+                    } else if change < 0 {
+                        let remove = (-change) as u32;
+                        if let Some(obj) = new_state.get_object_mut(*object_id) {
+                            let current = obj.counters.entry(CounterType::Loyalty).or_insert(0);
+                            *current = current.saturating_sub(remove);
+                        }
+                    }
+                    // Mark that a loyalty ability was activated this turn on this permanent.
+                    if let Some(obj) = new_state.get_object_mut(*object_id) {
+                        obj.abilities_activated_this_turn.insert(999); // sentinel for "used loyalty this turn"
+                    }
                     behavior.on_loyalty_ability(&mut new_state, *object_id, *ability_index, registry);
                     let name = card_name(&new_state, registry, *object_id);
                     new_state.log(LogLevel::Event, format!("p{} activated loyalty ability on {}: {}", player.0, name, ab.description));
