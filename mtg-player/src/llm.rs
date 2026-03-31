@@ -115,6 +115,26 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Unburial Rites ({4}{B} sorcery, flashback {3}{W}): Return a creature from your graveyard to the battlefield.
 - Desperate Ravings ({1}{R} instant, flashback {2}{U}): Draw 2 cards, discard 1.
 - Skeletal Grimace ({1}{B} aura): Enchanted creature gets +1/+1 and has "{B}: Regenerate this creature." Activate the regeneration ability (shows as "Activate <creature name>") to protect the creature from destruction — it gets a regeneration shield that saves it from the next lethal damage or destroy effect. Activate it BEFORE the creature would die!
+- Village Cannibals ({2}{B} creature 2/2): Whenever another Human dies, gets a +1/+1 counter. Grows when Humans on either side die.
+- Bloodcrazed Neonate ({1}{R} creature 2/1): Must attack each turn. Gets a +1/+1 counter whenever it deals combat damage to a player.
+- Stromkirk Noble ({R} creature 1/1): Can't be blocked by Humans. Gets a +1/+1 counter on combat damage to a player. Snowballs fast.
+- Champion of the Parish ({W} creature 1/1): Gets a +1/+1 counter whenever another Human enters under your control. Play Humans to grow it!
+- Festerhide Boar ({3}{G} creature 3/3 trample): Morbid — enters with two +1/+1 counters if a creature died this turn. Cast AFTER combat or removal for a 5/5 trampler.
+- Hollowhenge Scavenger ({3}{G}{G} creature 4/5): Morbid — gain 5 life if a creature died this turn. Big body.
+- Morkrut Banshee ({3}{B}{B} creature 4/4): Morbid — gives target creature -4/-4 when it enters if a creature died this turn. Kills most creatures!
+- Dead Weight ({B} aura): Enchanted creature gets -2/-2. Kills 2-toughness creatures immediately.
+- Spectral Flight ({1}{U} aura): Enchanted creature gets +2/+2 and flying. Great on any creature.
+- Bonds of Faith ({1}{W} aura): +2/+2 if enchanted creature is Human. If not Human, it can't attack or block (like Pacifism).
+- Glorious Anthem ({1}{W}{W} enchantment): All your creatures get +1/+1. Board-wide buff.
+- Spider Spawning ({4}{G} sorcery, flashback {6}{B}): Creates a 1/2 Spider with reach for each creature in your graveyard. Better late game.
+- Wreath of Geists ({G} aura): Enchanted creature gets +X/+X where X is creature cards in your graveyard. Grows as creatures die.
+- Geist-Honored Monk ({3}{W}{W} creature */* vigilance): Power/toughness = number of creatures you control. Creates two 1/1 Spirit tokens with flying on entry.
+- Murder of Crows ({3}{U}{U} creature 4/4 flying): Whenever another creature dies, you may draw a card then discard a card. Card filtering engine.
+- Sturmgeist ({3}{U}{U} creature */* flying): Power/toughness = cards in your hand. Draw a card when it deals combat damage.
+- Curiosity ({U} aura): Whenever enchanted creature deals damage to an opponent, draw a card. Put on evasive creatures!
+- Abattoir Ghoul ({3}{B} creature 3/2 first strike): When a creature it damaged this turn dies, you gain life equal to its toughness.
+- Crossway Vampire ({1}{R}{R} creature 3/2): When it enters, target creature can't block this turn. Clears the way for attackers.
+- Rakish Heir ({2}{R} creature 2/2): Whenever a Vampire you control deals combat damage to a player, that Vampire gets a +1/+1 counter.
 
 ## Flashback
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. Tap lands to get mana, then the Flashback option appears.
