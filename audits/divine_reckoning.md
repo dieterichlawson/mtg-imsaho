@@ -15,3 +15,12 @@ The Oracle text says each player "sacrifices" the rest of their creatures, not "
 **Issue 2 — Player choice is automated (picks highest toughness) instead of allowing player to choose.** This is noted as a simplification in the code comment and may be acceptable for the engine's current state, but it's technically incorrect.
 
 - Tests exist in `tier8_cards.rs` (`divine_reckoning_keeps_one_per_player`, `divine_reckoning_with_one_creature_keeps_it`, `divine_reckoning_has_flashback`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Each player chooses a creature they control. Destroy the rest. Flashback {5}{W}{W}
+**Scryfall type line**: Sorcery
+**Status**: ISSUE
+
+1. **Oracle text mismatch (minor)**: Code oracle_text says "destroys the rest" but Scryfall says "Destroy the rest." File: `mtg-engine/src/cards/divine_reckoning.rs`, line 26.
+2. **No player choice for which creature to keep**: Code auto-selects the creature with highest toughness instead of letting each player choose. This is noted as a simplification. File: `mtg-engine/src/cards/divine_reckoning.rs`, line 59.

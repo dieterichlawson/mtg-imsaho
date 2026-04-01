@@ -15,3 +15,12 @@ Findings:
 - Tests: `voiceless_spirit_has_flying_and_first_strike` in innistrad_cards.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flying, first strike
+**Scryfall type line**: Creature — Spirit
+**P/T**: 2/1, **Mana cost**: {2}{W}
+**Status**: PASS
+
+No issues found.

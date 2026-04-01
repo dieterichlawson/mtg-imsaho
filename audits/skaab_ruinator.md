@@ -13,3 +13,13 @@
 **Positive**: `can_cast_from_graveyard` returns true, correctly modeling the "You may cast Skaab Ruinator from your graveyard" ability.
 
 - Tests: `skaab_ruinator_exiles_creatures_from_graveyard` in tier15_cards.rs
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard.
+Flying
+You may cast this card from your graveyard.
+**Scryfall type line**: Creature — Zombie Horror
+**Status**: PASS
+
+No issues found. Card data, cost, types, subtypes, P/T, keywords, additional cost, and `can_cast_from_graveyard` all match Scryfall. Self-exclusion from exile candidates is correctly implemented.

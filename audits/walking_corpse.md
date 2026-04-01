@@ -16,3 +16,12 @@ Findings:
 - Tests: Walking Corpse is used as a test fixture in many tests (vanilla creature).
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: *(no text — vanilla creature)*
+**Scryfall type line**: Creature — Zombie
+**P/T**: 2/2, **Mana cost**: {1}{B}
+**Status**: PASS
+
+No issues found.

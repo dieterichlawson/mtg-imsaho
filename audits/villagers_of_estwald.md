@@ -16,3 +16,14 @@ Findings:
 - Tests: `villagers_of_estwald_transforms_to_large_body` in werewolf_cards.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text (front)**: At the beginning of each upkeep, if no spells were cast last turn, transform Villagers of Estwald.
+**Scryfall Oracle text (back)**: At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack of Estwald.
+**Scryfall type line (front)**: Creature — Human Werewolf
+**Scryfall type line (back)**: Creature — Werewolf
+**Front P/T**: 2/3, **Back P/T**: 4/6
+**Status**: PASS
+
+No issues found.

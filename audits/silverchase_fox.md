@@ -13,3 +13,11 @@ Implementation correctly models:
 - Tests: `silverchase_fox_exiles_enchantment` in tier8_cards.rs
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {1}{W}, Sacrifice this creature: Exile target enchantment.
+**Scryfall type line**: Creature — Fox
+**Status**: PASS
+
+No issues found.

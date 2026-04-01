@@ -17,3 +17,14 @@ Findings:
 - Tests: `village_ironsmith_keeps_first_strike_on_both_faces` in werewolf_cards.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text (front)**: First strike. At the beginning of each upkeep, if no spells were cast last turn, transform Village Ironsmith.
+**Scryfall Oracle text (back)**: First strike. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Ironfang.
+**Scryfall type line (front)**: Creature — Human Werewolf
+**Scryfall type line (back)**: Creature — Werewolf
+**Front P/T**: 1/1, **Back P/T**: 3/1
+**Status**: PASS
+
+No issues found. Both faces have first strike, werewolf transform logic correct, P/T correct.

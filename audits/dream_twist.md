@@ -11,3 +11,11 @@
 - Mills 3 cards via `mill_cards`: correct.
 - Uses `move_spell_after_resolve`: correct.
 - Tests exist in `flashback.rs` (`dream_twist_mills_three`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Target player mills three cards. Flashback {1}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found.

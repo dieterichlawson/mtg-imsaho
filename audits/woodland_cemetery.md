@@ -14,3 +14,11 @@ Findings:
 - Tests: `woodland_cemetery_card_data` and `woodland_cemetery_enters_untapped_with_swamp` in innistrad_simple_cards.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Woodland Cemetery enters the battlefield tapped unless you control a Swamp or a Forest. {T}: Add {B} or {G}.
+**Scryfall type line**: Land
+**Status**: PASS
+
+No issues found. Check-land ETB logic, mana abilities, and conditional tapped entry all correct.

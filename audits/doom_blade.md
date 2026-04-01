@@ -11,3 +11,11 @@
 - Uses `resolve_destroy` helper which calls `try_destroy`: correct pipeline for "destroy".
 - `resolve_destroy` calls `move_spell_after_resolve`: correct.
 - Tests exist in `spells.rs` (`doom_blade_destroys`) and `spell_fizzle.rs` (`doom_blade_target_already_gone`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Destroy target nonblack creature.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found.
