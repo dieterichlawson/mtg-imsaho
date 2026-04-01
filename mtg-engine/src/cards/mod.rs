@@ -512,8 +512,10 @@ pub enum TargetRequirement {
     Creature,
     /// Target a creature matching a filter (Doom Blade: "nonblack creature")
     CreatureWithFilter(TargetFilter),
-    /// Target a player only (Lava Axe)
+    /// Target a player only
     PlayerOnly,
+    /// Target a player or planeswalker (Lava Axe, Stensia Bloodhall)
+    PlayerOrPlaneswalker,
     /// Target a spell on the stack (Counterspell)
     Spell,
     /// Target any permanent on the battlefield matching a filter (Naturalize, Bramblecrush)

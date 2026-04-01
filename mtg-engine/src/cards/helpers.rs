@@ -51,8 +51,15 @@ pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Targ
             Target::Object(target_id) => {
                 if let Some(obj) = state.get_object_mut(*target_id) {
                     if obj.zone == Zone::Battlefield {
-                        obj.damage_marked += amount;
-                        obj.damaged_by.push(spell_id);
+                        if obj.card_types.contains(&crate::types::CardType::Planeswalker) {
+                            // Damage to planeswalkers removes loyalty counters.
+                            let loyalty = obj.counters.get(&crate::types::CounterType::Loyalty).copied().unwrap_or(0);
+                            let new_loyalty = loyalty.saturating_sub(amount as u32);
+                            obj.counters.insert(crate::types::CounterType::Loyalty, new_loyalty);
+                        } else {
+                            obj.damage_marked += amount;
+                            obj.damaged_by.push(spell_id);
+                        }
                         state.events.push(GameEvent::NonCombatDamageDealt {
                             source: spell_id,
                             target: DamageTarget::Object(*target_id),

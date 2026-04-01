@@ -27,7 +27,7 @@ impl CardBehavior for LavaAxe {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        TargetRequirement::PlayerOnly
+        TargetRequirement::PlayerOrPlaneswalker
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {

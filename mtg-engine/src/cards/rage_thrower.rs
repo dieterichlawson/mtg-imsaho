@@ -29,7 +29,7 @@ impl CardBehavior for RageThrower {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
-                    description: "deal 2 damage to target player".into(),
+                    description: "deal 2 damage to target player or planeswalker".into(),
                 },
             ],
         }
@@ -40,15 +40,20 @@ impl CardBehavior for RageThrower {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
-        // "Target player" — present choice between all players.
-        let targets: Vec<Target> = state.players.iter()
+        // "Target player or planeswalker" — present choice.
+        let mut targets: Vec<Target> = state.players.iter()
             .filter(|p| !p.lost)
             .map(|p| Target::Player(p.id))
             .collect();
+        for obj in state.all_objects_in_zone(Zone::Battlefield) {
+            if obj.card_types.contains(&CardType::Planeswalker) {
+                targets.push(Target::Object(obj.id));
+            }
+        }
         crate::cards::helpers::present_target_choice(
             state, self_id, controller, targets,
             PendingEffect::DealDamage { amount: 2, source_id: self_id, source_name: "Rage Thrower".into() },
-            "Rage Thrower: deal 2 damage to target player",
+            "Rage Thrower: deal 2 damage to target player or planeswalker",
             false,
         );
     }

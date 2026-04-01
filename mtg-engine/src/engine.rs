@@ -625,6 +625,32 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut actions = Vec::new();
+            for player in &state.players {
+                if !player.lost {
+                    let target = Target::Player(player.id);
+                    if behavior.is_valid_target(state, caster, &target, registry) {
+                        actions.push(Action::CastSpell {
+                            object_id: spell_id,
+                            targets: vec![target],
+                        });
+                    }
+                }
+            }
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                if obj.card_types.contains(&CardType::Planeswalker) {
+                    let target = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, caster, &target, registry) {
+                        actions.push(Action::CastSpell {
+                            object_id: spell_id,
+                            targets: vec![target],
+                        });
+                    }
+                }
+            }
+            actions
+        }
         TargetRequirement::Spell => {
             let mut actions = Vec::new();
             for entry in &state.stack {
@@ -774,6 +800,22 @@ fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut targets: Vec<Target> = state.players.iter()
+                .filter(|p| !p.lost)
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect();
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                if obj.card_types.contains(&CardType::Planeswalker) {
+                    let target = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, caster, &target, registry) {
+                        targets.push(target);
+                    }
+                }
+            }
+            targets
+        }
         TargetRequirement::GraveyardCard => {
             // All cards in all graveyards.
             state.objects.values()
@@ -857,6 +899,22 @@ fn generate_ability_targets(
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
+        }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut targets: Vec<Target> = state.players.iter()
+                .filter(|p| !p.lost)
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+                .collect();
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                if obj.card_types.contains(&CardType::Planeswalker) {
+                    let target = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, controller, &target, registry) {
+                        targets.push(target);
+                    }
+                }
+            }
+            targets
         }
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
@@ -1527,9 +1585,16 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name }) => {
             if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
-                    obj.damage_marked += amount;
-                    obj.damaged_by.push(*source_id);
                     let name = obj.name.clone();
+                    if obj.card_types.contains(&CardType::Planeswalker) {
+                        // Damage to planeswalkers removes loyalty counters.
+                        let loyalty = obj.counters.get(&CounterType::Loyalty).copied().unwrap_or(0);
+                        let new_loyalty = loyalty.saturating_sub(*amount as u32);
+                        obj.counters.insert(CounterType::Loyalty, new_loyalty);
+                    } else {
+                        obj.damage_marked += amount;
+                        obj.damaged_by.push(*source_id);
+                    }
                     state.events.push(GameEvent::NonCombatDamageDealt {
                         source: *source_id,
                         target: crate::events::DamageTarget::Object(*id),
