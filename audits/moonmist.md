@@ -77,3 +77,40 @@ Issue:
    - Code does: `.filter(|o| o.zone == Zone::Battlefield && !o.is_transformed)` -- the `!o.is_transformed` filter means only front-face (non-transformed) Humans are transformed. If a DFC's back face has the Human subtype and is currently transformed (showing the back face), it would not be transformed back to the front face. The oracle says "Transform all Humans" which means any creature currently with the Human subtype should be transformed, regardless of which face is showing.
 
 No other issues found. Tests in moonmist.rs (4 tests) cover prevention flag, damage prevention to player, wolf exception, and damage prevention to creature. No test for the transform functionality itself.
+
+## Audit — 2026-04-01 18:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Transform all Humans. Prevent all combat damage that would be dealt this turn by creatures other than Werewolves and Wolves. (Only double-faced cards can be transformed.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified correct: name "Moonmist", mana cost {1}{G} (Generic(1), Green), type Instant, oracle text matches.
+
+Transform logic (lines 33-70): correctly identifies creatures that are (a) on the battlefield, (b) not already transformed, (c) have the Human subtype, and (d) have a back face (are DFCs). Updates name, P/T, keywords, and subtypes from the back face. The `!o.is_transformed` filter is correct because a creature that is already transformed would have its back-face subtypes (not Human), so the Human subtype check alone would filter it out. The extra `!o.is_transformed` check is redundant but harmless.
+
+Per ruling: "Moonmist causes any double-faced Human to transform, not just Werewolves." The code checks `has_human_subtype && has_back_face` without restricting to Werewolves -- correct.
+
+Per ruling: "Whether or not a creature is a Werewolf or a Wolf is checked only as combat damage is dealt." The code uses `state.prevent_non_wolf_werewolf_combat_damage = true` flag checked at damage time via `is_non_wolf_damage_prevented` in `combat.rs` (line 301-307), which checks subtypes at the time of damage dealing -- correct.
+
+Per ruling: "Moonmist will prevent combat damage dealt by a creature that isn't a Werewolf or a Wolf even if that creature wasn't on the battlefield... when Moonmist resolved." The flag applies to all creatures at damage time, not just those present at resolution -- correct.
+
+Uses `move_spell_after_resolve(object_id)` -- correct. Flag cleared at end of turn (engine.rs line 2259) -- correct.
+
+### Tricky interactions checked
+- Non-Wolf/Werewolf DFC Human transform: pass
+- Combat damage prevention checked at damage time, not resolution time: pass
+- Flag cleared at end of turn: pass
+- Only DFCs transform (reminder text): pass
+
+### Test coverage
+- Prevention flag set after resolve: `tests/moonmist.rs` (line 19)
+- Non-wolf combat damage to player prevented: `tests/moonmist.rs` (line 32)
+- Wolf still deals combat damage: `tests/moonmist.rs` (line 50)
+- Non-wolf combat damage to creature prevented: `tests/moonmist.rs` (line 68)
+- Card data verification: `tests/innistrad_simple_cards.rs` (line 530)
+- Transform functionality (actual Human DFC transforms): NOT TESTED
+- Werewolf creature deals combat damage after Moonmist: NOT TESTED (only Wolf tested)

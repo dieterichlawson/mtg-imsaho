@@ -139,3 +139,55 @@ Issues:
 3. **Back face `triggered_abilities` vec is empty** (file: `mtg-engine/src/cards/kruin_outlaw.rs`, line 74):
    - Oracle text says: `At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.`
    - Code does: `back_face_data()` has `triggered_abilities: vec![]`. The upkeep trigger is only declared on the front face. The `on_upkeep` handler covers both faces, but the metadata is incomplete. If the engine uses `triggered_abilities` to determine whether to invoke hooks, this could cause the back face transform-back to not trigger.
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text (front)**: First strike
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back)**: Double strike
+Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line (front)**: Creature — Human Rogue Werewolf
+**Type line (back)**: Creature — Werewolf
+**Front P/T**: 2/2
+**Back P/T**: 3/3
+**Keywords (from Scryfall)**: Transform, First strike, Double strike
+**Status**: ISSUE
+
+### Code issues
+1. **Back face oracle text uses pre-errata wording and implementation does not grant menace keyword** (`mtg-engine/src/cards/isd/kruin_outlaw.rs` lines 59, 65-71):
+   - Oracle text says: `Werewolves you control have menace.`
+   - Code oracle_text says: `Each Werewolf you control can't be blocked except by two or more creatures.`
+   - Code does: Uses `ContinuousEffect::MinimumBlockers { count: 2, scope: ... }` rather than granting the `Keyword::Menace` to all Werewolves.
+   - While mechanically equivalent for blocking purposes, Werewolves would not be recognized as "having menace" by effects that check for the menace keyword (e.g., "whenever a creature with menace attacks"). The oracle_text field also does not match the current oracle wording.
+
+2. **Back face `triggered_abilities` vec is empty** (`mtg-engine/src/cards/isd/kruin_outlaw.rs` line 74):
+   - Oracle text says: `At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.`
+   - Code does: `back_face_data()` has `triggered_abilities: vec![]`.
+   - Verified that this does NOT prevent the trigger from firing: `trigger_description` in triggers.rs (line 294) checks front face triggers FIRST, finds the `TriggerKind::Upkeep` entry with description "transform", and returns it even when the creature is transformed. So the trigger still fires correctly. However, the metadata is incomplete -- if the engine ever changes to check back face triggers separately, this would break.
+
+Front face verified correct: mana cost {1}{R}{R}, card_types (Creature), subtypes (Human, Rogue, Werewolf), P/T 2/2, keywords (FirstStrike), triggered_abilities declares Upkeep trigger. on_resolve moves to battlefield. Transform logic: front-to-back checks `total_spells_last_turn == 0 && !state.is_first_turn` (correct). Back-to-front checks `spells_cast_last_turn.values().any(|&count| count >= 2)` (correct per oracle: "if a player cast two or more spells last turn"). dynamic_pt returns (3,3) when transformed: correct. on_upkeep toggles is_transformed and updates name: correct.
+
+### Tricky interactions checked
+- Transform condition (front to back, no spells last turn): pass
+- Transform condition (back to front, player cast 2+ spells): pass
+- First turn exception (no transform on first turn): pass (line 15)
+- MinimumBlockers applies to self (Terror): pass (tested)
+- MinimumBlockers applies to other Werewolves you control: pass (tested)
+- MinimumBlockers does NOT apply to non-Werewolves: pass (tested)
+- MinimumBlockers does NOT apply to opponent's Werewolves: pass (tested)
+- Menace keyword interactions with other effects: ISSUE (menace keyword not granted)
+- Ruling: transform mid-combat, blocked werewolves remain blocked: NOT TESTED (engine-level behavior)
+
+### Test coverage
+- Terror self requires 2 blockers: `mtg-engine/tests/kruin_outlaw.rs:23` (terror_of_kruin_pass_self_requires_two_blockers)
+- Terror allows 2 blockers: `mtg-engine/tests/kruin_outlaw.rs:56` (terror_of_kruin_pass_allows_two_blockers)
+- Grants restriction to other Werewolves: `mtg-engine/tests/kruin_outlaw.rs:90` (terror_of_kruin_pass_grants_restriction_to_other_werewolves)
+- Does not affect non-Werewolves: `mtg-engine/tests/kruin_outlaw.rs:128` (terror_of_kruin_pass_does_not_affect_non_werewolves)
+- Does not affect opponent's Werewolves: `mtg-engine/tests/kruin_outlaw.rs:164` (terror_of_kruin_pass_does_not_affect_opponent_werewolves)
+- Transform front to back (no spells): NOT TESTED (directly, but implied by werewolf test pattern)
+- Transform back to front (2+ spells): NOT TESTED
+- First strike on front face: NOT TESTED (keyword, engine-level)
+- Double strike on back face: NOT TESTED (keyword, engine-level)
+- Ruling: transform mid-combat keeps blocks: NOT TESTED

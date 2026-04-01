@@ -106,3 +106,45 @@ Issues:
 
 4. **Zero damage still targets but deals no damage** (file: `mtg-engine/src/cards/harvest_pyre.rs`, lines 54-75):
    - When count is 0 (empty graveyard), the code skips damage entirely (goes to the `else` branch at line 73). With the X templating, X=0 is valid and should still resolve (dealing 0 damage to the target). This is a minor edge case difference.
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard.
+Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text field uses outdated wording** (`mtg-engine/src/cards/isd/harvest_pyre.rs` line 25):
+   - Oracle text says: `As an additional cost to cast this spell, exile X cards from your graveyard. Harvest Pyre deals X damage to target creature.`
+   - Code oracle_text says: `As an additional cost to cast Harvest Pyre, exile any number of cards from your graveyard. Harvest Pyre deals damage to target creature equal to the number of cards exiled this way.`
+   - The current oracle uses "exile X cards" and "deals X damage" templating. The code uses older wording ("any number of cards" / "equal to the number of cards exiled this way").
+
+2. **Additional cost executed at resolve time instead of cast time** (`mtg-engine/src/cards/isd/harvest_pyre.rs` lines 44-52):
+   - Oracle text says: `As an additional cost to cast this spell, exile X cards from your graveyard.`
+   - Code does: Exiles cards in `on_resolve` (lines 44-52). The `additional_cost` field is `None` (line 29).
+   - Per rules, additional costs are paid during casting. If the spell is countered, the cards should already be exiled (cost paid), but currently they would not be.
+
+3. **Always exiles all cards instead of player choosing X** (`mtg-engine/src/cards/isd/harvest_pyre.rs` lines 44-47):
+   - Oracle text says: `exile X cards from your graveyard`
+   - Code does: `state.objects.values().filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.id != object_id)` -- exiles ALL graveyard cards.
+   - The player should choose how many cards (X) to exile. Code comment on line 41-43 acknowledges this limitation ("the engine lacks a 'choose a number' UI").
+
+Card data verified: mana cost {1}{R} correct, card_types (Instant) correct, target_requirement (Creature) correct per oracle ("target creature"). Uses `move_spell_after_resolve`: correct. Emits `NonCombatDamageDealt`: correct for spell damage. Tracks `damaged_by` (line 62): correct. Only exiles own graveyard (line 45 `o.owner == controller`): correct. Excludes self from exile (line 45 `o.id != object_id`): correct.
+
+### Tricky interactions checked
+- NonCombatDamageDealt event (not CombatDamageDealt): pass
+- damaged_by tracking for death trigger interactions: pass
+- Only exiles own graveyard: pass
+- Spell uses move_spell_after_resolve: pass
+- Countering the spell should still exile cards (additional cost): ISSUE (cost paid at resolution)
+- Player choice of X: ISSUE (auto-exiles all)
+
+### Test coverage
+- Deals damage equal to exiled count: `mtg-engine/tests/tier8_cards.rs:527` (harvest_pyre_deals_damage_equal_to_exiled_count)
+- Empty graveyard deals no damage: `mtg-engine/tests/tier8_cards.rs:554` (harvest_pyre_empty_graveyard_deals_no_damage)
+- Only exiles own graveyard: `mtg-engine/tests/tier8_cards.rs:568` (harvest_pyre_only_exiles_own_graveyard)
+- Fizzle (target leaves battlefield): NOT TESTED
+- Spell countered (cards should already be exiled): NOT TESTED
+- Player chooses X (subset of graveyard): NOT TESTED (known limitation)

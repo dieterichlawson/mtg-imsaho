@@ -108,3 +108,39 @@ Issue:
   - Scryfall ruling says: "The source of the damage is Blazing Torch, not the equipped creature."
   - Code does: `obj.damaged_by.push(object_id)` and `source: object_id` in the NonCombatDamageDealt event, where `object_id` is the equipped creature (per comment on line 106: "object_id is the creature").
   - The damage source should be the Blazing Torch equipment object, not the equipped creature. This affects protection interactions (e.g., protection from creatures should not prevent this damage since the source is an artifact).
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/216/blazing-torch?utm_source=api
+**Oracle text**: Equipped creature can't be blocked by Vampires or Zombies. Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target." Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)
+**Type line**: Artifact — Equipment
+**Mana cost**: {1}
+**Rulings**:
+- [2009-10-01] The source of the damage is Blazing Torch, not the equipped creature.
+- [2009-10-01] If Blazing Torch controlled by one player somehow winds up equipping a creature a different player controls, the damage ability can't be activated by either player.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Wrong damage source** (`mtg-engine/src/cards/isd/blazing_torch.rs`, lines 122-134):
+   - Oracle text says: `Blazing Torch deals 2 damage to any target.`
+   - Ruling says: "The source of the damage is Blazing Torch, not the equipped creature."
+   - Code does: `obj.damaged_by.push(object_id)` and `source: object_id` in the NonCombatDamageDealt event, where `object_id` is the equipped creature (per comment on line 122: "Source is the torch (flavor), but we use creature ID"). The torch is sacrificed first (line 118-119) so its ID still exists but refers to a graveyard object. The source should be the torch ID, not the creature ID.
+
+### Tricky interactions checked
+- Block restriction for Vampires/Zombies: PASS (uses `CreatureFilter::Not(Or(...))` with `EffectScope::Attached`)
+- Equip sorcery speed: PASS (sorcery_speed_only: true)
+- Torch sacrifice on use: PASS (calls `crate::destruction::sacrifice`)
+- NonCombatDamageDealt event: PASS (emitted for both creature and player targets)
+- LifeChanged event for player damage: PASS
+- damaged_by tracking: PASS (present at line 128) but uses wrong source (creature instead of torch)
+
+### Test coverage
+- Card data (mana cost, types, subtypes): `tier9_cards.rs:384` (blazing_torch_card_data)
+- Grants damage ability to equipped creature: `tier9_cards.rs:394` (blazing_torch_grants_damage_ability)
+- Deals 2 damage to player: `tier9_cards.rs:412` (blazing_torch_deals_damage_to_player)
+- Deals 2 damage to creature: `tier9_cards.rs:444` (blazing_torch_deals_damage_to_creature)
+- Equip ability: `tier9_cards.rs:470` (blazing_torch_equip_ability)
+- Torch sacrificed after use: `tier9_cards.rs:438` (verified in deals_damage_to_player test)
+- Cross-controller equip interaction (ruling): NOT TESTED
+- Damage source is torch not creature (ruling): NOT TESTED

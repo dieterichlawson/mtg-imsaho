@@ -122,3 +122,46 @@ Issues found:
 1. **Ability 0 target filter is `TargetFilter::Any` instead of excluding self** (`/home/user/mtg-imsaho/mtg-engine/src/cards/olivia_voldaren.rs`, line 59):
    - Oracle text says: `{1}{R}: Olivia Voldaren deals 1 damage to another target creature.`
    - Code does: `target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::Any))` at the ability definition level (line 59), which allows the UI/targeting system to present Olivia herself as a valid target. The "another" restriction is only enforced at resolution in `on_activate_ability` (line 100: `if *target_id == object_id { return; }`). Functionally correct but the targeting system would show an invalid option. Low severity.
+
+## Audit — 2026-04-01 18:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.
+{3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
+**Type line**: Legendary Creature — Vampire
+**Status**: ISSUE
+
+### Code issues
+1. **Ability 0 target filter does not exclude self at definition level** (`/Users/dlaw/mtg/mtg-engine/src/cards/isd/olivia_voldaren.rs`, line 59):
+   - Oracle text says: `{1}{R}: Olivia Voldaren deals 1 damage to another target creature.`
+   - Code does: `target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::Any))` -- uses `TargetFilter::Any` which does not exclude self. The "another" restriction is only enforced at resolution in `on_activate_ability` (line 100: `if *target_id == object_id { return; }`). The engine's `generate_ability_targets` function (engine.rs line 980-986) will present Olivia herself as a valid target for ability 0. Low severity since the ability correctly no-ops when self-targeting.
+
+2. **Engine does not apply CreatureWithFilter's filter in generate_ability_targets** (`/Users/dlaw/mtg/mtg-engine/src/engine.rs`, line 980):
+   - The `generate_ability_targets` function handles `CreatureWithFilter(_)` identically to `Creature` (line 980: `TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_)`), never calling `matches_target_filter`. For ability 1 with `TargetFilter::HasSubtype("Vampire")`, this means non-Vampire creatures are presented as valid targets. The Vampire check is only enforced at resolution in `on_activate_ability` (line 129-132). This is an engine-level issue that affects Olivia's ability 1 targeting correctness.
+
+All other card data verified correct: name, mana cost {2}{B}{R}, Legendary supertype, Vampire subtype, P/T 3/3, Flying keyword, oracle text matches. Ability costs correct. `NonCombatDamageDealt` event emitted (not `CombatDamageDealt`). `damaged_by` tracked. Vampire subtype addition preserves existing subtypes. +1/+1 counter on Olivia correct. `LeavesBattlefield` triggered ability declared. `on_leave_battlefield` returns stolen creatures to original controllers. Per ruling: "If Olivia Voldaren deals lethal damage to a creature with its first activated ability, that creature will become a Vampire before dying" -- code sets damage and adds subtype in same block before SBAs: correct.
+
+### Tricky interactions checked
+- "Another" self-exclusion at resolution level: pass (functionally correct)
+- "Another" self-exclusion at targeting level: ISSUE (see #1)
+- Vampire subtype added "in addition to" existing types: pass
+- Stolen creatures returned when Olivia leaves: pass
+- NonCombatDamageDealt (not Combat): pass
+- damaged_by tracking: pass
+- Lethal damage + Vampire subtype ordering: pass
+- CreatureWithFilter filter not applied by engine: ISSUE (see #2)
+
+### Test coverage
+- Ability 0: damage + Vampire + counter: `tests/olivia_voldaren.rs` (line 23)
+- Ability 0: cannot target self: `tests/olivia_voldaren.rs` (line 51)
+- Ability 1: steals Vampire: `tests/olivia_voldaren.rs` (line 68)
+- Ability 1: rejects non-Vampire: `tests/olivia_voldaren.rs` (line 86)
+- Stolen creatures return when Olivia leaves: `tests/olivia_voldaren.rs` (line 104)
+- Ability 1 target filter requires Vampire: `tests/olivia_voldaren.rs` (line 134)
+- Ability 0 via engine submit_action: `tests/tier14_cards.rs` (line 463)
+- Ability 1 via engine submit_action: `tests/tier14_cards.rs` (line 500)
+- Olivia leaves without controlling stolen creatures: NOT TESTED
+- Ruling: losing control of Olivia before ability 1 resolves: NOT TESTED
+- Engine presents self as valid target for ability 0: NOT TESTED
+- Engine presents non-Vampires as valid targets for ability 1: NOT TESTED

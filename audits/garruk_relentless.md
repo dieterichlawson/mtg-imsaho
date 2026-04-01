@@ -126,3 +126,59 @@ Confirmed issues (all previously identified, still present):
    - Code does: Auto-selects the strongest opponent creature via `max_by_key`. The oracle says "target creature" which should allow the controller to choose any creature (including own creatures), not just the opponent's strongest.
 
 No new issues found. Test coverage is adequate (6 tests in tier15_cards.rs).
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed?utm_source=api
+**Oracle text (front)**: When Garruk has two or fewer loyalty counters on him, transform him. 0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him. 0: Create a 2/2 green Wolf creature token.
+**Oracle text (back)**: +1: Create a 1/1 black Wolf creature token with deathtouch. -1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle. -3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+**Type line**: Legendary Planeswalker — Garruk // Legendary Planeswalker — Garruk
+**Starting loyalty**: 3
+**Rulings**:
+- [2011-09-22] Garruk Relentless's first ability is a state-triggered ability. It triggers once Garruk has two or fewer loyalty counters on him and it can't retrigger while that ability is on the stack.
+- [2011-09-22] You don't add or remove loyalty counters from Garruk Relentless when he transforms.
+- [2011-09-22] You can't activate a loyalty ability of Garruk Relentless and later that turn after he transforms activate a loyalty ability of Garruk, the Veil-Cursed.
+- [2011-09-22] The -1 ability doesn't target a creature, but you must sacrifice one if you control one.
+- [2011-09-22] The -3 bonus is locked in at resolution and doesn't change later.
+- [2011-09-22] Only creatures you control when -3 resolves get the bonus.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Transform is not a state-triggered ability** (`mtg-engine/src/cards/isd/garruk_relentless.rs`, lines 246-257):
+   - Oracle text says: `When Garruk has two or fewer loyalty counters on him, transform him.`
+   - Ruling says: "Garruk Relentless's first ability is a state-triggered ability."
+   - Code does: Transform check only runs at the end of `on_loyalty_ability()`. If Garruk loses loyalty from combat damage or other non-loyalty-ability sources (e.g., being attacked, Lightning Bolt targeting him), the transform will not trigger. The `triggered_abilities` vec is also empty.
+
+2. **No damage event for creature-to-planeswalker damage** (`mtg-engine/src/cards/isd/garruk_relentless.rs`, lines 118-123):
+   - Oracle text says: `That creature deals damage equal to its power to him.`
+   - Code does: Directly decrements loyalty counters via `loyalty.saturating_sub(remove)` without emitting a `NonCombatDamageDealt` event. The 3 damage Garruk deals to the creature does emit the event (line 112), but the reverse direction does not.
+
+3. **Front face fight ability auto-selects target** (`mtg-engine/src/cards/isd/garruk_relentless.rs`, lines 99-103):
+   - Oracle text says: `Garruk deals 3 damage to target creature.`
+   - Code does: Auto-selects the strongest opponent creature via `max_by_key(|(_, p)| *p)`. The word "target" means the controller should choose which creature to target. The code also restricts to opponent's creatures only, but the oracle says "target creature" with no controller restriction.
+
+### Tricky interactions checked
+- Starting loyalty 3: PASS (starting_loyalty returns Some(3), on_resolve adds 3 counters)
+- Legendary supertype: PASS (line 31)
+- Front face wolf token 2/2 green with Wolf subtype: PASS (line 131-139)
+- Back face +1 wolf 1/1 black with deathtouch and Wolf subtype: PASS (lines 147-155)
+- Back face -1 sacrifice is mandatory if you control a creature (ruling): PASS (line 163-170 finds a creature and sacrifices it; line 202 handles no-creature case)
+- Back face -1 does not target (ruling): PASS (no targeting in the implementation, auto-selects)
+- Back face -3 counts creatures in graveyard at resolution: PASS (line 210-221 counts at time of ability)
+- Back face -3 only affects creatures controlled at resolution: PASS (line 223-227 collects current creatures)
+- Loyalty abilities show correct costs (+1, -1, -3): PASS (lines 54-69)
+- No loyalty added/removed on transform (ruling): PASS (lines 249-256 only flip is_transformed and name)
+
+### Test coverage
+- Front face creates 2/2 Wolf token: `tier15_cards.rs:1046` (garruk_creates_wolf_token)
+- Transforms at 2 or fewer loyalty: `tier15_cards.rs:1068` (garruk_transforms_at_two_or_fewer_loyalty)
+- Back face creates 1/1 black Wolf with deathtouch: `tier15_cards.rs:1088` (garruk_back_face_creates_deathtouch_wolf)
+- Back face sacrifice-to-tutor: `tier15_cards.rs:1116` (garruk_back_face_sacrifice_to_tutor)
+- Back face -3 overrun effect: `tier15_cards.rs:1154` (garruk_back_face_overrun)
+- Back face loyalty abilities list: `tier15_cards.rs:1194` (garruk_back_face_loyalty_abilities_shown_when_transformed)
+- Transform from combat damage (state-triggered): NOT TESTED (bug: not implemented)
+- Front face fight targets player-chosen creature: NOT TESTED (bug: auto-selects)
+- Creature damage back to Garruk emits event: NOT TESTED (bug: no event emitted)
+- Cannot activate loyalty abilities on both faces in same turn (ruling): NOT TESTED
+- -1 is mandatory if creature is controlled (ruling): NOT TESTED (implemented correctly but no test)

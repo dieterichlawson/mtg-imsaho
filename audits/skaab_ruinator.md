@@ -84,3 +84,41 @@ Issue:
    - Code does: The `additional_cost` field is correctly set to `ExileCreaturesFromGraveyard(3)` in card data, but the exile logic is also executed inside `on_resolve` (lines 41-58). This means the creatures are exiled when the spell resolves, not when it is cast. Per MTG rules (CR 601.2b), additional costs are paid during the casting process. If the spell is countered, the additional cost should still have been paid (creatures exiled), but with this implementation they would not be.
 
 No other issues found. Test in tier15_cards.rs (1 test) verifies exiling 3 creatures and Skaab Ruinator entering the battlefield.
+
+## Audit — 2026-04-01 18:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard.
+Flying
+You may cast this card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**Status**: ISSUE
+
+### Code issues
+1. **Additional cost paid at resolve time instead of cast time** (`/Users/dlaw/mtg/mtg-engine/src/cards/isd/skaab_ruinator.rs`, lines 40-58):
+   - Oracle text says: `As an additional cost to cast this spell, exile three creature cards from your graveyard.`
+   - Code does: The exile logic is executed inside `on_resolve` (lines 41-58), not during the casting process. Per MTG rules (CR 601.2b), additional costs are paid during casting. If the spell is countered, the creatures should have already been exiled as part of casting. With this implementation, if the spell is countered, no creatures are exiled. Note: the `additional_cost: Some(AdditionalCost::ExileCreaturesFromGraveyard(3))` field is declared in card data, but the engine does not handle this cost type at cast time (engine.rs line 466: `_ => vec![]` catches `ExileCreaturesFromGraveyard` without action). This is an engine-level gap affecting all cards with this cost type (Skaab Ruinator, Skaab Goliath, Makeshift Mauler, Stitched Drake, Corpse Lunge).
+
+2. **Engine does not check graveyard creature count for cast eligibility** (`/Users/dlaw/mtg/mtg-engine/src/engine.rs`, lines 454-467):
+   - Oracle text says: `As an additional cost to cast this spell, exile three creature cards from your graveyard.`
+   - Code does: The engine's legal action generation (lines 454-467) only checks `AdditionalCost::SacrificeCreature` for eligibility; `ExileCreaturesFromGraveyard` falls through to `_ => vec![]`. This means the engine may present Skaab Ruinator as castable even when the player has fewer than 3 creature cards in their graveyard.
+
+3. **Exile candidate selection is not player-chosen** (`/Users/dlaw/mtg/mtg-engine/src/cards/isd/skaab_ruinator.rs`, lines 41-51):
+   - Oracle text says: `exile three creature cards from your graveyard`
+   - Code does: Auto-selects the first 3 creature cards via `.take(3)` (line 51). The player should choose which creatures to exile. Per ruling: "You must exile three creature cards from your graveyard no matter what zone you're casting Skaab Ruinator from."
+
+All other card data verified correct: name, mana cost {1}{U}{U}, type Creature, subtypes Zombie/Horror, P/T 5/6, Flying keyword, `can_cast_from_graveyard()` returns true, oracle text matches.
+
+### Tricky interactions checked
+- Cast from graveyard ability: pass (can_cast_from_graveyard returns true)
+- Self-exclusion from exile candidates (can't exile self when on stack): pass (line 44: `o.id != object_id`)
+- Additional cost timing (should be at cast, not resolve): ISSUE (see #1)
+- Creature card identification for exile: pass (checks card_types and fallback to power.is_some())
+
+### Test coverage
+- Exiles 3 creatures and enters battlefield: `tests/tier15_cards.rs` (line 484)
+- Cast from graveyard: NOT TESTED
+- Cast with fewer than 3 creatures in graveyard (should be illegal): NOT TESTED
+- Spell countered after casting (creatures should still be exiled): NOT TESTED
+- Player choice of which creatures to exile: NOT TESTED
+- Ruling: must exile 3 regardless of casting zone: NOT TESTED

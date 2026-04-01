@@ -85,3 +85,37 @@ Issues found:
 1. **Oracle text string says "Zombie creature cards" but Scryfall oracle says "Zombie cards"** (`/home/user/mtg-imsaho/mtg-engine/src/cards/ghoulcallers_chant.rs`, line 24):
    - Oracle text says: `Return two target Zombie cards from your graveyard to your hand.`
    - Code does: `oracle_text` field contains `"Return two target Zombie creature cards from your graveyard to your hand."` and `GraveyardCreatureOfSubtype("Zombie")` (line 38-39) enforces the target must be a creature card with Zombie subtype. The current oracle only requires "Zombie cards" -- any card with the Zombie subtype, not necessarily a creature. Low severity since Zombie is a creature subtype and non-creature Zombie cards are extremely rare in practice.
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Choose one —
+• Return target creature card from your graveyard to your hand.
+• Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text field says "Zombie creature cards" but oracle says "Zombie cards"** (`mtg-engine/src/cards/isd/ghoulcallers_chant.rs` line 24):
+   - Oracle text says: `Return two target Zombie cards from your graveyard to your hand.`
+   - Code oracle_text says: `Return two target Zombie creature cards from your graveyard to your hand.`
+   - The word "creature" is added in the code but not present in the current oracle text. The targeting requirement `GraveyardCreatureOfSubtype("Zombie")` also enforces creature type, which is technically more restrictive. Low severity since only creatures have the Zombie subtype in practice.
+
+Card data verified correct: mana cost {B}, card_types (Sorcery), no supertypes, no subtypes, no P/T, no keywords. oracle_text structure (modal with two modes) correct. Uses `move_spell_after_resolve`: correct. Modal targeting via `TargetRequirement::ModalChoice` with `GraveyardCreature` for mode 1 and `TwoTargets(GraveyardCreatureOfSubtype("Zombie"), GraveyardCreatureOfSubtype("Zombie"))` for mode 2: correct structure. `is_valid_target` checks `o.zone == Zone::Graveyard && o.owner == caster`: correct (both modes target "your graveyard"). `on_resolve` iterates targets and moves each from graveyard to hand: correct.
+
+### Tricky interactions checked
+- Mode 1 returns any creature card: pass
+- Mode 2 returns exactly two Zombie cards: pass
+- Cannot target opponent's graveyard: pass (is_valid_target checks owner)
+- Mode 2 not available with fewer than 2 Zombies: pass (tested)
+- Mixed graveyard (some Zombies, some non-Zombies): pass (tested)
+
+### Test coverage
+- Mode 1 returns creature: `mtg-engine/tests/ghoulcallers_chant.rs:22` (mode1_returns_one_creature_from_graveyard)
+- Mode 2 returns two Zombies: `mtg-engine/tests/ghoulcallers_chant.rs:38` (mode2_returns_two_zombies_from_graveyard)
+- Legal actions include mode 1: `mtg-engine/tests/ghoulcallers_chant.rs:61` (legal_actions_include_mode1_single_creature)
+- Legal actions include mode 2: `mtg-engine/tests/ghoulcallers_chant.rs:88` (legal_actions_include_mode2_two_zombies)
+- No mode 2 for non-Zombies: `mtg-engine/tests/ghoulcallers_chant.rs:119` (legal_actions_no_mode2_for_non_zombies)
+- Cannot target opponent's graveyard: `mtg-engine/tests/ghoulcallers_chant.rs:161` (cannot_target_opponents_graveyard)
+- Mixed graveyard correct modes: `mtg-engine/tests/ghoulcallers_chant.rs:183` (mixed_graveyard_correct_modes)
+- Fizzle (targets leave graveyard before resolution): NOT TESTED

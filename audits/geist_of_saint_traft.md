@@ -61,6 +61,39 @@ Minor issues:
 
 Tests in tier15_cards.rs cover angel creation and exile at end of combat.
 
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Hexproof (This creature can't be the target of spells or abilities your opponents control.)
+Whenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.
+**Type line**: Legendary Creature — Spirit Cleric
+**Status**: ISSUE
+
+### Code issues
+1. **Angel token not exiled if Geist leaves the battlefield before end of combat** (`mtg-engine/src/cards/isd/geist_of_saint_traft.rs` lines 89-104):
+   - Oracle text says: `Exile that token at end of combat.`
+   - Code does: `on_end_combat` reads the angel token ID from `state.get_object(self_id)` (the Geist). The trigger dispatch in `triggers.rs:919` checks `o.zone == Zone::Battlefield` and skips the trigger if the Geist is no longer on the battlefield. This means if the Geist dies during combat, the Angel token is never exiled. Per MTG rules, "Exile that token at end of combat" creates a delayed triggered ability that fires independently of the source.
+
+2. **Angel token tracking overwrites on multiple combats** (`mtg-engine/src/cards/isd/geist_of_saint_traft.rs` line 82):
+   - Oracle text says: `Exile that token at end of combat.`
+   - Code does: `obj.card_state.insert("angel_token".into(), token_id)` which uses HashMap insert, overwriting any previous value. If Geist attacks in multiple combat phases (extra combat steps), only the last angel token ID is tracked and earlier ones would not be exiled. Minor edge case.
+
+Card data verified correct: mana cost {1}{W}{U}, supertypes (Legendary), card_types (Creature), subtypes (Spirit, Cleric), P/T (2/2), keywords (Hexproof), oracle_text matches. triggered_abilities correctly declares Attacks + EndCombat. on_attacks creates 4/4 white Angel token with Flying, subtypes ["Angel"], tapped and attacking. on_resolve moves to battlefield and sets is_legendary. Uses `move_object` for entering battlefield (correct for creature). No anti-patterns in damage handling or spell cleanup.
+
+### Tricky interactions checked
+- Angel token enters attacking without being declared as attacker: correctly handled (no "attacks" trigger fires on the token)
+- Hexproof prevents targeting by opponent: pass (keyword declared)
+- Token subtypes ("Angel"): pass (uses create_token_with_subtypes)
+- Geist leaves battlefield before end of combat: ISSUE (angel not exiled)
+- Multiple combat phases (extra combats): ISSUE (only last token tracked)
+
+### Test coverage
+- Angel created on attack: `mtg-engine/tests/tier15_cards.rs:891` (geist_creates_angel_on_attack)
+- Angel exiled at end of combat: `mtg-engine/tests/tier15_cards.rs:914` (geist_angel_exiled_at_end_of_combat)
+- Geist dies before end of combat (angel should still be exiled): NOT TESTED
+- Multiple combat phases: NOT TESTED
+- Ruling: Angel can attack different player/planeswalker: NOT TESTED (acceptable in 2-player engine)
+
 ## Audit — 2026-04-01 14:37
 
 **Oracle text source**: Scryfall via WebSearch (https://scryfall.com/card/voc/155/geist-of-saint-traft, https://scryfall.com/card/isd/213/geist-of-saint-traft)

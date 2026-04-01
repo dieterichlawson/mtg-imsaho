@@ -43,6 +43,49 @@ Findings:
 - No triggered_abilities declared, none needed: correct.
 - Tests found in tier9_cards.rs and inquisitors_flail.rs.
 
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: If equipped creature would deal combat damage, it deals double that damage instead.
+If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.
+Equip {2}
+**Type line**: Artifact — Equipment
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text field says "another source" but oracle says "another creature"** (`mtg-engine/src/cards/isd/inquisitors_flail.rs` line 26):
+   - Oracle text says: `If another creature would deal combat damage to equipped creature`
+   - Code oracle_text says: `If another source would deal combat damage to equipped creature`
+   - The code uses "another source" where the current oracle says "another creature". In practice this is functionally equivalent since only creatures deal combat damage.
+
+Card data verified correct: mana cost {2}, card_types (Artifact), subtypes (Equipment), no P/T, no keywords (Equip is not in the engine's Keyword enum -- it's implemented as an activated ability). continuous_effects contains `DoubleCombatDamage { scope: EffectScope::Attached }`: correctly models both outgoing and incoming damage doubling (combat.rs lines 449-454 check `has_double_combat_damage` for both source and target). Equip {2} activated ability: correct cost, sorcery_speed_only true, targets creature (TargetRequirement::Creature). is_valid_target checks controller == caster: correct (equip only targets own creatures). on_resolve moves to battlefield and sets is_equipment: correct for equipment. on_activate_ability sets attached_to: correct. No triggered_abilities declared: correct (no triggers on this card).
+
+Trample + Flail interaction verified: combat.rs assigns damage to blockers first, then doubles each portion individually. For a 5/5 with trample blocked by 2/2: assigns 2 to blocker (doubled to 4) and 3 to player (doubled to 6). This matches the ruling: "you'll divide the original amount and then double the results."
+
+Multiple Flails verified: combat.rs lines 449-454 check source and target independently. If a creature has two Flails, `has_double_combat_damage(source)` doubles once (x2), then `has_double_combat_damage(target)` would not apply (the creature is the source, not target). Wait -- for OUTGOING damage, only the source check applies (x2 per Flail attached). But the `has_double_combat_damage` check iterates all effects on the creature; if two Flails are attached, each provides a DoubleCombatDamage effect, but `has_double_combat_damage` returns a boolean (true/false), not a count. This means multiple Flails would NOT stack -- the ruling says they should multiply (x4 for 2 Flails, x8 for 3).
+
+### Code issues (additional)
+2. **Multiple Inquisitor's Flails do not stack correctly** (`mtg-engine/src/combat.rs` lines 449-454):
+   - Ruling says: `If a creature is equipped with a second Inquisitor's Flail, combat damage dealt by and dealt to that creature will be multiplied by four.`
+   - Code does: `has_double_combat_damage` returns a boolean. `if has_double_combat_damage(source) { amount *= 2; }` -- this doubles exactly once regardless of how many Flails are attached. Two Flails should quadruple damage, but the code only doubles it.
+
+### Tricky interactions checked
+- Doubles outgoing combat damage: pass (tested)
+- Doubles incoming combat damage: pass (tested)
+- Trample + Flail interaction (divide then double): pass (verified in combat.rs)
+- Multiple Flails stacking: ISSUE (returns boolean, not count-based)
+- Non-combat damage not doubled: pass (only applies to combat damage)
+- Equip only targets own creatures: pass
+
+### Test coverage
+- Doubles damage to player: `mtg-engine/tests/inquisitors_flail.rs:21` (doubles_damage_to_player)
+- Doubles damage to creature: `mtg-engine/tests/inquisitors_flail.rs:44` (doubles_damage_to_creature)
+- Doubles damage taken from blocker: `mtg-engine/tests/inquisitors_flail.rs:67` (doubles_damage_taken_from_blocker)
+- No doubling without Flail: `mtg-engine/tests/inquisitors_flail.rs:90` (no_doubling_without_flail)
+- Multiple Flails stacking (x4): NOT TESTED
+- Ruling: trample + Flail divide-then-double: NOT TESTED
+- Ruling: multiple Flails multiplicative: NOT TESTED
+
 ## Audit — 2026-04-01 12:00
 
 **Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/227/inquisitors-flail), confirmed by Gatherer via WebSearch (https://gatherer.wizards.com/Pages/Card/Details.aspx?name=inquisitor's+flail)

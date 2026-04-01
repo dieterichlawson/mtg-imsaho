@@ -107,3 +107,41 @@ Issue:
   - Oracle text says: `{T}: Draw a card, then discard a card.`
   - Code does: Automatically prefers discarding a creature card (`hand.iter().find(|(_, is_creature)| *is_creature).or(hand.first())`).
   - The player should choose which card to discard. This matters because the player may want to discard a non-creature card to avoid transforming. The code always forces the transform when a creature card is in hand.
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/47/civilized-scholar-homicidal-brute?utm_source=api
+**Oracle text (front)**: {T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.
+**Oracle text (back)**: At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.
+**Type line**: Creature — Human Advisor // Creature — Human Mutant
+**Front P/T**: 0/1
+**Back P/T**: 5/1
+**Rulings**:
+- [2011-09-22] You don't have priority between untapping Civilized Scholar and transforming it.
+- [2011-09-22] If Civilized Scholar attacks, and later in the turn it transforms, Homicidal Brute's last ability won't trigger.
+- [2011-09-22] You'll tap and transform Homicidal Brute even if it couldn't attack.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Automatic discard selection** (`mtg-engine/src/cards/isd/civilized_scholar.rs`, lines 110-115):
+   - Oracle text says: `{T}: Draw a card, then discard a card.`
+   - Code does: Automatically prefers discarding a creature card via `hand.iter().find(|(_, is_creature)| *is_creature).or(hand.first())`. The player should choose which card to discard. This forces a transform whenever a creature card is in hand, removing player agency over whether to transform.
+
+### Tricky interactions checked
+- Draw then discard order: PASS (draws first at line 101, then discards)
+- Untap then transform (no priority between): PASS (lines 129-131 set tapped=false then is_transformed=true atomically, matching ruling)
+- End step transform back only on controller's end step: PASS (line 150 checks `state.active_player != controller`)
+- End step taps before transforming back: PASS (line 159 sets `obj.tapped = true` before `is_transformed = false`)
+- Attack flag tracking: PASS (on_attacks sets flag at line 141, on_end_step checks and clears at lines 154-168)
+- Ruling about Scholar attacking then transforming: PASS (the attack flag is set on the creature regardless of face, so if it attacked as Scholar and later transforms, the flag persists)
+- Ruling about tapping/transforming even if couldn't attack: PASS (end step transform-back is unconditional if didn't attack, line 157 just checks the flag)
+- Discard event emitted: PASS (line 118)
+
+### Test coverage
+- Draw, discard creature, transform: `tier15_cards.rs:1353` (civilized_scholar_draw_discard_creature_transforms)
+- Discard non-creature (should not transform): NOT TESTED
+- Homicidal Brute transforms back on end step if didn't attack: NOT TESTED
+- Homicidal Brute does NOT transform back if attacked: NOT TESTED
+- Ruling: no priority between untap and transform: NOT TESTED (but implemented correctly)
+- Ruling: Scholar attacks then transforms, Brute ability doesn't trigger: NOT TESTED

@@ -72,3 +72,37 @@ Issues found:
 1. **Static ability not enforced** (`/home/user/mtg-imsaho/mtg-engine/src/cards/stony_silence.rs`, lines 7-11):
    - Oracle text says: `Activated abilities of artifacts can't be activated.`
    - Code does: The card is registered with correct card data but the static ability has no in-game effect. The code comments document this as a known limitation: "the engine doesn't have an ability restriction system." No `continuous_effects` entry or other mechanism prevents artifact activated abilities from being used. This means artifacts on the battlefield can freely activate abilities while Stony Silence is in play.
+
+## Audit — 2026-04-01 18:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Activated abilities of artifacts can't be activated.
+**Type line**: Enchantment
+**Status**: ISSUE
+
+### Code issues
+Card data verified correct: name "Stony Silence", mana cost {1}{W} (Generic(1), White), type Enchantment, no subtypes, no supertypes, oracle text matches exactly.
+
+The code comment in `stony_silence.rs` (lines 7-11) claims the engine does not enforce this ability, but this is a **stale comment**. The engine DOES implement Stony Silence's restriction in `engine.rs` (lines 253-273): it checks whether any "Stony Silence" is on the battlefield and skips artifact activated abilities during legal action generation. However:
+
+1. **Mana abilities of artifacts are not blocked** (`/Users/dlaw/mtg/mtg-engine/src/engine.rs`, lines 229-246 vs 253-273):
+   - Oracle ruling says: `No abilities of artifacts can be activated, including mana abilities.`
+   - Code does: The Stony Silence check (lines 253-273) only applies to non-mana activated abilities. The mana abilities section (lines 229-246) does NOT check for Stony Silence, meaning artifact mana abilities (e.g., Sol Ring's `{T}: Add {C}{C}`) can still be activated while Stony Silence is on the battlefield. Per the Scryfall ruling, mana abilities should also be blocked.
+
+2. **Stale code comment** (`/Users/dlaw/mtg/mtg-engine/src/cards/isd/stony_silence.rs`, lines 7-11):
+   - Code says: `Known limitation: the engine doesn't have an ability restriction system. This card is registered for deck building and oracle text purposes, but its static ability is not enforced.`
+   - Reality: The engine DOES enforce the restriction for non-mana activated abilities in `engine.rs` lines 253-273. The comment is outdated and misleading.
+
+### Tricky interactions checked
+- Non-mana activated abilities of artifacts blocked: pass (engine.rs lines 267-273)
+- Mana abilities of artifacts blocked: ISSUE (not implemented, see #1)
+- Only affects artifacts on the battlefield (ruling): pass (action generation only checks battlefield permanents)
+- Triggered abilities unaffected (ruling): pass (only activated abilities are checked)
+- Stony Silence checks by name, not card type: pass (hardcoded name check is functional)
+
+### Test coverage
+- Card data verification: `tests/innistrad_simple_cards.rs` (line 586)
+- Artifact non-mana activated abilities blocked: NOT TESTED
+- Artifact mana abilities blocked: NOT TESTED
+- Non-artifact abilities unaffected: NOT TESTED
+- Triggered abilities of artifacts unaffected: NOT TESTED
