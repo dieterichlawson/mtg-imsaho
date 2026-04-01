@@ -52,7 +52,7 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Unbreathing Horde** — "If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter." Needs per-creature damage interception. (Fixed: added PreventDamageRemoveCounter continuous effect, checked in combat and non-combat damage paths)
 
 ### Player Hexproof
-- [ ] **Witchbane Orb** — "You have hexproof." Needs player targeting restriction in legal_actions (skip spells/abilities targeting a player with hexproof).
+- [x] **Witchbane Orb** — "You have hexproof." Needs player targeting restriction in legal_actions (skip spells/abilities targeting a player with hexproof). (Fixed: added grants_player_hexproof to CardBehavior, player_has_hexproof to GameState, can_target_player check in all player-targeting paths)
 
 ### Planeswalker Damage Redirect
 - [ ] **Curse of the Pierced Heart** — Oracle says "deals 1 damage to that player or a planeswalker that player controls." Needs damage redirect to planeswalker option.

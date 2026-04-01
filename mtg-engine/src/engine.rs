@@ -550,6 +550,15 @@ fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, reg
     true
 }
 
+/// Check if a player can be targeted by a given caster.
+/// Players with hexproof can't be targeted by opponents.
+fn can_target_player(state: &GameState, target_player: PlayerId, caster: PlayerId, registry: &CardRegistry) -> bool {
+    if target_player != caster && state.player_has_hexproof(target_player, registry) {
+        return false;
+    }
+    true
+}
+
 /// Generate CastSpell actions with all valid target combinations.
 fn generate_cast_actions_with_targets(
     state: &GameState,
@@ -582,7 +591,7 @@ fn generate_cast_actions_with_targets(
                 }
             }
             for player in &state.players {
-                if !player.lost {
+                if !player.lost && can_target_player(state, player.id, caster, registry) {
                     let target = Target::Player(player.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -613,7 +622,7 @@ fn generate_cast_actions_with_targets(
         TargetRequirement::PlayerOnly => {
             let mut actions = Vec::new();
             for player in &state.players {
-                if !player.lost {
+                if !player.lost && can_target_player(state, player.id, caster, registry) {
                     let target = Target::Player(player.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -767,7 +776,7 @@ fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost {
+                if !p.lost && can_target_player(state, p.id, caster, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, caster, &t, registry) {
                         targets.push(t);
@@ -779,6 +788,7 @@ fn valid_targets_for_req(
         TargetRequirement::PlayerOnly => {
             state.players.iter()
                 .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, caster, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
@@ -921,6 +931,7 @@ fn generate_ability_targets(
         TargetRequirement::PlayerOnly => {
             state.players.iter()
                 .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
@@ -933,7 +944,7 @@ fn generate_ability_targets(
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost {
+                if !p.lost && can_target_player(state, p.id, controller, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, controller, &t, registry) {
                         targets.push(t);

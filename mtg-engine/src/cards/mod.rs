@@ -660,6 +660,9 @@ pub trait CardBehavior: Send + Sync {
         vec![]
     }
 
+    /// Whether this permanent grants its controller hexproof (e.g., Witchbane Orb).
+    fn grants_player_hexproof(&self) -> bool { false }
+
     /// Called after a mana ability is activated. Used for mana abilities with side effects
     /// (e.g., Deranged Assistant mills a card when tapped for mana).
     fn on_activate_mana_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}

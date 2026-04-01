@@ -1017,6 +1017,17 @@ impl GameState {
         }
     }
 
+    /// Check if a player has hexproof (e.g., from Witchbane Orb).
+    pub fn player_has_hexproof(&self, player: PlayerId, registry: &crate::cards::CardRegistry) -> bool {
+        self.objects.values().any(|o| {
+            o.zone == Zone::Battlefield
+                && o.controller == player
+                && registry.get(o.card_id)
+                    .map(|b| b.grants_player_hexproof())
+                    .unwrap_or(false)
+        })
+    }
+
     /// Add counters to a permanent.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
         if let Some(obj) = self.objects.get_mut(&id) {
