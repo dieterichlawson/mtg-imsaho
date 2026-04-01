@@ -3,7 +3,9 @@
 mod common;
 
 use common::*;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::triggers;
@@ -345,6 +347,40 @@ fn nightfall_predator_has_fight_ability() {
         .activated_abilities(&state, ranger);
     assert_eq!(abilities.len(), 1);
     assert!(abilities[0].description.contains("Fight"));
+}
+
+#[test]
+fn nightfall_predator_can_fight_own_creature() {
+    // Per oracle: "{R}, {T}: This creature fights target creature." — no controller restriction.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ranger = named_creature(&mut state, &reg, "Daybreak Ranger", P0);
+    state.get_object_mut(ranger).unwrap().is_transformed = true;
+    state.get_object_mut(ranger).unwrap().name = "Nightfall Predator".into();
+
+    // Own creature to fight.
+    let own_creature = ready_creature(&mut state, P0, 2, 2);
+
+    // Give mana for the {R} cost.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+
+    let new_state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: ranger,
+            ability_index: 0,
+            targets: vec![Target::Object(own_creature)],
+        },
+        &reg,
+    );
+
+    // Both creatures should have dealt damage to each other.
+    // Nightfall Predator is 4/4, own creature is 2/2.
+    assert_eq!(new_state.get_object(own_creature).unwrap().damage_marked, 4,
+        "Own creature should take 4 damage from Nightfall Predator");
+    assert_eq!(new_state.get_object(ranger).unwrap().damage_marked, 2,
+        "Nightfall Predator should take 2 damage from own creature");
 }
 
 // ── Instigator Gang ───────────────────────────────────────────────
