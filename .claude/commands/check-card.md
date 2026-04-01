@@ -39,47 +39,55 @@ You **MUST** obtain the current Oracle text from an authoritative source before 
 
 **Try these approaches in order until one works:**
 
-**Approach 1: Scryfall API via curl**
+**Approach 1: Local oracle cache (ALWAYS try this first)**
+```bash
+python3 scripts/oracle_lookup.py lookup "Card Name"
 ```
-curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Name:', d['name']); print('Cost:', d.get('mana_cost','')); print('Type:', d['type_line']); print('Oracle:', d.get('oracle_text','')); print('P/T:', d.get('power',''), '/', d.get('toughness',''))"
-```
+If the card is in the cache, this is your source of truth. The cache contains verified oracle text with source citations. **Write down the oracle text from the cache output** — this is your single source of truth for the rest of the audit.
 
-For DFCs (double-faced cards), also check card_faces:
-```
-curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'Face {i}: Name={f[\"name\"]}, Type={f.get(\"type_line\",\"\")}, Oracle={f.get(\"oracle_text\",\"\")}, P/T={f.get(\"power\",\"\")} / {f.get(\"toughness\",\"\")}') for i,f in enumerate(d.get('card_faces',[]))]"
-```
+**Approach 2: If not cached, use the oracle-text skill to fetch and cache it**
+Run the `/oracle-text "Card Name"` skill, which will fetch from WebSearch, cache the result, and return the oracle text. If running inside a subagent without access to the skill, do the following manually:
 
-**Approach 2: If curl fails (403, empty response, proxy block), use WebSearch**
-Search for: `{card name} scryfall oracle text`
-The Scryfall card page in search results usually shows the full oracle text in the snippet.
+1. Use WebSearch: `{card name} scryfall oracle text` (restrict to scryfall.com)
+2. If that doesn't show full text: `{card name} MTG oracle text gatherer`
+3. If still not found: `{card name} MTG card text type line` (any source)
 
-**Approach 3: If Scryfall search doesn't show full text, try other sources**
-- Search: `{card name} MTG oracle text gatherer`
-- Search: `{card name} MTG card text type line`
-- Check Gatherer, MTG Wiki, EDHREC, MTGAssist, or any other source that shows current Oracle text
-- Cross-reference multiple sources if needed to confirm accuracy
+**After fetching, immediately cache it:**
+```bash
+python3 scripts/oracle_lookup.py add-card "Card Name" \
+  --mana-cost "{1}{R}" \
+  --type-line "Enchantment — Aura Curse" \
+  --oracle-text "The exact oracle text here..." \
+  --source "Scryfall via WebSearch" \
+  --source-url "https://scryfall.com/card/set/number/card-name"
+```
+For creatures add `--power` and `--toughness`. For DFCs, also run `add-back-face`.
 
 **You are not done until you have the oracle text.** If after all attempts you truly cannot find it, state this explicitly in the audit log — do NOT fall back to your training data and pretend it's authoritative.
 
-**Immediately after fetching, write down the oracle text verbatim.** Copy-paste it exactly — do not paraphrase, summarize, or reword. This written record is your single source of truth for the rest of the audit. All comparisons in later steps MUST reference this written-down text, not your memory. (Why: previous auditors unconsciously drifted from fetched text back to training-data memories mid-audit. Writing it down anchors you to the real text.)
+**Write down the oracle text verbatim** (from cache output or from what you just fetched). Copy-paste it exactly — do not paraphrase, summarize, or reword. This written record is your single source of truth for the rest of the audit. All comparisons in later steps MUST reference this written-down text, not your memory. (Why: previous auditors unconsciously drifted from fetched text back to training-data memories mid-audit. Writing it down anchors you to the real text.)
 
 Record: name, mana cost, type line (including ALL creature subtypes), Oracle text (verbatim), power/toughness, and which source you got it from.
 
 ### 3. Obtain rulings
 
-**Approach 1: Scryfall rulings API**
-```
-curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); uri=d.get('rulings_uri',''); print(uri)"
-```
-Then fetch the rulings URI:
-```
-curl -s "RULINGS_URI" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'{r[\"published_at\"]}: {r[\"comment\"]}') for r in d.get('data',[])]"
-```
+**Approach 1: Check local cache first**
+If you ran `python3 scripts/oracle_lookup.py lookup "Card Name"` in step 2 and rulings were shown, you already have them. Use those.
 
-**Approach 2: If API fails, use WebSearch**
-- Search: `{card name} MTG rulings`
-- Search: `{card name} scryfall rulings`
+**Approach 2: If no cached rulings, fetch via WebSearch**
+- Search: `{card name} scryfall rulings` (restrict to scryfall.com)
+- Search: `{card name} MTG rulings gatherer`
 - Check Gatherer rulings, MTGAssist rulings, or MTG Salvation forums
+
+**After fetching, cache EACH ruling with its source URL:**
+```bash
+python3 scripts/oracle_lookup.py add-ruling "Card Name" \
+  --date "2011-09-22" \
+  --text "The exact ruling text..." \
+  --source "Scryfall rulings via WebSearch" \
+  --source-url "https://scryfall.com/card/set/number/card-name"
+```
+**Every cached ruling MUST have a `--source-url`.** This is mandatory — rulings without source links are unverifiable and useless.
 
 Pay special attention to rulings about timing, targeting, "you may" vs mandatory, "another" vs "a", and "each opponent" vs "target player".
 
