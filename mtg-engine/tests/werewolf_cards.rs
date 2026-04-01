@@ -329,7 +329,7 @@ fn daybreak_ranger_has_activated_ability_on_front_face() {
     let ranger = named_creature(&mut state, &reg, "Daybreak Ranger", P0);
 
     let abilities = reg.get(state.get_object(ranger).unwrap().card_id).unwrap()
-        .activated_abilities(&state, ranger);
+        .activated_abilities(&state, ranger, &reg);
     assert_eq!(abilities.len(), 1);
     assert!(abilities[0].description.contains("flying"));
 }
@@ -342,7 +342,7 @@ fn nightfall_predator_has_fight_ability() {
     state.get_object_mut(ranger).unwrap().is_transformed = true;
 
     let abilities = reg.get(state.get_object(ranger).unwrap().card_id).unwrap()
-        .activated_abilities(&state, ranger);
+        .activated_abilities(&state, ranger, &reg);
     assert_eq!(abilities.len(), 1);
     assert!(abilities[0].description.contains("Fight"));
 }
@@ -375,7 +375,7 @@ fn ulvenwald_mystics_transforms_and_gains_regenerate() {
 
     // Front face: no activated abilities
     let front_abilities = reg.get(state.get_object(mystics).unwrap().card_id).unwrap()
-        .activated_abilities(&state, mystics);
+        .activated_abilities(&state, mystics, &reg);
     assert_eq!(front_abilities.len(), 0, "Front face should have no activated abilities");
 
     trigger_upkeep(&mut state, &reg);
@@ -384,7 +384,7 @@ fn ulvenwald_mystics_transforms_and_gains_regenerate() {
     assert!(state.get_object(mystics).unwrap().is_transformed);
     assert_eq!(state.effective_power(mystics, &reg).unwrap(), 5);
     let back_abilities = reg.get(state.get_object(mystics).unwrap().card_id).unwrap()
-        .activated_abilities(&state, mystics);
+        .activated_abilities(&state, mystics, &reg);
     assert_eq!(back_abilities.len(), 1, "Ulvenwald Primordials should have regenerate ability");
     assert!(back_abilities[0].description.contains("Regenerate"));
 }

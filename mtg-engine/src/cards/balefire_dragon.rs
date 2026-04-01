@@ -50,10 +50,7 @@ impl CardBehavior for BalefireDragon {
         // Deal that much damage to each of those creatures.
         // This is triggered ability damage, NOT combat damage.
         for creature_id in creatures {
-            if let Some(obj) = state.get_object_mut(creature_id) {
-                obj.damage_marked += amount;
-                obj.damaged_by.push(self_id);
-            }
+            state.mark_damage_on_creature(creature_id, amount, self_id);
             state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                 source: self_id,
                 target: crate::events::DamageTarget::Object(creature_id),

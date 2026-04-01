@@ -51,18 +51,15 @@ impl CardBehavior for SkirsdagCultist {
         if let Some(target) = targets.first() {
             match target {
                 Target::Object(target_id) => {
-                    if let Some(obj) = state.get_object_mut(*target_id) {
-                        if obj.zone == Zone::Battlefield {
-                            obj.damage_marked += 2;
-                            obj.damaged_by.push(_object_id);
-                            let name = obj.name.clone();
-                            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                                source: _object_id,
-                                target: crate::events::DamageTarget::Object(*target_id),
-                                amount: 2,
-                            });
-                            state.log(crate::state::LogLevel::Event, format!("Skirsdag Cultist dealt 2 damage to {}", name));
-                        }
+                    if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                        let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
+                        state.mark_damage_on_creature(*target_id, 2, _object_id);
+                        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                            source: _object_id,
+                            target: crate::events::DamageTarget::Object(*target_id),
+                            amount: 2,
+                        });
+                        state.log(crate::state::LogLevel::Event, format!("Skirsdag Cultist dealt 2 damage to {}", name));
                     }
                 }
                 Target::Player(player_id) => {

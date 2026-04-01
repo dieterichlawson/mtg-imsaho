@@ -550,6 +550,29 @@ fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, reg
     true
 }
 
+/// Check if a player can be targeted by a spell/ability from the given caster.
+/// Returns false if the player has hexproof (e.g. from Witchbane Orb) and the caster is an opponent.
+fn player_can_be_targeted(state: &GameState, target_player: PlayerId, caster: PlayerId, registry: &CardRegistry) -> bool {
+    if target_player == caster {
+        return true; // can always target yourself
+    }
+    // Check if any permanent controlled by target_player grants them hexproof.
+    for obj in state.all_objects_in_zone(Zone::Battlefield) {
+        if obj.controller != target_player {
+            continue;
+        }
+        let card_data = registry.card_data(obj.card_id);
+        if let Some(data) = card_data {
+            for effect in &data.continuous_effects {
+                if matches!(effect, ContinuousEffect::GrantPlayerHexproof) {
+                    return false;
+                }
+            }
+        }
+    }
+    true
+}
+
 /// Generate CastSpell actions with all valid target combinations.
 fn generate_cast_actions_with_targets(
     state: &GameState,
@@ -582,7 +605,7 @@ fn generate_cast_actions_with_targets(
                 }
             }
             for player in &state.players {
-                if !player.lost {
+                if !player.lost && player_can_be_targeted(state, player.id, caster, registry) {
                     let target = Target::Player(player.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -613,7 +636,7 @@ fn generate_cast_actions_with_targets(
         TargetRequirement::PlayerOnly => {
             let mut actions = Vec::new();
             for player in &state.players {
-                if !player.lost {
+                if !player.lost && player_can_be_targeted(state, player.id, caster, registry) {
                     let target = Target::Player(player.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -628,7 +651,7 @@ fn generate_cast_actions_with_targets(
         TargetRequirement::PlayerOrPlaneswalker => {
             let mut actions = Vec::new();
             for player in &state.players {
-                if !player.lost {
+                if !player.lost && player_can_be_targeted(state, player.id, caster, registry) {
                     let target = Target::Player(player.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -784,7 +807,7 @@ fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost {
+                if !p.lost && player_can_be_targeted(state, p.id, caster, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, caster, &t, registry) {
                         targets.push(t);
@@ -795,14 +818,14 @@ fn valid_targets_for_req(
         }
         TargetRequirement::PlayerOnly => {
             state.players.iter()
-                .filter(|p| !p.lost)
+                .filter(|p| !p.lost && player_can_be_targeted(state, p.id, caster, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
         TargetRequirement::PlayerOrPlaneswalker => {
             let mut targets: Vec<Target> = state.players.iter()
-                .filter(|p| !p.lost)
+                .filter(|p| !p.lost && player_can_be_targeted(state, p.id, caster, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
@@ -895,14 +918,14 @@ fn generate_ability_targets(
         }
         TargetRequirement::PlayerOnly => {
             state.players.iter()
-                .filter(|p| !p.lost)
+                .filter(|p| !p.lost && player_can_be_targeted(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
         }
         TargetRequirement::PlayerOrPlaneswalker => {
             let mut targets: Vec<Target> = state.players.iter()
-                .filter(|p| !p.lost)
+                .filter(|p| !p.lost && player_can_be_targeted(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
@@ -924,7 +947,7 @@ fn generate_ability_targets(
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost {
+                if !p.lost && player_can_be_targeted(state, p.id, controller, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, controller, &t, registry) {
                         targets.push(t);
@@ -1583,25 +1606,27 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
 
     match (target, effect) {
         (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name }) => {
-            if let Some(obj) = state.get_object_mut(*id) {
-                if obj.zone == Zone::Battlefield {
-                    let name = obj.name.clone();
-                    if obj.card_types.contains(&CardType::Planeswalker) {
-                        // Damage to planeswalkers removes loyalty counters.
+            let on_bf = state.get_object(*id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false);
+            if on_bf {
+                let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+                let is_pw = state.get_object(*id)
+                    .map(|o| o.card_types.contains(&CardType::Planeswalker))
+                    .unwrap_or(false);
+                if is_pw {
+                    if let Some(obj) = state.get_object_mut(*id) {
                         let loyalty = obj.counters.get(&CounterType::Loyalty).copied().unwrap_or(0);
                         let new_loyalty = loyalty.saturating_sub(*amount as u32);
                         obj.counters.insert(CounterType::Loyalty, new_loyalty);
-                    } else {
-                        obj.damage_marked += amount;
-                        obj.damaged_by.push(*source_id);
                     }
-                    state.events.push(GameEvent::NonCombatDamageDealt {
-                        source: *source_id,
-                        target: crate::events::DamageTarget::Object(*id),
-                        amount: *amount,
-                    });
-                    state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, name));
+                } else {
+                    state.mark_damage_on_creature(*id, *amount, *source_id);
                 }
+                state.events.push(GameEvent::NonCombatDamageDealt {
+                    source: *source_id,
+                    target: crate::events::DamageTarget::Object(*id),
+                    amount: *amount,
+                });
+                state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, name));
             }
         }
         (Target::Player(pid), PendingEffect::DealDamage { amount, source_id, source_name }) => {

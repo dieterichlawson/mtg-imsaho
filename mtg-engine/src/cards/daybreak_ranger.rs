@@ -144,11 +144,8 @@ impl CardBehavior for DaybreakRanger {
             } else {
                 // Daybreak Ranger: deal 2 damage to creature with flying
                 let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-                if let Some(obj) = state.get_object_mut(*target_id) {
-                    if obj.zone == Zone::Battlefield {
-                        obj.damage_marked += 2;
-                        obj.damaged_by.push(object_id);
-                    }
+                if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    state.mark_damage_on_creature(*target_id, 2, object_id);
                 }
                 state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                     source: object_id,

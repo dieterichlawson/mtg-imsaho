@@ -20,18 +20,15 @@ fn exile_and_deal_damage(state: &mut GameState, spell_id: ObjectId, exile_id: Ob
         let target_id = state.get_object(spell_id)
             .and_then(|o| o.card_state.get("damage_target").copied());
         if let Some(target_id) = target_id {
-            if let Some(obj) = state.get_object_mut(target_id) {
-                if obj.zone == Zone::Battlefield {
-                    obj.damage_marked += damage;
-                    obj.damaged_by.push(spell_id);
-                    let name = obj.name.clone();
-                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: spell_id,
-                        target: crate::events::DamageTarget::Object(target_id),
-                        amount: damage,
-                    });
-                    state.log(LogLevel::Event, format!("Corpse Lunge dealt {} damage to {}", damage, name));
-                }
+            if state.get_object(target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
+                state.mark_damage_on_creature(target_id, damage, spell_id);
+                state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                    source: spell_id,
+                    target: crate::events::DamageTarget::Object(target_id),
+                    amount: damage,
+                });
+                state.log(LogLevel::Event, format!("Corpse Lunge dealt {} damage to {}", damage, name));
             }
         }
     }

@@ -1004,6 +1004,37 @@ impl GameState {
         }
     }
 
+    /// Apply damage to a creature, checking for replacement effects like Unbreathing Horde's.
+    /// Returns the actual damage dealt (0 if prevented).
+    pub fn mark_damage_on_creature(&mut self, target_id: ObjectId, amount: u32, source_id: ObjectId) -> u32 {
+        // Check if this creature has the "prevent damage, remove +1/+1 counter" replacement effect.
+        // Currently only Unbreathing Horde has this.
+        let is_unbreathing_horde = self.get_object(target_id)
+            .map(|o| o.name == "Unbreathing Horde")
+            .unwrap_or(false);
+        if is_unbreathing_horde {
+            let counters = self.get_counter_count(target_id, crate::types::CounterType::PlusOnePlusOne);
+            if counters > 0 {
+                // Remove one +1/+1 counter, prevent all the damage.
+                if let Some(obj) = self.get_object_mut(target_id) {
+                    let c = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
+                    *c = c.saturating_sub(1);
+                }
+                self.log(LogLevel::Event,
+                    format!("Unbreathing Horde: {} damage prevented, removed a +1/+1 counter", amount));
+                return 0;
+            }
+            // No counters left — damage is dealt normally (creature will die from SBA).
+        }
+        if let Some(obj) = self.get_object_mut(target_id) {
+            obj.damage_marked += amount;
+            if !obj.damaged_by.contains(&source_id) {
+                obj.damaged_by.push(source_id);
+            }
+        }
+        amount
+    }
+
     /// Add counters to a permanent.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
         if let Some(obj) = self.objects.get_mut(&id) {

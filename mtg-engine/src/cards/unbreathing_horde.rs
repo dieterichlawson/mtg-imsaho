@@ -9,11 +9,8 @@ use crate::types::*;
 /// If Unbreathing Horde would be dealt damage, prevent that damage and remove a
 /// +1/+1 counter from it.
 ///
-/// Simplified: enters with counters, has Indestructible (damage is prevented via
-/// the keyword; counter removal on damage is handled best-effort in on_any_creature_enters).
-/// The damage prevention is approximate since the engine doesn't have per-creature
-/// damage replacement. Instead, we grant Indestructible and rely on SBA to kill it
-/// only when counters reach 0.
+/// Damage prevention is handled by `GameState::mark_damage_on_creature` which
+/// checks for Unbreathing Horde by name and applies the replacement effect.
 pub struct UnbreathingHorde;
 
 impl CardBehavior for UnbreathingHorde {

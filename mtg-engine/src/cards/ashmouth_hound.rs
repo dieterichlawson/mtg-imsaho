@@ -51,18 +51,15 @@ impl CardBehavior for AshmouthHound {
 }
 
 fn deal_1_damage(state: &mut GameState, source: ObjectId, target: ObjectId) {
-    if let Some(obj) = state.get_object_mut(target) {
-        if obj.zone == Zone::Battlefield {
-            obj.damage_marked += 1;
-            obj.damaged_by.push(source);
-            let name = obj.name.clone();
-            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                source,
-                target: crate::events::DamageTarget::Object(target),
-                amount: 1,
-            });
-            state.log(crate::state::LogLevel::Event,
-                format!("Ashmouth Hound deals 1 damage to {}", name));
-        }
+    if state.get_object(target).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        let name = state.get_object(target).map(|o| o.name.clone()).unwrap_or_default();
+        state.mark_damage_on_creature(target, 1, source);
+        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+            source,
+            target: crate::events::DamageTarget::Object(target),
+            amount: 1,
+        });
+        state.log(crate::state::LogLevel::Event,
+            format!("Ashmouth Hound deals 1 damage to {}", name));
     }
 }

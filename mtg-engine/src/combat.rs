@@ -370,14 +370,10 @@ fn deal_damage_to_creature(
     }
 
     let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
-    if let Some(obj) = state.get_object_mut(target) {
-        obj.damage_marked += actual_amount;
-        if has_deathtouch {
+    let dealt = state.mark_damage_on_creature(target, actual_amount, source);
+    if has_deathtouch && dealt > 0 {
+        if let Some(obj) = state.get_object_mut(target) {
             obj.dealt_deathtouch_damage = true;
-        }
-        // Track which creatures dealt damage to this creature (for Abattoir Ghoul).
-        if !obj.damaged_by.contains(&source) {
-            obj.damaged_by.push(source);
         }
     }
     state.events.push(GameEvent::CombatDamageDealt {

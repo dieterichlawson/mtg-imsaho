@@ -93,28 +93,25 @@ impl CardBehavior for OliviaVoldaren {
                 // {1}{R}: Deal 1 damage to ANOTHER target creature. Make it a Vampire. +1/+1 counter on Olivia.
                 if let Some(Target::Object(target_id)) = targets.first() {
                     if *target_id == object_id { return; } // "another" — can't target self
-                    if let Some(target_obj) = state.get_object(*target_id) {
-                        if target_obj.zone == Zone::Battlefield {
-                            // Deal 1 damage.
-                            if let Some(obj) = state.get_object_mut(*target_id) {
-                                obj.damage_marked += 1;
-                                obj.damaged_by.push(object_id);
-                                // Add Vampire subtype if not already present.
-                                if !obj.subtypes.contains(&"Vampire".to_string()) {
-                                    obj.subtypes.push("Vampire".to_string());
-                                }
+                    if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                        // Deal 1 damage.
+                        state.mark_damage_on_creature(*target_id, 1, object_id);
+                        // Add Vampire subtype if not already present.
+                        if let Some(obj) = state.get_object_mut(*target_id) {
+                            if !obj.subtypes.contains(&"Vampire".to_string()) {
+                                obj.subtypes.push("Vampire".to_string());
                             }
-                            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                                source: object_id,
-                                target: crate::events::DamageTarget::Object(*target_id),
-                                amount: 1,
-                            });
-                            // +1/+1 counter on Olivia.
-                            state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-                            let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-                            state.log(crate::state::LogLevel::Event,
-                                format!("Olivia Voldaren deals 1 damage to {}, makes it a Vampire, and gets a +1/+1 counter", target_name));
                         }
+                        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                            source: object_id,
+                            target: crate::events::DamageTarget::Object(*target_id),
+                            amount: 1,
+                        });
+                        // +1/+1 counter on Olivia.
+                        state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
+                        let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
+                        state.log(crate::state::LogLevel::Event,
+                            format!("Olivia Voldaren deals 1 damage to {}, makes it a Vampire, and gets a +1/+1 counter", target_name));
                     }
                 }
             }

@@ -76,10 +76,7 @@ impl CardBehavior for GarrukRelentless {
                 if let Some((target_id, target_power)) = target {
                     let target_name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
                     // Deal 3 to the creature.
-                    if let Some(obj) = state.get_object_mut(target_id) {
-                        obj.damage_marked += 3;
-                        obj.damaged_by.push(self_id);
-                    }
+                    state.mark_damage_on_creature(target_id, 3, self_id);
                     state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                         source: self_id,
                         target: crate::events::DamageTarget::Object(target_id),

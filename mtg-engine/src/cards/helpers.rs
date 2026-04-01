@@ -49,23 +49,26 @@ pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Targ
     if let Some(target) = targets.first() {
         match target {
             Target::Object(target_id) => {
-                if let Some(obj) = state.get_object_mut(*target_id) {
-                    if obj.zone == Zone::Battlefield {
-                        if obj.card_types.contains(&crate::types::CardType::Planeswalker) {
-                            // Damage to planeswalkers removes loyalty counters.
+                let on_battlefield = state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false);
+                if on_battlefield {
+                    let is_planeswalker = state.get_object(*target_id)
+                        .map(|o| o.card_types.contains(&crate::types::CardType::Planeswalker))
+                        .unwrap_or(false);
+                    if is_planeswalker {
+                        // Damage to planeswalkers removes loyalty counters.
+                        if let Some(obj) = state.get_object_mut(*target_id) {
                             let loyalty = obj.counters.get(&crate::types::CounterType::Loyalty).copied().unwrap_or(0);
                             let new_loyalty = loyalty.saturating_sub(amount as u32);
                             obj.counters.insert(crate::types::CounterType::Loyalty, new_loyalty);
-                        } else {
-                            obj.damage_marked += amount;
-                            obj.damaged_by.push(spell_id);
                         }
-                        state.events.push(GameEvent::NonCombatDamageDealt {
-                            source: spell_id,
-                            target: DamageTarget::Object(*target_id),
-                            amount,
-                        });
+                    } else {
+                        state.mark_damage_on_creature(*target_id, amount, spell_id);
                     }
+                    state.events.push(GameEvent::NonCombatDamageDealt {
+                        source: spell_id,
+                        target: DamageTarget::Object(*target_id),
+                        amount,
+                    });
                 }
             }
             Target::Player(player_id) => {

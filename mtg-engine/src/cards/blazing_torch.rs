@@ -124,10 +124,7 @@ impl CardBehavior for BlazingTorch {
             if let Some(target) = targets.first() {
                 match target {
                     Target::Object(target_id) => {
-                        if let Some(obj) = state.get_object_mut(*target_id) {
-                            obj.damage_marked += 2;
-                            obj.damaged_by.push(damage_source);
-                        }
+                        state.mark_damage_on_creature(*target_id, 2, damage_source);
                         state.events.push(GameEvent::NonCombatDamageDealt {
                             source: damage_source,
                             target: DamageTarget::Object(*target_id),

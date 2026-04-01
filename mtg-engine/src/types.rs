@@ -376,6 +376,9 @@ pub enum ContinuousEffect {
     /// Used by Terror of Kruin Pass: "Each Werewolf you control can't be blocked
     /// except by two or more creatures."
     RequireMinBlockers { min_blockers: u32, scope: EffectScope },
+    /// The controller of this permanent has hexproof (can't be targeted by opponents).
+    /// Used by Witchbane Orb.
+    GrantPlayerHexproof,
 }
 
 /// Condition for conditional effects.

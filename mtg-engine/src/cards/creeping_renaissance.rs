@@ -58,7 +58,8 @@ impl CardBehavior for CreepingRenaissance {
         ];
         for &(sentinel, ref card_type, _label) in &type_checks {
             let has_type = graveyard.iter().any(|o| {
-                registry.card_data(o.card_id)
+                o.card_types.contains(card_type)
+                || registry.card_data(o.card_id)
                     .map(|d| d.card_types.contains(card_type))
                     .unwrap_or(false)
             });
@@ -118,7 +119,8 @@ fn creeping_renaissance_return(state: &mut GameState, spell_id: ObjectId, sentin
     let to_return: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
         .iter()
         .filter(|o| {
-            registry.card_data(o.card_id)
+            o.card_types.contains(&card_type)
+            || registry.card_data(o.card_id)
                 .map(|d| d.card_types.contains(&card_type))
                 .unwrap_or(false)
         })

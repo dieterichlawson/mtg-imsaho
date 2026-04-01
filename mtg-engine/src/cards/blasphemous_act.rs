@@ -50,10 +50,7 @@ impl CardBehavior for BlasphemousAct {
             .map(|o| o.id)
             .collect();
         for id in creatures {
-            if let Some(obj) = state.get_object_mut(id) {
-                obj.damage_marked += 13;
-                obj.damaged_by.push(object_id);
-            }
+            state.mark_damage_on_creature(id, 13, object_id);
             state.events.push(GameEvent::NonCombatDamageDealt {
                 source: object_id,
                 target: DamageTarget::Object(id),

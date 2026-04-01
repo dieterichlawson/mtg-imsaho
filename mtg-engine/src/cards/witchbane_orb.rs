@@ -6,9 +6,6 @@ use crate::types::*;
 /// Witchbane Orb — {4} Artifact.
 /// When Witchbane Orb enters the battlefield, destroy all Curses attached to you.
 /// You have hexproof.
-///
-/// Known limitation: player hexproof is not implemented (would need a new engine
-/// system). The ETB curse destruction is implemented.
 pub struct WitchbaneOrb;
 
 impl CardBehavior for WitchbaneOrb {
@@ -26,7 +23,7 @@ impl CardBehavior for WitchbaneOrb {
             oracle_text: "When Witchbane Orb enters the battlefield, destroy all Curses attached to you.\nYou have hexproof.".into(),
             keywords: vec![],
             flashback_cost: None,
-            continuous_effects: vec![],
+            continuous_effects: vec![ContinuousEffect::GrantPlayerHexproof],
             additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {

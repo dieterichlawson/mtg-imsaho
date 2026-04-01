@@ -238,7 +238,7 @@ fn gutter_grime_creates_ooze_on_creature_death() {
 
     // Should have a counter on Gutter Grime.
     let counters = state.get_object(grime).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+        .counters.get(&CounterType::Slime).copied().unwrap_or(0);
     assert_eq!(counters, 1, "Gutter Grime should have 1 slime counter");
 
     // Should have created an Ooze token.
@@ -337,9 +337,10 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Put creature cards in graveyard.
+    // Put creature cards in graveyard (must have Creature card type set for type check).
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 2, 2);
+        state.get_object_mut(c).unwrap().card_types.push(CardType::Creature);
         state.move_object(c, Zone::Graveyard);
     }
 

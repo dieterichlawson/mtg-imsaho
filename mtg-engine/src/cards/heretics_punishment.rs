@@ -78,11 +78,8 @@ impl CardBehavior for HereticsPunishment {
             if let Some(target) = targets.first() {
                 match target {
                     Target::Object(target_id) => {
-                        if let Some(obj) = state.get_object_mut(*target_id) {
-                            if obj.zone == Zone::Battlefield {
-                                obj.damage_marked += max_mv;
-                                obj.damaged_by.push(object_id);
-                            }
+                        if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                            state.mark_damage_on_creature(*target_id, max_mv, object_id);
                         }
                         state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                             source: object_id,

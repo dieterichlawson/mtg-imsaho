@@ -34,10 +34,7 @@ impl CardBehavior for RollingTemblor {
             .collect();
         for id in creatures {
             if !state.has_keyword(id, Keyword::Flying, registry) {
-                if let Some(obj) = state.get_object_mut(id) {
-                    obj.damage_marked += 2;
-                    obj.damaged_by.push(object_id);
-                }
+                state.mark_damage_on_creature(id, 2, object_id);
                 state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                     source: object_id,
                     target: crate::events::DamageTarget::Object(id),
