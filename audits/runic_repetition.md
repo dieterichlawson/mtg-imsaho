@@ -20,3 +20,19 @@
 
 ## Verdict: FAIL
 - **Targeting is bypassed** — player should choose which exiled flashback card to return
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Return target exiled card with flashback you own to your hand.
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+Previous targeting issue has been fixed. The implementation now uses `TargetRequirement::ExileCard` and implements `is_valid_target` to check that the target is in exile, owned by the caster, and has flashback. The player can now choose which exiled flashback card to return.
+
+Verified correct:
+- Mana cost: {2}{U} -- matches
+- Type: Sorcery -- matches
+- Oracle text: minor word order difference ("card you own with flashback" vs "card with flashback you own") but functionally identical
+- `on_resolve`: moves target from exile to hand, then calls `move_spell_after_resolve(object_id)` -- correct
+- No anti-patterns detected
+- Tests found in `mtg-engine/tests/innistrad_simple_cards.rs`
