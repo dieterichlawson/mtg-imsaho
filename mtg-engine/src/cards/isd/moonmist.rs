@@ -29,41 +29,70 @@ impl CardBehavior for Moonmist {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // Transform all Human Werewolf DFCs (those that have a back face).
-        let humans_to_transform: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && !o.is_transformed)
+        // "Transform all Humans." — any creature currently with the Human subtype
+        // should transform, regardless of which face is showing. This includes:
+        // - Front-face Humans (transform to back face)
+        // - Back-face creatures that are still Human (transform back to front face,
+        //   e.g., Thraben Militia is Human on its back face)
+        let humans_to_transform: Vec<(ObjectId, bool)> = state.objects.values()
+            .filter(|o| o.zone == Zone::Battlefield)
             .filter(|o| {
-                // Check if it's a Human with a back face (i.e., a DFC).
-                let has_human_subtype = o.subtypes.iter().any(|s| s == "Human")
-                    || registry.card_data(o.card_id)
+                // Check if the creature currently has the Human subtype on its
+                // active face. Check instance subtypes first (set when transformed),
+                // then fall back to registry data for the correct face.
+                let has_human_subtype = if !o.subtypes.is_empty() {
+                    o.subtypes.iter().any(|s| s == "Human")
+                } else if o.is_transformed {
+                    // Transformed but no instance subtypes — check back face data.
+                    registry.get(o.card_id)
+                        .and_then(|b| b.back_face_data())
                         .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        .unwrap_or(false);
+                        .unwrap_or(false)
+                } else {
+                    // Not transformed, no instance subtypes — check front face data.
+                    registry.card_data(o.card_id)
+                        .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                        .unwrap_or(false)
+                };
+                // Must be a DFC (has a back face).
                 let has_back_face = registry.get(o.card_id)
                     .and_then(|b| b.back_face_data())
                     .is_some();
                 has_human_subtype && has_back_face
             })
-            .map(|o| o.id)
+            .map(|o| (o.id, o.is_transformed))
             .collect();
 
         let count = humans_to_transform.len();
-        for hid in humans_to_transform {
-            if let Some(obj) = state.get_object_mut(hid) {
-                obj.is_transformed = true;
+        for (hid, was_transformed) in &humans_to_transform {
+            if let Some(obj) = state.get_object_mut(*hid) {
+                obj.is_transformed = !obj.is_transformed;
             }
-            // Update characteristics from back face.
-            if let Some(behavior) = state.get_object(hid).and_then(|o| registry.get(o.card_id)) {
-                if let Some(back) = behavior.back_face_data() {
-                    if let Some(obj) = state.get_object_mut(hid) {
-                        obj.name = back.name.clone();
-                        if let Some(p) = back.power {
-                            obj.power = Some(p);
+            if let Some(behavior) = state.get_object(*hid).and_then(|o| registry.get(o.card_id)) {
+                if *was_transformed {
+                    // Was on back face → transform to front face. Restore front face data.
+                    let front = behavior.card_data();
+                    if let Some(obj) = state.get_object_mut(*hid) {
+                        obj.name = front.name.clone();
+                        obj.power = front.power;
+                        obj.toughness = front.toughness;
+                        obj.keywords = front.keywords.clone();
+                        obj.subtypes = front.subtypes.clone();
+                    }
+                } else {
+                    // Was on front face → transform to back face. Apply back face data.
+                    if let Some(back) = behavior.back_face_data() {
+                        if let Some(obj) = state.get_object_mut(*hid) {
+                            obj.name = back.name.clone();
+                            if let Some(p) = back.power {
+                                obj.power = Some(p);
+                            }
+                            if let Some(t) = back.toughness {
+                                obj.toughness = Some(t);
+                            }
+                            obj.keywords = back.keywords.clone();
+                            obj.subtypes = back.subtypes.clone();
                         }
-                        if let Some(t) = back.toughness {
-                            obj.toughness = Some(t);
-                        }
-                        obj.keywords = back.keywords.clone();
-                        obj.subtypes = back.subtypes.clone();
                     }
                 }
             }

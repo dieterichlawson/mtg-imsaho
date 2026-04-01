@@ -7,6 +7,7 @@
 mod common;
 
 use common::*;
+use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
@@ -83,4 +84,67 @@ fn prevents_non_wolf_combat_damage_to_creature() {
         "Attacker should take no damage when blocker's damage is prevented");
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
         "Blocker should take no damage when attacker's damage is prevented");
+}
+
+/// Moonmist transforms a front-face Human DFC to its back face.
+#[test]
+fn transforms_front_face_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let sentry = named_creature(&mut state, &reg, "Thraben Sentry", P0);
+    assert!(!state.get_object(sentry).unwrap().is_transformed);
+    assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Sentry");
+
+    let moonmist = castable_spell(&mut state, &reg, "Moonmist", P0);
+    let new_state = cast_and_resolve(&state, &reg, moonmist, vec![]);
+
+    assert!(new_state.get_object(sentry).unwrap().is_transformed,
+        "Thraben Sentry should transform to Thraben Militia");
+    assert_eq!(new_state.get_object(sentry).unwrap().name, "Thraben Militia");
+}
+
+/// Moonmist transforms a back-face Human (e.g., Thraben Militia) back to front face.
+/// This is the key fix — Thraben Militia is Human on its back face.
+#[test]
+fn transforms_back_face_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Start with an already-transformed Thraben Sentry (now Thraben Militia).
+    let sentry = named_creature(&mut state, &reg, "Thraben Sentry", P0);
+    if let Some(obj) = state.get_object_mut(sentry) {
+        obj.is_transformed = true;
+        obj.name = "Thraben Militia".into();
+        obj.subtypes = vec!["Human".into(), "Soldier".into()];
+        obj.power = Some(5);
+        obj.toughness = Some(4);
+    }
+
+    let moonmist = castable_spell(&mut state, &reg, "Moonmist", P0);
+    let new_state = cast_and_resolve(&state, &reg, moonmist, vec![]);
+
+    // Should transform back to front face (Thraben Sentry).
+    assert!(!new_state.get_object(sentry).unwrap().is_transformed,
+        "Thraben Militia (back-face Human) should transform back to Thraben Sentry");
+    assert_eq!(new_state.get_object(sentry).unwrap().name, "Thraben Sentry");
+}
+
+/// Non-DFC Humans should not be affected by Moonmist (only DFCs can transform).
+#[test]
+fn does_not_transform_non_dfc_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Elite Inquisitor is a Human but not a DFC.
+    let inquisitor = named_creature(&mut state, &reg, "Elite Inquisitor", P0);
+    assert!(!state.get_object(inquisitor).unwrap().is_transformed);
+
+    let moonmist = castable_spell(&mut state, &reg, "Moonmist", P0);
+    let new_state = cast_and_resolve(&state, &reg, moonmist, vec![]);
+
+    // Should NOT be transformed (not a DFC).
+    assert!(!new_state.get_object(inquisitor).unwrap().is_transformed,
+        "Non-DFC Human should not be affected by Moonmist");
+    assert_eq!(new_state.get_object(inquisitor).unwrap().name, "Elite Inquisitor");
 }
