@@ -15,3 +15,12 @@ Issues:
 3. **Looks at opponent's hand**: The card should let the player choose any nonland card name; it should NOT look at the opponent's hand. Nevermore is a blind naming effect, not a hand-disruption card.
 
 - Tests: tier14_cards.rs has `nevermore_prevents_named_spell` and `nevermore_allows_other_spells`. Tests manually set the named card, so they don't exercise the auto-selection bug.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: As this enchantment enters, choose a nonland card name. Spells with the chosen name can't be cast.
+**Scryfall type line**: Enchantment
+**Status**: ISSUE
+
+1. The card name choice is auto-selected (picks first nonland card from opponent's hand) rather than presenting a choice to the player. Per Oracle text, the controller should choose any nonland card name (not limited to cards in hand). (File: /home/user/mtg-imsaho/mtg-engine/src/cards/nevermore.rs, lines 41-53)
+2. Fallback to "Lightning Bolt" when no card found in opponent's hand is arbitrary and may not be useful. (File: /home/user/mtg-imsaho/mtg-engine/src/cards/nevermore.rs, line 53)

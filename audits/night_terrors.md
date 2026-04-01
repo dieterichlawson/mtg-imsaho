@@ -14,3 +14,11 @@ Issues:
 2. **Auto-selection**: The implementation auto-picks the first nonland card rather than presenting a choice to the caster. However, this is a common simplification in this codebase.
 
 - Tests: tier11_cards.rs has `night_terrors_exiles_nonland_from_hand` and `night_terrors_skips_lands`. Note the test name itself says "exiles" which confirms the bug is baked into the test.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Target player reveals their hand. You choose a nonland card from it. Exile that card.
+**Scryfall type line**: Sorcery
+**Status**: ISSUE
+
+1. The nonland card to exile is auto-selected (first nonland found) rather than presenting a choice to the player. Per Oracle text, "You choose a nonland card" should present a choice. (File: /home/user/mtg-imsaho/mtg-engine/src/cards/night_terrors.rs, lines 45-52)

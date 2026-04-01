@@ -15,3 +15,11 @@
 - Tests: tier15_cards.rs has test `moldgraf_monstrosity_returns_creatures_on_death`.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Trample. When this creature dies, exile it, then return two creature cards at random from your graveyard to the battlefield.
+**Scryfall type line**: Creature — Insect
+**Status**: PASS
+
+No issues found. Trample keyword present. Dies trigger exiles self, then returns up to 2 random creatures from graveyard. Uses controller (actually owner, which is correct since it uses o.owner for the graveyard search). SelfDies trigger kind declared.

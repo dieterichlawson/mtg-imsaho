@@ -14,3 +14,11 @@
 - Tests: flashback.rs has `nightbirds_clutches_taps_creature`, card_mechanics.rs has `nightbirds_clutches_prevents_blocking`.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Up to two target creatures can't block this turn. Flashback {3}{R}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. UpToTargets(2, Creature) targeting. Flashback {3}{R} correct. Applies cant_block via until_end_of_turn_cant_block. Uses move_spell_after_resolve.

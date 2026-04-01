@@ -17,3 +17,11 @@
 - Tests exist in tier15_cards.rs
 
 No issues found. Implementation correctly matches Oracle text with acceptable auto-pay simplification.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card.
+**Scryfall type line**: Creature — Human Soldier
+**Status**: ISSUE
+
+1. The "you may pay {1}" is auto-resolved (auto-pays if mana is available) instead of presenting a choice to the player. This violates the "you may" requirement — should present a yes/no choice. (File: /home/user/mtg-imsaho/mtg-engine/src/cards/mentor_of_the_meek.rs, lines 56-79)

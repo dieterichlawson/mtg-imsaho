@@ -10,3 +10,11 @@ Deathtouch
 - Subtype Snake: correct
 - Keywords Flash and Deathtouch: correct
 - Simple creature with keywords, no complex abilities
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Flash. Deathtouch.
+**Scryfall type line**: Creature — Snake
+**Status**: PASS
+
+No issues found.

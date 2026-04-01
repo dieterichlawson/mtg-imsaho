@@ -13,3 +13,11 @@ Whenever Bloodcrazed Neonate deals combat damage to a player, put a +1/+1 counte
 - on_combat_damage_to_player adds PlusOnePlusOne counter: correct
 - Checks creature is still on battlefield: correct
 - Test exists in tier6_cards.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: This creature attacks each combat if able. Whenever this creature deals combat damage to a player, put a +1/+1 counter on it.
+**Scryfall type line**: Creature — Vampire
+**Status**: PASS
+
+No issues found. ForceAttack and CombatDamageToPlayer trigger both correctly implemented.

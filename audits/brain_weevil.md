@@ -16,3 +16,11 @@ Sacrifice Brain Weevil: Target player discards two cards. Activate only as a sor
 - Discard implementation handles edge case of 2 or fewer cards in hand: correct
 - For 3+ cards, presents choice to target player: correct
 - Tests exist in tier8_cards.rs covering discard and intimidate
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Intimidate. Sacrifice Brain Weevil: Target player discards two cards. Activate only as a sorcery.
+**Scryfall type line**: Creature — Insect
+**Status**: PASS
+
+No issues found. Sacrifice cost, sorcery speed, target player choice, and discard handling all correct.

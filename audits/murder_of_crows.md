@@ -15,3 +15,11 @@
 - Tests: card_fixes.rs has `murder_of_crows_presents_draw_choice`.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flying. Whenever another creature dies, you may draw a card. If you do, discard a card.
+**Scryfall type line**: Creature — Bird
+**Status**: PASS
+
+No issues found. Flying keyword present. "You may" correctly presents a YesNo choice. AnyCreatureDies trigger kind declared. Triggers on any creature death (not just own).

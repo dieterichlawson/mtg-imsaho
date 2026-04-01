@@ -17,3 +17,11 @@ At the beginning of each upkeep, if a player cast two or more spells last turn, 
 - on_upkeep correctly toggles is_transformed and updates name
 - dynamic_pt returns (3,3) when transformed: correct
 - Tests exist in werewolf_cards.rs covering transform and intimidate gain/loss
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: (Front) At the beginning of each upkeep, if no spells were cast last turn, transform Gatstaf Shepherd. (Back) Intimidate. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Gatstaf Howler.
+**Scryfall type line**: Creature — Human Werewolf // Creature — Werewolf
+**Status**: PASS
+
+No issues found. Card data matches Oracle text. Front face subtypes [Human, Werewolf] correct. Back face subtypes [Werewolf] correct. Transform logic correct. Intimidate keyword on back face correct. Tests exist (werewolf_cards.rs).

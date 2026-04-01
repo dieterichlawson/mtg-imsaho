@@ -15,3 +15,11 @@
 - Tests: card_fixes.rs has `morkrut_banshee_can_target_self` test.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Morbid — When this creature enters, if a creature died this turn, target creature gets -4/-4 until end of turn.
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
+
+No issues found. Morbid condition checked correctly. Target choice presented to player. EntersBattlefield trigger kind declared. Can target self (confirmed by test).

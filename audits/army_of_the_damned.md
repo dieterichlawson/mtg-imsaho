@@ -13,3 +13,11 @@ Flashback {7}{B}{B}{B}
 - Tokens enter tapped (obj.tapped = true): correct
 - Uses move_spell_after_resolve: correct
 - Test exists in tier12_cards.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Create thirteen tapped 2/2 black Zombie creature tokens. Flashback {7}{B}{B}{B}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Token creation, tapped state, flashback cost, and move_spell_after_resolve all correct.

@@ -18,3 +18,11 @@
 - Tests: no dedicated test found, but card logic is straightforward
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Mikaeus enters with X +1/+1 counters on it. {T}: Put a +1/+1 counter on Mikaeus. {T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1 counter on each other creature you control.
+**Scryfall type line**: Legendary Creature — Human Cleric
+**Status**: PASS
+
+No issues found. X counters on ETB, tap abilities, counter distribution all correct. Legendary supertype set. Both activated abilities correctly require tap.

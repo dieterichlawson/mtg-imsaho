@@ -12,3 +12,11 @@ Other Spirit creatures you control get +1/+0.
 - Continuous effect: ModifyPT +1/+0 with GlobalOther scope filtering for You + HasSubtype("Spirit"): correct
 - "Other" is correctly handled by GlobalOther (excludes self): correct
 - Test exists in tier5_cards.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Flying. Other Spirit creatures you control get +1/+0.
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
+
+No issues found. GlobalOther scope correctly excludes self. Spirit subtype filter correct.

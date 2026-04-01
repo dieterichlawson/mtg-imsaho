@@ -19,3 +19,11 @@
 - Tests exist in werewolf_cards.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Front: Other Human creatures you control get +1/+1. / At the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck. Back: Other Werewolf and Wolf creatures you control get +1/+1. / At the beginning of your end step, create a 2/2 green Wolf creature token. / At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.
+**Scryfall type line**: Front: Creature — Human Advisor Werewolf / Back: Creature — Werewolf
+**Status**: PASS
+
+No issues found. Front face correctly includes Human/Advisor/Werewolf subtypes. Back face correctly has Werewolf subtype. Continuous effects use GlobalOther with correct filters. Wolf token created with correct subtypes. Transform logic checks spells_cast_last_turn correctly. EndStep trigger correctly limited to controller's end step.

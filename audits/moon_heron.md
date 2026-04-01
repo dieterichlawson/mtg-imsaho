@@ -13,3 +13,11 @@
 - Tests: Used in keywords.rs tests as a flying creature representative.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flying
+**Scryfall type line**: Creature — Spirit Bird
+**Status**: PASS
+
+No issues found. Vanilla creature with flying. Cost {3}{U}, P/T 3/2, subtypes Spirit and Bird all correct.

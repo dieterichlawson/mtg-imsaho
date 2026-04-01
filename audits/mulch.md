@@ -14,3 +14,11 @@
 - Tests: tier11_cards.rs has `mulch_puts_lands_in_hand_and_rest_in_graveyard`.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Reveal the top four cards of your library. Put all land cards revealed this way into your hand and the rest into your graveyard.
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Reveals top 4, separates lands from non-lands, lands to hand, rest to graveyard. Uses move_spell_after_resolve.

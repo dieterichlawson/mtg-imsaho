@@ -13,3 +13,11 @@ Flashback {5}{U}{U}
 - Checks target is still on battlefield before creating copy: correct
 - Uses move_spell_after_resolve: correct
 - Tests exist in tier12_cards.rs covering token copy creation and flashback
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Create a token that's a copy of target creature you control. Flashback {5}{U}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Target restriction (you control), token copy creation, flashback cost, and move_spell_after_resolve all correct.

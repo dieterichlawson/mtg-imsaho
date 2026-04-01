@@ -18,3 +18,12 @@ Issues found:
 3. **move_spell_after_resolve called even when spell fizzles**: If no creature is found, the spell should still go to graveyard, but the comment says "the spell fizzles (no effect)" — in real MTG, if you can't pay the additional cost, you can't cast it at all. Since the engine handles this at resolution, move_spell_after_resolve is called regardless, which is fine for cleanup.
 
 Test exists in tier8_cards.rs.
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: As an additional cost to cast this spell, sacrifice a creature. Draw two cards.
+**Scryfall type line**: Instant
+**Status**: ISSUE
+
+1. **Auto-selects sacrifice target** (altars_reap.rs:42-44): Uses `.find()` instead of presenting player choice. Player should choose which creature to sacrifice.
+2. **Sacrifice timing simplified**: Sacrifice happens on resolution instead of as a casting cost. Known engine limitation per code comments.

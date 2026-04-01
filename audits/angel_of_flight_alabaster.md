@@ -15,3 +15,11 @@ At the beginning of your upkeep, return target Spirit card from your graveyard t
 - Uses present_target_choice with mandatory targeting (optional: false): correct — the Oracle text says "return target Spirit" which is mandatory if valid targets exist
 - Uses PendingEffect::ReturnToHand: correct
 - Test exists in tier7_cards.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Flying. At the beginning of your upkeep, return target Spirit card from your graveyard to your hand.
+**Scryfall type line**: Creature — Angel
+**Status**: PASS
+
+No issues found. Trigger correctly limited to controller's upkeep. Target choice presented. Spirit subtype check covers both registry and object subtypes.

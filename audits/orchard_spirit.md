@@ -12,3 +12,11 @@
 - Tests: tier5_cards.rs has `orchard_spirit_not_blocked_by_ground`, `orchard_spirit_blocked_by_flyer`, and `orchard_spirit_blocked_by_reach`. Good coverage.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Orchard Spirit can't be blocked except by creatures with flying or reach.
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
+
+No issues found. BlockRestriction correctly uses Or filter with Flying and Reach. Cost, type, P/T all correct.

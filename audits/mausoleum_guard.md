@@ -15,3 +15,11 @@
 - Tests exist in tier3_cards.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: When this creature dies, create two 1/1 white Spirit creature tokens with flying.
+**Scryfall type line**: Creature — Human Scout
+**Status**: PASS
+
+No issues found.

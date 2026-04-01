@@ -15,3 +15,11 @@ Whenever Balefire Dragon deals combat damage to a player, it deals that much dam
 - Uses NonCombatDamageDealt event for the triggered ability damage: correct (this follow-up damage is not combat damage)
 - Checks self is still on battlefield before triggering: correct
 - Test exists in tier6_cards.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Flying. Whenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls.
+**Scryfall type line**: Creature — Dragon
+**Status**: PASS
+
+No issues found. Triggered damage correctly uses NonCombatDamageDealt (per Scryfall ruling: "The damage dealt by Balefire Dragon's triggered ability isn't combat damage").

@@ -13,3 +13,11 @@
 - Tests: tier2_spells.rs has `naturalize_destroys_enchantment` and `naturalize_cant_target_creature`.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Destroy target artifact or enchantment.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Target validation checks for Artifact or Enchantment. Uses resolve_destroy helper which calls try_destroy. Uses move_spell_after_resolve.

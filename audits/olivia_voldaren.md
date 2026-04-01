@@ -17,3 +17,13 @@ Issues:
 3. **Oracle text mismatch**: The implementation's oracle_text says "Gain control of target Vampire." but Oracle text says "Gain control of target Vampire for as long as you control Olivia Voldaren."
 
 - Tests: No dedicated Olivia Voldaren test file found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flying. {1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren. {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
+**Scryfall type line**: Legendary Creature — Vampire
+**Status**: ISSUE
+
+1. Ability 0 targeting uses TargetFilter::Any which allows targeting Olivia herself, but the Oracle text says "another target creature". The code does check for self-targeting in on_activate_ability (line 95: `if *target_id == object_id { return; }`), but the target filter should exclude self to prevent the player from selecting an invalid target. (File: /home/user/mtg-imsaho/mtg-engine/src/cards/olivia_voldaren.rs, line 52)
+2. Ability 1 target filter uses TargetFilter::Any instead of filtering for Vampires. The Vampire check only happens at resolution time (line 124-127). Should filter for Vampires at targeting time. (File: /home/user/mtg-imsaho/mtg-engine/src/cards/olivia_voldaren.rs, line 68)
+3. Ability 1 Oracle says "Gain control of target Vampire for as long as you control Olivia Voldaren" but the control change is permanent — it doesn't revert if Olivia leaves the battlefield. (File: /home/user/mtg-imsaho/mtg-engine/src/cards/olivia_voldaren.rs, line 129)

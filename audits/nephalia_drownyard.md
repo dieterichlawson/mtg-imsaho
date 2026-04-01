@@ -14,3 +14,11 @@
 - Tests: tier10_cards.rs has `nephalia_drownyard_card_data` and `nephalia_drownyard_mills_three`.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {T}: Add {C}. {1}{U}{B}, {T}: Target player mills three cards.
+**Scryfall type line**: Land
+**Status**: PASS
+
+No issues found. Mana ability produces colorless. Activated ability costs {1}{U}{B} with tap, targets a player, mills 3 cards.

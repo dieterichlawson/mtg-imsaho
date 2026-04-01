@@ -19,3 +19,11 @@
 - Tests exist in tier15_cards.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flying. {1}{U}: Mirror-Mad Phantasm's owner shuffles it into their library. If that player does, they reveal cards from the top of their library until a card named Mirror-Mad Phantasm is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard.
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
+
+No issues found. Ability correctly shuffles into library, reveals cards, finds by name, puts on battlefield or mills entire library. Flying keyword present.

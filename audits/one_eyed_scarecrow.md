@@ -14,3 +14,11 @@
 - Tests: card_mechanics.rs has `one_eyed_scarecrow_debuffs_opponent_flyers`.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Defender. Creatures with flying your opponents control get -1/-0.
+**Scryfall type line**: Artifact Creature — Scarecrow
+**Status**: PASS
+
+No issues found. Artifact Creature types correct. Defender keyword present. Continuous effect correctly uses Global filter with Opponents + HasKeyword(Flying). -1/-0 debuff correct.

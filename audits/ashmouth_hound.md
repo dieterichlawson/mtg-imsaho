@@ -12,3 +12,11 @@
 - on_becomes_blocked deals 1 damage to blocker_id: correct
 - Damage uses NonCombatDamageDealt event: correct (this is triggered ability damage, not combat damage)
 - Test exists in tier12_cards.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature.
+**Scryfall type line**: Creature — Elemental Dog
+**Status**: PASS
+
+No issues found. Subtypes correctly updated to "Dog" per errata. Both trigger kinds present. NonCombatDamageDealt used correctly.

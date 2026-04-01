@@ -15,3 +15,11 @@ At the beginning of your upkeep, target player draws a card and loses 1 life.
 - Uses PendingEffect::DrawAndLoseLife: correct
 - optional: false — correct, this is mandatory
 - Test exists in tier7_cards.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Flying. At the beginning of your upkeep, target player draws a card and loses 1 life.
+**Scryfall type line**: Creature — Demon
+**Status**: PASS
+
+No issues found. Target player choice correctly presented. Upkeep trigger limited to controller's upkeep.

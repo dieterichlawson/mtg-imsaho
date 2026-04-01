@@ -13,3 +13,11 @@
 - Tests: no dedicated test found, but implementation is straightforward
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Create two 2/2 black Zombie creature tokens. Flashback {5}{B}{B}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Tokens created with correct subtypes. Flashback cost {5}{B}{B} is correct. Uses move_spell_after_resolve.

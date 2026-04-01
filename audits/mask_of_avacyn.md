@@ -15,3 +15,11 @@
 - Tests exist in tier9_equipment.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Equipped creature gets +1/+2 and has hexproof. Equip {3}
+**Scryfall type line**: Artifact — Equipment
+**Status**: PASS
+
+No issues found.

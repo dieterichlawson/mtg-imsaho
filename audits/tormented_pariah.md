@@ -20,3 +20,14 @@
 - `on_upkeep` handles transform in both directions -- correct
 - Tests exist in `werewolf_cards.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text (front)**: At the beginning of each upkeep, if no spells were cast last turn, transform Tormented Pariah.
+**Scryfall Oracle text (back)**: At the beginning of each upkeep, if a player cast two or more spells last turn, transform Rampaging Werewolf.
+**Scryfall type line (front)**: Creature — Human Warrior Werewolf
+**Scryfall type line (back)**: Creature — Werewolf
+**Front P/T**: 3/2, **Back P/T**: 6/4
+**Status**: PASS
+
+No issues found.

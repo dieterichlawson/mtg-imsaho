@@ -16,3 +16,12 @@
 **Note on Oracle text:** Scryfall says "trample and haste" (trample listed first), while the implementation oracle_text says "haste and trample" (haste listed first). Both keywords are granted, so this is cosmetic only.
 
 - Tests exist in `tier12_cards.rs`
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Gain control of target creature until end of turn. Untap it. It gains trample and haste until end of turn.
+**Scryfall type line**: Sorcery
+**Mana cost**: {1}{R}{R}
+**Status**: PASS
+
+No issues found.

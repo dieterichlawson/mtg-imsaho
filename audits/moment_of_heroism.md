@@ -15,3 +15,11 @@
 - Tests: keywords.rs has lifelink-related test using Moment of Heroism.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Target creature gets +2/+2 and gains lifelink until end of turn.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly applies +2/+2 and lifelink until end of turn via UntilEndOfTurnEffect and UntilEndOfTurnKeyword. Uses move_spell_after_resolve. Targets a creature.

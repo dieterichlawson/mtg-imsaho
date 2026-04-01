@@ -19,3 +19,12 @@ Issues found:
 3. **Curse subtypes check**: The implementation checks `d.subtypes.iter().any(|s| s == "Curse")`. Curses in Innistrad are "Enchantment — Aura Curse", so the subtype is correct.
 
 Test exists in tier15_cards.rs.
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Deathtouch. When this creature dies, you may search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle.
+**Scryfall type line**: Creature — Human Shaman
+**Status**: ISSUE
+
+1. **"You may" not respected** (bitterheart_witch.rs:40-81): The ability is optional ("you may search") but the code always auto-searches. Should present a yes/no choice to the player.
+2. **"Target player" auto-selected** (bitterheart_witch.rs:42): Always attaches to opponent. Should present player choice since it says "target player" (could target yourself in multiplayer or for specific effects).

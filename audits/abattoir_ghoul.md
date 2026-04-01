@@ -14,3 +14,11 @@ Whenever a creature dealt damage by Abattoir Ghoul this turn dies, you gain life
 - Life gain uses dead_toughness (last-known information): correct
 - Life gain emits LifeChanged event: correct
 - Tests exist in tier6_cards.rs covering life gain, no-gain-if-not-damaged, and last-known-toughness scenarios
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: First strike. Whenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.
+**Scryfall type line**: Creature — Zombie
+**Status**: PASS
+
+No issues found. Card data, behavior, trigger kind, damage tracking, life gain with LifeChanged event all correct. Tests cover main effect, no-damage case, and last-known toughness.

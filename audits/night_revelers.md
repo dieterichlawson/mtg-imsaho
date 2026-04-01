@@ -12,3 +12,11 @@
 - Tests: tier12_cards.rs has `night_revelers_has_haste_with_opponent_human` which tests gaining and losing haste dynamically.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Night Revelers has haste as long as an opponent controls a Human.
+**Scryfall type line**: Creature — Vampire
+**Status**: PASS
+
+No issues found. Conditional haste via ContinuousEffect::ConditionalKeyword with correct condition. Cost, type, P/T all correct.

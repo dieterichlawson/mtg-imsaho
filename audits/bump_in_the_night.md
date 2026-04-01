@@ -14,3 +14,11 @@ Flashback {5}{R} (You may cast this card from your graveyard for its flashback c
 - Uses move_spell_after_resolve: correct
 - Emits LifeChanged event: correct
 - Tests exist in tier2_spells.rs and flashback.rs
+
+## Audit — 2026-04-01 (independent re-audit)
+
+**Scryfall Oracle text**: Target opponent loses 3 life. Flashback {5}{R}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Life loss (not damage) correctly implemented. Opponent-only targeting correct. Flashback cost correct.
