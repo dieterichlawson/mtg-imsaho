@@ -591,6 +591,60 @@ fn stony_silence_card_data() {
     assert_eq!(data.cost.as_ref().unwrap().mana_value(), 2);
 }
 
+#[test]
+fn stony_silence_blocks_artifact_mana_abilities() {
+    // Per ruling: "No abilities of artifacts can be activated, including mana abilities."
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    // Put Sol Ring on the battlefield (artifact with mana ability).
+    let sol_ring = named_creature(&mut state, &reg, "Sol Ring", P0);
+    // Sol Ring isn't a creature — fix the card types.
+    if let Some(obj) = state.get_object_mut(sol_ring) {
+        obj.card_types = vec![CardType::Artifact];
+        obj.power = None;
+        obj.toughness = None;
+    }
+
+    // Without Stony Silence: Sol Ring's mana ability should be available.
+    let actions_before = engine::legal_actions(&state, &reg);
+    let has_mana_ability = actions_before.actions.iter().any(|a| matches!(a, Action::ActivateManaAbility { object_id, .. } if *object_id == sol_ring));
+    assert!(has_mana_ability, "Sol Ring mana ability should be available without Stony Silence");
+
+    // Put Stony Silence on the battlefield.
+    let _stony = named_creature(&mut state, &reg, "Stony Silence", P0);
+
+    // With Stony Silence: Sol Ring's mana ability should be blocked.
+    let actions_after = engine::legal_actions(&state, &reg);
+    let has_mana_ability = actions_after.actions.iter().any(|a| matches!(a, Action::ActivateManaAbility { object_id, .. } if *object_id == sol_ring));
+    assert!(!has_mana_ability, "Sol Ring mana ability should be blocked by Stony Silence");
+}
+
+#[test]
+fn stony_silence_does_not_block_non_artifact_mana() {
+    // Stony Silence should NOT affect non-artifact mana abilities (lands, creatures).
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    // Put a Forest on the battlefield.
+    let forest = named_creature(&mut state, &reg, "Forest", P0);
+    if let Some(obj) = state.get_object_mut(forest) {
+        obj.card_types = vec![CardType::Land];
+        obj.power = None;
+        obj.toughness = None;
+    }
+
+    // Put Stony Silence on the battlefield.
+    let _stony = named_creature(&mut state, &reg, "Stony Silence", P0);
+
+    // Forest mana ability should still work.
+    let actions = engine::legal_actions(&state, &reg);
+    let has_forest_mana = actions.actions.iter().any(|a| matches!(a, Action::ActivateManaAbility { object_id, .. } if *object_id == forest));
+    assert!(has_forest_mana, "Forest mana ability should NOT be blocked by Stony Silence");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Witchbane Orb
 // ══════════════════════════════════════════════════════════════════

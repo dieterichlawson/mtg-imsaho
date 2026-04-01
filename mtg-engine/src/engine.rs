@@ -226,10 +226,23 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     // PassPriority is always available when you have priority.
     actions.push(Action::PassPriority);
 
+    // Check for Stony Silence: no abilities of artifacts can be activated, including mana abilities.
+    let stony_silence_active = state.objects.values().any(|o| {
+        o.zone == Zone::Battlefield && o.name == "Stony Silence"
+    });
+
     // Mana abilities: can activate anytime you have priority.
     // Deduplicate by card_id — if you have 5 untapped Forests, only show one "Tap Forest".
     let mut seen_mana_abilities: Vec<(CardId, usize)> = Vec::new();
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
+        // Stony Silence: skip mana abilities from artifacts.
+        if stony_silence_active {
+            let is_artifact = registry.card_data(obj.card_id)
+                .map(|d| d.card_types.contains(&CardType::Artifact))
+                .unwrap_or(false)
+                || obj.card_types.contains(&CardType::Artifact);
+            if is_artifact { continue; }
+        }
         if let Some(behavior) = registry.get(obj.card_id) {
             let mana_abs = behavior.mana_abilities(state, obj.id);
             for ma in mana_abs {
@@ -249,11 +262,6 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     let is_sorcery_speed = state.step.is_main_phase()
         && state.stack.is_empty()
         && state.active_player == player;
-
-    // Check for Stony Silence: artifact activated abilities can't be activated.
-    let stony_silence_active = state.objects.values().any(|o| {
-        o.zone == Zone::Battlefield && o.name == "Stony Silence"
-    });
 
     // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
     // Check attached permanents too (auras granting abilities to creatures).
