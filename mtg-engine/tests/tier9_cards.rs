@@ -467,6 +467,37 @@ fn blazing_torch_deals_damage_to_creature() {
 }
 
 #[test]
+fn blazing_torch_damage_source_is_torch_not_creature() {
+    // Per ruling: "The source of the damage is Blazing Torch, not the equipped creature."
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(torch).unwrap().attached_to = Some(creature);
+
+    let enemy = ready_creature(&mut state, P1, 3, 3);
+
+    let new_state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: creature,
+            ability_index: 1,
+            targets: vec![Target::Object(enemy)],
+        },
+        &reg,
+    );
+
+    // The damage source tracked on the creature should be the torch, not the equipped creature.
+    let enemy_obj = new_state.get_object(enemy).unwrap();
+    assert!(enemy_obj.damaged_by.contains(&torch),
+        "Damage source should be the torch ({}), not the creature ({}). Got: {:?}",
+        torch, creature, enemy_obj.damaged_by);
+    assert!(!enemy_obj.damaged_by.contains(&creature),
+        "Damage source should NOT be the equipped creature");
+}
+
+#[test]
 fn blazing_torch_equip_ability() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
