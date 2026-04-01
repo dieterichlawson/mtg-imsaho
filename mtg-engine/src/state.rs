@@ -131,6 +131,11 @@ pub struct GameState {
     #[serde(default)]
     pub prevent_non_wolf_werewolf_combat_damage: bool,
 
+    /// X value chosen for the most recently activated X-cost ability.
+    /// Set by the engine before calling on_activate_ability; cards read this.
+    #[serde(default)]
+    pub last_activated_x_value: Option<u32>,
+
     /// Index for trigger processing resumption after a resolution choice.
     #[serde(default)]
     pub trigger_event_index: usize,
@@ -220,6 +225,7 @@ impl GameState {
             spells_cast_this_turn: HashMap::new(),
             spells_cast_last_turn: HashMap::new(),
             prevent_non_wolf_werewolf_combat_damage: false,
+            last_activated_x_value: None,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
         }

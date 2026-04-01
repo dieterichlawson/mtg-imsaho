@@ -61,7 +61,7 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Infernal Plunge** — sacrifice should happen when casting, not at resolution. Needs the casting flow to prompt for additional costs before the spell goes on the stack. (Fixed: added sacrifice field to CastSpell action, engine validates and pays AdditionalCost::SacrificeCreature at cast time, generates one action per eligible creature. Also fixed Altar's Reap.)
 
 ### X-Cost Activated Abilities
-- [ ] **Kessig Wolf Run** — X-cost ability simplified to fixed cost. Needs X-cost support for activated abilities (player chooses X, pays accordingly).
+- [x] **Kessig Wolf Run** — X-cost ability simplified to fixed cost. Needs X-cost support for activated abilities (player chooses X, pays accordingly). (Fixed: engine now detects ManaSymbol::X in ability costs, pays non-X portion and drains remaining pool as X. X value stored in state.last_activated_x_value for card callbacks. Kessig Wolf Run now properly grants +X/+0 and trample.)
 
 ### Double Damage Replacement
 - [ ] **Inquisitor's Flail** — combat damage doubling is approximated via power boost. Needs actual damage multiplication in combat damage step. Also missing defensive doubling entirely.

@@ -286,8 +286,19 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
 
         for (source_card_id, ab) in abilities {
-            // Check mana cost.
-            if !mana::can_pay(mana_pool, &ab.cost) { continue; }
+            // Check mana cost. For X-cost abilities, check that non-X portion is affordable.
+            let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+            if has_x_cost {
+                let non_x_cost = ManaCost::new(
+                    ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                );
+                // Need at least non-X cost + 1 extra mana for X >= 1.
+                // Actually, X can be 0, so just need the non-X portion.
+                // But X=0 is usually pointless — still allow it for correctness.
+                if !mana::can_pay(mana_pool, &non_x_cost) { continue; }
+            } else {
+                if !mana::can_pay(mana_pool, &ab.cost) { continue; }
+            }
             // Check tap cost.
             if ab.requires_tap && obj_tapped { continue; }
             // Check once-per-turn.
@@ -1269,9 +1280,25 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 });
 
             if let Some(ab) = ability {
-                // Pay mana cost.
-                mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)
-                    .expect("legal_actions should have verified mana availability");
+                // Pay mana cost (with X-cost support).
+                let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+                if has_x_cost {
+                    let non_x_cost = ManaCost::new(
+                        ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                    );
+                    let pool = &new_state.get_player(player).mana_pool;
+                    let total_mana = pool.total();
+                    let non_x_amount = non_x_cost.mana_value();
+                    let x = total_mana.saturating_sub(non_x_amount);
+                    mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
+                        .expect("legal_actions should have verified mana availability");
+                    new_state.get_player_mut(player).mana_pool.empty();
+                    new_state.last_activated_x_value = Some(x);
+                } else {
+                    mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)
+                        .expect("legal_actions should have verified mana availability");
+                    new_state.last_activated_x_value = None;
+                }
 
                 // Pay tap cost.
                 if ab.requires_tap {
