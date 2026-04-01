@@ -35,8 +35,8 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Ghoulcaller's Chant** — needs mode selection + graveyard creature targeting (Added ModalChoice, GraveyardCreature, GraveyardCreatureOfSubtype to TargetRequirement)
 - [x] **Graveyard Shovel** — target player exiles a card from their graveyard (player choice). Fixed: targets PlayerOnly, targeted player chooses card via ResolutionChoice.
 - [x] **Memory's Journey** — target player shuffles up to 3 target graveyard cards into library. Fixed: cards must come from one player's graveyard using ModalChoice + GraveyardCardOwnedByCaster/Opponent.
-- [ ] **Purify the Grave** — exile target card from a graveyard (any graveyard, player choice)
-- [ ] **Runic Repetition** — return target exiled flashback card to hand
+- [x] **Purify the Grave** — exile target card from a graveyard (any graveyard, player choice). Already working with GraveyardCard targeting.
+- [x] **Runic Repetition** — return target exiled flashback card to hand. Already working with ExileCard targeting + flashback filter.
 
 ### End of Combat Trigger
 - [ ] **Geist of Saint Traft** — Angel token should be exiled at end of combat, not end step. Needs TriggerKind::EndCombat + PendingTrigger::EndCombatTrigger + on_end_combat hook + StepStarted::EndCombat processing.
