@@ -34,3 +34,23 @@ Verified correct:
 - `on_resolve` calls `move_spell_after_resolve(object_id)` -- correct
 - No anti-patterns detected
 - Tests found in `mtg-engine/tests/moonmist.rs` and `mtg-engine/tests/innistrad_simple_cards.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Transform all Humans. Prevent all combat damage that would be dealt this turn by creatures other than Werewolves and Wolves.
+**Type line**: Instant
+**Status**: ISSUE
+
+Card data correct: name, mana cost ({1}{G}), type (Instant).
+
+Transform logic: transforms all Humans with a back face (DFCs only), updates name/P/T/keywords/subtypes from back face. Correct per rulings ("Moonmist causes any double-faced Human to transform, not just Werewolves") and reminder text.
+
+Combat damage prevention: sets state.prevent_non_wolf_werewolf_combat_damage = true. Correct.
+
+on_resolve calls move_spell_after_resolve(object_id). Correct.
+
+Minor issue:
+1. The code filters on `!o.is_transformed` which means it only transforms front-face Humans to their back face. The oracle says "Transform all Humans" which should also transform any currently-transformed creature whose back face has the Human subtype back to its front face. In practice this is unlikely to matter in Innistrad (Humans are typically front-face), but it is technically incomplete.
+
+Tests in moonmist.rs cover prevention flag, damage prevention to player/creature, and wolf exception. No test for the transform functionality itself, but the damage prevention tests are thorough.

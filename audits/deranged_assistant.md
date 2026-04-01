@@ -41,3 +41,18 @@ Verified correct:
 - Summoning sickness check: yes (`!obj.summoning_sick`) -- correct
 - No anti-patterns detected
 - Tests found in `mtg-engine/tests/innistrad_simple_cards.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: {T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)
+**Type line**: Creature — Human Wizard
+**Status**: PASS
+
+Card data correct: name, mana cost ({1}{U}), type (Creature), subtypes (Human, Wizard), P/T (1/1).
+
+mana_abilities: correctly checks battlefield, untapped, not summoning sick, and library not empty. Produces 1 colorless mana with tap required.
+
+on_activate_mana_ability: mills one card via crate::engine::mill_cards as part of the mana ability cost.
+
+Tests in innistrad_simple_cards.rs cover card data and tapping for colorless mana. No anti-patterns found.

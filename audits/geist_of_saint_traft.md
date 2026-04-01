@@ -39,3 +39,24 @@ Verified correct:
 - `on_resolve`: moves to battlefield, sets `is_legendary` -- correct
 - No anti-patterns detected
 - Tests found in `mtg-engine/tests/tier15_cards.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Hexproof (This creature can't be the target of spells or abilities your opponents control.) / Whenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.
+**Type line**: Legendary Creature — Spirit Cleric
+**Status**: ISSUE
+
+Card data correct: name, mana cost ({1}{W}{U}), supertypes (Legendary), subtypes (Spirit, Cleric), P/T (2/2), keywords (Hexproof).
+
+triggered_abilities correctly declares Attacks and EndCombat triggers.
+
+on_attacks creates a 4/4 white Angel token with flying, tapped and attacking. Token has correct subtypes.
+
+on_end_combat correctly exiles the angel token.
+
+Minor issues:
+1. card_state.insert("angel_token", token_id) uses insert which overwrites previous values. If Geist attacks in multiple combat phases (extra combat steps), only the last angel token ID is tracked and earlier ones would not be exiled. Edge case but a potential bug.
+2. Angel token always attacks state.opponent(controller) rather than allowing choice of defender. Per ruling: "You choose which player or planeswalker the Angel token is attacking." In a 2-player game this is functionally correct, but the implementation doesn't respect multiplayer choice.
+
+Tests in tier15_cards.rs cover angel creation and exile at end of combat.

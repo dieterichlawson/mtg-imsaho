@@ -39,3 +39,18 @@ Verified correct:
 - `on_deals_combat_damage_to_creature`: flips coin via `rand::thread_rng().gen_bool(0.5)`, destroys creature on win via `try_destroy` -- correct
 - No anti-patterns detected (no `CombatDamageDealt` misuse; this correctly uses the creature-specific hook)
 - Tests found in `mtg-engine/tests/tier15_cards.rs` and `mtg-engine/tests/creepy_doll.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Indestructible. Whenever Creepy Doll deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.
+**Type line**: Artifact Creature — Construct
+**Status**: PASS
+
+Card data correct: name, mana cost ({5}), types (Artifact, Creature), subtypes (Construct), P/T (1/1), keywords (Indestructible).
+
+triggered_abilities correctly declares DealsCombatDamageToCreature.
+
+on_deals_combat_damage_to_creature: checks self is on battlefield, flips coin, calls try_destroy on win. Correct.
+
+Tests in creepy_doll.rs are thorough: trigger kind verification, indestructible keyword, trigger fires on combat damage to creature, does NOT fire on combat damage to player, and destroy effect works. No anti-patterns found.
