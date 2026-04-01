@@ -682,6 +682,9 @@ pub trait CardBehavior: Send + Sync {
     /// Called when a target is chosen via ChooseTarget with CardCallbackWithTarget effect.
     fn on_target_chosen(&self, _state: &mut GameState, _self_id: ObjectId, _target: &Target, _registry: &CardRegistry) {}
 
+    /// Called when a number is chosen via ChooseNumber.
+    fn on_number_chosen(&self, _state: &mut GameState, _self_id: ObjectId, _number: u32, _registry: &CardRegistry) {}
+
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.
     /// For permanents: default moves to battlefield.

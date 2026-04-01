@@ -1010,6 +1010,7 @@ impl CliPlayer {
                     }
                     ResolvedChoice::ChosenTarget(None) => "Decline (do nothing)".into(),
                     ResolvedChoice::ChosenCard(id) => Self::perm_name(view, *id),
+                    ResolvedChoice::ChosenNumber(n) => format!("{}", n),
                 }
             }
         }

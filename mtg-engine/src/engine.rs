@@ -204,6 +204,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             .map(|&id| Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) })
                             .collect()
                     }
+                    ResolutionChoiceKind::ChooseCardName { options, .. } => {
+                        options.iter()
+                            .map(|t| Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(t.clone())) })
+                            .collect()
+                    }
+                    ResolutionChoiceKind::ChooseNumber { min, max, .. } => {
+                        (*min..=*max)
+                            .map(|n| Action::ResolveChoice { choice: ResolvedChoice::ChosenNumber(n) })
+                            .collect()
+                    }
                 };
                 LegalActions { actions, combat_prompt: None, castable_spells: vec![] }
             }
@@ -1589,6 +1599,26 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.log(LogLevel::Event, format!("Kept {}", keep_name));
                         new_state.move_spell_after_resolve(*spell_id);
                     }
+                    (ResolutionChoiceKind::ChooseCardName { source_id, .. },
+                     ResolvedChoice::ChosenTarget(Some(crate::actions::Target::Object(card_ref_id)))) => {
+                        // Store the chosen card name on the source permanent.
+                        let chosen_name = new_state.get_object(*card_ref_id)
+                            .map(|o| o.name.clone())
+                            .unwrap_or_default();
+                        if let Some(obj) = new_state.get_object_mut(*source_id) {
+                            obj.instance_oracle_text = Some(format!("nevermore:{}", chosen_name));
+                        }
+                        new_state.log(LogLevel::Event, format!("Named \"{}\"", chosen_name));
+                    }
+                    (ResolutionChoiceKind::ChooseNumber { source_id, .. },
+                     ResolvedChoice::ChosenNumber(number)) => {
+                        let source_card_id = new_state.get_object(*source_id).map(|o| o.card_id);
+                        if let Some(card_id) = source_card_id {
+                            if let Some(behavior) = registry.get(card_id) {
+                                behavior.on_number_chosen(&mut new_state, *source_id, *number, registry);
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -1767,6 +1797,39 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             }
 
             state.move_spell_after_resolve(*spell_id);
+        }
+        (Target::Player(pid), PendingEffect::ForceSacrificeCreature) => {
+            // Target player sacrifices a creature of their choice.
+            let creatures: Vec<Target> = state.objects_in_zone(Zone::Battlefield, *pid)
+                .iter()
+                .filter(|o| o.power.is_some())
+                .map(|o| Target::Object(o.id))
+                .collect();
+            if creatures.len() > 1 {
+                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                    player: *pid,
+                    source: crate::ids::ObjectId(0),
+                    choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                        description: format!("Liliana -2: choose a creature to sacrifice"),
+                        options: creatures,
+                        optional: false,
+                        effect: PendingEffect::SacrificeCreature,
+                    },
+                });
+            } else if creatures.len() == 1 {
+                if let Target::Object(cid) = &creatures[0] {
+                    let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();
+                    crate::destruction::sacrifice(state, *cid, registry);
+                    state.log(LogLevel::Event, format!("p{} sacrificed {}", pid.0, name));
+                }
+            } else {
+                state.log(LogLevel::Event, format!("p{} has no creatures to sacrifice", pid.0));
+            }
+        }
+        (Target::Object(id), PendingEffect::SacrificeCreature) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            crate::destruction::sacrifice(state, *id, registry);
+            state.log(LogLevel::Event, format!("Sacrificed {}", name));
         }
         (_, PendingEffect::CardCallbackWithTarget { source_id }) => {
             let card_id = state.get_object(*source_id).map(|o| o.card_id);

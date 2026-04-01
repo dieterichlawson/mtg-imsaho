@@ -4,11 +4,8 @@ use crate::types::*;
 /// Stony Silence — {1}{W} Enchantment.
 /// Activated abilities of artifacts can't be activated.
 ///
-/// Known limitation: the engine doesn't have an ability restriction system.
-/// This card is registered for deck building and oracle text purposes, but its
-/// static ability is not enforced. Implementing it would require the engine to
-/// check for Stony Silence when generating legal activated ability actions for
-/// artifacts.
+/// Enforcement: the engine checks for Stony Silence on the battlefield when
+/// generating legal activated ability actions and skips artifact abilities.
 pub struct StonySilence;
 
 impl CardBehavior for StonySilence {

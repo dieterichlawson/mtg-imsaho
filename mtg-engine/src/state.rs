@@ -1255,6 +1255,22 @@ pub enum ResolutionChoiceKind {
         revealed: Vec<ObjectId>,
         spell_id: ObjectId,
     },
+    /// Choose a nonland card name from the card pool (Nevermore).
+    /// `options` lists Target::Object IDs that represent card names from the registry.
+    /// The engine stores the chosen name on the source permanent.
+    ChooseCardName {
+        description: String,
+        options: Vec<crate::actions::Target>,
+        source_id: ObjectId,
+    },
+    /// Choose a number from 0..=max (Harvest Pyre: "exile X cards").
+    /// The engine calls `on_number_chosen` on the source card's behavior.
+    ChooseNumber {
+        description: String,
+        min: u32,
+        max: u32,
+        source_id: ObjectId,
+    },
 }
 
 /// What happens when a YesNo choice is answered "yes".
@@ -1313,6 +1329,10 @@ pub enum PendingEffect {
     /// Generic card callback: calls the source card's `on_target_chosen` with the chosen target.
     /// `source_id` is the card that presented the choice.
     CardCallbackWithTarget { source_id: ObjectId },
+    /// Target player sacrifices a creature (Liliana -2).
+    ForceSacrificeCreature,
+    /// Sacrifice the chosen creature.
+    SacrificeCreature,
 }
 
 /// Game result.

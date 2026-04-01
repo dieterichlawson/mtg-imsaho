@@ -58,6 +58,8 @@ pub enum ResolvedChoice {
     ChosenTarget(Option<Target>),
     /// Choose a card from a revealed set.
     ChosenCard(ObjectId),
+    /// Choose a number (Harvest Pyre: how many cards to exile).
+    ChosenNumber(u32),
 }
 
 /// Prompt returned by legal_actions for combat.

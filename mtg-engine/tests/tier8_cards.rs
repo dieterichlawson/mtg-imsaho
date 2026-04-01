@@ -574,6 +574,14 @@ fn harvest_pyre_deals_damage_equal_to_exiled_count() {
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
     let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
 
+    // After resolve, should be awaiting a number choice. Choose to exile all 4.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting number choice");
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenNumber(4) },
+        &reg,
+    );
+
     // All 4 cards should be exiled.
     let exiled_count = state.objects.values()
         .filter(|o| o.zone == Zone::Exile && o.owner == P0)
@@ -619,6 +627,14 @@ fn harvest_pyre_only_exiles_own_graveyard() {
 
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
     let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+
+    // After resolve, choose to exile all 3 of P0's graveyard cards.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting number choice");
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenNumber(3) },
+        &reg,
+    );
 
     // Only P0's 3 cards should be exiled.
     let p0_exiled = state.objects.values()
