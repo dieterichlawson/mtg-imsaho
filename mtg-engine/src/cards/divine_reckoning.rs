@@ -23,7 +23,7 @@ impl CardBehavior for DivineReckoning {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Each player chooses a creature they control, then destroys the rest.\nFlashback {5}{W}{W}".into(),
+            oracle_text: "Each player chooses a creature they control. Destroy the rest.\nFlashback {5}{W}{W}".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),

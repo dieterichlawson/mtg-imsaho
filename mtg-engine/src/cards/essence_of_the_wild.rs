@@ -26,7 +26,7 @@ impl CardBehavior for EssenceOfTheWild {
             subtypes: vec!["Avatar".into()],
             power: Some(6),
             toughness: Some(6),
-            oracle_text: "Creatures you control enter the battlefield as a copy of Essence of the Wild.".into(),
+            oracle_text: "Creatures you control enter as a copy of this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

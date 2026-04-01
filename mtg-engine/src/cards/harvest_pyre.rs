@@ -22,7 +22,7 @@ impl CardBehavior for HarvestPyre {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "As an additional cost to cast Harvest Pyre, exile any number of cards from your graveyard.\nHarvest Pyre deals damage to target creature equal to the number of cards exiled this way.".into(),
+            oracle_text: "As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

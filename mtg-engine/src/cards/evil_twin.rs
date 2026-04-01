@@ -27,7 +27,7 @@ impl CardBehavior for EvilTwin {
             subtypes: vec!["Shapeshifter".into()],
             power: Some(0),
             toughness: Some(0),
-            oracle_text: "You may have Evil Twin enter the battlefield as a copy of any creature on the battlefield, except it has \"{U}{B}, {T}: Destroy target creature with the same name as this creature.\"".into(),
+            oracle_text: "You may have Evil Twin enter as a copy of any creature on the battlefield, except it has \"{U}{B}, {T}: Destroy target creature with the same name as this creature.\"".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

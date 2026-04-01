@@ -45,6 +45,9 @@ impl CardBehavior for BackFromTheBrink {
             return vec![];
         }
         // Only show ability if there's a creature in the graveyard.
+        // NOTE: Oracle says "pay its mana cost" but activated_abilities doesn't have
+        // access to the registry to look up the creature's cost. Using Generic(2) as
+        // an approximation. A proper fix requires adding registry to the trait method.
         let controller = obj.controller;
         let has_creature = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()

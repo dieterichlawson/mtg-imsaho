@@ -23,7 +23,7 @@ impl CardBehavior for CurseOfThePiercedHeart {
             subtypes: vec!["Aura".into(), "Curse".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchant player\nAt the beginning of enchanted player's upkeep, Curse of the Pierced Heart deals 1 damage to that player.".into(),
+            oracle_text: "Enchant player\nAt the beginning of enchanted player's upkeep, Curse of the Pierced Heart deals 1 damage to that player or a planeswalker that player controls.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
