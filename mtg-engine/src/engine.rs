@@ -912,7 +912,16 @@ fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::
         }
         TargetFilter::Noncreature => obj.power.is_none(),
         TargetFilter::Nonblack => !obj.colors.contains(&crate::types::Color::Black),
-        _ => true, // Other filters not yet needed for abilities.
+        TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
+            let has_subtype = subtypes.iter().any(|s| obj.subtypes.contains(s));
+            let has_card_type = card_types.iter().any(|t| obj.card_types.contains(t));
+            has_subtype || has_card_type
+        }
+        TargetFilter::YouControl | TargetFilter::YouDontControl => {
+            // These require caster context not available here; validated elsewhere.
+            true
+        }
+        _ => true, // Other filters (Nonblack, NotSubtypes, etc.) handled by card's is_valid_target.
     }
 }
 

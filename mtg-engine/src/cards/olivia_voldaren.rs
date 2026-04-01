@@ -64,7 +64,7 @@ impl CardBehavior for OliviaVoldaren {
             ]),
             requires_tap: false,
             sacrifice_cost: SacrificeCost::None,
-            target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::Any)),
+            target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::SubtypeOrCardType { subtypes: vec!["Vampire".into()], card_types: vec![] })),
             once_per_turn: false,
             sorcery_speed_only: false,
         });
