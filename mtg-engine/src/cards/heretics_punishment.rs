@@ -35,7 +35,7 @@ impl CardBehavior for HereticsPunishment {
         if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
-                description: "{3}{R}: Reveal top 3, deal damage equal to greatest mana value".into(),
+                description: "{3}{R}: Mill three cards, deal damage equal to greatest mana value".into(),
                 cost: ManaCost::new(vec![
                     ManaSymbol::Generic(3),
                     ManaSymbol::Colored(Color::Red),
@@ -56,7 +56,7 @@ impl CardBehavior for HereticsPunishment {
             Some(o) => o.controller,
             None => return,
         };
-        // Reveal top 3 cards.
+        // Mill three cards.
         let player = state.get_player(controller);
         let reveal_count = std::cmp::min(3, player.library_order.len());
         let revealed: Vec<ObjectId> = player.library_order[..reveal_count].to_vec();
@@ -106,7 +106,7 @@ impl CardBehavior for HereticsPunishment {
             }
         }
 
-        // Mill the revealed cards (move to graveyard per current Oracle errata).
+        // Mill the cards (move to graveyard).
         let to_mill: Vec<ObjectId> = state.get_player_mut(controller)
             .library_order.drain(..reveal_count).collect();
         for card_id in to_mill {
@@ -114,6 +114,6 @@ impl CardBehavior for HereticsPunishment {
         }
 
         state.log(crate::state::LogLevel::Event,
-            format!("Heretic's Punishment revealed {} cards, dealt {} damage", reveal_count, max_mv));
+            format!("Heretic's Punishment milled {} cards, dealt {} damage", reveal_count, max_mv));
     }
 }
