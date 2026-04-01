@@ -722,8 +722,20 @@ impl GameState {
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
-        // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
-        let mut power = if let Some(behavior) = registry.get(obj.card_id) {
+        // Check if this token has dynamic P/T tied to counter count on a source permanent
+        // (e.g., Gutter Grime Ooze tokens whose P/T = slime counters on Gutter Grime).
+        let mut power = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
+            let counter_type_val = obj.card_state.get("pt_source_counter_type")
+                .map(|v| v.0).unwrap_or(0);
+            let counter_type = match counter_type_val {
+                1 => crate::types::CounterType::Slime,
+                _ => crate::types::CounterType::PlusOnePlusOne,
+            };
+            self.get_object(*source_id)
+                .map(|src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
+                .unwrap_or(0)
+        } else if let Some(behavior) = registry.get(obj.card_id) {
+            // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
             if let Some((p, _)) = behavior.dynamic_pt(self, id) {
                 p
             } else {
@@ -755,8 +767,19 @@ impl GameState {
     pub fn effective_toughness(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
-        // Check if this creature's own card has dynamic P/T.
-        let mut toughness = if let Some(behavior) = registry.get(obj.card_id) {
+        // Check if this token has dynamic P/T tied to counter count on a source permanent.
+        let mut toughness = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
+            let counter_type_val = obj.card_state.get("pt_source_counter_type")
+                .map(|v| v.0).unwrap_or(0);
+            let counter_type = match counter_type_val {
+                1 => crate::types::CounterType::Slime,
+                _ => crate::types::CounterType::PlusOnePlusOne,
+            };
+            self.get_object(*source_id)
+                .map(|src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
+                .unwrap_or(0)
+        } else if let Some(behavior) = registry.get(obj.card_id) {
+            // Check if this creature's own card has dynamic P/T.
             if let Some((_, t)) = behavior.dynamic_pt(self, id) {
                 t
             } else {

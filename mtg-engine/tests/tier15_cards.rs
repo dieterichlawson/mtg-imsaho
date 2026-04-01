@@ -215,9 +215,9 @@ fn gutter_grime_creates_ooze_on_creature_death() {
     let behavior = reg.get(state.get_object(grime).unwrap().card_id).unwrap();
     behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, &reg);
 
-    // Should have a counter on Gutter Grime.
+    // Should have a slime counter on Gutter Grime.
     let counters = state.get_object(grime).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+        .counters.get(&CounterType::Slime).copied().unwrap_or(0);
     assert_eq!(counters, 1, "Gutter Grime should have 1 slime counter");
 
     // Should have created an Ooze token.
