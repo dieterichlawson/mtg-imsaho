@@ -378,6 +378,9 @@ pub enum ContinuousEffect {
     /// If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter.
     /// Used by Unbreathing Horde.
     PreventDamageRemoveCounter { scope: EffectScope },
+    /// Double combat damage dealt by and to this creature.
+    /// Used by Inquisitor's Flail.
+    DoubleCombatDamage { scope: EffectScope },
 }
 
 /// Condition for conditional effects.

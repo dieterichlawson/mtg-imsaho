@@ -226,9 +226,9 @@ fn inquisitors_flail_card_data() {
 }
 
 #[test]
-fn inquisitors_flail_doubles_power() {
+fn inquisitors_flail_doubles_combat_damage() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
@@ -236,9 +236,23 @@ fn inquisitors_flail_doubles_power() {
     // Attach the flail.
     state.get_object_mut(flail).unwrap().attached_to = Some(creature);
 
-    // Creature's effective power should be doubled (3 base + 3 from flail = 6).
-    assert_eq!(state.effective_power(creature, &reg), Some(6),
-        "3/3 creature with Inquisitor's Flail should have 6 effective power");
+    // Creature's effective power should NOT be doubled (no more dynamic_pt hack).
+    assert_eq!(state.effective_power(creature, &reg), Some(3),
+        "3/3 creature with Inquisitor's Flail should still show 3 effective power");
+
+    // Set up combat: creature attacks P1 unblocked.
+    state.combat = Some(mtg_engine::state::CombatState {
+        attackers: [(creature, P1)].into_iter().collect(),
+        blocker_assignments: std::collections::HashMap::new(),
+    });
+
+    let life_before = state.get_player(P1).life;
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    let life_after = state.get_player(P1).life;
+
+    // 3 damage doubled = 6 damage.
+    assert_eq!(life_before - life_after, 6,
+        "Inquisitor's Flail should double combat damage to player");
 }
 
 #[test]

@@ -64,7 +64,7 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Kessig Wolf Run** — X-cost ability simplified to fixed cost. Needs X-cost support for activated abilities (player chooses X, pays accordingly). (Fixed: engine now detects ManaSymbol::X in ability costs, pays non-X portion and drains remaining pool as X. X value stored in state.last_activated_x_value for card callbacks. Kessig Wolf Run now properly grants +X/+0 and trample.)
 
 ### Double Damage Replacement
-- [ ] **Inquisitor's Flail** — combat damage doubling is approximated via power boost. Needs actual damage multiplication in combat damage step. Also missing defensive doubling entirely.
+- [x] **Inquisitor's Flail** — combat damage doubling is approximated via power boost. Needs actual damage multiplication in combat damage step. Also missing defensive doubling entirely. (Fixed: removed dynamic_pt power hack, added DoubleCombatDamage continuous effect, damage now properly doubled in deal_damage_to_creature and deal_damage_to_player for both offensive and defensive cases.)
 
 ### Modal Spells
 - [ ] **Creeping Renaissance** — "Choose a permanent type." Needs a mode/type selection UI so the player picks creature/artifact/enchantment/land/planeswalker.

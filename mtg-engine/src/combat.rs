@@ -306,6 +306,16 @@ fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &
     !subtypes.iter().any(|s| s == "Wolf" || s == "Werewolf")
 }
 
+/// Check if a creature has the DoubleCombatDamage effect (e.g., Inquisitor's Flail).
+fn has_double_combat_damage(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
+    state.has_continuous_effect(creature_id, &|e| {
+        match e {
+            crate::types::ContinuousEffect::DoubleCombatDamage { scope } => Some(scope),
+            _ => None,
+        }
+    }, registry)
+}
+
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
 fn has_damage_prevention(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
     state.has_continuous_effect(creature_id, &|e| {
@@ -434,6 +444,15 @@ fn deal_damage_to_creature(
         return;
     }
 
+    // Inquisitor's Flail: double damage if source or target has the effect.
+    let mut amount = amount;
+    if has_double_combat_damage(state, source, registry) {
+        amount *= 2;
+    }
+    if has_double_combat_damage(state, target, registry) {
+        amount *= 2;
+    }
+
     let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
     if let Some(obj) = state.get_object_mut(target) {
         obj.damage_marked += amount;
@@ -481,6 +500,12 @@ fn deal_damage_to_player(
     // Moonmist: prevent combat damage from non-Wolf/non-Werewolf creatures.
     if is_non_wolf_damage_prevented(state, source, registry) {
         return;
+    }
+
+    // Inquisitor's Flail: double damage if source has the effect.
+    let mut amount = amount;
+    if has_double_combat_damage(state, source, registry) {
+        amount *= 2;
     }
 
     let old_life = state.get_player(player).life;
