@@ -96,3 +96,46 @@ Issues found:
 2. **Back face missing Upkeep triggered_abilities declaration**: The back face `triggered_abilities` vec is empty, but the back face has an upkeep transform trigger. The `on_upkeep` handler covers both faces, but the metadata is incomplete.
 
 Tests in `tests/werewolf_cards.rs` cover transform, double strike, and P/T. No graveyard or damage anti-patterns.
+
+## Audit — 2026-04-01 14:38
+
+**Oracle text source**: Scryfall card pages via WebSearch (https://scryfall.com/card/isd/152/kruin-outlaw-terror-of-kruin-pass, https://scryfall.com/card/inr/161/kruin-outlaw-terror-of-kruin-pass)
+**Oracle text (front)**: First strike. At the beginning of each upkeep, if no spells were cast last turn, transform Kruin Outlaw.
+**Oracle text (back)**: Double strike. Werewolves you control have menace. (They can't be blocked except by two or more creatures.) At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.
+**Type line (front)**: Creature — Human Rogue Werewolf
+**Type line (back)**: Creature — Werewolf
+**Front P/T**: 2/2
+**Back P/T**: 3/3
+**Status**: ISSUE
+
+Findings:
+1. **Front face name**: "Kruin Outlaw" -- correct.
+2. **Front mana cost {1}{R}{R}**: Correct (`Generic(1), Red, Red`).
+3. **Front subtypes**: Human/Rogue/Werewolf -- correct.
+4. **Front P/T**: 2/2 -- correct.
+5. **Front keywords**: [FirstStrike] -- correct.
+6. **Front triggered_abilities**: TriggerKind::Upkeep declared. Matches on_upkeep hook. Correct.
+7. **Back face name**: "Terror of Kruin Pass" -- correct.
+8. **Back subtypes**: ["Werewolf"] -- correct.
+9. **Back P/T**: 3/3 via dynamic_pt -- correct.
+10. **Back keywords**: [DoubleStrike] -- correct.
+11. **Transform logic (front to back)**: Checks `total_spells_last_turn == 0 && !state.is_first_turn` (line 15). Correct per oracle: "if no spells were cast last turn."
+12. **Transform logic (back to front)**: Checks `state.spells_cast_last_turn.values().any(|&count| count >= 2)` (line 17). Correct per oracle: "if a player cast two or more spells last turn."
+13. **on_upkeep**: Checks zone, calls should_transform, toggles is_transformed and name. Correct.
+14. **Blocking restriction**: `ContinuousEffect::MinimumBlockers { count: 2, scope: Global(And(You, HasSubtype("Werewolf"))) }`. Mechanically correct for blocking.
+15. **Tests**: Dedicated test file at `mtg-engine/tests/kruin_outlaw.rs` with 5 tests covering: self requires 2 blockers, allows 2 blockers, grants restriction to other werewolves, does not affect non-werewolves, does not affect opponent's werewolves. Thorough coverage.
+
+Issues:
+1. **Back face oracle text uses pre-errata wording** (file: `mtg-engine/src/cards/kruin_outlaw.rs`, line 59):
+   - Oracle text says: `Werewolves you control have menace.`
+   - Code oracle_text says: `Each Werewolf you control can't be blocked except by two or more creatures.`
+   - The card received errata to use the menace keyword. The code's oracle_text field does not reflect this.
+
+2. **Back face grants blocking restriction instead of menace keyword** (file: `mtg-engine/src/cards/kruin_outlaw.rs`, lines 65-71):
+   - Oracle text says: `Werewolves you control have menace.`
+   - Code does: Uses `ContinuousEffect::MinimumBlockers` rather than granting the Menace keyword.
+   - While mechanically equivalent for blocking purposes, this means Werewolves would not be recognized as "having menace" by effects that check for or interact with the menace keyword (e.g., "whenever a creature with menace attacks").
+
+3. **Back face `triggered_abilities` vec is empty** (file: `mtg-engine/src/cards/kruin_outlaw.rs`, line 74):
+   - Oracle text says: `At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.`
+   - Code does: `back_face_data()` has `triggered_abilities: vec![]`. The upkeep trigger is only declared on the front face. The `on_upkeep` handler covers both faces, but the metadata is incomplete. If the engine uses `triggered_abilities` to determine whether to invoke hooks, this could cause the back face transform-back to not trigger.

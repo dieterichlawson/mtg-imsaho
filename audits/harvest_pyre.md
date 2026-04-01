@@ -67,3 +67,42 @@ Findings:
 Issues:
 1. Additional cost (exile cards) is executed at resolve time instead of cast time.
 2. Player cannot choose how many cards to exile -- always exiles all (documented limitation).
+
+## Audit — 2026-04-01 14:38
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/146/harvest-pyre)
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard. Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Mana cost**: {1}{R}
+**Status**: ISSUE
+
+Findings:
+1. **Name**: "Harvest Pyre" -- correct.
+2. **Mana cost {1}{R}**: Correct (`Generic(1), Red`).
+3. **Type (Instant)**: Correct.
+4. **Target requirement (Creature)**: Correct per oracle (`target creature`).
+5. **Spell cleanup**: Uses `state.move_spell_after_resolve(object_id)` (line 77). Correct.
+6. **NonCombatDamageDealt**: Emitted at line 64. Correct.
+7. **`damaged_by` tracking**: Present at line 62 (`obj.damaged_by.push(object_id)`). Correct.
+8. **Only exiles own graveyard**: Filters `o.owner == controller` (line 45). Correct.
+9. **Excludes self from exile**: Filters `o.id != object_id` (line 45). Correct (Harvest Pyre itself may be in graveyard zone during resolution tracking, but this is defensive).
+10. **Tests**: No dedicated test file found. Previously noted in tier8_cards.rs.
+
+Issues:
+1. **Oracle text mismatch** (file: `mtg-engine/src/cards/harvest_pyre.rs`, line 25):
+   - Oracle text says: `As an additional cost to cast this spell, exile X cards from your graveyard. Harvest Pyre deals X damage to target creature.`
+   - Code oracle_text says: `As an additional cost to cast Harvest Pyre, exile any number of cards from your graveyard. Harvest Pyre deals damage to target creature equal to the number of cards exiled this way.`
+   - The current Scryfall oracle uses "X cards" and "X damage" templating. The code uses older wording ("any number of cards" / "equal to the number of cards exiled this way").
+
+2. **Additional cost executed at resolve time instead of cast time** (file: `mtg-engine/src/cards/harvest_pyre.rs`, lines 44-52):
+   - Oracle text says: `As an additional cost to cast this spell, exile X cards from your graveyard.`
+   - Code does: Exiles cards in `on_resolve` (lines 44-52), not at cast time. The `additional_cost` field is `None` (line 29).
+   - Per rules, additional costs are paid during casting. If the spell is countered, the cards should still be exiled (cost already paid), but currently they would not be.
+
+3. **Always exiles all cards instead of player choosing X** (file: `mtg-engine/src/cards/harvest_pyre.rs`, lines 44-47):
+   - Oracle text says: `exile X cards from your graveyard`
+   - Code does: Exiles all graveyard cards (`state.objects.values().filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.id != object_id)`).
+   - The player should choose how many cards (X) to exile. Code comment on line 43 acknowledges this limitation.
+
+4. **Zero damage still targets but deals no damage** (file: `mtg-engine/src/cards/harvest_pyre.rs`, lines 54-75):
+   - When count is 0 (empty graveyard), the code skips damage entirely (goes to the `else` branch at line 73). With the X templating, X=0 is valid and should still resolve (dealing 0 damage to the target). This is a minor edge case difference.

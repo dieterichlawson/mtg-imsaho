@@ -102,3 +102,27 @@ Findings:
 - Anti-pattern check: on_resolve uses move_object to battlefield (correct for planeswalker). No spell-to-graveyard anti-pattern.
 - Uses NonCombatDamageDealt for Garruk's 3 damage: correct.
 - Tests: 6 tests in tier15_cards.rs covering wolf creation, transform at 2 loyalty, back face deathtouch wolf, sacrifice-to-tutor, overrun, and ability list. Reasonable coverage.
+
+## Audit — 2026-04-01 14:37
+
+**Oracle text source**: Scryfall via WebSearch (https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed)
+**Oracle text (front)**: When Garruk Relentless has two or fewer loyalty counters on him, transform him. 0: Garruk Relentless deals 3 damage to target creature. That creature deals damage equal to its power to him. 0: Create a 2/2 green Wolf creature token.
+**Oracle text (back)**: +1: Create a 1/1 black Wolf creature token with deathtouch. -1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle. -3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+**Type line**: Legendary Planeswalker — Garruk // Legendary Planeswalker — Garruk
+**Status**: ISSUE
+
+Confirmed issues (all previously identified, still present):
+
+1. **Transform is not a proper state-triggered ability** (`garruk_relentless.rs` lines 246-257).
+   - Oracle text says: `When Garruk Relentless has two or fewer loyalty counters on him, transform him.`
+   - Code does: Transform check only runs at the end of `on_loyalty_ability`. If Garruk loses loyalty from combat damage or other non-loyalty-ability sources, the transform will not trigger. The `triggered_abilities` vec is empty despite the oracle having this state-triggered ability.
+
+2. **No NonCombatDamageDealt event for creature-to-planeswalker damage** (`garruk_relentless.rs` lines 118-123).
+   - Oracle text says: `That creature deals damage equal to its power to him.`
+   - Code does: Directly decrements loyalty counters via `loyalty.saturating_sub(remove)` without emitting a `NonCombatDamageDealt` event for the creature's damage to Garruk. Only the 3 damage from Garruk to the creature emits an event (line 112-116).
+
+3. **Front face fight ability auto-selects target** (`garruk_relentless.rs` lines 99-103).
+   - Oracle text says: `Garruk Relentless deals 3 damage to target creature.`
+   - Code does: Auto-selects the strongest opponent creature via `max_by_key`. The oracle says "target creature" which should allow the controller to choose any creature (including own creatures), not just the opponent's strongest.
+
+No new issues found. Test coverage is adequate (6 tests in tier15_cards.rs).
