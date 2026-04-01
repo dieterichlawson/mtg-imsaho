@@ -49,7 +49,7 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 
 ### Damage Prevention / Replacement
 - [x] **Moonmist** — "Prevent all combat damage that non-Wolf and non-Werewolf creatures would deal this turn." Needs a combat damage prevention system (per-turn flags checked during deal_combat_damage). (Fixed: added prevent_non_wolf_werewolf_combat_damage flag to GameState, checked in deal_damage_to_creature and deal_damage_to_player)
-- [ ] **Unbreathing Horde** — "If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter." Needs per-creature damage interception.
+- [x] **Unbreathing Horde** — "If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter." Needs per-creature damage interception. (Fixed: added PreventDamageRemoveCounter continuous effect, checked in combat and non-combat damage paths)
 
 ### Player Hexproof
 - [ ] **Witchbane Orb** — "You have hexproof." Needs player targeting restriction in legal_actions (skip spells/abilities targeting a player with hexproof).

@@ -263,6 +263,39 @@ fn deal_damage_step(
     }
 }
 
+/// Check if a creature has a "prevent damage, remove counter" replacement effect
+/// (e.g., Unbreathing Horde). If so, prevent the damage and remove a +1/+1 counter.
+/// Returns true if damage was prevented.
+fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, registry: &CardRegistry) -> bool {
+    let has_effect = state.has_continuous_effect(target, &|e| {
+        match e {
+            crate::types::ContinuousEffect::PreventDamageRemoveCounter { scope } => Some(scope),
+            _ => None,
+        }
+    }, registry);
+    if has_effect {
+        let counter_count = state.get_object(target)
+            .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied())
+            .unwrap_or(0);
+        if counter_count > 0 {
+            if let Some(obj) = state.get_object_mut(target) {
+                let entry = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
+                *entry = entry.saturating_sub(1);
+                if *entry == 0 {
+                    obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
+                }
+            }
+            let name = state.get_object(target).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event,
+                format!("{}: damage prevented, removed a +1/+1 counter", name));
+        }
+        // Damage is always prevented even if no counters remain.
+        true
+    } else {
+        false
+    }
+}
+
 /// Check if a creature's combat damage should be prevented because it's not a Wolf/Werewolf
 /// (set by Moonmist's effect for the rest of the turn).
 fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
@@ -393,6 +426,11 @@ fn deal_damage_to_creature(
 
     // Protection: if target has protection from the source creature, prevent damage.
     if has_protection_from_creature(state, target, source, registry) {
+        return;
+    }
+
+    // Unbreathing Horde: prevent damage, remove counter.
+    if apply_prevent_damage_remove_counter(state, target, registry) {
         return;
     }
 

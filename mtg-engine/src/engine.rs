@@ -1511,7 +1511,31 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
 
     match (target, effect) {
         (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name }) => {
-            if let Some(obj) = state.get_object_mut(*id) {
+            // Check for "prevent damage, remove counter" replacement (Unbreathing Horde).
+            let has_prevent = state.has_continuous_effect(*id, &|e| {
+                match e {
+                    crate::types::ContinuousEffect::PreventDamageRemoveCounter { scope } => Some(scope),
+                    _ => None,
+                }
+            }, registry);
+            if has_prevent {
+                let counter_count = state.get_object(*id)
+                    .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied())
+                    .unwrap_or(0);
+                if counter_count > 0 {
+                    if let Some(obj) = state.get_object_mut(*id) {
+                        let entry = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
+                        *entry = entry.saturating_sub(1);
+                        if *entry == 0 {
+                            obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
+                        }
+                    }
+                    let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+                    state.log(LogLevel::Event,
+                        format!("{}: damage prevented, removed a +1/+1 counter", name));
+                }
+                // Damage prevented — skip normal damage application.
+            } else if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
                     obj.damage_marked += amount;
                     obj.damaged_by.push(*source_id);

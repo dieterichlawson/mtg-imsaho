@@ -8,12 +8,6 @@ use crate::types::*;
 /// other Zombie you control and each Zombie card in your graveyard.
 /// If Unbreathing Horde would be dealt damage, prevent that damage and remove a
 /// +1/+1 counter from it.
-///
-/// Simplified: enters with counters, has Indestructible (damage is prevented via
-/// the keyword; counter removal on damage is handled best-effort in on_any_creature_enters).
-/// The damage prevention is approximate since the engine doesn't have per-creature
-/// damage replacement. Instead, we grant Indestructible and rely on SBA to kill it
-/// only when counters reach 0.
 pub struct UnbreathingHorde;
 
 impl CardBehavior for UnbreathingHorde {
@@ -32,7 +26,9 @@ impl CardBehavior for UnbreathingHorde {
             oracle_text: "Unbreathing Horde enters the battlefield with a +1/+1 counter on it for each other Zombie you control and each Zombie card in your graveyard.\nIf Unbreathing Horde would be dealt damage, prevent that damage and remove a +1/+1 counter from it.".into(),
             keywords: vec![],
             flashback_cost: None,
-            continuous_effects: vec![],
+            continuous_effects: vec![
+                ContinuousEffect::PreventDamageRemoveCounter { scope: EffectScope::OnSelf },
+            ],
             additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
