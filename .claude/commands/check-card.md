@@ -13,8 +13,8 @@ If you need to split work across multiple agents (e.g., auditing many cards in p
 
 ## CRITICAL RULES
 - **DO NOT read any previous audit logs before conducting your audit.** Your audit must be independent. You will write your results to the log AFTER completing your audit.
-- **Scryfall is the ONLY authoritative source for Oracle text.** NEVER trust your training data for card text, types, subtypes, or costs. Cards are errata'd regularly. Always verify via the API.
-- **Do NOT use WebFetch for Scryfall** — it returns 403. Use `curl` via the Bash tool.
+- **You MUST obtain the current Oracle text before auditing.** NEVER trust your training data for card text, types, subtypes, or costs. Cards are errata'd regularly (e.g., "Hound" → "Dog", planeswalker damage redirect removal, "dies" templating changes). Your training data is often WRONG. You must verify from an authoritative external source.
+- **Do NOT mark a card as ISSUE based on your memory of the oracle text.** If you couldn't fetch the oracle text from any source, say so explicitly — do NOT guess.
 
 ## Procedure (repeat for each card)
 
@@ -23,22 +23,39 @@ If you need to split work across multiple agents (e.g., auditing many cards in p
 - Assume the card is real — do NOT question whether a card exists
 - Note which set(s) the card appears in
 
-### 2. Pull the correct Oracle text from Scryfall
-Use the Bash tool to curl the Scryfall API:
+### 2. Obtain the CURRENT Oracle text — THIS IS MANDATORY
+
+You **MUST** obtain the current Oracle text from an authoritative source before proceeding. Do not skip this step. Do not rely on your training data. Oracle text changes over time due to errata, and auditing against stale text produces false positives.
+
+**Try these approaches in order until one works:**
+
+**Approach 1: Scryfall API via curl**
 ```
 curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Name:', d['name']); print('Cost:', d.get('mana_cost','')); print('Type:', d['type_line']); print('Oracle:', d.get('oracle_text','')); print('P/T:', d.get('power',''), '/', d.get('toughness',''))"
 ```
 
-**For DFCs (double-faced cards)**, also check card_faces:
+For DFCs (double-faced cards), also check card_faces:
 ```
 curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'Face {i}: Name={f[\"name\"]}, Type={f.get(\"type_line\",\"\")}, Oracle={f.get(\"oracle_text\",\"\")}, P/T={f.get(\"power\",\"\")} / {f.get(\"toughness\",\"\")}') for i,f in enumerate(d.get('card_faces',[]))]"
 ```
 
-Record: name, mana cost, type line (including ALL creature subtypes), Oracle text, power/toughness.
+**Approach 2: If curl fails (403, empty response, proxy block), use WebSearch**
+Search for: `{card name} scryfall oracle text`
+The Scryfall card page in search results usually shows the full oracle text in the snippet.
 
-**IMPORTANT**: Creature types change over time ("Hound" → "Dog"). Always use the Scryfall result.
+**Approach 3: If Scryfall search doesn't show full text, try other sources**
+- Search: `{card name} MTG oracle text gatherer`
+- Search: `{card name} MTG card text type line`
+- Check Gatherer, MTG Wiki, EDHREC, MTGAssist, or any other source that shows current Oracle text
+- Cross-reference multiple sources if needed to confirm accuracy
 
-### 3. Pull rulings from Scryfall
+**You are not done until you have the oracle text.** If after all attempts you truly cannot find it, state this explicitly in the audit log — do NOT fall back to your training data and pretend it's authoritative.
+
+Record: name, mana cost, type line (including ALL creature subtypes), Oracle text, power/toughness, and which source you got it from.
+
+### 3. Obtain rulings
+
+**Approach 1: Scryfall rulings API**
 ```
 curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); uri=d.get('rulings_uri',''); print(uri)"
 ```
@@ -46,6 +63,12 @@ Then fetch the rulings URI:
 ```
 curl -s "RULINGS_URI" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'{r[\"published_at\"]}: {r[\"comment\"]}') for r in d.get('data',[])]"
 ```
+
+**Approach 2: If API fails, use WebSearch**
+- Search: `{card name} MTG rulings`
+- Search: `{card name} scryfall rulings`
+- Check Gatherer rulings, MTGAssist rulings, or MTG Salvation forums
+
 Pay special attention to rulings about timing, targeting, "you may" vs mandatory, "another" vs "a", and "each opponent" vs "target player".
 
 ### 4. Research community knowledge (for complex cards)
