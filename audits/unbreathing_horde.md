@@ -47,3 +47,20 @@ Verified correct:
 - Note: oracle text in code uses older templating ("Unbreathing Horde enters the battlefield" vs Scryfall's "This creature enters") -- cosmetic only, no functional impact
 - No anti-patterns detected
 - Tests found in `mtg-engine/tests/tier15_cards.rs` and `mtg-engine/tests/unbreathing_horde.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: This creature enters with a +1/+1 counter on it for each other Zombie you control and each Zombie card in your graveyard. If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+Card data correct: name, mana cost ({2}{B}), type (Creature), subtypes (Zombie), P/T (0/0).
+
+ETB logic: counts other battlefield Zombies under controller (excludes self) + graveyard Zombies, adds that many +1/+1 counters. Correct.
+
+Damage prevention: implemented via ContinuousEffect::PreventDamageRemoveCounter with EffectScope::OnSelf. Correct.
+
+triggered_abilities declares EntersBattlefield. Correct.
+
+Tests in unbreathing_horde.rs cover damage prevention with counter removal, still dealing damage to others, and ETB counter count. All correct. No anti-patterns found.

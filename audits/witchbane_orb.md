@@ -40,3 +40,20 @@ Verified correct:
 - Note: `continuous_effects` is empty but hexproof is handled via a dedicated trait method, which is an acceptable pattern
 - No anti-patterns detected
 - Tests found in `mtg-engine/tests/witchbane_orb.rs` and `mtg-engine/tests/innistrad_simple_cards.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: When this artifact enters, destroy all Curses attached to you. You have hexproof. (You can't be the target of spells or abilities your opponents control, including Aura spells.)
+**Type line**: Artifact
+**Status**: PASS
+
+Card data correct: name, mana cost ({4}), type (Artifact).
+
+ETB trigger: finds all Curses attached to controller, destroys via try_destroy. Correct.
+
+Player hexproof: grants_player_hexproof() returns true, used by engine's player_has_hexproof check. Correct.
+
+Oracle text in code uses older "enters the battlefield" template vs current "enters" -- cosmetic only.
+
+Tests in witchbane_orb.rs cover player hexproof grant, opponent targeting prevention, and self-targeting still allowed. Thorough. No anti-patterns found.
