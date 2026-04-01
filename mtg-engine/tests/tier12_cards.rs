@@ -618,3 +618,168 @@ fn angelic_overseer_survives_destroy_with_human() {
     assert_eq!(state.get_object(angel).unwrap().zone, Zone::Battlefield,
         "Angelic Overseer should survive destruction");
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Ancient Grudge
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn ancient_grudge_destroys_artifact() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create an artifact on the battlefield for P1.
+    let artifact_card_id = reg.get_id_by_name("Blazing Torch").unwrap();
+    let artifact = state.create_object(artifact_card_id, P1, Zone::Battlefield, None, None);
+    state.get_object_mut(artifact).unwrap().name = "Blazing Torch".into();
+
+    let spell = castable_spell(&mut state, &reg, "Ancient Grudge", P0);
+    let state = cast_and_resolve(&state, &reg, spell, vec![mtg_engine::actions::Target::Object(artifact)]);
+
+    assert_eq!(state.get_object(artifact).unwrap().zone, Zone::Graveyard,
+        "Ancient Grudge should destroy the artifact");
+}
+
+#[test]
+fn ancient_grudge_has_flashback() {
+    let reg = registry();
+    let card_id = reg.get_id_by_name("Ancient Grudge").unwrap();
+    let data = reg.card_data(card_id).unwrap();
+    assert!(data.flashback_cost.is_some(), "Ancient Grudge should have flashback");
+    assert_eq!(data.flashback_cost.unwrap().mana_value(), 1, "Flashback should cost G = 1 MV");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Armored Skaab
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn armored_skaab_mills_four_on_etb() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put 5 cards in P0's library.
+    for _ in 0..5 {
+        let c = state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Library, None, None);
+        state.get_player_mut(P0).library_order.push(c);
+    }
+
+    let skaab = named_creature(&mut state, &reg, "Armored Skaab", P0);
+    let behavior = reg.get(state.get_object(skaab).unwrap().card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, skaab, &reg);
+
+    // Should have milled 4 cards (1 remaining in library).
+    let gy_count = state.objects.values()
+        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0)
+        .count();
+    assert_eq!(gy_count, 4, "Armored Skaab should mill 4 cards");
+    assert_eq!(state.get_player(P0).library_order.len(), 1, "Should have 1 card left in library");
+}
+
+#[test]
+fn armored_skaab_is_1_4_zombie_warrior() {
+    let reg = registry();
+    let card_id = reg.get_id_by_name("Armored Skaab").unwrap();
+    let data = reg.card_data(card_id).unwrap();
+    assert_eq!(data.power, Some(1));
+    assert_eq!(data.toughness, Some(4));
+    assert!(data.subtypes.contains(&"Zombie".into()));
+    assert!(data.subtypes.contains(&"Warrior".into()));
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Essence of the Wild
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn essence_of_the_wild_transforms_entering_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let essence = named_creature(&mut state, &reg, "Essence of the Wild", P0);
+
+    // Create a 1/1 creature entering under P0's control.
+    let small = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(small).unwrap().name = "Small Creature".into();
+
+    let behavior = reg.get(state.get_object(essence).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, essence, small, P0, &reg);
+
+    // Small creature should now be a 6/6 copy of Essence.
+    let obj = state.get_object(small).unwrap();
+    assert_eq!(obj.power, Some(6), "Should be 6 power");
+    assert_eq!(obj.toughness, Some(6), "Should be 6 toughness");
+    assert_eq!(obj.name, "Essence of the Wild", "Should have Essence's name");
+}
+
+#[test]
+fn essence_of_the_wild_ignores_opponent_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let essence = named_creature(&mut state, &reg, "Essence of the Wild", P0);
+
+    // Create a creature entering under P1's control.
+    let opp = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(opp).unwrap().name = "Opponent Creature".into();
+
+    let behavior = reg.get(state.get_object(essence).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, essence, opp, P1, &reg);
+
+    // Opponent's creature should be unchanged.
+    let obj = state.get_object(opp).unwrap();
+    assert_eq!(obj.power, Some(2), "Opponent's creature should be unchanged");
+    assert_eq!(obj.toughness, Some(2), "Opponent's creature should be unchanged");
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Selhoff Occultist
+// ═══════════════════════════════════════════════════════════════════
+
+#[test]
+fn selhoff_occultist_mills_on_creature_death() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let occultist = named_creature(&mut state, &reg, "Selhoff Occultist", P0);
+
+    // Put a card in P1's library to mill.
+    let lib_card = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Library, None, None);
+    state.get_player_mut(P1).library_order.push(lib_card);
+
+    // Trigger on another creature dying.
+    let dead = ready_creature(&mut state, P1, 1, 1);
+    let behavior = reg.get(state.get_object(occultist).unwrap().card_id).unwrap();
+    behavior.on_any_creature_dies(&mut state, occultist, dead, P1, &[], 1, &reg);
+
+    // Should have a choice to target a player for milling.
+    assert!(state.awaiting_action.is_some(), "Should have a pending target choice");
+
+    // Choose P1 as the target.
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(
+                mtg_engine::actions::Target::Player(P1),
+            )),
+        },
+        &reg,
+    );
+
+    // P1 should have milled 1 card.
+    let gy_count = state.objects.values()
+        .filter(|o| o.zone == Zone::Graveyard && o.owner == P1)
+        .count();
+    assert!(gy_count >= 1, "P1 should have milled at least 1 card");
+}
+
+#[test]
+fn selhoff_occultist_is_2_3_human_rogue() {
+    let reg = registry();
+    let card_id = reg.get_id_by_name("Selhoff Occultist").unwrap();
+    let data = reg.card_data(card_id).unwrap();
+    assert_eq!(data.power, Some(2));
+    assert_eq!(data.toughness, Some(3));
+    assert!(data.subtypes.contains(&"Human".into()));
+    assert!(data.subtypes.contains(&"Rogue".into()));
+}
