@@ -40,3 +40,21 @@
 **Status**: PASS
 
 No issues found. The global "can't be blocked except by two or more creatures" blocking restriction is correctly implemented as a MinimumBlockers continuous effect that applies to all Werewolves controlled by the same player. Tests verify self, other werewolves, non-werewolves, and opponent werewolves are all handled correctly. The MinimumBlockers enforcement is integrated into the combat blocker validation system.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text (front)**: First strike / At the beginning of each upkeep, if no spells were cast last turn, transform Kruin Outlaw.
+**Scryfall Oracle text (back)**: Double strike / Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.) / At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.
+**Scryfall type line (front)**: Creature — Human Rogue Werewolf
+**Scryfall type line (back)**: Creature — Werewolf
+**Status**: ISSUE
+
+Front face: mana cost {1}{R}{R} correct, subtypes Human/Rogue/Werewolf correct, P/T 2/2 correct, FirstStrike keyword correct, Upkeep triggered ability declared correctly.
+
+Back face: P/T 3/3 correct (via dynamic_pt), DoubleStrike keyword correct, subtypes ["Werewolf"] correct.
+
+Issues found:
+1. **Back face oracle text mismatch**: Current Scryfall oracle says "Werewolves you control have menace." The code's oracle_text field and implementation use "Each Werewolf you control can't be blocked except by two or more creatures." While mechanically equivalent (menace = can't be blocked except by 2+), the oracle text in the code does not match the current official oracle wording which grants the menace keyword. The implementation uses `MinimumBlockers` continuous effect rather than granting the menace keyword to all Werewolves, which could matter if other effects interact with the menace keyword specifically.
+2. **Back face missing Upkeep triggered_abilities declaration**: The back face `triggered_abilities` vec is empty, but the back face has "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass." The `on_upkeep` handler does handle both directions, but the metadata is incomplete. This was noted in a previous Kruin Outlaw audit as correct, but the back_face_data's triggered_abilities is empty.
+
+Tests present in `tests/kruin_outlaw.rs` and `tests/werewolf_cards.rs`. No move_object/graveyard or CombatDamageDealt anti-patterns.

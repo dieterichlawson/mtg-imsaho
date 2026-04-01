@@ -27,3 +27,22 @@
 **Status**: PASS
 
 Previous issue (hardcoded creature type) has been fixed. The implementation now uses ChooseCardType resolution choice system presenting all 5 permanent types (Creature, Artifact, Enchantment, Land, Planeswalker). Player selects via ChosenIndex, handler returns all matching cards from graveyard to hand, then calls move_spell_after_resolve. Flashback cost is correct. Multi-type cards (e.g., artifact creatures) are correctly handled since the filter uses `contains`. No issues found.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand. Flashback {5}{G}{G}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+Findings:
+- Mana cost {3}{G}{G}: correct.
+- Type Sorcery: correct.
+- P/T N/A: correct.
+- Flashback cost {5}{G}{G}: correct.
+- on_resolve presents ChooseCardType choice with 5 permanent types (Creature, Artifact, Enchantment, Land, Planeswalker): correct.
+- Resolution handler in engine.rs (line 1608-1641) processes the choice: maps type string to CardType, filters graveyard, moves matching cards to hand, calls move_spell_after_resolve: correct.
+- Anti-pattern check: move_spell_after_resolve is called in the engine handler (line 1640), not move_object to graveyard: correct.
+- No CombatDamageDealt misuse.
+- No triggered_abilities declared, none needed: correct.
+- Tests found in tier15_cards.rs.
+- Previous issue (hardcoded creature type) confirmed still fixed.

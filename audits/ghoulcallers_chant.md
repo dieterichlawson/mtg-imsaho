@@ -20,3 +20,18 @@ NOTE: Current Scryfall oracle text says "Zombie cards" not "Zombie creature card
 Otherwise correct: cost ({B}), type (Sorcery), oracle text structure matches.
 
 ## Verdict: ISSUES FOUND (2 issues)
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Choose one -- / Return target creature card from your graveyard to your hand. / Return two target Zombie cards from your graveyard to your hand.
+**Scryfall type line**: Sorcery
+**Status**: ISSUE
+
+Mana cost {B}: correct. Type Sorcery: correct. Uses `move_spell_after_resolve`: correct (no graveyard anti-pattern). Modal targeting via `TargetRequirement::ModalChoice`: correct structure.
+
+on_resolve: moves each targeted card from graveyard to hand, then calls `move_spell_after_resolve`: correct behavior.
+
+Issues found:
+1. **Mode 2 filters for "Zombie creature cards" but oracle says "Zombie cards"**: The `TargetRequirement` for mode 2 uses `GraveyardCreatureOfSubtype("Zombie")`, which requires the target to be both a creature card and have the Zombie subtype. The current Scryfall oracle text says "two target Zombie cards" (not "Zombie creature cards"). While all Zombie cards in Innistrad are creatures, this is technically a stricter filter than the oracle requires. Low severity since Zombie is a creature subtype and non-creature Zombie cards are extremely rare.
+
+Tests present in `tests/ghoulcallers_chant.rs`, `tests/innistrad_simple_cards.rs`, and `tests/tier11_cards.rs`.

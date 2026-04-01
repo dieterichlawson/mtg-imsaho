@@ -22,3 +22,15 @@
 
 ## Verdict
 **FAIL** -- 1 issue: Creature selection is deterministic (first 2) instead of random.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Trample / When Moldgraf Monstrosity dies, exile it, then return two creature cards at random from your graveyard to the battlefield.
+**Scryfall type line**: Creature — Insect
+**Status**: PASS
+
+Mana cost {4}{G}{G}{G}: correct. Type Creature, subtype Insect: correct. P/T 8/8: correct. Keyword Trample: correct. Triggered ability SelfDies declared: correct.
+
+on_dies behavior: exiles self via `move_object(object_id, Zone::Exile)` (correct, not moving to graveyard), then finds creature cards in controller's graveyard (excluding self since it's now exiled), shuffles them randomly using `rand::thread_rng()` and `SliceRandom::shuffle`, and takes up to 2. This is correct -- the previous audit's "not random" issue has been fixed; the code now imports `rand` and uses `.shuffle(&mut rng)`.
+
+Creatures are moved to battlefield and controller is set: correct. Tests present in `tests/tier15_cards.rs`. No anti-patterns found.

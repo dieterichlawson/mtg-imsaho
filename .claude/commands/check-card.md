@@ -7,6 +7,10 @@ Thoroughly audit Magic: The Gathering card implementations for correctness, test
 
 When multiple cards are given, run the full procedure for EACH card and compile a summary at the end.
 
+## CRITICAL: Batching over agents
+
+If you need to split work across multiple agents (e.g., auditing many cards in parallel), you **MUST** include the **full text of this skill prompt** in each agent's instructions — not a summary or abbreviation. Every agent must receive the complete procedure, checklists, anti-patterns, and rules verbatim. Summarizing or abbreviating the prompt will result in shallow, incomplete audits.
+
 ## CRITICAL RULES
 - **DO NOT read any previous audit logs before conducting your audit.** Your audit must be independent. You will write your results to the log AFTER completing your audit.
 - **Scryfall is the ONLY authoritative source for Oracle text.** NEVER trust your training data for card text, types, subtypes, or costs. Cards are errata'd regularly. Always verify via the API.
