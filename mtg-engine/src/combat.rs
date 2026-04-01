@@ -306,14 +306,16 @@ fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &
     !subtypes.iter().any(|s| s == "Wolf" || s == "Werewolf")
 }
 
-/// Check if a creature has the DoubleCombatDamage effect (e.g., Inquisitor's Flail).
-fn has_double_combat_damage(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
-    state.has_continuous_effect(creature_id, &|e| {
+/// Compute the combat damage multiplier from DoubleCombatDamage effects (e.g., Inquisitor's Flail).
+/// Each source doubles independently: 1 Flail = x2, 2 Flails = x4, 3 = x8, etc.
+fn combat_damage_multiplier(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> u32 {
+    let count = state.count_continuous_effect(creature_id, &|e| {
         match e {
             crate::types::ContinuousEffect::DoubleCombatDamage { scope } => Some(scope),
             _ => None,
         }
-    }, registry)
+    }, registry);
+    1u32 << count // 2^count
 }
 
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
@@ -444,14 +446,12 @@ fn deal_damage_to_creature(
         return;
     }
 
-    // Inquisitor's Flail: double damage if source or target has the effect.
+    // Inquisitor's Flail: multiply damage for each DoubleCombatDamage source.
+    // Dealing: source's Flails multiply the damage dealt.
+    // Receiving: target's Flails multiply the damage received.
     let mut amount = amount;
-    if has_double_combat_damage(state, source, registry) {
-        amount *= 2;
-    }
-    if has_double_combat_damage(state, target, registry) {
-        amount *= 2;
-    }
+    amount *= combat_damage_multiplier(state, source, registry);
+    amount *= combat_damage_multiplier(state, target, registry);
 
     let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
     if let Some(obj) = state.get_object_mut(target) {
@@ -502,11 +502,9 @@ fn deal_damage_to_player(
         return;
     }
 
-    // Inquisitor's Flail: double damage if source has the effect.
+    // Inquisitor's Flail: multiply damage for each DoubleCombatDamage source.
     let mut amount = amount;
-    if has_double_combat_damage(state, source, registry) {
-        amount *= 2;
-    }
+    amount *= combat_damage_multiplier(state, source, registry);
 
     let old_life = state.get_player(player).life;
     let new_life = old_life - amount as i32;

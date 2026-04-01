@@ -729,6 +729,45 @@ impl GameState {
         false
     }
 
+    /// Count how many sources apply a matching continuous effect to a creature.
+    /// Similar to has_continuous_effect but returns the count instead of a boolean.
+    pub fn count_continuous_effect(
+        &self,
+        creature_id: ObjectId,
+        predicate: &dyn Fn(&crate::types::ContinuousEffect) -> Option<&crate::types::EffectScope>,
+        registry: &crate::cards::CardRegistry,
+    ) -> u32 {
+        let mut count = 0;
+        for source in self.objects.values() {
+            if source.zone != Zone::Battlefield {
+                continue;
+            }
+            if let Some(ref instance_effects) = source.instance_continuous_effects {
+                for effect in instance_effects {
+                    if let Some(scope) = predicate(effect) {
+                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                            count += 1;
+                        }
+                    }
+                }
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                let effects = if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                };
+                for effect in &effects {
+                    if let Some(scope) = predicate(effect) {
+                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                            count += 1;
+                        }
+                    }
+                }
+            }
+        }
+        count
+    }
+
     /// Get the effective power of a creature, including continuous effects,
     /// dynamic P/T, counters, and "until end of turn" effects.
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {

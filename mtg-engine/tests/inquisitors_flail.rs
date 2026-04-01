@@ -108,3 +108,29 @@ fn no_doubling_without_flail() {
     assert_eq!(life_before - life_after, 3,
         "Without Flail equipped, damage should be normal");
 }
+
+/// Per ruling: two Inquisitor's Flails should quadruple damage (2^2 = 4x).
+#[test]
+fn two_flails_quadruple_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let flail1 = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
+    let flail2 = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
+    let creature = ready_creature(&mut state, P0, 3, 3);
+
+    state.get_object_mut(flail1).unwrap().attached_to = Some(creature);
+    state.get_object_mut(flail2).unwrap().attached_to = Some(creature);
+
+    state.combat = Some(mtg_engine::state::CombatState {
+        attackers: [(creature, P1)].into_iter().collect(),
+        blocker_assignments: std::collections::HashMap::new(),
+    });
+
+    let life_before = state.get_player(P1).life;
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+    let life_after = state.get_player(P1).life;
+
+    assert_eq!(life_before - life_after, 12,
+        "Two Flails should quadruple damage: 3 * 4 = 12");
+}
