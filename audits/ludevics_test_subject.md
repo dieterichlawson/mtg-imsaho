@@ -29,3 +29,25 @@
 1. **ISSUE (minor):** Front face subtypes are ["Lizard"] but should be ["Lizard", "Egg"]. The official type line is "Creature — Lizard Egg".
 
 ## Verdict: PASS (with minor subtype issue)
+
+## Audit -- 2026-04-01 09:00
+
+**Scryfall Oracle text**: (Front) Defender. {1}{U}: Put a hatchling counter on Ludevic's Test Subject. Then if there are five or more hatchling counters on it, remove all of them and transform Ludevic's Test Subject. (Back) Trample.
+**Scryfall type line**: (Front) Creature -- Lizard Egg. (Back) Creature -- Lizard Horror.
+**Status**: PASS
+
+Findings:
+1. **Mana cost {1}{U}**: Correct.
+2. **Front face P/T 0/3**: Correct.
+3. **Front face subtypes**: Code has `["Lizard", "Egg"]` (line 23). Previous audit said "Egg" was missing, but the current code includes it. This is now correct.
+4. **Front keywords [Defender]**: Correct.
+5. **Activated ability {1}{U}**: Correct cost. Adds hatchling counter, transforms at 5+. Logic correct.
+6. **Back face name (Ludevic's Abomination)**: Correct.
+7. **Back face subtypes ["Lizard", "Horror"]**: Correct per Scryfall.
+8. **Back face P/T 13/13**: Correct (via `dynamic_pt`).
+9. **Back face keywords [Trample]**: Correct.
+10. **Hatchling counter tracking**: Uses `card_state` HashMap with "hatchling_counters" key. Functional workaround for lack of native counter type.
+11. **No anti-patterns detected**: No spells, no damage, no triggered abilities needed.
+12. **Tests**: Found in `mtg-engine/tests/tier15_cards.rs`.
+
+No new issues found. Previous subtype issue appears resolved.

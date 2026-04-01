@@ -35,3 +35,24 @@ The oracle text says "Blazing Torch deals 2 damage" — the damage source should
 ## Verdict: FAIL — 2 issues found
 1. **Missing `damaged_by.push()`** when dealing damage to creatures (real bug)
 2. **Wrong damage source** — uses creature ID instead of torch ID (acknowledged in comment, but technically incorrect)
+
+## Audit -- 2026-04-01 09:00
+
+**Scryfall Oracle text**: Equipped creature can't be blocked by Vampires or Zombies. Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target." Equip {1}
+**Scryfall type line**: Artifact -- Equipment
+**Status**: ISSUE
+
+Findings:
+1. **Mana cost {1}**: Correct.
+2. **Type (Artifact -- Equipment)**: Correct. `card_types: [Artifact]`, `subtypes: ["Equipment"]`.
+3. **Oracle text**: Matches Scryfall.
+4. **Block restriction (Vampires/Zombies)**: Correctly implemented via `ContinuousEffect::BlockRestriction` with `CreatureFilter::Not(Or([HasSubtype("Vampire"), HasSubtype("Zombie")]))`.
+5. **Equip {1}**: Correct. `ability_index: 0`, cost Generic(1), sorcery_speed_only: true.
+6. **Damage ability**: Correctly requires tap, targets any target, deals 2 damage, sacrifices torch.
+7. **`damaged_by` tracking**: Previous audit claimed this was missing, but re-reading the code at lines 128-129, `obj.damaged_by.push(object_id)` IS present. Previous audit finding #1 appears to be incorrect -- the code does track damaged_by.
+8. **Damage source**: The `NonCombatDamageDealt` event and `damaged_by` both use `object_id` (the creature), not the torch. Per oracle, "Blazing Torch deals 2 damage" -- the source should be the torch. The code comment on line 122 acknowledges this. Since the torch is sacrificed before damage is dealt, using the torch's ID may cause issues (it's in the graveyard). This is a pragmatic trade-off but technically incorrect per oracle.
+9. **Anti-patterns**: Uses `NonCombatDamageDealt` (correct, not combat damage). No `move_object(id, Zone::Graveyard)` for spells (it's a permanent).
+10. **Tests**: Found in `mtg-engine/tests/tier9_cards.rs`.
+
+Issues:
+- Wrong damage source (creature ID instead of torch ID) -- acknowledged in code comment, technically incorrect per oracle text.

@@ -20,3 +20,22 @@
 
 ## Issues
 1. **ISSUE: Trigger implementation uses on_blocks/on_becomes_blocked instead of "deals combat damage to a creature".** The oracle says "Whenever this creature deals combat damage to a creature" which should trigger after damage is dealt. The current implementation triggers when blocking/becoming blocked (before damage). This means the ability fires at the wrong time -- it should fire after combat damage resolution, not when blocks are declared. The TriggerKinds Blocks and BecomesBlocked are incorrect for this card.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Creepy Doll is indestructible. Whenever Creepy Doll deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.
+**Scryfall type line**: Artifact Creature -- Construct
+**Status**: PASS
+
+Previous trigger timing issue has been fixed. The implementation now uses `TriggerKind::DealsCombatDamageToCreature` and `on_deals_combat_damage_to_creature` hook, which fires after combat damage is dealt rather than at block declaration.
+
+Verified correct:
+- Mana cost: {5} -- matches
+- Types: Artifact Creature -- matches
+- Subtypes: Construct -- matches
+- P/T: 1/1 -- matches
+- Keywords: Indestructible -- matches (oracle says "Creepy Doll is indestructible" which is functionally equivalent to keyword Indestructible)
+- `triggered_abilities`: DealsCombatDamageToCreature -- correct
+- `on_deals_combat_damage_to_creature`: flips coin via `rand::thread_rng().gen_bool(0.5)`, destroys creature on win via `try_destroy` -- correct
+- No anti-patterns detected (no `CombatDamageDealt` misuse; this correctly uses the creature-specific hook)
+- Tests found in `mtg-engine/tests/tier15_cards.rs` and `mtg-engine/tests/creepy_doll.rs`

@@ -24,3 +24,11 @@ Otherwise correct: cost ({4}{G}), type (Enchantment), trigger (nontoken creature
 **Status**: PASS
 
 No issues found. Dynamic P/T for Ooze tokens now correctly tracks slime counter count on the source Gutter Grime. Each token stores its source Gutter Grime ObjectId via card_state, and effective_power/toughness dynamically look up the counter count. If Gutter Grime leaves the battlefield, tokens become 0/0. Token deaths and opponent creature deaths correctly do not trigger the ability.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Whenever a nontoken creature you control dies, put a slime counter on this enchantment, then create a green Ooze creature token with "This token's power and toughness are each equal to the number of slime counters on Gutter Grime."
+**Scryfall type line**: Enchantment
+**Status**: PASS
+
+Mana cost {4}{G}: correct. Type Enchantment: correct. No subtypes: correct. Trigger on nontoken creature you control dying: correct (checks `is_token` and `dead_controller`). Adds slime counter via `CounterType::Slime`: correct. Creates green Ooze creature token with dynamic P/T linked to slime counters on source Gutter Grime: correct. Token created with subtypes `["Ooze"]`: correct. Uses `AnyCreatureDies` trigger kind with `triggered_abilities` declaration: correct. Tests present in `tests/gutter_grime.rs` and `tests/tier15_cards.rs`. No anti-patterns found (no `move_object` to graveyard for spells, no `CombatDamageDealt` misuse).

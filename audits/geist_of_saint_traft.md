@@ -18,3 +18,24 @@
 Otherwise correct: cost, types (Legendary Spirit Cleric), P/T (2/2), hexproof keyword, 4/4 white Angel token with flying, token enters tapped and attacking.
 
 ## Verdict: ISSUES FOUND (2 issues - timing)
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Hexproof. Whenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.
+**Scryfall type line**: Legendary Creature -- Spirit Cleric
+**Status**: PASS
+
+Previous timing issues have been fixed. The implementation now uses `TriggerKind::EndCombat` and `on_end_combat` (instead of EndStep/on_end_step).
+
+Verified correct:
+- Mana cost: {1}{W}{U} -- matches
+- Types: Legendary Creature -- matches
+- Subtypes: Spirit, Cleric -- matches
+- P/T: 2/2 -- matches
+- Keywords: Hexproof -- matches
+- `triggered_abilities`: Attacks + EndCombat -- correct
+- `on_attacks`: creates 4/4 white Angel creature token with flying, tapped and attacking -- correct. Token has "Angel" subtype -- correct.
+- `on_end_combat`: exiles the Angel token -- correct timing now
+- `on_resolve`: moves to battlefield, sets `is_legendary` -- correct
+- No anti-patterns detected
+- Tests found in `mtg-engine/tests/tier15_cards.rs`
