@@ -5,16 +5,4 @@ Equip {1}
 **Scryfall type line**: Artifact — Equipment
 **Status**: PASS
 
-### Findings
-
-1. **Card data correct**: Name, cost ({2}), types (Artifact), subtype (Equipment), no P/T all match.
-
-2. **Continuous effect correct**: Grants Flying to attached creature via `EffectScope::Attached`.
-
-3. **Equip ability correct**: Cost {1}, sorcery speed only, targets creature.
-
-4. **Equip target validation correct**: Only allows targeting creatures you control (line 52-53).
-
-5. **on_resolve sets is_equipment flag**: Correct.
-
-6. **Tests**: No dedicated tests found.
+No issues found. Mana cost {2} correct. Subtypes ["Equipment"] correct. Continuous effect grants Flying to attached creature. Equip {1} as sorcery-speed activated ability. Correctly validates equip targets as creatures the controller owns. Good test coverage for card data, entering as equipment, granting flying, and target validation.

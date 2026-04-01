@@ -1,13 +1,7 @@
 ## Audit — 2026-04-01
 
-**Scryfall Oracle text**: *(no oracle text — vanilla creature)*
+**Scryfall Oracle text**: (none — vanilla creature)
 **Scryfall type line**: Creature — Merfolk
 **Status**: PASS
 
-### Findings
-
-1. **Card data correct**: Name ("Coral Merfolk"), cost ({1}{U}), type (Creature), subtype (Merfolk), P/T (2/1) all match Oracle.
-
-2. **Vanilla creature**: Correctly has no abilities, no keywords, empty oracle text.
-
-3. **Tests**: No dedicated tests found.
+No issues found. Mana cost {1}{U} correct. 2/1 correct. Subtype Merfolk correct. No oracle text (vanilla). No tests found specifically for this card, but as a vanilla creature, the engine handles it through generic creature logic.

@@ -11,3 +11,11 @@
 - Force attack via `ForceAttack { scope: Attached }`: correct.
 - Uses `resolve_aura` helper: correct.
 - Tests exist in `bug_fixes.rs` (`furor_of_the_bitten_gives_plus_two_and_forces_attack`) and `innistrad_cards.rs`.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Enchant creature. Enchanted creature gets +2/+2 and attacks each combat if able.
+**Scryfall type line**: Enchantment — Aura
+**Status**: PASS
+
+No issues found. Correctly implements +2/+2 and force attack via continuous effects.
