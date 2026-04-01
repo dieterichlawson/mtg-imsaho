@@ -13,3 +13,11 @@
 - When X=0, spell resolves without dealing damage and calls `move_spell_after_resolve`: correct behavior (0 damage does nothing).
 - X value read from `o.x_value`: correct.
 - Tests exist in `tier14_cards.rs` (`devils_play_deals_x_damage`, `devils_play_x_zero`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Devil's Play deals X damage to any target. Flashback {X}{R}{R}{R}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found.

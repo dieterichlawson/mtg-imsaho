@@ -13,3 +13,12 @@
 - Handles the case where opponent has no creatures (does nothing) -- correct
 - Tests exist in `tier8_cards.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Target opponent sacrifices a creature. You gain life equal to that creature's toughness.
+**Scryfall type line**: Instant
+**Mana cost**: {2}{B}
+**Status**: PASS
+
+No issues found.

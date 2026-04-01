@@ -16,3 +16,12 @@ Findings:
 - Tests: `victim_of_night_kills_normal_creature` and `victim_of_night_cant_target_vampire` in tier2_spells.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Destroy target non-Vampire, non-Werewolf, non-Zombie creature.
+**Scryfall type line**: Instant
+**Mana cost**: {B}{B}
+**Status**: ISSUE
+
+1. **Token subtypes not checked for targeting restriction** (`mtg-engine/src/cards/victim_of_night.rs`, line 42): `is_valid_target` only checks `data.subtypes` from the registry, not `obj.subtypes`. A Zombie token (with "Zombie" in obj.subtypes but not in registry card_data) could be incorrectly targeted and destroyed. Should also check `obj.subtypes`.

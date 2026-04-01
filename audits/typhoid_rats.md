@@ -13,3 +13,12 @@
 - Vanilla creature with keyword, no special behavior needed
 - Tests exist in `innistrad_cards.rs` and `keywords.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Deathtouch
+**Scryfall type line**: Creature — Rat
+**P/T**: 1/1, **Mana cost**: {B}
+**Status**: PASS
+
+No issues found.

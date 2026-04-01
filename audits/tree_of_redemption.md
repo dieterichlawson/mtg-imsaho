@@ -16,3 +16,12 @@
 - Modifies `obj.toughness` directly to set new base toughness -- correct approach for this effect
 - Tests exist in `tier15_cards.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Defender. {T}: Exchange your life total with Tree of Redemption's toughness.
+**Scryfall type line**: Creature — Plant
+**P/T**: 0/13, **Mana cost**: {3}{G}
+**Status**: PASS
+
+No issues found.

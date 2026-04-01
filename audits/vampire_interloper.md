@@ -16,3 +16,12 @@ Findings:
 - Tests: `vampire_interloper_cant_block` in card_mechanics.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flying. Vampire Interloper can't block.
+**Scryfall type line**: Creature — Vampire Scout
+**P/T**: 2/1, **Mana cost**: {1}{B}
+**Status**: PASS
+
+No issues found. Subtypes (Vampire, Scout), flying keyword, and PreventBlock continuous effect all correct.

@@ -16,3 +16,12 @@ Findings:
 - Tests: `village_bell_ringer_untaps_creatures` in tier3_cards.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flash. When Village Bell-Ringer enters the battlefield, untap all creatures you control.
+**Scryfall type line**: Creature — Human Scout
+**P/T**: 1/4, **Mana cost**: {2}{W}
+**Status**: PASS
+
+No issues found.

@@ -13,3 +13,12 @@
 - On resolve: puts a +1/+1 counter on each target that is still on the battlefield -- correct
 - Tests exist in `flashback.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Put a +1/+1 counter on each of up to two target creatures. Flashback {1}{W}
+**Scryfall type line**: Sorcery
+**Mana cost**: {1}{G}
+**Status**: ISSUE
+
+1. **LLM card knowledge inaccurate** (`mtg-player/src/llm.rs`, line 109): Says "Put a +1/+1 counter on target creature" but Oracle says "each of up to two target creatures."

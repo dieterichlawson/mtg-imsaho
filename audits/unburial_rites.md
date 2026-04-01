@@ -16,3 +16,12 @@ Findings:
 - Tests: `unburial_rites_returns_creature` in flashback.rs, `unburial_rites_choice_with_multiple_creatures` in card_mechanics.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Return target creature card from your graveyard to the battlefield. Flashback {3}{W}
+**Scryfall type line**: Sorcery
+**Mana cost**: {4}{B}
+**Status**: PASS
+
+No issues found. Flashback cost correct. Player choice for multiple creatures in graveyard is properly presented.

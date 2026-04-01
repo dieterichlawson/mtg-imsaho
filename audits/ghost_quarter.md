@@ -12,3 +12,11 @@
 - Basic land enters untapped: correct (summoning_sick set to false, but lands don't have summoning sickness — harmless)
 - Auto-searches for first basic land rather than player choice: simplification noted
 - Tests exist in innistrad_simple_cards.rs covering card data and mana tap
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {T}: Add {C}. / {T}, Sacrifice Ghost Quarter: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle.
+**Scryfall type line**: Land
+**Status**: ISSUE
+
+1. **"May search" is auto-applied**: Oracle says "its controller may search" but the code auto-searches for a basic land without presenting a choice. The opponent should be able to decline the search. (Line 82-101 in ghost_quarter.rs)

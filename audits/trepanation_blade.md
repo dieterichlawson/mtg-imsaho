@@ -15,3 +15,12 @@
 - Land card is included in the mill count (increment happens before the land check break), which matches Oracle text ("each card put into that graveyard this way" includes the land) -- correct
 - Tests exist in `tier9_cards.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard. Equip {2}
+**Scryfall type line**: Artifact — Equipment
+**Mana cost**: {3}
+**Status**: PASS
+
+No issues found.

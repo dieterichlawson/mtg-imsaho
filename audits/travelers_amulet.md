@@ -13,3 +13,12 @@
 - Shuffle noted as no-op in engine (acceptable engine limitation)
 - Tests exist in `tier9_cards.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {1}, Sacrifice this artifact: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.
+**Scryfall type line**: Artifact
+**Mana cost**: {1}
+**Status**: PASS
+
+No issues found.

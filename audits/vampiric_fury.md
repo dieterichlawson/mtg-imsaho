@@ -15,3 +15,12 @@ Findings:
 - Tests: `vampiric_fury_buffs_vampires` in innistrad_cards.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Vampire creatures you control get +2/+0 and gain first strike until end of turn.
+**Scryfall type line**: Instant
+**Mana cost**: {1}{R}
+**Status**: ISSUE
+
+1. **Vampire tokens not detected** (`mtg-engine/src/cards/vampiric_fury.rs`, lines 44-46): The Vampire subtype check only looks at `registry.card_data(obj.card_id)`, not `obj.subtypes`. Vampire creature tokens would be missed. Should also check `obj.subtypes.iter().any(|s| s == "Vampire")`.

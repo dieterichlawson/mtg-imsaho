@@ -13,3 +13,11 @@
 - Discard event emitted: correct.
 - Minor note: discard uses `state.move_object(discard_id, Zone::Graveyard)` directly rather than a dedicated discard helper, but this is consistent with the codebase pattern and the Discarded event is emitted.
 - Tests exist in `flashback.rs` (`desperate_ravings_draws_two_discards_one`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Draw two cards, then discard a card at random. Flashback {2}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found.

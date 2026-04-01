@@ -19,3 +19,14 @@ Findings:
 - Tests: `ulvenwald_mystics_transforms_and_gains_regenerate` in werewolf_cards.rs covers core behavior.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text (front)**: At the beginning of each upkeep, if no spells were cast last turn, transform Ulvenwald Mystics.
+**Scryfall Oracle text (back)**: {G}: Regenerate Ulvenwald Primordials. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Ulvenwald Primordials.
+**Scryfall type line (front)**: Creature — Human Shaman Werewolf
+**Scryfall type line (back)**: Creature — Werewolf
+**Front P/T**: 3/3, **Back P/T**: 5/5
+**Status**: PASS
+
+No issues found.

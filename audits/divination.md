@@ -10,3 +10,11 @@
 - Uses `move_spell_after_resolve`: correct.
 - No targets: correct.
 - Tests exist in `spells.rs` (`divination_draws_two`) and `fizzle.rs`.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Draw two cards.
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found.

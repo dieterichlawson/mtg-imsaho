@@ -13,3 +13,11 @@
 - Life change event emitted: correct.
 - `requires_tap: false`: correct (no tap in cost).
 - Tests exist in `tier8_cards.rs` (`disciple_of_griselbrand_gains_life`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.
+**Scryfall type line**: Creature — Human Cleric
+**Status**: PASS
+
+No issues found.

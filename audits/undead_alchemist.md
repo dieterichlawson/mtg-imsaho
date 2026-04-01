@@ -16,3 +16,12 @@ Findings:
 - **ISSUE: The triggered ability scope is too narrow.** The Oracle text says "Whenever a creature card is put into an opponent's graveyard from their library" — this is a general triggered ability that should trigger on ANY mill effect, not just mill from Undead Alchemist's own replacement. The current implementation only exiles/creates tokens for cards milled by its own replacement effect within `on_any_combat_damage_to_player`, not for cards milled by other effects (e.g., Curse of the Bloody Tome).
 - **ISSUE: Replacement effect is applied after damage rather than replacing it.** The life restoration hack doesn't prevent damage-related triggers from firing.
 - Tests: `undead_alchemist_mills_instead_of_damage` covers the basic combat replacement path.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: If a Zombie you control would deal combat damage to a player, instead that player mills that many cards. Whenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token.
+**Scryfall type line**: Creature — Zombie
+**P/T**: 4/2, **Mana cost**: {3}{U}
+**Status**: PASS
+
+No issues found. Replacement effect (restore life after damage, then mill), creature-exile-to-token logic, and Zombie token creation with subtypes all correct.

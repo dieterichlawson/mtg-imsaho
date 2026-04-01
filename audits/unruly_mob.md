@@ -16,3 +16,12 @@ Findings:
 - Tests: `unruly_mob_gains_counter_when_ally_dies` in tier3_cards.rs.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Whenever another creature you control dies, put a +1/+1 counter on this creature.
+**Scryfall type line**: Creature — Human
+**P/T**: 1/1, **Mana cost**: {1}{W}
+**Status**: PASS
+
+No issues found.

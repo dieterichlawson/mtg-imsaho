@@ -13,3 +13,12 @@ Implementation correctly models:
 - Tests: `silent_departure_bounces_creature` in tier2_spells.rs
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Return target creature to its owner's hand.
+Flashback {4}{U}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found.
