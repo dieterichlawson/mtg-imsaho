@@ -54,3 +54,26 @@ Minor issue:
 1. The code filters on `!o.is_transformed` which means it only transforms front-face Humans to their back face. The oracle says "Transform all Humans" which should also transform any currently-transformed creature whose back face has the Human subtype back to its front face. In practice this is unlikely to matter in Innistrad (Humans are typically front-face), but it is technically incomplete.
 
 Tests in moonmist.rs cover prevention flag, damage prevention to player/creature, and wolf exception. No test for the transform functionality itself, but the damage prevention tests are thorough.
+
+## Audit — 2026-04-01 14:37
+
+**Oracle text source**: Scryfall via WebSearch (https://scryfall.com/card/isd/195/moonmist)
+**Oracle text**: Transform all Humans. Prevent all combat damage that would be dealt this turn by creatures other than Werewolves and Wolves.
+**Type line**: Instant
+**Status**: ISSUE
+
+Card data verified correct: name, mana cost ({1}{G}), card_types (Instant), oracle_text matches.
+
+on_resolve correctly:
+- Transforms Human DFCs by checking for Human subtype and back face existence
+- Updates characteristics (name, P/T, keywords, subtypes) from back face data
+- Sets `state.prevent_non_wolf_werewolf_combat_damage = true`
+- Calls `move_spell_after_resolve(object_id)` (correct for instant)
+
+Issue:
+
+1. **Transform only applies to non-transformed Humans** (`moonmist.rs` line 34).
+   - Oracle text says: `Transform all Humans.`
+   - Code does: `.filter(|o| o.zone == Zone::Battlefield && !o.is_transformed)` -- the `!o.is_transformed` filter means only front-face (non-transformed) Humans are transformed. If a DFC's back face has the Human subtype and is currently transformed (showing the back face), it would not be transformed back to the front face. The oracle says "Transform all Humans" which means any creature currently with the Human subtype should be transformed, regardless of which face is showing.
+
+No other issues found. Tests in moonmist.rs (4 tests) cover prevention flag, damage prevention to player, wolf exception, and damage prevention to creature. No test for the transform functionality itself.

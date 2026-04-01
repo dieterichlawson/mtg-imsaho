@@ -67,3 +67,20 @@ Findings:
 
 Issues:
 - Additional cost (exile 3 creatures) is executed at resolve time in `on_resolve` rather than at cast time. Per rules, additional costs are paid during casting, so if the spell is countered, the cards should still have been exiled.
+
+## Audit — 2026-04-01 14:37
+
+**Oracle text source**: Scryfall via WebSearch (https://scryfall.com/card/isd/77/skaab-ruinator)
+**Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard. Flying. You may cast this card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**Status**: ISSUE
+
+Card data verified correct: name, mana cost ({1}{U}{U}), card_types (Creature), subtypes (Zombie, Horror), P/T (5/6), keywords (Flying), oracle_text matches, additional_cost (ExileCreaturesFromGraveyard(3)), can_cast_from_graveyard() returns true.
+
+Issue:
+
+1. **Additional cost paid at resolve time instead of cast time** (`skaab_ruinator.rs` lines 40-58).
+   - Oracle text says: `As an additional cost to cast this spell, exile three creature cards from your graveyard.`
+   - Code does: The `additional_cost` field is correctly set to `ExileCreaturesFromGraveyard(3)` in card data, but the exile logic is also executed inside `on_resolve` (lines 41-58). This means the creatures are exiled when the spell resolves, not when it is cast. Per MTG rules (CR 601.2b), additional costs are paid during the casting process. If the spell is countered, the additional cost should still have been paid (creatures exiled), but with this implementation they would not be.
+
+No other issues found. Test in tier15_cards.rs (1 test) verifies exiling 3 creatures and Skaab Ruinator entering the battlefield.
