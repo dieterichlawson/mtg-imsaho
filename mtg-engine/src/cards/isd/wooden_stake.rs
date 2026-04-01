@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement, TriggeredAbilityDef, TriggerKind};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement, TriggeredAbilityDef, TriggerKind};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -48,7 +48,7 @@ impl CardBehavior for WoodenStake {
                 cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
                 requires_tap: false,
                 sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::Creature),
+                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
                 once_per_turn: false,
                 sorcery_speed_only: true,
             }]
