@@ -524,6 +524,36 @@ fn blazing_torch_equip_ability() {
     );
 }
 
+#[test]
+fn blazing_torch_equip_only_own_creatures() {
+    // Equip says "target creature you control" — can't equip opponent's creatures.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let torch = named_equipment(&mut state, &reg, "Blazing Torch", P0);
+    let own_creature = ready_creature(&mut state, P0, 2, 2);
+    let opp_creature = ready_creature(&mut state, P1, 3, 3);
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let actions = engine::legal_actions(&state, &reg);
+    let equip_targets: Vec<_> = actions.actions.iter()
+        .filter_map(|a| {
+            if let Action::ActivateAbility { object_id, ability_index: 0, targets } = a {
+                if *object_id == torch { Some(targets.clone()) } else { None }
+            } else { None }
+        })
+        .collect();
+
+    // Should be able to equip own creature.
+    assert!(equip_targets.iter().any(|t| t.contains(&Target::Object(own_creature))),
+        "Should be able to equip own creature");
+    // Should NOT be able to equip opponent's creature.
+    assert!(!equip_targets.iter().any(|t| t.contains(&Target::Object(opp_creature))),
+        "Should NOT be able to equip opponent's creature");
+}
+
 // ══════════════════════════════════════════════════════════════════
 // Equipment enters battlefield unattached
 // ══════════════════════════════════════════════════════════════════
