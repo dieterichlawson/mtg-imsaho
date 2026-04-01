@@ -13,8 +13,10 @@ If you need to split work across multiple agents (e.g., auditing many cards in p
 
 ## CRITICAL RULES
 - **DO NOT read any previous audit logs before conducting your audit.** Your audit must be independent. You will write your results to the log AFTER completing your audit.
-- **You MUST obtain the current Oracle text before auditing.** NEVER trust your training data for card text, types, subtypes, or costs. Cards are errata'd regularly (e.g., "Hound" → "Dog", planeswalker damage redirect removal, "dies" templating changes). Your training data is often WRONG. You must verify from an authoritative external source.
-- **Do NOT mark a card as ISSUE based on your memory of the oracle text.** If you couldn't fetch the oracle text from any source, say so explicitly — do NOT guess.
+- **NEVER USE YOUR TRAINING DATA AS A SOURCE FOR ORACLE TEXT, RULINGS, TYPES, SUBTYPES, COSTS, OR ANY OTHER CARD DATA.** Your memory of Magic cards is unreliable. Cards are errata'd regularly (e.g., "Hound" → "Dog", planeswalker damage redirect removal, "dies" templating changes, "mill" keyword addition). You MUST fetch the oracle text from an external source (Scryfall, Gatherer, etc.) for EVERY card you audit. There are ZERO exceptions to this rule.
+- **Do NOT compare code against what you think the card does.** Compare ONLY against text you fetched from an external source during this audit session. If you did not fetch it, you do not have it.
+- **Do NOT mark a card as ISSUE based on your memory of the oracle text.** If you couldn't fetch the oracle text from any source, say so explicitly and mark the card as SKIPPED — do NOT guess or fall back to memory.
+- **Every audit entry MUST cite its source** (e.g., "Source: Scryfall via WebSearch" or "Source: Gatherer via WebSearch"). If there is no source citation, the audit is invalid.
 
 ## Procedure (repeat for each card)
 
@@ -189,13 +191,16 @@ For each card audited, append to `audits/{card_file_name}.md` (create if it does
 ```markdown
 ## Audit — {YYYY-MM-DD HH:MM}
 
-**Scryfall Oracle text**: {exact text from API}
-**Scryfall type line**: {exact type line from API}
-**Status**: PASS / ISSUE
+**Oracle text source**: {e.g., "Scryfall card page via WebSearch", "Gatherer via WebSearch", "Scryfall API via curl"}
+**Oracle text**: {exact text from external source}
+**Type line**: {exact type line from external source}
+**Status**: PASS / ISSUE / SKIPPED (if oracle text could not be obtained)
 
 {If ISSUE, describe each issue with file path and line number}
 {If PASS, write "No issues found."}
 ```
+
+**If you do not have an external source citation, do NOT write the audit entry. Mark as SKIPPED instead.**
 
 Use the current date/time. Append — never overwrite previous audit entries.
 
