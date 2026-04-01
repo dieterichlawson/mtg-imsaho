@@ -126,6 +126,11 @@ pub struct GameState {
     #[serde(default)]
     pub spells_cast_last_turn: HashMap<PlayerId, u32>,
 
+    /// When true, prevent all combat damage dealt by creatures that are not
+    /// Wolves or Werewolves (set by Moonmist). Cleared at end of turn.
+    #[serde(default)]
+    pub prevent_non_wolf_werewolf_combat_damage: bool,
+
     /// Index for trigger processing resumption after a resolution choice.
     #[serde(default)]
     pub trigger_event_index: usize,
@@ -214,6 +219,7 @@ impl GameState {
             day_night: None,
             spells_cast_this_turn: HashMap::new(),
             spells_cast_last_turn: HashMap::new(),
+            prevent_non_wolf_werewolf_combat_damage: false,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
         }

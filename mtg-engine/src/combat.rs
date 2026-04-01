@@ -263,6 +263,16 @@ fn deal_damage_step(
     }
 }
 
+/// Check if a creature's combat damage should be prevented because it's not a Wolf/Werewolf
+/// (set by Moonmist's effect for the rest of the turn).
+fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
+    if !state.prevent_non_wolf_werewolf_combat_damage {
+        return false;
+    }
+    let subtypes = get_subtypes(state, source, registry);
+    !subtypes.iter().any(|s| s == "Wolf" || s == "Werewolf")
+}
+
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
 fn has_damage_prevention(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
     state.has_continuous_effect(creature_id, &|e| {
@@ -376,6 +386,11 @@ fn deal_damage_to_creature(
         return;
     }
 
+    // Moonmist: prevent combat damage from non-Wolf/non-Werewolf creatures.
+    if is_non_wolf_damage_prevented(state, source, registry) {
+        return;
+    }
+
     // Protection: if target has protection from the source creature, prevent damage.
     if has_protection_from_creature(state, target, source, registry) {
         return;
@@ -422,6 +437,11 @@ fn deal_damage_to_player(
 ) {
     // Skip if source has combat damage prevention (e.g., Ghostly Possession).
     if has_damage_prevention(state, source, registry) {
+        return;
+    }
+
+    // Moonmist: prevent combat damage from non-Wolf/non-Werewolf creatures.
+    if is_non_wolf_damage_prevented(state, source, registry) {
         return;
     }
 
