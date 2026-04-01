@@ -21,7 +21,7 @@ Each must be fixed — no shortcuts, no deferred work.
 - [x] Harvest Pyre — missing damaged_by tracking
 
 ## Real Bugs — Card-Level Fixes (no engine work needed)
-- [ ] **Civilized Scholar** — Homicidal Brute doesn't tap before transforming back. Add `obj.tapped = true` before transform.
+- [x] **Civilized Scholar** — Homicidal Brute doesn't tap before transforming back. Add `obj.tapped = true` before transform. (Already fixed)
 - [ ] **Gutter Grime** — Ooze token P/T should be dynamic (equal to slime counters on Gutter Grime), not static.
 - [ ] **Kruin Outlaw** — Back face (Terror of Kruin Pass) menace only on self. Should be a global continuous effect: "Each Werewolf you control can't be blocked except by two or more creatures."
 - [ ] **Mayor of Avabruck** — Back face (Howlpack Alpha) missing Upkeep trigger metadata in triggered_abilities. The on_upkeep is implemented but never called because no TriggerKind::Upkeep is declared on back face.
