@@ -8,7 +8,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::CardId;
 use mtg_engine::engine;
-use mtg_engine::actions::Action;
+use mtg_engine::actions::{Action, ResolvedChoice};
 use mtg_engine::sba::check_state_based_actions_with_registry;
 
 use mtg_engine::types::*;
@@ -1350,7 +1350,7 @@ fn grimoire_reanimates_all_graveyard_creatures() {
 // ── Civilized Scholar ──────────────────────────────────────────
 
 #[test]
-fn civilized_scholar_draw_discard_creature_transforms() {
+fn civilized_scholar_discard_creature_transforms() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -1361,17 +1361,78 @@ fn civilized_scholar_draw_discard_creature_transforms() {
     state.move_object(lib_card, Zone::Library);
     state.players[0].library_order = vec![lib_card];
 
-    // Put a creature in hand (will be discarded).
-    let _hand_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    // Put a non-creature in hand (so we have a choice after drawing).
+    let _hand_spell = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
 
-    let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, scholar, 0, &[], &reg);
+    // Activate the ability — draws a card, then prompts for discard.
+    let new_state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![] },
+        &reg,
+    );
 
-    // Should transform (discarded a creature).
-    assert!(state.get_object(scholar).unwrap().is_transformed);
-    assert_eq!(state.get_object(scholar).unwrap().name, "Homicidal Brute");
-    // Should be untapped (was untapped after discard).
-    assert!(!state.get_object(scholar).unwrap().tapped);
+    // Should be awaiting a discard choice now.
+    assert!(new_state.awaiting_action.is_some(),
+        "Should be awaiting discard choice");
+
+    // Choose to discard the creature (Grizzly Bears we drew).
+    let new_state = engine::submit_action(
+        &new_state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(lib_card) },
+        &reg,
+    );
+
+    // Should have transformed (discarded a creature).
+    assert!(new_state.get_object(scholar).unwrap().is_transformed,
+        "Should transform after discarding a creature");
+    assert_eq!(new_state.get_object(scholar).unwrap().name, "Homicidal Brute");
+    assert!(!new_state.get_object(scholar).unwrap().tapped,
+        "Should be untapped after transform");
+}
+
+#[test]
+fn civilized_scholar_discard_noncreature_no_transform() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let scholar = named_creature(&mut state, &reg, "Civilized Scholar", P0);
+
+    // Put a card in the library (will be drawn).
+    let lib_card = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
+    state.move_object(lib_card, Zone::Library);
+    state.players[0].library_order = vec![lib_card];
+
+    // Put a creature in hand.
+    let hand_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+
+    // Activate the ability.
+    let new_state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![] },
+        &reg,
+    );
+
+    // Should be awaiting a discard choice.
+    assert!(new_state.awaiting_action.is_some());
+
+    // Choose to discard the non-creature (Doom Blade we drew), keeping the creature.
+    let new_state = engine::submit_action(
+        &new_state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(lib_card) },
+        &reg,
+    );
+
+    // Should NOT transform (discarded a non-creature).
+    assert!(!new_state.get_object(scholar).unwrap().is_transformed,
+        "Should NOT transform after discarding a non-creature");
+    assert_eq!(new_state.get_object(scholar).unwrap().name, "Civilized Scholar");
+    // Should still be tapped (no untap since no transform).
+    assert!(new_state.get_object(scholar).unwrap().tapped,
+        "Should remain tapped when no transform");
+
+    // The creature should still be in hand.
+    assert_eq!(new_state.get_object(hand_creature).unwrap().zone, Zone::Hand,
+        "Player chose to keep the creature in hand");
 }
 
 // ── Planeswalker SBA ──────────────────────────────────────────

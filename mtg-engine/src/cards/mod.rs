@@ -394,6 +394,11 @@ pub trait CardBehavior: Send + Sync {
     /// `targets` contains targets chosen by the player (empty if untargeted).
     fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
 
+    /// Called after the player chooses and discards a card via ChooseCardFromHand
+    /// that was initiated by this permanent. Used by Civilized Scholar to check
+    /// if the discarded card was a creature and trigger untap/transform.
+    fn on_discard_choice(&self, _state: &mut GameState, _self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {}
+
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.
     /// For permanents: default moves to battlefield.

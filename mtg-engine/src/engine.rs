@@ -1510,7 +1510,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             use crate::state::ResolutionChoiceKind;
             use crate::actions::ResolvedChoice;
             let awaiting = new_state.awaiting_action.take();
-            if let Some(AwaitingAction::ResolutionChoice { choice: kind, .. }) = awaiting {
+            if let Some(AwaitingAction::ResolutionChoice { choice: kind, source: choice_source, .. }) = awaiting {
                 match (&kind, resolved) {
                     (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, .. },
                      ResolvedChoice::PayDecision(pay)) => {
@@ -1592,6 +1592,12 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             object: *discard_id,
                         });
                         new_state.log(LogLevel::Event, format!("Discarded {}", name));
+                        // Notify the source card about the discard (e.g., Civilized Scholar
+                        // checks if the discarded card was a creature to trigger transform).
+                        let source_card_id = new_state.get_object(choice_source).map(|o| o.card_id);
+                        if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
+                            behavior.on_discard_choice(&mut new_state, choice_source, *discard_id, registry);
+                        }
                     }
                     (ResolutionChoiceKind::ChooseFromRevealed { revealed, spell_id, .. },
                      ResolvedChoice::ChosenCard(keep_id)) => {
