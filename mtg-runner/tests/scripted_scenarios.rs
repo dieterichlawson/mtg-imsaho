@@ -170,6 +170,7 @@ fn scripted_counterspell() {
         Action::CastSpell {
             object_id: counter,
             targets: vec![Target::Object(tusker)],
+            sacrifice: None,
         },
     ];
     let mut player = ScriptedPlayer::new("P1", actions);
@@ -326,7 +327,7 @@ fn scripted_resolution_choice() {
         Action::ActivateManaAbility { object_id: plains[1], ability_index: 0 },
         Action::ActivateManaAbility { object_id: plains[2], ability_index: 0 },
         Action::ActivateManaAbility { object_id: plains[3], ability_index: 0 },
-        Action::CastSpell { object_id: sw, targets: vec![] },
+        Action::CastSpell { object_id: sw, targets: vec![], sacrifice: None },
         Action::ResolveChoice {
             choice: ResolvedChoice::ChosenTarget(Some(Target::Object(wc1))),
         },

@@ -44,7 +44,7 @@ fn opponent_cannot_target_hexproof_player() {
 
     let actions = mtg_engine::engine::legal_actions(&state, &reg);
     let cast_at_p0: Vec<_> = actions.actions.iter().filter(|a| {
-        if let Action::CastSpell { object_id, targets } = a {
+        if let Action::CastSpell { object_id, targets, .. } = a {
             object_id == &bump && targets.iter().any(|t| {
                 matches!(t, mtg_engine::actions::Target::Player(p) if *p == P0)
             })
@@ -71,7 +71,7 @@ fn can_target_self_with_hexproof() {
 
     let actions = mtg_engine::engine::legal_actions(&state, &reg);
     let cast_at_p0: Vec<_> = actions.actions.iter().filter(|a| {
-        if let Action::CastSpell { object_id, targets } = a {
+        if let Action::CastSpell { object_id, targets, .. } = a {
             object_id == &twist && targets.iter().any(|t| {
                 matches!(t, mtg_engine::actions::Target::Player(p) if *p == P0)
             })

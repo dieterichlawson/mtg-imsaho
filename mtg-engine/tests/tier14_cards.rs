@@ -402,7 +402,7 @@ fn snapcaster_mage_grants_flashback() {
     let snap = castable_spell(&mut state, &reg, "Snapcaster Mage", P0);
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: snap, targets: vec![] },
+        &Action::CastSpell { object_id: snap, targets: vec![], sacrifice: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
