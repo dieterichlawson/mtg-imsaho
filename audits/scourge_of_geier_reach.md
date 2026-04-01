@@ -15,3 +15,10 @@ Looking at how other cards use `dynamic_pt` (e.g., Reckless Waif returns `(3, 2)
 **Verdict**: Likely functions correctly given the engine's convention for `dynamic_pt` as a total override, but the pattern is fragile and inconsistent with the Oracle text semantics (which describe a modifier, not an absolute).
 
 - Tests: `scourge_of_geier_reach_scales_with_opponent_creatures` and `scourge_of_geier_reach_ignores_own_creatures` in tier12_cards.rs
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Scourge of Geier Reach gets +1/+1 for each creature your opponents control.
+**Scryfall type line**: Creature — Elemental
+**Status**: PASS
+
+No issues found. dynamic_pt correctly replaces base P/T with 3+N/3+N where N = opponent creature count.

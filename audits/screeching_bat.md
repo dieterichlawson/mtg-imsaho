@@ -14,3 +14,12 @@ The front face has flying, but Stalking Vampire (back face) does not have flying
 **Minor concern**: The auto-pay logic for the "you may" choice automatically pays if mana is available. This is a simplification (the player doesn't get to decline), but is noted in code comments.
 
 - Tests: `screeching_bat_transforms_at_upkeep_with_mana` in tier15_cards.rs
+## Audit — 2026-04-01
+
+**Scryfall Oracle text (front)**: Flying. At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Screeching Bat.
+**Scryfall Oracle text (back)**: At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Stalking Vampire.
+**Scryfall type line (front)**: Creature — Bat (2/2)
+**Scryfall type line (back)**: Creature — Vampire (5/5)
+**Status**: ISSUE
+
+- **"You may" not presented as player choice**: `mtg-engine/src/cards/screeching_bat.rs:78-95` — the on_upkeep auto-pays {2}{B}{B} if the controller has enough mana, instead of presenting a choice to the player. "You may" abilities must be optional. The player should be asked whether to pay.

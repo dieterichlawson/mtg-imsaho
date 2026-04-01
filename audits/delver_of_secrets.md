@@ -1,18 +1,10 @@
 ## Audit — 2026-04-01
 
-**Scryfall Oracle text**: (Front — Delver of Secrets) At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform Delver of Secrets.
-(Back — Insectile Aberration) Flying
-**Scryfall type line**: (Front) Creature — Human Wizard // (Back) Creature — Human Insect
+**Scryfall Oracle text (front)**: At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform Delver of Secrets.
+**Scryfall Oracle text (back)**: Flying
+**Scryfall type line**: Creature — Human Wizard // Creature — Human Insect
+**Front P/T**: 1/1
+**Back P/T**: 3/2
 **Status**: ISSUE
 
-### Findings
-
-1. **Reveal is not optional (ISSUE)**: Oracle says "You **may** reveal that card. If an instant or sorcery card is **revealed** this way, transform..." The implementation auto-reveals and auto-transforms if the top card is instant/sorcery (lines 86-93). The player should have the option to not reveal (e.g., to avoid transforming if they want to keep Delver as a Human for Champion of the Parish triggers, or to hide information).
-
-2. **Card data correct**: Name, cost ({U}), type (Creature), subtypes (Human, Wizard front / Human, Insect back), P/T (1/1 front / 3/2 back) all match.
-
-3. **Back face keywords correct**: Flying on Insectile Aberration.
-
-4. **Upkeep trigger correct**: Only triggers on front face during controller's upkeep.
-
-5. **Tests**: No dedicated tests found.
+1. **Transform is not optional ("You may reveal")** (`mtg-engine/src/cards/delver_of_secrets.rs`, lines 86-93): Oracle says "You may reveal that card." The code automatically reveals and transforms if an instant/sorcery is on top. While revealing is almost always correct, the player should technically have a choice (e.g., they might not want to reveal information, or in rare cases may not want to transform). This is a minor deviation.

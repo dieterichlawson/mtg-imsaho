@@ -13,3 +13,10 @@ Implementation correctly models:
 - Tests: `sensory_deprivation_reduces_power` in innistrad_cards.rs
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Enchant creature. Enchanted creature gets -3/-0.
+**Scryfall type line**: Enchantment — Aura
+**Status**: PASS
+
+No issues found. Correctly applies -3/-0 as continuous effect on attached creature.

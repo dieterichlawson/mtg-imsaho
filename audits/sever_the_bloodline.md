@@ -13,3 +13,10 @@ Implementation correctly models:
 - Tests: `sever_the_bloodline_exiles_all_with_same_name` and `sever_the_bloodline_has_flashback` in tier12_cards.rs
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Exile target creature and all other creatures with the same name as that creature. Flashback {5}{B}{B}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Correctly targets a creature, exiles it and all same-named creatures. Flashback cost correct.
