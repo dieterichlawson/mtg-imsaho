@@ -14,9 +14,18 @@ import argparse
 import json
 import os
 import sys
+import time
+import urllib.request
+import urllib.error
+import urllib.parse
 from datetime import date
 
 CACHE_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "oracle_cache.json")
+SCRYFALL_HEADERS = {
+    "User-Agent": "MTG-Imsaho/1.0",
+    "Accept": "application/json",
+}
+SCRYFALL_DELAY = 0.1  # 100ms between requests per Scryfall rate limit guidelines
 
 
 def load_cache():
@@ -180,6 +189,213 @@ def cmd_list(args):
         print(f"  {name} — {card.get('type_line', '?')}{r_str}")
 
 
+def scryfall_get(url):
+    """Make a GET request to Scryfall with required headers and rate limiting."""
+    req = urllib.request.Request(url, headers=SCRYFALL_HEADERS)
+    try:
+        with urllib.request.urlopen(req) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        print(f"Scryfall HTTP error {e.code}: {e.reason}", file=sys.stderr)
+        if e.code == 404:
+            return None
+        raise
+    except urllib.error.URLError as e:
+        print(f"Network error: {e.reason}", file=sys.stderr)
+        raise
+
+
+def parse_scryfall_card(data):
+    """Parse a Scryfall card object into our cache format."""
+    scryfall_url = data.get("scryfall_uri", "")
+
+    # DFC: card_faces present
+    faces = data.get("card_faces", [])
+    if faces:
+        front = faces[0]
+        card_data = {
+            "name": front["name"],
+            "mana_cost": front.get("mana_cost", ""),
+            "type_line": front.get("type_line", ""),
+            "oracle_text": front.get("oracle_text", ""),
+            "power": front.get("power"),
+            "toughness": front.get("toughness"),
+            "source": "Scryfall API",
+            "source_url": scryfall_url,
+            "cached_at": str(date.today()),
+        }
+        if len(faces) > 1:
+            back = faces[1]
+            card_data["back_face"] = {
+                "name": back["name"],
+                "type_line": back.get("type_line", ""),
+                "oracle_text": back.get("oracle_text", ""),
+                "power": back.get("power"),
+                "toughness": back.get("toughness"),
+            }
+    else:
+        card_data = {
+            "name": data["name"],
+            "mana_cost": data.get("mana_cost", ""),
+            "type_line": data.get("type_line", ""),
+            "oracle_text": data.get("oracle_text", ""),
+            "power": data.get("power"),
+            "toughness": data.get("toughness"),
+            "source": "Scryfall API",
+            "source_url": scryfall_url,
+            "cached_at": str(date.today()),
+        }
+
+    # Extract keywords from oracle text keywords array if present
+    keywords = data.get("keywords", [])
+    if keywords:
+        card_data["keywords"] = keywords
+
+    return card_data
+
+
+def fetch_rulings(card_name, rulings_uri):
+    """Fetch rulings from Scryfall and return as list of ruling dicts."""
+    if not rulings_uri:
+        return []
+    time.sleep(SCRYFALL_DELAY)
+    data = scryfall_get(rulings_uri)
+    if not data:
+        return []
+    rulings = []
+    for r in data.get("data", []):
+        rulings.append({
+            "date": r.get("published_at", ""),
+            "text": r.get("comment", ""),
+            "source": "Scryfall API",
+            "source_url": rulings_uri,
+            "cached_at": str(date.today()),
+        })
+    return rulings
+
+
+def cmd_fetch(args):
+    """Fetch a card from Scryfall API and cache it (card data + rulings)."""
+    cache = load_cache()
+
+    # Check cache first unless --force
+    if not args.force:
+        _, existing = find_card(cache, args.name)
+        if existing:
+            print(f"Already cached: {existing['name']} (use --force to re-fetch)")
+            cmd_lookup_by_name(cache, args.name)
+            return
+
+    # Fetch card data
+    encoded = urllib.parse.quote(args.name)
+    url = f"https://api.scryfall.com/cards/named?fuzzy={encoded}"
+    print(f"Fetching from Scryfall: {args.name}...")
+    data = scryfall_get(url)
+    if not data:
+        print(f"NOT FOUND on Scryfall: '{args.name}'")
+        sys.exit(1)
+
+    card_data = parse_scryfall_card(data)
+    cache["cards"][card_data["name"]] = card_data
+    print(f"Cached card: {card_data['name']}")
+
+    # Fetch rulings
+    rulings_uri = data.get("rulings_uri", "")
+    if rulings_uri:
+        print(f"Fetching rulings...")
+        rulings = fetch_rulings(card_data["name"], rulings_uri)
+        if rulings:
+            cache["rulings"][card_data["name"]] = rulings
+            print(f"Cached {len(rulings)} rulings")
+        else:
+            print("No rulings found")
+
+    save_cache(cache)
+    print("---")
+    cmd_lookup_by_name(cache, card_data["name"])
+
+
+def cmd_fetch_set(args):
+    """Fetch all cards in a set from Scryfall and cache them."""
+    cache = load_cache()
+    set_code = args.set_code.lower()
+
+    url = f"https://api.scryfall.com/cards/search?q=set%3A{set_code}&unique=cards&order=name"
+    total = 0
+    skipped = 0
+    page = 1
+
+    while url:
+        print(f"Fetching page {page} of set '{set_code}'...")
+        data = scryfall_get(url)
+        if not data:
+            print(f"No results for set '{set_code}'")
+            break
+
+        for card in data.get("data", []):
+            name = card.get("card_faces", [{}])[0].get("name", card["name"]) if card.get("card_faces") else card["name"]
+
+            if not args.force:
+                _, existing = find_card(cache, name)
+                if existing:
+                    skipped += 1
+                    continue
+
+            card_data = parse_scryfall_card(card)
+            cache["cards"][card_data["name"]] = card_data
+
+            # Fetch rulings for each card
+            rulings_uri = card.get("rulings_uri", "")
+            if rulings_uri:
+                time.sleep(SCRYFALL_DELAY)
+                rulings = fetch_rulings(card_data["name"], rulings_uri)
+                if rulings:
+                    cache["rulings"][card_data["name"]] = rulings
+
+            total += 1
+            print(f"  {card_data['name']}")
+            time.sleep(SCRYFALL_DELAY)
+
+        if data.get("has_more"):
+            url = data.get("next_page")
+            page += 1
+        else:
+            url = None
+
+    save_cache(cache)
+    print(f"\nDone. Cached {total} cards, skipped {skipped} already-cached.")
+
+
+def cmd_lookup_by_name(cache, name):
+    """Print card info from cache (helper, no args object needed)."""
+    _, card = find_card(cache, name)
+    if not card:
+        return
+    print(f"Name: {card['name']}")
+    print(f"Mana Cost: {card.get('mana_cost', 'N/A')}")
+    print(f"Type Line: {card.get('type_line', 'N/A')}")
+    if card.get("power") or card.get("toughness"):
+        print(f"P/T: {card.get('power', '?')}/{card.get('toughness', '?')}")
+    print(f"Oracle Text: {card.get('oracle_text', 'N/A')}")
+    if card.get("keywords"):
+        print(f"Keywords: {', '.join(card['keywords'])}")
+    print(f"Source: {card.get('source', 'unknown')}")
+    print(f"Source URL: {card.get('source_url', 'N/A')}")
+    if card.get("back_face"):
+        bf = card["back_face"]
+        print(f"\n--- Back Face ---")
+        print(f"Name: {bf['name']}")
+        print(f"Type Line: {bf.get('type_line', 'N/A')}")
+        if bf.get("power") or bf.get("toughness"):
+            print(f"P/T: {bf.get('power', '?')}/{bf.get('toughness', '?')}")
+        print(f"Oracle Text: {bf.get('oracle_text', 'N/A')}")
+    _, rulings = find_rulings(cache, name)
+    if rulings:
+        print(f"\n--- Rulings ({len(rulings)}) ---")
+        for r in rulings:
+            print(f"[{r.get('date', '?')}] {r['text']}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Oracle text cache manager")
     sub = parser.add_subparsers(dest="command")
@@ -221,6 +437,16 @@ def main():
     p.add_argument("--source", required=True)
     p.add_argument("--source-url", required=True)
 
+    # fetch (from Scryfall API)
+    p = sub.add_parser("fetch", help="Fetch a card from Scryfall API and cache it")
+    p.add_argument("name", help="Card name (fuzzy match)")
+    p.add_argument("--force", action="store_true", help="Re-fetch even if already cached")
+
+    # fetch-set (bulk fetch entire set)
+    p = sub.add_parser("fetch-set", help="Fetch all cards in a set from Scryfall API")
+    p.add_argument("set_code", help="Set code (e.g., 'isd' for Innistrad)")
+    p.add_argument("--force", action="store_true", help="Re-fetch even if already cached")
+
     # list
     sub.add_parser("list", help="List all cached cards")
 
@@ -235,6 +461,8 @@ def main():
         "add-card-json": cmd_add_card_json,
         "add-back-face": cmd_add_back_face,
         "add-ruling": cmd_add_ruling,
+        "fetch": cmd_fetch,
+        "fetch-set": cmd_fetch_set,
         "list": cmd_list,
     }
     cmds[args.command](args)
