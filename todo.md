@@ -76,42 +76,42 @@ These cards mark damage but don't push to `obj.damaged_by`, breaking cards that 
 
 These are acknowledged in code comments as simplifications:
 
-- [ ] **altars_reap**: Auto-selects sacrifice target
-- [ ] **bitterheart_witch**: Auto-search, auto-target
-- [ ] **caravan_vigil**: Morbid "you may" auto-chooses battlefield
-- [ ] **civilized_scholar**: Auto-picks creature to discard
-- [ ] **cloistered_youth**: Transform not optional ("you may")
-- [ ] **curiosity**: Auto-draws instead of optional
-- [ ] **delver_of_secrets**: Auto-reveals instead of optional
-- [ ] **divine_reckoning**: Auto-selects creature with highest toughness
-- [ ] **evil_twin**: Auto-copies first creature
-- [ ] **falkenrath_noble**: Auto-targets opponent
-- [ ] **ghost_quarter**: "May search" auto-applied
-- [ ] **grimgrin_corpse_born**: Sacrifice and attack trigger auto-pick targets
-- [ ] **grimoire_of_the_dead**: Auto-picks discard
-- [ ] **harvest_pyre**: Auto-exiles all graveyard cards
-- [ ] **infernal_plunge**: Auto-picks sacrifice target
-- [ ] **mentor_of_the_meek**: Auto-pays {1}
-- [ ] **moorland_haunt**: Auto-picks creature to exile
-- [ ] **nevermore**: Auto-picks card name (looks at opponent's hand incorrectly)
-- [ ] **night_terrors**: Auto-selects nonland card
-- [ ] **screeching_bat**: Auto-pays transform cost
-- [ ] **snapcaster_mage**: Auto-selects target
-- [ ] **stitchers_apprentice**: Auto-selects sacrifice target
-- [ ] **thraben_sentry**: Transform not optional ("you may")
-- [ ] **corpse_lunge**: Auto-picks highest-power creature to exile
-- [ ] **creeping_renaissance**: Type choice hardcoded to "creature"
-- [ ] **liliana_of_the_veil**: Multiple simplifications (auto-discard, auto-target, simplified -6)
-- [ ] **garruk_relentless**: Auto-targeting fight, back face not implemented
-- [ ] **back_from_the_brink**: Auto-picks creature to exile
+- [x] **altars_reap**: Player now chooses sacrifice target
+- [x] **bitterheart_witch**: "You may" search + choose curse
+- [x] **caravan_vigil**: Morbid "you may" now presents choice
+- [x] **civilized_scholar**: Player now chooses creature to discard
+- [x] **cloistered_youth**: Transform now optional ("you may")
+- [x] **curiosity**: Draw now optional
+- [x] **delver_of_secrets**: Reveal now optional
+- [x] **divine_reckoning**: Each player now chooses creature to keep
+- [x] **evil_twin**: "You may" copy + choose creature
+- [ ] **falkenrath_noble**: Auto-targets opponent (correct in 2-player — only valid target)
+- [x] **ghost_quarter**: "May search" now presents choice
+- [x] **grimgrin_corpse_born**: Sacrifice and attack trigger now present choices
+- [x] **grimoire_of_the_dead**: Player now chooses discard
+- [ ] **harvest_pyre**: Auto-exiles all graveyard cards (engine lacks "choose number" UI)
+- [x] **infernal_plunge**: Player now chooses sacrifice target
+- [x] **mentor_of_the_meek**: Pay {1} now optional
+- [x] **moorland_haunt**: Player now chooses creature to exile
+- [ ] **nevermore**: Auto-picks card name (engine lacks "name a card" UI)
+- [x] **night_terrors**: Player now chooses nonland card to exile
+- [x] **screeching_bat**: Pay transform cost now optional
+- [x] **snapcaster_mage**: Player now chooses target for flashback
+- [x] **stitchers_apprentice**: Player now chooses sacrifice target
+- [x] **thraben_sentry**: Transform now optional ("you may")
+- [x] **corpse_lunge**: Player now chooses creature to exile
+- [ ] **creeping_renaissance**: Type choice hardcoded (engine lacks "choose card type" UI)
+- [x] **back_from_the_brink**: Player now chooses creature to exile/copy
+- [ ] **liliana_of_the_veil**: Multiple simplifications (complex planeswalker)
+- [ ] **garruk_relentless**: Auto-targeting fight, back face not implemented (complex planeswalker)
 
 ## Category 7: Missing Tests
 
-- [ ] **ancient_grudge**: No tests
-- [ ] **armored_skaab**: No tests
-- [ ] **endless_ranks_of_the_dead**: No tests
-- [ ] **essence_of_the_wild**: No tests
-- [ ] **selhoff_occultist**: No tests
+- [x] **ancient_grudge**: Tests added (destroy artifact, flashback)
+- [x] **armored_skaab**: Tests added (mill 4 on ETB, stats)
+- [x] **endless_ranks_of_the_dead**: Tests existed (tier7_cards)
+- [x] **essence_of_the_wild**: Tests added (transforms creatures, ignores opponents)
+- [x] **selhoff_occultist**: Tests added (mills on death, stats)
 
 ## Category 8: Engine Limitations (cannot fix without engine changes)
 
