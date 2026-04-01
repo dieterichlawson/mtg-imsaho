@@ -204,6 +204,13 @@ impl CardBehavior for GarrukRelentless {
                         state.log(crate::state::LogLevel::Event,
                             "Garruk, the Veil-Cursed: no creature card found in library".into());
                     }
+
+                    // Shuffle library after searching (oracle: "then shuffle").
+                    {
+                        use rand::seq::SliceRandom;
+                        let mut rng = rand::thread_rng();
+                        state.get_player_mut(controller).library_order.shuffle(&mut rng);
+                    }
                 } else {
                     state.log(crate::state::LogLevel::Event,
                         "Garruk, the Veil-Cursed: no creature to sacrifice".into());
