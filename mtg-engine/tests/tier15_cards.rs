@@ -1017,7 +1017,7 @@ fn liliana_plus_one_each_player_discards() {
     let p1_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, liliana, 0, &reg);
+    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
 
     // Both players should have lost a card.
     assert_eq!(state.get_object(p0_card).unwrap().zone, Zone::Graveyard);
@@ -1034,7 +1034,7 @@ fn liliana_minus_two_opponent_sacrifices_creature() {
     let opp_creature = ready_creature(&mut state, P1, 3, 3);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, liliana, 1, &reg);
+    behavior.on_loyalty_ability(&mut state, liliana, 1, &[], &reg);
 
     // Opponent's creature should be dead.
     assert_eq!(state.get_object(opp_creature).unwrap().zone, Zone::Graveyard);
@@ -1054,7 +1054,7 @@ fn garruk_creates_wolf_token() {
     }
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, garruk, 1, &reg);
+    behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
 
     let bf = state.objects_in_zone(Zone::Battlefield, P0);
     let wolves: Vec<_> = bf.iter()
@@ -1077,7 +1077,10 @@ fn garruk_transforms_at_two_or_fewer_loyalty() {
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     // Use the wolf token ability (costs 0 loyalty).
-    behavior.on_loyalty_ability(&mut state, garruk, 1, &reg);
+    behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
+
+    // Transform is now handled by SBA, not inside on_loyalty_ability.
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
 
     // Should have transformed.
     assert!(state.get_object(garruk).unwrap().is_transformed);
@@ -1099,7 +1102,7 @@ fn garruk_back_face_creates_deathtouch_wolf() {
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     // +1: Create a 1/1 black Wolf with deathtouch (ability_index 10).
-    behavior.on_loyalty_ability(&mut state, garruk, 10, &reg);
+    behavior.on_loyalty_ability(&mut state, garruk, 10, &[], &reg);
 
     let wolves: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
         .iter()
@@ -1139,7 +1142,7 @@ fn garruk_back_face_sacrifice_to_tutor() {
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     // -1: Sacrifice a creature, search for a creature card (ability_index 11).
-    behavior.on_loyalty_ability(&mut state, garruk, 11, &reg);
+    behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
 
     // Sac target should be in graveyard.
     assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
@@ -1176,7 +1179,7 @@ fn garruk_back_face_overrun() {
 
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     // -3: Creatures get +X/+X and trample (ability_index 12).
-    behavior.on_loyalty_ability(&mut state, garruk, 12, &reg);
+    behavior.on_loyalty_ability(&mut state, garruk, 12, &[], &reg);
 
     // X should be 2 (2 creature cards in graveyard).
     // Creature should have +2/+2 until end of turn.
@@ -1511,6 +1514,7 @@ fn loyalty_ability_adjusts_counters() {
     let new_state = engine::submit_action(&state, &Action::ActivateLoyaltyAbility {
         object_id: liliana,
         ability_index: 0,
+        targets: vec![],
     }, &reg);
 
     // Loyalty should be 4 (3 + 1).

@@ -244,6 +244,28 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             took_action = true;
         }
 
+        // State-triggered ability: Garruk Relentless transforms when he has 2 or fewer loyalty.
+        // This is an SBA-like check that fires regardless of what caused the loyalty loss.
+        if let Some(reg) = registry {
+            let garruk_card_id = reg.get_id_by_name("Garruk Relentless");
+            if let Some(gid) = garruk_card_id {
+                let garruk_to_transform: Vec<_> = state.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield && o.card_id == gid && !o.is_transformed)
+                    .filter(|o| *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) <= 2)
+                    .map(|o| o.id)
+                    .collect();
+                for id in garruk_to_transform {
+                    if let Some(obj) = state.get_object_mut(id) {
+                        obj.is_transformed = true;
+                        obj.name = "Garruk, the Veil-Cursed".into();
+                    }
+                    state.log(LogLevel::Event,
+                        "Garruk Relentless transforms into Garruk, the Veil-Cursed (state-triggered)".into());
+                    took_action = true;
+                }
+            }
+        }
+
         // Rule 704.5k: Legend rule — if a player controls two or more legendary
         // permanents with the same name, all are put into the graveyard.
         // (Simplified: keep the newest, remove the rest.)

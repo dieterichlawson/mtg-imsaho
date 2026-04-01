@@ -1,4 +1,5 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef};
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -55,16 +56,19 @@ impl CardBehavior for GarrukRelentless {
                     ability_index: 10,
                     loyalty_change: 1,
                     description: "+1: Create a 1/1 black Wolf with deathtouch".into(),
+                    target_requirement: None,
                 },
                 LoyaltyAbilityDef {
                     ability_index: 11,
                     loyalty_change: -1,
                     description: "-1: Sacrifice a creature, search library for a creature card".into(),
+                    target_requirement: None,
                 },
                 LoyaltyAbilityDef {
                     ability_index: 12,
                     loyalty_change: -3,
                     description: "-3: Creatures you control get +X/+X and trample (X = creature cards in graveyard)".into(),
+                    target_requirement: None,
                 },
             ]
         } else {
@@ -74,44 +78,40 @@ impl CardBehavior for GarrukRelentless {
                     ability_index: 0,
                     loyalty_change: 0,
                     description: "0: Deal 3 damage to target creature, it fights back".into(),
+                    target_requirement: Some(TargetRequirement::Creature),
                 },
                 LoyaltyAbilityDef {
                     ability_index: 1,
                     loyalty_change: 0,
                     description: "0: Create a 2/2 Wolf token".into(),
+                    target_requirement: None,
                 },
             ]
         }
     }
 
-    fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, registry: &CardRegistry) {
+    fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             None => return,
         };
-        let opponent = state.opponent(controller);
 
         match ability_index {
             // ── Front face abilities ─────────────────────────────────────
             0 => {
-                // 0: Deal 3 damage to target creature. That creature deals damage equal to its
-                // power to Garruk. Simplified: pick the strongest opponent creature.
-                let target: Option<(ObjectId, i32)> = state.objects_in_zone(Zone::Battlefield, opponent)
-                    .iter()
-                    .filter(|o| o.power.is_some())
-                    .map(|o| (o.id, state.effective_power(o.id, registry).unwrap_or(0)))
-                    .max_by_key(|(_, p)| *p);
-
-                if let Some((target_id, target_power)) = target {
-                    let target_name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
+                // 0: Garruk deals 3 damage to target creature. That creature deals damage
+                // equal to its power to him.
+                if let Some(Target::Object(target_id)) = targets.first() {
+                    let target_power = state.effective_power(*target_id, registry).unwrap_or(0);
+                    let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
                     // Deal 3 to the creature.
-                    if let Some(obj) = state.get_object_mut(target_id) {
+                    if let Some(obj) = state.get_object_mut(*target_id) {
                         obj.damage_marked += 3;
                         obj.damaged_by.push(self_id);
                     }
                     state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                         source: self_id,
-                        target: crate::events::DamageTarget::Object(target_id),
+                        target: crate::events::DamageTarget::Object(*target_id),
                         amount: 3,
                     });
                     // The creature deals its power as damage to Garruk (remove loyalty counters).
@@ -121,6 +121,11 @@ impl CardBehavior for GarrukRelentless {
                             let loyalty = obj.counters.entry(CounterType::Loyalty).or_insert(0);
                             *loyalty = loyalty.saturating_sub(remove);
                         }
+                        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                            source: *target_id,
+                            target: crate::events::DamageTarget::Object(self_id),
+                            amount: remove,
+                        });
                     }
                     state.log(crate::state::LogLevel::Event,
                         format!("Garruk: deals 3 to {}, takes {} damage back", target_name, target_power));
@@ -243,18 +248,9 @@ impl CardBehavior for GarrukRelentless {
             _ => {}
         }
 
-        // Check transform condition: 2 or fewer loyalty → transform.
-        let loyalty = state.get_counter_count(self_id, CounterType::Loyalty);
-        if loyalty <= 2 {
-            if let Some(obj) = state.get_object_mut(self_id) {
-                if !obj.is_transformed {
-                    obj.is_transformed = true;
-                    obj.name = "Garruk, the Veil-Cursed".into();
-                    state.log(crate::state::LogLevel::Event,
-                        "Garruk Relentless transforms into Garruk, the Veil-Cursed".into());
-                }
-            }
-        }
+        // Transform check is now handled as a state-triggered ability in SBA
+        // (check_state_based_actions_with_registry). This ensures it fires from
+        // any source of loyalty loss, not just loyalty ability activation.
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[crate::actions::Target], _registry: &CardRegistry) {

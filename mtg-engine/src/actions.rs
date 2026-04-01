@@ -32,7 +32,7 @@ pub enum Action {
     ActivateAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target> },
 
     /// Activate a planeswalker loyalty ability.
-    ActivateLoyaltyAbility { object_id: ObjectId, ability_index: usize },
+    ActivateLoyaltyAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target> },
 
     /// Declare which creatures are attacking and who they're attacking.
     DeclareAttackers { attackers: Vec<(ObjectId, PlayerId)> },
@@ -133,7 +133,7 @@ impl std::fmt::Display for Action {
             Action::DiscardCards { cards } =>
                 write!(f, "Discard {} cards", cards.len()),
             Action::Concede => write!(f, "Concede"),
-            Action::ActivateLoyaltyAbility { object_id, ability_index } =>
+            Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
                 write!(f, "Activate loyalty ability {} on {}", ability_index, object_id),
             Action::ResolveChoice { choice } => write!(f, "Choice: {:?}", choice),
         }

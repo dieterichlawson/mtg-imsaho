@@ -105,6 +105,8 @@ pub struct LoyaltyAbilityDef {
     /// Loyalty change: positive adds, negative removes, zero is free.
     pub loyalty_change: i32,
     pub description: String,
+    /// Target requirement for this ability (None = untargeted).
+    pub target_requirement: Option<TargetRequirement>,
 }
 
 /// What kind of event triggers an ability.
@@ -339,7 +341,7 @@ pub trait CardBehavior: Send + Sync {
     fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
 
     /// Called when a loyalty ability is activated.
-    fn on_loyalty_ability(&self, _state: &mut GameState, _self_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
+    fn on_loyalty_ability(&self, _state: &mut GameState, _self_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
 
     /// Starting loyalty for planeswalkers.
     fn starting_loyalty(&self) -> Option<u32> { None }

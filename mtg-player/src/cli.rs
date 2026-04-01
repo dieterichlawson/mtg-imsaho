@@ -993,7 +993,7 @@ impl CliPlayer {
                 format!("Discard {}", names.join(", "))
             }
             Action::Concede => "Concede".into(),
-            Action::ActivateLoyaltyAbility { object_id, ability_index } =>
+            Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
                 format!("Activate loyalty ability {} on {}", ability_index, Self::perm_name(view, *object_id)),
             Action::ResolveChoice { choice } => {
                 use mtg_engine::actions::ResolvedChoice;

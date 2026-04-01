@@ -378,10 +378,23 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     if ab.loyalty_change < 0 && ((-ab.loyalty_change) as u32) > current_loyalty {
                         continue; // Not enough loyalty
                     }
-                    actions.push(Action::ActivateLoyaltyAbility {
-                        object_id: obj_id,
-                        ability_index: ab.ability_index,
-                    });
+                    if let Some(ref target_req) = ab.target_requirement {
+                        // Targeted loyalty ability: generate one action per valid target.
+                        let targets = valid_targets_for_req(state, player, obj_id, target_req, &*behavior, registry);
+                        for target in targets {
+                            actions.push(Action::ActivateLoyaltyAbility {
+                                object_id: obj_id,
+                                ability_index: ab.ability_index,
+                                targets: vec![target],
+                            });
+                        }
+                    } else {
+                        actions.push(Action::ActivateLoyaltyAbility {
+                            object_id: obj_id,
+                            ability_index: ab.ability_index,
+                            targets: vec![],
+                        });
+                    }
                 }
             }
         }
@@ -1538,7 +1551,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             }
         }
 
-        Action::ActivateLoyaltyAbility { object_id, ability_index } => {
+        Action::ActivateLoyaltyAbility { object_id, ability_index, targets } => {
             let player = new_state.priority_player.expect("ActivateLoyaltyAbility requires priority");
             if let Some(behavior) = registry.get(
                 new_state.get_object(*object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
@@ -1560,7 +1573,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     if let Some(obj) = new_state.get_object_mut(*object_id) {
                         obj.abilities_activated_this_turn.insert(999); // sentinel for "used loyalty this turn"
                     }
-                    behavior.on_loyalty_ability(&mut new_state, *object_id, *ability_index, registry);
+                    behavior.on_loyalty_ability(&mut new_state, *object_id, *ability_index, targets, registry);
                     let name = card_name(&new_state, registry, *object_id);
                     new_state.log(LogLevel::Event, format!("p{} activated loyalty ability on {}: {}", player.0, name, ab.description));
                 }

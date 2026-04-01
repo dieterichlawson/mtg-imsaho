@@ -46,21 +46,24 @@ impl CardBehavior for LilianaOfTheVeil {
                 ability_index: 0,
                 loyalty_change: 1,
                 description: "+1: Each player discards a card".into(),
+                target_requirement: None,
             },
             LoyaltyAbilityDef {
                 ability_index: 1,
                 loyalty_change: -2,
                 description: "-2: Target player sacrifices a creature".into(),
+                target_requirement: None,
             },
             LoyaltyAbilityDef {
                 ability_index: 2,
                 loyalty_change: -6,
                 description: "-6: Separate permanents into two piles, sacrifice one pile".into(),
+                target_requirement: None,
             },
         ]
     }
 
-    fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, registry: &CardRegistry) {
+    fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, _targets: &[crate::actions::Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             None => return,
