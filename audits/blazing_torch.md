@@ -178,3 +178,41 @@ The previous audit flagged a wrong damage source (creature ID instead of torch I
 - Equip ability: `tier9_cards.rs:501` (blazing_torch_equip_ability)
 - Torch sacrificed after use: `tier9_cards.rs:438` (verified in deals_damage_to_player test)
 - Cross-controller equip interaction (ruling): NOT TESTED
+
+## Audit — 2026-04-01 18:30
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/216/blazing-torch?utm_source=api
+**Oracle text**: Equipped creature can't be blocked by Vampires or Zombies. Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target." Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)
+**Type line**: Artifact — Equipment
+**Mana cost**: {1}
+**Rulings**:
+- [2009-10-01] The source of the damage is Blazing Torch, not the equipped creature.
+- [2009-10-01] If Blazing Torch controlled by one player somehow winds up equipping a creature a different player controls, the damage ability can't be activated by either player.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Equip ability allows targeting opponents' creatures** (`mtg-engine/src/cards/isd/blazing_torch.rs`, lines 50-57):
+   - Oracle text says: `Equip {1} ({1}: Attach to target creature you control.)`
+   - Code does: `is_valid_target` checks only `o.zone == Zone::Battlefield` for object targets, without checking `o.controller == caster`. Compare with `runechanters_pike.rs` line 46 which correctly checks `o.controller == caster`. Because `is_valid_target` is shared between the equip ability and the damage ability, and the damage ability legitimately targets any creature/player, the equip case is too permissive.
+
+### Tricky interactions checked
+- Block restriction for Vampires/Zombies: PASS (`CreatureFilter::Not(Or(...))` with `EffectScope::Attached`)
+- Equip sorcery speed: PASS (sorcery_speed_only: true)
+- Equip target "creature you control": FAIL (see issue above)
+- Torch sacrifice on use: PASS (calls `crate::destruction::sacrifice`)
+- Damage source is torch, not creature: PASS (lines 107-119 find torch ID before sacrificing, use as `damage_source`)
+- NonCombatDamageDealt event: PASS (emitted for both creature and player targets)
+- LifeChanged event for player damage: PASS (line 147)
+- damaged_by tracking: PASS (line 129 uses torch ID as source)
+
+### Test coverage
+- Card data (mana cost, types, subtypes): `tier9_cards.rs:384` (blazing_torch_card_data)
+- Grants damage ability to equipped creature: `tier9_cards.rs:394` (blazing_torch_grants_damage_ability)
+- Deals 2 damage to player: `tier9_cards.rs:412` (blazing_torch_deals_damage_to_player)
+- Deals 2 damage to creature: `tier9_cards.rs:444` (blazing_torch_deals_damage_to_creature)
+- Damage source is torch not creature (ruling): `tier9_cards.rs:470` (blazing_torch_damage_source_is_torch_not_creature)
+- Equip ability: `tier9_cards.rs:501` (blazing_torch_equip_ability)
+- Torch sacrificed after use: `tier9_cards.rs:438` (verified in deals_damage_to_player test)
+- Equip only targets creature you control: NOT TESTED (bug: not enforced)
+- Cross-controller equip interaction (ruling): NOT TESTED

@@ -162,3 +162,43 @@ Card data verified correct:
 - Cannot target opponent's graveyard: `mtg-engine/tests/ghoulcallers_chant.rs:161` (cannot_target_opponents_graveyard)
 - Mixed graveyard correct modes: `mtg-engine/tests/ghoulcallers_chant.rs:183` (mixed_graveyard_correct_modes)
 - Fizzle (targets leave graveyard before resolution): NOT TESTED
+
+## Audit — 2026-04-01 14:30
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**: Choose one —
+• Return target creature card from your graveyard to your hand.
+• Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Mana cost**: {B}
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified:
+- Mana cost {B}: correct (Colored(Black))
+- Type: Sorcery: correct
+- No supertypes: correct
+- No subtypes: correct
+- No P/T: correct
+- No keywords: correct
+- Oracle text: matches
+
+Behavior verified:
+- `target_requirement` uses `ModalChoice` with two modes: correct
+  - Mode 1: `GraveyardCreature` — one creature card from graveyard: correct
+  - Mode 2: `TwoTargets(GraveyardCreatureOfSubtype("Zombie"), GraveyardCreatureOfSubtype("Zombie"))` — two Zombie cards: correct
+- `is_valid_target` restricts to caster's graveyard (zone == Graveyard && owner == caster): correct
+- `on_resolve` moves each target from graveyard to hand with zone check: correct
+- Uses `move_spell_after_resolve`: correct (not raw `move_object`)
+
+### Tricky interactions checked
+- Mode selection (1 creature vs 2 Zombies): pass — ModalChoice generates separate actions per mode
+- Targets must be in caster's graveyard only: pass
+- Mode 2 requires exactly 2 Zombie targets: pass
+
+### Test coverage
+- Mode 1 (return one creature): `mtg-engine/tests/tier11_cards.rs:105` (ghoulcallers_chant_returns_creature_from_graveyard)
+- Mode 2 (return two Zombies): `mtg-engine/tests/tier11_cards.rs:120` (ghoulcallers_chant_returns_two_zombies)
+- Fizzle (targets leave graveyard before resolution): NOT TESTED

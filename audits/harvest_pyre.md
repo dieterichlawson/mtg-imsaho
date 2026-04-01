@@ -193,3 +193,47 @@ Card data verified correct:
 - Fizzle (target leaves battlefield): NOT TESTED
 - Spell countered (cards should already be exiled): NOT TESTED
 - Player chooses X (subset of graveyard): NOT TESTED (known limitation)
+
+## Audit — 2026-04-01 14:30
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard.
+Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Mana cost**: {1}{R}
+**Status**: ISSUE
+
+### Code issues
+- **Harvest Pyre exiles ALL graveyard cards instead of letting the caster choose X**
+  - Oracle text says: `As an additional cost to cast this spell, exile X cards from your graveyard.`
+  - Code does: `AdditionalCost::ExileAllFromGraveyard` which exiles every card in the caster's graveyard (engine.rs:1344-1351). The caster should be able to choose how many cards to exile (X), not be forced to exile all of them. This matters because:
+    - The player may want to keep cards in graveyard for flashback, Boneyard Wurm, Spider Spawning, etc.
+    - The player may want to deal less damage than the maximum available
+  - File: `mtg-engine/src/cards/isd/harvest_pyre.rs:29` (`AdditionalCost::ExileAllFromGraveyard`)
+  - File: `mtg-engine/src/engine.rs:1344-1356` (exile implementation)
+
+Other card data verified:
+- Mana cost {1}{R}: correct (Generic(1), Red)
+- Type: Instant: correct
+- No supertypes/subtypes: correct
+- No P/T: correct
+- No keywords: correct
+- Target requirement: Creature: correct
+- Uses `move_spell_after_resolve`: correct
+- Emits `NonCombatDamageDealt` (not `CombatDamageDealt`): correct
+- Tracks `damaged_by` on target creature: correct
+
+### Tricky interactions checked
+- Non-combat damage correctly uses NonCombatDamageDealt event: pass
+- damaged_by tracking: pass
+- Only exiles caster's own graveyard cards: pass (engine code filters by owner)
+- Additional cost paid at cast time (cards exiled even if spell is countered): pass
+- Choosing X cards to exile (subset of graveyard): FAIL — always exiles all
+
+### Test coverage
+- Deals damage equal to exiled count: `mtg-engine/tests/tier8_cards.rs:527` (harvest_pyre_deals_damage_equal_to_exiled_count)
+- Empty graveyard deals no damage: `mtg-engine/tests/tier8_cards.rs:554` (harvest_pyre_empty_graveyard_deals_no_damage)
+- Only exiles own graveyard: `mtg-engine/tests/tier8_cards.rs:568` (harvest_pyre_only_exiles_own_graveyard)
+- Fizzle (target leaves battlefield): NOT TESTED
+- Spell countered (cards should already be exiled as cost): NOT TESTED
+- Player chooses X (subset of graveyard): NOT TESTED (known limitation — the bug)

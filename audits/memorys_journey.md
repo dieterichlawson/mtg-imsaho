@@ -150,3 +150,45 @@ Previously reported issues that remain as known limitations:
 - Player becomes illegal target (ruling): NOT TESTED (requires player targeting)
 - All card targets illegal, player still shuffles (ruling): NOT TESTED
 - Ruling: can't target self with flashback: NOT TESTED
+
+## Audit — 2026-04-01 21:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library.
+Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS (known limitations documented)
+
+### Code issues
+No new issues found. Card data is correct:
+- Mana cost {1}{U}: correct (Generic(1), Blue)
+- Type Instant: correct
+- Flashback cost {G}: correct (`flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]))`)
+- `move_spell_after_resolve` called at end of `on_resolve`: correct
+- `on_resolve` moves targeted graveyard cards to library, adds to `library_order`, shuffles owning player's library: correct
+- `UpToTargets` generates actions starting from k=0, allowing 0 card targets per ruling: correct
+- `ModalChoice` correctly partitions into caster's graveyard (`GraveyardCardOwnedByCaster`) and opponent's graveyard (`GraveyardCardOwnedByOpponent`): correct for 2-player games
+- When no card targets are present, `target_player` defaults to controller (line 55): correct for the caster-mode case
+
+Known limitations (persisting from prior audits, not new):
+1. **Player not explicitly targeted**: The ModalChoice workaround infers the player from card ownership rather than explicitly targeting a player. Player hexproof (Witchbane Orb) would not prevent this spell. Does not affect normal 2-player gameplay.
+2. **0-card opponent-graveyard mode defaults to caster's library**: When cast with 0 card targets in the opponent-graveyard mode, `target_player` defaults to controller instead of opponent (line 55 fallback). Edge case only.
+
+### Tricky interactions checked
+- Shuffles up to 3 cards from one graveyard: pass
+- Does not mix cards from different graveyards: pass
+- Flashback cost {G}: pass
+- Player's library shuffled even with 0 card targets (own graveyard mode): pass
+- move_spell_after_resolve for spell cleanup: pass
+- Flashback exile after resolution: pass (handled by `move_spell_after_resolve`)
+
+### Test coverage
+- Shuffles own graveyard card: `tests/memorys_journey.rs:21`
+- Shuffles opponent graveyard card: `tests/memorys_journey.rs:37`
+- Up to 3 cards: `tests/memorys_journey.rs:53`
+- No mixing graveyards: `tests/memorys_journey.rs:78`
+- Flashback cost verification: `tests/memorys_journey.rs:121` and `tests/tier11_cards.rs:356`
+- Player becomes illegal target (ruling): NOT TESTED (requires player targeting)
+- All card targets illegal, player still shuffles (ruling): NOT TESTED
+- Ruling: can't target self with flashback: NOT TESTED
+- Flashback from graveyard (cast + exile): NOT TESTED

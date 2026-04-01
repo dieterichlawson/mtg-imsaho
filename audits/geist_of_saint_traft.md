@@ -163,3 +163,47 @@ Angel always attacks `state.opponent(controller)` rather than allowing choice of
 - Ruling: Angel can attack different player/planeswalker: NOT TESTED (acceptable in 2-player engine)
 - Ruling: Angel entering does not trigger "attacks" triggers: NOT TESTED (engine-level behavior)
 - Multiple combat phases: NOT TESTED (but code structure is correct)
+
+## Audit — 2026-04-01 14:30
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**: Hexproof (This creature can't be the target of spells or abilities your opponents control.)
+Whenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.
+**Type line**: Legendary Creature — Spirit Cleric
+**Mana cost**: {1}{W}{U}
+**P/T**: 2/2
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified:
+- Mana cost {1}{W}{U}: correct (Generic(1), White, Blue)
+- Type: Creature with Legendary supertype: correct
+- Subtypes Spirit, Cleric: correct
+- P/T 2/2: correct
+- Keywords: Hexproof: correct
+- Oracle text: matches
+- triggered_abilities: Attacks and EndCombat TriggerKinds: correct
+
+Behavior verified:
+- `on_attacks` creates 4/4 white Angel token with Flying and "Angel" subtype via `create_token_with_subtypes`: correct
+- Token is set tapped: correct
+- Token is added to combat as attacker: correct
+- Angel token is registered for exile at end of combat via `state.end_of_combat_exiles`: correct
+- End-of-combat exile fires even if Geist leaves battlefield (game-level storage, not card-level): correct
+- Angel attacks the opponent (in 2-player game, only one valid defender): acceptable
+
+### Tricky interactions checked
+- Angel enters attacking but was not "declared" as attacker (won't trigger "attacks" triggers): correct — `on_attacks` is not called for the token
+- Delayed exile fires independently of Geist's presence: pass (tested)
+- Hexproof prevents targeting by opponent spells/abilities: pass (keyword correctly declared)
+- Token has Angel creature subtype: pass (passed via `create_token_with_subtypes`)
+
+### Test coverage
+- Angel created on attack: `mtg-engine/tests/geist_of_saint_traft.rs:20` (geist_creates_angel_on_attack)
+- Angel exiled at end of combat: `mtg-engine/tests/geist_of_saint_traft.rs:44` (angel_exiled_at_end_of_combat)
+- Angel exiled even if Geist dies: `mtg-engine/tests/geist_of_saint_traft.rs:70` (angel_exiled_even_if_geist_dies)
+- Duplicate test in tier15: `mtg-engine/tests/tier15_cards.rs`
+- Ruling: Angel can attack different player/planeswalker: NOT TESTED (acceptable in 2-player engine)
+- Ruling: Angel entering does not trigger "attacks" triggers: NOT TESTED (engine-level behavior)

@@ -243,3 +243,68 @@ Card data verified correct:
 - Transform gains double strike: `mtg-engine/tests/werewolf_cards.rs:431` (kruin_outlaw_transforms_gains_double_strike_and_menace)
 - Ruling: transform mid-combat keeps blocks: NOT TESTED (engine-level behavior)
 - Transform back to front (2+ spells): NOT TESTED (directly)
+
+## Audit — 2026-04-01 14:30
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Front face Oracle text**: First strike
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Front face type line**: Creature — Human Rogue Werewolf
+**Front face P/T**: 2/2
+**Back face name**: Terror of Kruin Pass
+**Back face Oracle text**: Double strike
+Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Back face type line**: Creature — Werewolf
+**Back face P/T**: 3/3
+**Mana cost**: {1}{R}{R}
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified — front face:
+- Mana cost {1}{R}{R}: correct (Generic(1), Red, Red)
+- Types: Creature: correct
+- No supertypes: correct
+- Subtypes: Human, Rogue, Werewolf: correct (all three from oracle type line)
+- P/T 2/2: correct
+- Keywords: FirstStrike: correct
+- triggered_abilities: Upkeep TriggerKind: correct
+- Oracle text: matches
+
+Card data verified — back face:
+- Name: Terror of Kruin Pass: correct
+- Types: Creature: correct
+- Subtypes: Werewolf: correct (matches oracle "Creature — Werewolf")
+- P/T 3/3: correct (via `dynamic_pt` returning (3,3) when transformed)
+- Keywords: DoubleStrike: correct
+- Continuous effect: `GrantKeyword { keyword: Menace, scope: Global(And(You, HasSubtype("Werewolf"))) }`: correct — grants menace to your Werewolves
+- triggered_abilities: Upkeep TriggerKind: correct
+
+Behavior verified:
+- `werewolf_should_transform`: front-to-back when `total_spells_last_turn == 0` and not first turn: correct
+- `werewolf_should_transform`: back-to-front when any player cast 2+ spells last turn: correct
+- `on_upkeep` checks zone == Battlefield, then calls `should_transform`, then toggles `is_transformed` and updates name: correct
+- `has_keyword` correctly uses back face keywords when transformed (checked in state.rs:932-941): correct — FirstStrike removed, DoubleStrike active
+- Menace continuous effect uses `EffectScope::Global` with `CreatureFilter::And(You, HasSubtype("Werewolf"))`: correct — applies to all your Werewolves including itself
+
+### Tricky interactions checked
+- Transform condition (front): no spells cast last turn, not first turn: pass
+- Transform condition (back): a player cast 2+ spells last turn: pass
+- Keywords switch on transform (FirstStrike -> DoubleStrike): pass
+- Menace granted to all your Werewolves (including self): pass
+- Menace NOT granted to opponent's Werewolves: pass (CreatureFilter::You)
+- Non-Werewolves don't get menace: pass
+- P/T changes from 2/2 to 3/3 on transform: pass (dynamic_pt)
+
+### Test coverage
+- Self requires two blockers (menace): `mtg-engine/tests/kruin_outlaw.rs:23` (terror_of_kruin_pass_self_requires_two_blockers)
+- Allows two blockers: `mtg-engine/tests/kruin_outlaw.rs:56` (terror_of_kruin_pass_allows_two_blockers)
+- Grants menace to other Werewolves: `mtg-engine/tests/kruin_outlaw.rs:90` (terror_of_kruin_pass_grants_restriction_to_other_werewolves)
+- Does not affect non-Werewolves: `mtg-engine/tests/kruin_outlaw.rs:128` (terror_of_kruin_pass_does_not_affect_non_werewolves)
+- Does not affect opponent's Werewolves: `mtg-engine/tests/kruin_outlaw.rs:164` (terror_of_kruin_pass_does_not_affect_opponent_werewolves)
+- Grants menace keyword: `mtg-engine/tests/kruin_outlaw.rs:201` (terror_of_kruin_pass_grants_menace_keyword)
+- Transform gains double strike: `mtg-engine/tests/werewolf_cards.rs:431` (kruin_outlaw_transforms_gains_double_strike_and_menace)
+- Ruling: transform mid-combat keeps blocks: NOT TESTED (engine-level behavior)
+- Transform back to front (2+ spells): NOT TESTED (directly)

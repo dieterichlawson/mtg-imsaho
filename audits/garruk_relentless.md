@@ -237,3 +237,56 @@ All three issues from the previous audit have been fixed:
 - Cannot activate loyalty abilities on both faces in same turn (ruling): NOT TESTED
 - -1 is mandatory if creature is controlled (ruling): NOT TESTED (implemented correctly but no test)
 - Front face ability 0 creature fights back: NOT TESTED (implemented correctly but no test)
+
+## Audit — 2026-04-01 18:30
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed?utm_source=api
+**Oracle text (front)**: When Garruk has two or fewer loyalty counters on him, transform him. 0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him. 0: Create a 2/2 green Wolf creature token.
+**Oracle text (back)**: +1: Create a 1/1 black Wolf creature token with deathtouch. -1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle. -3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+**Type line**: Legendary Planeswalker — Garruk // Legendary Planeswalker — Garruk
+**Starting loyalty**: 3
+**Rulings**:
+- [2011-09-22] Garruk Relentless's first ability is a state-triggered ability.
+- [2011-09-22] You don't add or remove loyalty counters from Garruk Relentless when he transforms.
+- [2011-09-22] You can't activate a loyalty ability of Garruk Relentless and later that turn after he transforms activate a loyalty ability of Garruk, the Veil-Cursed.
+- [2011-09-22] The -1 ability doesn't target a creature, but you must sacrifice one if you control one.
+- [2011-09-22] The -3 bonus is locked in at resolution and doesn't change later.
+- [2011-09-22] Only creatures you control when -3 resolves get the bonus.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Missing library shuffle after -1 tutor** (`mtg-engine/src/cards/isd/garruk_relentless.rs`, lines 196-206):
+   - Oracle text says: `search your library for a creature card, reveal it, put it into your hand, then shuffle.`
+   - Code does: Removes the found creature from `library_order` and moves it to hand, but never shuffles the library. Compare with `caravan_vigil.rs` lines 73 and 80 which correctly call `library_order.shuffle(&mut rng)` after searching. This is a concrete bug -- after resolving -1, the library remains in its pre-search order rather than being randomized.
+
+### Tricky interactions checked
+- Starting loyalty 3: PASS (starting_loyalty returns Some(3), on_resolve adds 3 counters)
+- Legendary supertype: PASS (line 32)
+- State-triggered transform at <= 2 loyalty: PASS (SBA check in sba.rs lines 247-266)
+- No loyalty change on transform (ruling): PASS (SBA only flips is_transformed and name)
+- Front face ability 0 targets any creature via player choice: PASS (reads from `targets` parameter at line 104)
+- Front face ability 0 reads power before dealing damage: PASS (line 105)
+- Creature damage back to Garruk emits NonCombatDamageDealt: PASS (lines 124-128)
+- Front face wolf token 2/2 green with Wolf subtype: PASS (lines 136-144)
+- Back face +1 wolf 1/1 black with deathtouch and Wolf subtype: PASS (lines 152-160)
+- Back face -1 sacrifice is mandatory if creature controlled (ruling): PASS (lines 168-172)
+- Back face -1 does not target (ruling): PASS (no targeting, auto-selects via AI heuristic)
+- Back face -1 library search auto-selects: accepted engine pattern (auto-choice heuristic)
+- Back face -1 library shuffle after search: FAIL (see issue above)
+- Back face -3 counts creatures in graveyard at resolution (ruling): PASS (lines 215-226)
+- Back face -3 only affects creatures controlled at resolution (ruling): PASS (lines 228-232)
+- Loyalty abilities show correct costs (0/0 for front, +1/-1/-3 for back): PASS
+
+### Test coverage
+- Front face creates 2/2 Wolf token: `tier15_cards.rs:1046` (garruk_creates_wolf_token)
+- Transforms at 2 or fewer loyalty (via SBA): `tier15_cards.rs:1068` (garruk_transforms_at_two_or_fewer_loyalty)
+- Back face creates 1/1 black Wolf with deathtouch: `tier15_cards.rs:1091` (garruk_back_face_creates_deathtouch_wolf)
+- Back face sacrifice-to-tutor: `tier15_cards.rs:1119` (garruk_back_face_sacrifice_to_tutor)
+- Back face -3 overrun effect: `tier15_cards.rs:1157` (garruk_back_face_overrun)
+- Back face loyalty abilities list: `tier15_cards.rs:1197` (garruk_back_face_loyalty_abilities_shown_when_transformed)
+- Library shuffle after -1 tutor: NOT TESTED (bug: shuffle not implemented)
+- Transform from non-loyalty-ability damage source (e.g., combat): NOT TESTED (fixed but test uses loyalty ability path)
+- Cannot activate loyalty abilities on both faces in same turn (ruling): NOT TESTED
+- -1 is mandatory if creature is controlled (ruling): NOT TESTED (implemented correctly)
+- Front face ability 0 creature fights back: NOT TESTED (implemented correctly)
