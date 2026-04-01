@@ -23,7 +23,8 @@ pub enum Action {
     /// Cast a spell (puts it on the stack).
     /// For targeted spells, targets must be chosen at cast time.
     /// If the spell has an additional cost (e.g. sacrifice a creature), `sacrifice` holds the chosen creature.
-    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId> },
+    /// `exile_count` is used for "exile X cards from graveyard" costs (Harvest Pyre).
+    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId>, exile_count: Option<u32> },
 
     /// Activate a mana ability (doesn't use the stack, player retains priority).
     ActivateManaAbility { object_id: ObjectId, ability_index: usize },
@@ -108,7 +109,7 @@ impl std::fmt::Display for Action {
         match self {
             Action::PassPriority => write!(f, "Pass priority"),
             Action::PlayLand { object_id } => write!(f, "Play land {}", object_id),
-            Action::CastSpell { object_id, targets, sacrifice } => {
+            Action::CastSpell { object_id, targets, sacrifice, .. } => {
                 if targets.is_empty() && sacrifice.is_none() {
                     write!(f, "Cast spell {}", object_id)
                 } else if let Some(sac) = sacrifice {

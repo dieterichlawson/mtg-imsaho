@@ -159,7 +159,7 @@ fn frightful_delusion_discard_on_pay() {
     state.priority_player = Some(P1);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None },
+        &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None },
         &reg,
     );
 
@@ -168,7 +168,7 @@ fn frightful_delusion_discard_on_pay() {
     let fd = castable_spell(&mut state, &reg, "Frightful Delusion", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(creature)], sacrifice: None },
+        &Action::CastSpell { object_id: fd, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None },
         &reg,
     );
 

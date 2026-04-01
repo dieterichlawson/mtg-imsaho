@@ -5,6 +5,7 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::triggers;
@@ -524,7 +525,8 @@ fn corpse_lunge_picks_highest_power_creature() {
 }
 #[test]
 
-fn harvest_pyre_deals_damage_equal_to_exiled_count() {
+fn harvest_pyre_deals_damage_equal_to_chosen_x() {
+    // Player chooses X=4 (exile 4 cards from graveyard).
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -537,31 +539,114 @@ fn harvest_pyre_deals_damage_equal_to_exiled_count() {
     let target = ready_creature(&mut state, P1, 5, 5);
 
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
-    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+    // Cast with X=4 (exile all 4).
+    let mut new_state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(4) },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
 
-    // All 4 cards should be exiled.
-    let exiled_count = state.objects.values()
+    // 4 cards should be exiled.
+    let exiled_count = new_state.objects.values()
         .filter(|o| o.zone == Zone::Exile && o.owner == P0)
         .count();
-    assert_eq!(exiled_count, 4, "All 4 graveyard cards should be exiled");
+    assert_eq!(exiled_count, 4, "4 graveyard cards should be exiled");
 
     // Target should have 4 damage.
-    let target_obj = state.get_object(target).unwrap();
+    let target_obj = new_state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 4, "Target should have 4 damage from Harvest Pyre");
 }
-#[test]
 
-fn harvest_pyre_empty_graveyard_deals_no_damage() {
+#[test]
+fn harvest_pyre_player_chooses_partial_x() {
+    // Player chooses X=2 (exile only 2 of 4 available cards).
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    for _ in 0..4 {
+        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
+        state.move_object(c, Zone::Graveyard);
+    }
+
+    let target = ready_creature(&mut state, P1, 5, 5);
+
+    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+    let mut new_state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(2) },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
+
+    // Only 2 cards should be exiled.
+    let exiled_count = new_state.objects.values()
+        .filter(|o| o.zone == Zone::Exile && o.owner == P0)
+        .count();
+    assert_eq!(exiled_count, 2, "Only 2 graveyard cards should be exiled");
+
+    // 2 original cards remain + Harvest Pyre itself (moved to graveyard after resolve) = 3.
+    let gy_count = new_state.objects.values()
+        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0)
+        .count();
+    assert_eq!(gy_count, 3, "2 original cards + Harvest Pyre in graveyard");
+
+    // Target should have 2 damage, not 4.
+    let target_obj = new_state.get_object(target).unwrap();
+    assert_eq!(target_obj.damage_marked, 2, "Target should have 2 damage (X=2)");
+}
+
+#[test]
+fn harvest_pyre_x_zero_deals_no_damage() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    for _ in 0..3 {
+        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
+        state.move_object(c, Zone::Graveyard);
+    }
 
     let target = ready_creature(&mut state, P1, 3, 3);
 
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
-    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+    let mut new_state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(0) },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
 
-    let target_obj = state.get_object(target).unwrap();
-    assert_eq!(target_obj.damage_marked, 0, "No damage should be dealt with empty graveyard");
+    let target_obj = new_state.get_object(target).unwrap();
+    assert_eq!(target_obj.damage_marked, 0, "No damage should be dealt with X=0");
+}
+
+#[test]
+fn harvest_pyre_legal_actions_include_different_x_values() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    for _ in 0..3 {
+        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
+        state.move_object(c, Zone::Graveyard);
+    }
+
+    let _target = ready_creature(&mut state, P1, 3, 3);
+
+    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let actions = engine::legal_actions(&state, &reg);
+    let harvest_actions: Vec<_> = actions.actions.iter()
+        .filter(|a| {
+            if let Action::CastSpell { object_id, .. } = a { *object_id == spell } else { false }
+        })
+        .collect();
+
+    // Should have actions for X=0, X=1, X=2, X=3 (4 values × 1 target = 4 actions).
+    assert!(harvest_actions.len() >= 4,
+        "Should have at least 4 cast actions (X=0,1,2,3) but got {}", harvest_actions.len());
 }
 #[test]
 
@@ -583,21 +668,27 @@ fn harvest_pyre_only_exiles_own_graveyard() {
     let target = ready_creature(&mut state, P1, 6, 6);
 
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
-    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+    // Cast with X=3 (exile all 3 of P0's graveyard cards).
+    let mut new_state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(3) },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
 
     // Only P0's 3 cards should be exiled.
-    let p0_exiled = state.objects.values()
+    let p0_exiled = new_state.objects.values()
         .filter(|o| o.zone == Zone::Exile && o.owner == P0)
         .count();
     assert_eq!(p0_exiled, 3, "Only P0's 3 graveyard cards should be exiled");
 
     // P1's graveyard should be untouched.
-    let p1_gy = state.objects.values()
+    let p1_gy = new_state.objects.values()
         .filter(|o| o.zone == Zone::Graveyard && o.owner == P1)
         .count();
     assert_eq!(p1_gy, 2, "P1's graveyard should be untouched");
 
     // Target should have 3 damage.
-    let target_obj = state.get_object(target).unwrap();
+    let target_obj = new_state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 3, "Target should have 3 damage");
 }

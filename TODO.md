@@ -15,6 +15,4 @@ Add the ability to serialize a game state to a file and resume from it. This wou
 
 - [ ] **Inquisitor's Flail** — Oracle text field says "another source" but Scryfall says "another creature." Cosmetic only — behavior is correct.
 
-- [ ] **Blazing Torch** — `is_valid_target` doesn't restrict equip ability to "creature you control." The equip and damage abilities share `is_valid_target`, so the equip ability allows targeting opponent's creatures. Needs ability-index-aware targeting or separate validation.
-
-- [ ] **Garruk Relentless** — Back face -1 ability (sacrifice + library search) doesn't shuffle the library after searching. Oracle says "then shuffle."
+- [ ] **All equipment cards** — Most equipment uses `TargetRequirement::Creature` for equip instead of `CreatureWithFilter(YouControl)`. Equip by definition targets "creature you control." Fixed for Blazing Torch; other equipment (Cobbled Wings, Mask of Avacyn, Butcher's Cleaver, etc.) likely have the same issue.

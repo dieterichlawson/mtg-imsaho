@@ -7,9 +7,12 @@
       "oracle_text": "Enchant player\nAt the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.",
       "power": null,
       "toughness": null,
-      "source": "Scryfall via WebSearch",
-      "source_url": "https://scryfall.com/card/isd/138/curse-of-the-pierced-heart",
-      "cached_at": "2026-04-01"
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/isd/138/curse-of-the-pierced-heart?utm_source=api",
+      "cached_at": "2026-04-01",
+      "keywords": [
+        "Enchant"
+      ]
     },
     "Lightning Bolt": {
       "name": "Lightning Bolt",

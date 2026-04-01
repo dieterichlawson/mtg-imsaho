@@ -484,6 +484,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     if creatures.is_empty() { continue; }
                     creatures
                 }
+                Some(AdditionalCost::ExileXFromGraveyard) => {
+                    // Player chooses X (0 to graveyard size). Actions are expanded below.
+                    vec![]
+                }
                 Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => {
                     // Check that there are enough creature cards in graveyard.
                     let creature_count = state.objects.values()
@@ -526,6 +530,27 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice: Some(sac_id),
+                                exile_count: None,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // For ExileXFromGraveyard, expand each cast action into one per X value.
+            if matches!(&data.additional_cost, Some(AdditionalCost::ExileXFromGraveyard)) {
+                let gy_count = state.objects.values()
+                    .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id)
+                    .count() as u32;
+                let base_actions = std::mem::take(&mut cast_actions);
+                for action in base_actions {
+                    if let Action::CastSpell { object_id, targets, sacrifice, .. } = action {
+                        for x in 0..=gy_count {
+                            cast_actions.push(Action::CastSpell {
+                                object_id,
+                                targets: targets.clone(),
+                                sacrifice,
+                                exile_count: Some(x),
                             });
                         }
                     }
@@ -673,7 +698,7 @@ fn generate_cast_actions_with_targets(
 
     match target_req {
         TargetRequirement::None => {
-            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None }]
+            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None }]
         }
         TargetRequirement::AnyTarget => {
             // Can target any creature on the battlefield or any player.
@@ -686,7 +711,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None,
+                            sacrifice: None, exile_count: None,
                         });
                     }
                 }
@@ -698,7 +723,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None,
+                            sacrifice: None, exile_count: None,
                         });
                     }
                 }
@@ -715,7 +740,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None,
+                            sacrifice: None, exile_count: None,
                         });
                     }
                 }
@@ -731,7 +756,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None,
+                            sacrifice: None, exile_count: None,
                         });
                     }
                 }
@@ -752,7 +777,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None,
+                        sacrifice: None, exile_count: None,
                     });
                 }
             }
@@ -769,7 +794,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None,
+                        sacrifice: None, exile_count: None,
                     });
                 }
             }
@@ -780,7 +805,7 @@ fn generate_cast_actions_with_targets(
         | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None })
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None })
                 .collect()
         }
         TargetRequirement::ModalChoice(ref modes) => {
@@ -802,7 +827,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
-                            sacrifice: None,
+                            sacrifice: None, exile_count: None,
                         });
                     }
                 }
@@ -832,7 +857,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: combo,
-                        sacrifice: None,
+                        sacrifice: None, exile_count: None,
                     });
                 }
             }
@@ -1235,7 +1260,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets, sacrifice } => {
+        Action::CastSpell { object_id, targets, sacrifice, exile_count } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback vs cast-from-graveyard.
@@ -1357,20 +1382,23 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 }
             }
 
-            // Handle ExileAllFromGraveyard additional cost (Harvest Pyre).
+            // Handle ExileXFromGraveyard additional cost (Harvest Pyre).
+            // The player chose X via exile_count in the action.
             {
                 use crate::cards::AdditionalCost;
-                let needs_exile_all = registry.get(card_id)
-                    .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::ExileAllFromGraveyard)))
+                let needs_exile_x = registry.get(card_id)
+                    .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::ExileXFromGraveyard)))
                     .unwrap_or(false);
-                if needs_exile_all {
+                if needs_exile_x {
+                    let x = exile_count.unwrap_or(0);
                     let graveyard_cards: Vec<ObjectId> = new_state.objects.values()
                         .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id)
                         .map(|o| o.id)
+                        .take(x as usize)
                         .collect();
-                    let count = graveyard_cards.len();
-                    for card_id in &graveyard_cards {
-                        new_state.move_object(*card_id, Zone::Exile);
+                    let count = graveyard_cards.len() as u32;
+                    for gid in &graveyard_cards {
+                        new_state.move_object(*gid, Zone::Exile);
                     }
                     // Store the count on the spell for resolution.
                     if let Some(obj) = new_state.get_object_mut(*object_id) {

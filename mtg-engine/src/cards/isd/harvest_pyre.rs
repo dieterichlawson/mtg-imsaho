@@ -26,7 +26,7 @@ impl CardBehavior for HarvestPyre {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
-            additional_cost: Some(crate::cards::AdditionalCost::ExileAllFromGraveyard),
+            additional_cost: Some(crate::cards::AdditionalCost::ExileXFromGraveyard),
             triggered_abilities: vec![],
         }
     }
