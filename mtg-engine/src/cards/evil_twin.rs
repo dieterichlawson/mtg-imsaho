@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TargetFilter, TargetRequirement};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Evil Twin {2}{U}{B} 0/0 Shapeshifter.
@@ -36,46 +36,62 @@ impl CardBehavior for EvilTwin {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
         };
 
-        // Find a creature to copy (prefer opponent's creatures).
-        let target: Option<ObjectId> = state.objects.values()
+        // Find all creatures on the battlefield (excluding self).
+        let creatures: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != object_id)
-            .max_by_key(|o| if o.controller != controller { 1 } else { 0 })
-            .map(|o| o.id);
+            .map(|o| o.id)
+            .collect();
 
-        if let Some(target_id) = target {
-            let (name, power, toughness, card_id, subtypes) = match state.get_object(target_id) {
-                Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.subtypes.clone()),
-                None => return,
-            };
-            let (keywords, reg_subtypes) = registry.card_data(card_id)
-                .map(|d| (d.keywords.clone(), d.subtypes.clone()))
-                .unwrap_or_default();
+        if creatures.is_empty() {
+            return;
+        }
 
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.name = name.clone();
-                obj.power = power;
-                obj.toughness = toughness;
-                obj.card_id = card_id;
-                obj.keywords = keywords;
-                // Merge subtypes.
-                let mut all_subtypes = reg_subtypes;
-                for s in subtypes {
-                    if !all_subtypes.contains(&s) {
-                        all_subtypes.push(s);
-                    }
-                }
-                obj.subtypes = all_subtypes;
-                // Mark as Evil Twin via card_state so we know it has the destroy ability.
-                obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
-            }
-            state.log(crate::state::LogLevel::Event,
-                format!("Evil Twin enters as a copy of {}", name));
+        // "You may" — present choice.
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: object_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description: "Have Evil Twin enter as a copy of a creature?".into(),
+                source_card: object_id,
+                effect: YesNoEffect::CardCallback { context: vec![] },
+            },
+        });
+    }
+
+    fn on_yes_choice(&self, state: &mut GameState, self_id: ObjectId, _context: &[ObjectId], _registry: &CardRegistry) {
+        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+
+        let creatures: Vec<ObjectId> = state.objects.values()
+            .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != self_id)
+            .map(|o| o.id)
+            .collect();
+
+        if creatures.len() == 1 {
+            evil_twin_copy(state, self_id, creatures[0]);
+        } else if creatures.len() > 1 {
+            let options: Vec<Target> = creatures.iter().map(|&id| Target::Object(id)).collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Evil Twin: choose a creature to copy".into(),
+                    options,
+                    optional: false,
+                    effect: PendingEffect::CardCallbackWithTarget { source_id: self_id },
+                },
+            });
+        }
+    }
+
+    fn on_target_chosen(&self, state: &mut GameState, self_id: ObjectId, target: &Target, _registry: &CardRegistry) {
+        if let Target::Object(target_id) = target {
+            evil_twin_copy(state, self_id, *target_id);
         }
     }
 
@@ -134,4 +150,23 @@ impl CardBehavior for EvilTwin {
             }
         }
     }
+}
+
+fn evil_twin_copy(state: &mut GameState, twin_id: ObjectId, target_id: ObjectId) {
+    let (name, power, toughness, card_id, subtypes, keywords) = match state.get_object(target_id) {
+        Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.subtypes.clone(), o.keywords.clone()),
+        None => return,
+    };
+
+    if let Some(obj) = state.get_object_mut(twin_id) {
+        obj.name = name.clone();
+        obj.power = power;
+        obj.toughness = toughness;
+        obj.card_id = card_id;
+        obj.keywords = keywords;
+        obj.subtypes = subtypes;
+        obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
+    }
+    state.log(crate::state::LogLevel::Event,
+        format!("Evil Twin enters as a copy of {}", name));
 }

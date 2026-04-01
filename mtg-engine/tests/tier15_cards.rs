@@ -199,6 +199,17 @@ fn bitterheart_witch_finds_curse_on_death() {
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
     behavior.on_dies(&mut state, witch, &reg);
 
+    // Should have a YesNo choice. Choose yes to search.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
+
+    // Only one curse in library, so it auto-selects.
     // The curse should be on the battlefield attached to opponent.
     let curse = state.get_object(curse_obj).unwrap();
     assert_eq!(curse.zone, Zone::Battlefield, "Curse should be on battlefield");
@@ -874,12 +885,23 @@ fn evil_twin_copies_creature_on_etb() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _opponent_creature = named_creature(&mut state, &reg, "Grizzly Bears", P1);
+    let opponent_creature = named_creature(&mut state, &reg, "Grizzly Bears", P1);
     let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
 
     let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
     behavior.on_enter_battlefield(&mut state, twin, &reg);
 
+    // Should have a YesNo choice. Choose yes to copy.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
+
+    // Only one creature to copy, so it auto-selects Grizzly Bears.
     // Evil Twin should have copied Grizzly Bears stats.
     assert_eq!(state.get_object(twin).unwrap().name, "Grizzly Bears");
     assert_eq!(state.get_object(twin).unwrap().power, Some(2));
@@ -1094,19 +1116,38 @@ fn grimoire_accumulates_study_counters() {
     state.get_object_mut(grimoire).unwrap().name = "Grimoire of the Dead".into();
 
     // Give P0 cards to discard.
-    let _c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    let _c2 = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    let _c3 = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
+    let c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let c2 = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+    let c3 = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
 
     let behavior = reg.get(card_id).unwrap();
 
-    // Activate 3 times.
+    // Activate 1st time — 3 cards in hand, presents choice.
     behavior.on_activate_ability(&mut state, grimoire, 0, &[], &reg);
+    assert!(state.awaiting_action.is_some(), "Should have a pending discard choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenCard(c1),
+        },
+        &reg,
+    );
     let counters = state.get_object(grimoire).unwrap().card_state.get("study_counters")
         .map(|id| id.0 as u32).unwrap_or(0);
     assert_eq!(counters, 1);
 
+    // Activate 2nd time — 2 cards in hand, presents choice.
     behavior.on_activate_ability(&mut state, grimoire, 0, &[], &reg);
+    assert!(state.awaiting_action.is_some(), "Should have a pending discard choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenCard(c2),
+        },
+        &reg,
+    );
+
+    // Activate 3rd time — 1 card in hand, auto-selects.
     behavior.on_activate_ability(&mut state, grimoire, 0, &[], &reg);
 
     let counters = state.get_object(grimoire).unwrap().card_state.get("study_counters")

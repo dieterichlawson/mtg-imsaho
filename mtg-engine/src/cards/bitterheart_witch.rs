@@ -1,6 +1,7 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Bitterheart Witch — {4}{B} 1/2 Human Shaman with Deathtouch.
@@ -39,44 +40,105 @@ impl CardBehavior for BitterheartWitch {
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        let opponent = state.opponent(controller);
 
-        // Search library for a Curse card.
-        let curse_id = {
+        // Check if there's a Curse in the library.
+        let has_curse = {
             let player = state.get_player(controller);
-            player.library_order.iter()
-                .find(|&&obj_id| {
-                    let card_id = state.get_object(obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
-                    registry.card_data(card_id)
-                        .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
-                        .unwrap_or(false)
-                })
-                .copied()
+            player.library_order.iter().any(|&obj_id| {
+                let card_id = state.get_object(obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
+                registry.card_data(card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
+                    .unwrap_or(false)
+            })
         };
 
-        if let Some(curse_obj_id) = curse_id {
-            let name = state.get_object(curse_obj_id).map(|o| o.name.clone()).unwrap_or_default();
-            // Remove from library.
-            state.get_player_mut(controller).library_order.retain(|&id| id != curse_obj_id);
-            // Put on battlefield attached to opponent.
-            state.move_object(curse_obj_id, Zone::Battlefield);
-            if let Some(obj) = state.get_object_mut(curse_obj_id) {
-                obj.attached_to_player = Some(opponent);
-                obj.summoning_sick = false;
-            }
-            state.log(crate::state::LogLevel::Event,
-                format!("Bitterheart Witch found {} and attached it to p{}", name, opponent.0));
-            // Shuffle library.
-            use rand::seq::SliceRandom;
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(controller).library_order.shuffle(&mut rng);
-        } else {
+        if !has_curse {
             state.log(crate::state::LogLevel::Event,
                 "Bitterheart Witch: no Curse found in library".to_string());
             // Still shuffle.
             use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(controller).library_order.shuffle(&mut rng);
+            return;
         }
+
+        // "You may" — present choice.
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: object_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description: "Bitterheart Witch: search library for a Curse card?".into(),
+                source_card: object_id,
+                effect: YesNoEffect::CardCallback { context: vec![] },
+            },
+        });
     }
+
+    fn on_yes_choice(&self, state: &mut GameState, self_id: ObjectId, _context: &[ObjectId], registry: &CardRegistry) {
+        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let opponent = state.opponent(controller);
+
+        // Find all Curses in library.
+        let curses: Vec<ObjectId> = {
+            let player = state.get_player(controller);
+            player.library_order.iter()
+                .filter(|&&obj_id| {
+                    let card_id = state.get_object(obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
+                    registry.card_data(card_id)
+                        .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect()
+        };
+
+        if curses.len() == 1 {
+            bitterheart_attach_curse(state, self_id, curses[0], controller, opponent);
+        } else if curses.len() > 1 {
+            let options: Vec<Target> = curses.iter()
+                .map(|&id| Target::Object(id))
+                .collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Bitterheart Witch: choose a Curse card".into(),
+                    options,
+                    optional: false,
+                    effect: PendingEffect::CardCallbackWithTarget { source_id: self_id },
+                },
+            });
+            return;
+        }
+        // Shuffle after search.
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        state.get_player_mut(controller).library_order.shuffle(&mut rng);
+    }
+
+    fn on_target_chosen(&self, state: &mut GameState, self_id: ObjectId, target: &Target, _registry: &CardRegistry) {
+        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let opponent = state.opponent(controller);
+        if let Target::Object(curse_id) = target {
+            bitterheart_attach_curse(state, self_id, *curse_id, controller, opponent);
+        }
+        // Shuffle after search.
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        state.get_player_mut(controller).library_order.shuffle(&mut rng);
+    }
+}
+
+fn bitterheart_attach_curse(state: &mut GameState, _source_id: ObjectId, curse_id: ObjectId, controller: crate::ids::PlayerId, target_player: crate::ids::PlayerId) {
+    let name = state.get_object(curse_id).map(|o| o.name.clone()).unwrap_or_default();
+    // Remove from library.
+    state.get_player_mut(controller).library_order.retain(|&id| id != curse_id);
+    // Put on battlefield attached to target player.
+    state.move_object(curse_id, Zone::Battlefield);
+    if let Some(obj) = state.get_object_mut(curse_id) {
+        obj.attached_to_player = Some(target_player);
+        obj.summoning_sick = false;
+    }
+    state.log(crate::state::LogLevel::Event,
+        format!("Bitterheart Witch found {} and attached it to p{}", name, target_player.0));
 }

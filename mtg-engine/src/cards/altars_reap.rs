@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Altar's Reap — {1}{B} Instant.
@@ -36,18 +36,44 @@ impl CardBehavior for AltarsReap {
             .map(|o| o.controller)
             .unwrap_or(crate::ids::PlayerId(0));
 
-        // SIMPLIFICATION: In real MTG, the sacrifice happens as part of casting (before
-        // the spell goes on the stack). Here we sacrifice on resolution because the engine
-        // doesn't yet support multi-step casting with additional costs.
-        let creature_to_sac = state.objects.values()
-            .find(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some())
-            .map(|o| o.id);
+        let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
+            .iter()
+            .filter(|o| o.power.is_some())
+            .map(|o| o.id)
+            .collect();
 
-        if let Some(sac_id) = creature_to_sac {
-            crate::destruction::sacrifice(state, sac_id, registry);
-            crate::engine::draw_cards(state, controller, 2);
+        if creatures.len() == 1 {
+            altars_reap_sac(state, object_id, creatures[0], controller, registry);
+        } else if creatures.len() > 1 {
+            let options: Vec<Target> = creatures.iter().map(|&id| Target::Object(id)).collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: object_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Altar's Reap: choose a creature to sacrifice".into(),
+                    options,
+                    optional: false,
+                    effect: PendingEffect::CardCallbackWithTarget { source_id: object_id },
+                },
+            });
+            return;
         }
-        // If no creature to sacrifice, the spell fizzles (no effect).
         state.move_spell_after_resolve(object_id);
     }
+
+    fn on_target_chosen(&self, state: &mut GameState, self_id: ObjectId, target: &Target, registry: &CardRegistry) {
+        if let Target::Object(sac_id) = target {
+            let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+            altars_reap_sac(state, self_id, *sac_id, controller, registry);
+        }
+        state.move_spell_after_resolve(self_id);
+    }
+}
+
+fn altars_reap_sac(state: &mut GameState, _spell_id: ObjectId, sac_id: ObjectId, controller: crate::ids::PlayerId, registry: &CardRegistry) {
+    let name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
+    crate::destruction::sacrifice(state, sac_id, registry);
+    crate::engine::draw_cards(state, controller, 2);
+    state.log(crate::state::LogLevel::Event,
+        format!("Altar's Reap: sacrificed {}, drew 2 cards", name));
 }

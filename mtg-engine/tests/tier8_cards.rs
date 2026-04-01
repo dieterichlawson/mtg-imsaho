@@ -259,28 +259,48 @@ fn divine_reckoning_keeps_one_per_player() {
     // P0 has 3 creatures: 2/1, 2/3, 1/5.
     let _c1 = ready_creature(&mut state, P0, 2, 1);
     let _c2 = ready_creature(&mut state, P0, 2, 3);
-    let c3 = ready_creature(&mut state, P0, 1, 5); // highest toughness — should be kept
+    let c3 = ready_creature(&mut state, P0, 1, 5); // P0 will choose to keep this one
 
     // P1 has 2 creatures: 4/2, 3/4.
     let _c4 = ready_creature(&mut state, P1, 4, 2);
-    let c5 = ready_creature(&mut state, P1, 3, 4); // highest toughness — should be kept
+    let c5 = ready_creature(&mut state, P1, 3, 4); // P1 will choose to keep this one
 
     let spell = castable_spell(&mut state, &reg, "Divine Reckoning", P0);
-    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+    let mut state = cast_and_resolve(&state, &reg, spell, vec![]);
+
+    // P0 should have a ChooseTarget choice — choose c3 to keep.
+    assert!(state.awaiting_action.is_some(), "P0 should choose a creature to keep");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(c3))),
+        },
+        &reg,
+    );
+
+    // P1 should now have a ChooseTarget choice — choose c5 to keep.
+    assert!(state.awaiting_action.is_some(), "P1 should choose a creature to keep");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(c5))),
+        },
+        &reg,
+    );
 
     // P0 should have exactly 1 creature left on battlefield.
     let p0_creatures: Vec<_> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.controller == P0 && o.power.is_some())
         .collect();
     assert_eq!(p0_creatures.len(), 1, "P0 should have exactly 1 creature");
-    assert_eq!(p0_creatures[0].id, c3, "P0 should keep the highest-toughness creature");
+    assert_eq!(p0_creatures[0].id, c3, "P0 should keep the chosen creature");
 
     // P1 should have exactly 1 creature left on battlefield.
     let p1_creatures: Vec<_> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.power.is_some())
         .collect();
     assert_eq!(p1_creatures.len(), 1, "P1 should have exactly 1 creature");
-    assert_eq!(p1_creatures[0].id, c5, "P1 should keep the highest-toughness creature");
+    assert_eq!(p1_creatures[0].id, c5, "P1 should keep the chosen creature");
 }
 #[test]
 
