@@ -912,6 +912,7 @@ fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::
         }
         TargetFilter::Noncreature => obj.power.is_none(),
         TargetFilter::Nonblack => !obj.colors.contains(&crate::types::Color::Black),
+        TargetFilter::HasSubtype(subtype) => obj.subtypes.iter().any(|s| s == subtype),
         _ => true, // Other filters not yet needed for abilities.
     }
 }

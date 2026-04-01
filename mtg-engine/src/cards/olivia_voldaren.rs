@@ -1,13 +1,13 @@
 use crate::actions::Target;
-use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
+use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
 /// Olivia Voldaren — {2}{B}{R} 3/3 Legendary Vampire with Flying.
-/// {1}{R}: Deal 1 damage to target creature. That creature becomes a Vampire in addition
+/// {1}{R}: Deal 1 damage to another target creature. That creature becomes a Vampire in addition
 /// to its other types. Put a +1/+1 counter on Olivia Voldaren.
-/// {3}{B}{B}: Gain control of target Vampire.
+/// {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
 pub struct OliviaVoldaren;
 
 impl CardBehavior for OliviaVoldaren {
@@ -24,9 +24,17 @@ impl CardBehavior for OliviaVoldaren {
             subtypes: vec!["Vampire".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "Flying\n{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.\n{3}{B}{B}: Gain control of target Vampire.".into(),
+            oracle_text: "Flying\n{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.\n{3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.".into(),
             keywords: vec![Keyword::Flying],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::LeavesBattlefield,
+                    description: "return stolen creatures to their owners".into(),
+                },
+            ],
         }
     }
 
@@ -64,7 +72,7 @@ impl CardBehavior for OliviaVoldaren {
             ]),
             requires_tap: false,
             sacrifice_cost: SacrificeCost::None,
-            target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::Any)),
+            target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::HasSubtype("Vampire".into()))),
             once_per_turn: false,
             sorcery_speed_only: false,
         });
@@ -73,9 +81,6 @@ impl CardBehavior for OliviaVoldaren {
     }
 
     fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
-        // Both abilities target creatures, but ability 1 only targets Vampires.
-        // Since we can't distinguish which ability is being activated in is_valid_target,
-        // we accept any creature here. The on_activate_ability checks Vampire for ability 1.
         match target {
             Target::Object(id) => {
                 let obj = state.get_object(*id);
@@ -119,23 +124,73 @@ impl CardBehavior for OliviaVoldaren {
                 }
             }
             1 => {
-                // {3}{B}{B}: Gain control of target Vampire.
+                // {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia.
                 if let Some(Target::Object(target_id)) = targets.first() {
                     let is_vampire = state.get_object(*target_id)
                         .map(|o| o.zone == Zone::Battlefield && o.subtypes.contains(&"Vampire".to_string()))
                         .unwrap_or(false);
                     if is_vampire {
-                        // Change controller permanently (well, as long as Olivia is on the battlefield).
+                        // Record the original controller so we can revert when Olivia leaves.
+                        let original_controller = state.get_object(*target_id).map(|o| o.controller).unwrap_or(controller);
                         if let Some(obj) = state.get_object_mut(*target_id) {
                             let target_name = obj.name.clone();
                             obj.controller = controller;
                             state.log(crate::state::LogLevel::Event,
                                 format!("Olivia Voldaren gains control of {}", target_name));
                         }
+                        // Track the stolen creature in Olivia's card_state.
+                        // We use "stolen_N" keys to track multiple stolen creatures,
+                        // storing the original controller as an ObjectId (abusing the type for PlayerId).
+                        let stolen_count = state.get_object(object_id)
+                            .map(|o| o.card_state.keys().filter(|k| k.starts_with("stolen_")).count())
+                            .unwrap_or(0);
+                        let key = format!("stolen_{}", stolen_count);
+                        if let Some(olivia) = state.get_object_mut(object_id) {
+                            olivia.card_state.insert(key.clone(), *target_id);
+                            // Also store original controller using "orig_N" key.
+                            let orig_key = format!("orig_{}", stolen_count);
+                            olivia.card_state.insert(orig_key, ObjectId(original_controller.0 as u64));
+                        }
                     }
                 }
             }
             _ => {}
+        }
+    }
+
+    fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+        // When Olivia leaves the battlefield, return all stolen creatures to their original controllers.
+        let stolen_entries: Vec<(ObjectId, ObjectId)> = {
+            if let Some(olivia) = state.get_object(object_id) {
+                let mut entries = vec![];
+                let stolen_keys: Vec<String> = olivia.card_state.keys()
+                    .filter(|k| k.starts_with("stolen_"))
+                    .cloned()
+                    .collect();
+                for key in stolen_keys {
+                    let idx = key.strip_prefix("stolen_").unwrap_or("0");
+                    let orig_key = format!("orig_{}", idx);
+                    if let (Some(&target_id), Some(&orig_controller_id)) =
+                        (olivia.card_state.get(&key), olivia.card_state.get(&orig_key)) {
+                        entries.push((target_id, orig_controller_id));
+                    }
+                }
+                entries
+            } else {
+                vec![]
+            }
+        };
+
+        for (target_id, orig_controller_id) in stolen_entries {
+            let orig_controller = crate::ids::PlayerId(orig_controller_id.0 as u8);
+            if let Some(obj) = state.get_object_mut(target_id) {
+                if obj.zone == Zone::Battlefield {
+                    let name = obj.name.clone();
+                    obj.controller = orig_controller;
+                    state.log(crate::state::LogLevel::Event,
+                        format!("Olivia Voldaren left: {} returned to p{}", name, orig_controller.0));
+                }
+            }
         }
     }
 }

@@ -26,7 +26,7 @@ Each must be fixed — no shortcuts, no deferred work.
 - [x] **Kruin Outlaw** — Back face (Terror of Kruin Pass) menace only on self. Should be a global continuous effect: "Each Werewolf you control can't be blocked except by two or more creatures."
 - [x] **Mayor of Avabruck** — Back face (Howlpack Alpha) missing Upkeep trigger metadata in triggered_abilities. The on_upkeep is implemented but never called because no TriggerKind::Upkeep is declared on back face. (Already fixed — back face has both Upkeep and EndStep triggers declared)
 - [x] **Moldgraf Monstrosity** — Creature selection from graveyard is deterministic (first 2). Oracle says random. Use rand. (Already fixed — uses rand::seq::SliceRandom)
-- [ ] **Olivia Voldaren** — (a) Steal effect should end when Olivia leaves the battlefield. (b) Ability 1 should filter targets to Vampires only.
+- [x] **Olivia Voldaren** — (a) Steal effect should end when Olivia leaves the battlefield. (b) Ability 1 should filter targets to Vampires only.
 
 ## Real Bugs — Need Engine Work
 
