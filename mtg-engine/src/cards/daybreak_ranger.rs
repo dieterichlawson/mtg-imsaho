@@ -124,8 +124,8 @@ impl CardBehavior for DaybreakRanger {
                     .map(|o| o.is_transformed)
                     .unwrap_or(false);
                 if self_transformed {
-                    // Nightfall Predator: fight any creature you don't control
-                    obj.controller != caster
+                    // Nightfall Predator: fight target creature (any creature)
+                    true
                 } else {
                     // Daybreak Ranger: target creature with flying
                     state.has_keyword(*id, Keyword::Flying, registry)

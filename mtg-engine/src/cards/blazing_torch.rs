@@ -119,16 +119,17 @@ impl CardBehavior for BlazingTorch {
                 crate::destruction::sacrifice(state, torch, registry);
             }
 
-            // Deal 2 damage to the target. Source is the torch (flavor), but we use creature ID.
+            // Deal 2 damage to the target. Source is Blazing Torch per ruling.
+            let damage_source = torch_id.unwrap_or(object_id);
             if let Some(target) = targets.first() {
                 match target {
                     Target::Object(target_id) => {
                         if let Some(obj) = state.get_object_mut(*target_id) {
                             obj.damage_marked += 2;
-                            obj.damaged_by.push(object_id);
+                            obj.damaged_by.push(damage_source);
                         }
                         state.events.push(GameEvent::NonCombatDamageDealt {
-                            source: object_id,
+                            source: damage_source,
                             target: DamageTarget::Object(*target_id),
                             amount: 2,
                         });
@@ -138,7 +139,7 @@ impl CardBehavior for BlazingTorch {
                         let new_life = old_life - 2;
                         state.get_player_mut(*player_id).life = new_life;
                         state.events.push(GameEvent::NonCombatDamageDealt {
-                            source: object_id,
+                            source: damage_source,
                             target: DamageTarget::Player(*player_id),
                             amount: 2,
                         });

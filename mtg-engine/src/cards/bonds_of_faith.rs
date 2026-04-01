@@ -41,8 +41,12 @@ impl CardBehavior for BondsOfFaith {
         let target_id = state.get_object(object_id).and_then(|o| o.attached_to);
         if let Some(target_id) = target_id {
             let is_human = state.get_object(target_id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                .map(|o| {
+                    registry.card_data(o.card_id)
+                        .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                        .unwrap_or(false)
+                    || o.subtypes.iter().any(|s| s == "Human")
+                })
                 .unwrap_or(false);
             let target_name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
             let effects = if is_human {

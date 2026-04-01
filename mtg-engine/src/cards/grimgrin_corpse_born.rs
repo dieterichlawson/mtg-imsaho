@@ -117,11 +117,10 @@ impl CardBehavior for GrimgrinCorpseBorn {
             crate::destruction::try_destroy(state, target_id, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Grimgrin attacks: destroys {}", target_name));
+            // +1/+1 counter (only if target was valid — "then" means sequential resolution).
+            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
+            state.log(crate::state::LogLevel::Event,
+                "Grimgrin: +1/+1 counter from attack trigger".into());
         }
-
-        // +1/+1 counter.
-        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        state.log(crate::state::LogLevel::Event,
-            "Grimgrin: +1/+1 counter from attack trigger".into());
     }
 }

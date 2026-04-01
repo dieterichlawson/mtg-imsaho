@@ -49,12 +49,18 @@ impl CardBehavior for MemorysJourney {
             }
         }
 
-        // Shuffle the library of affected players.
+        // Shuffle only the affected player's library (owner of the cards).
         if !targets.is_empty() {
             use rand::seq::SliceRandom;
+            use std::collections::HashSet;
             let mut rng = rand::thread_rng();
-            for player in &mut state.players {
-                player.library_order.shuffle(&mut rng);
+            let affected_players: HashSet<u8> = targets.iter()
+                .filter_map(|t| if let Target::Object(id) = t { state.get_object(*id).map(|o| o.owner.0) } else { None })
+                .collect();
+            for &pid in &affected_players {
+                if let Some(player) = state.players.get_mut(pid as usize) {
+                    player.library_order.shuffle(&mut rng);
+                }
             }
         }
 

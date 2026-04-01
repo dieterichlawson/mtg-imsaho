@@ -65,6 +65,6 @@ impl CardBehavior for BurningVengeance {
             false,
         );
         state.log(crate::state::LogLevel::Event,
-            format!("Burning Vengeance deals 2 damage to opponent (flashback spell cast)"));
+            "Burning Vengeance triggered (flashback spell cast)".into());
     }
 }

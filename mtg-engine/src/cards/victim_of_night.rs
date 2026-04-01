@@ -38,11 +38,11 @@ impl CardBehavior for VictimOfNight {
                     None => return false,
                 };
                 if obj.zone != Zone::Battlefield || obj.power.is_none() { return false; }
-                if let Some(data) = registry.card_data(obj.card_id) {
-                    !data.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie")
-                } else {
-                    true
-                }
+                let has_excluded_subtype = registry.card_data(obj.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie"))
+                    .unwrap_or(false)
+                    || obj.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie");
+                !has_excluded_subtype
             }
             _ => false,
         }

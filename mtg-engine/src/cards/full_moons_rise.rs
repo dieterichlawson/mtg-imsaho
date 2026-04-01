@@ -5,8 +5,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Full Moon's Rise — {1}{G} Enchantment.
-/// Werewolf and Wolf creatures you control get +1/+0 and have trample.
-/// Sacrifice Full Moon's Rise: Regenerate all Werewolf and Wolf creatures you control.
+/// Werewolf creatures you control get +1/+0 and have trample.
+/// Sacrifice Full Moon's Rise: Regenerate all Werewolf creatures you control.
 pub struct FullMoonsRise;
 
 impl CardBehavior for FullMoonsRise {
@@ -54,7 +54,7 @@ impl CardBehavior for FullMoonsRise {
         if obj.zone == Zone::Battlefield {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
-                description: "Sacrifice: Regenerate all Wolf and Werewolf creatures you control".into(),
+                description: "Sacrifice: Regenerate all Werewolf creatures you control".into(),
                 cost: ManaCost::free(),
                 requires_tap: false,
                 sacrifice_cost: SacrificeCost::SacrificeThis,

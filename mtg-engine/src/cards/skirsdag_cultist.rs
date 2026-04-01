@@ -54,6 +54,7 @@ impl CardBehavior for SkirsdagCultist {
                     if let Some(obj) = state.get_object_mut(*target_id) {
                         if obj.zone == Zone::Battlefield {
                             obj.damage_marked += 2;
+                            obj.damaged_by.push(_object_id);
                             let name = obj.name.clone();
                             state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                                 source: _object_id,

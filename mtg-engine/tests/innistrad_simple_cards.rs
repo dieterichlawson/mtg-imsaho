@@ -398,8 +398,9 @@ fn graveyard_shovel_exiles_and_gains_life() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     let legal = engine::legal_actions(&state, &reg);
-    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == shovel));
-    assert!(activate.is_some(), "Should be able to activate Graveyard Shovel");
+    // Target P1 (who has the creature in graveyard).
+    let activate = legal.actions.iter().find(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. } if *object_id == shovel && targets.iter().any(|t| matches!(t, Target::Player(p) if *p == P1))));
+    assert!(activate.is_some(), "Should be able to activate Graveyard Shovel targeting P1");
 
     state = engine::submit_action(&state, activate.unwrap(), &reg);
 

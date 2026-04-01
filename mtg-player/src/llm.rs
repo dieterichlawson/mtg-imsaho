@@ -70,7 +70,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Swords to Plowshares ({W} instant): Exile target creature. Controller gains life equal to power. Best used on big threats.
 - Counterspell ({U}{U} instant): Counter target spell on the stack. Use when opponent casts a threatening creature or spell.
 - Dissipate ({1}{U}{U} instant): Counter target spell and exile it (not graveyard).
-- Frightful Delusion ({2}{U} instant): Counter target spell. Its controller discards a card.
+- Frightful Delusion ({2}{U} instant): Counter target spell unless its controller pays {1}. That player discards a card.
 - Lost in the Mist ({3}{U}{U} instant): Counter target spell AND return target permanent to its owner's hand. Two-for-one!
 - Holy Strength ({W} aura): Enchanted creature gets +1/+2. Cast on your creatures during main phase.
 - Pacifism ({1}{W} aura): Enchanted creature can't attack or block. Cast on opponent's creatures.
@@ -99,18 +99,18 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Pitchburn Devils ({4}{R} creature 3/3): When it dies, deals 3 damage to opponent.
 - Falkenrath Noble ({3}{B} creature 2/2 flying): Whenever ANY creature dies, opponent loses 1 life and you gain 1.
 - Rage Thrower ({5}{R} creature 4/2): Whenever another creature dies, deals 2 damage to opponent.
-- Fiend Hunter ({1}{W}{W} creature 1/3): When it enters, exiles an opponent's creature.
-- Intangible Virtue ({1}{W} enchantment): Your creatures get +1/+1.
+- Fiend Hunter ({1}{W}{W} creature 1/3): When it enters, exiles another target creature. When Fiend Hunter leaves, return the exiled card.
+- Intangible Virtue ({1}{W} enchantment): Creature tokens you control get +1/+1 and have vigilance.
 - Unruly Mob ({1}{W} creature 1/1): Gets a +1/+1 counter whenever another of your creatures dies.
 - Lumberknot ({2}{G}{G} creature 1/1 hexproof): Gets a +1/+1 counter whenever any creature dies. Can't be targeted!
 - Elder Cathar ({2}{W} creature 2/2): When it dies, puts a +1/+1 counter on one of your creatures.
 - Think Twice ({1}{U} instant, flashback {2}{U}): Draw a card. Can cast from graveyard!
 - Dream Twist ({U} instant, flashback {1}{U}): Target player mills 3 cards.
-- Travel Preparations ({1}{G} sorcery, flashback {1}{W}): Put a +1/+1 counter on target creature.
-- Feeling of Dread ({1}{W} instant, flashback {1}{U}): Tap target creature.
+- Travel Preparations ({1}{G} sorcery, flashback {1}{W}): Put a +1/+1 counter on each of up to two target creatures.
+- Feeling of Dread ({1}{W} instant, flashback {1}{U}): Tap up to two target creatures.
 - Nightbird's Clutches ({1}{R} sorcery, flashback {3}{R}): Tap target creature so it can't block.
 - Gnaw to the Bone ({2}{G} instant, flashback {2}{G}): Gain 2 life per creature in your graveyard.
-- Forbidden Alchemy ({2}{U} instant, flashback {6}{B}): Draw 1 card, mill 3.
+- Forbidden Alchemy ({2}{U} instant, flashback {6}{B}): Look at top 4 cards, put one in hand, rest in graveyard.
 - Rolling Temblor ({2}{R} sorcery, flashback {4}{R}{R}): 2 damage to each creature without flying.
 - Unburial Rites ({4}{B} sorcery, flashback {3}{W}): Return a creature from your graveyard to the battlefield.
 - Desperate Ravings ({1}{R} instant, flashback {2}{U}): Draw 2 cards, discard 1.

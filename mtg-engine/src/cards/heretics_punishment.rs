@@ -23,7 +23,7 @@ impl CardBehavior for HereticsPunishment {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{3}{R}: Choose target creature or player. Reveal the top 3 cards of your library. Heretic's Punishment deals damage to that target equal to the greatest mana value among the revealed cards. Put the revealed cards on the bottom of your library.".into(),
+            oracle_text: "{3}{R}: Choose target creature or player. Mill three cards. Heretic's Punishment deals damage to that creature or player equal to the highest mana value among the milled cards.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -82,6 +82,7 @@ impl CardBehavior for HereticsPunishment {
                         if let Some(obj) = state.get_object_mut(*target_id) {
                             if obj.zone == Zone::Battlefield {
                                 obj.damage_marked += max_mv;
+                                obj.damaged_by.push(object_id);
                             }
                         }
                         state.events.push(crate::events::GameEvent::NonCombatDamageDealt {

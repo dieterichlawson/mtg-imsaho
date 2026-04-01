@@ -14,8 +14,12 @@ impl SilverInlaidDagger {
     /// Check whether the target creature is a Human and set instance effects accordingly.
     fn update_effects(&self, state: &mut GameState, object_id: ObjectId, creature_id: ObjectId, registry: &CardRegistry) {
         let is_human = state.get_object(creature_id)
-            .and_then(|o| registry.card_data(o.card_id))
-            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+            .map(|o| {
+                registry.card_data(o.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false)
+                || o.subtypes.iter().any(|s| s == "Human")
+            })
             .unwrap_or(false);
 
         let effects = if is_human {

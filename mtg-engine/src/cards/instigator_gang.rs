@@ -70,6 +70,10 @@ impl CardBehavior for InstigatorGang {
                     kind: TriggerKind::AnyCreatureAttacks,
                     description: "attacking creatures you control get +3/+0".into(),
                 },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "transform".into(),
+                },
             ],
         })
     }

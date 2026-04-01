@@ -72,13 +72,21 @@ impl CardBehavior for CharmbreakerDevils {
         }
     }
 
-    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
         // Only trigger on your own spells.
         if caster != controller {
+            return;
+        }
+        // Only trigger on instant or sorcery spells.
+        let is_instant_or_sorcery = state.get_object(spell_id)
+            .and_then(|o| registry.card_data(o.card_id))
+            .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Instant | CardType::Sorcery)))
+            .unwrap_or(false);
+        if !is_instant_or_sorcery {
             return;
         }
         // +4/+0 until end of turn.
