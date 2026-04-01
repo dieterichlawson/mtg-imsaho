@@ -133,6 +133,15 @@ pub enum PendingTrigger {
         attacker_controller: PlayerId,
         description: String,
     },
+    /// A creature's "when this deals combat damage to a creature" trigger.
+    CombatDamageToCreature {
+        creature_id: ObjectId,
+        creature_card_id: CardId,
+        controller: PlayerId,
+        damaged_creature: ObjectId,
+        amount: u32,
+        description: String,
+    },
     /// A creature's "when this becomes blocked" trigger (attacker that gets blocked).
     BecomesBlockedTrigger {
         object_id: ObjectId,
@@ -162,6 +171,7 @@ impl PendingTrigger {
             PendingTrigger::AttacksTrigger { controller, .. } => *controller,
             PendingTrigger::BlocksTrigger { controller, .. } => *controller,
             PendingTrigger::AttackWatch { controller, .. } => *controller,
+            PendingTrigger::CombatDamageToCreature { controller, .. } => *controller,
             PendingTrigger::BecomesBlockedTrigger { controller, .. } => *controller,
         }
     }
@@ -258,6 +268,13 @@ impl PendingTrigger {
                     format!("{}'s attack trigger", card_name(*card_id))
                 } else {
                     format!("{}'s attack trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::CombatDamageToCreature { creature_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s combat damage trigger", card_name(*creature_card_id))
+                } else {
+                    format!("{}'s combat damage trigger ({})", card_name(*creature_card_id), description)
                 }
             }
             PendingTrigger::BlocksTrigger { card_id, description, .. }
@@ -423,7 +440,35 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                 }
             }
             GameEvent::CombatDamageDealt { source, target, amount } => {
-                // Only trigger for creature-to-player combat damage.
+                // Creature-to-creature combat damage triggers.
+                if let crate::events::DamageTarget::Object(damaged_id) = target {
+                    let source_id = *source;
+                    if let Some(obj) = state.get_object(source_id) {
+                        if obj.zone == Zone::Battlefield && obj.power.is_some() {
+                            let card_id = obj.card_id;
+                            let controller = obj.controller;
+                            if registry.get(card_id).is_some() {
+                                let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::DealsCombatDamageToCreature, false);
+                                if !desc.is_empty() {
+                                    let trigger = PendingTrigger::CombatDamageToCreature {
+                                        creature_id: source_id,
+                                        creature_card_id: card_id,
+                                        controller,
+                                        damaged_creature: *damaged_id,
+                                        amount: *amount,
+                                        description: desc,
+                                    };
+                                    if controller == active_player {
+                                        ap_triggers.push(trigger);
+                                    } else {
+                                        nap_triggers.push(trigger);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                // Creature-to-player combat damage triggers.
                 if let crate::events::DamageTarget::Player(damaged_player) = target {
                     let source_id = *source;
                     if let Some(obj) = state.get_object(source_id) {
@@ -847,6 +892,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         PendingTrigger::CombatDamageToPlayer { creature_id, creature_card_id, damaged_player, amount, .. } => {
             if let Some(behavior) = registry.get(creature_card_id) {
                 behavior.on_combat_damage_to_player(state, creature_id, damaged_player, amount, registry);
+            }
+        }
+        PendingTrigger::CombatDamageToCreature { creature_id, creature_card_id, damaged_creature, amount, .. } => {
+            if state.get_object(creature_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(creature_card_id) {
+                    behavior.on_deals_combat_damage_to_creature(state, creature_id, damaged_creature, amount, registry);
+                }
             }
         }
         PendingTrigger::CombatDamageWatch { watcher_id, watcher_card_id, source_id, damaged_player, amount, .. } => {

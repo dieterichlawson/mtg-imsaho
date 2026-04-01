@@ -39,10 +39,10 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Runic Repetition** — return target exiled flashback card to hand. Already working with ExileCard targeting + flashback filter.
 
 ### End of Combat Trigger
-- [ ] **Geist of Saint Traft** — Angel token should be exiled at end of combat, not end step. Needs TriggerKind::EndCombat + PendingTrigger::EndCombatTrigger + on_end_combat hook + StepStarted::EndCombat processing.
+- [x] **Geist of Saint Traft** — Angel token should be exiled at end of combat, not end step. Needs TriggerKind::EndCombat + PendingTrigger::EndCombatTrigger + on_end_combat hook + StepStarted::EndCombat processing. (Already implemented — EndCombat trigger system exists in engine and card uses on_end_combat hook)
 
 ### Combat Damage to Creature Trigger
-- [ ] **Creepy Doll** — currently fires at block declaration. Should fire when combat damage is actually dealt to a creature. Needs TriggerKind::DealsCombatDamageToCreature or similar.
+- [x] **Creepy Doll** — currently fires at block declaration. Should fire when combat damage is actually dealt to a creature. Needs TriggerKind::DealsCombatDamageToCreature or similar. (Fixed: added DealsCombatDamageToCreature trigger kind + PendingTrigger::CombatDamageToCreature + on_deals_combat_damage_to_creature hook)
 
 ### Mana Ability Callback
 - [ ] **Deranged Assistant** — mill cost never executed. Needs on_activate_mana_ability callback in CardBehavior + engine to call it during ActivateManaAbility handling.

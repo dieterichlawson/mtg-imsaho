@@ -420,6 +420,8 @@ pub enum TriggerKind {
     BecomesBlocked,
     /// Whenever any creature attacks — watcher on other permanents (like AnyCreatureDies).
     AnyCreatureAttacks,
+    /// When this creature deals combat damage to a creature.
+    DealsCombatDamageToCreature,
     /// At the beginning of end of combat step.
     EndCombat,
     /// When this permanent leaves the battlefield.
@@ -585,6 +587,10 @@ pub trait CardBehavior: Send + Sync {
     /// Called when this creature deals combat damage to a player.
     /// Used by Stromkirk Noble, Falkenrath Marauders, Sturmgeist, etc.
     fn on_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+
+    /// Called when this creature deals combat damage to another creature.
+    /// Used by Creepy Doll.
+    fn on_deals_combat_damage_to_creature(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_creature: ObjectId, _amount: u32, _registry: &CardRegistry) {}
 
     /// Called when ANY creature deals combat damage to a player.
     /// `self_id` is this permanent (the watcher), `source_id` is the creature that dealt damage.
