@@ -54,7 +54,7 @@ pub fn declare_blockers(
 }
 
 /// Set up blockers with validation. Filters out illegal block assignments
-/// (e.g., non-flyer blocking a flyer).
+/// (e.g., non-flyer blocking a flyer, or menace with only 1 blocker).
 pub fn declare_blockers_with_registry(
     state: &mut GameState,
     assignments: &[(ObjectId, ObjectId)],
@@ -64,6 +64,63 @@ pub fn declare_blockers_with_registry(
         .filter(|&&(blocker, attacker)| can_block_attacker(state, blocker, attacker, registry))
         .cloned()
         .collect();
+
+    // Minimum blocker enforcement: for attackers with menace or MinimumBlockers
+    // effects, verify they have enough blockers. If not, remove the block
+    // assignments for that attacker (can't be blocked by fewer than N creatures).
+    let mut blocker_counts: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
+    for &(_, attacker) in &valid {
+        *blocker_counts.entry(attacker).or_insert(0) += 1;
+    }
+
+    // Determine minimum blocker requirement for each attacker.
+    let attacker_ids: Vec<ObjectId> = blocker_counts.keys().cloned().collect();
+    let mut min_blockers: std::collections::HashMap<ObjectId, u32> = std::collections::HashMap::new();
+    for &att_id in &attacker_ids {
+        let mut min_req: u32 = 1; // default: any single creature can block
+        // Menace keyword: need at least 2 blockers.
+        if state.has_keyword(att_id, Keyword::Menace, registry) {
+            min_req = min_req.max(2);
+        }
+        // MinimumBlockers continuous effects (e.g., Terror of Kruin Pass).
+        for source in state.objects.values() {
+            if source.zone != crate::types::Zone::Battlefield {
+                continue;
+            }
+            let effects = if let Some(ref inst) = source.instance_continuous_effects {
+                inst.clone()
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                }
+            } else {
+                vec![]
+            };
+            for effect in &effects {
+                if let crate::types::ContinuousEffect::MinimumBlockers { count, scope } = effect {
+                    if state.effect_applies_to(att_id, scope, source.id, source.controller, registry) {
+                        min_req = min_req.max(*count);
+                    }
+                }
+            }
+        }
+        if min_req > 1 {
+            min_blockers.insert(att_id, min_req);
+        }
+    }
+
+    let valid: Vec<_> = valid.into_iter()
+        .filter(|&(_, attacker)| {
+            if let Some(&min) = min_blockers.get(&attacker) {
+                blocker_counts.get(&attacker).copied().unwrap_or(0) >= min as usize
+            } else {
+                true
+            }
+        })
+        .collect();
+
     declare_blockers(state, &valid);
 }
 

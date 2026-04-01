@@ -56,10 +56,20 @@ impl CardBehavior for KruinOutlaw {
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "Double strike, menace\nEach Werewolf you control can't be blocked except by two or more creatures.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.".into(),
-            keywords: vec![Keyword::DoubleStrike, Keyword::Menace],
+            oracle_text: "Double strike\nEach Werewolf you control can't be blocked except by two or more creatures.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.".into(),
+            keywords: vec![Keyword::DoubleStrike],
             flashback_cost: None,
-            continuous_effects: vec![],
+            continuous_effects: vec![
+                // "Each Werewolf you control can't be blocked except by two or more creatures."
+                // Implemented as a MinimumBlockers restriction on all Werewolves you control.
+                ContinuousEffect::MinimumBlockers {
+                    count: 2,
+                    scope: EffectScope::Global(CreatureFilter::And(vec![
+                        CreatureFilter::You,
+                        CreatureFilter::HasSubtype("Werewolf".into()),
+                    ])),
+                },
+            ],
             additional_cost: None,
             triggered_abilities: vec![],
         })

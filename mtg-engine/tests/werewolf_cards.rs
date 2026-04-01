@@ -404,13 +404,14 @@ fn kruin_outlaw_transforms_gains_double_strike_and_menace() {
 
     trigger_upkeep(&mut state, &reg);
 
-    // Back: double strike, menace (no more first strike since back face has DoubleStrike)
+    // Back: double strike, "can't be blocked except by two or more creatures" for
+    // all Werewolves (implemented as MinimumBlockers, not as Keyword::Menace).
     assert!(state.get_object(outlaw).unwrap().is_transformed);
     assert_eq!(state.effective_power(outlaw, &reg).unwrap(), 3);
     assert!(state.has_keyword(outlaw, Keyword::DoubleStrike, &reg),
         "Terror of Kruin Pass should have Double Strike");
-    assert!(state.has_keyword(outlaw, Keyword::Menace, &reg),
-        "Terror of Kruin Pass should have Menace");
+    // The blocking restriction is enforced via MinimumBlockers continuous effect,
+    // not as a menace keyword. See kruin_outlaw.rs tests for blocking validation.
 }
 
 // ── Subtype tests ─────────────────────────────────────────────────
