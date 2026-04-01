@@ -529,6 +529,10 @@ pub enum TargetRequirement {
     GraveyardCreature,
     /// Target a creature card with a specific subtype in any graveyard (Ghoulcaller's Chant mode 2).
     GraveyardCreatureOfSubtype(String),
+    /// Target a card in the caster's own graveyard (Memory's Journey mode 1).
+    GraveyardCardOwnedByCaster,
+    /// Target a card in an opponent's graveyard (Memory's Journey mode 2).
+    GraveyardCardOwnedByOpponent,
     /// Target a card in exile (Runic Repetition).
     ExileCard,
     /// Choose one of several targeting modes (Ghoulcaller's Chant). Engine generates actions for each mode independently.

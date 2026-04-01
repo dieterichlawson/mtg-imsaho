@@ -661,7 +661,8 @@ fn generate_cast_actions_with_targets(
             actions
         }
         TargetRequirement::GraveyardCard | TargetRequirement::ExileCard
-        | TargetRequirement::GraveyardCreature | TargetRequirement::GraveyardCreatureOfSubtype(_) => {
+        | TargetRequirement::GraveyardCreature | TargetRequirement::GraveyardCreatureOfSubtype(_)
+        | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
                 .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t] })
@@ -819,6 +820,22 @@ fn valid_targets_for_req(
                                 .map(|d| d.subtypes.iter().any(|s| s == subtype))
                                 .unwrap_or(false))
                 })
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCardOwnedByCaster => {
+            // Cards in the caster's own graveyard.
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Graveyard && o.owner == caster)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCardOwnedByOpponent => {
+            // Cards in any opponent's graveyard.
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Graveyard && o.owner != caster)
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()

@@ -26,7 +26,9 @@ fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards
                     match inner_req {
                         TargetRequirement::GraveyardCard
                         | TargetRequirement::GraveyardCreature
-                        | TargetRequirement::GraveyardCreatureOfSubtype(_) => obj.zone == Zone::Graveyard,
+                        | TargetRequirement::GraveyardCreatureOfSubtype(_)
+                        | TargetRequirement::GraveyardCardOwnedByCaster
+                        | TargetRequirement::GraveyardCardOwnedByOpponent => obj.zone == Zone::Graveyard,
                         TargetRequirement::ExileCard => obj.zone == Zone::Exile,
                         _ => obj.zone == Zone::Battlefield || obj.zone == Zone::Stack,
                     }
