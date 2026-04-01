@@ -1084,6 +1084,138 @@ fn garruk_transforms_at_two_or_fewer_loyalty() {
     assert_eq!(state.get_object(garruk).unwrap().name, "Garruk, the Veil-Cursed");
 }
 
+#[test]
+fn garruk_back_face_creates_deathtouch_wolf() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    state.add_counters(garruk, CounterType::Loyalty, 2);
+    if let Some(obj) = state.get_object_mut(garruk) {
+        obj.card_types = vec![CardType::Planeswalker];
+        obj.is_transformed = true;
+        obj.name = "Garruk, the Veil-Cursed".into();
+    }
+
+    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+    // +1: Create a 1/1 black Wolf with deathtouch (ability_index 10).
+    behavior.on_loyalty_ability(&mut state, garruk, 10, &reg);
+
+    let wolves: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
+        .iter()
+        .filter(|o| o.is_token && o.name == "Wolf")
+        .cloned()
+        .collect();
+    assert_eq!(wolves.len(), 1, "Should create a Wolf token");
+    assert_eq!(wolves[0].power, Some(1), "Wolf should be 1/1");
+    assert_eq!(wolves[0].toughness, Some(1), "Wolf should be 1/1");
+    assert!(wolves[0].keywords.contains(&Keyword::Deathtouch), "Wolf should have deathtouch");
+}
+
+#[test]
+fn garruk_back_face_sacrifice_to_tutor() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    state.add_counters(garruk, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(garruk) {
+        obj.card_types = vec![CardType::Planeswalker];
+        obj.is_transformed = true;
+        obj.name = "Garruk, the Veil-Cursed".into();
+    }
+
+    // Put a creature on the battlefield to sacrifice.
+    let sac_target = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(sac_target).unwrap().card_types = vec![CardType::Creature];
+
+    // Put a creature card in the library.
+    let lib_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    state.move_object(lib_creature, Zone::Library);
+    state.get_player_mut(P0).library_order.push(lib_creature);
+    if let Some(obj) = state.get_object_mut(lib_creature) {
+        obj.card_types = vec![CardType::Creature];
+    }
+
+    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+    // -1: Sacrifice a creature, search for a creature card (ability_index 11).
+    behavior.on_loyalty_ability(&mut state, garruk, 11, &reg);
+
+    // Sac target should be in graveyard.
+    assert_eq!(state.get_object(sac_target).unwrap().zone, Zone::Graveyard,
+        "Sacrificed creature should be in graveyard");
+
+    // Library creature should now be in hand.
+    assert_eq!(state.get_object(lib_creature).unwrap().zone, Zone::Hand,
+        "Tutored creature should be in hand");
+}
+
+#[test]
+fn garruk_back_face_overrun() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    state.add_counters(garruk, CounterType::Loyalty, 4);
+    if let Some(obj) = state.get_object_mut(garruk) {
+        obj.card_types = vec![CardType::Planeswalker];
+        obj.is_transformed = true;
+        obj.name = "Garruk, the Veil-Cursed".into();
+    }
+
+    // Put 2 creature cards in graveyard.
+    for _ in 0..2 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
+        state.move_object(c, Zone::Graveyard);
+    }
+
+    // Put a creature on the battlefield.
+    let creature = ready_creature(&mut state, P0, 3, 3);
+    state.get_object_mut(creature).unwrap().card_types = vec![CardType::Creature];
+
+    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+    // -3: Creatures get +X/+X and trample (ability_index 12).
+    behavior.on_loyalty_ability(&mut state, garruk, 12, &reg);
+
+    // X should be 2 (2 creature cards in graveyard).
+    // Creature should have +2/+2 until end of turn.
+    let has_buff = state.until_end_of_turn_effects.iter()
+        .any(|e| e.target == creature && e.power_mod == 2 && e.toughness_mod == 2);
+    assert!(has_buff, "Creature should have +2/+2 until end of turn");
+
+    // Should have trample.
+    let has_trample = state.until_end_of_turn_keywords.iter()
+        .any(|k| k.target == creature && k.keyword == Keyword::Trample);
+    assert!(has_trample, "Creature should have trample until end of turn");
+}
+
+#[test]
+fn garruk_back_face_loyalty_abilities_shown_when_transformed() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    state.add_counters(garruk, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(garruk) {
+        obj.card_types = vec![CardType::Planeswalker];
+        obj.is_transformed = true;
+        obj.name = "Garruk, the Veil-Cursed".into();
+    }
+
+    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+    let abilities = behavior.loyalty_abilities(&state, garruk);
+
+    // Back face should have 3 abilities with indices 10, 11, 12.
+    assert_eq!(abilities.len(), 3, "Back face should have 3 loyalty abilities");
+    assert_eq!(abilities[0].ability_index, 10);
+    assert_eq!(abilities[0].loyalty_change, 1); // +1
+    assert_eq!(abilities[1].ability_index, 11);
+    assert_eq!(abilities[1].loyalty_change, -1); // -1
+    assert_eq!(abilities[2].ability_index, 12);
+    assert_eq!(abilities[2].loyalty_change, -3); // -3
+}
+
 // ── Essence of the Wild ──────────────────────────────────────────
 
 #[test]

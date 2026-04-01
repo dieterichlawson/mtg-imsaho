@@ -361,7 +361,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             if already_used { continue; }
 
             if let Some(behavior) = registry.get(obj_card_id) {
-                let loyalty_abs = behavior.loyalty_abilities();
+                let loyalty_abs = behavior.loyalty_abilities(state, obj_id);
                 if loyalty_abs.is_empty() { continue; }
 
                 let current_loyalty = state.get_counter_count(obj_id, CounterType::Loyalty);
@@ -1482,7 +1482,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             if let Some(behavior) = registry.get(
                 new_state.get_object(*object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
             ) {
-                let abilities = behavior.loyalty_abilities();
+                let abilities = behavior.loyalty_abilities(&new_state, *object_id);
                 if let Some(ab) = abilities.iter().find(|a| a.ability_index == *ability_index) {
                     // Pay loyalty cost: add or remove loyalty counters.
                     let change = ab.loyalty_change;

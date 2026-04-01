@@ -615,7 +615,7 @@ pub trait CardBehavior: Send + Sync {
     fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Loyalty abilities for planeswalkers.
-    fn loyalty_abilities(&self) -> Vec<LoyaltyAbilityDef> { vec![] }
+    fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
 
     /// Called when a loyalty ability is activated.
     fn on_loyalty_ability(&self, _state: &mut GameState, _self_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}

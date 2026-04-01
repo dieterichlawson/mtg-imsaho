@@ -31,3 +31,22 @@
 5. **MINOR: Wolf tokens from front face** - Front face creates 2/2 green Wolf tokens. This matches oracle. OK.
 
 ## Verdict: ISSUES FOUND (3 issues)
+
+## Audit — 2026-04-01 08:20
+
+**Scryfall Oracle text (front)**: When Garruk Relentless has two or fewer loyalty counters on him, transform him. 0: Garruk Relentless deals 3 damage to target creature. That creature deals damage equal to its power to him. 0: Create a 2/2 green Wolf creature token.
+**Scryfall Oracle text (back)**: +1: Create a 1/1 black Wolf creature token with deathtouch. −1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle your library. −3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+**Scryfall type line**: Legendary Planeswalker — Garruk // Legendary Planeswalker — Garruk
+**Status**: PASS (with accepted simplifications)
+
+Previous issue #1 (back face not implemented) is now FIXED. All 3 back face loyalty abilities are implemented:
+- +1: Creates 1/1 black Wolf with deathtouch (ability_index 10)
+- -1: Sacrifices weakest creature, searches library for creature card (ability_index 11)
+- -3: Gives all controlled creatures +X/+X and trample until end of turn (ability_index 12)
+
+The loyalty_abilities trait method now takes state and object_id parameters to support returning different abilities based on is_transformed.
+
+Previous issue #2 (transform trigger type) remains an accepted simplification — transform is checked after loyalty ability activation only.
+Previous issue #3 (missing damage event for creature-to-planeswalker) remains an accepted simplification.
+
+Test coverage: 6 tests covering front face wolf creation, transform condition, back face deathtouch wolf, sacrifice-to-tutor, overrun effect, and loyalty abilities list verification.

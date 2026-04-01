@@ -70,4 +70,4 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Creeping Renaissance** — "Choose a permanent type." Implemented ChooseCardType resolution choice system with 5 permanent type options. Player selects type, all matching cards return from graveyard to hand.
 
 ### Garruk Back Face
-- [ ] **Garruk Relentless** — back face (Garruk, the Veil-Cursed) abilities entirely unimplemented. Needs: loyalty ability implementations for the back face (-1 create Wolf with deathtouch, -1 sacrifice creature to tutor, -3 creatures get +X/+X trample).
+- [x] **Garruk Relentless** — back face (Garruk, the Veil-Cursed) abilities implemented: +1 create 1/1 black Wolf with deathtouch, -1 sacrifice creature to tutor, -3 creatures get +X/+X and trample. loyalty_abilities trait method now takes state/object_id to support DFC face-switching.

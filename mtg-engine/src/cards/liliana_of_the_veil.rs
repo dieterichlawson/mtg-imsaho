@@ -40,7 +40,7 @@ impl CardBehavior for LilianaOfTheVeil {
         Some(3)
     }
 
-    fn loyalty_abilities(&self) -> Vec<LoyaltyAbilityDef> {
+    fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> {
         vec![
             LoyaltyAbilityDef {
                 ability_index: 0,
