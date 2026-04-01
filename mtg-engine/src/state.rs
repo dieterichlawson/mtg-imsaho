@@ -63,6 +63,10 @@ pub struct GameState {
     /// Combat state, present only during combat phase.
     pub combat: Option<CombatState>,
 
+    /// Objects to exile at end of combat (delayed triggers like Geist of Saint Traft's Angel).
+    /// These fire independently of the source permanent's presence on the battlefield.
+    pub end_of_combat_exiles: Vec<ObjectId>,
+
     /// Whether the game is waiting for attackers/blockers declaration.
     pub awaiting_action: Option<AwaitingAction>,
 
@@ -207,6 +211,7 @@ impl GameState {
             step: Step::Untap,
             stack: Vec::new(),
             combat: None,
+            end_of_combat_exiles: Vec::new(),
             awaiting_action: None,
             result: None,
             consecutive_passes: 0,

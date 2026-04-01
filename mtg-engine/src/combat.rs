@@ -551,6 +551,16 @@ fn deal_damage_to_player(
 
 /// Clean up combat state at end of combat.
 pub fn end_combat(state: &mut GameState) {
+    // Process delayed exile triggers (e.g., Geist of Saint Traft's Angel token).
+    // These fire independently of the source permanent's presence on the battlefield.
+    let exiles: Vec<_> = state.end_of_combat_exiles.drain(..).collect();
+    for exile_id in exiles {
+        if state.get_object(exile_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            state.move_object(exile_id, Zone::Exile);
+            state.log(crate::state::LogLevel::Event,
+                "Token exiled at end of combat (delayed trigger)".into());
+        }
+    }
     state.combat = None;
 }
 

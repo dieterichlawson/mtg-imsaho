@@ -76,30 +76,14 @@ impl CardBehavior for GeistOfSaintTraft {
             combat.attackers.insert(token_id, defender);
         }
 
-        // Store the token ID so we can exile it at end of combat.
-        // We use card_state on the Geist to track the angel token(s).
-        if let Some(obj) = state.get_object_mut(self_id) {
-            obj.card_state.insert("angel_token".into(), token_id);
-        }
+        // Store the token ID for exile at end of combat.
+        // Uses game-level storage so the exile fires even if Geist leaves the battlefield.
+        state.end_of_combat_exiles.push(token_id);
 
         state.log(crate::state::LogLevel::Event,
             "Geist of Saint Traft: created a 4/4 Angel token tapped and attacking".into());
     }
 
-    fn on_end_combat(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
-        // Exile the angel token at end of combat.
-        let angel_id = state.get_object(self_id)
-            .and_then(|o| o.card_state.get("angel_token").copied());
-
-        if let Some(angel_id) = angel_id {
-            if state.get_object(angel_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                state.move_object(angel_id, Zone::Exile);
-                state.log(crate::state::LogLevel::Event,
-                    "Geist of Saint Traft: Angel token exiled at end of combat".into());
-            }
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.card_state.remove("angel_token");
-            }
-        }
-    }
+    // on_end_combat is not needed — the Angel exile is handled as a delayed trigger
+    // via state.end_of_combat_exiles, which fires even if Geist has left the battlefield.
 }
