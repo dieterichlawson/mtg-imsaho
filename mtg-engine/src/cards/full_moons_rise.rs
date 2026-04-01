@@ -70,7 +70,7 @@ impl CardBehavior for FullMoonsRise {
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Regenerate all Wolf and Werewolf creatures you control.
+        // Regenerate all Werewolf creatures you control.
         let wolves_and_werewolves: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .filter(|o| {
