@@ -33,7 +33,7 @@ Each must be fixed — no shortcuts, no deferred work.
 ### Graveyard/Exile Targeting System
 The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Ghoulcaller's Chant** — needs mode selection + graveyard creature targeting (Added ModalChoice, GraveyardCreature, GraveyardCreatureOfSubtype to TargetRequirement)
-- [ ] **Graveyard Shovel** — target player exiles a card from their graveyard (player choice)
+- [x] **Graveyard Shovel** — target player exiles a card from their graveyard (player choice). Fixed: targets PlayerOnly, targeted player chooses card via ResolutionChoice.
 - [ ] **Memory's Journey** — target player shuffles up to 3 target graveyard cards into library
 - [ ] **Purify the Grave** — exile target card from a graveyard (any graveyard, player choice)
 - [ ] **Runic Repetition** — return target exiled flashback card to hand

@@ -1647,6 +1647,31 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
 
             state.move_spell_after_resolve(*spell_id);
         }
+        (Target::Object(id), PendingEffect::ExileFromGraveyardGainLife { controller }) => {
+            let is_creature = state.get_object(*id)
+                .map(|o| {
+                    registry.card_data(o.card_id)
+                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                        .unwrap_or(o.power.is_some())
+                })
+                .unwrap_or(false);
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*id, Zone::Exile);
+            state.log(LogLevel::Event, format!("Graveyard Shovel: exiled {} from graveyard", name));
+
+            if is_creature {
+                let old_life = state.get_player(*controller).life;
+                let new_life = old_life + 2;
+                state.get_player_mut(*controller).life = new_life;
+                state.events.push(GameEvent::LifeChanged {
+                    player: *controller,
+                    old: old_life,
+                    new_life,
+                });
+                state.log(LogLevel::Event,
+                    format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));
+            }
+        }
         _ => {}
     }
 }

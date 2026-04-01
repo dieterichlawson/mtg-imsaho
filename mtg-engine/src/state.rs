@@ -1265,6 +1265,8 @@ pub enum PendingEffect {
     /// Sacrifice the chosen creature and gain life equal to its toughness (Tribute to Hunger).
     /// `beneficiary` gains the life; `spell_id` is cleaned up after resolution.
     SacrificeAndGainLife { beneficiary: PlayerId, spell_id: ObjectId },
+    /// Exile a card from graveyard; if it's a creature card, controller gains 2 life (Graveyard Shovel).
+    ExileFromGraveyardGainLife { controller: PlayerId },
 }
 
 /// Game result.
