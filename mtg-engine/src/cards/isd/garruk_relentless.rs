@@ -1,5 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
+use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -19,6 +20,66 @@ use crate::types::*;
 ///   -3: Creatures you control gain trample and get +X/+X until end of turn, where X is the
 ///       number of creature cards in your graveyard.
 pub struct GarrukRelentless;
+
+impl GarrukRelentless {
+    /// Sacrifice a creature and then search library for a creature card.
+    /// Used when there's only one creature to sacrifice (no choice needed).
+    fn sacrifice_and_tutor(&self, state: &mut GameState, garruk_id: ObjectId, sac_id: ObjectId, controller: crate::ids::PlayerId, registry: &CardRegistry) {
+        let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
+        crate::destruction::sacrifice(state, sac_id, registry);
+        state.log(crate::state::LogLevel::Event,
+            format!("Garruk, the Veil-Cursed: sacrificed {}", sac_name));
+
+        // Find all creature cards in library for the player to choose from.
+        let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
+            .filter(|&&lib_id| {
+                if let Some(obj) = state.get_object(lib_id) {
+                    if !obj.card_types.is_empty() {
+                        obj.card_types.contains(&CardType::Creature)
+                    } else {
+                        registry.card_data(obj.card_id)
+                            .map(|d| d.card_types.contains(&CardType::Creature))
+                            .unwrap_or(false)
+                    }
+                } else {
+                    false
+                }
+            })
+            .copied()
+            .collect();
+
+        if creature_options.is_empty() {
+            state.log(crate::state::LogLevel::Event,
+                "Garruk, the Veil-Cursed: no creature card found in library".into());
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            state.get_player_mut(controller).library_order.shuffle(&mut rng);
+        } else if creature_options.len() == 1 {
+            let found_id = creature_options[0];
+            let found_name = state.get_object(found_id).map(|o| o.name.clone()).unwrap_or_default();
+            let player = state.get_player_mut(controller);
+            player.library_order.retain(|&lid| lid != found_id);
+            state.move_object(found_id, Zone::Hand);
+            state.log(crate::state::LogLevel::Event,
+                format!("Garruk, the Veil-Cursed: searched and found {}", found_name));
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            state.get_player_mut(controller).library_order.shuffle(&mut rng);
+        } else {
+            // Multiple creatures in library — present choice.
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: garruk_id,
+                choice: ResolutionChoiceKind::ChooseFromLibrary {
+                    description: "Garruk, the Veil-Cursed: choose a creature card from your library".into(),
+                    options: creature_options,
+                    searcher: controller,
+                    source_id: garruk_id,
+                },
+            });
+        }
+    }
+}
 
 impl CardBehavior for GarrukRelentless {
     fn card_data(&self) -> CardData {
@@ -164,56 +225,35 @@ impl CardBehavior for GarrukRelentless {
             11 => {
                 // -1: Sacrifice a creature. If you do, search your library for a creature card,
                 // reveal it, put it into your hand, then shuffle.
-                // Find a creature to sacrifice (pick weakest own creature).
-                let sac_target: Option<(ObjectId, i32)> = state.objects_in_zone(Zone::Battlefield, controller)
+                // Per ruling: "doesn't target a creature. However, when that ability resolves,
+                // you must sacrifice a creature if you control one."
+                let creatures: Vec<Target> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()
-                    .filter(|o| o.card_types.contains(&CardType::Creature))
-                    .map(|o| (o.id, state.effective_power(o.id, registry).unwrap_or(0)))
-                    .min_by_key(|(_, p)| *p);
+                    .filter(|o| o.card_types.contains(&CardType::Creature)
+                        || o.power.is_some()) // creatures include tokens
+                    .map(|o| Target::Object(o.id))
+                    .collect();
 
-                if let Some((sac_id, _)) = sac_target {
-                    let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
-                    crate::destruction::sacrifice(state, sac_id, registry);
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Garruk, the Veil-Cursed: sacrificed {}", sac_name));
-
-                    // Search library for a creature card.
-                    let creature_id = state.get_player(controller).library_order.iter().find(|&&lib_id| {
-                        if let Some(obj) = state.get_object(lib_id) {
-                            // Check object card_types or registry
-                            if !obj.card_types.is_empty() {
-                                obj.card_types.contains(&CardType::Creature)
-                            } else {
-                                registry.card_data(obj.card_id)
-                                    .map(|d| d.card_types.contains(&CardType::Creature))
-                                    .unwrap_or(false)
-                            }
-                        } else {
-                            false
-                        }
-                    }).copied();
-
-                    if let Some(found_id) = creature_id {
-                        let found_name = state.get_object(found_id).map(|o| o.name.clone()).unwrap_or_default();
-                        let player = state.get_player_mut(controller);
-                        player.library_order.retain(|&id| id != found_id);
-                        state.move_object(found_id, Zone::Hand);
-                        state.log(crate::state::LogLevel::Event,
-                            format!("Garruk, the Veil-Cursed: searched and found {}", found_name));
-                    } else {
-                        state.log(crate::state::LogLevel::Event,
-                            "Garruk, the Veil-Cursed: no creature card found in library".into());
-                    }
-
-                    // Shuffle library after searching (oracle: "then shuffle").
-                    {
-                        use rand::seq::SliceRandom;
-                        let mut rng = rand::thread_rng();
-                        state.get_player_mut(controller).library_order.shuffle(&mut rng);
-                    }
-                } else {
+                if creatures.is_empty() {
                     state.log(crate::state::LogLevel::Event,
                         "Garruk, the Veil-Cursed: no creature to sacrifice".into());
+                } else if creatures.len() == 1 {
+                    // Only one creature — auto-sacrifice and tutor.
+                    if let Target::Object(sac_id) = creatures[0] {
+                        self.sacrifice_and_tutor(state, self_id, sac_id, controller, registry);
+                    }
+                } else {
+                    // Multiple creatures — present choice to player.
+                    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                        player: controller,
+                        source: self_id,
+                        choice: ResolutionChoiceKind::ChooseTarget {
+                            description: "Garruk, the Veil-Cursed: choose a creature to sacrifice".into(),
+                            options: creatures,
+                            optional: false,
+                            effect: PendingEffect::SacrificeAndTutor { garruk_id: self_id },
+                        },
+                    });
                 }
             }
             12 => {

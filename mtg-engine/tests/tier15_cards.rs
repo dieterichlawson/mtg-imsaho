@@ -1224,6 +1224,50 @@ fn garruk_back_face_sacrifice_to_tutor() {
 }
 
 #[test]
+fn garruk_back_face_tutor_presents_sacrifice_choice() {
+    // With multiple creatures, the -1 ability should present a sacrifice choice.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let garruk = named_creature(&mut state, &reg, "Garruk Relentless", P0);
+    state.add_counters(garruk, CounterType::Loyalty, 4);
+    if let Some(obj) = state.get_object_mut(garruk) {
+        obj.card_types = vec![CardType::Planeswalker];
+        obj.is_transformed = true;
+        obj.name = "Garruk, the Veil-Cursed".into();
+    }
+
+    // Two creatures to choose from.
+    let creature1 = ready_creature(&mut state, P0, 1, 1);
+    state.get_object_mut(creature1).unwrap().card_types = vec![CardType::Creature];
+    let creature2 = ready_creature(&mut state, P0, 3, 3);
+    state.get_object_mut(creature2).unwrap().card_types = vec![CardType::Creature];
+
+    let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, garruk, 11, &[], &reg);
+
+    // Should be awaiting a sacrifice choice (not auto-selected).
+    assert!(state.awaiting_action.is_some(),
+        "Should present sacrifice choice when multiple creatures available");
+
+    // Resolve with the specific creature we want to sacrifice.
+    let new_state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(mtg_engine::actions::Target::Object(creature1))),
+        },
+        &reg,
+    );
+
+    // creature1 should be sacrificed (in graveyard).
+    assert_eq!(new_state.get_object(creature1).unwrap().zone, Zone::Graveyard,
+        "Chosen creature should be sacrificed");
+    // creature2 should still be on the battlefield.
+    assert_eq!(new_state.get_object(creature2).unwrap().zone, Zone::Battlefield,
+        "Non-chosen creature should remain on battlefield");
+}
+
+#[test]
 fn garruk_back_face_tutor_shuffles_library() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);

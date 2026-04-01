@@ -1516,6 +1516,163 @@ impl CliPlayer {
     }
 }
 
+impl CliPlayer {
+    /// Interactive library search UI: full-screen card browser with type-to-filter,
+    /// arrow key navigation, oracle text display, and Enter to select.
+    fn library_search_ui(&self, view: &GameView, actions: &[Action]) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+
+        // Collect card info for each option.
+        struct CardInfo {
+            id: ObjectId,
+            name: String,
+            type_line: String,
+            oracle_text: String,
+            cost: String,
+            pt: String,
+            action_index: usize,
+        }
+        let mut cards: Vec<CardInfo> = Vec::new();
+        for (i, action) in actions.iter().enumerate() {
+            if let Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) } = action {
+                let name = Self::perm_name(view, *id);
+                // Look up card info from library cards or hand.
+                let (type_line, oracle_text, cost, pt) = view.your_library_cards.iter()
+                    .find(|c| c.object_id == *id)
+                    .or_else(|| view.your_hand.iter().find(|c| c.object_id == *id))
+                    .map(|c| {
+                        let types: Vec<&str> = c.card_types.iter().map(|t| match t {
+                            CardType::Creature => "Creature",
+                            CardType::Instant => "Instant",
+                            CardType::Sorcery => "Sorcery",
+                            CardType::Enchantment => "Enchantment",
+                            CardType::Artifact => "Artifact",
+                            CardType::Land => "Land",
+                            CardType::Planeswalker => "Planeswalker",
+                        }).collect();
+                        let type_str = types.join(" ");
+                        let cost_str = c.cost.as_ref().map(|mc| format!("{}", mc)).unwrap_or_default();
+                        let pt_str = match (c.power, c.toughness) {
+                            (Some(p), Some(t)) => format!("{}/{}", p, t),
+                            _ => String::new(),
+                        };
+                        (type_str, c.oracle_text.clone(), cost_str, pt_str)
+                    })
+                    .unwrap_or_default();
+                cards.push(CardInfo { id: *id, name, type_line, oracle_text, cost, pt, action_index: i });
+            }
+        }
+
+        let mut filter = String::new();
+        let mut selected: usize = 0;
+        let mut out = stdout();
+
+        let _ = terminal::enable_raw_mode();
+
+        loop {
+            // Filter cards by name.
+            let filtered: Vec<&CardInfo> = if filter.is_empty() {
+                cards.iter().collect()
+            } else {
+                let lower = filter.to_lowercase();
+                cards.iter().filter(|c| c.name.to_lowercase().contains(&lower)).collect()
+            };
+
+            // Clamp selection.
+            if selected >= filtered.len() && !filtered.is_empty() {
+                selected = filtered.len() - 1;
+            }
+
+            // Render.
+            let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
+            let _ = execute!(out, SetForegroundColor(Color::Yellow),
+                Print("═══ Search Library ═══\n\r"),
+                ResetColor);
+            let _ = execute!(out, Print(format!("Filter: {}_\n\r\n\r", filter)));
+
+            let (_, term_height) = terminal::size().unwrap_or((80, 24));
+            let max_list = (term_height as usize).saturating_sub(8); // Leave room for detail
+
+            let start = if selected >= max_list / 2 { selected - max_list / 2 } else { 0 };
+            let visible: Vec<_> = filtered.iter().enumerate().skip(start).take(max_list).collect();
+
+            for (i, card) in &visible {
+                if *i == selected {
+                    let _ = execute!(out, SetForegroundColor(Color::Black),
+                        SetAttribute(Attribute::Reverse),
+                        Print(format!(" > {} ", card.name)),
+                        SetAttribute(Attribute::Reset),
+                        ResetColor,
+                        Print("\n\r"));
+                } else {
+                    let _ = execute!(out, Print(format!("   {}\n\r", card.name)));
+                }
+            }
+
+            // Show detail for selected card.
+            if let Some(card) = filtered.get(selected) {
+                let _ = execute!(out, Print("\n\r"));
+                let _ = execute!(out, SetForegroundColor(Color::Cyan),
+                    Print(format!("  {} {}\n\r", card.name, card.cost)),
+                    ResetColor);
+                let _ = execute!(out, SetForegroundColor(Color::DarkGrey),
+                    Print(format!("  {}", card.type_line)),
+                    ResetColor);
+                if !card.pt.is_empty() {
+                    let _ = execute!(out, Print(format!("  {}", card.pt)));
+                }
+                let _ = execute!(out, Print("\n\r"));
+                // Oracle text — wrap lines.
+                for line in card.oracle_text.split('\n') {
+                    let _ = execute!(out, Print(format!("  {}\n\r", line)));
+                }
+            }
+
+            let _ = execute!(out, Print("\n\r"),
+                SetForegroundColor(Color::DarkGrey),
+                Print("↑↓ navigate  |  type to filter  |  Enter to select"),
+                ResetColor, Print("\n\r"));
+            let _ = out.flush();
+
+            // Read input.
+            if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
+                match code {
+                    KeyCode::Enter => {
+                        if let Some(card) = filtered.get(selected) {
+                            let _ = terminal::disable_raw_mode();
+                            let _ = execute!(out, terminal::Clear(ClearType::All), cursor::MoveTo(0, 0));
+                            return actions[card.action_index].clone();
+                        }
+                    }
+                    KeyCode::Up => {
+                        if selected > 0 { selected -= 1; }
+                    }
+                    KeyCode::Down => {
+                        if selected + 1 < filtered.len() { selected += 1; }
+                    }
+                    KeyCode::Backspace => {
+                        filter.pop();
+                        selected = 0;
+                    }
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        let _ = terminal::disable_raw_mode();
+                        std::process::exit(0);
+                    }
+                    KeyCode::Char(c) => {
+                        filter.push(c);
+                        selected = 0;
+                    }
+                    KeyCode::Esc => {
+                        filter.clear();
+                        selected = 0;
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
 impl Player for CliPlayer {
     fn name(&self) -> &str {
         &self.name
@@ -1523,6 +1680,20 @@ impl Player for CliPlayer {
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
+
+        // Special case: library search — show interactive card browser.
+        if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. }))
+            && legal_actions.len() > 1
+        {
+            // Check if these are ChosenCard choices (library/revealed search).
+            let all_chosen_cards = legal_actions.iter().all(|a| matches!(a,
+                Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenCard(_) }
+            ));
+            if all_chosen_cards && legal_actions.len() > 3 {
+                return self.library_search_ui(view, legal_actions);
+            }
+        }
+
         let has_pass = legal_actions.iter().any(|a| matches!(a, Action::PassPriority));
 
         // Auto-pass when the only options are Pass and Concede.

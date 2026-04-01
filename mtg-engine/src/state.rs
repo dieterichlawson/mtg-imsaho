@@ -1297,6 +1297,18 @@ pub enum ResolutionChoiceKind {
         revealed: Vec<ObjectId>,
         spell_id: ObjectId,
     },
+    /// Search library for a card matching criteria and choose one (Garruk -1, etc.).
+    /// All matching cards are shown to the player. They pick one to put into hand.
+    /// After choosing, the library is shuffled.
+    ChooseFromLibrary {
+        description: String,
+        /// All cards in the library that match the search criteria.
+        options: Vec<ObjectId>,
+        /// The player whose library is being searched.
+        searcher: PlayerId,
+        /// The source permanent that initiated the search.
+        source_id: ObjectId,
+    },
     /// Choose a permanent type from a list of options (Creeping Renaissance).
     ChooseCardType {
         description: String,
@@ -1341,6 +1353,8 @@ pub enum PendingEffect {
     SacrificeAndGainLife { beneficiary: PlayerId, spell_id: ObjectId },
     /// Exile a card from graveyard; if it's a creature card, controller gains 2 life (Graveyard Shovel).
     ExileFromGraveyardGainLife { controller: PlayerId },
+    /// Sacrifice the chosen creature, then search library for a creature card (Garruk -1).
+    SacrificeAndTutor { garruk_id: ObjectId },
 }
 
 /// Game result.
