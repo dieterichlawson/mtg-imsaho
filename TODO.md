@@ -9,10 +9,4 @@ Add the ability to serialize a game state to a file and resume from it. This wou
 
 ## Open
 
-- [ ] **Skaab Ruinator** — Casting from graveyard panics. The engine treats graveyard-zone casts as flashback and tries `data.flashback_cost.expect(...)`, but Skaab Ruinator uses `can_cast_from_graveyard()` not flashback. The `legal_actions` function handles this correctly but `apply_action` does not. Also missing graveyard eligibility check (3+ creature cards) for graveyard casts.
-
-- [ ] **Harvest Pyre** — Exiles ALL graveyard cards instead of letting the player choose X. Oracle says "exile X cards from your graveyard" — player should choose how many. Needs engine support for choosing a number.
-
-- [ ] **Inquisitor's Flail** — Oracle text field says "another source" but Scryfall says "another creature." Cosmetic only — behavior is correct.
-
 - [ ] **All equipment cards** — Most equipment uses `TargetRequirement::Creature` for equip instead of `CreatureWithFilter(YouControl)`. Equip by definition targets "creature you control." Fixed for Blazing Torch; other equipment (Cobbled Wings, Mask of Avacyn, Butcher's Cleaver, etc.) likely have the same issue.
