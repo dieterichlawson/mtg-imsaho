@@ -73,7 +73,7 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield && !o.is_transformed => o,
             _ => return vec![],

@@ -55,7 +55,7 @@ impl CardBehavior for SilverInlaidDagger {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,

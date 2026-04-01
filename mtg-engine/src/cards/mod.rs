@@ -652,7 +652,7 @@ pub trait CardBehavior: Send + Sync {
     fn on_activate_mana_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
 
     /// List of non-mana activated abilities this permanent has.
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![]
     }
 

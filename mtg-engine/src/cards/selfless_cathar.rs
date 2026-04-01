@@ -26,7 +26,7 @@ impl CardBehavior for SelflessCathar {
         }
     }
 
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{1}{W}, Sacrifice: Creatures you control get +1/+1 until end of turn".into(),

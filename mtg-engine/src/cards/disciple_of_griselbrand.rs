@@ -28,7 +28,7 @@ impl CardBehavior for DiscipleOfGriselbrand {
         }
     }
 
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{1}, Sacrifice a creature: Gain life equal to its toughness".into(),
