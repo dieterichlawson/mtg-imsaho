@@ -20,3 +20,12 @@
 - Tests exist in tier15_cards.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text (front)**: Defender. {1}{U}: Put a hatchling counter on Ludevic's Test Subject. Then if there are five or more hatchling counters on it, remove all of them and transform Ludevic's Test Subject.
+**Scryfall Oracle text (back)**: Trample
+**Scryfall type line**: Creature -- Lizard Egg // Creature -- Lizard Horror
+**Status**: PASS
+
+No issues found. Hatchling counters tracked via card_state. Transform at 5 counters. Back face 13/13 Trample. Ability only available on front face (untransformed).

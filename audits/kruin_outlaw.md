@@ -14,3 +14,14 @@
 5. Tests exist in werewolf_cards.rs.
 
 **Summary**: The back face is missing a continuous effect that grants all Werewolves you control the "can't be blocked except by two or more creatures" evasion ability. This is functionally distinct from menace (menace is only on Terror of Kruin Pass itself).
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text (front)**: First strike. At the beginning of each upkeep, if no spells were cast last turn, transform Kruin Outlaw.
+**Scryfall Oracle text (back)**: Double strike, menace. Each Werewolf you control can't be blocked except by two or more creatures. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.
+**Scryfall type line**: Creature -- Human Rogue Werewolf // Creature -- Werewolf
+**Status**: ISSUE
+
+- Confirmed: Back face is missing a global continuous effect granting all Werewolves "can't be blocked except by two or more creatures." Menace on Terror of Kruin Pass itself is correct, but the evasion for OTHER Werewolves is not implemented.
+- Note: The back face Oracle text says "double strike, menace" -- the implementation correctly has both keywords.
+- P/T front 2/2, back 3/3 -- correct.

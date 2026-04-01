@@ -15,3 +15,11 @@
 - Tests exist in activated_abilities.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: Flying. {U}: Return Lantern Spirit to its owner's hand.
+**Scryfall type line**: Creature -- Spirit
+**Status**: PASS
+
+No issues found. Note: Scryfall says "Return this creature to its owner's hand" in current oracle text template. The code correctly uses move_object to Zone::Hand.

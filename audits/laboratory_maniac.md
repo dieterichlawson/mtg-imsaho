@@ -13,3 +13,11 @@
 - Tests exist in tier14_cards.rs (tests win condition and controller-only restriction)
 
 No issues found with the card data. The replacement effect is a special rule that must be handled by the engine draw logic.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: If you would draw a card while your library has no cards in it, you win the game instead.
+**Scryfall type line**: Creature -- Human Wizard
+**Status**: PASS
+
+No issues found. Card data is correct. Tests in tier14_cards.rs verify the win condition and controller-only restriction.

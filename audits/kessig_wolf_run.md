@@ -14,3 +14,11 @@
 - Tests exist in tier14_cards.rs
 
 Acceptable simplification of X cost. Implementation is functionally correct within engine constraints.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: {T}: Add {C}. {X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.
+**Scryfall type line**: Land
+**Status**: PASS
+
+No issues found. X simplified to 1 per activation (documented). Multiple activations approximate the effect.

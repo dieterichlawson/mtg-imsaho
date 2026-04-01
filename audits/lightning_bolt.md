@@ -12,3 +12,11 @@
 - Tests exist in spells.rs (tests creature kill and player damage)
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: Lightning Bolt deals 3 damage to any target.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Uses resolve_damage helper which correctly handles damage_marked, damaged_by, and NonCombatDamageDealt event.

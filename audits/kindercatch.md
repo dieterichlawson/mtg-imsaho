@@ -13,3 +13,11 @@
 - Referenced in tier10_cards.rs tests (used as a library card for Mindshrieker test)
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: (none -- vanilla)
+**Scryfall type line**: Creature -- Spirit
+**Status**: PASS
+
+No issues found.

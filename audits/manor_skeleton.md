@@ -15,3 +15,11 @@
 - Tests exist in activated_abilities.rs (stats, ability, and lethal damage tests)
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: Haste. {1}{B}: Regenerate Manor Skeleton.
+**Scryfall type line**: Creature -- Skeleton
+**Status**: PASS
+
+No issues found. Regeneration implemented via regeneration_shields counter. Tests cover stats, ability activation, and lethal damage survival.

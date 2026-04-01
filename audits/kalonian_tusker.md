@@ -13,3 +13,11 @@
 - Tests exist in innistrad_cards.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: (none -- vanilla)
+**Scryfall type line**: Creature -- Beast
+**Status**: PASS
+
+No issues found.

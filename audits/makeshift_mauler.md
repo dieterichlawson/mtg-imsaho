@@ -16,3 +16,12 @@
 8. Tests exist in tier11_cards.rs.
 
 **Summary**: The additional cost exile logic may be duplicated -- once via the `additional_cost` field and once manually in `on_resolve`. This needs investigation to determine which path the engine actually uses.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: As an additional cost to cast Makeshift Mauler, exile a creature card from your graveyard.
+**Scryfall type line**: Creature -- Zombie Horror
+**Status**: ISSUE
+
+- Confirmed potential double-exile issue. The additional_cost field declares ExileCreaturesFromGraveyard(1), AND the on_resolve manually exiles a creature from graveyard. If the engine processes the additional_cost at cast time, the creature ends up exiling TWO cards. If the engine ignores additional_cost for this type, only the resolution exile happens (wrong timing but functionally close).
+- All other card data (cost, types, subtypes, P/T) is correct.

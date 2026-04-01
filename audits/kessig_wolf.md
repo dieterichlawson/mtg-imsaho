@@ -14,3 +14,11 @@
 - Tests: no dedicated test found but ability mechanics are standard
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: {1}{R}: This creature gains first strike until end of turn.
+**Scryfall type line**: Creature -- Wolf
+**Status**: PASS
+
+No issues found. Note: Scryfall uses "This creature" but code uses "Kessig Wolf" -- cosmetic only. Tests exist in activated_abilities.rs.

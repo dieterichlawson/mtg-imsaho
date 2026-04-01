@@ -14,3 +14,11 @@
 - Tests exist in innistrad_simple_cards.rs
 
 No issues found. Implementation matches Oracle text.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: Return two cards at random from your graveyard to your hand.
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Scryfall ruling: "If you only have one card in your graveyard when Make a Wish resolves, that card will be returned to your hand." The implementation uses .take(2) which handles 0, 1, or 2+ cards correctly.

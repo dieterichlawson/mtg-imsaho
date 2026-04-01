@@ -17,3 +17,15 @@
 9. Tests: no dedicated test file found for Liliana.
 
 **Summary**: The -2 ability should allow targeting any player (not just opponent). The +1 discard should ideally let each player choose which card to discard. These are simplifications rather than bugs.
+
+## Audit — 2026-04-01 (independent)
+
+**Scryfall Oracle text**: +1: Each player discards a card. -2: Target player sacrifices a creature. -6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of your choice.
+**Scryfall type line**: Legendary Planeswalker -- Liliana
+**Status**: ISSUE
+
+- Confirmed issues from previous audit. Additionally:
+- Tests DO exist in tier15_cards.rs (liliana_enters_with_loyalty, liliana_plus_one_each_player_discards, liliana_minus_two_opponent_sacrifices_creature, and several planeswalker SBA tests).
+- The on_resolve correctly moves to battlefield and sets starting loyalty via add_counters.
+- +1 Scryfall ruling: "first the player whose turn it is chooses a card in hand without revealing it, then each other player in turn order does the same. Then all the chosen cards are discarded at the same time." Current implementation discards sequentially (auto-picks first card for each player). This is a simplification.
+- -2 correctly uses crate::destruction::sacrifice (not try_destroy) -- this is correct per Oracle "sacrifices."
