@@ -8,66 +8,31 @@ Add the ability to serialize a game state to a file and resume from it. This wou
 # Audit Bug List
 
 All bugs found in the full Scryfall-verified audit of 270 Innistrad cards.
-Each must be fixed — no shortcuts, no deferred work.
 
-## Already Fixed This Session
-- [x] Skaab Ruinator — cast from graveyard (added can_cast_from_graveyard)
-- [x] Stony Silence — artifact ability restriction (added legal_actions check)
-- [x] Blazing Torch — missing damaged_by on creature damage
-- [x] Daybreak Ranger — missing "Ranger" subtype
-- [x] Ludevic's Test Subject — missing "Egg" subtype on front face
-- [x] Mausoleum Guard — Spirit tokens lack "Spirit" subtype
-- [x] Midnight Haunting — Spirit tokens lack "Spirit" subtype
-- [x] Harvest Pyre — missing damaged_by tracking
+## Card-Level Bugs
 
-## Real Bugs — Card-Level Fixes (no engine work needed)
-- [x] **Civilized Scholar** — Homicidal Brute doesn't tap before transforming back. Add `obj.tapped = true` before transform. (Already fixed)
-- [x] **Gutter Grime** — Ooze token P/T should be dynamic (equal to slime counters on Gutter Grime), not static.
-- [x] **Kruin Outlaw** — Back face (Terror of Kruin Pass) menace only on self. Should be a global continuous effect: "Each Werewolf you control can't be blocked except by two or more creatures."
-- [x] **Mayor of Avabruck** — Back face (Howlpack Alpha) missing Upkeep trigger metadata in triggered_abilities. The on_upkeep is implemented but never called because no TriggerKind::Upkeep is declared on back face. (Already fixed — back face has both Upkeep and EndStep triggers declared)
-- [x] **Moldgraf Monstrosity** — Creature selection from graveyard is deterministic (first 2). Oracle says random. Use rand. (Already fixed — uses rand::seq::SliceRandom)
-- [x] **Olivia Voldaren** — (a) Steal effect should end when Olivia leaves the battlefield. (b) Ability 1 should filter targets to Vampires only.
+- [ ] **Blazing Torch** — Damage source is the torch (`object_id`) instead of the equipped creature. Oracle says "Equipped creature deals 2 damage to any target" so `damaged_by` and the `NonCombatDamageDealt` event source should reference the attached creature, not the torch itself.
 
-## Real Bugs — Need Engine Work
+- [ ] **Civilized Scholar** — (a) Auto-picks a creature card for discard (lines 110-115) instead of letting the player choose. Oracle says "discard a card" with transform trigger "if a creature card is discarded this way." (b) Back face (Homicidal Brute) has empty `triggered_abilities` vec despite having an `on_end_step` hook — needs `TriggerKind::EndStep` declared.
 
-### Graveyard/Exile Targeting System
-The engine cannot target cards in graveyards or exile. These cards all need it:
-- [x] **Ghoulcaller's Chant** — needs mode selection + graveyard creature targeting (Added ModalChoice, GraveyardCreature, GraveyardCreatureOfSubtype to TargetRequirement)
-- [x] **Graveyard Shovel** — target player exiles a card from their graveyard (player choice). Fixed: targets PlayerOnly, targeted player chooses card via ResolutionChoice.
-- [x] **Memory's Journey** — target player shuffles up to 3 target graveyard cards into library. Fixed: cards must come from one player's graveyard using ModalChoice + GraveyardCardOwnedByCaster/Opponent.
-- [x] **Purify the Grave** — exile target card from a graveyard (any graveyard, player choice). Already working with GraveyardCard targeting.
-- [x] **Runic Repetition** — return target exiled flashback card to hand. Already working with ExileCard targeting + flashback filter.
+- [ ] **Garruk Relentless** — (a) Front face fight ability auto-targets the strongest opponent creature instead of letting the controller choose. Oracle says "target creature." (b) Transform condition ("when Garruk has two or fewer loyalty counters") is a state-triggered ability but only checks after `on_loyalty_ability`. Won't trigger from combat damage or other non-loyalty sources. (c) Creature-to-planeswalker damage in the fight ability doesn't emit a `NonCombatDamageDealt` event — just decrements loyalty directly.
 
-### End of Combat Trigger
-- [x] **Geist of Saint Traft** — Angel token should be exiled at end of combat, not end step. Needs TriggerKind::EndCombat + PendingTrigger::EndCombatTrigger + on_end_combat hook + StepStarted::EndCombat processing. (Already implemented — EndCombat trigger system exists in engine and card uses on_end_combat hook)
+- [ ] **Geist of Saint Traft** — Angel token tracking uses `card_state.insert("angel_token", id)` which overwrites on multiple attacks in the same combat (e.g., with extra combat steps). Should use a vec or unique keys per token.
 
-### Combat Damage to Creature Trigger
-- [x] **Creepy Doll** — currently fires at block declaration. Should fire when combat damage is actually dealt to a creature. Needs TriggerKind::DealsCombatDamageToCreature or similar. (Fixed: added DealsCombatDamageToCreature trigger kind + PendingTrigger::CombatDamageToCreature + on_deals_combat_damage_to_creature hook)
+- [ ] **Ghoulcaller's Chant** — Mode 2 uses `GraveyardCreatureOfSubtype("Zombie")` but oracle says "two target Zombie cards" (not "Zombie creature cards"). Could miss non-creature Zombies in graveyard. Very minor since Zombies are almost always creatures.
 
-### Mana Ability Callback
-- [x] **Deranged Assistant** — mill cost never executed. Needs on_activate_mana_ability callback in CardBehavior + engine to call it during ActivateManaAbility handling. (Already implemented — on_activate_mana_ability exists in trait and engine calls it at resolution)
+- [ ] **Harvest Pyre** — Exiles ALL cards from controller's graveyard at resolve (lines 44-47) instead of letting the player choose X cards to exile. Oracle says "Exile X cards from your graveyard" where X determines the damage dealt. Player should choose both X and which cards.
 
-### Damage Prevention / Replacement
-- [x] **Moonmist** — "Prevent all combat damage that non-Wolf and non-Werewolf creatures would deal this turn." Needs a combat damage prevention system (per-turn flags checked during deal_combat_damage). (Fixed: added prevent_non_wolf_werewolf_combat_damage flag to GameState, checked in deal_damage_to_creature and deal_damage_to_player)
-- [x] **Unbreathing Horde** — "If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter." Needs per-creature damage interception. (Fixed: added PreventDamageRemoveCounter continuous effect, checked in combat and non-combat damage paths)
+- [ ] **Kruin Outlaw / Terror of Kruin Pass** — (a) Back face uses `MinimumBlockers` effect instead of the menace keyword. (b) Oracle says "Each Werewolf you control" has menace — should be a global continuous effect on all your Werewolves, not just self. (c) Back face `triggered_abilities` vec is empty despite needing `TriggerKind::Upkeep` for the transform-back check.
 
-### Player Hexproof
-- [x] **Witchbane Orb** — "You have hexproof." Needs player targeting restriction in legal_actions (skip spells/abilities targeting a player with hexproof). (Fixed: added grants_player_hexproof to CardBehavior, player_has_hexproof to GameState, can_target_player check in all player-targeting paths)
+- [ ] **Memory's Journey** — Target player selection is implicit (auto-derived from modal choice of "your graveyard" vs "opponent's graveyard") rather than explicit targeting. Oracle says "target player shuffles up to three target cards from their graveyard into their library" — the player should be a target.
 
-### Planeswalker Damage Redirect
-- [x] **Curse of the Pierced Heart** — Oracle says "deals 1 damage to that player or a planeswalker that player controls." Needs damage redirect to planeswalker option. (Not a bug: planeswalker damage redirect was removed from MTG rules in 2018. Current Oracle text is just "deals 1 damage to that player." Already correct.)
+- [ ] **Moonmist** — Transform filter uses `!o.is_transformed` (line 34) which prevents already-transformed Werewolves from transforming back. Oracle says "Transform all Humans" — should transform any Human regardless of current face. Also may incorrectly transform non-Werewolf DFCs that happen to be Human.
 
-### Multi-Step Casting (Additional Costs at Cast Time)
-- [x] **Infernal Plunge** — sacrifice should happen when casting, not at resolution. Needs the casting flow to prompt for additional costs before the spell goes on the stack. (Fixed: added sacrifice field to CastSpell action, engine validates and pays AdditionalCost::SacrificeCreature at cast time, generates one action per eligible creature. Also fixed Altar's Reap.)
+- [ ] **Olivia Voldaren** — Ability 0 (ping for 1 damage) uses `TargetFilter::Any` which could allow targeting Olivia herself. Oracle says "target creature" with no self-exclusion, but the +1/+1 counter and Vampire-making only apply to "that creature" if it survives, so self-targeting would be odd but technically legal. Low severity.
 
-### X-Cost Activated Abilities
-- [x] **Kessig Wolf Run** — X-cost ability simplified to fixed cost. Needs X-cost support for activated abilities (player chooses X, pays accordingly). (Fixed: engine now detects ManaSymbol::X in ability costs, pays non-X portion and drains remaining pool as X. X value stored in state.last_activated_x_value for card callbacks. Kessig Wolf Run now properly grants +X/+0 and trample.)
+## Bugs Needing Engine Work
 
-### Double Damage Replacement
-- [x] **Inquisitor's Flail** — combat damage doubling is approximated via power boost. Needs actual damage multiplication in combat damage step. Also missing defensive doubling entirely. (Fixed: removed dynamic_pt power hack, added DoubleCombatDamage continuous effect, damage now properly doubled in deal_damage_to_creature and deal_damage_to_player for both offensive and defensive cases.)
+- [ ] **Skaab Ruinator** — "As an additional cost to cast this spell, exile three creature cards from your graveyard." Currently exiles at resolve time (`on_resolve` lines 41-58), not at cast time. Needs the additional-cost-at-cast-time system to handle exile-from-graveyard costs (similar to how `Infernal Plunge` sacrifice was fixed).
 
-### Modal Spells
-- [x] **Creeping Renaissance** — "Choose a permanent type." Implemented ChooseCardType resolution choice system with 5 permanent type options. Player selects type, all matching cards return from graveyard to hand.
-
-### Garruk Back Face
-- [x] **Garruk Relentless** — back face (Garruk, the Veil-Cursed) abilities implemented: +1 create 1/1 black Wolf with deathtouch, -1 sacrifice creature to tutor, -3 creatures get +X/+X and trample. loyalty_abilities trait method now takes state/object_id to support DFC face-switching.
+- [ ] **Stony Silence** — "Activated abilities of artifacts can't be activated." The static ability is declared but not enforced in `legal_actions`. Needs engine support to check for artifact-ability-restriction effects when generating legal actions for activated abilities.
