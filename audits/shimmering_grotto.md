@@ -12,3 +12,10 @@ Implementation correctly models:
 - Tests: `shimmering_grotto_card_data` and `shimmering_grotto_taps_for_colorless` in innistrad_simple_cards.rs
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {T}: Add {C}. {1}, {T}: Add one mana of any color.
+**Scryfall type line**: Land
+**Status**: PASS
+
+No issues found. Colorless mana ability and color-filtering activated ability (5 color choices) correctly implemented.
