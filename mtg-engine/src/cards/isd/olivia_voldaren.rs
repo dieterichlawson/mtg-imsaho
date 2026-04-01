@@ -56,7 +56,7 @@ impl CardBehavior for OliviaVoldaren {
             ]),
             requires_tap: false,
             sacrifice_cost: SacrificeCost::None,
-            target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::Any)),
+            target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::Another)),
             once_per_turn: false,
             sorcery_speed_only: false,
         });

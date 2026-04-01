@@ -967,10 +967,54 @@ fn build_cast_target_spec(
     }
 }
 
+/// Check if a creature matches a TargetFilter for ability targeting.
+fn matches_ability_target_filter(
+    state: &GameState,
+    obj: &crate::state::GameObject,
+    filter: &crate::cards::TargetFilter,
+    controller: PlayerId,
+    source_id: ObjectId,
+    registry: &CardRegistry,
+) -> bool {
+    use crate::cards::TargetFilter;
+    match filter {
+        TargetFilter::Any => true,
+        TargetFilter::Another => obj.id != source_id,
+        TargetFilter::YouControl => obj.controller == controller,
+        TargetFilter::YouDontControl => obj.controller != controller,
+        TargetFilter::Nonblack => {
+            // Check if the creature's mana cost contains black.
+            if let Some(data) = registry.card_data(obj.card_id) {
+                if let Some(ref cost) = data.cost {
+                    !cost.symbols.iter().any(|s| matches!(s, ManaSymbol::Colored(Color::Black)))
+                } else {
+                    true // No cost = not black
+                }
+            } else {
+                true
+            }
+        }
+        TargetFilter::NotSubtypes(types) => {
+            let subtypes = &obj.subtypes;
+            !types.iter().any(|t| subtypes.contains(t))
+        }
+        TargetFilter::PowerAtLeast(n) => {
+            state.effective_power(obj.id, registry).unwrap_or(0) >= *n
+        }
+        TargetFilter::Attacking => {
+            state.combat.as_ref().map(|c| c.attackers.contains_key(&obj.id)).unwrap_or(false)
+        }
+        TargetFilter::HasSubtype(subtype) => {
+            obj.subtypes.contains(subtype)
+        }
+        _ => true, // Other filters not commonly used for ability targeting
+    }
+}
+
 /// Generate valid targets for a targeted activated ability.
 fn generate_ability_targets(
     state: &GameState,
-    _source_id: ObjectId,
+    source_id: ObjectId,
     ab: &crate::cards::ActivatedAbilityDef,
     controller: PlayerId,
     registry: &CardRegistry,
@@ -985,10 +1029,19 @@ fn generate_ability_targets(
     };
 
     match target_req {
-        TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_) => {
+        TargetRequirement::Creature => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| o.power.is_some())
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+                .collect()
+        }
+        TargetRequirement::CreatureWithFilter(filter) => {
+            state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| o.power.is_some())
+                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .filter(|o| matches_ability_target_filter(state, o, filter, controller, source_id, registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()

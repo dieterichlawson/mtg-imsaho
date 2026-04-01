@@ -181,6 +181,8 @@ pub enum TargetFilter {
     SubtypeOrCardType { subtypes: Vec<String>, card_types: Vec<CardType> },
     /// Only creatures with a specific subtype (Olivia Voldaren: target Vampire).
     HasSubtype(String),
+    /// "Another" — excludes the source permanent from valid targets.
+    Another,
 }
 
 impl std::fmt::Display for TargetFilter {
@@ -207,6 +209,7 @@ impl std::fmt::Display for TargetFilter {
                 write!(f, "{}", names.join(" or "))
             }
             TargetFilter::HasSubtype(subtype) => write!(f, "{}", subtype),
+            TargetFilter::Another => write!(f, "another"),
             TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
                 let mut parts: Vec<String> = subtypes.clone();
                 for t in card_types {
