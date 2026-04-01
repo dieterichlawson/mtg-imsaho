@@ -64,7 +64,31 @@ pub fn declare_blockers_with_registry(
         .filter(|&&(blocker, attacker)| can_block_attacker(state, blocker, attacker, registry))
         .cloned()
         .collect();
-    declare_blockers(state, &valid);
+
+    // Check RequireMinBlockers: if an attacker requires N+ blockers and fewer
+    // are assigned, remove those block assignments (the creature is unblockable
+    // unless enough blockers are committed).
+    let min_blocker_reqs = get_min_blocker_requirements(state, registry);
+    let final_valid: Vec<_> = if min_blocker_reqs.is_empty() {
+        valid
+    } else {
+        // Count blockers per attacker.
+        let mut blocker_counts: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
+        for &(_blocker, attacker) in &valid {
+            *blocker_counts.entry(attacker).or_insert(0) += 1;
+        }
+        // Filter out assignments where attacker requires more blockers than assigned.
+        valid.into_iter().filter(|&(_blocker, attacker)| {
+            if let Some(&min_required) = min_blocker_reqs.get(&attacker) {
+                let count = blocker_counts.get(&attacker).copied().unwrap_or(0);
+                count >= min_required
+            } else {
+                true
+            }
+        }).collect()
+    };
+
+    declare_blockers(state, &final_valid);
 }
 
 /// Deal combat damage with full keyword support.
@@ -653,4 +677,58 @@ mod tests {
         assert_eq!(eligible.len(), 1);
         assert_eq!(eligible[0], a);
     }
+}
+
+/// For each attacker currently in combat, determine the minimum number of
+/// blockers required (from RequireMinBlockers continuous effects and menace keyword).
+/// Returns a map from attacker ObjectId to minimum blocker count.
+fn get_min_blocker_requirements(
+    state: &GameState,
+    registry: &CardRegistry,
+) -> std::collections::HashMap<ObjectId, usize> {
+    let mut reqs: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
+    let combat = match &state.combat {
+        Some(c) => c,
+        None => return reqs,
+    };
+
+    for &attacker_id in combat.attackers.keys() {
+        let mut min_needed: usize = 1; // default: 1 blocker is enough
+
+        // Check menace keyword.
+        if state.has_keyword(attacker_id, Keyword::Menace, registry) {
+            min_needed = min_needed.max(2);
+        }
+
+        // Check RequireMinBlockers continuous effects from all battlefield permanents.
+        for source in state.objects.values() {
+            if source.zone != crate::types::Zone::Battlefield {
+                continue;
+            }
+            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
+                instance_effects.clone()
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                }
+            } else {
+                continue
+            };
+            for effect in &effects {
+                if let crate::types::ContinuousEffect::RequireMinBlockers { min_blockers, scope } = effect {
+                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
+                        min_needed = min_needed.max(*min_blockers as usize);
+                    }
+                }
+            }
+        }
+
+        if min_needed > 1 {
+            reqs.insert(attacker_id, min_needed);
+        }
+    }
+
+    reqs
 }

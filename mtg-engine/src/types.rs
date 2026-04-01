@@ -371,6 +371,10 @@ pub enum ContinuousEffect {
     ConditionalKeyword { keyword: Keyword, condition: EffectCondition, scope: EffectScope },
     /// Reduce cost of spells matching a filter.
     ReduceCost { reduction: u32, filter: SpellFilter },
+    /// Creature can't be blocked except by N or more creatures.
+    /// Used by Terror of Kruin Pass: "Each Werewolf you control can't be blocked
+    /// except by two or more creatures."
+    RequireMinBlockers { min_blockers: u32, scope: EffectScope },
 }
 
 /// Condition for conditional effects.
