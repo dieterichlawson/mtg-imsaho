@@ -45,10 +45,10 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Creepy Doll** — currently fires at block declaration. Should fire when combat damage is actually dealt to a creature. Needs TriggerKind::DealsCombatDamageToCreature or similar. (Fixed: added DealsCombatDamageToCreature trigger kind + PendingTrigger::CombatDamageToCreature + on_deals_combat_damage_to_creature hook)
 
 ### Mana Ability Callback
-- [ ] **Deranged Assistant** — mill cost never executed. Needs on_activate_mana_ability callback in CardBehavior + engine to call it during ActivateManaAbility handling.
+- [x] **Deranged Assistant** — mill cost never executed. Needs on_activate_mana_ability callback in CardBehavior + engine to call it during ActivateManaAbility handling. (Already implemented — on_activate_mana_ability exists in trait and engine calls it at resolution)
 
 ### Damage Prevention / Replacement
-- [ ] **Moonmist** — "Prevent all combat damage that non-Wolf and non-Werewolf creatures would deal this turn." Needs a combat damage prevention system (per-turn flags checked during deal_combat_damage).
+- [x] **Moonmist** — "Prevent all combat damage that non-Wolf and non-Werewolf creatures would deal this turn." Needs a combat damage prevention system (per-turn flags checked during deal_combat_damage). (Fixed: added prevent_non_wolf_werewolf_combat_damage flag to GameState, checked in deal_damage_to_creature and deal_damage_to_player)
 - [ ] **Unbreathing Horde** — "If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter." Needs per-creature damage interception.
 
 ### Player Hexproof
