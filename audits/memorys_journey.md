@@ -53,3 +53,22 @@ Issues found:
 3. **Per ruling, if no cards targeted or all card targets are illegal, the player still shuffles their library**: The current implementation would not shuffle the library if all card targets become illegal (the `target_player` would be None since it's derived from the first card target).
 
 Tests in `tests/tier11_cards.rs` cover: shuffling cards into library, flashback cost verification. No graveyard or damage anti-patterns.
+
+## Audit — 2026-04-01 12:00
+
+**Oracle text source**: Scryfall via WebSearch
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library. Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: ISSUE
+
+Mana cost {1}{U}: correct. Type Instant: correct. Flashback cost {G}: correct. Uses `move_spell_after_resolve`: correct. `on_resolve` moves targeted cards from graveyard to library and shuffles the owning player's library: correct basic behavior.
+
+Tests in `tests/memorys_journey.rs` cover: shuffling own graveyard card, shuffling opponent's graveyard card, up to 3 cards, no mixing graveyards, flashback cost verification. Good coverage.
+
+Issues found:
+1. **Targeting model uses ModalChoice instead of targeting a player** (`/home/user/mtg-imsaho/mtg-engine/src/cards/memorys_journey.rs`, lines 39-42):
+   - Oracle text says: `Target player shuffles up to three target cards from their graveyard into their library.`
+   - Code does: `TargetRequirement::ModalChoice` with two modes (`GraveyardCardOwnedByCaster` and `GraveyardCardOwnedByOpponent`) instead of explicitly targeting a player. Per Scryfall ruling: "If the player is an illegal target by the time Memory's Journey resolves, the spell will have no effect, even if the cards are still legal targets." The current implementation never targets a player object, so player hexproof/shroud protections would be bypassed.
+2. **Player not shuffled when all card targets are illegal** (`/home/user/mtg-imsaho/mtg-engine/src/cards/memorys_journey.rs`, lines 47-53):
+   - Oracle text says (per Scryfall ruling): "If no cards were targeted by Memory's Journey or if all the targeted cards are illegal targets by the time Memory's Journey resolves, the targeted player will still shuffle their library."
+   - Code does: `target_player` is derived from the first card target's owner (line 47-53). If all card targets become illegal and are removed from the targets list, `target_player` would be `None` and no shuffle would occur.

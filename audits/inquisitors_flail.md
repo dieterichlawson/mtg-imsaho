@@ -43,6 +43,20 @@ Findings:
 - No triggered_abilities declared, none needed: correct.
 - Tests found in tier9_cards.rs and inquisitors_flail.rs.
 
+## Audit — 2026-04-01 12:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/227/inquisitors-flail), confirmed by Gatherer via WebSearch (https://gatherer.wizards.com/Pages/Card/Details.aspx?name=inquisitor's+flail)
+**Oracle text**: If equipped creature would deal combat damage, it deals double that damage instead. If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead. Equip {2}
+**Type line**: Artifact — Equipment
+**Status**: ISSUE
+
+1. **Oracle text string mismatch** (`mtg-engine/src/cards/inquisitors_flail.rs`, line 26):
+   - Oracle text says: `If another creature would deal combat damage to equipped creature`
+   - Code says: `If another source would deal combat damage to equipped creature`
+   - The code uses "another source" where the current Scryfall oracle text says "another creature".
+
+No other issues. Mana cost {2}, types Artifact/Equipment, equip cost, sorcery-speed-only, creature targeting, DoubleCombatDamage continuous effect, and combat.rs implementation (lines 447-454) all correctly double both outgoing and incoming combat damage. Tests in inquisitors_flail.rs (4 tests) confirm both directions work. No anti-patterns found.
+
 ## Audit — 2026-04-01 10:00
 
 **Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/227/inquisitors-flail)

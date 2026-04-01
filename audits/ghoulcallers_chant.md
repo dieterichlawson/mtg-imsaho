@@ -69,3 +69,19 @@ Issues found (persisting from prior audit):
 1. **Mode 2 uses "Zombie creature cards" filter but oracle says "Zombie cards"**: The `GraveyardCreatureOfSubtype("Zombie")` requirement checks for both creature type and Zombie subtype. Current Scryfall oracle says "two target Zombie cards" not "Zombie creature cards." While Zombie is a creature subtype (making non-creature Zombie cards extremely rare in practice), the filter is technically more restrictive than the oracle requires. Low severity.
 
 Tests in `tests/tier11_cards.rs`: returns creature from graveyard, returns two zombies. Good basic coverage. No anti-patterns found.
+
+## Audit — 2026-04-01 12:00
+
+**Oracle text source**: Scryfall via WebSearch, confirmed by Gatherer via WebSearch
+**Oracle text**: Choose one — • Return target creature card from your graveyard to your hand. • Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Status**: ISSUE
+
+Mana cost {B}: correct. Type Sorcery: correct. No subtypes/supertypes: correct. Uses `move_spell_after_resolve`: correct. Modal targeting via `TargetRequirement::ModalChoice`: correct structure. `on_resolve` iterates targets and moves each from graveyard to hand: correct. `is_valid_target` checks `o.zone == Zone::Graveyard && o.owner == caster`: correct (both modes target "your graveyard").
+
+Tests in `tests/ghoulcallers_chant.rs` cover: mode 1 returning a creature, mode 2 returning two zombies, legal actions for mode 1 and mode 2, no mode 2 for non-zombies, cannot target opponent's graveyard, mixed graveyard correct modes. Good coverage.
+
+Issues found:
+1. **Oracle text string says "Zombie creature cards" but Scryfall oracle says "Zombie cards"** (`/home/user/mtg-imsaho/mtg-engine/src/cards/ghoulcallers_chant.rs`, line 24):
+   - Oracle text says: `Return two target Zombie cards from your graveyard to your hand.`
+   - Code does: `oracle_text` field contains `"Return two target Zombie creature cards from your graveyard to your hand."` and `GraveyardCreatureOfSubtype("Zombie")` (line 38-39) enforces the target must be a creature card with Zombie subtype. The current oracle only requires "Zombie cards" -- any card with the Zombie subtype, not necessarily a creature. Low severity since Zombie is a creature subtype and non-creature Zombie cards are extremely rare in practice.

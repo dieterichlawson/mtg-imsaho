@@ -54,3 +54,21 @@ Findings:
 
 Issues:
 - Static ability ("Activated abilities of artifacts can't be activated") is not enforced. Documented as known limitation in code comments. Rulings confirm this affects mana abilities and only artifacts on the battlefield.
+
+## Audit — 2026-04-01 12:00
+
+**Oracle text source**: Scryfall via WebSearch
+**Oracle text**: Activated abilities of artifacts can't be activated.
+**Type line**: Enchantment
+**Status**: ISSUE
+
+Mana cost {1}{W}: correct (Generic(1), White). Type Enchantment: correct. No subtypes or supertypes: correct. Oracle text string matches Scryfall exactly. No P/T: correct. No flashback: correct. No triggered abilities: correct.
+
+Per Scryfall rulings: Activated abilities contain a colon; no abilities of artifacts can be activated including mana abilities; only affects artifacts on the battlefield; triggered abilities are unaffected.
+
+Tests in `tests/innistrad_simple_cards.rs` (line 586): verifies card data (type is Enchantment). No test for the static ability effect.
+
+Issues found:
+1. **Static ability not enforced** (`/home/user/mtg-imsaho/mtg-engine/src/cards/stony_silence.rs`, lines 7-11):
+   - Oracle text says: `Activated abilities of artifacts can't be activated.`
+   - Code does: The card is registered with correct card data but the static ability has no in-game effect. The code comments document this as a known limitation: "the engine doesn't have an ability restriction system." No `continuous_effects` entry or other mechanism prevents artifact activated abilities from being used. This means artifacts on the battlefield can freely activate abilities while Stony Silence is in play.

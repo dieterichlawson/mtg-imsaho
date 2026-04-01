@@ -40,6 +40,24 @@ Findings:
 - Oracle discrepancy (carried forward): implementation cannot redirect damage to a planeswalker the enchanted player controls. Minor accepted simplification.
 - Tests found in tier15_cards.rs and tier7_cards.rs.
 
+## Audit — 2026-04-01 12:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/138/curse-of-the-pierced-heart), confirmed by Gatherer via WebSearch (https://gatherer.wizards.com/pages/card/Details.aspx?multiverseid=227071)
+**Oracle text**: Enchant player. At the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.
+**Type line**: Enchantment — Aura Curse
+**Status**: ISSUE
+
+1. **Oracle text string mismatch** (`mtg-engine/src/cards/curse_of_the_pierced_heart.rs`, line 26):
+   - Oracle text says: `this Aura deals 1 damage to that player or a planeswalker that player controls`
+   - Code says: `Curse of the Pierced Heart deals 1 damage to that player.`
+   - The code's oracle_text field omits the "or a planeswalker that player controls" clause and uses the old card-name self-reference instead of "this Aura".
+
+2. **Missing planeswalker targeting in behavior** (`mtg-engine/src/cards/curse_of_the_pierced_heart.rs`, lines 62-64):
+   - Oracle text says: `deals 1 damage to that player or a planeswalker that player controls`
+   - Code does: Always deals 1 damage to the player only (subtracts 1 from life, emits NonCombatDamageDealt targeting the player). No option to redirect damage to a planeswalker.
+
+No other issues. Mana cost, types, subtypes, targeting, trigger kind, event types, and anti-pattern checks all pass. Tests in tier7_cards.rs cover the basic upkeep damage case.
+
 ## Audit — 2026-04-01 10:00
 
 **Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/138/curse-of-the-pierced-heart)

@@ -97,3 +97,22 @@ Correction: After re-reading the code, the back face `triggered_abilities` vec a
 **Revised Status**: PASS
 
 Tests in `tests/werewolf_cards.rs`: human buff, werewolf buff after transform, Wolf token creation on end step, no token on front face. Good coverage. No anti-patterns found.
+
+## Audit — 2026-04-01 12:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/193/mayor-of-avabruck-howlpack-alpha), confirmed by tappedout.net and Gatherer via WebSearch
+**Oracle text (front)**: Other Human creatures you control get +1/+1. At the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.
+**Oracle text (back)**: Each other creature you control that's a Werewolf or a Wolf gets +1/+1. At the beginning of your end step, create a 2/2 green Wolf creature token. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.
+**Type line (front)**: Creature — Human Advisor Werewolf
+**Type line (back)**: Creature — Werewolf
+**Status**: PASS
+
+No issues found.
+
+Details:
+- Front face: Mana cost {1}{G} correct. Subtypes Human/Advisor/Werewolf correct. P/T 1/1 correct. ModifyPT +1/+1 with scope GlobalOther(You AND Human) correct. Upkeep triggered ability declared correctly.
+- Back face: P/T 3/3 via dynamic_pt correct. Subtypes ["Werewolf"] correct. ModifyPT +1/+1 with scope GlobalOther(You AND (Werewolf OR Wolf)) correct (semantically matches "Each other creature you control that's a Werewolf or a Wolf gets +1/+1"). EndStep creates 2/2 green Wolf creature token with "Wolf" subtype, only during controller's end step when transformed: correct. Back face triggered_abilities includes BOTH TriggerKind::Upkeep and TriggerKind::EndStep (lines 84-93): correct.
+- Transform logic: front-to-back when no spells cast last turn (and not first turn), back-to-front when any player cast 2+ spells last turn: correct.
+- Wolf token created via create_token_with_subtypes with colors [Green], types [Creature], subtypes ["Wolf"]: correct.
+- Tests in werewolf_cards.rs cover: human buff, werewolf/wolf buff after transform, Wolf token creation on end step, no token on front face. Good coverage.
+- No anti-patterns found. No missing triggered_abilities declarations.

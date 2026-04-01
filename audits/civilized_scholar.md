@@ -77,3 +77,33 @@ Findings:
 - No CombatDamageDealt misuse.
 - No missing token subtypes (no tokens created).
 - Tests: 1 test in tier15_cards.rs (civilized_scholar_draw_discard_creature_transforms). Minimal coverage -- only tests the transform case. No test for: discarding non-creature (should not transform), Homicidal Brute transforming back on end step, Homicidal Brute NOT transforming back if it attacked.
+
+## Audit — 2026-04-01 14:38
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/47/civilized-scholar-homicidal-brute)
+**Oracle text (front)**: {T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.
+**Oracle text (back)**: At the beginning of your end step, if Homicidal Brute didn't attack this turn, tap Homicidal Brute, then transform it.
+**Type line**: Creature — Human Advisor // Creature — Human Mutant
+**Front P/T**: 0/1
+**Back P/T**: 5/1
+**Status**: ISSUE
+
+Findings:
+1. **Name**: "Civilized Scholar" / "Homicidal Brute" -- correct.
+2. **Mana cost {2}{U}**: Correct (`Generic(2), Blue`).
+3. **Front face type**: Creature, subtypes Human/Advisor, P/T 0/1 -- correct.
+4. **Back face type**: Creature, subtypes Human/Mutant, P/T 5/1 -- correct (dynamic_pt returns (5,1) when transformed).
+5. **Activated ability**: {T}, draw then discard, if creature discarded untap + transform -- correct structure.
+6. **End step transform back**: Checks is_transformed, active_player == controller, attacked_this_turn flag. Taps before transforming (line 159: `obj.tapped = true`). Correct per oracle: `tap Homicidal Brute, then transform it.`
+7. **on_attacks**: Sets "attacked_this_turn" card_state flag (line 141). Correct.
+8. **End step clears flag**: Line 167-169 removes "attacked_this_turn" after check. Correct.
+9. **triggered_abilities**: Declares TriggerKind::Attacks and TriggerKind::EndStep. Matches on_attacks and on_end_step hooks.
+10. **Discard event**: Emitted at line 118. Correct.
+11. **No spell cleanup needed**: Creature enters battlefield via normal cast flow.
+12. **Tests**: No dedicated test file found. Previously noted in tier15_cards.rs.
+
+Issue:
+- **Automatic discard selection** (file: `mtg-engine/src/cards/civilized_scholar.rs`, lines 111-114):
+  - Oracle text says: `{T}: Draw a card, then discard a card.`
+  - Code does: Automatically prefers discarding a creature card (`hand.iter().find(|(_, is_creature)| *is_creature).or(hand.first())`).
+  - The player should choose which card to discard. This matters because the player may want to discard a non-creature card to avoid transforming. The code always forces the transform when a creature card is in hand.
