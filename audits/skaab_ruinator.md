@@ -122,3 +122,40 @@ All other card data verified correct: name, mana cost {1}{U}{U}, type Creature, 
 - Spell countered after casting (creatures should still be exiled): NOT TESTED
 - Player choice of which creatures to exile: NOT TESTED
 - Ruling: must exile 3 regardless of casting zone: NOT TESTED
+
+## Re-Audit — 2026-04-01 20:00
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py)
+**Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard.
+Flying
+You may cast this card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**Status**: ISSUE
+
+### Code issues
+Previous issues about additional cost timing and eligibility checking have been fixed by the engine (engine.rs lines 487-497 for eligibility, lines 1302-1336 for cost payment at cast time). The `on_resolve` method (skaab_ruinator.rs line 37-41) now correctly just moves to the battlefield without re-exiling.
+
+However, one new issue was found:
+
+1. **Casting from graveyard will panic due to cost calculation bug** (engine.rs lines 1232-1239):
+   - Oracle text says: `You may cast this card from your graveyard.`
+   - Code does: When cast from the graveyard, `is_flashback` is set to `true` (line 1225: detects graveyard zone). The cost calculation (lines 1232-1239) then enters the flashback branch: `dynamic_fb.unwrap_or_else(|| { data.flashback_cost.expect("flashback cast on card without flashback_cost") })`. For Skaab Ruinator, `dynamic_fb` is `None` and `data.flashback_cost` is `None`, so this will **panic** with "flashback cast on card without flashback_cost". The `legal_actions` function (line 558-568) correctly handles this case by falling through to the normal mana cost when `can_cast_from_graveyard()` is true and there's no flashback cost, but the `apply_action` function does not replicate this logic. This bug is untested because the existing test only casts from hand, not from graveyard.
+
+All other card data verified correct: name "Skaab Ruinator", mana cost {1}{U}{U}, type Creature, subtypes Zombie/Horror, P/T 5/6, Flying keyword, `can_cast_from_graveyard()` returns true, additional_cost `ExileCreaturesFromGraveyard(3)`, oracle text matches.
+
+Engine eligibility check (engine.rs line 487-497) correctly verifies 3+ creature cards in graveyard and excludes the spell itself (`o.id != obj.id`). Engine cost payment (engine.rs lines 1302-1336) exiles creatures at cast time (before moving to stack). Exile candidate selection auto-picks highest-power creatures (acceptable simplification).
+
+### Tricky interactions checked
+- Additional cost paid at cast time (not resolve): pass (engine.rs lines 1302-1336)
+- Eligibility check for 3 graveyard creatures: pass (engine.rs lines 487-497)
+- Self-exclusion from exile candidates: pass (engine.rs line 491: `o.id != obj.id` and line 1311: `o.id != *object_id`)
+- Cast from graveyard (can_cast_from_graveyard): ISSUE (panics in apply_action, see #1)
+- on_resolve enters battlefield (not graveyard): pass
+- Creature card identification: pass (checks power.is_some() and card_types)
+
+### Test coverage
+- Exiles 3 creatures and enters battlefield: `tests/tier15_cards.rs:484`
+- Cast from graveyard: NOT TESTED (would panic, see issue #1)
+- Spell countered after casting (creatures still exiled): NOT TESTED
+- Cast with fewer than 3 creatures (should be illegal): NOT TESTED
+- Ruling: can't exile self to pay cost: NOT TESTED (covered by engine code)

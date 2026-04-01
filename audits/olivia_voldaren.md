@@ -165,3 +165,41 @@ All other card data verified correct: name, mana cost {2}{B}{R}, Legendary super
 - Ruling: losing control of Olivia before ability 1 resolves: NOT TESTED
 - Engine presents self as valid target for ability 0: NOT TESTED
 - Engine presents non-Vampires as valid targets for ability 1: NOT TESTED
+
+## Re-Audit — 2026-04-01 20:00
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py)
+**Oracle text**: Flying
+{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.
+{3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
+**Type line**: Legendary Creature — Vampire
+**Status**: PASS
+
+### Code issues
+No issues found. Both issues from the prior audit (2026-04-01 18:00) have been fixed:
+
+1. **Ability 0 target filter now uses `TargetFilter::Another`** (`olivia_voldaren.rs` line 59): Previously `TargetFilter::Any`, now correctly excludes self at the targeting level. The engine's `matches_ability_target_filter` function (engine.rs line 1010) implements `Another` as `obj.id != source_id`.
+
+2. **Engine now applies `CreatureWithFilter` filter for activated abilities** (engine.rs lines 1068-1075): Previously the engine handled `CreatureWithFilter(_)` identically to `Creature` in `generate_ability_targets`. Now there is a dedicated match arm that calls `matches_ability_target_filter`, so ability 1's `HasSubtype("Vampire")` filter is properly applied at the targeting level.
+
+All card data verified correct: name "Olivia Voldaren", mana cost {2}{B}{R}, Legendary supertype, Vampire subtype, P/T 3/3, Flying keyword, oracle text matches. Ability 0 cost {1}{R}: correct, `requires_tap: false`: correct. Ability 1 cost {3}{B}{B}: correct, `requires_tap: false`: correct. `NonCombatDamageDealt` event emitted: correct. `damaged_by` tracked: correct. Vampire subtype addition preserves existing subtypes: correct. +1/+1 counter on Olivia via `state.add_counters`: correct. `LeavesBattlefield` triggered ability declared: correct. `on_leave_battlefield` returns stolen creatures to original controllers: correct.
+
+### Tricky interactions checked
+- "Another" self-exclusion at targeting level: pass (TargetFilter::Another, line 59)
+- "Another" self-exclusion at resolution level: pass (line 100 check)
+- Vampire subtype added "in addition to" existing types: pass
+- Stolen creatures returned when Olivia leaves: pass
+- NonCombatDamageDealt (not CombatDamageDealt): pass
+- damaged_by tracking: pass
+- Lethal damage + Vampire subtype before SBAs: pass (same block, per ruling)
+- CreatureWithFilter(HasSubtype("Vampire")) applied for ability 1: pass
+
+### Test coverage
+- Ability 0: damage + Vampire + counter: `tests/olivia_voldaren.rs:23`
+- Ability 0: cannot target self: `tests/olivia_voldaren.rs:51`
+- Ability 1: steals Vampire: `tests/olivia_voldaren.rs:68`
+- Ability 1: rejects non-Vampire: `tests/olivia_voldaren.rs:86`
+- Stolen creatures return when Olivia leaves: `tests/olivia_voldaren.rs:104`
+- Ability 1 target filter requires Vampire: `tests/olivia_voldaren.rs:134`
+- Ruling: losing control of Olivia before ability 1 resolves: NOT TESTED
+- Ruling: lethal damage creature becomes Vampire before dying: NOT TESTED (covered by code structure)

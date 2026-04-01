@@ -118,3 +118,48 @@ Issue:
    - Code does: `obj.card_state.insert("angel_token".into(), token_id)` which overwrites any previous value. If Geist attacks in multiple combat phases (e.g., extra combat steps from other cards), only the last angel token ID is tracked and earlier ones would not be exiled at end of combat. This is a minor edge case bug.
 
 No other issues found. Tests in tier15_cards.rs cover angel creation on attack and exile at end of combat (2 tests).
+
+## Audit — 2026-04-01 17:00
+
+**Oracle text source**: Scryfall API (cached)
+**Oracle text**: Hexproof (This creature can't be the target of spells or abilities your opponents control.)
+Whenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.
+**Type line**: Legendary Creature — Spirit Cleric
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All previously flagged issues have been fixed:
+- Token exile timing: now uses `TriggerKind::EndCombat` and `state.end_of_combat_exiles.push(token_id)` (not EndStep).
+- Angel exile if Geist leaves battlefield: `state.end_of_combat_exiles` is game-level storage, fires regardless of Geist's presence. Test `angel_exiled_even_if_geist_dies` confirms this.
+- Multiple combat phases: `end_of_combat_exiles` is a Vec with `.push()`, so multiple tokens are tracked correctly (previous `card_state.insert` overwrite bug is gone).
+
+Card data verified correct:
+- Mana cost: {1}{W}{U}
+- Supertypes: Legendary
+- Card types: Creature
+- Subtypes: Spirit, Cleric
+- P/T: 2/2
+- Keywords: Hexproof
+- oracle_text: matches Scryfall
+- triggered_abilities: Attacks + EndCombat
+- on_attacks: creates 4/4 white Angel creature token with Flying, subtypes ["Angel"], tapped and attacking
+- on_resolve: moves to battlefield, sets is_legendary
+
+Angel always attacks `state.opponent(controller)` rather than allowing choice of defender. Per ruling, player can choose which player/planeswalker the Angel attacks. In a 2-player game this is correct since there is only one opponent and the engine does not support planeswalkers as attack targets.
+
+### Tricky interactions checked
+- Angel enters tapped and attacking: pass
+- Angel exiled at end of combat (not end step): pass
+- Geist dies before end of combat (angel still exiled): pass (tested)
+- Multiple combat phases (multiple tokens tracked): pass (Vec push, not overwrite)
+- Hexproof keyword: pass
+
+### Test coverage
+- Angel created on attack: `mtg-engine/tests/geist_of_saint_traft.rs:20` (geist_creates_angel_on_attack)
+- Angel exiled at end of combat: `mtg-engine/tests/geist_of_saint_traft.rs:44` (angel_exiled_at_end_of_combat)
+- Angel exiled even if Geist dies: `mtg-engine/tests/geist_of_saint_traft.rs:70` (angel_exiled_even_if_geist_dies)
+- Ruling: Angel can attack different player/planeswalker: NOT TESTED (acceptable in 2-player engine)
+- Ruling: Angel entering does not trigger "attacks" triggers: NOT TESTED (engine-level behavior)
+- Multiple combat phases: NOT TESTED (but code structure is correct)

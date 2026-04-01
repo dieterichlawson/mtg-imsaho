@@ -106,3 +106,43 @@ The code comment in `stony_silence.rs` (lines 7-11) claims the engine does not e
 - Artifact mana abilities blocked: NOT TESTED
 - Non-artifact abilities unaffected: NOT TESTED
 - Triggered abilities of artifacts unaffected: NOT TESTED
+
+## Re-Audit — 2026-04-01 20:00
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py)
+**Oracle text**: Activated abilities of artifacts can't be activated.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. All previously reported issues have been fixed:
+
+1. **Static ability is now enforced by the engine** (engine.rs lines 229-282): The engine checks for any "Stony Silence" on the battlefield and blocks both mana abilities (lines 238-244) and non-mana activated abilities (lines 276-282) of artifacts. The artifact check examines both the card's registered types and the object's runtime types (`obj.card_types`).
+
+2. **Code comment is now accurate** (stony_silence.rs lines 6-9): Previously said the ability was not enforced; now correctly states "Enforced by the engine in legal_actions(): when Stony Silence is on the battlefield, both mana abilities and non-mana activated abilities of artifacts are excluded from the legal action list."
+
+3. **Previous audit false positive corrected**: The 2026-04-01 18:00 audit incorrectly claimed mana abilities were not blocked. The code at lines 238-244 clearly blocks mana abilities of artifacts when Stony Silence is active. The test `stony_silence_blocks_artifact_mana_abilities` confirms this.
+
+All card data verified correct: name "Stony Silence", mana cost {1}{W} (Generic(1), White), type Enchantment, no subtypes, no supertypes, no P/T, oracle text matches exactly.
+
+Per Scryfall rulings:
+- "Activated abilities contain a colon": engine only blocks activated abilities (cost:effect pattern), not triggered abilities. Correct.
+- "No abilities of artifacts can be activated, including mana abilities": both mana and non-mana abilities blocked. Correct.
+- "Only affects artifacts on the battlefield": engine only generates actions for battlefield permanents. Correct.
+- "Triggered abilities are unaffected": engine does not block triggered abilities. Correct.
+
+### Tricky interactions checked
+- Mana abilities of artifacts blocked: pass (engine.rs lines 238-244)
+- Non-mana activated abilities of artifacts blocked: pass (engine.rs lines 276-282)
+- Non-artifact mana abilities unaffected: pass (only skips when is_artifact is true)
+- Only affects battlefield artifacts (ruling): pass (action generation only checks battlefield)
+- Triggered abilities unaffected (ruling): pass (only activated abilities checked)
+- Both players' artifacts affected: pass (stony_silence_active checks all battlefield objects regardless of controller)
+
+### Test coverage
+- Card data verification: `tests/innistrad_simple_cards.rs:586`
+- Artifact mana abilities blocked: `tests/innistrad_simple_cards.rs:595`
+- Non-artifact mana abilities unaffected: `tests/innistrad_simple_cards.rs:625`
+- Artifact non-mana activated abilities blocked: NOT TESTED
+- Triggered abilities of artifacts unaffected: NOT TESTED
+- Opponent's artifacts also blocked: NOT TESTED

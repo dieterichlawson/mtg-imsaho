@@ -191,3 +191,55 @@ Front face verified correct: mana cost {1}{R}{R}, card_types (Creature), subtype
 - First strike on front face: NOT TESTED (keyword, engine-level)
 - Double strike on back face: NOT TESTED (keyword, engine-level)
 - Ruling: transform mid-combat keeps blocks: NOT TESTED
+
+## Audit — 2026-04-01 17:00
+
+**Oracle text source**: Scryfall API (cached)
+**Oracle text (front)**: First strike
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back)**: Double strike
+Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line (front)**: Creature — Human Rogue Werewolf
+**Type line (back)**: Creature — Werewolf
+**Front P/T**: 2/2
+**Back P/T**: 3/3
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All previously flagged issues have been fixed:
+- Back face oracle text: now says "Werewolves you control have menace." matching current oracle (was pre-errata "Each Werewolf you control can't be blocked except by two or more creatures.").
+- Back face menace keyword: now uses `ContinuousEffect::GrantKeyword { keyword: Keyword::Menace, scope: Global(And(You, HasSubtype("Werewolf"))) }` which grants the actual Menace keyword (was `MinimumBlockers`). Test `terror_of_kruin_pass_grants_menace_keyword` confirms `state.has_keyword` returns true for both Terror itself and other Werewolves.
+- Back face triggered_abilities: now declares `TriggeredAbilityDef { kind: TriggerKind::Upkeep, description: "transform".into() }` (was empty vec).
+
+Card data verified correct:
+- Front: mana cost {1}{R}{R}, card_types (Creature), subtypes (Human, Rogue, Werewolf), P/T 2/2, keywords (FirstStrike), triggered_abilities declares Upkeep trigger, oracle_text matches Scryfall
+- Back: card_types (Creature), subtypes (Werewolf), P/T 3/3 via dynamic_pt, keywords (DoubleStrike), continuous_effects grants Menace to all your Werewolves, triggered_abilities declares Upkeep trigger, oracle_text matches Scryfall
+- Transform logic: front-to-back checks `total_spells_last_turn == 0 && !state.is_first_turn` (correct)
+- Transform logic: back-to-front checks `spells_cast_last_turn.values().any(|&count| count >= 2)` (correct: "if a player cast two or more spells last turn")
+- on_upkeep: checks zone, calls should_transform, toggles is_transformed and name
+
+### Tricky interactions checked
+- Transform condition (front to back, no spells last turn): pass
+- Transform condition (back to front, player cast 2+ spells): pass
+- First turn exception (no transform on first turn): pass
+- Menace granted to self (Terror): pass (tested)
+- Menace granted to other Werewolves you control: pass (tested)
+- Menace NOT granted to non-Werewolves: pass (tested)
+- Menace NOT granted to opponent's Werewolves: pass (tested)
+- Menace keyword recognized by has_keyword: pass (tested)
+- First strike on front face: pass (keyword declared)
+- Double strike on back face: pass (keyword in back_face_data)
+
+### Test coverage
+- Terror self requires 2 blockers: `mtg-engine/tests/kruin_outlaw.rs:23` (terror_of_kruin_pass_self_requires_two_blockers)
+- Terror allows 2 blockers: `mtg-engine/tests/kruin_outlaw.rs:56` (terror_of_kruin_pass_allows_two_blockers)
+- Grants restriction to other Werewolves: `mtg-engine/tests/kruin_outlaw.rs:90` (terror_of_kruin_pass_grants_restriction_to_other_werewolves)
+- Does not affect non-Werewolves: `mtg-engine/tests/kruin_outlaw.rs:128` (terror_of_kruin_pass_does_not_affect_non_werewolves)
+- Does not affect opponent's Werewolves: `mtg-engine/tests/kruin_outlaw.rs:164` (terror_of_kruin_pass_does_not_affect_opponent_werewolves)
+- Grants menace keyword: `mtg-engine/tests/kruin_outlaw.rs:201` (terror_of_kruin_pass_grants_menace_keyword)
+- Transform gains double strike: `mtg-engine/tests/werewolf_cards.rs:431` (kruin_outlaw_transforms_gains_double_strike_and_menace)
+- Ruling: transform mid-combat keeps blocks: NOT TESTED (engine-level behavior)
+- Transform back to front (2+ spells): NOT TESTED (directly)

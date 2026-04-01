@@ -119,3 +119,46 @@ Card data verified correct: mana cost {B}, card_types (Sorcery), no supertypes, 
 - Cannot target opponent's graveyard: `mtg-engine/tests/ghoulcallers_chant.rs:161` (cannot_target_opponents_graveyard)
 - Mixed graveyard correct modes: `mtg-engine/tests/ghoulcallers_chant.rs:183` (mixed_graveyard_correct_modes)
 - Fizzle (targets leave graveyard before resolution): NOT TESTED
+
+## Audit — 2026-04-01 17:00
+
+**Oracle text source**: Scryfall API (cached)
+**Oracle text**: Choose one —
+• Return target creature card from your graveyard to your hand.
+• Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Previously flagged oracle text mismatch has been fixed: the code's oracle_text field (line 24) now says "Zombie cards" matching the current Scryfall oracle, not "Zombie creature cards."
+
+The target requirement for mode 2 still uses `GraveyardCreatureOfSubtype("Zombie")` which adds a creature type check the oracle does not require. However, the Zombie subtype is only found on creature cards in the Innistrad card pool, so this has zero practical impact. Not flagged as an issue.
+
+Card data verified correct:
+- Mana cost: {B}
+- Card types: Sorcery
+- No supertypes, subtypes, P/T, keywords
+- oracle_text: matches Scryfall
+- Modal targeting via `TargetRequirement::ModalChoice`: mode 1 = GraveyardCreature, mode 2 = TwoTargets(GraveyardCreatureOfSubtype("Zombie"), GraveyardCreatureOfSubtype("Zombie"))
+- is_valid_target: checks `o.zone == Zone::Graveyard && o.owner == caster` -- correct for "your graveyard"
+- on_resolve: iterates targets, moves each from graveyard to hand, calls `move_spell_after_resolve` -- correct
+
+### Tricky interactions checked
+- Mode 1 returns any creature card: pass
+- Mode 2 returns exactly two Zombie cards: pass
+- Cannot target opponent's graveyard: pass (is_valid_target checks owner)
+- Mode 2 not available with fewer than 2 Zombies: pass (tested)
+- Mixed graveyard (some Zombies, some non-Zombies): pass (tested)
+- Sorcery speed only: pass (card type Sorcery)
+
+### Test coverage
+- Mode 1 returns creature: `mtg-engine/tests/ghoulcallers_chant.rs:22` (mode1_returns_one_creature_from_graveyard)
+- Mode 2 returns two Zombies: `mtg-engine/tests/ghoulcallers_chant.rs:38` (mode2_returns_two_zombies_from_graveyard)
+- Legal actions include mode 1: `mtg-engine/tests/ghoulcallers_chant.rs:61` (legal_actions_include_mode1_single_creature)
+- Legal actions include mode 2: `mtg-engine/tests/ghoulcallers_chant.rs:88` (legal_actions_include_mode2_two_zombies)
+- No mode 2 for non-Zombies: `mtg-engine/tests/ghoulcallers_chant.rs:119` (legal_actions_no_mode2_for_non_zombies)
+- Cannot target opponent's graveyard: `mtg-engine/tests/ghoulcallers_chant.rs:161` (cannot_target_opponents_graveyard)
+- Mixed graveyard correct modes: `mtg-engine/tests/ghoulcallers_chant.rs:183` (mixed_graveyard_correct_modes)
+- Fizzle (targets leave graveyard before resolution): NOT TESTED

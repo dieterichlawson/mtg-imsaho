@@ -119,3 +119,41 @@ Issues:
 - Back face fight resolves correctly: NOT TESTED
 - Nightfall Predator can target own creatures: NOT TESTED (bug: code incorrectly restricts this)
 - Transform back when 2+ spells cast: NOT TESTED
+
+## Audit — 2026-04-01 13:35
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/176/daybreak-ranger-nightfall-predator?utm_source=api
+**Oracle text (front)**: {T}: This creature deals 2 damage to target creature with flying. At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back)**: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.) At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line (front)**: Creature — Human Archer Ranger Werewolf
+**Type line (back)**: Creature — Werewolf
+**Front P/T**: 2/2
+**Back P/T**: 4/4
+**Ruling**: [2016-07-13] See Shadows over Innistrad mechanics article for DFC rules.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+The previous audit flagged that Nightfall Predator's fight targeting was too restrictive (only opponent's creatures). This has been fixed. The current `is_valid_target` code (lines 121-136) returns `true` for any creature when the card is transformed, meaning Nightfall Predator can fight any creature including your own. A test for this was added at `werewolf_cards.rs:353`.
+
+### Tricky interactions checked
+- Front face targets only creatures with flying: PASS (line 132 checks `has_keyword(Keyword::Flying)`)
+- Front face deals 2 damage (not fight): PASS (manually marks damage at line 150, does not call `fight`)
+- Back face fight allows any creature target: PASS (line 129 returns `true` with no controller restriction)
+- Back face fight uses `crate::combat::fight`: PASS (line 144)
+- Back face costs {R} + tap: PASS (ManaCost(Red), requires_tap: true at lines 91-92)
+- Werewolf transform conditions: PASS (front: no spells last turn, back: any player 2+ spells)
+- First turn no-transform: PASS (line 17 checks `!state.is_first_turn`)
+- NonCombatDamageDealt for front face damage: PASS (lines 154-157)
+- damaged_by tracking for front face: PASS (line 151)
+- Subtypes include all four (Human, Archer, Ranger, Werewolf): PASS (line 34)
+- dynamic_pt returns (4,4) when transformed: PASS (line 74)
+
+### Test coverage
+- Transforms to Nightfall Predator: `werewolf_cards.rs:312` (daybreak_ranger_transforms_to_nightfall_predator)
+- Front face has activated ability with "flying" in description: `werewolf_cards.rs:328` (daybreak_ranger_has_activated_ability_on_front_face)
+- Back face has fight ability: `werewolf_cards.rs:340` (nightfall_predator_has_fight_ability)
+- Nightfall Predator can fight own creature: `werewolf_cards.rs:353` (nightfall_predator_can_fight_own_creature)
+- Front face deals damage to creature with flying: NOT TESTED
+- Transform back when 2+ spells cast: NOT TESTED

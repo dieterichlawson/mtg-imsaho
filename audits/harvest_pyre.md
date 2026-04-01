@@ -148,3 +148,48 @@ Card data verified: mana cost {1}{R} correct, card_types (Instant) correct, targ
 - Fizzle (target leaves battlefield): NOT TESTED
 - Spell countered (cards should already be exiled): NOT TESTED
 - Player chooses X (subset of graveyard): NOT TESTED (known limitation)
+
+## Audit — 2026-04-01 17:00
+
+**Oracle text source**: Scryfall API (cached)
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard.
+Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Status**: ISSUE
+
+### Code issues
+1. **Always exiles all graveyard cards instead of player choosing X** (`mtg-engine/src/cards/isd/harvest_pyre.rs` line 29, `mtg-engine/src/engine.rs` lines 1344-1359):
+   - Oracle text says: `exile X cards from your graveyard`
+   - Code does: `additional_cost: Some(AdditionalCost::ExileAllFromGraveyard)` which in engine.rs exiles ALL cards from the caster's graveyard (`state.objects.values().filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id)`).
+   - The player should choose how many cards (X) to exile. This matters strategically (e.g., keeping flashback cards, Gnaw to the Bone fuel, Boneyard Wurm power).
+
+Previously flagged issues that have been fixed:
+- Oracle text field: now uses current "exile X cards" / "deals X damage" wording (was "exile any number of cards" / "deals damage equal to the number of cards exiled this way").
+- Additional cost timing: now uses `additional_cost: Some(AdditionalCost::ExileAllFromGraveyard)` which is handled at cast time in engine.rs (lines 1338-1360), not at resolve time. If the spell is countered, the exile has already happened. Fixed.
+- damaged_by tracking: line 50 has `obj.damaged_by.push(object_id)`. Present and correct.
+
+Card data verified correct:
+- Mana cost: {1}{R}
+- Card types: Instant
+- oracle_text: matches Scryfall
+- Target requirement: Creature -- correct per oracle "target creature"
+- additional_cost: ExileAllFromGraveyard (set, not None)
+- on_resolve: reads exile_count from card_state, deals that much damage, emits NonCombatDamageDealt, tracks damaged_by, calls move_spell_after_resolve
+- Only exiles own graveyard: engine.rs line 1346 filters `o.owner == player`
+- Excludes self from exile: engine.rs line 1346 filters `o.id != *object_id`
+
+### Tricky interactions checked
+- Additional cost paid at cast time (survives counterspell): pass (fixed)
+- NonCombatDamageDealt event emitted: pass
+- damaged_by tracking: pass
+- Only exiles own graveyard: pass
+- Spell cleanup via move_spell_after_resolve: pass
+- Player choice of X (exile subset): ISSUE (auto-exiles all)
+
+### Test coverage
+- Deals damage equal to exiled count: `mtg-engine/tests/tier8_cards.rs:527` (harvest_pyre_deals_damage_equal_to_exiled_count)
+- Empty graveyard deals no damage: `mtg-engine/tests/tier8_cards.rs:554` (harvest_pyre_empty_graveyard_deals_no_damage)
+- Only exiles own graveyard: `mtg-engine/tests/tier8_cards.rs:568` (harvest_pyre_only_exiles_own_graveyard)
+- Fizzle (target leaves battlefield): NOT TESTED
+- Spell countered (cards should already be exiled): NOT TESTED
+- Player chooses X (subset of graveyard): NOT TESTED (known limitation)

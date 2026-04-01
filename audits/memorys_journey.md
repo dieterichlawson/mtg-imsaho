@@ -111,3 +111,42 @@ All other card data correct: mana cost {1}{U}, type Instant, flashback cost {G},
 - Cast with 0 card targets (ruling): NOT TESTED
 - All card targets illegal, player still shuffles (ruling): NOT TESTED
 - Flashback self-exile after cast: NOT TESTED
+
+## Re-Audit — 2026-04-01 20:00
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py)
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library.
+Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS (known limitations documented)
+
+### Code issues
+No new issues found. All previously reported issues are known design limitations of the targeting system (ModalChoice instead of player+cards targeting) that have been documented across multiple prior audits. The core functionality is correct:
+
+- Mana cost {1}{U}: correct (Generic(1), Blue).
+- Type Instant: correct.
+- Flashback cost {G}: correct (`flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]))`).
+- `on_resolve` moves targeted graveyard cards to library, adds them to `library_order`, and shuffles the owning player's library: correct.
+- `move_spell_after_resolve` called after resolution: correct (flashback exile handled properly).
+- `UpToTargets` range starts from 0 (`k in 0..=max`): correct per ruling "You don't have to target any cards."
+
+Previously reported issues that remain as known limitations:
+1. Player not explicitly targeted (ModalChoice workaround). Does not affect gameplay in 2-player games.
+2. When casting with 0 card targets via opponent-graveyard mode, `target_player` defaults to controller instead of opponent (edge case).
+
+### Tricky interactions checked
+- Shuffles up to 3 cards from one graveyard: pass
+- Does not mix cards from different graveyards: pass
+- Flashback cost {G}: pass
+- Player's library shuffled even with 0 card targets: pass (when casting with own graveyard mode)
+- move_spell_after_resolve for spell cleanup: pass
+
+### Test coverage
+- Shuffles own graveyard card: `tests/memorys_journey.rs:21`
+- Shuffles opponent graveyard card: `tests/memorys_journey.rs:37`
+- Up to 3 cards: `tests/memorys_journey.rs:53`
+- No mixing graveyards: `tests/memorys_journey.rs:78`
+- Flashback cost verification: `tests/memorys_journey.rs:121`
+- Player becomes illegal target (ruling): NOT TESTED (requires player targeting)
+- All card targets illegal, player still shuffles (ruling): NOT TESTED
+- Ruling: can't target self with flashback: NOT TESTED
