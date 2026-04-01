@@ -722,6 +722,14 @@ impl GameState {
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
+        // Gutter Grime tokens: P/T equals slime counters on the referenced enchantment.
+        if let Some(&gutter_grime_id) = obj.card_state.get("gutter_grime_id") {
+            let slime_count = self.get_object(gutter_grime_id)
+                .map(|g| *g.counters.get(&crate::types::CounterType::Slime).unwrap_or(&0))
+                .unwrap_or(0) as i32;
+            return Some(slime_count);
+        }
+
         // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
         let mut power = if let Some(behavior) = registry.get(obj.card_id) {
             if let Some((p, _)) = behavior.dynamic_pt(self, id) {
@@ -754,6 +762,14 @@ impl GameState {
     /// Get the effective toughness of a creature.
     pub fn effective_toughness(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
+
+        // Gutter Grime tokens: P/T equals slime counters on the referenced enchantment.
+        if let Some(&gutter_grime_id) = obj.card_state.get("gutter_grime_id") {
+            let slime_count = self.get_object(gutter_grime_id)
+                .map(|g| *g.counters.get(&crate::types::CounterType::Slime).unwrap_or(&0))
+                .unwrap_or(0) as i32;
+            return Some(slime_count);
+        }
 
         // Check if this creature's own card has dynamic P/T.
         let mut toughness = if let Some(behavior) = registry.get(obj.card_id) {

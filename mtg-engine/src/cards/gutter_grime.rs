@@ -8,15 +8,9 @@ use crate::types::*;
 /// Gutter Grime, then create a green Ooze creature token with
 /// "This creature's power and toughness are each equal to the number of
 /// slime counters on Gutter Grime."
-///
-/// Simplified: tokens are created with P/T equal to the current slime counter
-/// count at creation time (they don't dynamically update).
 pub struct GutterGrime;
 
-/// Counter type for slime counters — we reuse PlusOnePlusOne as a stand-in
-/// since the engine only has a few counter types. The count is tracked on the
-/// enchantment itself.
-const SLIME_COUNTER: CounterType = CounterType::PlusOnePlusOne;
+const SLIME_COUNTER: CounterType = CounterType::Slime;
 
 impl CardBehavior for GutterGrime {
     fn card_data(&self) -> CardData {
@@ -65,14 +59,19 @@ impl CardBehavior for GutterGrime {
         let slime_count = state.get_object(self_id)
             .map(|o| *o.counters.get(&SLIME_COUNTER).unwrap_or(&0))
             .unwrap_or(1) as i32;
-        // Create the Ooze token.
-        state.create_token_with_subtypes(
+        // Create the Ooze token with P/T equal to current slime count.
+        let token_id = state.create_token_with_subtypes(
             "Ooze", controller, slime_count, slime_count,
             vec![Color::Green],
             vec![CardType::Creature],
             vec![],
             vec!["Ooze".into()],
         );
+        // Track which Gutter Grime this token belongs to for dynamic P/T.
+        // Track which Gutter Grime this token belongs to for dynamic P/T lookup.
+        if let Some(token) = state.get_object_mut(token_id) {
+            token.card_state.insert("gutter_grime_id".into(), self_id);
+        }
         state.log(crate::state::LogLevel::Event,
             format!("Gutter Grime: added slime counter (now {}), created {}/{} Ooze token",
                 slime_count, slime_count, slime_count));
