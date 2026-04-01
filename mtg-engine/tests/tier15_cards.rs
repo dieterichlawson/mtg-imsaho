@@ -88,6 +88,16 @@ fn mentor_of_the_meek_draws_when_small_creature_enters() {
     let behavior = reg.get(state.get_object(mentor).unwrap().card_id).unwrap();
     behavior.on_any_creature_enters(&mut state, mentor, small_creature, P0, &reg);
 
+    // Should now have a YesNo choice awaiting. Choose yes to pay and draw.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
+
     // Should have drawn a card.
     let hand_count = state.objects.values()
         .filter(|o| o.zone == Zone::Hand && o.owner == P0)
@@ -520,6 +530,16 @@ fn delver_transforms_when_top_card_is_instant() {
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, delver, &reg);
 
+    // Should have a YesNo choice. Choose yes to reveal and transform.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
+
     // Should be transformed.
     assert!(state.get_object(delver).unwrap().is_transformed);
     assert_eq!(state.get_object(delver).unwrap().name, "Insectile Aberration");
@@ -559,6 +579,16 @@ fn cloistered_youth_transforms_at_upkeep() {
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, youth, &reg);
 
+    // Should have a YesNo choice. Choose yes to transform.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
+
     assert!(state.get_object(youth).unwrap().is_transformed);
     assert_eq!(state.get_object(youth).unwrap().name, "Unholy Fiend");
     assert_eq!(behavior.dynamic_pt(&state, youth), Some((3, 3)));
@@ -597,6 +627,16 @@ fn screeching_bat_transforms_at_upkeep_with_mana() {
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, bat, &reg);
+
+    // Should have a YesNo choice. Choose yes to pay and transform.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
 
     assert!(state.get_object(bat).unwrap().is_transformed);
     assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
@@ -643,6 +683,16 @@ fn thraben_sentry_transforms_when_creature_dies() {
     // Simulate another creature dying.
     let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
     behavior.on_any_creature_dies(&mut state, sentry, other, P0, &[], 1, &reg);
+
+    // Should have a YesNo choice. Choose yes to transform.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
 
     assert!(state.get_object(sentry).unwrap().is_transformed);
     assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia");

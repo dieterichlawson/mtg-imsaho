@@ -3,8 +3,10 @@
 mod common;
 
 use common::*;
+use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
+use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
@@ -381,6 +383,16 @@ fn curiosity_draw_on_enchanted_creature_combat_damage() {
     });
 
     triggers::process_triggers(&mut state, &reg);
+
+    // Curiosity presents a YesNo choice. Choose yes to draw.
+    assert!(state.awaiting_action.is_some(), "Should have a pending YesNo choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
 
     let hand_after = state.objects.values()
         .filter(|o| o.zone == Zone::Hand && o.owner == P0)

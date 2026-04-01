@@ -470,8 +470,8 @@ impl LlmPlayer {
             Action::ResolveChoice { choice } => {
                 use mtg_engine::actions::ResolvedChoice;
                 match choice {
-                    ResolvedChoice::PayDecision(true) => "Pay {1}".into(),
-                    ResolvedChoice::PayDecision(false) => "Don't pay (countered)".into(),
+                    ResolvedChoice::PayDecision(true) => "Yes".into(),
+                    ResolvedChoice::PayDecision(false) => "No".into(),
                     ResolvedChoice::ChosenTarget(Some(t)) => {
                         match t {
                             mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),

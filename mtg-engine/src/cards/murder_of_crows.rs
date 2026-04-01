@@ -1,6 +1,6 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Murder of Crows — {3}{U}{U} 4/4 Bird. Flying.
@@ -47,6 +47,7 @@ impl CardBehavior for MurderOfCrows {
             choice: ResolutionChoiceKind::YesNo {
                 description: "Murder of Crows: draw a card? (you must then discard one)".into(),
                 source_card: self_id,
+                effect: YesNoEffect::DrawThenDiscard,
             },
         });
     }

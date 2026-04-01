@@ -1,6 +1,6 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Thraben Sentry {3}{W} 2/2 Human Soldier with Vigilance // Thraben Militia 5/4 Human Soldier.
@@ -69,13 +69,16 @@ impl CardBehavior for ThrabenSentry {
         if dead_controller != controller || is_transformed {
             return;
         }
-        // Auto-transform (simplified "you may" — always yes).
-        if let Some(obj) = state.get_object_mut(self_id) {
-            obj.is_transformed = true;
-            obj.name = "Thraben Militia".into();
-        }
-        state.log(crate::state::LogLevel::Event,
-            "Thraben Sentry transforms into Thraben Militia".into());
+        // "You may transform Thraben Sentry" — present choice.
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description: "Transform Thraben Sentry into Thraben Militia?".into(),
+                source_card: self_id,
+                effect: YesNoEffect::Transform { back_face_name: "Thraben Militia".into() },
+            },
+        });
     }
 
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {

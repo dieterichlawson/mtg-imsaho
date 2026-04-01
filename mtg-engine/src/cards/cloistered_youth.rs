@@ -1,6 +1,6 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Cloistered Youth {1}{W} 3/2 Human // Unholy Fiend 3/3 Horror.
@@ -78,13 +78,16 @@ impl CardBehavior for CloisteredYouth {
             return;
         }
         if !is_transformed {
-            // Transform from Cloistered Youth to Unholy Fiend at upkeep.
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = true;
-                obj.name = "Unholy Fiend".into();
-            }
-            state.log(crate::state::LogLevel::Event,
-                "Cloistered Youth transforms into Unholy Fiend".into());
+            // "You may transform Cloistered Youth" — present choice.
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::YesNo {
+                    description: "Transform Cloistered Youth into Unholy Fiend?".into(),
+                    source_card: self_id,
+                    effect: YesNoEffect::Transform { back_face_name: "Unholy Fiend".into() },
+                },
+            });
         }
     }
 

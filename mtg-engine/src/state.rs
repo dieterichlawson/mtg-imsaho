@@ -1194,6 +1194,7 @@ pub enum ResolutionChoiceKind {
     YesNo {
         description: String,
         source_card: ObjectId,
+        effect: YesNoEffect,
     },
     /// Choose a card from hand to discard (Murder of Crows, future discard effects).
     ChooseCardFromHand {
@@ -1207,6 +1208,21 @@ pub enum ResolutionChoiceKind {
         revealed: Vec<ObjectId>,
         spell_id: ObjectId,
     },
+}
+
+/// What happens when a YesNo choice is answered "yes".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum YesNoEffect {
+    /// Draw a card, then discard a card (Murder of Crows).
+    DrawThenDiscard,
+    /// Draw a card (Curiosity).
+    Draw,
+    /// Transform the source card (Cloistered Youth, Thraben Sentry, Delver of Secrets).
+    Transform { back_face_name: String },
+    /// Pay {1} and draw a card (Mentor of the Meek).
+    PayAndDraw,
+    /// Pay a specific mana cost and transform (Screeching Bat / Stalking Vampire).
+    PayManaAndTransform { cost: ManaCost, back_face_name: String },
 }
 
 /// What happens to the chosen target when a ResolutionChoice is resolved.

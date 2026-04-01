@@ -1,6 +1,6 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Screeching Bat {2}{B} 2/2 Bat with Flying // Stalking Vampire 5/5 Vampire.
@@ -74,24 +74,27 @@ impl CardBehavior for ScreechingBat {
             return;
         }
         // "You may pay {2}{B}{B}. If you do, transform."
-        // Auto-pay if the controller has enough mana (simplified "you may").
-        let pool = &state.get_player(controller).mana_pool;
         let cost = ManaCost::new(vec![
             ManaSymbol::Generic(2),
             ManaSymbol::Colored(Color::Black),
             ManaSymbol::Colored(Color::Black),
         ]);
+        let pool = &state.get_player(controller).mana_pool;
         if crate::mana::can_pay(pool, &cost) {
-            crate::mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &cost).ok();
             let is_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = !is_transformed;
-                let name = if obj.is_transformed { "Stalking Vampire" } else { "Screeching Bat" };
-                obj.name = name.into();
-            }
-            let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(crate::state::LogLevel::Event,
-                format!("Transforms into {}", new_name));
+            let back_name = if is_transformed { "Screeching Bat" } else { "Stalking Vampire" };
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::YesNo {
+                    description: format!("Pay {{2}}{{B}}{{B}} to transform into {}?", back_name),
+                    source_card: self_id,
+                    effect: YesNoEffect::PayManaAndTransform {
+                        cost: cost.clone(),
+                        back_face_name: back_name.into(),
+                    },
+                },
+            });
         }
     }
 

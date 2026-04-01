@@ -8,7 +8,7 @@ use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::mana;
 use crate::sba::check_state_based_actions_with_registry;
 use crate::stack;
-use crate::state::{AwaitingAction, GameState, LogLevel};
+use crate::state::{AwaitingAction, GameState, LogLevel, YesNoEffect};
 use crate::triggers;
 use crate::types::*;
 
@@ -1371,29 +1371,82 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         }
                         new_state.move_spell_after_resolve(*source_spell_id);
                     }
-                    (ResolutionChoiceKind::YesNo { source_card, .. },
+                    (ResolutionChoiceKind::YesNo { source_card, effect, .. },
                      ResolvedChoice::PayDecision(yes)) => {
                         if *yes {
-                            // "You may draw a card. If you do, discard a card."
                             let controller = new_state.get_object(*source_card)
                                 .map(|o| o.controller).unwrap_or(PlayerId(0));
-                            draw_cards(&mut new_state, controller, 1);
-                            let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
-                                .iter().map(|o| o.id).collect();
-                            if hand.len() == 1 {
-                                new_state.move_object(hand[0], Zone::Graveyard);
-                                new_state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
-                                new_state.log(LogLevel::Event, format!("Drew and discarded a card"));
-                            } else if !hand.is_empty() {
-                                new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                                    player: controller,
-                                    source: *source_card,
-                                    choice: ResolutionChoiceKind::ChooseCardFromHand {
-                                        description: "Murder of Crows: choose a card to discard".into(),
-                                        player: controller,
-                                        cards: hand,
-                                    },
-                                });
+                            match effect {
+                                YesNoEffect::DrawThenDiscard => {
+                                    draw_cards(&mut new_state, controller, 1);
+                                    let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
+                                        .iter().map(|o| o.id).collect();
+                                    if hand.len() == 1 {
+                                        new_state.move_object(hand[0], Zone::Graveyard);
+                                        new_state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
+                                        new_state.log(LogLevel::Event, format!("Drew and discarded a card"));
+                                    } else if !hand.is_empty() {
+                                        new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                                            player: controller,
+                                            source: *source_card,
+                                            choice: ResolutionChoiceKind::ChooseCardFromHand {
+                                                description: "Choose a card to discard".into(),
+                                                player: controller,
+                                                cards: hand,
+                                            },
+                                        });
+                                    }
+                                }
+                                YesNoEffect::Draw => {
+                                    draw_cards(&mut new_state, controller, 1);
+                                    new_state.log(LogLevel::Event, "Drew a card".into());
+                                }
+                                YesNoEffect::Transform { back_face_name } => {
+                                    if let Some(obj) = new_state.get_object_mut(*source_card) {
+                                        obj.is_transformed = true;
+                                        obj.name = back_face_name.clone();
+                                    }
+                                    new_state.log(LogLevel::Event,
+                                        format!("Transformed into {}", back_face_name));
+                                }
+                                YesNoEffect::PayAndDraw => {
+                                    // Deduct {1} mana if available, then draw.
+                                    let player = new_state.get_player_mut(controller);
+                                    let mut paid = false;
+                                    if player.mana_pool.get(ManaType::Colorless) >= 1 {
+                                        *player.mana_pool.mana.entry(ManaType::Colorless).or_insert(0) -= 1;
+                                        paid = true;
+                                    } else {
+                                        for mt in &[ManaType::White, ManaType::Blue, ManaType::Black, ManaType::Red, ManaType::Green] {
+                                            if player.mana_pool.get(*mt) >= 1 {
+                                                *player.mana_pool.mana.entry(*mt).or_insert(0) -= 1;
+                                                paid = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    if paid {
+                                        draw_cards(&mut new_state, controller, 1);
+                                        new_state.log(LogLevel::Event, "Paid {1} and drew a card".into());
+                                    } else {
+                                        new_state.log(LogLevel::Event, "Not enough mana to pay {1}".into());
+                                    }
+                                }
+                                YesNoEffect::PayManaAndTransform { cost, back_face_name } => {
+                                    let can_pay = mana::can_pay(&new_state.get_player(controller).mana_pool, cost);
+                                    if can_pay {
+                                        mana::auto_pay(&mut new_state.get_player_mut(controller).mana_pool, cost).ok();
+                                        let is_transformed = new_state.get_object(*source_card).map(|o| o.is_transformed).unwrap_or(false);
+                                        if let Some(obj) = new_state.get_object_mut(*source_card) {
+                                            obj.is_transformed = !is_transformed;
+                                            obj.name = back_face_name.clone();
+                                        }
+                                        new_state.log(LogLevel::Event,
+                                            format!("Paid mana and transformed into {}", back_face_name));
+                                    } else {
+                                        new_state.log(LogLevel::Event, "Not enough mana to pay transform cost".into());
+                                    }
+                                }
                             }
                         }
                         // If no, nothing happens.

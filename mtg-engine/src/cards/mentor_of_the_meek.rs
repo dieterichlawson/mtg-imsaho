@@ -1,6 +1,6 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Mentor of the Meek — {2}{W} 2/2 Human Soldier.
@@ -52,31 +52,18 @@ impl CardBehavior for MentorOfTheMeek {
         if power > 2 {
             return;
         }
-        // "You may pay {1}" — auto-pay if the controller has mana available.
+        // "You may pay {1}. If you do, draw a card." — present choice if mana available.
         let pool = &state.get_player(controller).mana_pool;
         if pool.total() >= 1 {
-            // Deduct 1 mana (prefer colorless first, then any).
-            let player = state.get_player_mut(controller);
-            let mut paid = false;
-            // Try colorless first.
-            if player.mana_pool.get(ManaType::Colorless) >= 1 {
-                *player.mana_pool.mana.entry(ManaType::Colorless).or_insert(0) -= 1;
-                paid = true;
-            } else {
-                // Try any color.
-                for mt in &[ManaType::White, ManaType::Blue, ManaType::Black, ManaType::Red, ManaType::Green] {
-                    if player.mana_pool.get(*mt) >= 1 {
-                        *player.mana_pool.mana.entry(*mt).or_insert(0) -= 1;
-                        paid = true;
-                        break;
-                    }
-                }
-            }
-            if paid {
-                crate::engine::draw_cards(state, controller, 1);
-                state.log(crate::state::LogLevel::Event,
-                    "Mentor of the Meek triggered: paid {1}, drew a card".to_string());
-            }
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::YesNo {
+                    description: "Mentor of the Meek: pay {1} to draw a card?".into(),
+                    source_card: self_id,
+                    effect: YesNoEffect::PayAndDraw,
+                },
+            });
         }
     }
 }

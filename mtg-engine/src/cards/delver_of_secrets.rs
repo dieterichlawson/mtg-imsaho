@@ -1,6 +1,6 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Delver of Secrets {U} 1/1 Human Wizard // Insectile Aberration 3/2 Human Insect with Flying.
@@ -84,12 +84,17 @@ impl CardBehavior for DelverOfSecrets {
                         .unwrap_or(false)
                 });
             if is_instant_or_sorcery {
-                if let Some(obj) = state.get_object_mut(self_id) {
-                    obj.is_transformed = true;
-                    obj.name = "Insectile Aberration".into();
-                }
-                state.log(crate::state::LogLevel::Event,
-                    "Delver of Secrets transforms into Insectile Aberration".into());
+                // "You may reveal that card. If an instant or sorcery card is
+                // revealed this way, transform Delver of Secrets."
+                state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                    player: controller,
+                    source: self_id,
+                    choice: ResolutionChoiceKind::YesNo {
+                        description: "Reveal top card and transform Delver of Secrets?".into(),
+                        source_card: self_id,
+                        effect: YesNoEffect::Transform { back_face_name: "Insectile Aberration".into() },
+                    },
+                });
             }
         }
     }
