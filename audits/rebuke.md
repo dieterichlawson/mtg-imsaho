@@ -13,3 +13,10 @@ Implementation correctly models:
 - Tests: `rebuke_destroys_attacking_creature` in tier2_spells.rs
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Destroy target attacking creature.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly targets only attacking creatures and destroys via try_destroy.

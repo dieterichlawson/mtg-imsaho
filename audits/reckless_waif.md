@@ -17,3 +17,12 @@ Implementation correctly models:
 - Tests: 4 tests in werewolf_cards.rs covering transform/untransform logic
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text (front)**: At the beginning of each upkeep, if no spells were cast last turn, transform Reckless Waif.
+**Scryfall Oracle text (back)**: At the beginning of each upkeep, if a player cast two or more spells last turn, transform Merciless Predator.
+**Scryfall type line (front)**: Creature — Human Rogue Werewolf (1/1)
+**Scryfall type line (back)**: Creature — Werewolf (3/2)
+**Status**: PASS
+
+No issues found. Transform logic, subtypes, P/T, and DFC data all correct.

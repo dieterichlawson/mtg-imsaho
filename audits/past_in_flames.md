@@ -14,3 +14,10 @@
 - Tests: tier14_cards.rs has `past_in_flames_grants_flashback_to_all`.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost. Flashback {4}{R}
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Implementation correctly grants flashback to graveyard instants/sorceries and has its own flashback cost.

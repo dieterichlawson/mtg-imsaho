@@ -13,3 +13,10 @@ Implementation correctly models:
 - Tests: `runic_repetition_card_data` and `runic_repetition_returns_flashback_card_from_exile` in innistrad_simple_cards.rs
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Return target exiled card with flashback you own to your hand.
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Correctly targets exiled cards with flashback owned by the caster and returns them to hand.

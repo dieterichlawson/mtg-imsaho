@@ -14,3 +14,10 @@
 - Tests: innistrad_cards.rs has `rally_the_peasants_buffs_all_your_creatures`.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Creatures you control get +2/+0 until end of turn. Flashback {2}{R}
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly applies +2/+0 to controller's creatures and has flashback {2}{R}.

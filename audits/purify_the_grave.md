@@ -14,3 +14,10 @@
 - Tests: tier11_cards.rs has `purify_the_grave_exiles_card_from_graveyard` and `purify_the_grave_has_flashback`.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Exile target card from a graveyard. Flashback {W}
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly targets graveyard cards and has flashback {W}.

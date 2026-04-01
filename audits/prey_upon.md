@@ -13,3 +13,10 @@
 - Tests: tier2_spells.rs has `prey_upon_fight`.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Target creature you control fights target creature you don't control.
+**Scryfall type line**: Sorcery
+**Status**: PASS
+
+No issues found. Correctly implements two-target fight with proper target filters.

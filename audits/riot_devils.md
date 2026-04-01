@@ -12,3 +12,10 @@ Implementation correctly models:
 - Tests: `riot_devils_is_2_3` in innistrad_cards.rs
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: (none — vanilla creature)
+**Scryfall type line**: Creature — Devil
+**Status**: PASS
+
+No issues found. Vanilla 2/3 Devil for {2}{R}.

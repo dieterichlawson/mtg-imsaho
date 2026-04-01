@@ -11,3 +11,10 @@
 - Checks untapped and on battlefield before allowing activation. Correct.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: ({T}: Add {W}.)
+**Scryfall type line**: Basic Land — Plains
+**Status**: PASS
+
+No issues found.

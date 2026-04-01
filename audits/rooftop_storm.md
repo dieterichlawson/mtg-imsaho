@@ -12,3 +12,10 @@ Implementation correctly models:
 - Tests: `rooftop_storm_makes_zombies_free` and `rooftop_storm_no_free_non_zombies` in tier14_cards.rs
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.
+**Scryfall type line**: Enchantment
+**Status**: PASS
+
+No issues found. Implementation handles cost reduction for Zombie creatures.

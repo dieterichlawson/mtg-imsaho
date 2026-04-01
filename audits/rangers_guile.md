@@ -14,3 +14,10 @@
 - Tests: card_fixes.rs has `rangers_guile_cannot_target_opponent_creature`, innistrad_cards.rs has `rangers_guile_gives_hexproof_and_pump`.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Target creature you control gets +1/+1 and gains hexproof until end of turn.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly targets own creatures, grants +1/+1 and hexproof until end of turn.

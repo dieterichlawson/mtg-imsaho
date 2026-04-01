@@ -16,3 +16,10 @@
 Note: Oracle says "put a +1/+1 counter on it" (referring to the Vampire), implementation puts counter on source_id. Correct.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on it.
+**Scryfall type line**: Creature — Vampire
+**Status**: PASS
+
+No issues found. Correctly checks both registry subtypes and obj.subtypes for Vampire type (handles tokens). Puts counter on the Vampire that dealt damage, not on Rakish Heir itself.

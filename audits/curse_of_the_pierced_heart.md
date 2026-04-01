@@ -1,18 +1,9 @@
 ## Audit — 2026-04-01
 
 **Scryfall Oracle text**: Enchant player
-At the beginning of enchanted player's upkeep, Curse of the Pierced Heart deals 1 damage to that player.
+At the beginning of enchanted player's upkeep, Curse of the Pierced Heart deals 1 damage to that player or a planeswalker that player controls.
 **Scryfall type line**: Enchantment — Aura Curse
-**Status**: PASS
+**Status**: ISSUE
 
-### Findings
-
-1. **Card data correct**: Name, cost ({1}{R}), type (Enchantment), subtypes (Aura, Curse) all match.
-
-2. **Upkeep trigger correct**: Triggers on enchanted player's upkeep.
-
-3. **Damage implementation correct**: Deals 1 damage (subtracts life and emits `NonCombatDamageDealt` event). This is damage, not life loss, which matches "deals 1 damage."
-
-4. **NonCombatDamageDealt event correct**: Correctly uses `NonCombatDamageDealt` rather than `CombatDamageDealt`.
-
-5. **Tests**: No dedicated tests found.
+1. **Oracle text in code is outdated** (`mtg-engine/src/cards/curse_of_the_pierced_heart.rs`, line 27): Code oracle text says "deals 1 damage to that player" but current Scryfall Oracle text says "deals 1 damage to that player or a planeswalker that player controls." The planeswalker targeting option is missing.
+2. **No planeswalker damage option** (`mtg-engine/src/cards/curse_of_the_pierced_heart.rs`, lines 62-72): The upkeep handler always damages the player. Per Oracle, the controller of the Curse should choose whether to deal 1 damage to the player or a planeswalker that player controls. This is minor in a format without many planeswalkers but is technically incorrect.

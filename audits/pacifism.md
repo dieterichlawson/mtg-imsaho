@@ -14,3 +14,10 @@
 - Tests: enchantments.rs has `pacifism_prevents_attacking`, spell_fizzle.rs tests Pacifism fizzling.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Enchant creature. Enchanted creature can't attack or block.
+**Scryfall type line**: Enchantment — Aura
+**Status**: PASS
+
+No issues found.

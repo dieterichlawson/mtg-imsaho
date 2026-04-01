@@ -15,3 +15,10 @@ Implementation correctly models:
 - Tests: Not found for this specific card, but trigger/morbid infrastructure is tested elsewhere.
 
 No issues found.
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flying. Morbid — At the beginning of each end step, if a creature died this turn, destroy target non-Demon creature.
+**Scryfall type line**: Creature — Demon
+**Status**: PASS
+
+No issues found. Morbid condition checked via creature_died_this_turn. Correctly filters non-Demon targets. Mandatory ability with EndStep trigger.
