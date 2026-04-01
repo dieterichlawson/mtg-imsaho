@@ -36,40 +36,23 @@ impl CardBehavior for BondsOfFaith {
         crate::cards::helpers::resolve_aura(state, object_id, targets);
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        // Determine whether the enchanted creature is a Human.
-        let target_id = state.get_object(object_id).and_then(|o| o.attached_to);
-        if let Some(target_id) = target_id {
-            let is_human = state.get_object(target_id)
-                .map(|o| {
-                    registry.card_data(o.card_id)
-                        .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        .unwrap_or(false)
-                    || o.subtypes.iter().any(|s| s == "Human")
-                })
-                .unwrap_or(false);
-            let target_name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-            let effects = if is_human {
-                state.log(crate::state::LogLevel::Event,
-                    format!("Bonds of Faith gives {} +2/+2 (Human)", target_name));
-                vec![ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached }]
-            } else {
-                state.log(crate::state::LogLevel::Event,
-                    format!("Bonds of Faith prevents {} from attacking or blocking (non-Human)", target_name));
-                vec![
-                    ContinuousEffect::PreventAttack { scope: EffectScope::Attached },
-                    ContinuousEffect::PreventBlock { scope: EffectScope::Attached },
-                ]
-            };
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.instance_continuous_effects = Some(effects);
-                // Keep instance_oracle_text for display purposes.
-                obj.instance_oracle_text = Some(if is_human {
-                    "Enchanted creature gets +2/+2.".to_string()
-                } else {
-                    "Enchanted creature can't attack or block.".to_string()
-                });
-            }
+    fn dynamic_continuous_effects(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Option<Vec<ContinuousEffect>> {
+        let target_id = state.get_object(object_id).and_then(|o| o.attached_to)?;
+        let is_human = state.get_object(target_id)
+            .map(|o| {
+                o.subtypes.iter().any(|s| s == "Human")
+                || registry.card_data(o.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if is_human {
+            Some(vec![ContinuousEffect::ModifyPT { power: 2, toughness: 2, scope: EffectScope::Attached }])
+        } else {
+            Some(vec![
+                ContinuousEffect::PreventAttack { scope: EffectScope::Attached },
+                ContinuousEffect::PreventBlock { scope: EffectScope::Attached },
+            ])
         }
     }
 }

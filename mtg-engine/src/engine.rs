@@ -2187,6 +2187,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             state.until_end_of_turn_cant_block.clear();
             state.until_end_of_turn_protection.clear();
             state.until_end_of_turn_removed_keywords.clear();
+            state.until_end_of_turn_combat_damage_prevention.clear();
 
             // Clear unused regeneration shields.
             for obj in state.objects.values_mut() {

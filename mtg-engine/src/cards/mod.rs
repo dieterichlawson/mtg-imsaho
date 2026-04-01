@@ -558,6 +558,15 @@ pub trait CardBehavior: Send + Sync {
         None
     }
 
+    /// Compute continuous effects dynamically based on current game state.
+    /// Called during effect evaluation. If Some is returned, these effects are used
+    /// INSTEAD of the static continuous_effects from card_data.
+    /// Used by cards whose effects depend on runtime conditions (e.g., Bonds of Faith:
+    /// +2/+2 if attached to Human, prevent attack/block otherwise).
+    fn dynamic_continuous_effects(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Option<Vec<ContinuousEffect>> {
+        None
+    }
+
     /// Called when this permanent enters the battlefield (ETB trigger).
     fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 

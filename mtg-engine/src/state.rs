@@ -135,6 +135,21 @@ pub struct GameState {
     /// non-active player's at the back (top). Resolved LIFO from the back.
     #[serde(default)]
     pub pending_triggers: Vec<crate::triggers::PendingTrigger>,
+
+    /// Combat damage prevention filters active until end of turn.
+    /// Each filter prevents combat damage from sources matching the filter.
+    #[serde(default)]
+    pub until_end_of_turn_combat_damage_prevention: Vec<CombatDamagePreventionFilter>,
+}
+
+/// A filter describing which sources have their combat damage prevented.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CombatDamagePreventionFilter {
+    /// Prevent combat damage from creatures that do NOT have any of the given subtypes.
+    /// Used by Moonmist: prevent from non-Wolf/Werewolf.
+    NotHavingSubtype(Vec<String>),
+    /// Prevent ALL combat damage this turn.
+    All,
 }
 
 /// Log level for game log entries.
@@ -216,6 +231,7 @@ impl GameState {
             spells_cast_last_turn: HashMap::new(),
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
+            until_end_of_turn_combat_damage_prevention: Vec::new(),
         }
     }
 
@@ -632,6 +648,28 @@ impl GameState {
         }
     }
 
+    /// Resolve the continuous effects for a source permanent. Priority:
+    /// 1. instance_continuous_effects (set at ETB, mutable)
+    /// 2. dynamic_continuous_effects (computed from current state via CardBehavior)
+    /// 3. static continuous_effects from card_data (or back_face_data if transformed)
+    fn get_continuous_effects_for(&self, source: &GameObject, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
+        if let Some(ref instance_effects) = source.instance_continuous_effects {
+            return instance_effects.clone();
+        }
+        if let Some(behavior) = registry.get(source.card_id) {
+            if let Some(dynamic) = behavior.dynamic_continuous_effects(self, source.id, registry) {
+                return dynamic;
+            }
+            if source.is_transformed {
+                behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+            } else {
+                behavior.card_data().continuous_effects
+            }
+        } else {
+            Vec::new()
+        }
+    }
+
     /// Collect all (power_mod, toughness_mod) from continuous effects that apply to a creature.
     fn continuous_pt_mods(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> (i32, i32) {
         use crate::types::ContinuousEffect;
@@ -641,33 +679,18 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            // Check instance-level effects first (e.g., Bonds of Faith).
-            if let Some(ref instance_effects) = source.instance_continuous_effects {
-                for effect in instance_effects {
-                    if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            power += p;
-                            toughness += t;
-                        }
+            let effects = self.get_continuous_effects_for(source, registry);
+            for effect in &effects {
+                if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
+                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        power += p;
+                        toughness += t;
                     }
                 }
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                // Card-level static effects (use back face if transformed).
-                let effects = if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                };
-                for effect in &effects {
-                    if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            power += p;
-                            toughness += t;
-                        }
-                    }
-                }
-                // Dynamic P/T from auras (e.g., Wreath of Geists: +X/+X where X = creatures in graveyard).
-                if source.attached_to == Some(creature_id) {
+            }
+            // Dynamic P/T from auras (e.g., Wreath of Geists: +X/+X where X = creatures in graveyard).
+            if source.attached_to == Some(creature_id) {
+                if let Some(behavior) = registry.get(source.card_id) {
                     if let Some((p, t)) = behavior.dynamic_pt(self, source.id) {
                         power += p;
                         toughness += t;
@@ -689,27 +712,11 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            // Check instance-level effects first.
-            if let Some(ref instance_effects) = source.instance_continuous_effects {
-                for effect in instance_effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            return true;
-                        }
-                    }
-                }
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                // Use back face effects when transformed.
-                let effects = if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                };
-                for effect in &effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            return true;
-                        }
+            let effects = self.get_continuous_effects_for(source, registry);
+            for effect in &effects {
+                if let Some(scope) = predicate(effect) {
+                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        return true;
                     }
                 }
             }
@@ -913,17 +920,7 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
-                instance_effects.clone()
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                }
-            } else {
-                continue;
-            };
+            let effects = self.get_continuous_effects_for(source, registry);
             for effect in &effects {
                 if let ContinuousEffect::ConditionalKeyword { keyword: kw, condition, scope } = effect {
                     if *kw != keyword {

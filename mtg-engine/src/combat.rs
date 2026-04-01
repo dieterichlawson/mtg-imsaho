@@ -342,6 +342,31 @@ fn has_inquisitors_flail(state: &GameState, creature_id: ObjectId, registry: &Ca
     })
 }
 
+/// Check if combat damage from this source is prevented by an until-end-of-turn filter.
+fn is_combat_damage_prevented(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
+    use crate::state::CombatDamagePreventionFilter;
+    for filter in &state.until_end_of_turn_combat_damage_prevention {
+        match filter {
+            CombatDamagePreventionFilter::All => return true,
+            CombatDamagePreventionFilter::NotHavingSubtype(allowed_subtypes) => {
+                // Prevent damage unless the source has one of the allowed subtypes.
+                let has_allowed = if let Some(obj) = state.get_object(source) {
+                    allowed_subtypes.iter().any(|st| obj.subtypes.contains(st))
+                    || registry.card_data(obj.card_id)
+                        .map(|d| allowed_subtypes.iter().any(|st| d.subtypes.contains(st)))
+                        .unwrap_or(false)
+                } else {
+                    false
+                };
+                if !has_allowed {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
 /// Deal damage from a source creature to a target creature. Handles lifelink.
 fn deal_damage_to_creature(
     state: &mut GameState,
@@ -352,6 +377,11 @@ fn deal_damage_to_creature(
 ) {
     // Skip if source or target has combat damage prevention (e.g., Ghostly Possession).
     if has_damage_prevention(state, source, registry) || has_damage_prevention(state, target, registry) {
+        return;
+    }
+
+    // Check until-end-of-turn combat damage prevention filters (e.g., Moonmist).
+    if is_combat_damage_prevented(state, source, registry) {
         return;
     }
 
@@ -406,6 +436,11 @@ fn deal_damage_to_player(
 ) {
     // Skip if source has combat damage prevention (e.g., Ghostly Possession).
     if has_damage_prevention(state, source, registry) {
+        return;
+    }
+
+    // Check until-end-of-turn combat damage prevention filters (e.g., Moonmist).
+    if is_combat_damage_prevented(state, source, registry) {
         return;
     }
 
