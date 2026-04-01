@@ -4,7 +4,7 @@ use crate::actions::Target;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Diregraf Ghoul — 2/2 for {B}. Enters the battlefield tapped.
+/// Diregraf Ghoul — 2/2 for {B}. This creature enters tapped.
 /// Note: "enters tapped" is a static/replacement ability, NOT a triggered ability.
 pub struct DiregrafGhoul;
 
