@@ -525,8 +525,14 @@ pub enum TargetRequirement {
     UpToTargets(usize, Box<TargetRequirement>),
     /// Target a card in any player's graveyard (Purify the Grave).
     GraveyardCard,
+    /// Target a creature card in any graveyard (Ghoulcaller's Chant mode 1).
+    GraveyardCreature,
+    /// Target a creature card with a specific subtype in any graveyard (Ghoulcaller's Chant mode 2).
+    GraveyardCreatureOfSubtype(String),
     /// Target a card in exile (Runic Repetition).
     ExileCard,
+    /// Choose one of several targeting modes (Ghoulcaller's Chant). Engine generates actions for each mode independently.
+    ModalChoice(Vec<TargetRequirement>),
 }
 
 /// The trait that every card implements.

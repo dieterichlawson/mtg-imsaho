@@ -31,22 +31,23 @@ impl CardBehavior for GhoulcallersChant {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        // Player chooses 1 creature (any) or 2 Zombie creatures from graveyard.
-        // Modeled as "up to 2 graveyard cards" — is_valid_target filters to creatures.
-        TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::GraveyardCard))
+        // Modal: mode 1 = one creature card; mode 2 = two Zombie creature cards.
+        TargetRequirement::ModalChoice(vec![
+            TargetRequirement::GraveyardCreature,
+            TargetRequirement::TwoTargets(
+                Box::new(TargetRequirement::GraveyardCreatureOfSubtype("Zombie".into())),
+                Box::new(TargetRequirement::GraveyardCreatureOfSubtype("Zombie".into())),
+            ),
+        ])
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        // Both modes require cards in the caster's graveyard.
+        // The TargetRequirement handles creature/subtype filtering.
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| {
-                        o.zone == Zone::Graveyard
-                            && o.owner == caster
-                            && registry.card_data(o.card_id)
-                                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                                .unwrap_or(o.power.is_some())
-                    })
+                    .map(|o| o.zone == Zone::Graveyard && o.owner == caster)
                     .unwrap_or(false)
             }
             _ => false,
@@ -56,10 +57,14 @@ impl CardBehavior for GhoulcallersChant {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(card_id) = target {
-                let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.move_object(*card_id, Zone::Hand);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Ghoulcaller's Chant returned {} to hand", name));
+                if let Some(obj) = state.get_object(*card_id) {
+                    if obj.zone == Zone::Graveyard {
+                        let name = obj.name.clone();
+                        state.move_object(*card_id, Zone::Hand);
+                        state.log(crate::state::LogLevel::Event,
+                            format!("Ghoulcaller's Chant returned {} to hand", name));
+                    }
+                }
             }
         }
         state.move_spell_after_resolve(object_id);

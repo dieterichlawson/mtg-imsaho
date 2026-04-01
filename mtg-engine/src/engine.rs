@@ -660,11 +660,19 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
-        TargetRequirement::GraveyardCard | TargetRequirement::ExileCard => {
+        TargetRequirement::GraveyardCard | TargetRequirement::ExileCard
+        | TargetRequirement::GraveyardCreature | TargetRequirement::GraveyardCreatureOfSubtype(_) => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
                 .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t] })
                 .collect()
+        }
+        TargetRequirement::ModalChoice(ref modes) => {
+            let mut actions = Vec::new();
+            for mode_req in modes {
+                actions.extend(generate_cast_actions_with_targets(state, caster, spell_id, mode_req, behavior));
+            }
+            actions
         }
         TargetRequirement::TwoTargets(ref req1, ref req2) => {
             // Generate Cartesian product of valid targets for each requirement.
@@ -782,6 +790,39 @@ fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
+        TargetRequirement::GraveyardCreature => {
+            // Creature cards in all graveyards. Check both object and registry data.
+            state.objects.values()
+                .filter(|o| {
+                    o.zone == Zone::Graveyard
+                        && (o.power.is_some()
+                            || registry.card_data(o.card_id)
+                                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                                .unwrap_or(false))
+                })
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCreatureOfSubtype(ref subtype) => {
+            // Creature cards with a specific subtype in all graveyards.
+            // Check subtypes on both the object and the registry card data.
+            state.objects.values()
+                .filter(|o| {
+                    o.zone == Zone::Graveyard
+                        && (o.power.is_some()
+                            || registry.card_data(o.card_id)
+                                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                                .unwrap_or(false))
+                        && (o.subtypes.iter().any(|s| s == subtype)
+                            || registry.card_data(o.card_id)
+                                .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                                .unwrap_or(false))
+                })
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
         TargetRequirement::ExileCard => {
             // All cards in exile owned by the caster.
             state.objects.values()
@@ -816,6 +857,15 @@ fn build_cast_target_spec(
         TargetRequirement::UpToTargets(max, inner_req) => {
             let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);
             CastTargetSpec::UpToTargets { max: *max, options }
+        }
+        TargetRequirement::ModalChoice(ref modes) => {
+            // Collect all possible targets across all modes.
+            let mut all_options = Vec::new();
+            for mode_req in modes {
+                all_options.extend(valid_targets_for_req(state, caster, spell_id, mode_req, behavior, registry));
+            }
+            all_options.dedup();
+            CastTargetSpec::SingleTarget(all_options)
         }
         // All single-target types
         _ => {

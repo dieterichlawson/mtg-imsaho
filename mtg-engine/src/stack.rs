@@ -7,6 +7,12 @@ use crate::types::Zone;
 /// Check if a target is still legal at resolution time.
 fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement) -> bool {
     use crate::cards::TargetRequirement;
+
+    // ModalChoice: legal if legal under any mode.
+    if let TargetRequirement::ModalChoice(ref modes) = target_req {
+        return modes.iter().any(|mode_req| is_target_legal(state, target, mode_req));
+    }
+
     // Unwrap nested requirements (UpToTargets, TwoTargets).
     let inner_req = match target_req {
         TargetRequirement::UpToTargets(_, inner) => inner.as_ref(),
@@ -18,7 +24,9 @@ fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards
             match state.get_object(*id) {
                 Some(obj) => {
                     match inner_req {
-                        TargetRequirement::GraveyardCard => obj.zone == Zone::Graveyard,
+                        TargetRequirement::GraveyardCard
+                        | TargetRequirement::GraveyardCreature
+                        | TargetRequirement::GraveyardCreatureOfSubtype(_) => obj.zone == Zone::Graveyard,
                         TargetRequirement::ExileCard => obj.zone == Zone::Exile,
                         _ => obj.zone == Zone::Battlefield || obj.zone == Zone::Stack,
                     }
