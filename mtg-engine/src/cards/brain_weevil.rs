@@ -70,6 +70,7 @@ impl CardBehavior for BrainWeevil {
                         description: "Brain Weevil: choose a card to discard (1 of 2)".into(),
                         player: *target_player,
                         cards: hand,
+                        callback_source: None,
                     },
                 });
             }

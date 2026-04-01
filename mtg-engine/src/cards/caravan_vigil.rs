@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind, YesNoEffect};
 use crate::types::*;
 
 /// Caravan Vigil — {G} Sorcery.
@@ -57,10 +57,23 @@ impl CardBehavior for CaravanVigil {
 
             if state.creature_died_this_turn {
                 // Morbid: "You may put that card onto the battlefield instead."
-                // Auto-choose battlefield (strictly better in almost all cases).
-                state.move_object(land_id, Zone::Battlefield);
+                // Move to hand first (default), then present choice for battlefield.
+                state.move_object(land_id, Zone::Hand);
                 state.log(crate::state::LogLevel::Event,
-                    format!("Caravan Vigil (morbid): {} enters the battlefield", name));
+                    format!("Caravan Vigil: found {}", name));
+
+                // Present choice: put on battlefield instead of hand?
+                state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                    player: controller,
+                    source: object_id,
+                    choice: ResolutionChoiceKind::YesNo {
+                        description: format!("Morbid: put {} onto the battlefield instead of hand?", name),
+                        source_card: object_id,
+                        effect: YesNoEffect::CardCallback {
+                            context: vec![land_id],
+                        },
+                    },
+                });
             } else {
                 state.move_object(land_id, Zone::Hand);
                 state.log(crate::state::LogLevel::Event,
@@ -81,5 +94,15 @@ impl CardBehavior for CaravanVigil {
         }
 
         state.move_spell_after_resolve(object_id);
+    }
+
+    fn on_yes_choice(&self, state: &mut GameState, _self_id: ObjectId, context: &[ObjectId], _registry: &CardRegistry) {
+        // Move the land from hand to battlefield.
+        if let Some(&land_id) = context.first() {
+            let name = state.get_object(land_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(land_id, Zone::Battlefield);
+            state.log(crate::state::LogLevel::Event,
+                format!("Caravan Vigil (morbid): {} enters the battlefield", name));
+        }
     }
 }

@@ -3,8 +3,9 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::Target;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -197,7 +198,17 @@ fn caravan_vigil_morbid_puts_land_on_battlefield() {
     state.get_player_mut(P0).library_order.push(forest);
 
     let vigil = castable_spell(&mut state, &reg, "Caravan Vigil", P0);
-    let new_state = cast_and_resolve(&state, &reg, vigil, vec![]);
+    let mut new_state = cast_and_resolve(&state, &reg, vigil, vec![]);
+
+    // Morbid: should have a YesNo choice for putting land on battlefield.
+    assert!(new_state.awaiting_action.is_some(), "Should have a pending YesNo choice for morbid");
+    new_state = engine::submit_action(
+        &new_state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
 
     // Forest should be on the battlefield (morbid).
     assert_eq!(new_state.get_object(forest).unwrap().zone, Zone::Battlefield);

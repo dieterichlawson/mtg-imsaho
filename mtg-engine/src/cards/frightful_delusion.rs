@@ -85,6 +85,7 @@ impl CardBehavior for FrightfulDelusion {
                                 description: "Frightful Delusion: choose a card to discard".into(),
                                 player: controller,
                                 cards: hand,
+                                callback_source: None,
                             },
                         });
                         // Move spell to graveyard before the discard choice.

@@ -654,6 +654,17 @@ pub trait CardBehavior: Send + Sync {
     /// `targets` contains targets chosen by the player (empty if untargeted).
     fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
 
+    /// Called when the player answers "yes" to a YesNo choice with CardCallback effect.
+    /// `context` is the card-specific data passed when the choice was created.
+    fn on_yes_choice(&self, _state: &mut GameState, _self_id: ObjectId, _context: &[ObjectId], _registry: &CardRegistry) {}
+
+    /// Called after the player chooses a card to discard via ChooseCardFromHand with callback.
+    /// `discarded_id` is the card that was discarded.
+    fn on_discard_choice(&self, _state: &mut GameState, _self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {}
+
+    /// Called when a target is chosen via ChooseTarget with CardCallbackWithTarget effect.
+    fn on_target_chosen(&self, _state: &mut GameState, _self_id: ObjectId, _target: &Target, _registry: &CardRegistry) {}
+
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.
     /// For permanents: default moves to battlefield.

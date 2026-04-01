@@ -1363,6 +1363,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                     description: "Frightful Delusion: choose a card to discard".into(),
                                     player: controller,
                                     cards: hand,
+                                    callback_source: None,
                                 },
                             });
                             // Move the spell to graveyard before the discard choice.
@@ -1393,6 +1394,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                                 description: "Choose a card to discard".into(),
                                                 player: controller,
                                                 cards: hand,
+                                                callback_source: None,
                                             },
                                         });
                                     }
@@ -1447,6 +1449,14 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                         new_state.log(LogLevel::Event, "Not enough mana to pay transform cost".into());
                                     }
                                 }
+                                YesNoEffect::CardCallback { context } => {
+                                    let card_id = new_state.get_object(*source_card).map(|o| o.card_id);
+                                    if let Some(cid) = card_id {
+                                        if let Some(behavior) = registry.get(cid) {
+                                            behavior.on_yes_choice(&mut new_state, *source_card, context, registry);
+                                        }
+                                    }
+                                }
                             }
                         }
                         // If no, nothing happens.
@@ -1457,7 +1467,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             apply_pending_effect(&mut new_state, t, effect, registry);
                         }
                     }
-                    (ResolutionChoiceKind::ChooseCardFromHand { .. },
+                    (ResolutionChoiceKind::ChooseCardFromHand { callback_source, .. },
                      ResolvedChoice::ChosenCard(discard_id)) => {
                         let name = new_state.get_object(*discard_id).map(|o| o.name.clone()).unwrap_or_default();
                         new_state.move_object(*discard_id, Zone::Graveyard);
@@ -1466,6 +1476,16 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             object: *discard_id,
                         });
                         new_state.log(LogLevel::Event, format!("Discarded {}", name));
+
+                        // If there's a callback source, notify the card behavior.
+                        if let Some(src_id) = callback_source {
+                            let card_id = new_state.get_object(*src_id).map(|o| o.card_id);
+                            if let Some(cid) = card_id {
+                                if let Some(behavior) = registry.get(cid) {
+                                    behavior.on_discard_choice(&mut new_state, *src_id, *discard_id, registry);
+                                }
+                            }
+                        }
                     }
                     (ResolutionChoiceKind::ChooseFromRevealed { revealed, spell_id, .. },
                      ResolvedChoice::ChosenCard(keep_id)) => {
@@ -1648,6 +1668,27 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             }
 
             state.move_spell_after_resolve(*spell_id);
+        }
+        (_, PendingEffect::CardCallbackWithTarget { source_id }) => {
+            let card_id = state.get_object(*source_id).map(|o| o.card_id);
+            if let Some(cid) = card_id {
+                if let Some(behavior) = registry.get(cid) {
+                    behavior.on_target_chosen(state, *source_id, target, registry);
+                }
+            }
+        }
+        (Target::Object(id), PendingEffect::GrantFlashback) => {
+            // Grant the chosen instant/sorcery flashback equal to its mana cost.
+            let (name, cost) = state.get_object(*id)
+                .and_then(|o| registry.card_data(o.card_id).map(|d| {
+                    (o.name.clone(), d.cost.clone().unwrap_or(ManaCost::free()))
+                }))
+                .unwrap_or_else(|| (String::new(), ManaCost::free()));
+            let already_has = state.until_end_of_turn_flashback.iter().any(|(oid, _)| *oid == *id);
+            if !already_has {
+                state.until_end_of_turn_flashback.push((*id, cost));
+                state.log(LogLevel::Event, format!("Snapcaster Mage grants flashback to {}", name));
+            }
         }
         _ => {}
     }

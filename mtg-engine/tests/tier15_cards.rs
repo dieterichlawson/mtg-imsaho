@@ -1163,10 +1163,20 @@ fn civilized_scholar_draw_discard_creature_transforms() {
     state.players[0].library_order = vec![lib_card];
 
     // Put a creature in hand (will be discarded).
-    let _hand_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let hand_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
 
     let behavior = reg.get(state.get_object(scholar).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, scholar, 0, &[], &reg);
+
+    // Should have a ChooseCardFromHand choice (2 cards in hand after draw).
+    assert!(state.awaiting_action.is_some(), "Should have a pending discard choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenCard(hand_creature),
+        },
+        &reg,
+    );
 
     // Should transform (discarded a creature).
     assert!(state.get_object(scholar).unwrap().is_transformed);

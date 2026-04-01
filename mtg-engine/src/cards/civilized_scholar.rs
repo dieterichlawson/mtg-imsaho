@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Civilized Scholar {2}{U} 0/1 Human Advisor // Homicidal Brute 5/1 Human Mutant.
@@ -100,32 +100,54 @@ impl CardBehavior for CivilizedScholar {
         // Draw a card.
         crate::engine::draw_cards(state, controller, 1);
 
-        // Discard a card. Auto-pick a creature if possible (simplified).
-        let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
-            .iter().map(|o| (o.id, o.power.is_some())).collect();
+        // Then discard a card — present choice to the player.
+        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller)
+            .iter().map(|o| o.id).collect();
         if hand.is_empty() {
             return;
         }
 
-        // Prefer to discard a creature card to trigger the transform.
-        let (discard_id, is_creature) = hand.iter()
-            .find(|(_, is_creature)| *is_creature)
-            .or(hand.first())
-            .copied()
-            .unwrap();
+        if hand.len() == 1 {
+            // Only one card — auto-discard it.
+            let discard_id = hand[0];
+            let is_creature = state.get_object(discard_id).map(|o| o.power.is_some()).unwrap_or(false);
+            state.move_object(discard_id, Zone::Graveyard);
+            state.events.push(crate::events::GameEvent::Discarded {
+                player: controller,
+                object: discard_id,
+            });
+            let name = state.get_object(discard_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event,
+                format!("Civilized Scholar: discarded {}", name));
+            if is_creature {
+                if let Some(obj) = state.get_object_mut(object_id) {
+                    obj.tapped = false;
+                    obj.is_transformed = true;
+                    obj.name = "Homicidal Brute".into();
+                }
+                state.log(crate::state::LogLevel::Event,
+                    "Civilized Scholar transforms into Homicidal Brute".into());
+            }
+        } else {
+            // Multiple cards — let the player choose which to discard.
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: object_id,
+                choice: ResolutionChoiceKind::ChooseCardFromHand {
+                    description: "Civilized Scholar: choose a card to discard".into(),
+                    player: controller,
+                    cards: hand,
+                    callback_source: Some(object_id),
+                },
+            });
+        }
+    }
 
-        state.move_object(discard_id, Zone::Graveyard);
-        state.events.push(crate::events::GameEvent::Discarded {
-            player: controller,
-            object: discard_id,
-        });
-        let discard_name = state.get_object(discard_id).map(|o| o.name.clone()).unwrap_or_default();
-        state.log(crate::state::LogLevel::Event,
-            format!("Civilized Scholar: p{} discarded {}", controller.0, discard_name));
-
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, _registry: &CardRegistry) {
+        // If a creature card was discarded, untap and transform.
+        let is_creature = state.get_object(discarded_id).map(|o| o.power.is_some()).unwrap_or(false);
         if is_creature {
-            // Untap and transform.
-            if let Some(obj) = state.get_object_mut(object_id) {
+            if let Some(obj) = state.get_object_mut(self_id) {
                 obj.tapped = false;
                 obj.is_transformed = true;
                 obj.name = "Homicidal Brute".into();

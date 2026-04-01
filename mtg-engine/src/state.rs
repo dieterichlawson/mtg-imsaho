@@ -1196,11 +1196,14 @@ pub enum ResolutionChoiceKind {
         source_card: ObjectId,
         effect: YesNoEffect,
     },
-    /// Choose a card from hand to discard (Murder of Crows, future discard effects).
+    /// Choose a card from hand to discard (Murder of Crows, Civilized Scholar, etc.).
+    /// If `callback_source` is Some, the engine calls the source card's `on_discard_choice`
+    /// after the discard resolves.
     ChooseCardFromHand {
         description: String,
         player: PlayerId,
         cards: Vec<ObjectId>,
+        callback_source: Option<ObjectId>,
     },
     /// Choose one card from a revealed set to keep (Forbidden Alchemy).
     ChooseFromRevealed {
@@ -1223,6 +1226,9 @@ pub enum YesNoEffect {
     PayAndDraw,
     /// Pay a specific mana cost and transform (Screeching Bat / Stalking Vampire).
     PayManaAndTransform { cost: ManaCost, back_face_name: String },
+    /// Generic callback: on "yes", the engine calls the card's `on_yes_choice` method.
+    /// `context` carries card-specific data (e.g., an ObjectId for the chosen land).
+    CardCallback { context: Vec<ObjectId> },
 }
 
 /// What happens to the chosen target when a ResolutionChoice is resolved.
@@ -1258,6 +1264,11 @@ pub enum PendingEffect {
     /// Sacrifice the chosen creature and gain life equal to its toughness (Tribute to Hunger).
     /// `beneficiary` gains the life; `spell_id` is cleaned up after resolution.
     SacrificeAndGainLife { beneficiary: PlayerId, spell_id: ObjectId },
+    /// Grant flashback to the chosen instant/sorcery (Snapcaster Mage).
+    GrantFlashback,
+    /// Generic card callback: calls the source card's `on_target_chosen` with the chosen target.
+    /// `source_id` is the card that presented the choice.
+    CardCallbackWithTarget { source_id: ObjectId },
 }
 
 /// Game result.
