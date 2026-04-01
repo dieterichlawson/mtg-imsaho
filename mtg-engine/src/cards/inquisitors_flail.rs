@@ -9,11 +9,6 @@ use crate::types::*;
 /// If another source would deal combat damage to equipped creature, it deals double
 /// that damage to equipped creature instead.
 /// Equip {2}.
-///
-/// SIMPLIFICATION: The double-damage replacement effect is complex to implement in the
-/// combat system. Instead, we approximate the offensive half by granting a +P/+0 bonus
-/// equal to the creature's effective power (effectively doubling its power for combat).
-/// The defensive doubling (taking double combat damage) is not implemented.
 pub struct InquisitorsFlail;
 
 impl CardBehavior for InquisitorsFlail {
@@ -50,36 +45,6 @@ impl CardBehavior for InquisitorsFlail {
             }
             _ => false,
         }
-    }
-
-    /// Approximate the offensive double damage by granting +P/+0 equal to the creature's
-    /// base effective power (before this bonus). This effectively doubles power for combat.
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        let obj = state.get_object(object_id)?;
-        if obj.zone != Zone::Battlefield {
-            return None;
-        }
-        // Get the attached creature's ID.
-        let creature_id = obj.attached_to?;
-        let creature = state.get_object(creature_id)?;
-        if creature.zone != Zone::Battlefield {
-            return None;
-        }
-        // Use the creature's base power (from the object, without continuous effects from this equipment).
-        // This is an approximation — we use the raw power value which includes P/T modifications
-        // from other sources but not this equipment's own contribution.
-        let base_power = creature.power.unwrap_or(0);
-        // Add +1/+1 counters.
-        let counter_bonus = *creature.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
-        let counter_penalty = *creature.counters.get(&CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
-        let effective = base_power + counter_bonus - counter_penalty;
-        // Until-end-of-turn effects on the creature.
-        let eot_bonus: i32 = state.until_end_of_turn_effects.iter()
-            .filter(|e| e.target == creature_id)
-            .map(|e| e.power_mod)
-            .sum();
-        let total_power = (effective + eot_bonus).max(0);
-        Some((total_power, 0))
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {

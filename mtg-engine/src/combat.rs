@@ -306,6 +306,18 @@ fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker
     false
 }
 
+/// Check if a creature has Inquisitor's Flail equipped.
+fn has_inquisitors_flail(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
+    state.objects.values().any(|o| {
+        o.zone == Zone::Battlefield
+            && o.is_equipment
+            && o.attached_to == Some(creature_id)
+            && registry.card_data(o.card_id)
+                .map(|d| d.name == "Inquisitor's Flail")
+                .unwrap_or(false)
+    })
+}
+
 /// Deal damage from a source creature to a target creature. Handles lifelink.
 fn deal_damage_to_creature(
     state: &mut GameState,
@@ -324,9 +336,18 @@ fn deal_damage_to_creature(
         return;
     }
 
+    // Inquisitor's Flail: double damage if source has it (offensive) or target has it (defensive).
+    let mut actual_amount = amount;
+    if has_inquisitors_flail(state, source, registry) {
+        actual_amount *= 2;
+    }
+    if has_inquisitors_flail(state, target, registry) {
+        actual_amount *= 2;
+    }
+
     let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
     if let Some(obj) = state.get_object_mut(target) {
-        obj.damage_marked += amount;
+        obj.damage_marked += actual_amount;
         if has_deathtouch {
             obj.dealt_deathtouch_damage = true;
         }
@@ -338,14 +359,14 @@ fn deal_damage_to_creature(
     state.events.push(GameEvent::CombatDamageDealt {
         source,
         target: DamageTarget::Object(target),
-        amount,
+        amount: actual_amount,
     });
 
     // Lifelink: source's controller gains life.
     if state.has_keyword(source, Keyword::Lifelink, registry) {
         let controller = state.get_object(source).expect("damage source must exist").controller;
         let old_life = state.get_player(controller).life;
-        let new_life = old_life + amount as i32;
+        let new_life = old_life + actual_amount as i32;
         state.get_player_mut(controller).life = new_life;
         state.events.push(GameEvent::LifeChanged {
             player: controller,
@@ -368,14 +389,21 @@ fn deal_damage_to_player(
         return;
     }
 
+    // Inquisitor's Flail: double damage if source has it (offensive).
+    let actual_amount = if has_inquisitors_flail(state, source, registry) {
+        amount * 2
+    } else {
+        amount
+    };
+
     let old_life = state.get_player(player).life;
-    let new_life = old_life - amount as i32;
+    let new_life = old_life - actual_amount as i32;
     state.get_player_mut(player).life = new_life;
 
     state.events.push(GameEvent::CombatDamageDealt {
         source,
         target: DamageTarget::Player(player),
-        amount,
+        amount: actual_amount,
     });
     state.events.push(GameEvent::LifeChanged {
         player,

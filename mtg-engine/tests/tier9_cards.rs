@@ -226,19 +226,35 @@ fn inquisitors_flail_card_data() {
 }
 
 #[test]
-fn inquisitors_flail_doubles_power() {
+fn inquisitors_flail_doubles_combat_damage() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
 
     let flail = named_equipment(&mut state, &reg, "Inquisitor's Flail", P0);
-    let creature = ready_creature(&mut state, P0, 3, 3);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 1, 10);
 
-    // Attach the flail.
-    state.get_object_mut(flail).unwrap().attached_to = Some(creature);
+    // Attach the flail to the attacker.
+    state.get_object_mut(flail).unwrap().attached_to = Some(attacker);
 
-    // Creature's effective power should be doubled (3 base + 3 from flail = 6).
-    assert_eq!(state.effective_power(creature, &reg), Some(6),
-        "3/3 creature with Inquisitor's Flail should have 6 effective power");
+    // Set up combat: attacker blocked by blocker.
+    let mut combat = mtg_engine::state::CombatState::new();
+    combat.attackers.insert(attacker, P1);
+    combat.blocker_assignments.insert(attacker, vec![blocker]);
+    state.combat = Some(combat);
+
+    // Resolve combat damage.
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    // Attacker with flail should deal 6 damage (3 * 2) to blocker.
+    let blocker_obj = state.get_object(blocker).unwrap();
+    assert_eq!(blocker_obj.damage_marked, 6,
+        "Attacker with Inquisitor's Flail should deal double combat damage (3 * 2 = 6)");
+
+    // Blocker deals 1 damage to attacker, but attacker has flail so takes double (1 * 2 = 2).
+    let attacker_obj = state.get_object(attacker).unwrap();
+    assert_eq!(attacker_obj.damage_marked, 2,
+        "Equipped creature should take double combat damage (1 * 2 = 2)");
 }
 
 #[test]
