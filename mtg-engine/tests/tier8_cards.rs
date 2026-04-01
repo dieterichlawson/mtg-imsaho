@@ -5,6 +5,7 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions_with_registry;
 use mtg_engine::triggers;
@@ -399,7 +400,7 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
         .collect();
     assert_eq!(creatures_before.len(), 1, "Only the apprentice on the battlefield");
 
-    let state = mtg_engine::engine::submit_action(
+    let mut state = engine::submit_action(
         &state,
         &Action::ActivateAbility {
             object_id: apprentice,
@@ -409,22 +410,26 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
         &reg,
     );
 
-    // After activation: a 2/2 token was created, then a creature was sacrificed.
-    // The auto-sacrifice picks the first creature, which could be the token or
-    // an existing creature. Net result: one creature on battlefield.
+    // Should have a sacrifice choice (apprentice + new token).
+    assert!(state.awaiting_action.is_some(), "Should have a pending sacrifice choice");
+    // Find the token to sacrifice it.
+    let token = state.objects.values()
+        .find(|o| o.zone == Zone::Battlefield && o.is_token && o.power.is_some())
+        .map(|o| o.id)
+        .expect("Should have created a Homunculus token");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(token))),
+        },
+        &reg,
+    );
+
+    // After: token was sacrificed, apprentice remains.
     let creatures_after: Vec<_> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
         .collect();
-    // The apprentice was tapped and a creature was sacrificed. The token was created.
-    // Net: we should have exactly 1 creature (the one that wasn't sacrificed).
     assert_eq!(creatures_after.len(), 1, "Should have 1 creature on battlefield after create + sacrifice");
-
-    // One creature should be in the graveyard (the sacrificed one).
-    let graveyard: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0 && o.power.is_some())
-        .collect();
-    // Note: tokens cease to exist when they go to graveyard (SBA), but before SBA we still see it.
-    assert!(graveyard.len() >= 1, "A creature should have been sacrificed");
 }
 #[test]
 
@@ -513,11 +518,21 @@ fn corpse_lunge_picks_highest_power_creature() {
     let target = ready_creature(&mut state, P1, 6, 6);
 
     let spell = castable_spell(&mut state, &reg, "Corpse Lunge", P0);
-    let state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+    let mut state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
+
+    // Should have a choice of which creature to exile. Choose the 5/5.
+    assert!(state.awaiting_action.is_some(), "Should have exile choice");
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(big))),
+        },
+        &reg,
+    );
 
     // Should exile the 5/5 and deal 5 damage.
     let big_obj = state.get_object(big).unwrap();
-    assert_eq!(big_obj.zone, Zone::Exile, "Highest-power creature should be exiled");
+    assert_eq!(big_obj.zone, Zone::Exile, "Chosen creature should be exiled");
 
     let target_obj = state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 5, "Should deal 5 damage (power of exiled 5/5)");

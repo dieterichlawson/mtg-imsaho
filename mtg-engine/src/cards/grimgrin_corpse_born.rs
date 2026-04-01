@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Grimgrin, Corpse-Born {3}{U}{B} 5/5 Legendary Zombie Warrior.
@@ -79,23 +79,33 @@ impl CardBehavior for GrimgrinCorpseBorn {
             None => return,
         };
 
-        // Sacrifice another creature (pick the first available that isn't Grimgrin).
-        let sacrifice_target: Option<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
+        // Sacrifice another creature — present choice.
+        let candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .find(|o| o.id != object_id && o.power.is_some())
-            .map(|o| o.id);
+            .filter(|o| o.id != object_id && o.power.is_some())
+            .map(|o| o.id)
+            .collect();
 
-        if let Some(sac_id) = sacrifice_target {
-            let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::sacrifice(state, sac_id, registry);
-            // Untap Grimgrin.
+        if candidates.len() == 1 {
+            grimgrin_sacrifice(state, object_id, candidates[0], registry);
+        } else if candidates.len() > 1 {
+            // Mark ability_index=0 so on_target_chosen knows this is a sacrifice choice.
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.tapped = false;
+                obj.card_state.insert("pending_choice".into(), ObjectId(0));
             }
-            // +1/+1 counter.
-            state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-            state.log(crate::state::LogLevel::Event,
-                format!("Grimgrin: sacrificed {}, untapped, +1/+1 counter", sac_name));
+            let options: Vec<Target> = candidates.iter()
+                .map(|&id| Target::Object(id))
+                .collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: object_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Grimgrin: choose a creature to sacrifice".into(),
+                    options,
+                    optional: false,
+                    effect: PendingEffect::CardCallbackWithTarget { source_id: object_id },
+                },
+            });
         }
     }
 
@@ -105,22 +115,75 @@ impl CardBehavior for GrimgrinCorpseBorn {
             _ => return,
         };
 
-        // Destroy target creature defending player controls.
+        // Destroy target creature defending player controls — present choice.
         let defender = state.opponent(controller);
-        let target: Option<ObjectId> = state.objects_in_zone(Zone::Battlefield, defender)
+        let targets: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, defender)
             .iter()
-            .find(|o| o.power.is_some())
-            .map(|o| o.id);
+            .filter(|o| o.power.is_some())
+            .map(|o| o.id)
+            .collect();
 
-        if let Some(target_id) = target {
-            let target_name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::try_destroy(state, target_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Grimgrin attacks: destroys {}", target_name));
-            // +1/+1 counter (only if target was valid — "then" means sequential resolution).
-            state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-            state.log(crate::state::LogLevel::Event,
-                "Grimgrin: +1/+1 counter from attack trigger".into());
+        if targets.len() == 1 {
+            grimgrin_attack_destroy(state, self_id, targets[0], registry);
+        } else if targets.len() > 1 {
+            if let Some(obj) = state.get_object_mut(self_id) {
+                obj.card_state.insert("pending_choice".into(), ObjectId(1));
+            }
+            let options: Vec<Target> = targets.iter()
+                .map(|&id| Target::Object(id))
+                .collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Grimgrin: choose a creature to destroy".into(),
+                    options,
+                    optional: false,
+                    effect: PendingEffect::CardCallbackWithTarget { source_id: self_id },
+                },
+            });
         }
     }
+
+    fn on_target_chosen(&self, state: &mut GameState, self_id: ObjectId, target: &Target, registry: &CardRegistry) {
+        let choice_type = state.get_object(self_id)
+            .and_then(|o| o.card_state.get("pending_choice").copied())
+            .map(|id| id.0)
+            .unwrap_or(0);
+
+        if let Target::Object(target_id) = target {
+            if choice_type == 0 {
+                // Sacrifice choice.
+                grimgrin_sacrifice(state, self_id, *target_id, registry);
+            } else {
+                // Attack destroy choice.
+                grimgrin_attack_destroy(state, self_id, *target_id, registry);
+            }
+        }
+        // Clean up choice marker.
+        if let Some(obj) = state.get_object_mut(self_id) {
+            obj.card_state.remove("pending_choice");
+        }
+    }
+}
+
+fn grimgrin_sacrifice(state: &mut GameState, grimgrin_id: ObjectId, sac_id: ObjectId, registry: &CardRegistry) {
+    let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
+    crate::destruction::sacrifice(state, sac_id, registry);
+    if let Some(obj) = state.get_object_mut(grimgrin_id) {
+        obj.tapped = false;
+    }
+    state.add_counters(grimgrin_id, CounterType::PlusOnePlusOne, 1);
+    state.log(crate::state::LogLevel::Event,
+        format!("Grimgrin: sacrificed {}, untapped, +1/+1 counter", sac_name));
+}
+
+fn grimgrin_attack_destroy(state: &mut GameState, self_id: ObjectId, target_id: ObjectId, registry: &CardRegistry) {
+    let target_name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
+    crate::destruction::try_destroy(state, target_id, registry);
+    state.log(crate::state::LogLevel::Event,
+        format!("Grimgrin attacks: destroys {}", target_name));
+    state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
+    state.log(crate::state::LogLevel::Event,
+        "Grimgrin: +1/+1 counter from attack trigger".into());
 }
