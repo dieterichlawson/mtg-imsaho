@@ -590,6 +590,23 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             if !mana::can_pay(&player_state.mana_pool, fb_cost) { continue; }
 
+            // Check additional cost eligibility for graveyard casts.
+            {
+                use crate::cards::AdditionalCost;
+                if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = &data.additional_cost {
+                    // Count creature cards in graveyard (excluding the spell itself).
+                    let creature_count = state.objects.values()
+                        .filter(|o| {
+                            o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
+                                && (o.power.is_some() || registry.card_data(o.card_id)
+                                    .map(|d| d.card_types.contains(&CardType::Creature))
+                                    .unwrap_or(false))
+                        })
+                        .count();
+                    if creature_count < *n { continue; }
+                }
+            }
+
             let target_req = behavior.target_requirement();
 
             if matches!(target_req, crate::cards::TargetRequirement::None) {
@@ -606,7 +623,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
                     name: data.name.clone(),
-                    is_flashback: true,
+                    is_flashback: !cast_from_gy,
                     target_spec: spec,
                 });
             }
@@ -1221,14 +1238,19 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         Action::CastSpell { object_id, targets, sacrifice } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
-            // Detect flashback: card is being cast from the graveyard.
-            let is_flashback = new_state.get_object(*object_id)
-                .map(|o| o.zone == Zone::Graveyard)
-                .unwrap_or(false);
-
-            // Pay the appropriate mana cost (applying cost reduction for non-flashback).
+            // Detect flashback vs cast-from-graveyard.
+            // Flashback: card has flashback_cost or dynamically granted flashback.
+            // Cast-from-graveyard: card has can_cast_from_graveyard() (Skaab Ruinator) — uses normal mana cost.
             let card_id = new_state.get_object(*object_id).expect("CastSpell object must exist").card_id;
             let data = registry.get(card_id).expect("card must be in registry").card_data();
+            let behavior = registry.get(card_id).expect("card must be in registry");
+            let in_graveyard = new_state.get_object(*object_id)
+                .map(|o| o.zone == Zone::Graveyard)
+                .unwrap_or(false);
+            let is_cast_from_graveyard = in_graveyard && behavior.can_cast_from_graveyard();
+            let is_flashback = in_graveyard && !is_cast_from_graveyard;
+
+            // Pay the appropriate mana cost (applying cost reduction for non-flashback).
             let cost = if is_flashback {
                 // Check until_end_of_turn_flashback for dynamically granted flashback.
                 let dynamic_fb = new_state.until_end_of_turn_flashback.iter()

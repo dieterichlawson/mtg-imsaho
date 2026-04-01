@@ -506,6 +506,76 @@ fn skaab_ruinator_exiles_creatures_from_graveyard() {
     assert_eq!(exiled, 3, "Should exile 3 creatures from graveyard");
 }
 
+#[test]
+fn skaab_ruinator_cast_from_graveyard() {
+    // "You may cast this card from your graveyard" — uses normal mana cost, not flashback.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    // Put Skaab Ruinator in graveyard.
+    let ruinator = spell_in_hand(&mut state, &reg, "Skaab Ruinator", P0);
+    state.move_object(ruinator, Zone::Graveyard);
+
+    // Put 3 creature cards in graveyard for the additional cost.
+    for _ in 0..3 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        state.move_object(c, Zone::Graveyard);
+    }
+
+    // Give enough mana ({1}{U}{U}).
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Should be castable from graveyard.
+    let actions = engine::legal_actions(&state, &reg);
+    let can_cast = actions.actions.iter().any(|a| {
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == ruinator)
+    });
+    assert!(can_cast, "Skaab Ruinator should be castable from graveyard");
+
+    // Cast it.
+    let new_state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: ruinator, targets: vec![], sacrifice: None },
+        &reg,
+    );
+
+    // Should be on the stack (not panicked!).
+    assert_eq!(new_state.get_object(ruinator).unwrap().zone, Zone::Stack,
+        "Skaab Ruinator should be on the stack after casting from graveyard");
+
+    // Should NOT have cast_with_flashback set (it's not flashback).
+    assert!(!new_state.get_object(ruinator).unwrap().cast_with_flashback,
+        "Should not be marked as flashback — it's cast-from-graveyard");
+}
+
+#[test]
+fn skaab_ruinator_not_castable_without_enough_creatures() {
+    // Can't cast from graveyard without 3 creature cards.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let ruinator = spell_in_hand(&mut state, &reg, "Skaab Ruinator", P0);
+    state.move_object(ruinator, Zone::Graveyard);
+
+    // Only 2 creatures (need 3).
+    for _ in 0..2 {
+        let c = ready_creature(&mut state, P0, 1, 1);
+        state.move_object(c, Zone::Graveyard);
+    }
+
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let actions = engine::legal_actions(&state, &reg);
+    let can_cast = actions.actions.iter().any(|a| {
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == ruinator)
+    });
+    assert!(!can_cast, "Should NOT be castable with only 2 creature cards in graveyard");
+}
+
 // ── Manor Gargoyle ───────────────────────────────────────────────
 
 #[test]
