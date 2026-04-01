@@ -31,23 +31,14 @@ impl CardBehavior for AltarsReap {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id)
             .map(|o| o.controller)
             .unwrap_or(crate::ids::PlayerId(0));
 
-        // SIMPLIFICATION: In real MTG, the sacrifice happens as part of casting (before
-        // the spell goes on the stack). Here we sacrifice on resolution because the engine
-        // doesn't yet support multi-step casting with additional costs.
-        let creature_to_sac = state.objects.values()
-            .find(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some())
-            .map(|o| o.id);
-
-        if let Some(sac_id) = creature_to_sac {
-            crate::destruction::sacrifice(state, sac_id, registry);
-            crate::engine::draw_cards(state, controller, 2);
-        }
-        // If no creature to sacrifice, the spell fizzles (no effect).
+        // The creature sacrifice happens at cast time (as an additional cost).
+        // On resolution, just draw two cards.
+        crate::engine::draw_cards(state, controller, 2);
         state.move_spell_after_resolve(object_id);
     }
 }

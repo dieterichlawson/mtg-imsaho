@@ -435,6 +435,21 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 }
             }
 
+            // Check additional costs.
+            use crate::cards::AdditionalCost;
+            let eligible_sacrifices: Vec<ObjectId> = match &data.additional_cost {
+                Some(AdditionalCost::SacrificeCreature) => {
+                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
+                        .iter()
+                        .filter(|o| o.power.is_some())
+                        .map(|o| o.id)
+                        .collect();
+                    if creatures.is_empty() { continue; }
+                    creatures
+                }
+                _ => vec![],
+            };
+
             // Generate cast actions with valid targets.
             let target_req = behavior.target_requirement();
 
@@ -446,9 +461,27 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 seen_untargeted_casts.push(obj.card_id);
             }
 
-            let cast_actions = generate_cast_actions_with_targets(
+            let mut cast_actions = generate_cast_actions_with_targets(
                 state, player, obj.id, &target_req, behavior,
             );
+
+            // If the spell requires a creature sacrifice, expand each action
+            // into one per eligible creature.
+            if !eligible_sacrifices.is_empty() {
+                let base_actions = std::mem::take(&mut cast_actions);
+                for action in base_actions {
+                    if let Action::CastSpell { object_id, targets, .. } = action {
+                        for &sac_id in &eligible_sacrifices {
+                            cast_actions.push(Action::CastSpell {
+                                object_id,
+                                targets: targets.clone(),
+                                sacrifice: Some(sac_id),
+                            });
+                        }
+                    }
+                }
+            }
+
             if !cast_actions.is_empty() {
                 actions.extend(cast_actions);
                 let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
@@ -573,7 +606,7 @@ fn generate_cast_actions_with_targets(
 
     match target_req {
         TargetRequirement::None => {
-            vec![Action::CastSpell { object_id: spell_id, targets: vec![] }]
+            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None }]
         }
         TargetRequirement::AnyTarget => {
             // Can target any creature on the battlefield or any player.
@@ -586,6 +619,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
@@ -597,6 +631,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
@@ -613,6 +648,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
@@ -628,6 +664,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
@@ -648,6 +685,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
+                        sacrifice: None,
                     });
                 }
             }
@@ -664,6 +702,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
+                        sacrifice: None,
                     });
                 }
             }
@@ -674,7 +713,7 @@ fn generate_cast_actions_with_targets(
         | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t] })
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None })
                 .collect()
         }
         TargetRequirement::ModalChoice(ref modes) => {
@@ -696,6 +735,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
+                            sacrifice: None,
                         });
                     }
                 }
@@ -723,6 +763,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: combo,
+                        sacrifice: None,
                     });
                 }
             }
@@ -1072,7 +1113,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets } => {
+        Action::CastSpell { object_id, targets, sacrifice } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback: card is being cast from the graveyard.
@@ -1124,6 +1165,33 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             } else {
                 mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
                     .expect("legal_actions should have verified mana availability");
+            }
+
+            // Pay additional costs (sacrifice) at cast time, before the spell goes on the stack.
+            if let Some(sac_id) = sacrifice {
+                let sac_name = card_name(&new_state, registry, *sac_id);
+                crate::destruction::sacrifice(&mut new_state, *sac_id, registry);
+                new_state.log(LogLevel::Event,
+                    format!("Sacrificed {} as additional cost", sac_name));
+            } else {
+                // Backward compatibility: if sacrifice is None but the spell has
+                // AdditionalCost::SacrificeCreature, auto-sacrifice the first creature.
+                use crate::cards::AdditionalCost;
+                let needs_sac = registry.get(card_id)
+                    .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::SacrificeCreature)))
+                    .unwrap_or(false);
+                if needs_sac {
+                    let creature = new_state.objects_in_zone(Zone::Battlefield, player)
+                        .iter()
+                        .find(|o| o.power.is_some())
+                        .map(|o| o.id);
+                    if let Some(cid) = creature {
+                        let sac_name = card_name(&new_state, registry, cid);
+                        crate::destruction::sacrifice(&mut new_state, cid, registry);
+                        new_state.log(LogLevel::Event,
+                            format!("Sacrificed {} as additional cost", sac_name));
+                    }
+                }
             }
 
             // Move to stack and store targets.

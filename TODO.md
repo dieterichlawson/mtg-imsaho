@@ -58,7 +58,7 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Curse of the Pierced Heart** — Oracle says "deals 1 damage to that player or a planeswalker that player controls." Needs damage redirect to planeswalker option. (Not a bug: planeswalker damage redirect was removed from MTG rules in 2018. Current Oracle text is just "deals 1 damage to that player." Already correct.)
 
 ### Multi-Step Casting (Additional Costs at Cast Time)
-- [ ] **Infernal Plunge** — sacrifice should happen when casting, not at resolution. Needs the casting flow to prompt for additional costs before the spell goes on the stack.
+- [x] **Infernal Plunge** — sacrifice should happen when casting, not at resolution. Needs the casting flow to prompt for additional costs before the spell goes on the stack. (Fixed: added sacrifice field to CastSpell action, engine validates and pays AdditionalCost::SacrificeCreature at cast time, generates one action per eligible creature. Also fixed Altar's Reap.)
 
 ### X-Cost Activated Abilities
 - [ ] **Kessig Wolf Run** — X-cost ability simplified to fixed cost. Needs X-cost support for activated abilities (player chooses X, pays accordingly).
