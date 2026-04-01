@@ -33,65 +33,23 @@ The write-it-down-verbatim rule, the side-by-side quoting rule, and the reconcil
 - Assume the card is real — do NOT question whether a card exists
 - Note which set(s) the card appears in
 
-### 2. Obtain the CURRENT Oracle text — THIS IS MANDATORY
+### 2. Obtain the CURRENT Oracle text and rulings — THIS IS MANDATORY
 
 You **MUST** obtain the current Oracle text from an authoritative source before proceeding. Do not skip this step. Do not rely on your training data. Oracle text changes over time due to errata, and auditing against stale text produces false positives.
 
-**Try these approaches in order until one works:**
+Use the `/oracle-text "Card Name"` skill to look up the card. It checks the local cache first, falls back to the Scryfall API, and handles DFCs and rulings automatically.
 
-**Approach 1: Local oracle cache (ALWAYS try this first)**
-```bash
-python3 scripts/oracle_lookup.py lookup "Card Name"
-```
-If the card is in the cache, this is your source of truth. The cache contains verified oracle text with source citations. **Write down the oracle text from the cache output** — this is your single source of truth for the rest of the audit.
-
-**Approach 2: If not cached, use the oracle-text skill to fetch and cache it**
-Run the `/oracle-text "Card Name"` skill, which will fetch from WebSearch, cache the result, and return the oracle text. If running inside a subagent without access to the skill, do the following manually:
-
-1. Use WebSearch: `{card name} scryfall oracle text` (restrict to scryfall.com)
-2. If that doesn't show full text: `{card name} MTG oracle text gatherer`
-3. If still not found: `{card name} MTG card text type line` (any source)
-
-**After fetching, immediately cache it:**
-```bash
-python3 scripts/oracle_lookup.py add-card "Card Name" \
-  --mana-cost "{1}{R}" \
-  --type-line "Enchantment — Aura Curse" \
-  --oracle-text "The exact oracle text here..." \
-  --source "Scryfall via WebSearch" \
-  --source-url "https://scryfall.com/card/set/number/card-name"
-```
-For creatures add `--power` and `--toughness`. For DFCs, also run `add-back-face`.
+If running inside a subagent without access to the skill, read `.claude/commands/oracle-text.md` and follow its procedure directly.
 
 **You are not done until you have the oracle text.** If after all attempts you truly cannot find it, state this explicitly in the audit log — do NOT fall back to your training data and pretend it's authoritative.
 
 **Write down the oracle text verbatim** (from cache output or from what you just fetched). Copy-paste it exactly — do not paraphrase, summarize, or reword. This written record is your single source of truth for the rest of the audit. All comparisons in later steps MUST reference this written-down text, not your memory. (Why: previous auditors unconsciously drifted from fetched text back to training-data memories mid-audit. Writing it down anchors you to the real text.)
 
-Record: name, mana cost, type line (including ALL creature subtypes), Oracle text (verbatim), power/toughness, and which source you got it from.
-
-### 3. Obtain rulings
-
-**Approach 1: Check local cache first**
-If you ran `python3 scripts/oracle_lookup.py lookup "Card Name"` in step 2 and rulings were shown, you already have them. Use those.
-
-**Approach 2: If no cached rulings, fetch via WebSearch**
-- Search: `{card name} scryfall rulings` (restrict to scryfall.com)
-- Search: `{card name} MTG rulings gatherer`
-- Check Gatherer rulings, MTGAssist rulings, or MTG Salvation forums
-
-**After fetching, cache EACH ruling with its source URL:**
-```bash
-python3 scripts/oracle_lookup.py add-ruling "Card Name" \
-  --date "2011-09-22" \
-  --text "The exact ruling text..." \
-  --source "Scryfall rulings via WebSearch" \
-  --source-url "https://scryfall.com/card/set/number/card-name"
-```
-**Every cached ruling MUST have a `--source-url`.** This is mandatory — rulings without source links are unverifiable and useless.
+Record: name, mana cost, type line (including ALL creature subtypes), Oracle text (verbatim), power/toughness, rulings, and which source you got it from.
 
 Pay special attention to rulings about timing, targeting, "you may" vs mandatory, "another" vs "a", and "each opponent" vs "target player".
 
-### 4. Research community knowledge (for complex cards)
+### 3. Research community knowledge (for complex cards)
 
 Skip for vanilla creatures and basic spells. For anything with triggered abilities, activated abilities, unusual timing, replacement effects, or multi-step resolution:
 
@@ -105,9 +63,9 @@ Skip for vanilla creatures and basic spells. For anything with triggered abiliti
   - Curses: "MTG curse rules enchant player"
   - Death triggers: "MTG death trigger timing simultaneous"
   - Replacement effects: "MTG replacement effect ordering"
-- **Record surprising findings** for step 6.
+- **Record surprising findings** for step 5.
 
-### 5. Identify relevant comprehensive rules
+### 4. Identify relevant comprehensive rules
 - Creatures: summoning sickness, combat rules
 - Instants/sorceries: stack rules, timing restrictions
 - Auras: attachment rules, what happens when target leaves
@@ -117,7 +75,7 @@ Skip for vanilla creatures and basic spells. For anything with triggered abiliti
 - ETB/dies: zone transition rules, last-known information
 - Transform/DFC: which face's characteristics are active, transform vs ETB
 
-### 6. Think about tricky interactions
+### 5. Think about tricky interactions
 This is the most important step. Consider:
 
 **With the stack:**
@@ -141,7 +99,7 @@ This is the most important step. Consider:
 - "Combat damage" vs "damage" — combat damage is a subset
 - "Mana cost" vs "mana value" — cost includes colors, value is just the number
 
-### 7. Check the code
+### 6. Check the code
 Read the card's implementation file. Verify:
 
 **IMPORTANT: When claiming ANY mismatch between oracle text and code, you MUST quote both sides exactly:**
@@ -176,47 +134,48 @@ If you cannot produce both exact quotes, the mismatch is not verified and MUST N
 - [ ] Token creation includes correct subtypes via `create_token_with_subtypes`
 - [ ] triggered_abilities TriggerKind entries match EVERY implemented hook (on_blocks needs Blocks, on_upkeep needs Upkeep, etc.)
 
-### 8. Check test coverage
+### 7. Check test coverage
 Search for tests in `mtg-engine/tests/`. Check:
 - [ ] At least one test for the card's main effect
 - [ ] For targeted spells: fizzle test?
 - [ ] For "you may": declining test?
 - [ ] For triggers: test through trigger system?
 - [ ] For flashback: cast from graveyard + exiled after?
+- [ ] Is there a test for each ruling?
+- [ ] Is there a test for each tricky interaction?
+- [ ] Do tests verify mechanism, not just outcome?
+- [ ] Do any tests enshrine wrong behavior?
 
-### 9. Check UI presentation
+### 8. Check UI presentation
 - If the card involves choices, are they presented to the player?
 - Does the triggered ability description make sense on the stack?
+- Does the description of the cards make sense in the logs and on the stack?
 - Is the card in the LLM card knowledge section?
 
-### 10. Shortcut check
+### 9. Shortcut check
+
+Often implementations have been found to take shortcuts and not implement things correctly. All implementations should 'do the right thing' and implement the MTG rules exactly. There should be no kludges.
 **Known anti-patterns:**
 - `move_object(id, Zone::Graveyard)` instead of `move_spell_after_resolve(id)`
 - `CombatDamageDealt` for non-combat damage (should be `NonCombatDamageDealt`)
-- Auto-targeting "target player" without choice (must present choice)
 - `obj.power` instead of `state.effective_power(id, registry)`
 - `EffectScope::Global` when `GlobalOther` is needed (or vice versa)
 - Missing token subtypes (tokens need subtypes via `create_token_with_subtypes`)
 - Missing triggered_abilities declaration for an implemented hook
 - `try_destroy` when Oracle says "sacrifice" (or vice versa)
 - Human/subtype check only via registry, not also checking `obj.subtypes` (misses tokens)
+- Using menace for an effect that requires 2 blockers on a creature when the card does not mention menace.
 
-### 11. Verify test correctness
-For EXISTING tests:
-- [ ] Assertions match CURRENT Oracle text from Scryfall?
-- [ ] Tests verify mechanism, not just outcome?
-- [ ] Any tests that enshrine wrong behavior?
+### 10. Reconcile findings before writing
 
-### 12. Reconcile findings before writing
-
-Before writing anything, review every issue you flagged:
+Before writing your final report, review every issue you flagged:
 - Re-read your written-down oracle text from step 2.
 - For each flagged issue, confirm the discrepancy still holds by quoting the oracle text AND the code side by side.
 - Drop any issue where the quotes actually match or where you cannot produce an exact quote from the oracle text supporting the issue.
 - Check for **outdated rules** — if your issue depends on a rule that may have changed (e.g., planeswalker damage redirect removed in 2018, "Hound" → "Dog" errata, "dies" templating), verify the current rule applies.
 - If you corrected yourself during the audit (e.g., "actually, this is fine"), make sure the correction is reflected in your final status. Do NOT leave a stale ISSUE status from before the correction.
 
-### 13. Write audit log
+### 12. Write audit log
 **IMPORTANT**: After completing your audit, append your findings to the audit log file:
 
 For each card audited, append to `audits/{card_file_name}.md` (create if it doesn't exist):
@@ -235,11 +194,9 @@ For each card audited, append to `audits/{card_file_name}.md` (create if it does
 {If PASS, write "No issues found."}
 ```
 
-**If you do not have an external source citation, do NOT write the audit entry. Mark as SKIPPED instead.**
-
 Use the current date/time. Append — never overwrite previous audit entries.
 
-### 14. Final report
+### 13. Final report
 Output a structured report:
 
 ```
