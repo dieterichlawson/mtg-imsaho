@@ -19,7 +19,26 @@ python3 scripts/oracle_lookup.py lookup "Card Name"
 
 If the card is cached, output the cached data and you're done. The cache includes the source URL for verification.
 
-### Step 2: If not cached, fetch via WebSearch
+### Step 2: If not cached, try the Scryfall API directly
+
+```bash
+curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" \
+  -H "User-Agent: MTG-Imsaho/1.0" \
+  -H "Accept: application/json" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); print('Name:', d['name']); print('Cost:', d.get('mana_cost','')); print('Type:', d['type_line']); print('Oracle:', d.get('oracle_text','')); print('P/T:', d.get('power',''), '/', d.get('toughness',''))"
+```
+
+For DFCs, also check card_faces:
+```bash
+curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" \
+  -H "User-Agent: MTG-Imsaho/1.0" \
+  -H "Accept: application/json" \
+  | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'Face {i}: Name={f[\"name\"]}, Type={f.get(\"type_line\",\"\")}, Oracle={f.get(\"oracle_text\",\"\")}, P/T={f.get(\"power\",\"\")} / {f.get(\"toughness\",\"\")}') for i,f in enumerate(d.get('card_faces',[]))]"
+```
+
+Note: Both `User-Agent` and `Accept` headers are required by Scryfall's API — requests missing either will get 403'd. If curl fails (proxy block, network error), fall through to step 3.
+
+### Step 3: If API fails, fetch via WebSearch
 
 Search for the card's oracle text. Try in order:
 
