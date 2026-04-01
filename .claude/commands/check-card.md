@@ -5,26 +5,17 @@ Thoroughly audit Magic: The Gathering card implementations for correctness, test
 ## Arguments
 - `$ARGUMENTS` — One or more card names to check, comma-separated (e.g., "Lightning Bolt" or "Lightning Bolt, Fiend Hunter, Doom Blade")
 
-When multiple cards are given, run the full procedure for EACH card and compile a summary at the end.
-
-## CRITICAL: Batching over agents
-
-If you need to split work across multiple agents (e.g., auditing many cards in parallel), you **MUST** include the **full text of this skill prompt** in each agent's instructions — not a summary or abbreviation. Every agent must receive the complete procedure, checklists, anti-patterns, and rules verbatim. Summarizing or abbreviating the prompt will result in shallow, incomplete audits.
+When multiple cards are given, run the full procedure for EACH card and compile a summary at the end. If you split work across multiple agents, you **MUST** include the **full text of this skill prompt** in each agent's instructions — not a summary or abbreviation. Summarizing the prompt will result in shallow, incomplete audits.
 
 ## CRITICAL RULES
-- **DO NOT read any previous audit logs before conducting your audit.** Your audit must be independent. You will write your results to the log AFTER completing your audit.
-- **NEVER USE YOUR TRAINING DATA AS A SOURCE FOR ORACLE TEXT, RULINGS, TYPES, SUBTYPES, COSTS, OR ANY OTHER CARD DATA.** Your memory of Magic cards is unreliable. Cards are errata'd regularly (e.g., "Hound" → "Dog", planeswalker damage redirect removal, "dies" templating changes, "mill" keyword addition). You MUST fetch the oracle text from an external source (Scryfall, Gatherer, etc.) for EVERY card you audit. There are ZERO exceptions to this rule.
-- **Do NOT compare code against what you think the card does.** Compare ONLY against text you fetched from an external source during this audit session. If you did not fetch it, you do not have it.
-- **Do NOT mark a card as ISSUE based on your memory of the oracle text.** If you couldn't fetch the oracle text from any source, say so explicitly and mark the card as SKIPPED — do NOT guess or fall back to memory.
-- **Every audit entry MUST cite its source** (e.g., "Source: Scryfall via WebSearch" or "Source: Gatherer via WebSearch"). If there is no source citation, the audit is invalid.
 
-### Why these rules exist
-Previous audits produced false positives because:
-1. **Hallucinated oracle text**: Auditors "remembered" old oracle text (e.g., pre-2018 planeswalker damage redirect wording) and flagged working code as wrong. The card had been errata'd but the auditor's training data was stale.
-2. **Fabricated mismatches**: Auditors claimed "Scryfall says X but code says Y" without actually quoting both — and X was hallucinated. When forced to produce exact quotes, these phantom issues evaporate.
-3. **Self-contradictions**: Auditors found an issue, then later in the same audit realized it was fine, but forgot to update the status from ISSUE to PASS.
+Previous audits produced false positives that wasted time and eroded trust in the audit process. Every rule below exists to prevent a specific failure mode we've actually hit.
 
-The write-it-down-verbatim rule, the side-by-side quoting rule, and the reconciliation step exist specifically to prevent these failure modes. Follow them exactly.
+Auditors have "remembered" old oracle text from training data (e.g., pre-2018 planeswalker damage redirect wording) and flagged working code as wrong, when in fact the card had been errata'd and the auditor's memory was stale. To prevent this, you must **NEVER use your training data as a source for oracle text, rulings, types, subtypes, costs, or any other card data.** Cards are errata'd regularly ("Hound" to "Dog", "dies" templating changes, "mill" keyword addition). You must fetch the oracle text from an external source for every card you audit — there are zero exceptions. Do not compare code against what you think the card does; compare only against text you fetched during this audit session. If you did not fetch it, you do not have it. If you couldn't fetch oracle text from any source, mark the card as SKIPPED — do not guess or fall back to memory.
+
+Auditors have also claimed "Scryfall says X but code says Y" without actually quoting both sides, and X turned out to be hallucinated. When forced to produce exact quotes, these phantom issues evaporated. To prevent this, **when claiming any mismatch you must quote both sides exactly** — the oracle text and the code. If you cannot produce both exact quotes, the mismatch is not verified and must not be flagged.
+
+Finally, auditors have read old audit logs and been biased by prior findings instead of auditing independently. To prevent this, **do not read any previous audit logs before conducting your audit.** Your audit must be independent. You will write your results to the log after completing your audit.
 
 ## Procedure (repeat for each card)
 
@@ -102,11 +93,6 @@ This is the most important step. Consider:
 ### 6. Check the code
 Read the card's implementation file. Verify:
 
-**IMPORTANT: When claiming ANY mismatch between oracle text and code, you MUST quote both sides exactly:**
-- "Oracle text says: `{exact quote from your written-down oracle text}`"
-- "Code says: `{exact quote from the code}`"
-If you cannot produce both exact quotes, the mismatch is not verified and MUST NOT be flagged.
-
 **Card data (compare EXACTLY against your written-down oracle text from step 2):**
 - [ ] Mana cost matches (correct colors and generic amount)
 - [ ] Card types correct (Creature, Instant, Sorcery, Enchantment, Artifact, Land, Planeswalker)
@@ -154,7 +140,8 @@ Search for tests in `mtg-engine/tests/`. Check:
 
 ### 9. Shortcut check
 
-Often implementations have been found to take shortcuts and not implement things correctly. All implementations should 'do the right thing' and implement the MTG rules exactly. There should be no kludges.
+Often implementations have been found to take shortcuts and not implement things correctly. All implementations should 'do the right thing' and implement the MTG rules exactly. There should be no kludges or simplifications.
+
 **Known anti-patterns:**
 - `move_object(id, Zone::Graveyard)` instead of `move_spell_after_resolve(id)`
 - `CombatDamageDealt` for non-combat damage (should be `NonCombatDamageDealt`)
@@ -166,7 +153,7 @@ Often implementations have been found to take shortcuts and not implement things
 - Human/subtype check only via registry, not also checking `obj.subtypes` (misses tokens)
 - Using menace for an effect that requires 2 blockers on a creature when the card does not mention menace.
 
-### 10. Reconcile findings before writing
+### 10. Reconcile findings
 
 Before writing your final report, review every issue you flagged:
 - Re-read your written-down oracle text from step 2.
@@ -175,46 +162,33 @@ Before writing your final report, review every issue you flagged:
 - Check for **outdated rules** — if your issue depends on a rule that may have changed (e.g., planeswalker damage redirect removed in 2018, "Hound" → "Dog" errata, "dies" templating), verify the current rule applies.
 - If you corrected yourself during the audit (e.g., "actually, this is fine"), make sure the correction is reflected in your final status. Do NOT leave a stale ISSUE status from before the correction.
 
-### 12. Write audit log
-**IMPORTANT**: After completing your audit, append your findings to the audit log file:
+### 11. Write report
 
-For each card audited, append to `audits/{card_file_name}.md` (create if it doesn't exist):
-```markdown
-## Audit — {YYYY-MM-DD HH:MM}
-
-**Oracle text source**: {e.g., "Scryfall card page via WebSearch", "Gatherer via WebSearch", "Scryfall API via curl"}
-**Oracle text**: {exact text from external source}
-**Type line**: {exact type line from external source}
-**Status**: PASS / ISSUE / SKIPPED (if oracle text could not be obtained)
-
-{If ISSUE, for each issue provide:}
-{  - Description with file path and line number}
-{  - Oracle text says: `{exact quote from written-down oracle text}`}
-{  - Code does: `{exact quote or description of code behavior}`}
-{If PASS, write "No issues found."}
-```
+Write a single report that serves as both the audit log and the skill output. Append it to `audits/{card_file_name}.md` (create if it doesn't exist), and also output it to the user.
 
 Use the current date/time. Append — never overwrite previous audit entries.
 
-### 13. Final report
-Output a structured report:
+**If you do not have an external source citation, do NOT write the audit entry. Mark as SKIPPED instead.**
 
-```
-## Card: {name}
-**Set**: {set name}
-**Oracle text**: {current Oracle text from Scryfall}
-**Status**: CORRECT / NEEDS FIX / CRITICAL
+```markdown
+## Audit — {YYYY-MM-DD HH:MM}
 
-**Code issues**:
-- {issue 1}
-- {issue 2}
+**Oracle text source**: {e.g., "Oracle cache (Scryfall API)", "Scryfall via WebSearch"}
+**Oracle text**: {exact text from external source}
+**Type line**: {exact type line from external source}
+**Status**: PASS / ISSUE / SKIPPED
 
-**Tricky interactions checked**:
+### Code issues
+{If PASS, write "No issues found."}
+{If ISSUE, for each issue:}
+- {Description with file path and line number}
+  - Oracle text says: `{exact quote}`
+  - Code does: `{exact quote or description of code behavior}`
+
+### Tricky interactions checked
 - {interaction 1}: {pass/fail}
 
-**Test coverage**:
-- Existing tests: {list}
-- Missing tests: {list with descriptions}
-
-**Code quality**: {notes}
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- {ruling or interaction}: `test_file.rs:line_number` / NOT TESTED
 ```
