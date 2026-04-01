@@ -5,8 +5,8 @@ use crate::state::{GameState, LogLevel};
 use crate::types::*;
 
 /// Harvest Pyre — {1}{R} Instant.
-/// As an additional cost to cast Harvest Pyre, exile any number of cards from your graveyard.
-/// Harvest Pyre deals damage to target creature equal to the number of cards exiled this way.
+/// As an additional cost to cast this spell, exile X cards from your graveyard.
+/// Harvest Pyre deals X damage to target creature.
 pub struct HarvestPyre;
 
 impl CardBehavior for HarvestPyre {
@@ -22,11 +22,11 @@ impl CardBehavior for HarvestPyre {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "As an additional cost to cast Harvest Pyre, exile any number of cards from your graveyard.\nHarvest Pyre deals damage to target creature equal to the number of cards exiled this way.".into(),
+            oracle_text: "As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
-            additional_cost: None, // Engine doesn't enforce this yet; handled in on_resolve.
+            additional_cost: Some(crate::cards::AdditionalCost::ExileAllFromGraveyard),
             triggered_abilities: vec![],
         }
     }
@@ -36,25 +36,13 @@ impl CardBehavior for HarvestPyre {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-
-        // KNOWN LIMITATION: Oracle says "exile any number of cards" — the player
-        // should choose how many. The engine lacks a "choose a number" UI, so we
-        // exile all cards for maximum damage (the most common strategic choice).
-        let graveyard_cards: Vec<ObjectId> = state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.id != object_id)
-            .map(|o| o.id)
-            .collect();
-
-        let count = graveyard_cards.len() as u32;
-        for card_id in &graveyard_cards {
-            state.move_object(*card_id, Zone::Exile);
-        }
+        // The exile happened at cast time (additional cost). Read the count.
+        let count = state.get_object(object_id)
+            .and_then(|o| o.card_state.get("exile_count").copied())
+            .map(|id| id.0 as u32)
+            .unwrap_or(0);
 
         if count > 0 {
-            state.log(LogLevel::Event, format!("Harvest Pyre exiled {} cards from graveyard", count));
-
-            // Deal damage to the target creature.
             if let Some(Target::Object(target_id)) = targets.first() {
                 if let Some(obj) = state.get_object_mut(*target_id) {
                     if obj.zone == Zone::Battlefield {
@@ -70,8 +58,6 @@ impl CardBehavior for HarvestPyre {
                     }
                 }
             }
-        } else {
-            state.log(LogLevel::Event, "Harvest Pyre: no cards in graveyard to exile".into());
         }
 
         state.move_spell_after_resolve(object_id);

@@ -1284,6 +1284,30 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 }
             }
 
+            // Handle ExileAllFromGraveyard additional cost (Harvest Pyre).
+            {
+                use crate::cards::AdditionalCost;
+                let needs_exile_all = registry.get(card_id)
+                    .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::ExileAllFromGraveyard)))
+                    .unwrap_or(false);
+                if needs_exile_all {
+                    let graveyard_cards: Vec<ObjectId> = new_state.objects.values()
+                        .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id)
+                        .map(|o| o.id)
+                        .collect();
+                    let count = graveyard_cards.len();
+                    for card_id in &graveyard_cards {
+                        new_state.move_object(*card_id, Zone::Exile);
+                    }
+                    // Store the count on the spell for resolution.
+                    if let Some(obj) = new_state.get_object_mut(*object_id) {
+                        obj.card_state.insert("exile_count".into(), ObjectId(count as u64));
+                    }
+                    new_state.log(LogLevel::Event,
+                        format!("Exiled {} cards from graveyard as additional cost", count));
+                }
+            }
+
             // Move to stack and store targets.
             new_state.move_object(*object_id, Zone::Stack);
             {

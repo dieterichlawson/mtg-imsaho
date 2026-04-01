@@ -81,6 +81,9 @@ pub enum AdditionalCost {
     SacrificeCreature,
     /// Exile N creature cards from your graveyard (Makeshift Mauler, Stitched Drake).
     ExileCreaturesFromGraveyard(usize),
+    /// Exile all cards from your graveyard (Harvest Pyre). The count is stored
+    /// on the spell object's card_state as "exile_count" for use during resolution.
+    ExileAllFromGraveyard,
 }
 
 /// A non-mana activated ability definition.
