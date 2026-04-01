@@ -1,21 +1,15 @@
-# Audit: Somberwald Spider
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Somberwald Spider
-- **Cost:** {4}{G}
-- **Type:** Creature -- Spider
-- **Oracle:** Reach. Morbid -- When Somberwald Spider enters the battlefield, if a creature died this turn, put two +1/+1 counters on Somberwald Spider.
-- **P/T:** 2/4
+**Scryfall Oracle text**: Reach\nMorbid — When Somberwald Spider enters the battlefield, if a creature died this turn, put two +1/+1 counters on Somberwald Spider.
+**Scryfall type line**: Creature — Spider
+**Mana cost**: {4}{G}
+**P/T**: 2/4
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/somberwald_spider.rs`
-- **Name:** Somberwald Spider ✅
-- **Cost:** {4}{G} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Spider ✅
-- **P/T:** 2/4 ✅
-- **Keywords:** Reach ✅
-- **Triggered ability:** EntersBattlefield ✅
-- **Morbid check:** checks `state.creature_died_this_turn` ✅
-- **Counters:** adds 2 PlusOnePlusOne counters ✅
+Implementation correctly models:
+- Name, mana cost {4}{G}, type Creature, subtype Spider, P/T 2/4
+- Reach keyword
+- Morbid ETB: if `creature_died_this_turn`, adds 2 +1/+1 counters
+- Tests: `somberwald_spider_morbid_counters`, `somberwald_spider_no_morbid_no_counters` in card_mechanics.rs, and `somberwald_spider_has_reach` in innistrad_cards.rs
 
-## Verdict: PASS -- no issues found
+No issues found.

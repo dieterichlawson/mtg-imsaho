@@ -1,35 +1,18 @@
-# Audit: Villagers of Estwald // Howlpack of Estwald
+## Audit — 2026-04-01
 
-## Scryfall Reference
-### Front Face
-- **Name:** Villagers of Estwald
-- **Cost:** {2}{G}
-- **Type:** Creature — Human Werewolf
-- **Oracle:** At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
-- **P/T:** 2/3
+**Scryfall Oracle text (front)**: At the beginning of each upkeep, if no spells were cast last turn, transform Villagers of Estwald.
+**Scryfall Oracle text (back — Howlpack of Estwald)**: At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack of Estwald.
+**Scryfall type line**: Creature — Human Werewolf // Creature — Werewolf
+**Scryfall mana cost**: {2}{G}
+**Scryfall P/T**: 2/3 // 4/6
+**Status**: PASS
 
-### Back Face
-- **Name:** Howlpack of Estwald
-- **Cost:** *(none)*
-- **Type:** Creature — Werewolf
-- **Oracle:** At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
-- **P/T:** 4/6
+Findings:
+- Name: Correct ("Villagers of Estwald" / "Howlpack of Estwald").
+- Mana cost: {2}{G} — correct.
+- Types: Creature — Human Werewolf // Creature — Werewolf — correct.
+- P/T: 2/3 // 4/6 — correct. `dynamic_pt` returns (4,6) when transformed.
+- Transform logic: Standard werewolf pattern, correct.
+- Tests: `villagers_of_estwald_transforms_to_large_body` in werewolf_cards.rs.
 
-## Implementation: `mtg-engine/src/cards/villagers_of_estwald.rs`
-
-### Front Face
-- Name: "Villagers of Estwald" -- MATCH
-- Cost: {2}{G} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Human", "Werewolf"] -- MATCH
-- P/T: 2/3 -- MATCH
-- Trigger: Upkeep -- MATCH
-
-### Back Face
-- Name: "Howlpack of Estwald" -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Werewolf"] -- MATCH
-- P/T: 4/6 -- MATCH
-
-## Verdict
-**PASS** — Standard Innistrad werewolf, correctly implemented.
+No issues found.

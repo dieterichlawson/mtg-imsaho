@@ -1,17 +1,12 @@
-# Audit: Abbey Griffin
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Abbey Griffin
-- **Mana Cost:** {3}{W}
-- **Type:** Creature — Griffin
-- **Oracle:** Flying, vigilance
-- **P/T:** 2/2
+**Scryfall Oracle text**: Flying, vigilance
+**Scryfall type line**: Creature — Griffin
+**Status**: PASS
 
-## Implementation: `abbey_griffin.rs`
-- **Name:** Abbey Griffin -- CORRECT
-- **Mana Cost:** {3}{W} -- CORRECT
-- **Type:** Creature — Griffin -- CORRECT
-- **P/T:** 2/2 -- CORRECT
-- **Keywords:** Flying, Vigilance -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {3}{W}: correct
+- 2/2 stats: correct
+- Subtype Griffin: correct
+- Keywords Flying and Vigilance: correct
+- Simple vanilla creature with keywords, no abilities to implement
+- Test exists in innistrad_cards.rs

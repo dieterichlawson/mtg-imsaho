@@ -1,23 +1,16 @@
-# Audit: Kessig Wolf
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Kessig Wolf
-- **Cost:** {2}{R}
-- **Type:** Creature — Wolf
-- **Oracle:** {1}{R}: Kessig Wolf gains first strike until end of turn.
-- **P/T:** 3/1
+**Scryfall Oracle text**: {1}{R}: Kessig Wolf gains first strike until end of turn.
+**Scryfall type line**: Creature — Wolf
+**Status**: PASS
 
-## Implementation
-- Name: "Kessig Wolf" -- CORRECT
-- Cost: {2}{R} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Wolf"] -- CORRECT
-- P/T: 3/1 -- CORRECT
-- Oracle text matches -- CORRECT
-- Activated ability: {1}{R} cost, no tap required, grants first strike until end of turn -- CORRECT
-- Uses UntilEndOfTurnKeyword for first strike -- CORRECT
+- Name: Kessig Wolf -- correct
+- Cost: {2}{R} -- correct
+- Type: Creature -- correct
+- Subtypes: Wolf -- correct
+- P/T: 3/1 -- correct
+- Activated ability: {1}{R} for first strike until end of turn -- correctly implemented
+- Ability does not require tap -- correct
+- Tests: no dedicated test found but ability mechanics are standard
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

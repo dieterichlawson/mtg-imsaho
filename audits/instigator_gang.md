@@ -1,33 +1,20 @@
-# Audit: Instigator Gang // Wildblood Pack
+## Audit — 2026-04-01
 
-## Oracle (Official)
-### Front: Instigator Gang
-- **Cost:** {3}{R}
-- **Type:** Creature — Human Werewolf
-- **Oracle:** Attacking creatures you control get +1/+0. At the beginning of each upkeep, if no spells were cast last turn, transform Instigator Gang.
-- **P/T:** 2/3
+**Scryfall Oracle text**: (Front — Instigator Gang) Attacking creatures you control get +1/+0.
+At the beginning of each upkeep, if no spells were cast last turn, transform Instigator Gang.
+(Back — Wildblood Pack) Trample
+Attacking creatures you control get +3/+0.
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform Wildblood Pack.
+**Scryfall type line**: Creature — Human Werewolf // Creature — Werewolf
+**Status**: PASS
 
-### Back: Wildblood Pack
-- **Type:** Creature — Werewolf
-- **Oracle:** Trample. Attacking creatures you control get +3/+0. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Wildblood Pack.
-- **P/T:** 5/5
-
-## Implementation
-- Front name: "Instigator Gang" -- CORRECT
-- Front cost: {3}{R} -- CORRECT
-- Front subtypes: ["Human", "Werewolf"] -- CORRECT
-- Front P/T: 2/3 -- CORRECT
-- Front oracle text matches -- CORRECT
-- Back name: "Wildblood Pack" -- CORRECT
-- Back subtypes: ["Werewolf"] -- CORRECT
-- Back P/T: 5/5 (via dynamic_pt) -- CORRECT
-- Back keywords: [Trample] -- CORRECT
-- Back oracle text matches -- CORRECT
-- Transform logic: no spells -> transform to back; any player 2+ spells -> transform to front -- CORRECT
-- Attacking creatures buff: +1/+0 (front) or +3/+0 (back) via on_any_creature_attacks -- CORRECT
-- Uses UntilEndOfTurnEffect for power bonus -- CORRECT
-
-## Issues
-None.
-
-## Verdict: PASS
+- Mana cost {3}{R}: correct
+- Front face 2/3: correct
+- Front face subtypes Human Werewolf: correct
+- Front face: attacking creatures get +1/+0: correct (via on_any_creature_attacks with bonus=1)
+- Back face name "Wildblood Pack": correct
+- Back face 5/5: correct
+- Back face keyword Trample: correct
+- Back face: attacking creatures get +3/+0: correct (bonus=3 when transformed)
+- Werewolf transform logic: correct
+- Tests exist in werewolf_cards.rs

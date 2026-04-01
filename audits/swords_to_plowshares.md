@@ -1,21 +1,15 @@
-# Audit: Swords to Plowshares
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Swords to Plowshares
-- **Cost:** {W}
-- **Type:** Instant
-- **Oracle:** Exile target creature. Its controller gains life equal to its power.
-- **P/T:** N/A
+**Scryfall Oracle text**: Exile target creature. Its controller gains life equal to its power.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/swords_to_plowshares.rs`
-- **Name:** Swords to Plowshares ✅
-- **Cost:** {W} ✅
-- **Type:** Instant ✅
-- **Target:** TargetRequirement::Creature ✅
-- **on_resolve:** exiles target creature from battlefield ✅
-- **Life gain:** uses effective_power (accounts for buffs/counters), controller gains that much life ✅
-- **Power floor:** .max(0) prevents negative power from causing life loss ✅
-- **Events:** emits LifeChanged event ✅
-- **Spell cleanup:** move_spell_after_resolve ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Swords to Plowshares")
+- Cost: {W} -- correct
+- Type: Instant -- correct
+- Target: TargetRequirement::Creature -- correct
+- Implementation exiles the creature and grants life equal to its effective power to the creature's controller (not the caster) -- correct
+- Uses `effective_power` which accounts for buffs/counters -- correct
+- Life gain skipped if power <= 0 -- correct (you can't gain negative life)
+- Tests exist in `spells.rs`, `fizzle.rs`, `spell_fizzle.rs`
+- No issues found

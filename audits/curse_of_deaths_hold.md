@@ -1,21 +1,18 @@
-# Audit: Curse of Death's Hold
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Curse of Death's Hold
-- **Cost:** {3}{B}{B}
-- **Type:** Enchantment -- Aura Curse
-- **Oracle:** Enchant player. Creatures enchanted player controls get -1/-1.
-- **P/T:** N/A
-- **Keywords:** Enchant
+**Scryfall Oracle text**: Enchant player
+Creatures enchanted player controls get -1/-1.
+**Scryfall type line**: Enchantment — Aura Curse
+**Status**: PASS
 
-## Implementation: `curse_of_deaths_hold.rs`
-- **Name:** Curse of Death's Hold -- CORRECT
-- **Cost:** {3}{B}{B} -- CORRECT
-- **Type:** Enchantment -- CORRECT
-- **Subtypes:** ["Aura", "Curse"] -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Target:** TargetRequirement::PlayerOnly -- CORRECT
-- **Continuous effect:** ModifyPT { power: -1, toughness: -1, scope: Global(AttachedPlayer) } -- CORRECT
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name, cost ({3}{B}{B}), type (Enchantment), subtypes (Aura, Curse) all match.
+
+2. **Continuous effect correct**: `ModifyPT { power: -1, toughness: -1, scope: EffectScope::Global(CreatureFilter::AttachedPlayer) }` correctly debuffs all creatures controlled by the enchanted player.
+
+3. **Target requirement correct**: `PlayerOnly` matches "Enchant player."
+
+4. **Resolve correct**: Uses `resolve_curse` helper.
+
+5. **Tests**: No dedicated tests found.

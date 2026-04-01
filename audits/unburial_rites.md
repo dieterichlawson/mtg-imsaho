@@ -1,20 +1,18 @@
-# Audit: Unburial Rites
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Unburial Rites
-- **Cost:** {4}{B}
-- **Type:** Sorcery
-- **Oracle:** Return target creature card from your graveyard to the battlefield. Flashback {3}{W}
-- **P/T:** N/A
+**Scryfall Oracle text**: Return target creature card from your graveyard to the battlefield.\nFlashback {3}{W}
+**Scryfall type line**: Sorcery
+**Scryfall mana cost**: {4}{B}
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/unburial_rites.rs`
-- Name: "Unburial Rites" -- MATCH
-- Cost: {4}{B} -- MATCH
-- Types: Sorcery -- MATCH
-- Flashback: {3}{W} -- MATCH
-- Behavior: Returns a creature card from graveyard to battlefield -- MATCH
-- Handles single vs. multiple choices -- CORRECT
-- Uses PendingEffect::ReturnToBattlefield for multi-choice -- CORRECT
+Findings:
+- Name: Correct.
+- Mana cost: {4}{B} — correct (Generic(4), Black).
+- Type: Sorcery — correct.
+- Oracle text: Matches.
+- Flashback cost: {3}{W} — correct (Generic(3), White).
+- Resolution: Finds creature cards in controller's graveyard, moves to battlefield. Handles single target auto-selection and multi-target player choice. Correct.
+- Targeting: Uses `o.power.is_some()` as creature heuristic, which is reasonable.
+- Tests: `unburial_rites_returns_creature` in flashback.rs, `unburial_rites_choice_with_multiple_creatures` in card_mechanics.rs.
 
-## Verdict
-**PASS** — Correctly implements reanimation with flashback.
+No issues found.

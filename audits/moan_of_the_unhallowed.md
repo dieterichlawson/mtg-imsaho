@@ -1,17 +1,15 @@
-# Audit: Moan of the Unhallowed
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Moan of the Unhallowed
-- **Cost:** {2}{B}{B}
-- **Type:** Sorcery
-- **Oracle:** Create two 2/2 black Zombie creature tokens. Flashback {5}{B}{B}
+**Scryfall Oracle text**: Create two 2/2 black Zombie creature tokens.\nFlashback {5}{B}{B}
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/moan_of_the_unhallowed.rs`
-- **Name:** Moan of the Unhallowed -- CORRECT
-- **Cost:** {2}{B}{B} -- CORRECT
-- **Type:** Sorcery -- CORRECT
-- **Flashback:** {5}{B}{B} -- CORRECT
-- **on_resolve:** Creates two 2/2 black Zombie tokens with "Zombie" subtype -- CORRECT
+- Name: Moan of the Unhallowed -- correct
+- Cost: {2}{B}{B} -- correct
+- Type: Sorcery -- correct
+- Effect: creates two 2/2 black Zombie creature tokens -- correctly implemented
+- Flashback: {5}{B}{B} -- correctly implemented
+- Tokens have correct stats (2/2), color (black), type (Creature), subtype (Zombie) -- correct
+- Tests: no dedicated test found, but implementation is straightforward
 
-## Verdict
-**PASS** -- No issues found.
+No issues found. Implementation matches Oracle text.

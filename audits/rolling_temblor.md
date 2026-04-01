@@ -1,24 +1,15 @@
-# Audit: Rolling Temblor
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Rolling Temblor
-- **Cost:** {2}{R}
-- **Type:** Sorcery
-- **Oracle Text:** Rolling Temblor deals 2 damage to each creature without flying.\nFlashback {4}{R}{R}
-- **P/T:** N/A
+**Scryfall Oracle text**: Rolling Temblor deals 2 damage to each creature without flying.\nFlashback {4}{R}{R}
+**Scryfall type line**: Sorcery
+**Mana cost**: {2}{R}
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2}{R} — OK
-- **Type:** Sorcery — OK
-- **Oracle Text:** "Rolling Temblor deals 2 damage to each creature without flying." — OK (flashback in separate field)
-- **Flashback Cost:** {4}{R}{R} — OK
-- **P/T:** N/A — OK
-- **on_resolve:** Iterates all battlefield creatures, skips those with Flying keyword, marks 2 damage, emits NonCombatDamageDealt event — OK
-- **NonCombatDamageDealt:** Correctly emitted for each damaged creature — OK
-- **Flying check:** uses state.has_keyword which checks both static and granted keywords — OK
+Implementation correctly models:
+- Name, mana cost {2}{R}, type Sorcery
+- Deals 2 damage to each creature without flying (checks `has_keyword(Keyword::Flying)`)
+- Flashback cost {4}{R}{R}
+- Properly emits NonCombatDamageDealt events
+- Tests: `rolling_temblor_damages_non_flyers` in flashback.rs
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

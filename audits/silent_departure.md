@@ -1,20 +1,15 @@
-# Audit: Silent Departure
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Silent Departure
-- **Cost:** {U}
-- **Type:** Sorcery
-- **Oracle:** Return target creature to its owner's hand. Flashback {4}{U}
-- **P/T:** N/A
+**Scryfall Oracle text**: Return target creature to its owner's hand.\nFlashback {4}{U}
+**Scryfall type line**: Sorcery
+**Mana cost**: {U}
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/silent_departure.rs`
-- **Name:** Silent Departure ✅
-- **Cost:** {U} ✅
-- **Type:** Sorcery ✅
-- **Oracle text:** matches ✅
-- **Target:** TargetRequirement::Creature ✅
-- **on_resolve:** returns target creature to hand, checks zone is battlefield ✅
-- **Flashback:** {4}{U} ✅
-- **Spell cleanup:** move_spell_after_resolve ✅
+Implementation correctly models:
+- Name, mana cost {U}, type Sorcery
+- Target requirement: Creature
+- Resolution returns target creature to hand (owner's hand via zone move)
+- Flashback {4}{U}
+- Tests: `silent_departure_bounces_creature` in tier2_spells.rs
 
-## Verdict: PASS -- no issues found
+No issues found.

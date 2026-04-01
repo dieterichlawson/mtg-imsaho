@@ -1,22 +1,16 @@
-# Audit: Clifftop Retreat
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Clifftop Retreat
-- **Cost:** (none)
-- **Type:** Land
-- **Oracle:** This land enters tapped unless you control a Mountain or a Plains. {T}: Add {R} or {W}.
-- **P/T:** N/A
-- **Keywords:** none
+**Scryfall Oracle text**: Clifftop Retreat enters the battlefield tapped unless you control a Mountain or a Plains.
+{T}: Add {R} or {W}.
+**Scryfall type line**: Land
+**Status**: PASS
 
-## Implementation: `clifftop_retreat.rs`
-- **Name:** Clifftop Retreat -- CORRECT
-- **Cost:** None -- CORRECT
-- **Type:** Land -- CORRECT
-- **Subtypes:** none -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Keywords:** none -- CORRECT
-- **ETB check:** Checks for Mountain or Plains subtypes on other lands -- CORRECT
-- **Mana abilities:** Add {R} or {W} -- CORRECT
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name, no mana cost (land), type (Land), no subtypes, no P/T.
+
+2. **ETB tapped logic correct**: Checks if controller has a Mountain or Plains (by subtype), correctly excludes self from the check (line 21: `o.id != object_id`).
+
+3. **Mana abilities correct**: Produces {R} or {W}, requires tap.
+
+4. **Tests**: No dedicated tests found.

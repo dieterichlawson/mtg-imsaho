@@ -1,23 +1,15 @@
-# Audit: Disciple of Griselbrand
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Disciple of Griselbrand
-- **Cost:** {1}{B}
-- **Type:** Creature -- Human Cleric
-- **Oracle:** {1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.
-- **P/T:** 1/1
+**Scryfall Oracle text**: {1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.
+**Scryfall type line**: Creature — Human Cleric
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({1}{B})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Human, Cleric)
-- Oracle text: CORRECT
-- P/T: CORRECT (1/1)
-- Activated ability cost {1}: CORRECT
-- Sacrifice a creature cost: CORRECT (SacrificeCost::SacrificeCreature)
-- requires_tap: CORRECT (false)
-- Life gain equals sacrificed creature's toughness: CORRECT (reads from CreatureDied event)
-
-## Issues
-None found.
+- Mana cost {1}{B}: correct.
+- Type Creature, subtypes Human Cleric: correct.
+- Power/Toughness 1/1: correct.
+- Activated ability cost {1} + sacrifice a creature: correct.
+- Uses `SacrificeCost::SacrificeCost::SacrificeCreature`: correct.
+- Life gain reads toughness from `CreatureDied` event: reasonable approach.
+- Life change event emitted: correct.
+- `requires_tap: false`: correct (no tap in cost).
+- Tests exist in `tier8_cards.rs` (`disciple_of_griselbrand_gains_life`).

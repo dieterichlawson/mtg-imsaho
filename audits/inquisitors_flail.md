@@ -1,23 +1,14 @@
-# Audit: Inquisitor's Flail
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Inquisitor's Flail
-- **Cost:** {2}
-- **Type:** Artifact — Equipment
-- **Oracle:** If equipped creature would deal combat damage, it deals double that damage instead. If another source would deal combat damage to equipped creature, it deals double that damage to equipped creature instead. Equip {2}
-- **P/T:** N/A
+**Scryfall Oracle text**: If equipped creature would deal combat damage, it deals double that damage instead.
+If another source would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.
+Equip {2}
+**Scryfall type line**: Artifact — Equipment
+**Status**: ISSUE
 
-## Implementation
-- Name: "Inquisitor's Flail" -- CORRECT
-- Cost: {2} -- CORRECT
-- Type: Artifact -- CORRECT
-- Subtypes: ["Equipment"] -- CORRECT
-- Equip {2}, sorcery speed, targets creature you control -- CORRECT
-- Oracle text: says "another creature" in code comment but oracle says "another source" -- the oracle_text string in code is correct
-
-## Issues
-1. **ISSUE (simplification):** Offensive double damage is approximated by granting +P/+0 equal to creature's effective power via `dynamic_pt`. This is an approximation rather than a true damage replacement effect. The comment acknowledges this.
-2. **ISSUE (missing):** Defensive doubling (equipped creature takes double combat damage from other sources) is NOT implemented. Comment acknowledges this.
-3. **ISSUE (minor):** The `dynamic_pt` approach means the power bonus is visible outside combat, which could affect other game interactions differently than the real card.
-
-## Verdict: PASS (with noted simplifications)
+- Mana cost {2}: correct
+- Card types Artifact, subtype Equipment: correct
+- Equip {2}: correct (sorcery speed, targets creature)
+- ISSUE: The double-damage replacement effect is approximated by granting +P/+0 equal to the creature's power via dynamic_pt. This is not equivalent to doubling combat damage: (1) it changes the creature's actual power, which affects fight effects and other power-referencing abilities, not just combat damage; (2) it doesn't account for additional damage modifications that happen after power is calculated; (3) it's applied on the Equipment's dynamic_pt rather than the creature's, which is unusual.
+- ISSUE: The defensive half (taking double combat damage) is not implemented at all, as noted in the comments.
+- Tests exist in tier9_cards.rs covering card data, power doubling, and equip ability

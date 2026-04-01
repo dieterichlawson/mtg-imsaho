@@ -1,19 +1,11 @@
-# Audit: Fortress Crab
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Fortress Crab
-- **Cost:** {3}{U}
-- **Type:** Creature -- Crab
-- **Oracle:** (none -- vanilla creature)
-- **P/T:** 1/6
+**Scryfall Oracle text**: (none — vanilla creature)
+**Scryfall type line**: Creature — Crab
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({3}{U})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Crab)
-- Oracle text: CORRECT (empty string)
-- P/T: CORRECT (1/6)
-
-## Issues
-None found.
+- Mana cost {3}{U}: correct.
+- Type Creature, subtype Crab: correct.
+- Power/Toughness 1/6: correct.
+- Vanilla creature (no abilities, no keywords): correct.
+- Tests exist in `innistrad_cards.rs` (`fortress_crab_is_1_6`).

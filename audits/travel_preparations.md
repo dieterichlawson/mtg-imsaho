@@ -1,19 +1,15 @@
-# Audit: Travel Preparations
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Travel Preparations
-- **Cost:** {1}{G}
-- **Type:** Sorcery
-- **Oracle:** Put a +1/+1 counter on each of up to two target creatures. Flashback {1}{W}
-- **P/T:** N/A
+**Scryfall Oracle text**: Put a +1/+1 counter on each of up to two target creatures.\nFlashback {1}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/travel_preparations.rs`
-- Name: "Travel Preparations" -- MATCH
-- Cost: {1}{G} -- MATCH
-- Types: Sorcery -- MATCH
-- Flashback: {1}{W} -- MATCH
-- Target: UpToTargets(2, Creature) -- MATCH
-- Behavior: Puts +1/+1 counter on each target creature on the battlefield -- MATCH
-
-## Verdict
-**PASS** — Correctly implemented with flashback.
+- Name: correct ("Travel Preparations")
+- Cost: {1}{G} -- correct
+- Type: Sorcery -- correct
+- Oracle text: matches
+- Flashback cost: {1}{W} -- correct
+- Target: UpToTargets(2, Creature) -- correct (up to two target creatures)
+- On resolve: puts a +1/+1 counter on each target that is still on the battlefield -- correct
+- Tests exist in `flashback.rs`
+- No issues found

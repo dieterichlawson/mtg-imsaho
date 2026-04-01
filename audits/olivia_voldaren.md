@@ -1,34 +1,19 @@
-# Audit: Olivia Voldaren
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Olivia Voldaren
-- **Cost:** {2}{B}{R}
-- **Type:** Legendary Creature — Vampire
-- **Oracle:** Flying. {1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren. {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
-- **P/T:** 3/3
+**Scryfall Oracle text**: Flying\n{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.\n{3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
+**Scryfall type line**: Legendary Creature — Vampire
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/olivia_voldaren.rs`
-- **Name:** Olivia Voldaren -- CORRECT
-- **Cost:** {2}{B}{R} -- CORRECT
-- **Type:** Creature, Legendary -- CORRECT
-- **Subtypes:** Vampire -- CORRECT
-- **P/T:** 3/3 -- CORRECT
-- **Keywords:** Flying -- CORRECT
+- Name: Correct ("Olivia Voldaren")
+- Cost: {2}{B}{R} - Correct
+- Type: Legendary Creature — Vampire - Correct (supertypes: [Legendary])
+- P/T: 3/3 - Correct
+- Keywords: Flying - Correct
+- Ability 0 ({1}{R}): Deals 1 damage to another target creature, makes it a Vampire, puts +1/+1 counter on Olivia. Implementation checks `target_id == object_id` to enforce "another". Correct.
 
-### Ability 0: {1}{R} ping
-- **Cost:** {1}{R} -- CORRECT
-- **Targets:** Another creature -- CORRECT (enforced in on_activate_ability with self-check)
-- **Effect:** 1 damage, makes Vampire, +1/+1 counter on Olivia -- CORRECT
-- **NonCombatDamageDealt event:** Emitted -- CORRECT
-- **damaged_by tracking:** Added -- CORRECT
+Issues:
+1. **Ability 1 target filter incorrect**: The second ability ({3}{B}{B}: Gain control of target Vampire) uses `TargetFilter::Any` instead of filtering for Vampires only. While the on_activate_ability checks for Vampire subtype before executing, the ability should only allow targeting Vampires in the first place. A player could waste mana activating it on a non-Vampire and get no effect.
+2. **Control effect duration**: Oracle says "for as long as you control Olivia Voldaren" but the implementation grants permanent control change without tracking that Olivia must remain on the battlefield. If Olivia leaves, the control should revert.
+3. **Oracle text mismatch**: The implementation's oracle_text says "Gain control of target Vampire." but Oracle text says "Gain control of target Vampire for as long as you control Olivia Voldaren."
 
-### Ability 1: {3}{B}{B} steal
-- **Cost:** {3}{B}{B} -- CORRECT
-- **Target:** Vampire creature -- CORRECT (checked in on_activate_ability)
-
-## Issues
-1. **Control duration missing:** Oracle says "Gain control of target Vampire **for as long as you control Olivia Voldaren**." The implementation changes controller permanently without the "for as long as" condition. If Olivia leaves the battlefield, the stolen creature should revert to its original controller.
-2. **Ability 1 target filter too broad:** The activated ability definition uses `TargetFilter::Any` for ability 1 but should filter to Vampires only. The Vampire check is only in on_activate_ability, which means the AI may try to target non-Vampires and waste the activation.
-
-## Verdict
-**FAIL** -- 2 issues: (1) Steal effect should end when Olivia leaves; (2) Ability 1 target filter should be Vampire-only.
+- Tests: No dedicated Olivia Voldaren test file found.

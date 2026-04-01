@@ -1,23 +1,16 @@
-# Audit: Elder of Laurels
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Elder of Laurels
-- **Cost:** {2}{G}
-- **Type:** Creature -- Human Advisor
-- **Oracle:** {3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.
-- **P/T:** 2/3
+**Scryfall Oracle text**: {3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.
+**Scryfall type line**: Creature — Human Advisor
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({2}{G})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Human, Advisor)
-- Oracle text: CORRECT
-- P/T: CORRECT (2/3)
-- Activated ability cost: CORRECT ({3}{G})
-- requires_tap: CORRECT (false)
-- Target creature: CORRECT (TargetRequirement::Creature)
-- +X/+X where X = creatures you control: CORRECT (counts creatures on battlefield under controller)
-
-## Issues
-None found.
+- Mana cost {2}{G}: correct.
+- Type Creature, subtypes Human Advisor: correct.
+- Power/Toughness 2/3: correct.
+- Activated ability cost {3}{G}: correct.
+- Targets any creature (TargetRequirement::Creature): correct.
+- X = number of creatures you control: correct (counts by `power.is_some()`).
+- Applies as UntilEndOfTurnEffect with power_mod and toughness_mod: correct.
+- `requires_tap: false`: correct (no tap in cost).
+- Only available on battlefield: correct.
+- Tests exist in `tier10_cards.rs` (`elder_of_laurels_card_data`, `elder_of_laurels_pumps_by_creature_count`).

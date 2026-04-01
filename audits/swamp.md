@@ -1,20 +1,14 @@
-# Audit: Swamp
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Swamp
-- **Cost:** N/A (Land)
-- **Type:** Basic Land -- Swamp
-- **Oracle:** ({T}: Add {B}.)
-- **P/T:** N/A
+**Scryfall Oracle text**: ({T}: Add {B}.)
+**Scryfall type line**: Basic Land — Swamp
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/swamp.rs`
-- **Name:** Swamp ✅
-- **Cost:** None ✅
-- **Type:** Land ✅
-- **Supertypes:** Basic ✅
-- **Subtypes:** Swamp ✅
-- **Mana ability:** {T}: Add {B} ✅
-- **requires_tap:** true ✅
-- **Zone check:** only when on battlefield and untapped ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Swamp")
+- Cost: None (land) -- correct
+- Type: Land -- correct
+- Supertypes: Basic -- correct
+- Subtypes: Swamp -- correct
+- Mana ability: {T}: Add {B} -- correct
+- Standard basic land implementation, no issues
+- No dedicated tests found but used extensively across the test suite

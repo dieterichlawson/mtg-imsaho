@@ -1,21 +1,13 @@
-# Audit: Coral Merfolk
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Coral Merfolk
-- **Cost:** {1}{U}
-- **Type:** Creature -- Merfolk
-- **Oracle:** (none - vanilla)
-- **P/T:** 2/1
-- **Keywords:** none
+**Scryfall Oracle text**: *(no oracle text — vanilla creature)*
+**Scryfall type line**: Creature — Merfolk
+**Status**: PASS
 
-## Implementation: `coral_merfolk.rs`
-- **Name:** Coral Merfolk -- CORRECT
-- **Cost:** {1}{U} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** ["Merfolk"] -- CORRECT
-- **P/T:** 2/1 -- CORRECT
-- **Keywords:** none -- CORRECT
-- **Oracle text:** "" -- CORRECT (vanilla)
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name ("Coral Merfolk"), cost ({1}{U}), type (Creature), subtype (Merfolk), P/T (2/1) all match Oracle.
+
+2. **Vanilla creature**: Correctly has no abilities, no keywords, empty oracle text.
+
+3. **Tests**: No dedicated tests found.

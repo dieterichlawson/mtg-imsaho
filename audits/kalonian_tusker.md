@@ -1,21 +1,15 @@
-# Audit: Kalonian Tusker
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Kalonian Tusker
-- **Cost:** {G}{G}
-- **Type:** Creature — Beast
-- **Oracle:** (vanilla — no oracle text)
-- **P/T:** 3/3
+**Scryfall Oracle text**: *(no oracle text - vanilla creature)*
+**Scryfall type line**: Creature — Beast
+**Status**: PASS
 
-## Implementation
-- Name: "Kalonian Tusker" -- CORRECT
-- Cost: {G}{G} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Beast"] -- CORRECT
-- P/T: 3/3 -- CORRECT
-- Oracle text: empty string -- CORRECT (vanilla creature)
+- Name: Kalonian Tusker -- correct
+- Cost: {G}{G} -- correct
+- Type: Creature -- correct
+- Subtypes: Beast -- correct
+- P/T: 3/3 -- correct
+- No abilities (vanilla) -- correct
+- Tests exist in innistrad_cards.rs
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

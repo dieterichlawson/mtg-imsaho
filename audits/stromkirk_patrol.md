@@ -1,19 +1,14 @@
-# Audit: Stromkirk Patrol
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Stromkirk Patrol
-- **Cost:** {4}{B}
-- **Type:** Creature -- Vampire Soldier
-- **Oracle:** Whenever Stromkirk Patrol deals combat damage to a player, put a +1/+1 counter on it.
-- **P/T:** 4/3
+**Scryfall Oracle text**: Whenever Stromkirk Patrol deals combat damage to a player, put a +1/+1 counter on it.
+**Scryfall type line**: Creature — Vampire Soldier
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/stromkirk_patrol.rs`
-- **Name:** Stromkirk Patrol ✅
-- **Cost:** {4}{B} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Vampire, Soldier ✅
-- **P/T:** 4/3 ✅
-- **Triggered ability:** CombatDamageToPlayer ✅
-- **on_combat_damage_to_player:** adds +1/+1 counter, checks zone ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Stromkirk Patrol")
+- Cost: {4}{B} -- correct
+- Type: Creature -- correct
+- Subtypes: Vampire, Soldier -- correct
+- P/T: 4/3 -- correct (Scryfall confirms 4/3 not 4/2)
+- Combat damage trigger: adds +1/+1 counter via `on_combat_damage_to_player` -- correct
+- Tests exist in `tier6_cards.rs`
+- No issues found

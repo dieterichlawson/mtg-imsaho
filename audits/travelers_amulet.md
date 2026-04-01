@@ -1,19 +1,15 @@
-# Audit: Traveler's Amulet
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Traveler's Amulet
-- **Cost:** {1}
-- **Type:** Artifact
-- **Oracle:** {1}, Sacrifice this artifact: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.
-- **P/T:** N/A
+**Scryfall Oracle text**: {1}, Sacrifice Traveler's Amulet: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.
+**Scryfall type line**: Artifact
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/travelers_amulet.rs`
-- Name: "Traveler's Amulet" -- MATCH
-- Cost: {1} -- MATCH
-- Types: Artifact -- MATCH
-- Activated ability: {1}, sacrifice this -- MATCH
-- Behavior: Searches library for basic land (CardType::Land + Supertype::Basic), puts into hand -- MATCH
-- Shuffle noted as no-op (engine limitation) -- OK
-
-## Verdict
-**PASS** — Correctly implemented.
+- Name: correct ("Traveler's Amulet")
+- Cost: {1} -- correct
+- Type: Artifact -- correct
+- Activated ability: {1}, Sacrifice -- correct (SacrificeCost::SacrificeThis, no tap required)
+- Searches library for a basic land (checks CardType::Land and Supertype::Basic) -- correct
+- Puts the land into hand -- correct
+- Shuffle noted as no-op in engine (acceptable engine limitation)
+- Tests exist in `tier9_cards.rs`
+- No issues found

@@ -1,22 +1,15 @@
-# Audit: Darkthicket Wolf
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Darkthicket Wolf
-- **Cost:** {1}{G}
-- **Type:** Creature -- Wolf
-- **Oracle:** {2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.
-- **P/T:** 2/2
-- **Keywords:** none
+**Scryfall Oracle text**: {2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. Activate only once each turn.
+**Scryfall type line**: Creature — Wolf
+**Status**: PASS
 
-## Implementation: `darkthicket_wolf.rs`
-- **Name:** Darkthicket Wolf -- CORRECT
-- **Cost:** {1}{G} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** ["Wolf"] -- CORRECT
-- **P/T:** 2/2 -- CORRECT
-- **Keywords:** none -- CORRECT
-- **Activated ability:** {2}{G}: +2/+2 until end of turn -- CORRECT
-- **Once per turn:** true -- CORRECT
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name, cost ({1}{G}), type (Creature), subtype (Wolf), P/T (2/2) all match.
+
+2. **Activated ability correct**: Cost {2}{G}, no tap required, `once_per_turn: true` matches "Activate only once each turn."
+
+3. **Effect correct**: +2/+2 until end of turn via `UntilEndOfTurnEffect`.
+
+4. **Tests**: No dedicated tests found.

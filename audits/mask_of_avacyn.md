@@ -1,20 +1,17 @@
-# Audit: Mask of Avacyn
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Mask of Avacyn
-- **Cost:** {2}
-- **Type:** Artifact — Equipment
-- **Oracle:** Equipped creature gets +1/+2 and has hexproof. Equip {3}
+**Scryfall Oracle text**: Equipped creature gets +1/+2 and has hexproof.\nEquip {3}
+**Scryfall type line**: Artifact — Equipment
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/mask_of_avacyn.rs`
-- **Name:** Mask of Avacyn -- CORRECT
-- **Cost:** {2} -- CORRECT
-- **Type:** Artifact -- CORRECT
-- **Subtypes:** Equipment -- CORRECT
-- **Oracle text:** Equipped creature gets +1/+2 and has hexproof. Equip {3} -- CORRECT
-- **Continuous effects:** ModifyPT +1/+2 Attached, GrantKeyword Hexproof Attached -- CORRECT
-- **Equip cost:** {3}, sorcery speed, targets creature you control -- CORRECT
-- **on_resolve:** Moves to battlefield, sets is_equipment -- CORRECT
+- Name: Mask of Avacyn -- correct
+- Cost: {2} -- correct
+- Type: Artifact -- correct
+- Subtypes: Equipment -- correct
+- Continuous effects: +1/+2 and hexproof to equipped creature (Attached scope) -- correct
+- Equip cost: {3} -- correct
+- Equip is sorcery speed -- correct
+- Target validation: own creatures only -- correct
+- Tests exist in tier9_equipment.rs
 
-## Verdict
-**PASS** -- No issues found.
+No issues found. Implementation matches Oracle text.

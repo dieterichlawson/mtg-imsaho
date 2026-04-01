@@ -1,20 +1,16 @@
-# Audit: Abattoir Ghoul
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Abattoir Ghoul
-- **Mana Cost:** {3}{B}
-- **Type:** Creature — Zombie
-- **Oracle:** First strike. Whenever a creature dealt damage by Abattoir Ghoul this turn dies, you gain life equal to that creature's toughness.
-- **P/T:** 3/2
+**Scryfall Oracle text**: First strike
+Whenever a creature dealt damage by Abattoir Ghoul this turn dies, you gain life equal to that creature's toughness.
+**Scryfall type line**: Creature — Zombie
+**Status**: PASS
 
-## Implementation: `abattoir_ghoul.rs`
-- **Name:** Abattoir Ghoul -- CORRECT
-- **Mana Cost:** {3}{B} -- CORRECT
-- **Type:** Creature — Zombie -- CORRECT
-- **P/T:** 3/2 -- CORRECT
-- **Keywords:** FirstStrike -- CORRECT
-- **Triggered ability:** AnyCreatureDies, checks `dead_damaged_by.contains(&self_id)` -- CORRECT
-- **Life gain:** Uses `dead_toughness` (last-known information) -- CORRECT
-- **NonCombatDamageDealt:** N/A (life gain, not damage)
-
-## Verdict: PASS -- No issues found
+- Mana cost {3}{B}: correct
+- 3/2 stats: correct
+- Subtype Zombie: correct
+- Keyword FirstStrike: correct
+- Triggered ability uses TriggerKind::AnyCreatureDies: correct
+- on_any_creature_dies checks dead_damaged_by.contains(&self_id): correct
+- Life gain uses dead_toughness (last-known information): correct
+- Life gain emits LifeChanged event: correct
+- Tests exist in tier6_cards.rs covering life gain, no-gain-if-not-damaged, and last-known-toughness scenarios

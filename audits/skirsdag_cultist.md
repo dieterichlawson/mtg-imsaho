@@ -1,22 +1,16 @@
-# Audit: Skirsdag Cultist
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Skirsdag Cultist
-- **Cost:** {2}{R}{R}
-- **Type:** Creature -- Human Shaman
-- **Oracle:** {R}, {T}, Sacrifice a creature: Skirsdag Cultist deals 2 damage to any target.
-- **P/T:** 2/2
+**Scryfall Oracle text**: {R}, {T}, Sacrifice a creature: Skirsdag Cultist deals 2 damage to any target.
+**Scryfall type line**: Creature — Human Shaman
+**Mana cost**: {2}{R}{R}
+**P/T**: 2/2
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/skirsdag_cultist.rs`
-- **Name:** Skirsdag Cultist ✅
-- **Cost:** {2}{R}{R} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Shaman ✅
-- **P/T:** 2/2 ✅
-- **Activated ability:** {R}, tap, sacrifice a creature ✅
-- **sacrifice_cost:** SacrificeCost::SacrificeCreature ✅
-- **Target:** AnyTarget ✅
-- **Damage to creature:** marks 2 damage, emits NonCombatDamageDealt event ✅
-- **Damage to player:** reduces life by 2, emits NonCombatDamageDealt + LifeChanged events ✅
+Implementation correctly models:
+- Name, mana cost {2}{R}{R}, type Creature, subtypes Human/Shaman, P/T 2/2
+- Activated ability: {R}, tap, sacrifice a creature, target any target
+- Deals 2 damage to creature or player target
+- Emits NonCombatDamageDealt events
+- Tests: 3 tests in tier8_cards.rs covering damage to creature, damage to player, and inability to activate without a creature
 
-## Verdict: PASS -- no issues found
+No issues found.

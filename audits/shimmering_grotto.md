@@ -1,23 +1,14 @@
-# Audit: Shimmering Grotto
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Shimmering Grotto
-- **Cost:** None
-- **Type:** Land
-- **Oracle Text:** {T}: Add {C}.\n{1}, {T}: Add one mana of any color.
-- **P/T:** N/A
+**Scryfall Oracle text**: {T}: Add {C}.\n{1}, {T}: Add one mana of any color.
+**Scryfall type line**: Land
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** None — OK
-- **Type:** Land — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Mana Abilities:** Produces (Colorless, 1) with requires_tap — OK
-- **Activated Abilities:** 5 separate activated abilities for each color ({W}, {U}, {B}, {R}, {G}), each costing {1} and requiring tap — OK
-- **on_activate_ability:** Adds the chosen color mana to controller's pool — OK
+Implementation correctly models:
+- Name, no mana cost (land), type Land
+- Mana ability: {T} for {C}
+- Activated ability: {1}, {T} for one mana of any color (implemented as 5 separate activated abilities, one per color)
+- The 5-option approach is a reasonable workaround for the engine lacking a "choose a color" mechanism
+- Tests: `shimmering_grotto_card_data` and `shimmering_grotto_taps_for_colorless` in innistrad_simple_cards.rs
 
-## Issues
-None found. The "any color" is correctly modeled as 5 separate abilities.
-
-## Verdict: PASS
+No issues found.

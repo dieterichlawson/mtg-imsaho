@@ -1,20 +1,20 @@
-# Audit: Altar's Reap
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Altar's Reap
-- **Mana Cost:** {1}{B}
-- **Type:** Instant
-- **Oracle:** As an additional cost to cast this spell, sacrifice a creature. Draw two cards.
-- **P/T:** N/A
+**Scryfall Oracle text**: As an additional cost to cast this spell, sacrifice a creature.
+Draw two cards.
+**Scryfall type line**: Instant
+**Status**: ISSUE
 
-## Implementation: `altars_reap.rs`
-- **Name:** Altar's Reap -- CORRECT
-- **Mana Cost:** {1}{B} -- CORRECT
-- **Type:** Instant -- CORRECT
-- **Additional cost:** SacrificeCreature -- CORRECT
-- **Effect:** Draw 2 cards -- CORRECT
+- Mana cost {1}{B}: correct
+- Card type Instant: correct
+- Additional cost SacrificeCreature: correct
+- Uses crate::destruction::sacrifice: correct
+- Uses crate::engine::draw_cards: correct
+- Uses move_spell_after_resolve: correct
 
-## Issues
-1. **ISSUE (minor/known):** The sacrifice happens on resolution rather than as part of casting. Code has a comment acknowledging this simplification: "the engine doesn't yet support multi-step casting with additional costs." The spell also selects the creature to sacrifice automatically rather than letting the player choose. Additionally, if no creature is available at resolution time, it still fizzles (which is correct behavior since you shouldn't have been able to cast it without the cost, but this is a consequence of the simplification).
+Issues found:
+1. **Sacrifice timing is wrong**: The implementation sacrifices on resolution (line 42-48), but the sacrifice is an additional cost to *cast* the spell. The code comment acknowledges this as a simplification. However, this means if the spell is countered, no creature was sacrificed, which is incorrect — the creature should already be gone. This is a known engine limitation per the comment.
+2. **No player choice for sacrifice target**: The code picks the first creature found via `.find()` rather than letting the player choose which creature to sacrifice. The Oracle text doesn't specify "choose" but in MTG the controller chooses which creature to sacrifice as part of paying costs.
+3. **move_spell_after_resolve called even when spell fizzles**: If no creature is found, the spell should still go to graveyard, but the comment says "the spell fizzles (no effect)" — in real MTG, if you can't pay the additional cost, you can't cast it at all. Since the engine handles this at resolution, move_spell_after_resolve is called regardless, which is fine for cleanup.
 
-## Verdict: PASS (with known simplification) -- Sacrifice timing is noted as simplified
+Test exists in tier8_cards.rs.

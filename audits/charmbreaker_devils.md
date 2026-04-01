@@ -1,23 +1,18 @@
-# Audit: Charmbreaker Devils
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Charmbreaker Devils
-- **Cost:** {5}{R}
-- **Type:** Creature -- Devil
-- **Oracle:** At the beginning of your upkeep, return an instant or sorcery card at random from your graveyard to your hand. Whenever you cast an instant or sorcery spell, this creature gets +4/+0 until end of turn.
-- **P/T:** 4/4
-- **Keywords:** none
+**Scryfall Oracle text**: At the beginning of your upkeep, return an instant or sorcery card at random from your graveyard to your hand.
+Whenever you cast an instant or sorcery spell, Charmbreaker Devils gets +4/+0 until end of turn.
+**Scryfall type line**: Creature — Devil
+**Status**: ISSUE
 
-## Implementation: `charmbreaker_devils.rs`
-- **Name:** Charmbreaker Devils -- CORRECT
-- **Cost:** {5}{R} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** ["Devil"] -- CORRECT
-- **P/T:** 4/4 -- CORRECT
-- **Keywords:** none -- CORRECT
-- **Triggers:** Upkeep (return instant/sorcery), SpellCast (+4/+0) -- CORRECT
-- **Behavior:** on_upkeep returns random instant/sorcery from graveyard -- CORRECT
-- **Behavior:** on_spell_cast gives +4/+0 until end of turn -- ISSUE (see below)
+### Findings
 
-## Issues
-1. **ISSUE: on_spell_cast does not check if the spell cast is an instant or sorcery.** The oracle text says "Whenever you cast an instant or sorcery spell", but the implementation triggers on ANY spell cast by the controller. It should filter to only instant/sorcery spells.
+1. **on_spell_cast does not check spell type (ISSUE)**: The Oracle text says "Whenever you cast an instant or sorcery spell" but `on_spell_cast` (line 75) does not verify that the cast spell is an instant or sorcery. It triggers on ANY spell cast by the controller, including creatures, artifacts, enchantments, etc. The `_spell_id` parameter is ignored; it should be used to look up the spell's card types and filter to instant/sorcery only.
+
+2. **Card data correct**: Name, cost ({5}{R}), type (Creature), subtype (Devil), P/T (4/4) all match.
+
+3. **Upkeep ability correct**: Correctly finds instant/sorcery cards in graveyard, picks one at random, and returns to hand.
+
+4. **Until-end-of-turn effect correct**: Uses `UntilEndOfTurnEffect` with +4/+0.
+
+5. **Tests**: No dedicated tests found.

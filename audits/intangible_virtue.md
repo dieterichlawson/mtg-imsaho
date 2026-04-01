@@ -1,22 +1,11 @@
-# Audit: Intangible Virtue
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Intangible Virtue
-- **Cost:** {1}{W}
-- **Type:** Enchantment
-- **Oracle:** Creature tokens you control get +1/+1 and have vigilance.
-- **P/T:** N/A
+**Scryfall Oracle text**: Creature tokens you control get +1/+1 and have vigilance.
+**Scryfall type line**: Enchantment
+**Status**: PASS
 
-## Implementation
-- Name: "Intangible Virtue" -- CORRECT
-- Cost: {1}{W} -- CORRECT
-- Type: Enchantment -- CORRECT
-- Oracle text matches -- CORRECT
-- Continuous effects:
-  - ModifyPT { power: 1, toughness: 1, scope: Global(YourTokens) } -- CORRECT
-  - GrantKeyword { keyword: Vigilance, scope: Global(YourTokens) } -- CORRECT
-
-## Issues
-None.
-
-## Verdict: PASS
+- Mana cost {1}{W}: correct
+- Card type Enchantment: correct
+- Continuous effect ModifyPT +1/+1 with scope Global(CreatureFilter::YourTokens): correct
+- Continuous effect GrantKeyword Vigilance with scope Global(CreatureFilter::YourTokens): correct
+- Tests exist in tier3_cards.rs and card_mechanics.rs covering token-only buffing

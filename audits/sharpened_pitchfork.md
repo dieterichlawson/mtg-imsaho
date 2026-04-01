@@ -1,24 +1,16 @@
-# Audit: Sharpened Pitchfork
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Sharpened Pitchfork
-- **Cost:** {2}
-- **Type:** Artifact — Equipment
-- **Oracle Text:** Equipped creature has first strike.\nAs long as equipped creature is a Human, it gets +1/+1.\nEquip {1}
-- **P/T:** N/A
+**Scryfall Oracle text**: Equipped creature has first strike.\nAs long as equipped creature is a Human, it gets +1/+1.\nEquip {1}
+**Scryfall type line**: Artifact — Equipment
+**Mana cost**: {2}
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2} — OK
-- **Type:** Artifact, subtypes ["Equipment"] — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Continuous Effects:** GrantKeyword FirstStrike on Attached — OK
-- **Human bonus:** update_effects dynamically adds ModifyPT +1/+1 when attached creature is Human — OK
-- **Equip:** {1}, sorcery speed — OK
-- **on_resolve:** Moves to battlefield, sets is_equipment — OK
+Implementation correctly models:
+- Name, mana cost {2}, type Artifact, subtype Equipment
+- Grants first strike to equipped creature
+- Conditional +1/+1 bonus when equipped creature is a Human (via `update_effects`)
+- Equip {1} at sorcery speed
+- Equipment enters battlefield with `is_equipment = true`
+- Tests: 3 tests in tier9_equipment.rs covering data, non-Human behavior, and Human bonus
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

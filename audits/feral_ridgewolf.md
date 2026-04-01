@@ -1,23 +1,16 @@
-# Audit: Feral Ridgewolf
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Feral Ridgewolf
-- **Cost:** {2}{R}
-- **Type:** Creature -- Wolf
-- **Oracle:** Trample. {1}{R}: Feral Ridgewolf gets +2/+0 until end of turn.
-- **P/T:** 1/2
+**Scryfall Oracle text**: Trample\n{1}{R}: Feral Ridgewolf gets +2/+0 until end of turn.
+**Scryfall type line**: Creature — Wolf
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({2}{R})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Wolf)
-- Oracle text: CORRECT
-- P/T: CORRECT (1/2)
-- Keywords: CORRECT (Trample)
-- Activated ability cost: CORRECT ({1}{R})
-- requires_tap: CORRECT (false)
-- +2/+0 until end of turn: CORRECT (power_mod: 2, toughness_mod: 0)
-
-## Issues
-None found.
+- Mana cost {2}{R}: correct.
+- Type Creature, subtype Wolf: correct.
+- Power/Toughness 1/2: correct.
+- Keywords: Trample: correct.
+- Activated ability cost {1}{R}: correct.
+- Grants +2/+0 until end of turn via UntilEndOfTurnEffect: correct.
+- `requires_tap: false`: correct.
+- Can activate multiple times: correct (`once_per_turn: false`).
+- Only available on battlefield: correct.
+- Tests exist in `activated_abilities.rs` (`feral_ridgewolf_has_correct_stats`, `feral_ridgewolf_gets_plus_2_plus_0`, `feral_ridgewolf_can_activate_multiple_times`).

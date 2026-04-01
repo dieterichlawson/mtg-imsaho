@@ -1,22 +1,14 @@
-# Audit: Ghoulcaller's Chant
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {B}
-- Type: Sorcery
-- Oracle: "Choose one --
-  * Return target creature card from your graveyard to your hand.
-  * Return two target Zombie creature cards from your graveyard to your hand."
+**Scryfall Oracle text**: Choose one —
+* Return target creature card from your graveyard to your hand.
+* Return two target Zombie creature cards from your graveyard to your hand.
+**Scryfall type line**: Sorcery
+**Status**: ISSUE
 
-NOTE: Current Scryfall oracle text says "Zombie cards" not "Zombie creature cards" for mode 2. However the original Innistrad printing says "Zombie creature cards". The current oracle errata simplified it.
-
-## Implementation: ghoulcallers_chant.rs
-
-## Issues Found
-
-1. **ISSUE: Mode selection is automated, not player-chosen** - The implementation auto-selects mode 2 (return two Zombies) whenever there are 2+ Zombies in graveyard, and falls back to mode 1 otherwise. Per Oracle, the player chooses which mode. A player might want to return a single non-Zombie creature even when Zombies are available.
-
-2. **BUG (from prior audit): Oracle text says "Zombie creature cards" but current errata says "Zombie cards"** - The engine filters for creature AND Zombie (lines 43-49), but updated oracle only requires Zombie subtype. Low severity since all Zombies in the set are creatures.
-
-Otherwise correct: cost ({B}), type (Sorcery), oracle text structure matches.
-
-## Verdict: ISSUES FOUND (2 issues)
+- Mana cost {B}: correct
+- Card type Sorcery: correct
+- Oracle text: correct
+- ISSUE: The modal choice is not properly enforced. The target_requirement is UpToTargets(2, GraveyardCard) which allows returning 1 or 2 creature cards regardless of type. Oracle requires that if the second mode is chosen (returning 2), both must be Zombie creature cards. The is_valid_target method only checks for creature type, not Zombie subtype, so it allows returning 2 non-Zombie creatures.
+- on_resolve correctly returns targeted cards to hand: correct
+- Tests exist in tier11_cards.rs covering single creature return and two-zombie return

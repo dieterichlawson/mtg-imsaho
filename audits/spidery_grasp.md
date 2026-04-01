@@ -1,20 +1,15 @@
-# Audit: Spidery Grasp
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Spidery Grasp
-- **Cost:** {2}{G}
-- **Type:** Instant
-- **Oracle:** Untap target creature. It gets +2/+4 and gains reach until end of turn.
-- **P/T:** N/A
+**Scryfall Oracle text**: Untap target creature. It gets +2/+4 and gains reach until end of turn.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/spidery_grasp.rs`
-- **Name:** Spidery Grasp ✅
-- **Cost:** {2}{G} ✅
-- **Type:** Instant ✅
-- **Target:** TargetRequirement::Creature ✅
-- **on_resolve:** untaps target (sets tapped = false) ✅
-- **P/T buff:** +2/+4 via until_end_of_turn_effects ✅
-- **Keyword grant:** Reach via until_end_of_turn_keywords ✅
-- **Spell cleanup:** move_spell_after_resolve ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Spidery Grasp")
+- Cost: {2}{G} -- correct
+- Type: Instant -- correct
+- Oracle text: matches
+- Target: TargetRequirement::Creature -- correct
+- Implementation untaps the creature, applies +2/+4 via UntilEndOfTurnEffect, and grants Reach via UntilEndOfTurnKeyword
+- Correctly validates target is still on battlefield before applying effects
+- Tests exist in `innistrad_cards.rs`
+- No issues found

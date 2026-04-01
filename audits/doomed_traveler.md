@@ -1,22 +1,14 @@
-# Audit: Doomed Traveler
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Doomed Traveler
-- **Cost:** {W}
-- **Type:** Creature -- Human Soldier
-- **Oracle:** When Doomed Traveler dies, create a 1/1 white Spirit creature token with flying.
-- **P/T:** 1/1
+**Scryfall Oracle text**: When Doomed Traveler dies, create a 1/1 white Spirit creature token with flying.
+**Scryfall type line**: Creature — Human Soldier
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({W})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Human, Soldier)
-- Oracle text: CORRECT
-- P/T: CORRECT (1/1)
-- Dies trigger: CORRECT (TriggerKind::SelfDies)
-- Token created: 1/1 white Spirit with flying: CORRECT
-- Token subtypes: CORRECT (Spirit)
-
-## Issues
-None found.
+- Mana cost {W}: correct.
+- Type Creature, subtypes Human Soldier: correct.
+- Power/Toughness 1/1: correct.
+- Dies trigger creates 1/1 white Spirit with flying: correct.
+- Token has correct subtypes ["Spirit"], color [White], keywords [Flying]: correct.
+- TriggerKind::SelfDies in triggered_abilities: correct.
+- `on_dies` hook implemented: correct.
+- Tests exist in `tier3_cards.rs` (`doomed_traveler_creates_spirit_on_death`).

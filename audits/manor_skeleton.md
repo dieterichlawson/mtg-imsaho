@@ -1,24 +1,17 @@
-# Audit: Manor Skeleton
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Manor Skeleton
-- **Cost:** {1}{B}
-- **Type:** Creature — Skeleton
-- **Oracle:** Haste. {1}{B}: Regenerate Manor Skeleton.
-- **P/T:** 1/1
+**Scryfall Oracle text**: Haste\n{1}{B}: Regenerate Manor Skeleton. (The next time this creature would be destroyed this turn, it isn't. Instead tap it, remove all damage from it, and remove it from combat.)
+**Scryfall type line**: Creature — Skeleton
+**Status**: PASS
 
-## Implementation
-- Name: "Manor Skeleton" -- CORRECT
-- Cost: {1}{B} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Skeleton"] -- CORRECT
-- P/T: 1/1 -- CORRECT
-- Keywords: [Haste] -- CORRECT
-- Oracle text matches -- CORRECT
-- Activated ability: {1}{B} regenerate -- CORRECT
-- Uses regeneration_shields mechanism -- CORRECT
+- Name: Manor Skeleton -- correct
+- Cost: {1}{B} -- correct
+- Type: Creature -- correct
+- Subtypes: Skeleton -- correct
+- P/T: 1/1 -- correct
+- Keywords: Haste -- correct
+- Activated ability: {1}{B} to regenerate -- correctly implemented (adds regeneration shield)
+- Ability does not require tap -- correct
+- Tests exist in activated_abilities.rs (stats, ability, and lethal damage tests)
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

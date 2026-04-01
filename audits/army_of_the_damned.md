@@ -1,18 +1,15 @@
-# Audit: Army of the Damned
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Army of the Damned
-- **Mana Cost:** {5}{B}{B}{B}
-- **Type:** Sorcery
-- **Oracle:** Create thirteen tapped 2/2 black Zombie creature tokens. Flashback {7}{B}{B}{B}
-- **P/T:** N/A
+**Scryfall Oracle text**: Create thirteen 2/2 black Zombie creature tokens. They enter the battlefield tapped.
+Flashback {7}{B}{B}{B}
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `army_of_the_damned.rs`
-- **Name:** Army of the Damned -- CORRECT
-- **Mana Cost:** {5}{B}{B}{B} -- CORRECT
-- **Type:** Sorcery -- CORRECT
-- **Flashback:** {7}{B}{B}{B} -- CORRECT
-- **Effect:** Creates 13 tokens, each 2/2 black Zombie creature, enters tapped -- CORRECT
-- **Token subtypes:** ["Zombie"] -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {5}{B}{B}{B}: correct
+- Card type Sorcery: correct
+- Flashback {7}{B}{B}{B}: correct
+- Creates 13 tokens in a loop: correct
+- Tokens are 2/2 black Zombie creature tokens: correct
+- Tokens enter tapped (obj.tapped = true): correct
+- Uses move_spell_after_resolve: correct
+- Test exists in tier12_cards.rs

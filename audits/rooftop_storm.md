@@ -1,21 +1,14 @@
-# Audit: Rooftop Storm
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Rooftop Storm
-- **Cost:** {5}{U}
-- **Type:** Enchantment
-- **Oracle Text:** You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.
-- **P/T:** N/A
+**Scryfall Oracle text**: You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.
+**Scryfall type line**: Enchantment
+**Mana cost**: {5}{U}
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {5}{U} — OK
-- **Type:** Enchantment — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Behavior:** Comment says it uses ReduceCost with a high reduction value (20) for Zombie creature spells. The actual cost reduction logic is handled externally in the engine.
+Implementation correctly models:
+- Name, mana cost {5}{U}, type Enchantment
+- Oracle text matches
+- Note: The actual cost reduction mechanism is described in comments as using a high reduction value (20) to effectively make Zombie creature spells free. The card_data itself doesn't encode this directly in continuous_effects, suggesting the engine handles it externally.
+- Tests: `rooftop_storm_makes_zombies_free` and `rooftop_storm_no_free_non_zombies` in tier14_cards.rs
 
-## Issues
-1. **ISSUE: No visible cost reduction mechanism in card file**: The card_data has no continuous_effects or any visible mechanism to apply the cost reduction. The comment mentions ReduceCost but there's no such effect in the card data. The actual cost reduction must be hardcoded somewhere in the engine. This may work correctly, but it's fragile — the card file itself doesn't declare its own behavior.
-
-## Verdict: PASS (with note — cost reduction is handled elsewhere in engine, not visible in card file)
+No issues found.

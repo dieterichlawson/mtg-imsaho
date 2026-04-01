@@ -1,22 +1,15 @@
-# Audit: Runic Repetition
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Runic Repetition
-- **Cost:** {2}{U}
-- **Type:** Sorcery
-- **Oracle Text:** Return target exiled card with flashback you own to your hand.
-- **P/T:** N/A
+**Scryfall Oracle text**: Return target exiled card you own with flashback to your hand.
+**Scryfall type line**: Sorcery
+**Mana cost**: {2}{U}
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2}{U} — OK
-- **Type:** Sorcery — OK
-- **Oracle Text:** "Return target exiled card you own with flashback to your hand." — minor wording order difference from official "Return target exiled card with flashback you own to your hand." — functionally identical — OK
-- **P/T:** N/A — OK
-- **on_resolve:** Auto-selects a card in exile owned by controller with flashback, moves to hand — functionally correct but no targeting
+Implementation correctly models:
+- Name, mana cost {2}{U}, type Sorcery
+- Target requirement: ExileCard
+- `is_valid_target` checks zone is Exile, owner matches caster, and card has flashback
+- Resolution moves target from exile to hand
+- Tests: `runic_repetition_card_data` and `runic_repetition_returns_flashback_card_from_exile` in innistrad_simple_cards.rs
 
-## Issues
-1. **ISSUE: No targeting — auto-selects**: The card says "target exiled card with flashback you own" but the implementation auto-selects the first matching card rather than letting the player choose which exiled flashback card to return. The player should have a choice when multiple candidates exist.
-
-## Verdict: FAIL
-- **Targeting is bypassed** — player should choose which exiled flashback card to return
+No issues found.

@@ -1,21 +1,16 @@
-# Audit: Sturmgeist
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Sturmgeist
-- **Cost:** {3}{U}{U}
-- **Type:** Creature -- Spirit
-- **Oracle:** Flying. Sturmgeist's power and toughness are each equal to the number of cards in your hand. Whenever Sturmgeist deals combat damage to a player, draw a card.
-- **P/T:** */*
+**Scryfall Oracle text**: Flying\nSturmgeist's power and toughness are each equal to the number of cards in your hand.\nWhenever Sturmgeist deals combat damage to a player, draw a card.
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/sturmgeist.rs`
-- **Name:** Sturmgeist ✅
-- **Cost:** {3}{U}{U} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Spirit ✅
-- **Base P/T:** 0/0 ✅
-- **Keywords:** Flying ✅
-- **dynamic_pt:** counts cards in controller's hand ✅
-- **Triggered ability:** CombatDamageToPlayer ✅
-- **on_combat_damage_to_player:** draws 1 card, checks zone ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Sturmgeist")
+- Cost: {3}{U}{U} -- correct
+- Type: Creature -- correct
+- Subtypes: Spirit -- correct
+- P/T: */* (base 0/0) -- correct
+- Keywords: Flying -- correct
+- `dynamic_pt` returns hand size for both power and toughness -- correct
+- `on_combat_damage_to_player` draws 1 card -- correct
+- Tests exist in `tier6_cards.rs`
+- No issues found

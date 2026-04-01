@@ -1,30 +1,20 @@
-# Audit: Cloistered Youth // Unholy Fiend
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Front Face: Cloistered Youth**
-  - **Cost:** {1}{W}
-  - **Type:** Creature -- Human
-  - **Oracle:** At the beginning of your upkeep, you may transform this creature.
-  - **P/T:** 1/1
+**Scryfall Oracle text**: (Front — Cloistered Youth) At the beginning of your upkeep, you may transform Cloistered Youth.
+(Back — Unholy Fiend) At the beginning of your end step, you lose 1 life.
+**Scryfall type line**: (Front) Creature — Human // (Back) Creature — Horror
+**Status**: ISSUE
 
-- **Back Face: Unholy Fiend**
-  - **Cost:** (none)
-  - **Type:** Creature -- Horror
-  - **Oracle:** At the beginning of your end step, you lose 1 life.
-  - **P/T:** 3/3
+### Findings
 
-## Implementation: `cloistered_youth.rs`
-- **Front face name:** Cloistered Youth -- CORRECT
-- **Cost:** {1}{W} -- CORRECT
-- **Front subtypes:** ["Human"] -- CORRECT
-- **Front P/T:** 1/1 -- CORRECT
-- **Back face name:** Unholy Fiend -- CORRECT
-- **Back subtypes:** ["Horror"] -- CORRECT
-- **Back P/T:** 3/3 -- CORRECT
-- **Upkeep:** Transforms front to back -- CORRECT
-- **End step:** Loses 1 life when transformed -- CORRECT
+1. **Front face P/T wrong (ISSUE)**: Implementation has `power: Some(1), toughness: Some(1)` (line 26-27). Oracle text for Cloistered Youth is 1/1 on the printed card but the actual Oracle P/T is **1/1**. Wait — checking again: Cloistered Youth is actually a 1/1. However, the doc comment on line 6 says "3/2" which is wrong — 3/2 is not the front face. The back face Unholy Fiend is 3/3. The stored card_data power/toughness of (1,1) is correct for the front face though.
 
-## Issues
-1. **ISSUE: Front face P/T is 1/1, but Scryfall says 1/1.** Wait -- actually the doc comment says "3/2" on line 6 but the card_data says power: Some(1), toughness: Some(1). Checking Scryfall: front face is 1/1. The doc comment on line 6 says "{1}{W} 3/2 Human" which is WRONG in the comment but the code uses 1/1 which is CORRECT. The dynamic_pt returns (3,3) when transformed which matches the back face. The comment is just misleading but the code is correct.
+2. **Back face P/T**: Unholy Fiend is listed as 3/3 in the implementation. Oracle text says Unholy Fiend is **3/3**. This is correct.
 
-No functional issues.
+3. **Transform is not optional (ISSUE)**: Oracle says "you **may** transform Cloistered Youth." The implementation auto-transforms on upkeep (line 82-84) without giving the player a choice. This removes player agency.
+
+4. **Triggered ability kind mismatch (ISSUE)**: The second triggered ability is `TriggerKind::EndStep`, but the back face's Oracle says "At the beginning of your **end step**" — "end step" is correct. However, the back face Oracle actually says "At the beginning of your **end step**, you lose 1 life" — this is Unholy Fiend's upkeep, not end step. Checking the actual Oracle: Unholy Fiend says "At the beginning of your **end step**, you lose 1 life." So EndStep trigger kind is correct.
+
+5. **Life loss implementation**: Uses direct life subtraction rather than damage. This is correct — "lose 1 life" is life loss, not damage.
+
+6. **Tests**: No dedicated tests found.

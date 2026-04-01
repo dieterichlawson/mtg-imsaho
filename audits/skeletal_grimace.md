@@ -1,24 +1,16 @@
-# Audit: Skeletal Grimace
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Skeletal Grimace
-- **Cost:** {1}{B}
-- **Type:** Enchantment -- Aura
-- **Oracle:** Enchant creature. Enchanted creature gets +1/+1 and has "{B}: Regenerate this creature."
-- **P/T:** N/A
+**Scryfall Oracle text**: Enchant creature\nEnchanted creature gets +1/+1 and has "{B}: Regenerate this creature."
+**Scryfall type line**: Enchantment — Aura
+**Mana cost**: {1}{B}
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/skeletal_grimace.rs`
-- **Name:** Skeletal Grimace ✅
-- **Cost:** {1}{B} ✅
-- **Type:** Enchantment ✅
-- **Subtypes:** Aura ✅
-- **Target:** TargetRequirement::Creature ✅
-- **Continuous effect:** ModifyPT +1/+1 on Attached ✅
-- **Regenerate ability:** activated ability grants {B}: Regenerate ✅
-- **on_resolve:** uses resolve_aura helper ✅
-- **on_activate_ability:** adds regeneration_shields ✅
+Implementation correctly models:
+- Name, mana cost {1}{B}, type Enchantment, subtype Aura
+- Continuous effect: +1/+1 to attached creature
+- Grants "{B}: Regenerate" activated ability to the enchanted creature
+- Regeneration adds a regeneration shield
+- Target requirement: Creature; resolves as aura
+- Tests: 4 tests in card_mechanics.rs covering ability grant, regeneration saves, doom blade interaction, and deathtouch interaction
 
-### Note
-- The activated ability is granted to the enchanted creature, and the code checks `power.is_some()` to verify it's a creature. This is correct.
-
-## Verdict: PASS -- no issues found
+No issues found.

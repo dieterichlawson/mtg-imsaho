@@ -1,15 +1,11 @@
-# Audit: Goblin Piker
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {1}{R}
-- Type: Creature -- Goblin Warrior
-- P/T: 2/1
-- Oracle: (no text, vanilla creature)
+**Scryfall Oracle text**: (no oracle text — vanilla creature)
+**Scryfall type line**: Creature — Goblin Warrior
+**Status**: PASS
 
-## Implementation: goblin_piker.rs
-
-## Issues Found
-
-No issues found. Name, cost ({1}{R}), type (Creature), subtypes (Goblin, Warrior), P/T (2/1), and empty oracle text all match. Vanilla creature correctly implemented.
-
-## Verdict: PASS
+- Mana cost {1}{R}: correct
+- 2/1 stats: correct
+- Subtypes Goblin Warrior: correct
+- Vanilla creature with no abilities: correct
+- No dedicated tests found (vanilla creature, minimal risk)

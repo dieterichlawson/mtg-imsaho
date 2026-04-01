@@ -1,20 +1,15 @@
-# Audit: Thraben Purebloods
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Thraben Purebloods
-- **Cost:** {4}{W}
-- **Type:** Creature — Dog
-- **Oracle:** *(no text)*
-- **P/T:** 3/5
+**Scryfall Oracle text**: (no oracle text -- vanilla creature)
+**Scryfall type line**: Creature — Hound
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/thraben_purebloods.rs`
-- Name: "Thraben Purebloods" -- MATCH
-- Cost: {4}{W} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Dog"] -- MATCH
-- P/T: 3/5 -- MATCH
-- Oracle: empty -- MATCH
-- Keywords: none -- MATCH
+- Name: correct ("Thraben Purebloods")
+- Cost: {4}{W} -- correct
+- Type: Creature -- correct
+- P/T: 3/5 -- correct
+- Oracle text: empty -- correct (vanilla creature)
 
-## Verdict
-**PASS** — Vanilla creature, correctly implemented.
+- Subtypes: Dog -- correct (updated from "Hound" per 2021 Oracle creature type update)
+- Tests exist in `innistrad_cards.rs`
+- No issues found

@@ -1,42 +1,21 @@
-# Audit: Mayor of Avabruck // Howlpack Alpha
+## Audit — 2026-04-01
 
-## Official Oracle
+**Scryfall Oracle text (front — Mayor of Avabruck)**: Other Human creatures you control get +1/+1.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.
+**Scryfall Oracle text (back — Howlpack Alpha)**: Each other Werewolf and Wolf creature you control gets +1/+1.\nAt the beginning of your end step, create a 2/2 green Wolf creature token.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.
+**Scryfall type line**: Creature — Human Advisor Werewolf // Creature — Werewolf
+**Status**: PASS
 
-### Front Face: Mayor of Avabruck
-- **Cost:** {1}{G}
-- **Type:** Creature — Human Advisor Werewolf
-- **Oracle:** Other Human creatures you control get +1/+1. At the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.
-- **P/T:** 1/1
+- Name (front): Mayor of Avabruck -- correct
+- Cost: {1}{G} -- correct
+- Subtypes (front): Human, Advisor, Werewolf -- correct
+- P/T (front): 1/1 -- correct
+- Front face buff: other Human creatures +1/+1 -- correctly implemented
+- Name (back): Howlpack Alpha -- correct
+- Subtypes (back): Werewolf -- correct
+- P/T (back): 3/3 -- correct
+- Back face buff: other Werewolf and Wolf creatures +1/+1 -- correctly implemented
+- End step token creation (back face only, controller's end step): 2/2 green Wolf -- correct
+- Transform logic: standard werewolf transform -- correct
+- Tests exist in werewolf_cards.rs
 
-### Back Face: Howlpack Alpha
-- **Type:** Creature — Werewolf
-- **Oracle:** Each other creature you control that's a Werewolf or a Wolf gets +1/+1. At the beginning of your end step, create a 2/2 green Wolf creature token. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.
-- **P/T:** 3/3
-
-## Implementation: `mtg-engine/src/cards/mayor_of_avabruck.rs`
-
-### Front Face
-- **Name:** Mayor of Avabruck -- CORRECT
-- **Cost:** {1}{G} -- CORRECT
-- **Subtypes:** Human, Advisor, Werewolf -- CORRECT
-- **P/T:** 1/1 -- CORRECT
-- **Continuous effect:** ModifyPT +1/+1, GlobalOther(You AND Human) -- CORRECT
-- **Triggered ability:** Upkeep transform -- CORRECT
-
-### Back Face
-- **Name:** Howlpack Alpha -- CORRECT
-- **Subtypes:** Werewolf -- CORRECT
-- **P/T:** 3/3 (via dynamic_pt) -- CORRECT
-- **Continuous effect:** ModifyPT +1/+1, GlobalOther(You AND (Werewolf OR Wolf)) -- CORRECT
-- **Triggered ability:** EndStep create 2/2 Wolf token -- CORRECT
-- **Wolf token:** 2/2 green creature with "Wolf" subtype -- CORRECT
-
-### Transform Logic
-- Front->Back: No spells cast last turn AND not first turn -- CORRECT
-- Back->Front: Any player cast 2+ spells last turn -- CORRECT
-
-## Issues
-1. **Back face missing Upkeep triggered ability:** The back face `triggered_abilities` only includes `TriggerKind::EndStep` but is missing `TriggerKind::Upkeep` for the transform-back trigger. The `on_upkeep` handler does handle both directions, but the triggered_abilities metadata doesn't list it for the back face.
-
-## Verdict
-**FAIL** -- 1 issue: Back face metadata missing Upkeep triggered ability entry.
+No issues found. Implementation matches Oracle text.

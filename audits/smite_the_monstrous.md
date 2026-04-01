@@ -1,18 +1,15 @@
-# Audit: Smite the Monstrous
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Smite the Monstrous
-- **Cost:** {3}{W}
-- **Type:** Instant
-- **Oracle:** Destroy target creature with power 4 or greater.
-- **P/T:** N/A
+**Scryfall Oracle text**: Destroy target creature with power 4 or greater.
+**Scryfall type line**: Instant
+**Mana cost**: {3}{W}
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/smite_the_monstrous.rs`
-- **Name:** Smite the Monstrous ✅
-- **Cost:** {3}{W} ✅
-- **Type:** Instant ✅
-- **Target:** CreatureWithFilter(PowerAtLeast(4)) ✅
-- **is_valid_target:** uses effective_power to account for buffs/debuffs ✅
-- **on_resolve:** uses resolve_destroy helper ✅
+Implementation correctly models:
+- Name, mana cost {3}{W}, type Instant
+- Target requirement: creature with power >= 4 (uses `TargetFilter::PowerAtLeast(4)`)
+- `is_valid_target` checks effective power (accounts for buffs/debuffs/counters)
+- Resolution delegates to `helpers::resolve_destroy`
+- Tests: `smite_the_monstrous_kills_big_creature` in tier2_spells.rs
 
-## Verdict: PASS -- no issues found
+No issues found.

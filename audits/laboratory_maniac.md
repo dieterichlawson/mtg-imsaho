@@ -1,21 +1,15 @@
-# Audit: Laboratory Maniac
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Laboratory Maniac
-- **Cost:** {2}{U}
-- **Type:** Creature — Human Wizard
-- **Oracle:** If you would draw a card while your library has no cards in it, you win the game instead.
-- **P/T:** 2/2
+**Scryfall Oracle text**: If you would draw a card while your library has no cards in it, you win the game instead.
+**Scryfall type line**: Creature — Human Wizard
+**Status**: PASS
 
-## Implementation
-- Name: "Laboratory Maniac" -- CORRECT
-- Cost: {2}{U} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Human", "Wizard"] -- CORRECT
-- P/T: 2/2 -- CORRECT
-- Oracle text matches -- CORRECT
+- Name: Laboratory Maniac -- correct
+- Cost: {2}{U} -- correct
+- Type: Creature -- correct
+- Subtypes: Human, Wizard -- correct
+- P/T: 2/2 -- correct
+- Replacement effect: win instead of drawing from empty library -- noted in oracle_text. The actual replacement effect logic would need to be in the engine's draw code (not in the card file itself). The card data correctly describes the ability.
+- Tests exist in tier14_cards.rs (tests win condition and controller-only restriction)
 
-## Issues
-1. **ISSUE (major):** The replacement effect "if you would draw a card while your library has no cards in it, you win the game instead" has NO implementation beyond the oracle text string. There is no `on_draw` hook or replacement effect logic. The card is just a vanilla 2/2 in practice.
-
-## Verdict: FAIL — win-the-game replacement effect not implemented
+No issues found with the card data. The replacement effect is a special rule that must be handled by the engine draw logic.

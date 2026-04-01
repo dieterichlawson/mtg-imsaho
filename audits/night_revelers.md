@@ -1,19 +1,14 @@
-# Audit: Night Revelers
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Night Revelers
-- **Cost:** {4}{R}
-- **Type:** Creature — Vampire
-- **Oracle:** Night Revelers has haste as long as an opponent controls a Human.
-- **P/T:** 4/4
+**Scryfall Oracle text**: Night Revelers has haste as long as an opponent controls a Human.
+**Scryfall type line**: Creature — Vampire
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/night_revelers.rs`
-- **Name:** Night Revelers -- CORRECT
-- **Cost:** {4}{R} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** Vampire -- CORRECT
-- **P/T:** 4/4 -- CORRECT
-- **Continuous effect:** ConditionalKeyword Haste, condition OpponentControlsSubtype("Human"), scope OnSelf -- CORRECT
+- Name: Correct ("Night Revelers")
+- Cost: {4}{R} - Correct
+- Type: Creature — Vampire - Correct
+- P/T: 4/4 - Correct
+- Conditional keyword: Haste when opponent controls a Human subtype creature. Implemented via ContinuousEffect::ConditionalKeyword with OpponentControlsSubtype("Human") and OnSelf scope. Correct.
+- Tests: tier12_cards.rs has `night_revelers_has_haste_with_opponent_human` which tests gaining and losing haste dynamically.
 
-## Verdict
-**PASS** -- No issues found.
+No issues found.

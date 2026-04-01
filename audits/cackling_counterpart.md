@@ -1,20 +1,15 @@
-# Audit: Cackling Counterpart
+## Audit — 2026-04-01
 
-## Oracle (Scryfall/API)
-- **Name:** Cackling Counterpart
-- **Cost:** {1}{U}{U}
-- **Type:** Instant
-- **Oracle:** Create a token that's a copy of target creature you control. Flashback {5}{U}{U}
-- **P/T:** N/A
+**Scryfall Oracle text**: Create a token that's a copy of target creature you control.
+Flashback {5}{U}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation: `cackling_counterpart.rs`
-- **Name:** Cackling Counterpart -- CORRECT
-- **Cost:** {1}{U}{U} -- CORRECT
-- **Type:** Instant -- CORRECT
-- **Flashback:** {5}{U}{U} -- CORRECT
-- **Target:** CreatureWithFilter(YouControl) -- CORRECT
-- **Effect:** Creates token copy via `create_token_copy` -- CORRECT
-- **Zone check:** Verifies target is still on battlefield at resolution -- CORRECT
-- **move_spell_after_resolve:** Called -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {1}{U}{U}: correct
+- Card type Instant: correct
+- Flashback {5}{U}{U}: correct
+- Target requirement: CreatureWithFilter(YouControl): correct — "target creature you control"
+- on_resolve creates token copy via state.create_token_copy: correct
+- Checks target is still on battlefield before creating copy: correct
+- Uses move_spell_after_resolve: correct
+- Tests exist in tier12_cards.rs covering token copy creation and flashback

@@ -1,23 +1,20 @@
-# Audit: Hanweir Watchkeep / Bane of Hanweir
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-**Front Face: Hanweir Watchkeep**
-- Cost: {2}{R}
-- Type: Creature -- Human Warrior Werewolf
-- P/T: 1/5
-- Oracle: "Defender
-  At the beginning of each upkeep, if no spells were cast last turn, transform Hanweir Watchkeep."
+**Scryfall Oracle text**: (Front — Hanweir Watchkeep) Defender
+At the beginning of each upkeep, if no spells were cast last turn, transform Hanweir Watchkeep.
+(Back — Bane of Hanweir) Bane of Hanweir attacks each combat if able.
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform Bane of Hanweir.
+**Scryfall type line**: Creature — Human Warrior Werewolf // Creature — Werewolf
+**Status**: PASS
 
-**Back Face: Bane of Hanweir**
-- Type: Creature -- Werewolf
-- P/T: 5/5
-- Oracle: "Bane of Hanweir attacks each combat if able.
-  At the beginning of each upkeep, if a player cast two or more spells last turn, transform Bane of Hanweir."
-
-## Implementation: hanweir_watchkeep.rs
-
-## Issues Found
-
-No issues found. Front and back face names, types, subtypes (Human Warrior Werewolf / Werewolf), P/T (1/5 / 5/5), defender keyword, forced attack on back face (ContinuousEffect::ForceAttack), and werewolf transform logic all match.
-
-## Verdict: PASS
+- Mana cost {2}{R}: correct
+- Front face 1/5: correct
+- Front face subtypes Human Warrior Werewolf: correct
+- Front face keyword Defender: correct
+- Back face name "Bane of Hanweir": correct
+- Back face 5/5: correct
+- Back face subtypes Werewolf: correct
+- Back face ForceAttack continuous effect: correct (attacks each combat if able)
+- Werewolf transform logic: correct
+- NOTE: When transforming to back face, the Defender keyword from the front face is no longer active (dynamic_pt overrides stats). The back face correctly does not have Defender.
+- Tests exist in werewolf_cards.rs covering transform and defender/force-attack behavior

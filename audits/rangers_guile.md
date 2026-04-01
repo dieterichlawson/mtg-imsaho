@@ -1,23 +1,16 @@
-# Audit: Ranger's Guile
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Ranger's Guile
-- **Cost:** {G}
-- **Type:** Instant
-- **Oracle Text:** Target creature you control gets +1/+1 and gains hexproof until end of turn.
-- **P/T:** N/A
+**Scryfall Oracle text**: Target creature you control gets +1/+1 and gains hexproof until end of turn.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {G} — OK
-- **Type:** Instant — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Target:** CreatureWithFilter(YouControl) — OK
-- **is_valid_target:** Checks battlefield, is creature, controller matches — OK
-- **on_resolve:** Applies +1/+1 UntilEndOfTurnEffect and Hexproof UntilEndOfTurnKeyword — OK
+- Name: Correct ("Ranger's Guile")
+- Cost: {G} - Correct
+- Type: Instant - Correct
+- Oracle text matches.
+- Target: Creature you control (CreatureWithFilter(YouControl)) - Correct
+- is_valid_target: Checks zone == Battlefield, is a creature (power.is_some()), and controller == caster. Correct.
+- on_resolve: Applies +1/+1 via UntilEndOfTurnEffect and grants Hexproof via UntilEndOfTurnKeyword. Correct.
+- Tests: card_fixes.rs has `rangers_guile_cannot_target_opponent_creature`, innistrad_cards.rs has `rangers_guile_gives_hexproof_and_pump`.
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

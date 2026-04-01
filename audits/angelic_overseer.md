@@ -1,18 +1,15 @@
-# Audit: Angelic Overseer
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Angelic Overseer
-- **Mana Cost:** {3}{W}{W}
-- **Type:** Creature — Angel
-- **Oracle:** Flying. As long as you control a Human, Angelic Overseer has hexproof and indestructible.
-- **P/T:** 5/3
+**Scryfall Oracle text**: Flying
+As long as you control a Human, Angelic Overseer has hexproof and is indestructible.
+**Scryfall type line**: Creature — Angel
+**Status**: PASS
 
-## Implementation: `angelic_overseer.rs`
-- **Name:** Angelic Overseer -- CORRECT
-- **Mana Cost:** {3}{W}{W} -- CORRECT
-- **Type:** Creature — Angel -- CORRECT
-- **P/T:** 5/3 -- CORRECT
-- **Keywords:** Flying -- CORRECT
-- **Continuous effects:** ConditionalKeyword Hexproof (YouControlSubtype Human) + ConditionalKeyword Indestructible (YouControlSubtype Human) -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {3}{W}{W}: correct
+- 5/3 stats: correct
+- Subtype Angel: correct
+- Keyword Flying: correct
+- Conditional Hexproof with YouControlSubtype("Human"): correct
+- Conditional Indestructible with YouControlSubtype("Human"): correct
+- Both use EffectScope::OnSelf: correct
+- Tests exist in tier12_cards.rs covering flying, hexproof/indestructible with human, and surviving destroy

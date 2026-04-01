@@ -1,19 +1,15 @@
-# Audit: Geist-Honored Monk
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {3}{W}{W}
-- Type: Creature -- Human Monk
-- P/T: */*
-- Oracle: "Vigilance
-  Geist-Honored Monk's power and toughness are each equal to the number of creatures you control.
-  When Geist-Honored Monk enters the battlefield, create two 1/1 white Spirit creature tokens with flying."
+**Scryfall Oracle text**: Vigilance
+Geist-Honored Monk's power and toughness are each equal to the number of creatures you control.
+When Geist-Honored Monk enters the battlefield, create two 1/1 white Spirit creature tokens with flying.
+**Scryfall type line**: Creature — Human Monk
+**Status**: PASS
 
-## Implementation: geist_honored_monk.rs
-
-## Issues Found
-
-1. **MINOR: Base P/T listed as 0/0 instead of */** - The card_data sets power: Some(0), toughness: Some(0). While functionally equivalent since dynamic_pt overrides it, the base should ideally represent the characteristic-defining ability. This is cosmetic since the dynamic_pt function correctly computes creature count.
-
-Otherwise all correct: cost {3}{W}{W}, types, subtypes (Human Monk), vigilance keyword, ETB trigger creates two 1/1 white Spirit tokens with flying, dynamic P/T counts creatures controller controls.
-
-## Verdict: PASS (1 minor cosmetic note)
+- Mana cost {3}{W}{W}: correct
+- Base P/T */* (stored as 0/0): correct
+- Subtypes Human Monk: correct
+- Keyword Vigilance: correct
+- dynamic_pt counts creatures controller controls on battlefield: correct
+- ETB trigger creates two 1/1 white Spirit tokens with flying: correct
+- Tests exist in tier5_cards.rs covering dynamic P/T and token creation

@@ -1,21 +1,15 @@
-# Audit: Blasphemous Act
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Blasphemous Act
-- **Cost:** {8}{R}
-- **Type:** Sorcery
-- **Oracle:** This spell costs {1} less to cast for each creature on the battlefield. Blasphemous Act deals 13 damage to each creature.
-- **P/T:** N/A
+**Scryfall Oracle text**: This spell costs {1} less to cast for each creature on the battlefield.
+Blasphemous Act deals 13 damage to each creature.
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/blasphemous_act.rs`
-- **Name:** Blasphemous Act ✅
-- **Cost:** {8}{R} ✅
-- **Type:** Sorcery ✅
-- **Oracle text:** matches ✅
-- **Cost reduction:** `modified_cost` counts creatures, reduces generic by that count, capped at 8 ✅
-- **Damage:** 13 to each creature ✅
-- **NonCombatDamageDealt events:** emitted for each creature ✅
-- **damaged_by tracking:** pushes `object_id` for each creature ✅
-- **move_spell_after_resolve:** called ✅
-
-## Verdict: PASS — no issues found
+- Mana cost {8}{R}: correct
+- Card type Sorcery: correct
+- Cost reduction via modified_cost: correct
+- Reduction capped at 8 (can't go below {R}): correct
+- Deals 13 damage to each creature on battlefield: correct
+- Uses NonCombatDamageDealt event: correct
+- Uses move_spell_after_resolve: correct
+- Tests exist in tier12_cards.rs covering damage, cost reduction, and castability

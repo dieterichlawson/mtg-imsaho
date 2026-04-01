@@ -1,15 +1,13 @@
-# Audit: Gruesome Deformity
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {B}
-- Type: Enchantment -- Aura
-- Oracle: "Enchant creature
-  Enchanted creature has intimidate."
+**Scryfall Oracle text**: Enchant creature
+Enchanted creature has intimidate.
+**Scryfall type line**: Enchantment — Aura
+**Status**: PASS
 
-## Implementation: gruesome_deformity.rs
-
-## Issues Found
-
-No issues found. Name, cost ({B}), type (Enchantment), subtype (Aura), oracle text, target requirement (Creature), and continuous effect (GrantKeyword Intimidate with EffectScope::Attached) all match.
-
-## Verdict: PASS
+- Mana cost {B}: correct
+- Card type Enchantment, subtype Aura: correct
+- Target requirement Creature: correct
+- Grants Intimidate via continuous effect (EffectScope::Attached): correct
+- Resolves as aura: correct
+- Tests exist in innistrad_cards.rs covering intimidate grant

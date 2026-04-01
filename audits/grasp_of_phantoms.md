@@ -1,19 +1,14 @@
-# Audit: Grasp of Phantoms
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {3}{U}
-- Type: Sorcery
-- Oracle: "Put target creature on top of its owner's library.
-  Flashback {7}{U}"
+**Scryfall Oracle text**: Put target creature on top of its owner's library.
+Flashback {7}{U}
+**Scryfall type line**: Sorcery
+**Status**: ISSUE
 
-## Implementation: grasp_of_phantoms.rs
-
-## Issues Found
-
-1. **MINOR: Oracle text missing period after flashback cost** - Implementation has "Flashback {7}{U}" without a period. The Oracle text from Scryfall uses a period. This is purely cosmetic.
-
-2. **POTENTIAL ISSUE: Library insertion may double-add** - Line 44 does `state.move_object(*target_id, Zone::Library)` which likely already adds to the library, and then line 46 does `state.get_player_mut(owner).library_order.insert(0, *target_id)` which inserts at position 0. If move_object already appends to library_order, this would result in the card appearing twice in the library. This needs verification of how move_object handles library placement.
-
-Otherwise correct: cost ({3}{U}), type (Sorcery), flashback cost ({7}{U}), target requirement (Creature), effect (put on top of library).
-
-## Verdict: POTENTIAL ISSUE (1 possible double-add to library)
+- Mana cost {3}{U}: correct
+- Card type Sorcery: correct
+- Target requirement Creature: correct
+- Flashback cost {7}{U}: correct
+- On resolve: moves creature to Library zone and inserts at position 0 (top): correct
+- ISSUE: Potential double-insert — move_object likely already adds the card to the library zone, then the code manually inserts at position 0. This could result in the card appearing twice in library_order if move_object appends to the end of library_order. The insert at position 0 is correct intent but may cause duplication depending on move_object implementation.
+- Tests exist in tier11_cards.rs covering top-of-library placement and flashback

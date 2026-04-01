@@ -1,19 +1,17 @@
-# Audit: Angel of Flight Alabaster
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Angel of Flight Alabaster
-- **Mana Cost:** {4}{W}
-- **Type:** Creature — Angel
-- **Oracle:** Flying. At the beginning of your upkeep, return target Spirit card from your graveyard to your hand.
-- **P/T:** 4/4
+**Scryfall Oracle text**: Flying
+At the beginning of your upkeep, return target Spirit card from your graveyard to your hand.
+**Scryfall type line**: Creature — Angel
+**Status**: PASS
 
-## Implementation: `angel_of_flight_alabaster.rs`
-- **Name:** Angel of Flight Alabaster -- CORRECT
-- **Mana Cost:** {4}{W} -- CORRECT
-- **Type:** Creature — Angel -- CORRECT
-- **P/T:** 4/4 -- CORRECT
-- **Keywords:** Flying -- CORRECT
-- **Triggered ability:** Upkeep trigger, returns Spirit from graveyard to hand -- CORRECT
-- **Target filtering:** Checks both registry subtypes and object subtypes for "Spirit" -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {4}{W}: correct
+- 4/4 stats: correct
+- Subtype Angel: correct
+- Keyword Flying: correct
+- Triggered ability TriggerKind::Upkeep: correct
+- on_upkeep checks active_player == controller (your upkeep only): correct
+- Filters graveyard for Spirit subtype cards: correct
+- Uses present_target_choice with mandatory targeting (optional: false): correct — the Oracle text says "return target Spirit" which is mandatory if valid targets exist
+- Uses PendingEffect::ReturnToHand: correct
+- Test exists in tier7_cards.rs

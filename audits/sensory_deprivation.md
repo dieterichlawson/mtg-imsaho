@@ -1,23 +1,15 @@
-# Audit: Sensory Deprivation
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Sensory Deprivation
-- **Cost:** {U}
-- **Type:** Enchantment — Aura
-- **Oracle Text:** Enchant creature\nEnchanted creature gets -3/-0.
-- **P/T:** N/A
+**Scryfall Oracle text**: Enchant creature\nEnchanted creature gets -3/-0.
+**Scryfall type line**: Enchantment — Aura
+**Mana cost**: {U}
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {U} — OK
-- **Type:** Enchantment with subtype Aura — OK
-- **Oracle Text:** "Enchanted creature gets -3/-0." — OK (omits "Enchant creature" as convention)
-- **P/T:** N/A — OK
-- **Continuous Effects:** ModifyPT { power: -3, toughness: 0, scope: Attached } — OK
-- **Target:** TargetRequirement::Creature — OK
-- **on_resolve:** Uses resolve_aura helper — OK
+Implementation correctly models:
+- Name, mana cost {U}, type Enchantment, subtype Aura
+- Continuous effect: ModifyPT { power: -3, toughness: 0, scope: Attached }
+- Target requirement: Creature
+- Resolution uses `helpers::resolve_aura`
+- Tests: `sensory_deprivation_reduces_power` in innistrad_cards.rs
 
-## Issues
-None found (same "Enchant creature" omission convention as other Auras).
-
-## Verdict: PASS
+No issues found.

@@ -1,16 +1,13 @@
-# Audit: Mountain
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Mountain
-- **Type:** Basic Land — Mountain
-- **Oracle:** {T}: Add {R}.
+**Scryfall Oracle text**: ({T}: Add {R}.)
+**Scryfall type line**: Basic Land — Mountain
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/mountain.rs`
-- **Name:** Mountain -- CORRECT
-- **Type:** Land -- CORRECT
-- **Supertypes:** Basic -- CORRECT
-- **Subtypes:** Mountain -- CORRECT
-- **Mana ability:** {T}: Add {R} -- CORRECT
+- Name: Correct ("Mountain")
+- Cost: None - Correct
+- Type: Basic Land — Mountain - Correct (supertypes: [Basic], subtypes: ["Mountain"])
+- Mana ability: {T}: Add {R} - Correct (produces ManaType::Red)
+- Checks untapped and on battlefield before allowing activation - Correct
 
-## Verdict
-**PASS** -- No issues found.
+No issues found.

@@ -1,18 +1,15 @@
-# Audit: Naturalize
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Naturalize
-- **Cost:** {1}{G}
-- **Type:** Instant
-- **Oracle:** Destroy target artifact or enchantment.
+**Scryfall Oracle text**: Destroy target artifact or enchantment.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/naturalize.rs`
-- **Name:** Naturalize -- CORRECT
-- **Cost:** {1}{G} -- CORRECT
-- **Type:** Instant -- CORRECT
-- **Target:** PermanentWithFilter(HasCardType [Artifact, Enchantment]) -- CORRECT
-- **is_valid_target:** Checks battlefield, artifact or enchantment -- CORRECT
-- **on_resolve:** Uses helpers::resolve_destroy -- CORRECT
+- Name: Correct ("Naturalize")
+- Cost: {1}{G} - Correct
+- Type: Instant - Correct
+- Target: Artifact or enchantment on battlefield - Correct (uses TargetFilter::HasCardType with both types)
+- is_valid_target checks zone == Battlefield and card type is Artifact or Enchantment. Correct.
+- on_resolve uses helpers::resolve_destroy. Correct.
+- Tests: tier2_spells.rs has `naturalize_destroys_enchantment` and `naturalize_cant_target_creature`.
 
-## Verdict
-**PASS** -- No issues found.
+No issues found.

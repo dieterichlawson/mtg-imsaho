@@ -1,24 +1,17 @@
-# Audit: Falkenrath Noble
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Falkenrath Noble
-- **Cost:** {3}{B}
-- **Type:** Creature -- Vampire Noble
-- **Oracle:** Flying. Whenever Falkenrath Noble or another creature dies, target player loses 1 life and you gain 1 life.
-- **P/T:** 2/2
+**Scryfall Oracle text**: Flying\nWhenever Falkenrath Noble or another creature dies, target player loses 1 life and you gain 1 life.
+**Scryfall type line**: Creature — Vampire Noble
+**Status**: ISSUE
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({3}{B})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Vampire, Noble)
-- Oracle text: CORRECT (uses "this creature" but Scryfall says "Falkenrath Noble" -- functionally equivalent)
-- P/T: CORRECT (2/2)
-- Keywords: CORRECT (Flying)
-- Self-dies trigger: CORRECT (TriggerKind::SelfDies in on_dies)
-- Any creature dies trigger: CORRECT (TriggerKind::AnyCreatureDies in on_any_creature_dies)
-- Target player loses 1 life: CORRECT (auto-targets opponent)
-- You gain 1 life: CORRECT
+- Mana cost {3}{B}: correct.
+- Type Creature, subtypes Vampire Noble: correct.
+- Power/Toughness 2/2: correct.
+- Keywords: Flying: correct.
+- Triggers: SelfDies + AnyCreatureDies: correct combination.
+- Life drain logic (opponent loses 1, you gain 1): correct.
+- LifeChanged events emitted for both sides: correct.
 
-## Issues
-None found.
+**Issue — "target player" always auto-targets opponent.** The Oracle says "target player loses 1 life" which means the controller should be able to choose which player loses 1 life (could target themselves in rare edge cases, or matters for hexproof/shroud on players). The implementation hardcodes `state.opponent(controller)` as the drain target. This is an acceptable simplification for 2-player but technically incorrect for the targeting semantics.
+
+- Tests exist in `tier3_cards.rs` (`falkenrath_noble_drains_on_any_death`), `bug_fixes.rs` (multiple tests), and `apnap.rs`.

@@ -1,24 +1,14 @@
-# Audit: Endless Ranks of the Dead
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Endless Ranks of the Dead
-- **Cost:** {2}{B}{B}
-- **Type:** Enchantment
-- **Oracle:** At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.
-- **P/T:** N/A
+**Scryfall Oracle text**: At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.
+**Scryfall type line**: Enchantment
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({2}{B}{B})
-- Type: CORRECT (Enchantment)
-- Oracle text: CORRECT
-- Triggered ability: CORRECT (TriggerKind::Upkeep)
-- Only triggers on controller's upkeep: CORRECT (checks state.active_player == controller)
-- Counts Zombies you control: CORRECT
-- X = half rounded down: CORRECT (zombie_count / 2)
-- Creates 2/2 black Zombie tokens: CORRECT
-- Token subtypes: CORRECT (Zombie)
-- P/T: CORRECT (N/A)
-
-## Issues
-None found.
+- Mana cost {2}{B}{B}: correct.
+- Type Enchantment: correct.
+- Triggered ability on upkeep (TriggerKind::Upkeep): correct.
+- Only triggers on controller's upkeep (`state.active_player != controller` guard): correct.
+- Counts Zombies via card data subtypes and object subtypes: correct.
+- X = zombie_count / 2 (integer division = rounded down): correct.
+- Creates 2/2 black Zombie creature tokens with correct subtypes: correct.
+- Tests exist in `tier7_cards.rs` (`endless_ranks_creates_zombie_tokens`).

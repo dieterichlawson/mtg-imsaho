@@ -1,22 +1,15 @@
-# Audit: Prey Upon
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Prey Upon
-- **Cost:** {G}
-- **Type:** Sorcery
-- **Oracle Text:** Target creature you control fights target creature you don't control.
-- **P/T:** N/A
+**Scryfall Oracle text**: Target creature you control fights target creature you don't control.
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {G} — OK
-- **Type:** Sorcery — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Target:** TwoTargets(CreatureWithFilter(YouControl), CreatureWithFilter(YouDontControl)) — OK
-- **on_resolve:** Handles both target orderings, calls combat::fight — OK
+- Name: Correct ("Prey Upon")
+- Cost: {G} - Correct
+- Type: Sorcery - Correct
+- Oracle text matches.
+- Target requirement: TwoTargets -- one creature you control, one creature you don't control. Correct.
+- on_resolve: Identifies which target is yours and which is theirs, then calls combat::fight. Handles both orderings of targets. Correct.
+- Tests: tier2_spells.rs has `prey_upon_fight`.
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

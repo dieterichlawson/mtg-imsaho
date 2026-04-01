@@ -1,27 +1,19 @@
-# Audit: Liliana of the Veil
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Liliana of the Veil
-- **Cost:** {1}{B}{B}
-- **Type:** Legendary Planeswalker — Liliana
-- **Oracle:** +1: Each player discards a card. -2: Target player sacrifices a creature. -6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.
-- **Loyalty:** 3
+**Scryfall Oracle text**: +1: Each player discards a card.\n-2: Target player sacrifices a creature.\n-6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of your choice.
+**Scryfall type line**: Legendary Planeswalker — Liliana
+**Status**: ISSUE
 
-## Implementation
-- Name: "Liliana of the Veil" -- CORRECT
-- Cost: {1}{B}{B} -- CORRECT
-- Type: Planeswalker -- CORRECT
-- Supertypes: [Legendary] -- CORRECT
-- Subtypes: ["Liliana"] -- CORRECT
-- Starting loyalty: 3 -- CORRECT
-- Oracle text matches -- CORRECT
-- +1: each player discards (auto-picks first card in hand) -- CORRECT (simplified selection)
-- -2: opponent sacrifices a creature -- CORRECT (simplified: always targets opponent)
-- -6: opponent sacrifices half their permanents -- SIMPLIFICATION (real card has pile division with player choice)
+**Findings**:
 
-## Issues
-1. **ISSUE (simplification):** +1 ability auto-picks the first card in hand rather than allowing player choice.
-2. **ISSUE (simplification):** -2 always targets opponent, rather than allowing "target player" selection.
-3. **ISSUE (simplification):** -6 simplified from pile division to "sacrifice half permanents." The real card separates into two piles and the target player chooses which pile to sacrifice. Code takes the first half, not a random/chosen split.
+1. Name: Liliana of the Veil -- correct
+2. Cost: {1}{B}{B} -- correct
+3. Type: Planeswalker with Legendary supertype -- correct
+4. Subtypes: Liliana -- correct
+5. Starting loyalty: 3 -- correct
+6. **+1 ability**: Each player discards a card -- implemented but simplified (auto-picks first card in hand rather than letting each player choose). Acceptable simplification but noted.
+7. **-2 ability**: "Target player sacrifices a creature" -- implementation hardcodes opponent as the target rather than allowing targeting any player. The Oracle text says "target player" which means it could target yourself. Minor issue.
+8. **-6 ability**: Pile separation is simplified to "sacrifice half their permanents" targeting opponent only. This is a significant simplification but noted as acceptable given engine constraints. The Oracle text allows targeting any player and requires actual pile division.
+9. Tests: no dedicated test file found for Liliana.
 
-## Verdict: PASS (with noted simplifications — all acknowledged in comments)
+**Summary**: The -2 ability should allow targeting any player (not just opponent). The +1 discard should ideally let each player choose which card to discard. These are simplifications rather than bugs.

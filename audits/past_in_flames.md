@@ -1,23 +1,16 @@
-# Audit: Past in Flames
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Past in Flames
-- **Cost:** {3}{R}
-- **Type:** Sorcery
-- **Oracle Text:** Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R}
-- **P/T:** N/A
+**Scryfall Oracle text**: Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R}
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {3}{R} — OK
-- **Type:** Sorcery — OK
-- **Oracle Text:** Matches (uses \n separator) — OK
-- **Flashback Cost:** {4}{R} — OK
-- **on_resolve:** Moves self to graveyard first (so it resolves before granting), then grants flashback to all instants/sorceries in controller's graveyard via until_end_of_turn_flashback — OK
-- **Flashback cost = mana cost:** Uses `d.cost.clone().unwrap_or(ManaCost::free())` which correctly sets the flashback cost to the card's own mana cost — OK
-- **Deduplication:** Checks `already_has` to avoid duplicating flashback grants — OK
+- Name: Correct ("Past in Flames")
+- Cost: {3}{R} - Correct
+- Type: Sorcery - Correct
+- Flashback: {4}{R} - Correct
+- Oracle text matches.
+- Implementation: Moves itself to graveyard first (via move_spell_after_resolve), then iterates over all instant/sorcery cards in the controller's graveyard and grants flashback with cost equal to their mana cost via `until_end_of_turn_flashback`. Correct.
+- Skips cards that already have flashback granted. Correct.
+- Tests: tier14_cards.rs has `past_in_flames_grants_flashback_to_all`.
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

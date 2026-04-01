@@ -1,23 +1,16 @@
-# Audit: Make a Wish
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Make a Wish
-- **Cost:** {3}{G}
-- **Type:** Sorcery
-- **Oracle:** Return two cards at random from your graveyard to your hand.
-- **P/T:** N/A
+**Scryfall Oracle text**: Return two cards at random from your graveyard to your hand.
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation
-- Name: "Make a Wish" -- CORRECT
-- Cost: {3}{G} -- CORRECT
-- Type: Sorcery -- CORRECT
-- Oracle text matches -- CORRECT
-- Shuffles graveyard cards and takes 2 at random -- CORRECT
-- Excludes tokens from selection -- CORRECT
-- Excludes self (the Make a Wish spell) from graveyard selection -- CORRECT
-- Calls move_spell_after_resolve -- CORRECT
+- Name: Make a Wish -- correct
+- Cost: {3}{G} -- correct
+- Type: Sorcery -- correct
+- Effect: return two random graveyard cards to hand -- correctly implemented
+- Excludes tokens from graveyard selection -- correct (tokens cease to exist in graveyard per rules, but filtering them is good practice)
+- Excludes itself from selection -- correct
+- Uses random shuffling -- correct
+- Tests exist in innistrad_simple_cards.rs
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

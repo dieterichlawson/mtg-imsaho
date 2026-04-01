@@ -1,21 +1,15 @@
-# Audit: Silverchase Fox
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Silverchase Fox
-- **Cost:** {1}{W}
-- **Type:** Creature -- Fox
-- **Oracle:** {1}{W}, Sacrifice Silverchase Fox: Exile target enchantment.
-- **P/T:** 2/2
+**Scryfall Oracle text**: {1}{W}, Sacrifice Silverchase Fox: Exile target enchantment.
+**Scryfall type line**: Creature — Fox
+**Mana cost**: {1}{W}
+**P/T**: 2/2
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/silverchase_fox.rs`
-- **Name:** Silverchase Fox ✅
-- **Cost:** {1}{W} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Fox ✅
-- **P/T:** 2/2 ✅
-- **Activated ability cost:** {1}{W}, SacrificeSelf ✅
-- **Target:** PermanentWithFilter(HasCardType(Enchantment)) ✅
-- **Effect:** exiles target enchantment from battlefield ✅
-- **Instant speed:** sorcery_speed_only: false ✅
+Implementation correctly models:
+- Name, mana cost {1}{W}, type Creature, subtype Fox, P/T 2/2
+- Activated ability: {1}{W}, sacrifice self, target enchantment on battlefield
+- Resolution exiles the target enchantment
+- Tests: `silverchase_fox_exiles_enchantment` in tier8_cards.rs
 
-## Verdict: PASS -- no issues found
+No issues found.

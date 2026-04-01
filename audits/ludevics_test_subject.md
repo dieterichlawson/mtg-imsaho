@@ -1,31 +1,22 @@
-# Audit: Ludevic's Test Subject // Ludevic's Abomination
+## Audit — 2026-04-01
 
-## Oracle (Official)
-### Front: Ludevic's Test Subject
-- **Cost:** {1}{U}
-- **Type:** Creature — Lizard Egg
-- **Oracle:** Defender. {1}{U}: Put a hatchling counter on Ludevic's Test Subject. Then if there are five or more hatchling counters on it, remove all of them and transform Ludevic's Test Subject.
-- **P/T:** 0/3
+**Scryfall Oracle text (front — Ludevic's Test Subject)**: Defender\n{1}{U}: Put a hatchling counter on Ludevic's Test Subject. Then if there are five or more hatchling counters on it, remove all of them and transform Ludevic's Test Subject.
+**Scryfall Oracle text (back — Ludevic's Abomination)**: Trample
+**Scryfall type line**: Creature — Lizard Egg // Creature — Lizard Horror
+**Status**: PASS
 
-### Back: Ludevic's Abomination
-- **Type:** Creature — Lizard Horror
-- **Oracle:** Trample
-- **P/T:** 13/13
+- Name (front): Ludevic's Test Subject -- correct
+- Cost: {1}{U} -- correct
+- Type: Creature -- correct
+- Subtypes (front): Lizard, Egg -- correct
+- P/T (front): 0/3 -- correct
+- Keywords (front): Defender -- correct
+- Activated ability: {1}{U} to add hatchling counter, transform at 5 -- correctly implemented using card_state
+- Name (back): Ludevic's Abomination -- correct
+- Subtypes (back): Lizard, Horror -- correct
+- P/T (back): 13/13 -- correct
+- Keywords (back): Trample -- correct
+- Ability only available on front face -- correct
+- Tests exist in tier15_cards.rs
 
-## Implementation
-- Front name: "Ludevic's Test Subject" -- CORRECT
-- Front cost: {1}{U} -- CORRECT
-- Front P/T: 0/3 -- CORRECT
-- Front keywords: [Defender] -- CORRECT
-- Front oracle text matches -- CORRECT
-- Back name: "Ludevic's Abomination" -- CORRECT
-- Back subtypes: ["Lizard", "Horror"] -- CORRECT
-- Back P/T: 13/13 (via dynamic_pt) -- CORRECT
-- Back keywords: [Trample] -- CORRECT
-- Activated ability: {1}{U}, adds hatchling counter, transforms at 5 -- CORRECT
-- Uses card_state for hatchling counter tracking -- OK (workaround)
-
-## Issues
-1. **ISSUE (minor):** Front face subtypes are ["Lizard"] but should be ["Lizard", "Egg"]. The official type line is "Creature — Lizard Egg".
-
-## Verdict: PASS (with minor subtype issue)
+No issues found. Implementation matches Oracle text.

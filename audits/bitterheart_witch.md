@@ -1,23 +1,21 @@
-# Audit: Bitterheart Witch
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Bitterheart Witch
-- **Cost:** {4}{B}
-- **Type:** Creature — Human Shaman
-- **Oracle:** Deathtouch. When Bitterheart Witch dies, you may search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle.
-- **P/T:** 1/2
+**Scryfall Oracle text**: Deathtouch
+When Bitterheart Witch dies, you may search your library for a Curse card, put it onto the battlefield attached to target player, then shuffle.
+**Scryfall type line**: Creature — Human Shaman
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/bitterheart_witch.rs`
-- **Name:** Bitterheart Witch ✅
-- **Cost:** {4}{B} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Shaman ✅
-- **P/T:** 1/2 ✅
-- **Keywords:** Deathtouch ✅
-- **Triggered ability:** SelfDies ✅
-- **on_dies:** Searches library for Curse, puts on battlefield attached to opponent, shuffles ✅
-- **"you may" optional:** Implementation always searches (not optional) — noted as simplification ✅ (documented)
-- **"target player":** Implementation always targets opponent — noted as simplification (documented)
-- **Shuffle on fail:** Shuffles even when no Curse found ✅
+- Mana cost {4}{B}: correct
+- 1/2 stats: correct
+- Subtypes Human, Shaman: correct
+- Keyword Deathtouch: correct
+- Triggered ability TriggerKind::SelfDies: correct
+- Searches library for Curse card: correct
+- Shuffles library after: correct (even when no Curse found)
 
-## Verdict: PASS — no issues found (simplifications documented)
+Issues found:
+1. **"You may" is not respected**: The Oracle text says "you may search your library" — this is optional. The implementation always searches automatically without giving the player a choice to decline.
+2. **"Target player" is not implemented**: The Oracle text says "attached to target player" — the controller should choose which player to attach the Curse to. The implementation always attaches to the opponent automatically.
+3. **Curse subtypes check**: The implementation checks `d.subtypes.iter().any(|s| s == "Curse")`. Curses in Innistrad are "Enchantment — Aura Curse", so the subtype is correct.
+
+Test exists in tier15_cards.rs.

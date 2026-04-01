@@ -1,18 +1,15 @@
-# Audit: Spectral Rider
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Spectral Rider
-- **Cost:** {W}{W}
-- **Type:** Creature -- Spirit Knight
-- **Oracle:** Intimidate
-- **P/T:** 2/2
+**Scryfall Oracle text**: Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)
+**Scryfall type line**: Creature — Spirit Knight
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/spectral_rider.rs`
-- **Name:** Spectral Rider ✅
-- **Cost:** {W}{W} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Spirit, Knight ✅
-- **P/T:** 2/2 ✅
-- **Keywords:** Intimidate ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Spectral Rider")
+- Cost: {W}{W} -- correct
+- Type: Creature -- correct
+- Subtypes: Spirit, Knight -- correct
+- P/T: 2/2 -- correct
+- Keywords: Intimidate -- correct
+- Vanilla creature with keyword, no special behavior needed
+- Tests exist in `innistrad_cards.rs` and `keywords.rs`
+- No issues found

@@ -1,18 +1,14 @@
-# Audit: Sol Ring
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Sol Ring
-- **Cost:** {1}
-- **Type:** Artifact
-- **Oracle:** {T}: Add {C}{C}.
-- **P/T:** N/A
+**Scryfall Oracle text**: {T}: Add {C}{C}.
+**Scryfall type line**: Artifact
+**Mana cost**: {1}
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/sol_ring.rs`
-- **Name:** Sol Ring ✅
-- **Cost:** {1} ✅
-- **Type:** Artifact ✅
-- **Mana ability:** produces 2 colorless mana ✅
-- **requires_tap:** true ✅
-- **Zone check:** only available on battlefield and untapped ✅
+Implementation correctly models:
+- Name, mana cost {1}, type Artifact
+- Mana ability: tap to add 2 colorless mana
+- Only available when on battlefield and untapped
+- Tests: No dedicated test found, but this is a straightforward mana ability.
 
-## Verdict: PASS -- no issues found
+No issues found.

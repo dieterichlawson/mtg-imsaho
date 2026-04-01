@@ -1,24 +1,16 @@
-# Audit: Silver-Inlaid Dagger
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Silver-Inlaid Dagger
-- **Cost:** {1}
-- **Type:** Artifact -- Equipment
-- **Oracle:** Equipped creature gets +2/+0. As long as equipped creature is a Human, it gets an additional +1/+0. Equip {2}
-- **P/T:** N/A
+**Scryfall Oracle text**: Equipped creature gets +2/+0.\nAs long as equipped creature is a Human, it gets an additional +1/+0.\nEquip {2}
+**Scryfall type line**: Artifact — Equipment
+**Mana cost**: {1}
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/silver_inlaid_dagger.rs`
-- **Name:** Silver-Inlaid Dagger ✅
-- **Cost:** {1} ✅
-- **Type:** Artifact ✅
-- **Subtypes:** Equipment ✅
-- **Base effect:** ModifyPT +2/+0 on Attached ✅
-- **Human bonus:** update_effects checks for Human subtype and grants +3/+0 instead ✅
-- **Equip cost:** {2}, sorcery speed, targets own creature ✅
-- **is_equipment:** set to true on resolve ✅
+**Issue: Oracle text in implementation says "+3/+0 instead" but actual Oracle says "+2/+0" base and "an additional +1/+0" for Humans (total +3/+0 for Humans).**
 
-### Issue
-- **MINOR:** The oracle text in the implementation says "it gets +3/+0 instead" but the actual oracle text is "it gets an additional +1/+0" (meaning +2/+0 base plus +1/+0 additional = +3/+0 total). The functional result is the same (+3/+0 to Humans), so no gameplay bug.
-- **POTENTIAL:** The Human check uses `registry.card_data(o.card_id)` to look at the base subtypes. If a creature gains or loses the Human subtype through effects, this would not be detected. Minor edge case.
+The implementation oracle_text says "gets +2/+0. As long as equipped creature is a Human, it gets +3/+0 instead." while the actual Oracle text says "gets +2/+0" and "As long as equipped creature is a Human, it gets an additional +1/+0." The functional result is the same (+2 for non-Humans, +3 for Humans), so the behavior is correct, but the oracle_text string is a paraphrase rather than exact.
 
-## Verdict: PASS -- functionally correct, minor oracle text wording difference
+The `update_effects` method correctly applies +2/+0 for non-Humans and +3/+0 for Humans.
+
+- Tests: 3 tests in tier9_equipment.rs covering data, non-Human +2, and Human +3
+
+Functional behavior is correct; oracle text wording is a minor paraphrase.

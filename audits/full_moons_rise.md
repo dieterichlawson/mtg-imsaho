@@ -1,22 +1,16 @@
-# Audit: Full Moon's Rise
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Full Moon's Rise
-- **Cost:** {1}{G}
-- **Type:** Enchantment
-- **Oracle:** Werewolf creatures you control get +1/+0 and have trample. Sacrifice Full Moon's Rise: Regenerate all Werewolf creatures you control.
-- **P/T:** N/A
+**Scryfall Oracle text**: Werewolf creatures you control get +1/+0 and have trample.\nSacrifice Full Moon's Rise: Regenerate all Werewolf and Wolf creatures you control.
+**Scryfall type line**: Enchantment
+**Status**: ISSUE
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({1}{G})
-- Type: CORRECT (Enchantment)
-- Oracle text: PARTIALLY INCORRECT -- the implementation oracle text says "Werewolf creatures" for the static ability but also says "Regenerate all Werewolf creatures" for the sacrifice ability, which matches. However, the code comment at the top says "Werewolf and Wolf creatures" which does not match Oracle.
-- P/T: CORRECT (N/A)
-- +1/+0 to Werewolf creatures: CORRECT (continuous effect ModifyPT with HasSubtype("Werewolf"))
-- Trample to Werewolf creatures: CORRECT (GrantKeyword Trample with HasSubtype("Werewolf"))
-- Sacrifice ability: CORRECT (SacrificeCost::SacrificeThis)
-- Regeneration effect: The on_activate_ability only regenerates creatures with "Werewolf" subtype.
+- Mana cost {1}{G}: correct.
+- Type Enchantment: correct.
+- Sacrifice ability with `SacrificeCost::SacrificeThis`: correct.
+- Regeneration effect grants `regeneration_shields += 1`: correct.
 
-## Issues
-**ISSUE: Code comment says "Werewolf and Wolf" but Oracle only says "Werewolf".** The doc comment at line 9 says "Werewolf and Wolf creatures" but the actual Scryfall oracle text only says "Werewolf creatures." The continuous_effects correctly only filter for HasSubtype("Werewolf"). The activated ability description also mentions "Wolf and Werewolf" but the actual filter in on_activate_ability only checks for "Werewolf" -- so the code behavior is correct, but the comments/descriptions are misleading.
+**Issue 1 — Static buff only applies to Werewolf, not Wolf creatures.** The Oracle text says "Werewolf creatures you control get +1/+0 and have trample" but the actual Innistrad printing says "Werewolf creatures you control get +1/+0 and have trample." The implementation's continuous_effects only filter for `HasSubtype("Werewolf")` which matches the Oracle text. However, the oracle_text field in the code also only says "Werewolf creatures" for the static buff, which is correct.
+
+**Issue 2 — Regeneration ability only regenerates Werewolf creatures, not Wolf creatures.** The Oracle for the sacrifice ability says "Regenerate all Werewolf and Wolf creatures you control." The `on_activate_ability` implementation only checks for `s == "Werewolf"` (line 84) and does NOT check for "Wolf". Wolf creatures would not be regenerated. The description string mentions "Wolf and Werewolf" but the filter code only matches Werewolf.
+
+- Tests exist in `innistrad_simple_cards.rs` (`full_moons_rise_card_data`) — card data only, no behavioral tests.

@@ -1,20 +1,13 @@
-# Audit: Chapel Geist
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Chapel Geist
-- **Cost:** {1}{W}{W}
-- **Type:** Creature -- Spirit
-- **Oracle:** Flying
-- **P/T:** 2/3
-- **Keywords:** Flying
+**Scryfall Oracle text**: Flying
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
 
-## Implementation: `chapel_geist.rs`
-- **Name:** Chapel Geist -- CORRECT
-- **Cost:** {1}{W}{W} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** ["Spirit"] -- CORRECT
-- **P/T:** 2/3 -- CORRECT
-- **Keywords:** [Flying] -- CORRECT
+### Findings
 
-## Issues
-None
+1. **All correct**: Name ("Chapel Geist"), cost ({1}{W}{W}), type (Creature), subtype (Spirit), P/T (2/3), keyword (Flying) all match Oracle text.
+
+2. **No abilities to implement**: Vanilla flyer, correctly has no triggered/activated abilities.
+
+3. **Tests**: No dedicated tests found.

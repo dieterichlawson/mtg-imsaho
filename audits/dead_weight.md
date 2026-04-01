@@ -1,21 +1,18 @@
-# Audit: Dead Weight
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Dead Weight
-- **Cost:** {B}
-- **Type:** Enchantment -- Aura
-- **Oracle:** Enchant creature. Enchanted creature gets -2/-2.
-- **P/T:** N/A
-- **Keywords:** Enchant
+**Scryfall Oracle text**: Enchant creature
+Enchanted creature gets -2/-2.
+**Scryfall type line**: Enchantment — Aura
+**Status**: PASS
 
-## Implementation: `dead_weight.rs`
-- **Name:** Dead Weight -- CORRECT
-- **Cost:** {B} -- CORRECT
-- **Type:** Enchantment -- CORRECT
-- **Subtypes:** ["Aura"] -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Continuous effect:** ModifyPT { power: -2, toughness: -2, scope: Attached } -- CORRECT
-- **Target:** TargetRequirement::Creature -- CORRECT
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name, cost ({B}), type (Enchantment), subtype (Aura) all match.
+
+2. **Continuous effect correct**: `ModifyPT { power: -2, toughness: -2, scope: EffectScope::Attached }` correctly debuffs the enchanted creature.
+
+3. **Oracle text field**: Only says "Enchanted creature gets -2/-2." and omits "Enchant creature" — minor omission but does not affect functionality.
+
+4. **Resolve correct**: Uses `resolve_aura` helper.
+
+5. **Tests**: No dedicated tests found.

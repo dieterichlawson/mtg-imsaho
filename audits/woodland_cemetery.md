@@ -1,19 +1,16 @@
-# Audit: Woodland Cemetery
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Woodland Cemetery
-- **Cost:** *(none)*
-- **Type:** Land
-- **Oracle:** This land enters tapped unless you control a Swamp or a Forest. {T}: Add {B} or {G}.
-- **P/T:** N/A
+**Scryfall Oracle text**: Woodland Cemetery enters the battlefield tapped unless you control a Swamp or a Forest.\n{T}: Add {B} or {G}.
+**Scryfall type line**: Land
+**Scryfall mana cost**: (none)
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/woodland_cemetery.rs`
-- Name: "Woodland Cemetery" -- MATCH
-- Cost: None -- MATCH
-- Types: Land -- MATCH
-- on_enter_battlefield: Checks if controller has a Swamp or Forest (by subtype), enters tapped if not -- MATCH
-- Excludes self from the check (o.id != object_id) -- CORRECT
-- Mana abilities: Two options: Add {B} or Add {G}, both require tap -- MATCH
+Findings:
+- Name: Correct.
+- Type: Land — correct. No cost — correct.
+- Enters tapped condition: Checks for Swamp or Forest subtypes on other permanents controlled by the same player. Correctly excludes itself (`o.id != object_id`). Correct.
+- Mana abilities: Two abilities producing {B} and {G} respectively, both requiring tap. Correct.
+- Only shows mana abilities when untapped and on battlefield. Correct.
+- Tests: `woodland_cemetery_card_data` and `woodland_cemetery_enters_untapped_with_swamp` in innistrad_simple_cards.rs.
 
-## Verdict
-**PASS** — Dual land with conditional ETB tapped correctly implemented.
+No issues found.

@@ -1,25 +1,13 @@
-# Audit: Skirsdag High Priest
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Skirsdag High Priest
-- **Cost:** {1}{B}
-- **Type:** Creature -- Human Cleric
-- **Oracle:** Morbid -- {T}, Tap two untapped creatures you control: Create a 5/5 black Demon creature token with flying. Activate only if a creature died this turn.
-- **P/T:** 1/2
+**Scryfall Oracle text**: Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon creature token with flying. Activate only if a creature died this turn.
+**Scryfall type line**: Creature — Human Cleric
+**Mana cost**: {1}{B}
+**P/T**: 1/2
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/skirsdag_high_priest.rs`
-- **Name:** Skirsdag High Priest ✅
-- **Cost:** {1}{B} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Cleric ✅
-- **P/T:** 1/2 ✅
-- **Morbid check:** checks `state.creature_died_this_turn` ✅
-- **Tap cost:** requires_tap: true, plus taps 2 other untapped creatures ✅
-- **Sorcery speed:** sorcery_speed_only: true ✅
-- **Token:** 5/5 black Demon with flying, subtypes ["Demon"] ✅
-- **Pre-checks:** verifies not tapped, not summoning sick, at least 2 other untapped creatures ✅
+**Issue: Oracle text mismatch.** The implementation oracle_text says "Activate only as a sorcery" but the actual Oracle text (post-errata) says "Activate only if a creature died this turn." The morbid condition is checked correctly in code (`creature_died_this_turn`), and the ability is also marked `sorcery_speed_only: true`. The original Innistrad printing did say "Activate this ability only any time you could cast a sorcery" in addition to the morbid condition, so both restrictions should apply. The implementation correctly enforces both, but the oracle_text string omits the morbid activation restriction text.
 
-### Note
-- The two creatures to tap are auto-selected (first two found) rather than player-chosen. This is a simplification but functionally acceptable in most cases.
+The functional behavior (morbid check + sorcery speed + tap self + tap two other creatures + create 5/5 flying Demon token) is correct.
 
-## Verdict: PASS -- no issues found
+- Tests: 4 tests in tier10_cards.rs covering card data, morbid creation, no-morbid prevention, and creature count requirement

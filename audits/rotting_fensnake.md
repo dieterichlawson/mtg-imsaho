@@ -1,21 +1,14 @@
-# Audit: Rotting Fensnake
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Rotting Fensnake
-- **Cost:** {3}{B}
-- **Type:** Creature — Zombie Snake
-- **Oracle Text:** (none — vanilla creature)
-- **P/T:** 5/1
+**Scryfall Oracle text**: (none — vanilla creature)
+**Scryfall type line**: Creature — Zombie Snake
+**Mana cost**: {3}{B}
+**P/T**: 5/1
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {3}{B} — OK
-- **Type:** Creature, subtypes ["Zombie", "Snake"] — OK
-- **Oracle Text:** Empty string — OK
-- **P/T:** 5/1 — OK
-- **Keywords:** None — OK
+Implementation correctly models:
+- Name, mana cost {3}{B}, type Creature, subtypes Zombie/Snake, P/T 5/1
+- Vanilla creature with no abilities
+- Tests: `rotting_fensnake_is_5_1` in innistrad_cards.rs
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

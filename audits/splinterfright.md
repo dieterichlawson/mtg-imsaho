@@ -1,21 +1,17 @@
-# Audit: Splinterfright
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Splinterfright
-- **Cost:** {2}{G}
-- **Type:** Creature -- Elemental
-- **Oracle:** Trample. Splinterfright's power and toughness are each equal to the number of creature cards in your graveyard. At the beginning of your upkeep, mill two cards.
-- **P/T:** */*
+**Scryfall Oracle text**: Trample\nSplinterfright's power and toughness are each equal to the number of creature cards in your graveyard.\nAt the beginning of your upkeep, mill two cards.
+**Scryfall type line**: Creature — Elemental
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/splinterfright.rs`
-- **Name:** Splinterfright ✅
-- **Cost:** {2}{G} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Elemental ✅
-- **Base P/T:** 0/0 (used as fallback) ✅
-- **Keywords:** Trample ✅
-- **dynamic_pt:** counts creature cards (power.is_some()) in controller's graveyard ✅
-- **Triggered ability:** Upkeep ✅
-- **on_upkeep:** mills 2 cards, only on controller's upkeep ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Splinterfright")
+- Cost: {2}{G} -- correct
+- Type: Creature -- correct
+- Subtypes: Elemental -- correct
+- P/T: */* (base 0/0) -- correct
+- Keywords: Trample -- correct
+- `dynamic_pt` counts creature cards in controller's graveyard -- correct
+- `on_upkeep` mills 2 cards, only on controller's upkeep -- correct
+- Triggered ability registered as TriggerKind::Upkeep -- correct
+- Tests exist in `tier7_cards.rs`
+- No issues found

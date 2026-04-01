@@ -1,19 +1,15 @@
-# Audit: Typhoid Rats
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Typhoid Rats
-- **Cost:** {B}
-- **Type:** Creature — Rat
-- **Oracle:** Deathtouch
-- **P/T:** 1/1
+**Scryfall Oracle text**: Deathtouch (Any amount of damage this deals to a creature is enough to destroy it.)
+**Scryfall type line**: Creature — Rat
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/typhoid_rats.rs`
-- Name: "Typhoid Rats" -- MATCH
-- Cost: {B} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Rat"] -- MATCH
-- P/T: 1/1 -- MATCH
-- Keywords: [Deathtouch] -- MATCH
-
-## Verdict
-**PASS** — Simple deathtouch creature, correctly implemented.
+- Name: correct ("Typhoid Rats")
+- Cost: {B} -- correct
+- Type: Creature -- correct
+- Subtypes: Rat -- correct
+- P/T: 1/1 -- correct
+- Keywords: Deathtouch -- correct
+- Vanilla creature with keyword, no special behavior needed
+- Tests exist in `innistrad_cards.rs` and `keywords.rs`
+- No issues found

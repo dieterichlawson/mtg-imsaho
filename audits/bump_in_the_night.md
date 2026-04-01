@@ -1,22 +1,16 @@
-# Audit: Bump in the Night
+## Audit — 2026-04-01
 
-## Oracle (Scryfall/API)
-- **Name:** Bump in the Night
-- **Cost:** {B}
-- **Type:** Sorcery
-- **Oracle:** Target opponent loses 3 life. Flashback {5}{R}
-- **P/T:** N/A
+**Scryfall Oracle text**: Target opponent loses 3 life.
+Flashback {5}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `bump_in_the_night.rs`
-- **Name:** Bump in the Night -- CORRECT
-- **Cost:** {B} -- CORRECT
-- **Type:** Sorcery -- CORRECT
-- **Flashback:** {5}{R} -- CORRECT
-- **Target:** PlayerOnly, validated to exclude self (opponent only) -- CORRECT
-- **Effect:** Target opponent loses 3 life -- CORRECT
-- **Life loss:** Directly modifies life and emits LifeChanged event -- CORRECT
-
-## Issues
-1. **ISSUE (minor):** This is life loss, not damage. The implementation correctly does NOT emit NonCombatDamageDealt, which is correct -- life loss is distinct from damage in MTG rules.
-
-## Verdict: PASS -- No issues found
+- Mana cost {B}: correct
+- Card type Sorcery: correct
+- Flashback {5}{R}: correct
+- Target requirement PlayerOnly: correct
+- is_valid_target excludes caster (opponent only): correct
+- Loses 3 life (not damage): correct — implemented as direct life subtraction, not damage
+- Uses move_spell_after_resolve: correct
+- Emits LifeChanged event: correct
+- Tests exist in tier2_spells.rs and flashback.rs

@@ -1,22 +1,13 @@
-# Audit: Avacyn's Pilgrim
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Avacyn's Pilgrim
-- **Cost:** {G}
-- **Type:** Creature — Human Monk
-- **Oracle:** {T}: Add {W}.
-- **P/T:** 1/1
+**Scryfall Oracle text**: {T}: Add {W}.
+**Scryfall type line**: Creature — Human Monk
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/avacyns_pilgrim.rs`
-- **Name:** Avacyn's Pilgrim ✅
-- **Cost:** {G} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Monk ✅
-- **P/T:** 1/1 ✅
-- **Oracle text:** matches ✅
-- **Mana ability:** {T}: Add {W} ✅
-- **Produced mana:** White ✅
-- **requires_tap:** true ✅
-- **Summoning sickness check:** present in mana_abilities ✅
-
-## Verdict: PASS — no issues found
+- Mana cost {G}: correct
+- 1/1 stats: correct
+- Subtypes Human, Monk: correct
+- Mana ability produces White mana: correct
+- requires_tap: true: correct
+- Checks summoning_sick: correct (mana abilities from creatures with tap still need to check summoning sickness)
+- Tests exist in innistrad_simple_cards.rs covering card data, tapping for white, and summoning sickness

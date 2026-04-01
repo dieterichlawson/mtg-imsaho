@@ -1,15 +1,13 @@
-# Audit: Hamlet Captain
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {1}{G}
-- Type: Creature -- Human Warrior
-- P/T: 2/2
-- Oracle: "Whenever Hamlet Captain attacks or blocks, other Human creatures you control get +1/+1 until end of turn."
+**Scryfall Oracle text**: Whenever Hamlet Captain attacks or blocks, other Human creatures you control get +1/+1 until end of turn.
+**Scryfall type line**: Creature — Human Warrior
+**Status**: PASS
 
-## Implementation: hamlet_captain.rs
-
-## Issues Found
-
-No issues found. Name, cost ({1}{G}), type (Creature), subtypes (Human, Warrior), P/T (2/2), oracle text, and both triggered abilities (attacks, blocks) all match. The buff correctly targets other Human creatures you control (excluding self) and applies +1/+1 until end of turn via UntilEndOfTurnEffect.
-
-## Verdict: PASS
+- Mana cost {1}{G}: correct
+- 2/2 stats: correct
+- Subtypes Human Warrior: correct
+- Triggers on both attacks and blocks: correct (two TriggeredAbilityDefs, on_attacks and on_blocks both call buff_humans)
+- Buffs other Human creatures you control (excluding self) with +1/+1 until end of turn: correct
+- Checks subtypes on both object and card_data for Human: correct
+- Tests exist in tier12_cards.rs covering attack and block buffs

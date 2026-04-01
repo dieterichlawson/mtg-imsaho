@@ -1,19 +1,14 @@
-# Audit: Stony Silence
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Stony Silence
-- **Cost:** {1}{W}
-- **Type:** Enchantment
-- **Oracle:** Activated abilities of artifacts can't be activated.
-- **P/T:** N/A
+**Scryfall Oracle text**: Activated abilities of artifacts can't be activated.
+**Scryfall type line**: Enchantment
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/stony_silence.rs`
-- **Name:** Stony Silence ✅
-- **Cost:** {1}{W} ✅
-- **Type:** Enchantment ✅
-- **Oracle text:** matches ✅
+- Name: correct ("Stony Silence")
+- Cost: {1}{W} -- correct
+- Type: Enchantment -- correct
+- Oracle text: matches
 
-### Issue
-- **NOT IMPLEMENTED:** The card's static ability (preventing activation of artifact abilities) is not enforced by the engine. The code comments explicitly document this as a known limitation. The card exists for deck building and oracle text purposes only.
+**Issue: Static ability is not implemented.** The code comment explicitly acknowledges this: "the engine doesn't have an ability restriction system." The card is registered for deck building purposes only. Its static ability (preventing activated abilities of artifacts) is never enforced. This means Sol Ring, equipment equip abilities, Traveler's Amulet, etc. can all still be activated while Stony Silence is on the battlefield.
 
-## Verdict: ISSUE -- static ability not enforced (documented known limitation)
+- Tests exist in `innistrad_simple_cards.rs` (card_data test only, no functional test)

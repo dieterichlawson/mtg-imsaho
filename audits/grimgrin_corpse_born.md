@@ -1,25 +1,18 @@
-# Audit: Grimgrin, Corpse-Born
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {3}{U}{B}
-- Type: Legendary Creature -- Zombie Warrior
-- P/T: 5/5
-- Oracle: "Grimgrin, Corpse-Born enters tapped and doesn't untap during your untap step.
-  Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
-  Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin."
+**Scryfall Oracle text**: Grimgrin, Corpse-Born enters the battlefield tapped and doesn't untap during your untap step.
+Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
+Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.
+**Scryfall type line**: Legendary Creature — Zombie Warrior
+**Status**: ISSUE
 
-## Implementation: grimgrin_corpse_born.rs
-
-## Issues Found
-
-1. **ISSUE: Sacrifice ability auto-selects sacrifice target** - The sacrifice ability should let the player choose which creature to sacrifice. The implementation auto-picks "the first available that isn't Grimgrin" (line 83-86). This removes strategic choice.
-
-2. **ISSUE: Sacrifice ability has no sacrifice_cost** - The activated ability definition (line 64-73) sets sacrifice_cost to SacrificeCost::None. The actual sacrifice happens in on_activate_ability. This means the engine might not properly enforce the "sacrifice another creature" cost -- if no other creatures exist, the ability shouldn't be activatable, but it still appears in the list.
-
-3. **ISSUE: Attack trigger auto-targets** - The attack trigger should let the player choose which creature to destroy. The implementation auto-selects "the first creature the defending player controls" (line 110-113).
-
-4. **ISSUE: Oracle text order** - Oracle says "destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin." The implementation correctly destroys first (line 117), then adds the counter (line 123). The counter should only be added if the destroy happened (targeting is mandatory). Currently the counter is always added even if no target exists.
-
-Otherwise correct: cost, types (Legendary Zombie Warrior), P/T (5/5), enters tapped, doesn't untap, sacrifice-to-untap ability, attack trigger.
-
-## Verdict: ISSUES FOUND (4 issues)
+- Mana cost {3}{U}{B}: correct
+- 5/5 stats: correct
+- Supertype Legendary: correct
+- Subtypes Zombie Warrior: correct
+- Enters tapped: correct
+- PreventUntap continuous effect: correct
+- Sacrifice ability (untap + counter): correct in effect, but the sacrifice is auto-picked (first available creature) rather than player choice
+- ISSUE: The sacrifice ability uses SacrificeCost::None and manually picks a creature to sacrifice in on_activate_ability. This means the engine doesn't enforce the sacrifice as a cost — the ability could be activated even with no other creatures. The auto-pick of "first available" creature is also not player-controlled.
+- Attack trigger (destroy + counter): correctly destroys a creature the defending player controls and adds +1/+1 counter. Target auto-picked as first found creature rather than player choice.
+- Tests exist in tier15_cards.rs covering enters-tapped, sacrifice/untap/counter mechanics

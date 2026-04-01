@@ -1,21 +1,18 @@
-# Audit: Unruly Mob
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Unruly Mob
-- **Cost:** {1}{W}
-- **Type:** Creature — Human
-- **Oracle:** Whenever another creature you control dies, put a +1/+1 counter on this creature.
-- **P/T:** 1/1
+**Scryfall Oracle text**: Whenever another creature you control dies, put a +1/+1 counter on Unruly Mob.
+**Scryfall type line**: Creature — Human
+**Scryfall mana cost**: {1}{W}
+**Scryfall P/T**: 1/1
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/unruly_mob.rs`
-- Name: "Unruly Mob" -- MATCH
-- Cost: {1}{W} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Human"] -- MATCH
-- P/T: 1/1 -- MATCH
-- Trigger: AnyCreatureDies -- MATCH
-- on_any_creature_dies: Filters to dead_controller == controller (another creature YOU control) -- CORRECT
-- Adds +1/+1 counter -- MATCH
+Findings:
+- Name: Correct.
+- Mana cost: {1}{W} — correct.
+- Types: Creature — Human — correct.
+- P/T: 1/1 — correct.
+- Oracle text: Matches.
+- Trigger: `on_any_creature_dies` correctly checks that self is on the battlefield and that the dead creature's controller matches self's controller. Note: does not explicitly exclude self dying (dead_id != self_id), but since it checks self is on the battlefield, if self dies it would no longer be on the battlefield, so this is fine.
+- Tests: `unruly_mob_gains_counter_when_ally_dies` in tier3_cards.rs.
 
-## Verdict
-**PASS** — Correctly implemented.
+No issues found.

@@ -1,23 +1,17 @@
-# Audit: Lantern Spirit
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Lantern Spirit
-- **Cost:** {2}{U}
-- **Type:** Creature — Spirit
-- **Oracle:** Flying. {U}: Return Lantern Spirit to its owner's hand.
-- **P/T:** 2/1
+**Scryfall Oracle text**: Flying\n{U}: Return Lantern Spirit to its owner's hand.
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
 
-## Implementation
-- Name: "Lantern Spirit" -- CORRECT
-- Cost: {2}{U} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Spirit"] -- CORRECT
-- P/T: 2/1 -- CORRECT
-- Keywords: [Flying] -- CORRECT
-- Activated ability: {U}, returns self to hand -- CORRECT
-- No tap required for ability -- CORRECT
+- Name: Lantern Spirit -- correct
+- Cost: {2}{U} -- correct
+- Type: Creature -- correct
+- Subtypes: Spirit -- correct
+- P/T: 2/1 -- correct
+- Keywords: Flying -- correct
+- Activated ability: {U} to return to hand -- correctly implemented
+- Ability does not require tap -- correct
+- Tests exist in activated_abilities.rs
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

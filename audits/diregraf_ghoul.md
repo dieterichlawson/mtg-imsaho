@@ -1,20 +1,13 @@
-# Audit: Diregraf Ghoul
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Diregraf Ghoul
-- **Cost:** {B}
-- **Type:** Creature -- Zombie
-- **Oracle:** Diregraf Ghoul enters the battlefield tapped.
-- **P/T:** 2/2
+**Scryfall Oracle text**: Diregraf Ghoul enters the battlefield tapped.
+**Scryfall type line**: Creature — Zombie
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({B})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Zombie)
-- Oracle text: CORRECT
-- P/T: CORRECT (2/2)
-- ETB tapped: CORRECT (sets obj.tapped = true in on_resolve)
-
-## Issues
-None found.
+- Mana cost {B}: correct.
+- Type Creature: correct.
+- Subtype Zombie: correct.
+- Power/Toughness 2/2: correct.
+- Enters tapped implemented via `on_resolve` setting `obj.tapped = true` after moving to battlefield: correct.
+- No keywords: correct.
+- Tests exist in `innistrad_cards.rs` (`diregraf_ghoul_enters_tapped`).

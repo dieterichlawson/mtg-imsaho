@@ -1,19 +1,15 @@
-# Audit: Spider Spawning
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Spider Spawning
-- **Cost:** {4}{G}
-- **Type:** Sorcery
-- **Oracle:** Create a 1/2 green Spider creature token with reach for each creature card in your graveyard. Flashback {6}{B}
-- **P/T:** N/A
+**Scryfall Oracle text**: Create a 1/2 green Spider creature token with reach for each creature card in your graveyard.\nFlashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/spider_spawning.rs`
-- **Name:** Spider Spawning ✅
-- **Cost:** {4}{G} ✅
-- **Type:** Sorcery ✅
-- **Flashback:** {6}{B} ✅
-- **on_resolve:** counts creature cards in graveyard (owner == controller, power.is_some(), excludes self on stack) ✅
-- **Token:** 1/2 green Spider with Reach, subtypes ["Spider"] ✅
-- **Spell cleanup:** move_spell_after_resolve ✅
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Spider Spawning")
+- Cost: {4}{G} -- correct
+- Type: Sorcery -- correct
+- Oracle text: matches
+- Flashback cost: {6}{B} -- correct
+- Token creation: 1/2 green Spider with reach -- correct (uses `create_token_with_subtypes` with proper params)
+- Correctly counts creature cards in graveyard (excluding itself while on the stack)
+- Tests exist in `tier5_cards.rs`
+- No issues found

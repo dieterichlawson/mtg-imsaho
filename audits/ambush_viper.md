@@ -1,17 +1,12 @@
-# Audit: Ambush Viper
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Ambush Viper
-- **Mana Cost:** {1}{G}
-- **Type:** Creature — Snake
-- **Oracle:** Flash, Deathtouch
-- **P/T:** 2/1
+**Scryfall Oracle text**: Flash
+Deathtouch
+**Scryfall type line**: Creature — Snake
+**Status**: PASS
 
-## Implementation: `ambush_viper.rs`
-- **Name:** Ambush Viper -- CORRECT
-- **Mana Cost:** {1}{G} -- CORRECT
-- **Type:** Creature — Snake -- CORRECT
-- **P/T:** 2/1 -- CORRECT
-- **Keywords:** Flash, Deathtouch -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {1}{G}: correct
+- 2/1 stats: correct
+- Subtype Snake: correct
+- Keywords Flash and Deathtouch: correct
+- Simple creature with keywords, no complex abilities

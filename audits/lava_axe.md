@@ -1,21 +1,15 @@
-# Audit: Lava Axe
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Lava Axe
-- **Cost:** {4}{R}
-- **Type:** Sorcery
-- **Oracle:** Lava Axe deals 5 damage to target player or planeswalker.
-- **P/T:** N/A
+**Scryfall Oracle text**: Lava Axe deals 5 damage to target player or planeswalker.
+**Scryfall type line**: Sorcery
+**Status**: ISSUE
 
-## Implementation
-- Name: "Lava Axe" -- CORRECT
-- Cost: {4}{R} -- CORRECT
-- Type: Sorcery -- CORRECT
-- Oracle text matches -- CORRECT
-- Target requirement: PlayerOnly -- POTENTIAL ISSUE (see below)
-- Deals 5 damage via resolve_damage helper -- CORRECT
+**Findings**:
 
-## Issues
-1. **ISSUE (minor):** Target requirement is `PlayerOnly` but oracle says "target player or planeswalker." The card should also be able to target planeswalkers. This matters if the engine supports planeswalkers as targets.
-
-## Verdict: PASS (minor targeting limitation for planeswalkers)
+1. Name: Lava Axe -- correct
+2. Cost: {4}{R} -- correct
+3. Type: Sorcery -- correct
+4. Damage: 5 -- correct
+5. **ISSUE — Target restriction too narrow**: The Oracle text says "target player or planeswalker" but the implementation uses `TargetRequirement::PlayerOnly`, which does not allow targeting planeswalkers. Should be `PlayerOrPlaneswalker` or equivalent.
+6. The oracle_text field in the implementation correctly says "target player or planeswalker" but the target_requirement() method only returns PlayerOnly.
+7. Tests exist in spells.rs (only tests player targeting).

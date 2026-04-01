@@ -1,19 +1,17 @@
-# Audit: Voiceless Spirit
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Voiceless Spirit
-- **Cost:** {2}{W}
-- **Type:** Creature — Spirit
-- **Oracle:** Flying, first strike
-- **P/T:** 2/1
+**Scryfall Oracle text**: Flying, first strike
+**Scryfall type line**: Creature — Spirit
+**Scryfall mana cost**: {2}{W}
+**Scryfall P/T**: 2/1
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/voiceless_spirit.rs`
-- Name: "Voiceless Spirit" -- MATCH
-- Cost: {2}{W} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Spirit"] -- MATCH
-- P/T: 2/1 -- MATCH
-- Keywords: [Flying, FirstStrike] -- MATCH
+Findings:
+- Name: Correct.
+- Mana cost: {2}{W} — correct.
+- Types: Creature — Spirit — correct.
+- P/T: 2/1 — correct.
+- Keywords: Flying, first strike — both correctly implemented in the keywords vec.
+- Tests: `voiceless_spirit_has_flying_and_first_strike` in innistrad_cards.rs.
 
-## Verdict
-**PASS** — Correctly implemented with both keywords.
+No issues found.

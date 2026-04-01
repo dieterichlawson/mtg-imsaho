@@ -1,20 +1,17 @@
-# Audit: Vampiric Fury
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Vampiric Fury
-- **Cost:** {1}{R}
-- **Type:** Instant
-- **Oracle:** Vampire creatures you control get +2/+0 and gain first strike until end of turn.
-- **P/T:** N/A
+**Scryfall Oracle text**: Vampire creatures you control get +2/+0 and gain first strike until end of turn.
+**Scryfall type line**: Instant
+**Scryfall mana cost**: {1}{R}
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/vampiric_fury.rs`
-- Name: "Vampiric Fury" -- MATCH
-- Cost: {1}{R} -- MATCH
-- Types: Instant -- MATCH
-- Behavior: Finds Vampire creatures under caster's control, grants +2/+0 and first strike until EOT -- MATCH
+Findings:
+- Name: Correct.
+- Mana cost: {1}{R} — correct.
+- Type: Instant — correct.
+- Oracle text: Matches.
+- Resolution: Finds all Vampire creatures controlled by the caster, applies +2/+0 and first strike until end of turn. Correctly uses `until_end_of_turn_effects` for the power bonus and `until_end_of_turn_keywords` for first strike.
+- **Minor note**: The implementation checks `obj.power.is_some()` as a creature heuristic, which is standard for this engine.
+- Tests: `vampiric_fury_buffs_vampires` in innistrad_cards.rs.
 
-### Note
-- Only checks registry card_data subtypes for Vampire, not instance subtypes on game objects. Vampire tokens whose subtype is only on the game object (not via card_data) might be missed.
-
-## Verdict
-**PASS** — Correctly implements the Vampire tribal pump spell.
+No issues found.

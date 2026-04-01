@@ -1,16 +1,13 @@
-# Audit: Graveyard Shovel
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {2}
-- Type: Artifact
-- Oracle: "{2}, {T}: Exile target card from a graveyard. If it was a creature card, you gain 2 life."
+**Scryfall Oracle text**: {2}, {T}: Target player exiles a card from their graveyard. If it's a creature card, you gain 2 life.
+**Scryfall type line**: Artifact
+**Status**: ISSUE
 
-## Implementation: graveyard_shovel.rs
-
-## Issues Found
-
-1. **ISSUE: Auto-targets instead of player choice** - Oracle says "target card from a graveyard" meaning the player should choose which card to exile. The implementation auto-selects, preferring creature cards for life gain (line 63-65). This removes strategic choice (e.g., choosing to exile a key non-creature card from opponent's graveyard even though creature cards exist).
-
-Otherwise correct: cost ({2}), type (Artifact), oracle text, activated ability cost ({2} + tap), exile effect, and life gain for creature cards all match.
-
-## Verdict: ISSUES FOUND (1 issue - auto-targeting)
+- Mana cost {2}: correct
+- Card type Artifact: correct
+- Activated ability {2}, {T}: correct cost and tap requirement
+- ISSUE: Oracle says "Target player exiles a card from their graveyard" — the target is a player who then chooses a card to exile. The implementation instead targets a graveyard card directly (TargetRequirement::GraveyardCard) and can target any player's graveyard card. This changes the targeting semantics: Oracle targets a player, then that player exiles a card of their choice; the implementation targets a specific card.
+- Creature check and 2 life gain: correctly checks if exiled card was a creature and gains 2 life
+- Life gain emits LifeChanged event: correct
+- Tests exist in innistrad_simple_cards.rs covering exile and life gain

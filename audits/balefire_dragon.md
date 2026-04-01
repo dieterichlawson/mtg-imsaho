@@ -1,23 +1,17 @@
-# Audit: Balefire Dragon
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Balefire Dragon
-- **Cost:** {5}{R}{R}
-- **Type:** Creature — Dragon
-- **Oracle:** Flying. Whenever Balefire Dragon deals combat damage to a player, it deals that much damage to each creature that player controls.
-- **P/T:** 6/6
+**Scryfall Oracle text**: Flying
+Whenever Balefire Dragon deals combat damage to a player, it deals that much damage to each creature that player controls.
+**Scryfall type line**: Creature — Dragon
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/balefire_dragon.rs`
-- **Name:** Balefire Dragon ✅
-- **Cost:** {5}{R}{R} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Dragon ✅
-- **P/T:** 6/6 ✅
-- **Keywords:** Flying ✅
-- **Triggered ability:** CombatDamageToPlayer ✅
-- **on_combat_damage_to_player:** deals `amount` damage to each creature damaged player controls ✅
-- **Damage is non-combat:** Uses `damage_marked` + `NonCombatDamageDealt` event ✅
-- **damaged_by tracking:** pushes `self_id` ✅
-- **Zone check:** checks self is on battlefield ✅
-
-## Verdict: PASS — no issues found
+- Mana cost {5}{R}{R}: correct
+- 6/6 stats: correct
+- Subtype Dragon: correct
+- Keyword Flying: correct
+- Triggered ability TriggerKind::CombatDamageToPlayer: correct
+- on_combat_damage_to_player collects all creatures the damaged player controls: correct
+- Deals `amount` damage (the combat damage dealt) to each creature: correct
+- Uses NonCombatDamageDealt event for the triggered ability damage: correct (this follow-up damage is not combat damage)
+- Checks self is still on battlefield before triggering: correct
+- Test exists in tier6_cards.rs

@@ -1,23 +1,18 @@
-# Audit: Makeshift Mauler
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Makeshift Mauler
-- **Cost:** {3}{U}
-- **Type:** Creature — Zombie Horror
-- **Oracle:** As an additional cost to cast this spell, exile a creature card from your graveyard.
-- **P/T:** 4/5
+**Scryfall Oracle text**: As an additional cost to cast Makeshift Mauler, exile a creature card from your graveyard.
+**Scryfall type line**: Creature — Zombie Horror
+**Status**: ISSUE
 
-## Implementation
-- Name: "Makeshift Mauler" -- CORRECT
-- Cost: {3}{U} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Zombie", "Horror"] -- CORRECT
-- P/T: 4/5 -- CORRECT
-- Oracle text matches -- CORRECT
-- Additional cost: ExileCreaturesFromGraveyard(1) -- CORRECT
-- On resolve: exiles a creature card from graveyard, then enters battlefield -- CORRECT
+**Findings**:
 
-## Issues
-None.
+1. Name: Makeshift Mauler -- correct
+2. Cost: {3}{U} -- correct
+3. Type: Creature -- correct
+4. Subtypes: Zombie, Horror -- correct
+5. P/T: 4/5 -- correct
+6. Additional cost: exile a creature card from graveyard -- declared in card_data as `AdditionalCost::ExileCreaturesFromGraveyard(1)` which is correct.
+7. **ISSUE — Double exile in on_resolve**: The `on_resolve` method manually exiles a creature card from the graveyard again during resolution. If the engine already handles the `AdditionalCost` at cast time, this would exile TWO creature cards total. If the engine does NOT handle it automatically, then only the on_resolve exile happens (at the wrong time -- should be at cast time, not resolution). Either way, one of these is redundant or incorrectly timed.
+8. Tests exist in tier11_cards.rs.
 
-## Verdict: PASS
+**Summary**: The additional cost exile logic may be duplicated -- once via the `additional_cost` field and once manually in `on_resolve`. This needs investigation to determine which path the engine actually uses.

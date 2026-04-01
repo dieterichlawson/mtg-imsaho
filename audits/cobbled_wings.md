@@ -1,23 +1,20 @@
-# Audit: Cobbled Wings
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Cobbled Wings
-- **Cost:** {2}
-- **Type:** Artifact -- Equipment
-- **Oracle:** Equipped creature has flying. Equip {1}
-- **P/T:** N/A
-- **Keywords:** Equip
+**Scryfall Oracle text**: Equipped creature has flying.
+Equip {1}
+**Scryfall type line**: Artifact — Equipment
+**Status**: PASS
 
-## Implementation: `cobbled_wings.rs`
-- **Name:** Cobbled Wings -- CORRECT
-- **Cost:** {2} -- CORRECT
-- **Type:** Artifact -- CORRECT
-- **Subtypes:** ["Equipment"] -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Continuous effect:** GrantKeyword Flying to Attached -- CORRECT
-- **Equip cost:** {1} -- CORRECT
-- **Equip sorcery speed:** true -- CORRECT
-- **Target validation:** own creatures only -- CORRECT
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name, cost ({2}), types (Artifact), subtype (Equipment), no P/T all match.
+
+2. **Continuous effect correct**: Grants Flying to attached creature via `EffectScope::Attached`.
+
+3. **Equip ability correct**: Cost {1}, sorcery speed only, targets creature.
+
+4. **Equip target validation correct**: Only allows targeting creatures you control (line 52-53).
+
+5. **on_resolve sets is_equipment flag**: Correct.
+
+6. **Tests**: No dedicated tests found.

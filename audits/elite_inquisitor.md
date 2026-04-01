@@ -1,23 +1,12 @@
-# Audit: Elite Inquisitor
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Elite Inquisitor
-- **Cost:** {W}{W}
-- **Type:** Creature -- Human Soldier
-- **Oracle:** First strike, vigilance. Protection from Vampires, from Werewolves, and from Zombies.
-- **P/T:** 2/2
+**Scryfall Oracle text**: First strike, vigilance\nProtection from Vampires, from Werewolves, and from Zombies
+**Scryfall type line**: Creature — Human Soldier
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({W}{W})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Human, Soldier)
-- Oracle text: CORRECT
-- P/T: CORRECT (2/2)
-- Keywords: CORRECT (FirstStrike, Vigilance)
-- Protection from Vampires: CORRECT (ProtectionFromSubtype "Vampire")
-- Protection from Werewolves: CORRECT (ProtectionFromSubtype "Werewolf")
-- Protection from Zombies: CORRECT (ProtectionFromSubtype "Zombie")
-
-## Issues
-None found.
+- Mana cost {W}{W}: correct.
+- Type Creature, subtypes Human Soldier: correct.
+- Power/Toughness 2/2: correct.
+- Keywords: FirstStrike, Vigilance: correct.
+- Protection from Vampires, Werewolves, Zombies via `ProtectionFromSubtype`: correct.
+- Tests exist in `tier12_cards.rs` (`elite_inquisitor_keywords`, `elite_inquisitor_protection_prevents_damage`, `elite_inquisitor_cant_be_blocked_by_zombies`).

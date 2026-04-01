@@ -1,17 +1,15 @@
-# Audit: Maw of the Mire
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Maw of the Mire
-- **Cost:** {4}{B}
-- **Type:** Sorcery
-- **Oracle:** Destroy target land. You gain 4 life.
+**Scryfall Oracle text**: Destroy target land. You gain 4 life.
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/maw_of_the_mire.rs`
-- **Name:** Maw of the Mire -- CORRECT
-- **Cost:** {4}{B} -- CORRECT
-- **Type:** Sorcery -- CORRECT
-- **Target:** Land (PermanentWithFilter HasCardType Land) -- CORRECT
-- **on_resolve:** Destroys target land via try_destroy, gains 4 life with LifeChanged event -- CORRECT
+- Name: Maw of the Mire -- correct
+- Cost: {4}{B} -- correct
+- Type: Sorcery -- correct
+- Target: land permanent -- correctly implemented with PermanentWithFilter(HasCardType(Land))
+- Effect: destroys land and gains 4 life -- correctly implemented
+- Life gain properly tracks old/new life and emits event -- correct
+- Tests exist in innistrad_simple_cards.rs
 
-## Verdict
-**PASS** -- No issues found.
+No issues found. Implementation matches Oracle text.

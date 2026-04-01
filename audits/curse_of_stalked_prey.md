@@ -1,22 +1,18 @@
-# Audit: Curse of Stalked Prey
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Curse of Stalked Prey
-- **Cost:** {1}{R}
-- **Type:** Enchantment -- Aura Curse
-- **Oracle:** Enchant player. Whenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature.
-- **P/T:** N/A
-- **Keywords:** Enchant
+**Scryfall Oracle text**: Enchant player
+Whenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature.
+**Scryfall type line**: Enchantment — Aura Curse
+**Status**: PASS
 
-## Implementation: `curse_of_stalked_prey.rs`
-- **Name:** Curse of Stalked Prey -- CORRECT
-- **Cost:** {1}{R} -- CORRECT
-- **Type:** Enchantment -- CORRECT
-- **Subtypes:** ["Aura", "Curse"] -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Target:** TargetRequirement::PlayerOnly -- CORRECT
-- **Trigger:** AnyCombatDamageToPlayer -- CORRECT
-- **Behavior:** Adds +1/+1 counter when creature deals combat damage to enchanted player -- CORRECT
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name, cost ({1}{R}), type (Enchantment), subtypes (Aura, Curse) all match.
+
+2. **Trigger correct**: Uses `TriggerKind::AnyCombatDamageToPlayer` which correctly matches "deals combat damage."
+
+3. **Target verification correct**: Checks that `damaged_player` matches the `cursed_player` (attached_to_player).
+
+4. **Counter placement correct**: Adds +1/+1 counter to the source creature that dealt damage, only if it's still on the battlefield.
+
+5. **Tests**: No dedicated tests found.

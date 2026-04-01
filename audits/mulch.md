@@ -1,16 +1,16 @@
-# Audit: Mulch
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Mulch
-- **Cost:** {1}{G}
-- **Type:** Sorcery
-- **Oracle:** Reveal the top four cards of your library. Put all land cards revealed this way into your hand and the rest into your graveyard.
+**Scryfall Oracle text**: Reveal the top four cards of your library. Put all land cards revealed this way into your hand and the rest into your graveyard.
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/mulch.rs`
-- **Name:** Mulch -- CORRECT
-- **Cost:** {1}{G} -- CORRECT
-- **Type:** Sorcery -- CORRECT
-- **on_resolve:** Reveals top 4, lands to hand, rest to graveyard -- CORRECT
+- Name: Correct ("Mulch")
+- Cost: {1}{G} - Correct
+- Type: Sorcery - Correct
+- Oracle text matches.
+- Implementation: Reveals top 4 cards (handles case where library has fewer), sorts into lands (to hand) and non-lands (to graveyard). Correct.
+- Uses registry card_data to check CardType::Land for land detection. Correct.
+- Logs reveal, logs lands put into hand. Correct.
+- Tests: tier11_cards.rs has `mulch_puts_lands_in_hand_and_rest_in_graveyard`.
 
-## Verdict
-**PASS** -- No issues found.
+No issues found.

@@ -1,21 +1,15 @@
-# Audit: Kindercatch
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Kindercatch
-- **Cost:** {3}{G}{G}{G}
-- **Type:** Creature — Spirit
-- **Oracle:** (vanilla — no oracle text)
-- **P/T:** 6/6
+**Scryfall Oracle text**: *(no oracle text - vanilla creature)*
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
 
-## Implementation
-- Name: "Kindercatch" -- CORRECT
-- Cost: {3}{G}{G}{G} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Spirit"] -- CORRECT
-- P/T: 6/6 -- CORRECT
-- Oracle text: empty string -- CORRECT (vanilla creature)
+- Name: Kindercatch -- correct
+- Cost: {3}{G}{G}{G} -- correct
+- Type: Creature -- correct
+- Subtypes: Spirit -- correct
+- P/T: 6/6 -- correct
+- No abilities (vanilla) -- correct
+- Referenced in tier10_cards.rs tests (used as a library card for Mindshrieker test)
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

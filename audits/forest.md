@@ -1,22 +1,12 @@
-# Audit: Forest
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Forest
-- **Cost:** (none)
-- **Type:** Basic Land -- Forest
-- **Oracle:** ({T}: Add {G}.)
-- **P/T:** N/A
+**Scryfall Oracle text**: ({T}: Add {G}.)
+**Scryfall type line**: Basic Land — Forest
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT (None)
-- Type: CORRECT (Land)
-- Supertypes: CORRECT (Basic)
-- Subtypes: CORRECT (Forest)
-- Oracle text: CORRECT ("{T}: Add {G}.")
-- Mana ability produces Green: CORRECT
-- requires_tap: CORRECT (true)
-- P/T: CORRECT (N/A)
-
-## Issues
-None found.
+- Mana cost: none (land): correct.
+- Type Land, supertype Basic, subtype Forest: correct.
+- Mana ability: tap to add {G}: correct.
+- Only available when on battlefield and untapped: correct.
+- `requires_tap: true`: correct.
+- Tests exist across multiple test files (lands_and_mana.rs etc.).

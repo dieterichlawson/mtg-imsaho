@@ -1,37 +1,19 @@
-# Audit: Village Ironsmith // Ironfang
+## Audit — 2026-04-01
 
-## Scryfall Reference
-### Front Face
-- **Name:** Village Ironsmith
-- **Cost:** {1}{R}
-- **Type:** Creature — Human Werewolf
-- **Oracle:** First strike / At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
-- **P/T:** 1/1
+**Scryfall Oracle text (front)**: First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform Village Ironsmith.
+**Scryfall Oracle text (back — Ironfang)**: First strike\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Ironfang.
+**Scryfall type line**: Creature — Human Werewolf // Creature — Werewolf
+**Scryfall mana cost**: {1}{R}
+**Scryfall P/T**: 1/1 // 3/1
+**Status**: PASS
 
-### Back Face
-- **Name:** Ironfang
-- **Cost:** *(none)*
-- **Type:** Creature — Werewolf
-- **Oracle:** First strike / At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
-- **P/T:** 3/1
+Findings:
+- Name: Correct ("Village Ironsmith" / "Ironfang").
+- Mana cost: {1}{R} — correct.
+- Types: Creature — Human Werewolf // Creature — Werewolf — correct.
+- P/T: 1/1 // 3/1 — correct. `dynamic_pt` returns (3,1) when transformed.
+- Keywords: First strike on both faces — correct.
+- Transform logic: Same werewolf pattern as other cards; correct.
+- Tests: `village_ironsmith_keeps_first_strike_on_both_faces` in werewolf_cards.rs.
 
-## Implementation: `mtg-engine/src/cards/village_ironsmith.rs`
-
-### Front Face
-- Name: "Village Ironsmith" -- MATCH
-- Cost: {1}{R} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Human", "Werewolf"] -- MATCH
-- P/T: 1/1 -- MATCH
-- Keywords: [FirstStrike] -- MATCH
-- Trigger: Upkeep -- MATCH
-
-### Back Face
-- Name: "Ironfang" -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Werewolf"] -- MATCH
-- P/T: 3/1 -- MATCH
-- Keywords: [FirstStrike] -- MATCH (both faces have first strike)
-
-## Verdict
-**PASS** — Standard Innistrad werewolf with first strike, correctly implemented.
+No issues found.

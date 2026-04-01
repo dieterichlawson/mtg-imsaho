@@ -1,22 +1,15 @@
-# Audit: Lost in the Mist
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Lost in the Mist
-- **Cost:** {3}{U}{U}
-- **Type:** Instant
-- **Oracle:** Counter target spell. Return target permanent to its owner's hand.
-- **P/T:** N/A
+**Scryfall Oracle text**: Counter target spell. Return target permanent to its owner's hand.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation
-- Name: "Lost in the Mist" -- CORRECT
-- Cost: {3}{U}{U} -- CORRECT
-- Type: Instant -- CORRECT
-- Oracle text matches -- CORRECT
-- Two targets: spell + permanent via TwoTargets -- CORRECT
-- Counters spell (removes from stack, moves to graveyard) -- CORRECT
-- Bounces permanent to hand -- CORRECT
+- Name: Lost in the Mist -- correct
+- Cost: {3}{U}{U} -- correct
+- Type: Instant -- correct
+- Two targets: one spell (to counter) and one permanent (to bounce) -- correctly implemented with TwoTargets
+- Counter logic: removes from stack and moves to graveyard -- correct
+- Bounce logic: moves permanent to hand -- correct
+- Tests exist in tier2_spells.rs
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

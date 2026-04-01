@@ -1,18 +1,11 @@
-# Audit: Armored Skaab
+## Audit — 2026-04-01
 
-## Reference (Scryfall/API)
-- **Name:** Armored Skaab
-- **Mana Cost:** {2}{U}
-- **Type:** Creature — Zombie Warrior
-- **Oracle:** When Armored Skaab enters the battlefield, mill four cards.
-- **P/T:** 1/4
+**Scryfall Oracle text**: When Armored Skaab enters the battlefield, mill four cards.
+**Scryfall type line**: Creature — Zombie Warrior
+**Status**: PASS
 
-## Implementation: `armored_skaab.rs`
-- **Name:** Armored Skaab -- CORRECT
-- **Mana Cost:** {2}{U} -- CORRECT
-- **Type:** Creature — Zombie Warrior -- CORRECT
-- **Subtypes:** ["Zombie", "Warrior"] -- CORRECT
-- **P/T:** 1/4 -- CORRECT
-- **Triggered ability:** EntersBattlefield, mills 4 cards -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {2}{U}: correct
+- 1/4 stats: correct
+- Subtypes Zombie, Warrior: correct
+- Triggered ability TriggerKind::EntersBattlefield: correct
+- on_enter_battlefield mills 4 cards via crate::engine::mill_cards: correct

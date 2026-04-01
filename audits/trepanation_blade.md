@@ -1,22 +1,17 @@
-# Audit: Trepanation Blade
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Trepanation Blade
-- **Cost:** {3}
-- **Type:** Artifact — Equipment
-- **Oracle:** Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard. Equip {2}
-- **P/T:** N/A
+**Scryfall Oracle text**: Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. That player mills those cards. Equipped creature gets +1/+0 until end of turn for each card put into that graveyard this way.\nEquip {2}
+**Scryfall type line**: Artifact — Equipment
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/trepanation_blade.rs`
-- Name: "Trepanation Blade" -- MATCH
-- Cost: {3} -- MATCH
-- Types: Artifact -- MATCH
-- Subtypes: ["Equipment"] -- MATCH
-- Equip: {2} -- MATCH
-- Trigger: Attacks (on equipped creature) -- MATCH
-- is_equipment set on resolve -- MATCH
-- Mill logic: reveals until land, counts all cards revealed (including land) -- MATCH
-- Grants +1/+0 per card revealed until EOT -- MATCH
+- Name: correct ("Trepanation Blade")
+- Cost: {3} -- correct
+- Type: Artifact -- correct
+- Subtypes: Equipment -- correct
+- Equip cost: {2} -- correct (sorcery_speed_only: true)
+- Attack trigger: mills from defending player's library until a land is found -- correct
+- Pump: +1/+0 per card milled until end of turn -- correct
 
-## Verdict
-**PASS** — Equipment and mill trigger correctly implemented.
+- Land card is included in the mill count (increment happens before the land check break), which matches Oracle text ("each card put into that graveyard this way" includes the land) -- correct
+- Tests exist in `tier9_cards.rs`
+- No issues found

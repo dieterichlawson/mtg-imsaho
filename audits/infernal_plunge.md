@@ -1,22 +1,14 @@
-# Audit: Infernal Plunge
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Infernal Plunge
-- **Cost:** {R}
-- **Type:** Sorcery
-- **Oracle:** As an additional cost to cast this spell, sacrifice a creature. Add {R}{R}{R}.
-- **P/T:** N/A
+**Scryfall Oracle text**: As an additional cost to cast this spell, sacrifice a creature.
+Add {R}{R}{R}.
+**Scryfall type line**: Sorcery
+**Status**: ISSUE
 
-## Implementation
-- Name: "Infernal Plunge" -- CORRECT
-- Cost: {R} -- CORRECT
-- Type: Sorcery -- CORRECT
-- Oracle text matches -- CORRECT
-- additional_cost: SacrificeCreature -- CORRECT
-- Adds {R}{R}{R} to mana pool -- CORRECT
-- SIMPLIFICATION noted: sacrifice happens on resolution rather than during casting -- ACKNOWLEDGED
-
-## Issues
-1. **ISSUE (minor/simplification):** The sacrifice is performed at resolution instead of as a casting cost. Comment acknowledges this. In real MTG, the creature would be sacrificed as part of casting before the spell goes on the stack.
-
-## Verdict: PASS (with noted simplification)
+- Mana cost {R}: correct
+- Card type Sorcery: correct
+- Additional cost SacrificeCreature declared in card_data: correct
+- Adds {R}{R}{R} to mana pool: correct
+- ISSUE: The sacrifice happens at resolution time rather than at casting time. Oracle requires it as an additional cost to cast. The comment acknowledges this as a simplification. If the creature dies before resolution (e.g., from another spell on the stack), the spell would still resolve and add mana incorrectly.
+- ISSUE: The creature to sacrifice is auto-picked (first found) rather than player choice
+- Tests exist in tier8_cards.rs covering sacrifice and mana addition

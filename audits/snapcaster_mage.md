@@ -1,25 +1,17 @@
-# Audit: Snapcaster Mage
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Snapcaster Mage
-- **Cost:** {1}{U}
-- **Type:** Creature -- Human Wizard
-- **Oracle:** Flash. When Snapcaster Mage enters the battlefield, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.
-- **P/T:** 2/1
+**Scryfall Oracle text**: Flash\nWhen Snapcaster Mage enters the battlefield, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.
+**Scryfall type line**: Creature — Human Wizard
+**Mana cost**: {1}{U}
+**P/T**: 2/1
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/snapcaster_mage.rs`
-- **Name:** Snapcaster Mage ✅
-- **Cost:** {1}{U} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Wizard ✅
-- **P/T:** 2/1 ✅
-- **Keywords:** Flash ✅
-- **Triggered ability:** EntersBattlefield ✅
-- **on_enter_battlefield:** finds instant/sorcery in graveyard without flashback ✅
-- **Flashback cost:** uses the card's mana cost ✅
-- **until_end_of_turn_flashback:** correctly stored ✅
+**Issue: Target selection is automated instead of player-chosen.** The implementation automatically selects the instant/sorcery with the highest mana value from the graveyard rather than presenting a choice to the player. The Oracle text says "target instant or sorcery card," meaning the player should choose which card gets flashback. The current "pick the most expensive" heuristic may not always match optimal play.
 
-### Issue
-- **SIMPLIFICATION:** The target is auto-selected (highest mana value card) rather than letting the player choose. The oracle says "target" which normally means the player picks. This is a minor simplification -- the AI picks the most expensive card, which is usually but not always correct.
+**Positive aspects**:
+- Flash keyword correctly implemented
+- Flashback grant uses `until_end_of_turn_flashback` (correct duration)
+- Flashback cost equals mana cost (correct)
+- Only targets cards without existing flashback (correct)
 
-## Verdict: PASS -- minor simplification in target selection
+- Tests: `snapcaster_mage_grants_flashback` in tier14_cards.rs

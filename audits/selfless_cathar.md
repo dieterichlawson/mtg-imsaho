@@ -1,22 +1,14 @@
-# Audit: Selfless Cathar
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Selfless Cathar
-- **Cost:** {W}
-- **Type:** Creature — Human Cleric (Oracle updated from original "Human")
-- **Oracle Text:** {1}{W}, Sacrifice Selfless Cathar: Creatures you control get +1/+1 until end of turn.
-- **P/T:** 1/1
+**Scryfall Oracle text**: {1}{W}, Sacrifice Selfless Cathar: Creatures you control get +1/+1 until end of turn.
+**Scryfall type line**: Creature — Human
+**Mana cost**: {W}
+**P/T**: 1/1
+**Status**: ISSUE
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {W} — OK
-- **Type:** Creature, subtypes ["Human", "Cleric"] — OK (matches current Oracle)
-- **Oracle Text:** Matches — OK
-- **P/T:** 1/1 — OK
-- **Activated Ability:** {1}{W}, SacrificeThis, gives +1/+1 until EOT to all your creatures — OK
-- **on_activate_ability:** Applies UntilEndOfTurnEffect to all creatures controller controls — OK
+**Issue: Subtype mismatch.** Implementation has subtypes `["Human", "Cleric"]` but Oracle type line is "Creature — Human" (no Cleric subtype). Selfless Cathar is not a Cleric.
 
-## Issues
-None found. (Note: doc comment says "Human Soldier" but code correctly has "Human Cleric" matching current Oracle.)
-
-## Verdict: PASS
+The ability implementation is correct:
+- Activated ability with {1}{W} cost and SacrificeThis
+- Grants +1/+1 until end of turn to all creatures you control
+- Tests: `selfless_cathar_pump_all_creatures` in tier8_cards.rs

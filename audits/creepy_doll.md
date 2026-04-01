@@ -1,22 +1,18 @@
-# Audit: Creepy Doll
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Creepy Doll
-- **Cost:** {5}
-- **Type:** Artifact Creature -- Construct
-- **Oracle:** Indestructible. Whenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.
-- **P/T:** 1/1
-- **Keywords:** Indestructible
+**Scryfall Oracle text**: Indestructible
+Whenever Creepy Doll deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.
+**Scryfall type line**: Artifact Creature — Construct
+**Status**: ISSUE
 
-## Implementation: `creepy_doll.rs`
-- **Name:** Creepy Doll -- CORRECT
-- **Cost:** {5} -- CORRECT
-- **Type:** [Artifact, Creature] -- CORRECT
-- **Subtypes:** ["Construct"] -- CORRECT
-- **P/T:** 1/1 -- CORRECT
-- **Keywords:** [Indestructible] -- CORRECT
-- **Behavior:** Coin flip on combat damage to creature, if win -> destroy -- CORRECT
-- **Uses try_destroy:** Yes -- CORRECT
+### Findings
 
-## Issues
-1. **ISSUE: Trigger implementation uses on_blocks/on_becomes_blocked instead of "deals combat damage to a creature".** The oracle says "Whenever this creature deals combat damage to a creature" which should trigger after damage is dealt. The current implementation triggers when blocking/becoming blocked (before damage). This means the ability fires at the wrong time -- it should fire after combat damage resolution, not when blocks are declared. The TriggerKinds Blocks and BecomesBlocked are incorrect for this card.
+1. **Trigger implementation uses Blocks/BecomesBlocked instead of CombatDamageDealt (ISSUE)**: Oracle says "Whenever Creepy Doll deals combat damage to a creature." The implementation triggers on `TriggerKind::Blocks` and `TriggerKind::BecomesBlocked` (lines 33-38), which fire when blockers are declared, not when combat damage is dealt. This is incorrect — the trigger should fire during the combat damage step when Creepy Doll actually deals its damage. If Creepy Doll is destroyed before damage (e.g., by first strike), the trigger should not fire, but the current implementation would still fire it at blocker declaration.
+
+2. **Card data correct**: Name, cost ({5}), types (Artifact, Creature), subtype (Construct), P/T (1/1), keyword (Indestructible) all match.
+
+3. **Uses try_destroy**: Correct (line 60) — properly respects indestructible on the target.
+
+4. **Coin flip logic**: Uses `gen_bool(0.5)` which is correct for a fair coin flip.
+
+5. **Tests**: No dedicated tests found.

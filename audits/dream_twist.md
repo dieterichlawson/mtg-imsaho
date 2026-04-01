@@ -1,21 +1,13 @@
-# Audit: Dream Twist
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Dream Twist
-- **Cost:** {U}
-- **Type:** Instant
-- **Oracle:** Target player mills three cards. Flashback {1}{U}
-- **P/T:** N/A
+**Scryfall Oracle text**: Target player mills three cards.\nFlashback {1}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({U})
-- Type: CORRECT (Instant)
-- Oracle text: CORRECT
-- Flashback cost: CORRECT ({1}{U})
-- Target requirement: CORRECT (PlayerOnly)
-- Mills 3 cards: CORRECT
-- P/T: CORRECT (N/A)
-
-## Issues
-None found.
+- Mana cost {U}: correct.
+- Type Instant: correct.
+- Flashback {1}{U}: correct.
+- Targets a player (PlayerOnly): correct.
+- Mills 3 cards via `mill_cards`: correct.
+- Uses `move_spell_after_resolve`: correct.
+- Tests exist in `flashback.rs` (`dream_twist_mills_three`).

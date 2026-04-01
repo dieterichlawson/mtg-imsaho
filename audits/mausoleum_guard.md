@@ -1,23 +1,17 @@
-# Audit: Mausoleum Guard
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Mausoleum Guard
-- **Cost:** {3}{W}
-- **Type:** Creature — Human Scout
-- **Oracle:** When Mausoleum Guard dies, create two 1/1 white Spirit creature tokens with flying.
-- **P/T:** 2/2
+**Scryfall Oracle text**: When Mausoleum Guard dies, create two 1/1 white Spirit creature tokens with flying.
+**Scryfall type line**: Creature — Human Scout
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/mausoleum_guard.rs`
-- **Name:** Mausoleum Guard -- CORRECT
-- **Cost:** {3}{W} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** Human, Scout -- CORRECT
-- **P/T:** 2/2 -- CORRECT
-- **Triggered ability:** SelfDies -- CORRECT
-- **on_dies:** Creates two 1/1 white Spirit tokens with flying -- CORRECT
+- Name: Mausoleum Guard -- correct
+- Cost: {3}{W} -- correct
+- Type: Creature -- correct
+- Subtypes: Human, Scout -- correct
+- P/T: 2/2 -- correct
+- Triggered ability: on death, create two 1/1 white Spirit tokens with flying -- correctly implemented
+- Tokens have correct stats (1/1), color (white), type (Creature), keyword (Flying), subtype (Spirit) -- correct
+- Uses controller (not owner) for token creation -- correct
+- Tests exist in tier3_cards.rs
 
-## Issues
-1. **Token subtypes missing:** Uses `create_token("Spirit", ...)` which passes empty subtypes vec. The Spirit tokens will not have the "Spirit" creature subtype. Should use `create_token_with_subtypes` with `vec!["Spirit".into()]`.
-
-## Verdict
-**FAIL** -- 1 issue: Spirit tokens lack "Spirit" creature subtype.
+No issues found. Implementation matches Oracle text.

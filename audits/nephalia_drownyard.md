@@ -1,16 +1,16 @@
-# Audit: Nephalia Drownyard
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Nephalia Drownyard
-- **Type:** Land
-- **Oracle:** {T}: Add {C}. {1}{U}{B}, {T}: Target player mills three cards.
+**Scryfall Oracle text**: {T}: Add {C}.\n{1}{U}{B}, {T}: Target player mills three cards.
+**Scryfall type line**: Land
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/nephalia_drownyard.rs`
-- **Name:** Nephalia Drownyard -- CORRECT
-- **Type:** Land -- CORRECT
-- **Mana ability:** {T}: Add {C} -- CORRECT
-- **Activated ability:** {1}{U}{B}, {T}, targets player -- CORRECT
-- **on_activate_ability:** Mills 3 cards via engine::mill_cards -- CORRECT
+- Name: Correct ("Nephalia Drownyard")
+- Cost: None (Land) - Correct
+- Type: Land - Correct
+- Oracle text matches.
+- Mana ability: {T}: Add {C} - Correct
+- Activated ability: {1}{U}{B}, {T}: Target player mills three cards - Correct cost, correct tap, targets a player, mills 3.
+- on_activate_ability calls mill_cards(state, player, 3). Correct.
+- Tests: tier10_cards.rs has `nephalia_drownyard_card_data` and `nephalia_drownyard_mills_three`.
 
-## Verdict
-**PASS** -- No issues found.
+No issues found.

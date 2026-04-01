@@ -1,23 +1,18 @@
-# Audit: Curiosity
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Curiosity
-- **Cost:** {U}
-- **Type:** Enchantment -- Aura
-- **Oracle:** Enchant creature. Whenever enchanted creature deals damage to an opponent, you may draw a card.
-- **P/T:** N/A
-- **Keywords:** Enchant
+**Scryfall Oracle text**: Enchant creature
+Whenever enchanted creature deals damage to an opponent, you may draw a card.
+**Scryfall type line**: Enchantment — Aura
+**Status**: ISSUE
 
-## Implementation: `curiosity.rs`
-- **Name:** Curiosity -- CORRECT
-- **Cost:** {U} -- CORRECT
-- **Type:** Enchantment -- CORRECT
-- **Subtypes:** ["Aura"] -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Target:** TargetRequirement::Creature -- CORRECT
-- **Trigger:** AnyDamageToPlayer -- CORRECT
-- **Behavior:** Draws a card when enchanted creature deals damage to opponent -- CORRECT
-- **Checks:** source_id == attached_to, damaged_player != controller -- CORRECT
+### Findings
 
-## Issues
-None (the oracle says "damage" not "combat damage", and the implementation correctly triggers on any damage to an opponent, which is correct)
+1. **Trigger kind may be too narrow (potential ISSUE)**: Uses `TriggerKind::AnyDamageToPlayer` which is good. The `on_any_damage_to_player` handler correctly checks that the source is the enchanted creature and that the damaged player is an opponent. However, Oracle says "deals damage" (any damage, including combat and non-combat). The handler receives damage events — need to verify that both combat and non-combat damage events invoke this hook. If `AnyDamageToPlayer` only covers one type, this would be a bug.
+
+2. **"You may" is auto-resolved (minor ISSUE)**: Oracle says "you **may** draw a card." The implementation auto-draws (line 65). While drawing is almost always beneficial, there are edge cases (e.g., near-empty library to avoid decking).
+
+3. **Card data correct**: Name, cost ({U}), type (Enchantment), subtype (Aura) all match.
+
+4. **Opponent check correct**: Line 61 correctly checks `damaged_player == controller` and returns if true (only triggers on opponents).
+
+5. **Tests**: Found in `tier6_cards.rs`.

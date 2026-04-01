@@ -1,21 +1,14 @@
-# Audit: Lightning Bolt
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Lightning Bolt
-- **Cost:** {R}
-- **Type:** Instant
-- **Oracle:** Lightning Bolt deals 3 damage to any target.
-- **P/T:** N/A
+**Scryfall Oracle text**: Lightning Bolt deals 3 damage to any target.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation
-- Name: "Lightning Bolt" -- CORRECT
-- Cost: {R} -- CORRECT
-- Type: Instant -- CORRECT
-- Oracle text matches -- CORRECT
-- Target requirement: AnyTarget -- CORRECT
-- Deals 3 damage via resolve_damage helper -- CORRECT
+- Name: Lightning Bolt -- correct
+- Cost: {R} -- correct
+- Type: Instant -- correct
+- Damage: 3 -- correct
+- Target: AnyTarget (creature, player, or planeswalker) -- correct
+- Tests exist in spells.rs (tests creature kill and player damage)
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

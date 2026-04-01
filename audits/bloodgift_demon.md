@@ -1,23 +1,17 @@
-# Audit: Bloodgift Demon
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Bloodgift Demon
-- **Cost:** {3}{B}{B}
-- **Type:** Creature — Demon
-- **Oracle:** Flying. At the beginning of your upkeep, target player draws a card and loses 1 life.
-- **P/T:** 5/4
+**Scryfall Oracle text**: Flying
+At the beginning of your upkeep, target player draws a card and loses 1 life.
+**Scryfall type line**: Creature — Demon
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/bloodgift_demon.rs`
-- **Name:** Bloodgift Demon ✅
-- **Cost:** {3}{B}{B} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Demon ✅
-- **P/T:** 5/4 ✅
-- **Keywords:** Flying ✅
-- **Triggered ability:** Upkeep ✅
-- **on_upkeep:** Triggers only on controller's upkeep ✅
-- **Target choice:** Presents all non-lost players as options via AwaitingAction ✅
-- **Effect:** DrawAndLoseLife pending effect ✅
-- **Zone check:** checks self is on battlefield ✅
-
-## Verdict: PASS — no issues found
+- Mana cost {3}{B}{B}: correct
+- 5/4 stats: correct
+- Subtype Demon: correct
+- Keyword Flying: correct
+- Triggered ability TriggerKind::Upkeep: correct
+- on_upkeep checks active_player == controller (your upkeep only): correct
+- Presents target player choice to controller: correct
+- Uses PendingEffect::DrawAndLoseLife: correct
+- optional: false — correct, this is mandatory
+- Test exists in tier7_cards.rs

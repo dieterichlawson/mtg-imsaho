@@ -1,18 +1,16 @@
-# Audit: Nightbird's Clutches
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Nightbird's Clutches
-- **Cost:** {1}{R}
-- **Type:** Sorcery
-- **Oracle:** Up to two target creatures can't block this turn. Flashback {3}{R}
+**Scryfall Oracle text**: Up to two target creatures can't block this turn.\nFlashback {3}{R}
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/nightbirds_clutches.rs`
-- **Name:** Nightbird's Clutches -- CORRECT
-- **Cost:** {1}{R} -- CORRECT
-- **Type:** Sorcery -- CORRECT
-- **Flashback:** {3}{R} -- CORRECT
-- **Target:** UpToTargets(2, Creature) -- CORRECT
-- **on_resolve:** Adds targets to until_end_of_turn_cant_block -- CORRECT
+- Name: Correct ("Nightbird's Clutches")
+- Cost: {1}{R} - Correct
+- Type: Sorcery - Correct
+- Oracle text matches.
+- Flashback: {3}{R} - Correct
+- Target: Up to two creatures (UpToTargets(2, Creature)) - Correct
+- Effect: Adds target creatures to until_end_of_turn_cant_block. Correct.
+- Tests: flashback.rs has `nightbirds_clutches_taps_creature`, card_mechanics.rs has `nightbirds_clutches_prevents_blocking`.
 
-## Verdict
-**PASS** -- No issues found.
+No issues found.

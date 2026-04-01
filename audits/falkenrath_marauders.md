@@ -1,22 +1,14 @@
-# Audit: Falkenrath Marauders
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Falkenrath Marauders
-- **Cost:** {3}{R}{R}
-- **Type:** Creature -- Vampire Warrior
-- **Oracle:** Flying, haste. Whenever Falkenrath Marauders deals combat damage to a player, put two +1/+1 counters on it.
-- **P/T:** 2/2
+**Scryfall Oracle text**: Flying, haste\nWhenever Falkenrath Marauders deals combat damage to a player, put two +1/+1 counters on Falkenrath Marauders.
+**Scryfall type line**: Creature — Vampire Warrior
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({3}{R}{R})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Vampire, Warrior)
-- Oracle text: CORRECT
-- P/T: CORRECT (2/2)
-- Keywords: CORRECT (Flying, Haste)
-- Combat damage trigger: CORRECT (TriggerKind::CombatDamageToPlayer)
-- Two +1/+1 counters: CORRECT (add_counters with PlusOnePlusOne, 2)
-
-## Issues
-None found.
+- Mana cost {3}{R}{R}: correct.
+- Type Creature, subtypes Vampire Warrior: correct.
+- Power/Toughness 2/2: correct.
+- Keywords: Flying, Haste: correct.
+- Trigger on combat damage to player (TriggerKind::CombatDamageToPlayer): correct.
+- Adds 2 +1/+1 counters: correct.
+- Checks zone == Battlefield before adding counters: correct.
+- Tests exist in `tier6_cards.rs` (`falkenrath_marauders_two_counters_on_combat_damage`).

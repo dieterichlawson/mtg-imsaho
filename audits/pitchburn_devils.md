@@ -1,23 +1,15 @@
-# Audit: Pitchburn Devils
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Pitchburn Devils
-- **Cost:** {4}{R}
-- **Type:** Creature — Devil
-- **Oracle Text:** When Pitchburn Devils dies, it deals 3 damage to any target.
-- **P/T:** 3/3
+**Scryfall Oracle text**: When Pitchburn Devils dies, it deals 3 damage to any target.
+**Scryfall type line**: Creature — Devil
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {4}{R} — OK
-- **Type:** Creature, subtypes ["Devil"] — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** 3/3 — OK
-- **Triggered Abilities:** SelfDies trigger — OK
-- **on_dies:** Presents target choice to controller with "any target" (all creatures + all players), PendingEffect::DealDamage { amount: 3 } — OK
-- **Damage event:** DealDamage pending effect correctly emits NonCombatDamageDealt via the engine's resolution handler — OK
+- Name: Correct ("Pitchburn Devils")
+- Cost: {4}{R} - Correct
+- Type: Creature — Devil - Correct
+- P/T: 3/3 - Correct
+- Trigger: SelfDies - Correct
+- Effect: Deals 3 damage to any target (creatures + players). Uses helpers::any_targets and presents target choice. Mandatory (not "you may"). Correct.
+- Tests: tier3_cards.rs has `pitchburn_devils_deals_3_on_death`, card_mechanics.rs has `pitchburn_devils_choice_with_targets`.
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

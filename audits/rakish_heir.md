@@ -1,23 +1,18 @@
-# Audit: Rakish Heir
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Rakish Heir
-- **Cost:** {2}{R}
-- **Type:** Creature — Vampire
-- **Oracle Text:** Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on it.
-- **P/T:** 2/2
+**Scryfall Oracle text**: Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on it.
+**Scryfall type line**: Creature — Vampire
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2}{R} — OK
-- **Type:** Creature, subtypes ["Vampire"] — OK
-- **Oracle Text:** "Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on that Vampire." — close match (official says "on it" not "on that Vampire", but semantically identical) — OK
-- **P/T:** 2/2 — OK
-- **Triggered Abilities:** AnyCombatDamageToPlayer — OK
-- **on_any_combat_damage_to_player:** Checks source is a Vampire controlled by same controller, adds +1/+1 counter to the source — OK
-- **Vampire check:** Checks both registry subtypes and instance subtypes — OK
+- Name: Correct ("Rakish Heir")
+- Cost: {2}{R} - Correct
+- Type: Creature — Vampire - Correct
+- P/T: 2/2 - Correct
+- Trigger: AnyCombatDamageToPlayer - Correct
+- Implementation: Checks if the source creature is a Vampire controlled by Rakish Heir's controller, then puts +1/+1 counter on the source (the Vampire that dealt damage). Correct.
+- Checks both registry card_data subtypes and runtime subtypes for Vampire. Correct (handles Olivia's type-changing ability).
+- Tests: tier6_cards.rs has `rakish_heir_self_counter_on_combat_damage`, `rakish_heir_counter_on_other_vampire_combat_damage`, and `rakish_heir_no_counter_on_non_vampire`. Good coverage.
 
-## Issues
-None found.
+Note: Oracle says "put a +1/+1 counter on it" (referring to the Vampire), implementation puts counter on source_id. Correct.
 
-## Verdict: PASS
+No issues found.

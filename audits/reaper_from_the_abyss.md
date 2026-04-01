@@ -1,24 +1,17 @@
-# Audit: Reaper from the Abyss
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Reaper from the Abyss
-- **Cost:** {3}{B}{B}{B}
-- **Type:** Creature — Demon
-- **Oracle Text:** Flying\nMorbid — At the beginning of each end step, if a creature died this turn, destroy target non-Demon creature.
-- **P/T:** 6/6
+**Scryfall Oracle text**: Flying\nMorbid — At the beginning of each end step, if a creature died this turn, destroy target non-Demon creature.
+**Scryfall type line**: Creature — Demon
+**Mana cost**: {3}{B}{B}{B}
+**P/T**: 6/6
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {3}{B}{B}{B} — OK
-- **Type:** Creature, subtypes ["Demon"] — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** 6/6 — OK
-- **Keywords:** Flying — OK
-- **Triggered Abilities:** EndStep trigger — OK
-- **on_end_step:** Checks creature_died_this_turn (morbid), filters non-Demon creatures, presents target choice, PendingEffect::DestroyCreature — OK
-- **Non-Demon filter:** Checks both registry and instance subtypes — OK
+Implementation correctly models:
+- Name, mana cost {3}{B}{B}{B}, type Creature, subtype Demon, P/T 6/6
+- Flying keyword
+- Morbid triggered ability at end step checking `creature_died_this_turn`
+- Targets non-Demon creatures only (filters out Demons by subtype)
+- Presents target choice to controller
+- Tests: Not found for this specific card, but trigger/morbid infrastructure is tested elsewhere.
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

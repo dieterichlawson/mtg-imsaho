@@ -1,21 +1,12 @@
-# Audit: Isolated Chapel
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Isolated Chapel
-- **Cost:** (none — Land)
-- **Type:** Land
-- **Oracle:** Isolated Chapel enters the battlefield tapped unless you control a Plains or a Swamp. {T}: Add {W} or {B}.
-- **P/T:** N/A
+**Scryfall Oracle text**: Isolated Chapel enters the battlefield tapped unless you control a Plains or a Swamp.
+{T}: Add {W} or {B}.
+**Scryfall type line**: Land
+**Status**: PASS
 
-## Implementation
-- Name: "Isolated Chapel" -- CORRECT
-- Cost: None -- CORRECT
-- Type: Land -- CORRECT
-- Oracle text matches -- CORRECT
-- ETB tapped-unless logic checks for Plains or Swamp subtypes, excluding self -- CORRECT
-- Mana abilities produce {W} or {B} with tap -- CORRECT
-
-## Issues
-None.
-
-## Verdict: PASS
+- Card type Land (no mana cost): correct
+- ETB: enters tapped unless controller has a Plains or Swamp (checks subtypes): correct
+- Excludes self from the check (o.id != object_id): correct
+- Mana abilities: {T}: Add {W} or {B} (two separate ManaAbilityDefs): correct
+- Tests exist in innistrad_simple_cards.rs covering card data

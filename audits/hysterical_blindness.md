@@ -1,22 +1,11 @@
-# Audit: Hysterical Blindness
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Hysterical Blindness
-- **Cost:** {2}{U}
-- **Type:** Instant
-- **Oracle:** Creatures your opponents control get -4/-0 until end of turn.
-- **P/T:** N/A
+**Scryfall Oracle text**: Creatures your opponents control get -4/-0 until end of turn.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation
-- Name: "Hysterical Blindness" -- CORRECT
-- Cost: {2}{U} -- CORRECT
-- Type: Instant -- CORRECT
-- Oracle text matches -- CORRECT
-- Applies -4/+0 until end of turn to opponent creatures on battlefield -- CORRECT
-- Correctly filters opponent creatures by `controller != controller` and `power.is_some()` -- CORRECT
-- Calls `move_spell_after_resolve` -- CORRECT
-
-## Issues
-None.
-
-## Verdict: PASS
+- Mana cost {2}{U}: correct
+- Card type Instant: correct
+- On resolve: applies -4/+0 until end of turn to all creatures opponents control: correct
+- Uses UntilEndOfTurnEffect with power_mod=-4, toughness_mod=0: correct
+- Tests exist in innistrad_cards.rs covering opponent creature debuff

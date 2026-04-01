@@ -1,21 +1,18 @@
-# Audit: Brain Weevil
+## Audit — 2026-04-01
 
-## Oracle (Scryfall/API)
-- **Name:** Brain Weevil
-- **Cost:** {3}{B}
-- **Type:** Creature — Insect
-- **Oracle:** Intimidate. Sacrifice Brain Weevil: Target player discards two cards. Activate only as a sorcery.
-- **P/T:** 1/1
+**Scryfall Oracle text**: Intimidate
+Sacrifice Brain Weevil: Target player discards two cards. Activate only as a sorcery.
+**Scryfall type line**: Creature — Insect
+**Status**: PASS
 
-## Implementation: `brain_weevil.rs`
-- **Name:** Brain Weevil -- CORRECT
-- **Cost:** {3}{B} -- CORRECT
-- **Type:** Creature — Insect -- CORRECT
-- **P/T:** 1/1 -- CORRECT
-- **Keywords:** Intimidate -- CORRECT
-- **Activated ability:** Sacrifice self, target player discards 2, sorcery speed -- CORRECT
-- **Sacrifice cost:** SacrificeCost::SacrificeThis -- CORRECT
-- **Target:** PlayerOnly -- CORRECT
-- **Discard handling:** Handles <= 2 cards (auto-discard) and > 2 cards (player choice) -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {3}{B}: correct
+- 1/1 stats: correct
+- Subtype Insect: correct
+- Keyword Intimidate: correct
+- Activated ability: sacrifice self, target player discards two, sorcery speed: correct
+- sacrifice_cost: SacrificeCost::SacrificeThis: correct
+- target_requirement: PlayerOnly: correct
+- sorcery_speed_only: true: correct
+- Discard implementation handles edge case of 2 or fewer cards in hand: correct
+- For 3+ cards, presents choice to target player: correct
+- Tests exist in tier8_cards.rs covering discard and intimidate

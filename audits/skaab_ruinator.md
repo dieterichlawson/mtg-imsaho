@@ -1,25 +1,15 @@
-# Audit: Skaab Ruinator
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Skaab Ruinator
-- **Cost:** {1}{U}{U}
-- **Type:** Creature -- Zombie Horror
-- **Oracle:** As an additional cost to cast Skaab Ruinator, exile three creature cards from your graveyard. Flying. You may cast Skaab Ruinator from your graveyard.
-- **P/T:** 5/6
+**Scryfall Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard.\nFlying\nYou may cast Skaab Ruinator from your graveyard.
+**Scryfall type line**: Creature — Zombie Horror
+**Mana cost**: {1}{U}{U}
+**P/T**: 5/6
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/skaab_ruinator.rs`
-- **Name:** Skaab Ruinator ✅
-- **Cost:** {1}{U}{U} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Zombie, Horror ✅
-- **P/T:** 5/6 ✅
-- **Keywords:** Flying ✅
-- **Additional cost:** ExileCreaturesFromGraveyard(3) ✅
-- **on_resolve:** exiles 3 creature cards, excludes self, moves to battlefield ✅
-- **Cast from graveyard:** mentioned in oracle_text but unclear if engine supports this ability
+**Issue: Oracle text order.** The actual Oracle text lists the additional cost first, then Flying, then the graveyard-cast ability. The implementation has "Flying\nAs an additional cost...\nYou may cast..." which puts Flying first. Cosmetic only.
 
-### Issue
-- **BUG (same as Skaab Goliath):** Additional cost paid at resolve time instead of cast time.
-- **MISSING:** "You may cast Skaab Ruinator from your graveyard" -- this is stated in oracle text but there's no implementation for casting from graveyard (no flashback_cost or special graveyard-casting logic). This ability appears non-functional.
+**Same concern as Skaab Goliath**: The `on_resolve` method manually exiles creatures from the graveyard, but `AdditionalCost::ExileCreaturesFromGraveyard(3)` is also declared in card_data. Potential double-exile depending on engine handling.
 
-## Verdict: ISSUE -- "cast from graveyard" ability not implemented
+**Positive**: `can_cast_from_graveyard` returns true, correctly modeling the "You may cast Skaab Ruinator from your graveyard" ability.
+
+- Tests: `skaab_ruinator_exiles_creatures_from_graveyard` in tier15_cards.rs

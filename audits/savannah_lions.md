@@ -1,21 +1,14 @@
-# Audit: Savannah Lions
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Savannah Lions
-- **Cost:** {W}
-- **Type:** Creature — Cat
-- **Oracle Text:** (none — vanilla creature)
-- **P/T:** 2/1
+**Scryfall Oracle text**: (none — vanilla creature)
+**Scryfall type line**: Creature — Cat
+**Mana cost**: {W}
+**P/T**: 2/1
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {W} — OK
-- **Type:** Creature, subtypes ["Cat"] — OK
-- **Oracle Text:** Empty string — OK
-- **P/T:** 2/1 — OK
-- **Keywords:** None — OK
+Implementation correctly models:
+- Name, mana cost {W}, type Creature, subtype Cat, P/T 2/1
+- Vanilla creature with no abilities
+- Tests: No dedicated test found, but this is a simple vanilla creature.
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

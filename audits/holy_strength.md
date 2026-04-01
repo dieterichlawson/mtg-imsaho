@@ -1,23 +1,13 @@
-# Audit: Holy Strength
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Holy Strength
-- **Cost:** {W}
-- **Type:** Enchantment — Aura
-- **Oracle:** Enchant creature. Enchanted creature gets +1/+2.
-- **P/T:** N/A
+**Scryfall Oracle text**: Enchant creature
+Enchanted creature gets +1/+2.
+**Scryfall type line**: Enchantment — Aura
+**Status**: PASS
 
-## Implementation
-- Name: "Holy Strength" -- CORRECT
-- Cost: {W} -- CORRECT
-- Type: Enchantment -- CORRECT
-- Subtypes: ["Aura"] -- CORRECT
-- Oracle text: "Enchanted creature gets +1/+2." -- MINOR: missing "Enchant creature" line (the enchant ability), but functionally handled via target_requirement
-- Continuous effect: ModifyPT { power: 1, toughness: 2, scope: Attached } -- CORRECT
-- target_requirement: Creature -- CORRECT
-- Uses resolve_aura helper -- CORRECT
-
-## Issues
-None (functional).
-
-## Verdict: PASS
+- Mana cost {W}: correct
+- Card type Enchantment, subtype Aura: correct
+- Target requirement Creature: correct
+- Continuous effect ModifyPT +1/+2 with scope Attached: correct
+- Resolves as aura: correct
+- Tests exist in enchantments.rs covering creature buffing

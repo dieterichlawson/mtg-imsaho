@@ -1,22 +1,14 @@
-# Audit: Forbidden Alchemy
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Forbidden Alchemy
-- **Cost:** {2}{U}
-- **Type:** Instant
-- **Oracle:** Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard. Flashback {6}{B}
-- **P/T:** N/A
+**Scryfall Oracle text**: Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.\nFlashback {6}{B}
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({2}{U})
-- Type: CORRECT (Instant)
-- Oracle text: CORRECT
-- Flashback cost: CORRECT ({6}{B})
-- Looks at top 4 cards: CORRECT (drains 4 from library_order)
-- Player chooses one for hand: CORRECT (ChooseFromRevealed choice)
-- Rest go to graveyard: CORRECT
-- P/T: CORRECT (N/A)
-
-## Issues
-None found.
+- Mana cost {2}{U}: correct.
+- Type Instant: correct.
+- Flashback {6}{B}: correct.
+- Reveals top 4 cards, player picks 1 for hand, rest to graveyard: correct.
+- When only 1 card, auto-puts in hand: correct.
+- When 2+ cards, presents ChooseFromRevealed choice: correct.
+- Uses `move_spell_after_resolve` (deferred when choice is pending): correct.
+- Tests exist in `flashback.rs` (`forbidden_alchemy_draws_and_mills`) and `card_mechanics.rs` (`forbidden_alchemy_choice_from_top_4`).

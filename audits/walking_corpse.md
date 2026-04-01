@@ -1,19 +1,18 @@
-# Audit: Walking Corpse
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Walking Corpse
-- **Cost:** {1}{B}
-- **Type:** Creature — Zombie
-- **Oracle:** *(no text)*
-- **P/T:** 2/2
+**Scryfall Oracle text**: (none — vanilla creature)
+**Scryfall type line**: Creature — Zombie
+**Scryfall mana cost**: {1}{B}
+**Scryfall P/T**: 2/2
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/walking_corpse.rs`
-- Name: "Walking Corpse" -- MATCH
-- Cost: {1}{B} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Zombie"] -- MATCH
-- P/T: 2/2 -- MATCH
-- Oracle: empty -- MATCH
+Findings:
+- Name: Correct.
+- Mana cost: {1}{B} — correct.
+- Types: Creature — Zombie — correct.
+- P/T: 2/2 — correct.
+- Oracle text: Empty string — correct for a vanilla creature.
+- No keywords, no abilities — correct.
+- Tests: Walking Corpse is used as a test fixture in many tests (vanilla creature).
 
-## Verdict
-**PASS** — Vanilla creature, correctly implemented.
+No issues found.

@@ -1,22 +1,15 @@
-# Audit: Spare from Evil
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Spare from Evil
-- **Cost:** {1}{W}
-- **Type:** Instant
-- **Oracle:** Creatures you control gain protection from non-Human creatures until end of turn.
-- **P/T:** N/A
+**Scryfall Oracle text**: Creatures you control gain protection from non-Human creatures until end of turn.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/spare_from_evil.rs`
-- **Name:** Spare from Evil ✅
-- **Cost:** {1}{W} ✅
-- **Type:** Instant ✅
-- **on_resolve:** collects all creatures controlled by caster ✅
-- **Protection filter:** Not(HasSubtype("Human")) -- protection from non-Human creatures ✅
-- **Until end of turn:** uses `until_end_of_turn_protection` ✅
-- **Spell cleanup:** move_spell_after_resolve ✅
-
-### Note
-- Only grants protection to creatures on the battlefield at time of resolution, not to creatures that enter later. This matches standard MTG rules for one-shot effects.
-
-## Verdict: PASS -- no issues found
+- Name: correct ("Spare from Evil")
+- Cost: {1}{W} -- correct
+- Type: Instant -- correct
+- Oracle text: matches
+- Implementation uses `UntilEndOfTurnProtection` with a `CreatureFilter::Not(HasSubtype("Human"))` filter, which correctly models "protection from non-Human creatures"
+- Correctly collects all creatures controlled by the caster on the battlefield and grants them the protection
+- Spell moves to graveyard after resolve via `move_spell_after_resolve`
+- Tests exist in `tier12_cards.rs`
+- No issues found

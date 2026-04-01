@@ -1,21 +1,13 @@
-# Audit: Plains
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Plains
-- **Cost:** None
-- **Type:** Basic Land — Plains
-- **Oracle Text:** ({T}: Add {W}.)
-- **P/T:** N/A
+**Scryfall Oracle text**: ({T}: Add {W}.)
+**Scryfall type line**: Basic Land — Plains
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** None — OK
-- **Type:** Land, Supertype Basic, subtype Plains — OK
-- **Oracle Text:** "{T}: Add {W}." — OK (parentheses are a reminder text convention, not part of oracle)
-- **P/T:** N/A — OK
-- **Mana Ability:** Produces (White, 1) with requires_tap: true — OK
+- Name: Correct ("Plains")
+- Cost: None - Correct
+- Type: Basic Land — Plains - Correct (supertypes: [Basic], subtypes: ["Plains"])
+- Mana ability: {T}: Add {W} - Correct (produces ManaType::White)
+- Checks untapped and on battlefield before allowing activation. Correct.
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

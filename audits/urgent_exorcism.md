@@ -1,19 +1,18 @@
-# Audit: Urgent Exorcism
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Urgent Exorcism
-- **Cost:** {1}{W}
-- **Type:** Instant
-- **Oracle:** Destroy target Spirit or enchantment.
-- **P/T:** N/A
+**Scryfall Oracle text**: Destroy target Spirit or enchantment.
+**Scryfall type line**: Instant
+**Scryfall mana cost**: {1}{W}
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/urgent_exorcism.rs`
-- Name: "Urgent Exorcism" -- MATCH
-- Cost: {1}{W} -- MATCH
-- Types: Instant -- MATCH
-- Target: PermanentWithFilter (Spirit subtype OR Enchantment card type) -- MATCH
-- is_valid_target: Checks battlefield, enchantment OR Spirit subtype -- MATCH
-- on_resolve: Uses resolve_destroy -- CORRECT (destroy, not sacrifice)
+Findings:
+- Name: Correct.
+- Mana cost: {1}{W} — correct.
+- Type: Instant — correct.
+- Oracle text: Matches.
+- Targeting: `is_valid_target` checks that the permanent is on the battlefield and is either an Enchantment (by card type) or a Spirit (by subtype). Correct.
+- Target requirement uses `SubtypeOrCardType` filter — correct.
+- Resolution: Uses `resolve_destroy` helper. Correct.
+- Tests: `urgent_exorcism_destroys_spirit` in tier2_spells.rs.
 
-## Verdict
-**PASS** — Correctly targets Spirits or enchantments and destroys them.
+No issues found.

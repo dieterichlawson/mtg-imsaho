@@ -1,18 +1,12 @@
-# Audit: Boneyard Wurm
+## Audit — 2026-04-01
 
-## Oracle (Scryfall/API)
-- **Name:** Boneyard Wurm
-- **Cost:** {1}{G}
-- **Type:** Creature — Wurm
-- **Oracle:** Boneyard Wurm's power and toughness are each equal to the number of creature cards in your graveyard.
-- **P/T:** */*
+**Scryfall Oracle text**: Boneyard Wurm's power and toughness are each equal to the number of creature cards in your graveyard.
+**Scryfall type line**: Creature — Wurm
+**Status**: PASS
 
-## Implementation: `boneyard_wurm.rs`
-- **Name:** Boneyard Wurm -- CORRECT
-- **Cost:** {1}{G} -- CORRECT
-- **Type:** Creature — Wurm -- CORRECT
-- **Base P/T:** 0/0 -- CORRECT (star/star cards use 0/0 base)
-- **dynamic_pt:** Returns (creature_cards_in_gy, creature_cards_in_gy) -- CORRECT
-- **Graveyard counting:** Counts objects in controller's graveyard with power.is_some() (i.e., creatures) -- CORRECT
-
-## Verdict: PASS -- No issues found
+- Mana cost {1}{G}: correct
+- Base P/T 0/0 (represented as */*): correct — the implementation uses Some(0)/Some(0) as base with dynamic_pt override
+- Subtype Wurm: correct
+- dynamic_pt counts creature cards in controller's graveyard: correct
+- Uses o.power.is_some() to identify creature cards: reasonable proxy
+- Test exists in tier7_cards.rs

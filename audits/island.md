@@ -1,22 +1,10 @@
-# Audit: Island
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Island
-- **Cost:** (none — Basic Land)
-- **Type:** Basic Land — Island
-- **Oracle:** ({T}: Add {U}.)
-- **P/T:** N/A
+**Scryfall Oracle text**: ({T}: Add {U}.)
+**Scryfall type line**: Basic Land — Island
+**Status**: PASS
 
-## Implementation
-- Name: "Island" -- CORRECT
-- Cost: None -- CORRECT
-- Card types: [Land] -- CORRECT
-- Supertypes: [Basic] -- CORRECT
-- Subtypes: ["Island"] -- CORRECT
-- Oracle text: "{T}: Add {U}." -- CORRECT
-- Mana ability: produces {U}, requires tap -- CORRECT
-
-## Issues
-None.
-
-## Verdict: PASS
+- Card type Land, supertype Basic, subtype Island: correct
+- No mana cost: correct
+- Mana ability {T}: Add {U}: correct (produces ManaType::Blue)
+- No dedicated tests needed (basic land)

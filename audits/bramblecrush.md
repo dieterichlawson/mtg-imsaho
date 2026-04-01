@@ -1,18 +1,12 @@
-# Audit: Bramblecrush
+## Audit — 2026-04-01
 
-## Oracle (Scryfall/API)
-- **Name:** Bramblecrush
-- **Cost:** {2}{G}{G}
-- **Type:** Sorcery
-- **Oracle:** Destroy target noncreature permanent.
-- **P/T:** N/A
+**Scryfall Oracle text**: Destroy target noncreature permanent.
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation: `bramblecrush.rs`
-- **Name:** Bramblecrush -- CORRECT
-- **Cost:** {2}{G}{G} -- CORRECT
-- **Type:** Sorcery -- CORRECT
-- **Target:** PermanentWithFilter(Noncreature) -- CORRECT
-- **Target validation:** Checks battlefield zone and !CardType::Creature -- CORRECT
-- **Effect:** Uses resolve_destroy (destruction pipeline) -- CORRECT (destroy, not sacrifice)
-
-## Verdict: PASS -- No issues found
+- Mana cost {2}{G}{G}: correct
+- Card type Sorcery: correct
+- Target requirement: PermanentWithFilter(Noncreature): correct
+- is_valid_target checks battlefield, excludes creatures: correct
+- Uses resolve_destroy helper (proper destruction pipeline): correct
+- Tests exist in tier2_spells.rs (destroys land, can't target creature) and card_fixes.rs (respects indestructible)

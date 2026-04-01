@@ -1,20 +1,18 @@
-# Audit: Vampire Interloper
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Vampire Interloper
-- **Cost:** {1}{B}
-- **Type:** Creature — Vampire Scout
-- **Oracle:** Flying / This creature can't block.
-- **P/T:** 2/1
+**Scryfall Oracle text**: Flying\nVampire Interloper can't block.
+**Scryfall type line**: Creature — Vampire Scout
+**Scryfall mana cost**: {1}{B}
+**Scryfall P/T**: 2/1
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/vampire_interloper.rs`
-- Name: "Vampire Interloper" -- MATCH
-- Cost: {1}{B} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Vampire", "Scout"] -- MATCH
-- P/T: 2/1 -- MATCH
-- Keywords: [Flying] -- MATCH
-- Continuous effects: [PreventBlock { scope: OnSelf }] -- MATCH ("can't block")
+Findings:
+- Name: Correct.
+- Mana cost: {1}{B} — correct.
+- Types: Creature — Vampire Scout — correct.
+- P/T: 2/1 — correct.
+- Keywords: Flying — correct.
+- Can't block: Implemented via `ContinuousEffect::PreventBlock { scope: EffectScope::OnSelf }`. Correct.
+- Tests: `vampire_interloper_cant_block` in card_mechanics.rs.
 
-## Verdict
-**PASS** — Correctly implemented with flying and can't-block restriction.
+No issues found.

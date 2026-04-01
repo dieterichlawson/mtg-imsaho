@@ -1,21 +1,15 @@
-# Audit: Devil's Play
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Devil's Play
-- **Cost:** {X}{R}
-- **Type:** Sorcery
-- **Oracle:** Devil's Play deals X damage to any target. Flashback {X}{R}{R}{R}
-- **P/T:** N/A
+**Scryfall Oracle text**: Devil's Play deals X damage to any target.\nFlashback {X}{R}{R}{R}
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({X}{R})
-- Type: CORRECT (Sorcery)
-- Oracle text: CORRECT
-- Flashback cost: CORRECT ({X}{R}{R}{R})
-- Target requirement: CORRECT (AnyTarget)
-- X damage via stored x_value: CORRECT
-- P/T: CORRECT (N/A)
-
-## Issues
-None found.
+- Mana cost {X}{R}: correct.
+- Type Sorcery: correct.
+- Flashback cost {X}{R}{R}{R}: correct.
+- Targets AnyTarget: correct (can hit creatures or players).
+- Uses `resolve_damage` helper which emits `NonCombatDamageDealt`: correct.
+- `resolve_damage` calls `move_spell_after_resolve`: correct.
+- When X=0, spell resolves without dealing damage and calls `move_spell_after_resolve`: correct behavior (0 damage does nothing).
+- X value read from `o.x_value`: correct.
+- Tests exist in `tier14_cards.rs` (`devils_play_deals_x_damage`, `devils_play_x_zero`).

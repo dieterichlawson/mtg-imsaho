@@ -1,21 +1,14 @@
-# Audit: Riot Devils
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Riot Devils
-- **Cost:** {2}{R}
-- **Type:** Creature — Devil
-- **Oracle Text:** (none — vanilla creature)
-- **P/T:** 2/3
+**Scryfall Oracle text**: (none — vanilla creature)
+**Scryfall type line**: Creature — Devil
+**Mana cost**: {2}{R}
+**P/T**: 2/3
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2}{R} — OK
-- **Type:** Creature, subtypes ["Devil"] — OK
-- **Oracle Text:** Empty string — OK
-- **P/T:** 2/3 — OK
-- **Keywords:** None — OK
+Implementation correctly models:
+- Name, mana cost {2}{R}, type Creature, subtype Devil, P/T 2/3
+- Vanilla creature with no abilities (empty oracle text)
+- Tests: `riot_devils_is_2_3` in innistrad_cards.rs
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

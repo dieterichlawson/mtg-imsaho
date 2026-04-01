@@ -1,21 +1,16 @@
-# Audit: Grizzled Outcasts / Krallenhorde Wantons
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-**Front Face: Grizzled Outcasts**
-- Cost: {4}{G}
-- Type: Creature -- Human Werewolf
-- P/T: 4/4
-- Oracle: "At the beginning of each upkeep, if no spells were cast last turn, transform Grizzled Outcasts."
+**Scryfall Oracle text**: (Front — Grizzled Outcasts) At the beginning of each upkeep, if no spells were cast last turn, transform Grizzled Outcasts.
+(Back — Krallenhorde Wantons) At the beginning of each upkeep, if a player cast two or more spells last turn, transform Krallenhorde Wantons.
+**Scryfall type line**: Creature — Human Werewolf // Creature — Werewolf
+**Status**: PASS
 
-**Back Face: Krallenhorde Wantons**
-- Type: Creature -- Werewolf
-- P/T: 7/7
-- Oracle: "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Krallenhorde Wantons."
-
-## Implementation: grizzled_outcasts.rs
-
-## Issues Found
-
-No issues found. Front and back face names, types, subtypes, P/T values, and oracle text all match. Werewolf transform logic is correct (same pattern as other werewolves).
-
-## Verdict: PASS
+- Mana cost {4}{G}: correct
+- Front face 4/4: correct
+- Front face subtypes Human Werewolf: correct
+- Back face name "Krallenhorde Wantons": correct
+- Back face 7/7: correct
+- Back face subtypes Werewolf: correct
+- Werewolf transform logic: correct
+- dynamic_pt returns (7,7) when transformed: correct
+- Tests exist in werewolf_cards.rs

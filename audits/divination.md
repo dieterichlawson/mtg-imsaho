@@ -1,19 +1,12 @@
-# Audit: Divination
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Divination
-- **Cost:** {2}{U}
-- **Type:** Sorcery
-- **Oracle:** Draw two cards.
-- **P/T:** N/A
+**Scryfall Oracle text**: Draw two cards.
+**Scryfall type line**: Sorcery
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({2}{U})
-- Type: CORRECT (Sorcery)
-- Oracle text: CORRECT
-- on_resolve draws 2 cards: CORRECT
-- P/T: CORRECT (N/A)
-
-## Issues
-None found.
+- Mana cost {2}{U}: correct.
+- Type Sorcery: correct.
+- Draws 2 cards via `draw_cards`: correct.
+- Uses `move_spell_after_resolve`: correct.
+- No targets: correct.
+- Tests exist in `spells.rs` (`divination_draws_two`) and `fizzle.rs`.

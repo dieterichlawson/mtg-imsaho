@@ -1,23 +1,15 @@
-# Audit: Witchbane Orb
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Witchbane Orb
-- **Cost:** {4}
-- **Type:** Artifact
-- **Oracle:** When this artifact enters, destroy all Curses attached to you. You have hexproof.
-- **P/T:** N/A
+**Scryfall Oracle text**: When Witchbane Orb enters the battlefield, destroy all Curses attached to you.\nYou have hexproof.
+**Scryfall type line**: Artifact
+**Scryfall mana cost**: {4}
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/witchbane_orb.rs`
-- Name: "Witchbane Orb" -- MATCH
-- Cost: {4} -- MATCH
-- Types: Artifact -- MATCH
-- Trigger: EntersBattlefield -- MATCH
-- ETB: Finds all curses attached to controller, destroys them via try_destroy -- MATCH
-
-### ISSUE: Player Hexproof Not Implemented
-- Oracle grants "You have hexproof" as a static ability while this artifact is on the battlefield.
-- The implementation does NOT implement player hexproof. Code comment acknowledges this as a known limitation.
-- **BUG**: Opponents can still target you with spells and abilities while Witchbane Orb is on the battlefield.
-
-## Verdict
-**FAIL** — ETB curse destruction works, but the ongoing "You have hexproof" static ability is not implemented.
+Findings:
+- Name: Correct.
+- Mana cost: {4} — correct.
+- Type: Artifact — correct.
+- Oracle text: Matches.
+- ETB curse destruction: Implemented — finds all permanents with "Curse" subtype attached to the controller and destroys them. Correct.
+- **ISSUE: "You have hexproof" is not implemented.** The code comment acknowledges this. While on the battlefield, the controller should have hexproof (cannot be targeted by spells or abilities opponents control). This is a significant missing ability — it is the card's primary ongoing effect.
+- Tests: `witchbane_orb_card_data` in innistrad_simple_cards.rs (data-only test, no behavioral test for hexproof).

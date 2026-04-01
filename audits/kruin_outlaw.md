@@ -1,31 +1,16 @@
-# Audit: Kruin Outlaw // Terror of Kruin Pass
+## Audit — 2026-04-01
 
-## Oracle (Official)
-### Front: Kruin Outlaw
-- **Cost:** {1}{R}{R}
-- **Type:** Creature — Human Rogue Werewolf
-- **Oracle:** First strike. At the beginning of each upkeep, if no spells were cast last turn, transform Kruin Outlaw.
-- **P/T:** 2/2
+**Scryfall Oracle text (front — Kruin Outlaw)**: First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform Kruin Outlaw.
+**Scryfall Oracle text (back — Terror of Kruin Pass)**: Double strike, menace\nEach Werewolf you control can't be blocked except by two or more creatures.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.
+**Scryfall type line**: Creature — Human Rogue Werewolf // Creature — Werewolf
+**Status**: ISSUE
 
-### Back: Terror of Kruin Pass
-- **Type:** Creature — Werewolf
-- **Oracle:** Double strike. Menace. Each Werewolf you control can't be blocked except by two or more creatures. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.
-- **P/T:** 3/3
+**Findings**:
 
-## Implementation
-- Front name: "Kruin Outlaw" -- CORRECT
-- Front cost: {1}{R}{R} -- CORRECT
-- Front subtypes: ["Human", "Rogue", "Werewolf"] -- CORRECT
-- Front P/T: 2/2 -- CORRECT
-- Front keywords: [FirstStrike] -- CORRECT
-- Front oracle text matches -- CORRECT
-- Back name: "Terror of Kruin Pass" -- CORRECT
-- Back subtypes: ["Werewolf"] -- CORRECT
-- Back P/T: 3/3 (via dynamic_pt) -- CORRECT
-- Back keywords: [DoubleStrike, Menace] -- CORRECT
-- Transform logic -- CORRECT
+1. **Front face**: Name, cost ({1}{R}{R}), types (Human Rogue Werewolf), P/T (2/2), first strike, and transform trigger all correct.
+2. **Back face**: Name (Terror of Kruin Pass), P/T (3/3), double strike, menace -- correct.
+3. **ISSUE — Missing "can't be blocked except by two" ability on back face**: The Oracle text for Terror of Kruin Pass includes "Each Werewolf you control can't be blocked except by two or more creatures." This is a global evasion ability for all your Werewolves. The implementation only grants double strike and menace to Terror of Kruin Pass itself but does not implement the "can't be blocked except by two or more creatures" ability for other Werewolves. Note that menace on Terror of Kruin Pass itself covers the blocking restriction for this creature, but other Werewolves you control should also gain this restriction.
+4. Transform logic is correct (standard werewolf transform conditions).
+5. Tests exist in werewolf_cards.rs.
 
-## Issues
-1. **ISSUE (minor):** The back face oracle text in the implementation says "Each Werewolf you control can't be blocked except by two or more creatures" but also lists Menace as a keyword. The real card grants menace to all your Werewolves (a global effect), not just to this creature. The implementation only lists the keywords on back_face_data but does NOT implement a continuous effect granting menace to other Werewolves you control.
-
-## Verdict: PASS (with minor issue — global menace for Werewolves not implemented)
+**Summary**: The back face is missing a continuous effect that grants all Werewolves you control the "can't be blocked except by two or more creatures" evasion ability. This is functionally distinct from menace (menace is only on Terror of Kruin Pass itself).

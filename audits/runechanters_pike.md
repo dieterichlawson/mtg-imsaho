@@ -1,25 +1,16 @@
-# Audit: Runechanter's Pike
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Runechanter's Pike
-- **Cost:** {2}
-- **Type:** Artifact — Equipment
-- **Oracle Text:** Equipped creature has first strike and gets +X/+0, where X is the number of instant and sorcery cards in your graveyard.\nEquip {2}
-- **P/T:** N/A
+**Scryfall Oracle text**: Equipped creature has first strike and gets +X/+0, where X is the number of instant and sorcery cards in your graveyard.\nEquip {2}
+**Scryfall type line**: Artifact — Equipment
+**Mana cost**: {2}
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2} — OK
-- **Type:** Artifact, subtypes ["Equipment"] — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Continuous Effects:** GrantKeyword FirstStrike on Attached — OK
-- **dynamic_pt:** Counts instant/sorcery cards in controller's graveyard, returns (count, 0) — OK
-- **Equip ability:** Equip {2}, sorcery speed, targets creature — OK
-- **on_resolve:** Moves to battlefield, sets is_equipment — OK
-- **on_activate_ability:** Attaches to target creature — OK
+Implementation correctly models:
+- Name, mana cost {2}, type Artifact, subtype Equipment
+- Grants first strike via ContinuousEffect::GrantKeyword
+- Dynamic P/T bonus: counts instant and sorcery cards in controller's graveyard
+- Equip {2} as activated ability (sorcery speed only)
+- Equipment enters battlefield properly with `is_equipment = true`
+- Tests: 3 tests in tier9_cards.rs covering card data, first strike grant, and equip ability
 
-## Issues
-1. **Minor: dynamic_pt counts from equipment's controller, not equipped creature's controller**: The dynamic_pt uses the equipment's own controller. If the equipment were somehow controlled by a different player than the equipped creature (unusual), this could differ. In practice this is fine.
-
-## Verdict: PASS
+No issues found.

@@ -1,15 +1,14 @@
-# Audit: Ghost Quarter
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: (none, land)
-- Type: Land
-- Oracle: "{T}: Add {C}.
-  {T}, Sacrifice Ghost Quarter: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle."
+**Scryfall Oracle text**: {T}: Add {C}.
+{T}, Sacrifice Ghost Quarter: Destroy target land. Its controller may search their library for a basic land card, put it onto the battlefield, then shuffle.
+**Scryfall type line**: Land
+**Status**: PASS
 
-## Implementation: ghost_quarter.rs
-
-## Issues Found
-
-No issues found. Name, type (Land), oracle text, mana ability, and activated ability all match. The sacrifice ability correctly requires tap, sacrifice self, and targets a land. The "may search" is auto-resolved (always searches), which is a reasonable AI simplification. Basic land search logic correctly checks for CardType::Land + Supertype::Basic.
-
-## Verdict: PASS
+- Card type Land (no mana cost): correct
+- Mana ability {T}: Add {C}: correct
+- Activated ability: requires tap, sacrifice this, targets a land: correct
+- On activation: destroys target land, then searches controller's library for a basic land (checking card_types Land + supertypes Basic): correct
+- Basic land enters untapped: correct (summoning_sick set to false, but lands don't have summoning sickness — harmless)
+- Auto-searches for first basic land rather than player choice: simplification noted
+- Tests exist in innistrad_simple_cards.rs covering card data and mana tap

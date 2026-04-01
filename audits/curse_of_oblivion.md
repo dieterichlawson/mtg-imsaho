@@ -1,23 +1,18 @@
-# Audit: Curse of Oblivion
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Curse of Oblivion
-- **Cost:** {3}{B}
-- **Type:** Enchantment -- Aura Curse
-- **Oracle:** Enchant player. At the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard.
-- **P/T:** N/A
-- **Keywords:** Enchant
+**Scryfall Oracle text**: Enchant player
+At the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard.
+**Scryfall type line**: Enchantment — Aura Curse
+**Status**: PASS
 
-## Implementation: `curse_of_oblivion.rs`
-- **Name:** Curse of Oblivion -- CORRECT
-- **Cost:** {3}{B} -- CORRECT
-- **Type:** Enchantment -- CORRECT
-- **Subtypes:** ["Aura", "Curse"] -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Target:** TargetRequirement::PlayerOnly -- CORRECT
-- **Trigger:** Upkeep -- CORRECT
-- **Behavior:** Cursed player exiles two cards from graveyard at their upkeep -- CORRECT
-- **Choice mechanism:** Presents choice if >2 cards, auto-exiles if <=2 -- CORRECT
+### Findings
 
-## Issues
-None
+1. **Card data correct**: Name, cost ({3}{B}), type (Enchantment), subtypes (Aura, Curse) all match.
+
+2. **Upkeep trigger correct**: Triggers on enchanted player's upkeep, verified by checking `active_player == cursed_player`.
+
+3. **Exile logic correct**: When 2 or fewer cards in graveyard, exiles all. When more, presents a choice to the cursed player. Uses `PendingEffect::ExileCurseOfOblivion { remaining: 1 }` to handle the second exile pick.
+
+4. **Player choice implemented**: The cursed player gets to choose which cards to exile, which is correct.
+
+5. **Tests**: No dedicated tests found.

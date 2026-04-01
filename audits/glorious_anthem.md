@@ -1,14 +1,10 @@
-# Audit: Glorious Anthem
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {1}{W}{W}
-- Type: Enchantment
-- Oracle: "Creatures you control get +1/+1."
+**Scryfall Oracle text**: Creatures you control get +1/+1.
+**Scryfall type line**: Enchantment
+**Status**: PASS
 
-## Implementation: glorious_anthem.rs
-
-## Issues Found
-
-No issues found. Name, cost ({1}{W}{W}), type (Enchantment), oracle text, and continuous effect (ModifyPT +1/+1 for creatures you control) all match.
-
-## Verdict: PASS
+- Mana cost {1}{W}{W}: correct
+- Card type Enchantment: correct
+- Continuous effect ModifyPT +1/+1 with scope Global(CreatureFilter::You): correct
+- Tests exist in enchantments.rs covering creature buffing

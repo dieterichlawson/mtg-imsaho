@@ -1,21 +1,12 @@
-# Audit: Gallows Warden
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Gallows Warden
-- **Cost:** {4}{W}
-- **Type:** Creature -- Spirit
-- **Oracle:** Flying. Other Spirit creatures you control get +0/+1.
-- **P/T:** 3/3
+**Scryfall Oracle text**: Flying\nOther Spirit creatures you control get +0/+1.
+**Scryfall type line**: Creature — Spirit
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({4}{W})
-- Type: CORRECT (Creature)
-- Subtypes: CORRECT (Spirit)
-- Oracle text: CORRECT
-- P/T: CORRECT (3/3)
-- Keywords: CORRECT (Flying)
-- +0/+1 to other Spirit creatures you control: CORRECT (ModifyPT power:0, toughness:1, scope: GlobalOther with You + HasSubtype("Spirit"))
-
-## Issues
-None found.
+- Mana cost {4}{W}: correct.
+- Type Creature, subtype Spirit: correct.
+- Power/Toughness 3/3: correct.
+- Keywords: Flying: correct.
+- Continuous effect: Other Spirits you control get +0/+1 via `GlobalOther(And(You, HasSubtype("Spirit")))`: correct. Uses `GlobalOther` (not `Global`) so it excludes itself.
+- Tests exist in `tier5_cards.rs` (`gallows_warden_buffs_other_spirits`).

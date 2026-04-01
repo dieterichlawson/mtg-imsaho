@@ -1,34 +1,16 @@
-# Audit: Screeching Bat // Stalking Vampire
+## Audit — 2026-04-01
 
-## Official Oracle (Front Face)
-- **Name:** Screeching Bat
-- **Cost:** {2}{B}
-- **Type:** Creature — Bat
-- **Oracle Text:** Flying\nAt the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Screeching Bat.
-- **P/T:** 2/2
+**Scryfall Oracle text (front — Screeching Bat)**: Flying\nAt the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Screeching Bat.
+**Scryfall Oracle text (back — Stalking Vampire)**: At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Stalking Vampire.
+**Scryfall type line**: Creature — Bat // Creature — Vampire
+**Mana cost**: {2}{B}
+**P/T**: 2/2 // 5/5
+**Status**: ISSUE
 
-## Official Oracle (Back Face)
-- **Name:** Stalking Vampire
-- **Cost:** None
-- **Type:** Creature — Vampire
-- **Oracle Text:** At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Stalking Vampire.
-- **P/T:** 5/5
+**Issue: Back face (Stalking Vampire) should NOT have flying, but front face does.**
 
-## Implementation Review
-- **Front Face Name:** OK
-- **Front Face Cost:** {2}{B} — OK
-- **Front Face Type:** Creature, subtypes ["Bat"] — OK
-- **Front Face Oracle:** Matches — OK
-- **Front Face P/T:** 2/2 — OK
-- **Front Face Keywords:** Flying — OK
-- **Back Face Name:** "Stalking Vampire" — OK
-- **Back Face Type:** Creature, subtypes ["Vampire"] — OK
-- **Back Face Oracle:** Matches — OK
-- **Back Face P/T:** 5/5 (via dynamic_pt) — OK
-- **Transform:** on_upkeep checks active_player == controller, checks mana availability, auto-pays if possible — OK
-- **Back face Flying:** Stalking Vampire should NOT have flying (only Screeching Bat has it). The back_face_data has no keywords — OK
+The front face has flying, but Stalking Vampire (back face) does not have flying per Oracle text. The implementation correctly does not list flying in the back face keywords (keywords: vec![]), and the front face has Keyword::Flying. However, the `dynamic_pt` approach means the creature's keywords may not update on transform since there is no explicit keyword removal/addition on transform. Whether flying persists on the back face depends on the engine's transform handling -- if the engine swaps to back_face_data keywords, this is fine. If it only swaps P/T, the Vampire would incorrectly retain flying.
 
-## Issues
-1. **Minor: "you may" is auto-decided**: The transform trigger says "you may pay" but the implementation auto-pays if mana is available. This removes player agency — the player might not want to transform even when they have the mana. Noted as a simplification.
+**Minor concern**: The auto-pay logic for the "you may" choice automatically pays if mana is available. This is a simplification (the player doesn't get to decline), but is noted in code comments.
 
-## Verdict: PASS (with noted simplification on "you may" choice)
+- Tests: `screeching_bat_transforms_at_upkeep_with_mana` in tier15_cards.rs

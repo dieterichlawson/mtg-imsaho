@@ -1,15 +1,13 @@
-# Audit: Geistflame
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {R}
-- Type: Instant
-- Oracle: "Geistflame deals 1 damage to any target.
-  Flashback {3}{R}"
+**Scryfall Oracle text**: Geistflame deals 1 damage to any target.
+Flashback {3}{R}
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation: geistflame.rs
-
-## Issues Found
-
-No issues found. Name, cost ({R}), type (Instant), oracle text, flashback cost ({3}{R}), target requirement (AnyTarget), and damage amount (1) all match. Uses resolve_damage helper which correctly handles damaged_by tracking and NonCombatDamageDealt events.
-
-## Verdict: PASS
+- Mana cost {R}: correct
+- Card type Instant: correct
+- Target requirement AnyTarget: correct
+- Deals 1 damage via resolve_damage helper: correct
+- Flashback cost {3}{R}: correct
+- Tests exist in tier2_spells.rs, flashback.rs, and fizzle.rs covering damage, flashback casting, and flashback exile

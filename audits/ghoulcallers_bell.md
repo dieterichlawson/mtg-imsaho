@@ -1,14 +1,11 @@
-# Audit: Ghoulcaller's Bell
+## Audit — 2026-04-01
 
-## Oracle Reference (Scryfall)
-- Cost: {1}
-- Type: Artifact
-- Oracle: "{T}: Each player mills a card."
+**Scryfall Oracle text**: {T}: Each player mills a card.
+**Scryfall type line**: Artifact
+**Status**: PASS
 
-## Implementation: ghoulcallers_bell.rs
-
-## Issues Found
-
-No issues found. Name, cost ({1}), type (Artifact), oracle text, and activated ability all match. The tap ability correctly mills 1 card from each player using crate::engine::mill_cards.
-
-## Verdict: PASS
+- Mana cost {1}: correct
+- Card type Artifact: correct
+- Activated ability {T}: correct (requires tap, no mana cost)
+- On activation: mills 1 card for each player: correct
+- Tests exist in innistrad_simple_cards.rs covering card data and mill functionality

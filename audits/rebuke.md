@@ -1,23 +1,15 @@
-# Audit: Rebuke
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Rebuke
-- **Cost:** {2}{W}
-- **Type:** Instant
-- **Oracle Text:** Destroy target attacking creature.
-- **P/T:** N/A
+**Scryfall Oracle text**: Destroy target attacking creature.
+**Scryfall type line**: Instant
+**Mana cost**: {2}{W}
+**Status**: PASS
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2}{W} — OK
-- **Type:** Instant — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Target:** CreatureWithFilter(Attacking) — OK
-- **is_valid_target:** Checks battlefield, is creature, is in combat.attackers — OK
-- **on_resolve:** Uses resolve_destroy helper — OK
+Implementation correctly models:
+- Name, mana cost {2}{W}, type Instant
+- Target requirement: attacking creature (uses `TargetFilter::Attacking`)
+- `is_valid_target` checks the creature is on the battlefield, is a creature (has power), and is in the attackers list
+- Resolution delegates to `helpers::resolve_destroy`
+- Tests: `rebuke_destroys_attacking_creature` in tier2_spells.rs
 
-## Issues
-None found.
-
-## Verdict: PASS
+No issues found.

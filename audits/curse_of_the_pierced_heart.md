@@ -1,23 +1,18 @@
-# Audit: Curse of the Pierced Heart
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Curse of the Pierced Heart
-- **Cost:** {1}{R}
-- **Type:** Enchantment -- Aura Curse
-- **Oracle:** Enchant player. At the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.
-- **P/T:** N/A
-- **Keywords:** Enchant
+**Scryfall Oracle text**: Enchant player
+At the beginning of enchanted player's upkeep, Curse of the Pierced Heart deals 1 damage to that player.
+**Scryfall type line**: Enchantment — Aura Curse
+**Status**: PASS
 
-## Implementation: `curse_of_the_pierced_heart.rs`
-- **Name:** Curse of the Pierced Heart -- CORRECT
-- **Cost:** {1}{R} -- CORRECT
-- **Type:** Enchantment -- CORRECT
-- **Subtypes:** ["Aura", "Curse"] -- CORRECT
-- **P/T:** N/A -- CORRECT
-- **Target:** TargetRequirement::PlayerOnly -- CORRECT
-- **Trigger:** Upkeep -- CORRECT
-- **Behavior:** Deals 1 damage to enchanted player at their upkeep -- CORRECT
-- **Uses NonCombatDamageDealt event:** Yes -- CORRECT
+### Findings
 
-## Issues
-1. **MINOR: Oracle says "deals 1 damage to that player or a planeswalker that player controls."** The implementation always deals damage to the player (never to a planeswalker). Since planeswalkers are unlikely in this engine's context, this is a minor simplification.
+1. **Card data correct**: Name, cost ({1}{R}), type (Enchantment), subtypes (Aura, Curse) all match.
+
+2. **Upkeep trigger correct**: Triggers on enchanted player's upkeep.
+
+3. **Damage implementation correct**: Deals 1 damage (subtracts life and emits `NonCombatDamageDealt` event). This is damage, not life loss, which matches "deals 1 damage."
+
+4. **NonCombatDamageDealt event correct**: Correctly uses `NonCombatDamageDealt` rather than `CombatDamageDealt`.
+
+5. **Tests**: No dedicated tests found.

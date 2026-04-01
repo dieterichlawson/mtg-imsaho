@@ -1,22 +1,16 @@
-# Audit: Slayer of the Wicked
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Slayer of the Wicked
-- **Cost:** {3}{W}
-- **Type:** Creature -- Human Soldier
-- **Oracle:** When Slayer of the Wicked enters the battlefield, you may destroy target Vampire, Werewolf, or Zombie.
-- **P/T:** 3/2
+**Scryfall Oracle text**: When Slayer of the Wicked enters the battlefield, you may destroy target Vampire, Werewolf, or Zombie.
+**Scryfall type line**: Creature — Human Soldier
+**Mana cost**: {3}{W}
+**P/T**: 3/2
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/slayer_of_the_wicked.rs`
-- **Name:** Slayer of the Wicked ✅
-- **Cost:** {3}{W} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Soldier ✅
-- **P/T:** 3/2 ✅
-- **Triggered ability:** EntersBattlefield ✅
-- **"You may":** uses present_optional_target_choice ✅
-- **Target filter:** checks subtypes for "Vampire", "Werewolf", or "Zombie" ✅
-- **Destroy effect:** PendingEffect::Destroy ✅
-- **Target scope:** any controller (not just opponent) -- matches oracle (no "an opponent controls" restriction) ✅
+Implementation correctly models:
+- Name, mana cost {3}{W}, type Creature, subtypes Human/Soldier, P/T 3/2
+- ETB triggered ability: "you may destroy target Vampire, Werewolf, or Zombie"
+- Uses optional target choice (correctly models "you may")
+- Filters targets by Vampire, Werewolf, or Zombie subtypes
+- Tests: `slayer_of_the_wicked_destroys_zombie` in tier3_cards.rs
 
-## Verdict: PASS -- no issues found
+No issues found.

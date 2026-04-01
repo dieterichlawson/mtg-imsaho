@@ -1,21 +1,18 @@
-# Audit: Village Bell-Ringer
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Village Bell-Ringer
-- **Cost:** {2}{W}
-- **Type:** Creature — Human Scout
-- **Oracle:** Flash / When this creature enters, untap all creatures you control.
-- **P/T:** 1/4
+**Scryfall Oracle text**: Flash\nWhen Village Bell-Ringer enters the battlefield, untap all creatures you control.
+**Scryfall type line**: Creature — Human Scout
+**Scryfall mana cost**: {2}{W}
+**Scryfall P/T**: 1/4
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/village_bell_ringer.rs`
-- Name: "Village Bell-Ringer" -- MATCH
-- Cost: {2}{W} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Human", "Scout"] -- MATCH
-- P/T: 1/4 -- MATCH
-- Keywords: [Flash] -- MATCH
-- Trigger: EntersBattlefield -- MATCH
-- on_enter_battlefield: Untaps all creatures (power.is_some()) controlled by controller -- MATCH
+Findings:
+- Name: Correct ("Village Bell-Ringer").
+- Mana cost: {2}{W} — correct.
+- Types: Creature — Human Scout — correct.
+- P/T: 1/4 — correct.
+- Keywords: Flash — correct.
+- ETB: Untaps all creatures controlled by the same player. Correctly filters for battlefield creatures that are tapped. Correct.
+- Tests: `village_bell_ringer_untaps_creatures` in tier3_cards.rs.
 
-## Verdict
-**PASS** — Flash creature with ETB untap correctly implemented.
+No issues found.

@@ -1,22 +1,18 @@
-# Audit: Bonds of Faith
+## Audit — 2026-04-01
 
-## Oracle (Scryfall/API)
-- **Name:** Bonds of Faith
-- **Cost:** {1}{W}
-- **Type:** Enchantment — Aura
-- **Oracle:** Enchant creature. Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
-- **P/T:** N/A
+**Scryfall Oracle text**: Enchant creature
+Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Scryfall type line**: Enchantment — Aura
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/bonds_of_faith.rs`
-- **Name:** Bonds of Faith -- CORRECT
-- **Cost:** {1}{W} -- CORRECT
-- **Type:** Enchantment — Aura -- CORRECT (subtypes: ["Aura"])
-- **Target requirement:** Creature -- CORRECT
-- **Effect on Human:** +2/+2 via ModifyPT -- CORRECT
-- **Effect on non-Human:** PreventAttack + PreventBlock -- CORRECT
-- **Aura attachment:** Uses resolve_aura helper -- CORRECT
+- Mana cost {1}{W}: correct
+- Card type Enchantment, subtype Aura: correct
+- Target requirement: Creature: correct
+- Uses resolve_aura helper: correct
+- Human check grants +2/+2: correct
+- Non-Human check prevents attack and block: correct
 
-## Issues
-1. **ISSUE (minor):** The Human check is done once at ETB time and stored as `instance_continuous_effects`. If the creature's type changes (e.g., gains/loses Human subtype), the effect won't update. The oracle says "as long as it's a Human" which implies continuous checking.
+Issues found:
+1. **Continuous effect is not dynamic**: The implementation checks whether the creature is Human at ETB time (on_enter_battlefield) and locks in the effect. If the creature's type changes later (e.g., gains or loses the Human subtype via another effect), the Bonds of Faith effect won't update. The Oracle text says "as long as it's a Human" which should be checked continuously. This is a moderate fidelity issue.
 
-## Verdict: PASS (with minor limitation) -- Human check is snapshot rather than continuous
+Tests exist in bug_fixes.rs and card_mechanics.rs.

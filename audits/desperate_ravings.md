@@ -1,21 +1,15 @@
-# Audit: Desperate Ravings
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Desperate Ravings
-- **Cost:** {1}{R}
-- **Type:** Instant
-- **Oracle:** Draw two cards, then discard a card at random. Flashback {2}{U}
-- **P/T:** N/A
+**Scryfall Oracle text**: Draw two cards, then discard a card at random.\nFlashback {2}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({1}{R})
-- Type: CORRECT (Instant)
-- Oracle text: CORRECT
-- Flashback cost: CORRECT ({2}{U})
-- P/T: CORRECT (N/A)
-- on_resolve draws 2 cards: CORRECT
-- on_resolve discards at random: CORRECT (uses `choose(&mut rand::thread_rng())`)
-
-## Issues
-None found.
+- Mana cost {1}{R}: correct.
+- Type Instant: correct.
+- Oracle text matches: draw two, then discard at random.
+- Flashback {2}{U}: correct.
+- Uses `move_spell_after_resolve`: correct.
+- Random discard uses `rand::thread_rng()` and `SliceRandom::choose`: correct.
+- Discard event emitted: correct.
+- Minor note: discard uses `state.move_object(discard_id, Zone::Graveyard)` directly rather than a dedicated discard helper, but this is consistent with the codebase pattern and the Discarded event is emitted.
+- Tests exist in `flashback.rs` (`desperate_ravings_draws_two_discards_one`).

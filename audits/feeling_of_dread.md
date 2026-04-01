@@ -1,21 +1,14 @@
-# Audit: Feeling of Dread
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Feeling of Dread
-- **Cost:** {1}{W}
-- **Type:** Instant
-- **Oracle:** Tap up to two target creatures. Flashback {1}{U}
-- **P/T:** N/A
+**Scryfall Oracle text**: Tap up to two target creatures.\nFlashback {1}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({1}{W})
-- Type: CORRECT (Instant)
-- Oracle text: CORRECT
-- Flashback cost: CORRECT ({1}{U})
-- Target requirement: CORRECT (UpToTargets(2, Creature))
-- Taps targets: CORRECT (sets obj.tapped = true)
-- P/T: CORRECT (N/A)
-
-## Issues
-None found.
+- Mana cost {1}{W}: correct.
+- Type Instant: correct.
+- Flashback {1}{U}: correct.
+- Targets up to 2 creatures via `UpToTargets(2, Creature)`: correct.
+- Taps each target creature on resolve: correct.
+- Checks zone == Battlefield before tapping: correct.
+- Uses `move_spell_after_resolve`: correct.
+- Tests exist in `flashback.rs` (`feeling_of_dread_taps_creature`) and `card_mechanics.rs` (`feeling_of_dread_taps_two`).

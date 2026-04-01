@@ -1,20 +1,15 @@
-# Audit: Markov Patrician
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Markov Patrician
-- **Cost:** {2}{B}
-- **Type:** Creature — Vampire
-- **Oracle:** Lifelink
-- **P/T:** 3/1
+**Scryfall Oracle text**: Lifelink
+**Scryfall type line**: Creature — Vampire
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/markov_patrician.rs`
-- **Name:** Markov Patrician -- CORRECT
-- **Cost:** {2}{B} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** Vampire -- CORRECT
-- **Oracle:** Lifelink -- CORRECT
-- **P/T:** 3/1 -- CORRECT
-- **Keywords:** Lifelink -- CORRECT
+- Name: Markov Patrician -- correct
+- Cost: {2}{B} -- correct
+- Type: Creature -- correct
+- Subtypes: Vampire -- correct
+- P/T: 3/1 -- correct
+- Keywords: Lifelink -- correct
+- Tests exist in innistrad_cards.rs
 
-## Verdict
-**PASS** -- No issues found.
+No issues found. Implementation matches Oracle text.

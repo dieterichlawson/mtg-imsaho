@@ -1,19 +1,14 @@
-# Audit: Midnight Haunting
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Midnight Haunting
-- **Cost:** {2}{W}
-- **Type:** Instant
-- **Oracle:** Create two 1/1 white Spirit creature tokens with flying.
+**Scryfall Oracle text**: Create two 1/1 white Spirit creature tokens with flying.
+**Scryfall type line**: Instant
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/midnight_haunting.rs`
-- **Name:** Midnight Haunting -- CORRECT
-- **Cost:** {2}{W} -- CORRECT
-- **Type:** Instant -- CORRECT
-- **on_resolve:** Creates two 1/1 white Spirit tokens with flying -- CORRECT
+- Name: Midnight Haunting -- correct
+- Cost: {2}{W} -- correct
+- Type: Instant -- correct
+- Effect: creates two 1/1 white Spirit creature tokens with flying -- correctly implemented
+- Tokens have correct stats, color, type, keyword, and subtype -- correct
+- Tests exist in tier3_cards.rs
 
-## Issues
-1. **Token subtypes missing:** Uses `create_token("Spirit", ...)` which passes empty subtypes vec. The Spirit tokens will not have the "Spirit" creature subtype. Should use `create_token_with_subtypes` with `vec!["Spirit".into()]`.
-
-## Verdict
-**FAIL** -- 1 issue: Spirit tokens lack "Spirit" creature subtype.
+No issues found. Implementation matches Oracle text.

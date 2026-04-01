@@ -1,21 +1,12 @@
-# Audit: Hinterland Harbor
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Hinterland Harbor
-- **Cost:** (none — Land)
-- **Type:** Land
-- **Oracle:** Hinterland Harbor enters the battlefield tapped unless you control a Forest or an Island. {T}: Add {G} or {U}.
-- **P/T:** N/A
+**Scryfall Oracle text**: Hinterland Harbor enters the battlefield tapped unless you control a Forest or an Island.
+{T}: Add {G} or {U}.
+**Scryfall type line**: Land
+**Status**: PASS
 
-## Implementation
-- Name: "Hinterland Harbor" -- CORRECT
-- Cost: None -- CORRECT
-- Type: Land -- CORRECT
-- Oracle text matches -- CORRECT
-- ETB tapped-unless logic checks for Forest or Island subtypes, excluding self -- CORRECT
-- Mana abilities produce {G} or {U} with tap -- CORRECT
-
-## Issues
-None.
-
-## Verdict: PASS
+- Card type Land (no mana cost): correct
+- ETB: enters tapped unless controller has a Forest or Island (checks subtypes): correct
+- Excludes self from the check (o.id != object_id): correct
+- Mana abilities: {T}: Add {G} or {U} (two separate ManaAbilityDefs): correct
+- Tests exist in innistrad_simple_cards.rs covering card data

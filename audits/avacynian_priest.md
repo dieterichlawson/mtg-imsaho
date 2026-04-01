@@ -1,23 +1,15 @@
-# Audit: Avacynian Priest
+## Audit — 2026-04-01
 
-## Oracle (Scryfall)
-- **Name:** Avacynian Priest
-- **Cost:** {1}{W}
-- **Type:** Creature — Human Cleric
-- **Oracle:** {1}, {T}: Tap target non-Human creature.
-- **P/T:** 1/2
+**Scryfall Oracle text**: {1}, {T}: Tap target non-Human creature.
+**Scryfall type line**: Creature — Human Cleric
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/avacynian_priest.rs`
-- **Name:** Avacynian Priest ✅
-- **Cost:** {1}{W} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Cleric ✅
-- **P/T:** 1/2 ✅
-- **Oracle text:** matches ✅
-- **Activated ability:** {1}, {T}: Tap target non-Human creature ✅
-- **Target filtering:** Excludes Humans via `is_valid_target` ✅
-- **Tap effect:** Sets `tapped = true` on target ✅
-- **requires_tap:** true ✅
-- **Triggered abilities:** none ✅
-
-## Verdict: PASS — no issues found
+- Mana cost {1}{W}: correct
+- 1/2 stats: correct
+- Subtypes Human, Cleric: correct
+- Activated ability: {1}, tap, target non-Human creature: correct
+- requires_tap: true: correct
+- is_valid_target excludes Humans and requires battlefield/creature: correct
+- on_activate_ability sets target tapped = true: correct
+- sorcery_speed_only: false — correct, this can be activated at instant speed
+- Tests exist in activated_abilities.rs covering stats, tapping, human exclusion, and tap requirement

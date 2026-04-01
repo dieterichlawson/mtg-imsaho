@@ -1,20 +1,17 @@
-# Audit: Moorland Haunt
+## Audit — 2026-04-01
 
-## Official Oracle
-- **Name:** Moorland Haunt
-- **Type:** Land
-- **Oracle:** {T}: Add {C}. {W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.
+**Scryfall Oracle text**: {T}: Add {C}.\n{W}{U}, {T}, Exile a creature card from your graveyard: Create a 1/1 white Spirit creature token with flying.
+**Scryfall type line**: Land
+**Status**: ISSUE
 
-## Implementation: `mtg-engine/src/cards/moorland_haunt.rs`
-- **Name:** Moorland Haunt -- CORRECT
-- **Type:** Land -- CORRECT
-- **Mana ability:** {T}: Add {C} -- CORRECT
-- **Activated ability:** {W}{U}, {T}, exile creature from graveyard -- CORRECT
-- **Token:** 1/1 white Spirit with flying, "Spirit" subtype -- CORRECT
+- Name: Correct ("Moorland Haunt")
+- Cost: None (Land) - Correct
+- Type: Land - Correct
+- Oracle text matches.
+- Mana ability: {T}: Add {C} - Correct
+- Activated ability: {W}{U}, {T}, Exile a creature card from graveyard - Correct cost, correct tap requirement
 
-## Notes
-- Token is created with name "Spirit Token" rather than "Spirit". Minor cosmetic issue.
-- Creature exile from graveyard is auto-picked (first found). Acceptable simplification.
+Issues:
+1. **No player choice for which creature to exile**: The implementation auto-picks the first creature card in the graveyard (`next()`) rather than letting the player choose which creature card to exile. The Oracle text says "Exile a creature card from your graveyard" which implies the controller chooses.
 
-## Verdict
-**PASS** -- No issues found.
+- Tests: innistrad_simple_cards.rs has `moorland_haunt_card_data` and `moorland_haunt_creates_spirit_token` tests.

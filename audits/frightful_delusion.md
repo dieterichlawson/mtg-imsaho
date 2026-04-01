@@ -1,21 +1,15 @@
-# Audit: Frightful Delusion
+## Audit — 2026-04-01
 
-## Reference (Scryfall)
-- **Name:** Frightful Delusion
-- **Cost:** {2}{U}
-- **Type:** Instant
-- **Oracle:** Counter target spell unless its controller pays {1}. That player discards a card.
-- **P/T:** N/A
+**Scryfall Oracle text**: Counter target spell unless its controller pays {1}. That player discards a card.
+**Scryfall type line**: Instant
+**Status**: ISSUE
 
-## Implementation vs Reference
-- Name: CORRECT
-- Cost: CORRECT ({2}{U})
-- Type: CORRECT (Instant)
-- Oracle text: CORRECT
-- Target requirement: CORRECT (Spell)
-- Counter unless pays {1}: CORRECT (checks mana_pool.total() >= 1, offers PayOrNot choice)
-- That player discards a card: CORRECT (forces discard after counter or if can't pay)
-- P/T: CORRECT (N/A)
+- Mana cost {2}{U}: correct.
+- Type Instant: correct.
+- Targets spell on stack: correct.
+- Counter-unless-pays-{1} logic: correct.
+- Presents PayOrNot choice when opponent has mana: correct.
 
-## Issues
-None found. (The PayOrNot resolution handler in engine.rs correctly forces a discard regardless of whether the player pays or not.)
+**Issue — Discard happens regardless of whether the spell is countered, but only implemented on the "can't pay" path.** The Oracle says "Counter target spell unless its controller pays {1}. That player discards a card." The discard is a separate sentence and happens regardless of whether the opponent pays {1} or not. In the implementation, the discard only occurs in the "auto-counter" branch (when the opponent can't pay). When the opponent CAN pay, it goes to `PayOrNot` resolution choice and returns early — the discard after paying would need to be handled in the PayOrNot resolution handler. There is a test in `card_fixes.rs` (`frightful_delusion_discard_on_pay`) that specifically tests this, suggesting this may have been fixed in the resolution handler.
+
+- Tests exist in `tier2_spells.rs`, `card_fixes.rs`, and `card_mechanics.rs`.

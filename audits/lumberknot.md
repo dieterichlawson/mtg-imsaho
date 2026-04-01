@@ -1,24 +1,17 @@
-# Audit: Lumberknot
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Lumberknot
-- **Cost:** {2}{G}{G}
-- **Type:** Creature — Treefolk
-- **Oracle:** Hexproof. Whenever a creature dies, put a +1/+1 counter on Lumberknot.
-- **P/T:** 1/1
+**Scryfall Oracle text**: Hexproof\nWhenever a creature dies, put a +1/+1 counter on Lumberknot.
+**Scryfall type line**: Creature — Treefolk
+**Status**: PASS
 
-## Implementation
-- Name: "Lumberknot" -- CORRECT
-- Cost: {2}{G}{G} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Treefolk"] -- CORRECT
-- P/T: 1/1 -- CORRECT
-- Keywords: [Hexproof] -- CORRECT
-- Oracle text matches -- CORRECT
-- Triggered ability: AnyCreatureDies -- CORRECT
-- on_any_creature_dies: adds +1/+1 counter if on battlefield -- CORRECT
+- Name: Lumberknot -- correct
+- Cost: {2}{G}{G} -- correct
+- Type: Creature -- correct
+- Subtypes: Treefolk -- correct
+- P/T: 1/1 -- correct
+- Keywords: Hexproof -- correct
+- Triggered ability: any creature dies -> +1/+1 counter -- correctly implemented via on_any_creature_dies
+- Checks that Lumberknot is on the battlefield before adding counter -- correct
+- Tests exist in tier3_cards.rs
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.

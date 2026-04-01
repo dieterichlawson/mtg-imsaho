@@ -1,21 +1,18 @@
-# Audit: Woodland Sleuth
+## Audit — 2026-04-01
 
-## Scryfall Reference
-- **Name:** Woodland Sleuth
-- **Cost:** {3}{G}
-- **Type:** Creature — Human Scout
-- **Oracle:** Morbid -- When this creature enters, if a creature died this turn, return a creature card at random from your graveyard to your hand.
-- **P/T:** 2/3
+**Scryfall Oracle text**: Morbid — When Woodland Sleuth enters the battlefield, if a creature died this turn, return a creature card at random from your graveyard to your hand.
+**Scryfall type line**: Creature — Human Scout
+**Scryfall mana cost**: {3}{G}
+**Scryfall P/T**: 2/3
+**Status**: PASS
 
-## Implementation: `mtg-engine/src/cards/woodland_sleuth.rs`
-- Name: "Woodland Sleuth" -- MATCH
-- Cost: {3}{G} -- MATCH
-- Types: Creature -- MATCH
-- Subtypes: ["Human", "Scout"] -- MATCH
-- P/T: 2/3 -- MATCH
-- Trigger: EntersBattlefield -- MATCH
-- Morbid check: uses state.creature_died_this_turn -- MATCH
-- Behavior: Finds creature cards in controller's graveyard, shuffles them, returns one at random to hand -- MATCH
+Findings:
+- Name: Correct.
+- Mana cost: {3}{G} — correct.
+- Types: Creature — Human Scout — correct.
+- P/T: 2/3 — correct.
+- Morbid condition: Checks `state.creature_died_this_turn`. Correct.
+- ETB effect: Finds creature cards in controller's graveyard, shuffles randomly, returns one to hand. Correct.
+- Tests: `woodland_sleuth_morbid_returns_creature` and `woodland_sleuth_no_morbid_no_return` in tier11_cards.rs.
 
-## Verdict
-**PASS** — Morbid ETB correctly implemented with random selection.
+No issues found.

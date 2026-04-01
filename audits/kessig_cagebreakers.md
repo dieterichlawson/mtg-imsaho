@@ -1,27 +1,18 @@
-# Audit: Kessig Cagebreakers
+## Audit — 2026-04-01
 
-## Oracle (Official)
-- **Name:** Kessig Cagebreakers
-- **Cost:** {4}{G}
-- **Type:** Creature — Human Rogue
-- **Oracle:** Whenever Kessig Cagebreakers attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard.
-- **P/T:** 3/4
+**Scryfall Oracle text**: Whenever Kessig Cagebreakers attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard.
+**Scryfall type line**: Creature — Human Rogue
+**Status**: PASS
 
-## Implementation
-- Name: "Kessig Cagebreakers" -- CORRECT
-- Cost: {4}{G} -- CORRECT
-- Type: Creature -- CORRECT
-- Subtypes: ["Human", "Rogue"] -- CORRECT
-- P/T: 3/4 -- CORRECT
-- Oracle text matches -- CORRECT
-- Triggered ability: Attacks trigger -- CORRECT
-- Counts creature cards in graveyard -- CORRECT
-- Creates 2/2 green Wolf tokens -- CORRECT
-- Tokens are tapped and attacking -- CORRECT
-- Token subtypes: ["Wolf"] -- CORRECT
-- Token colors: [Green] -- CORRECT
+- Name: Kessig Cagebreakers -- correct
+- Cost: {4}{G} -- correct
+- Type: Creature -- correct
+- Subtypes: Human, Rogue -- correct
+- P/T: 3/4 -- correct
+- Triggered ability: attacks trigger creating Wolf tokens tapped and attacking -- correctly implemented
+- Token creation: 2/2 green Wolf creature tokens -- correct
+- Counts creature cards in graveyard -- correct
+- Sets tokens as tapped and attacking the correct defending player -- correct
+- Tests exist in tier15_cards.rs
 
-## Issues
-None.
-
-## Verdict: PASS
+No issues found. Implementation matches Oracle text.
