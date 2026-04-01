@@ -259,3 +259,56 @@ Behavior verified:
 - Duplicate test in tier15: `mtg-engine/tests/tier15_cards.rs`
 - Ruling: Angel can attack different player/planeswalker: NOT TESTED (acceptable in 2-player engine)
 - Ruling: Angel entering does not trigger "attacks" triggers: NOT TESTED (engine-level behavior)
+
+## Audit — 2026-04-01 14:48
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**: Hexproof (This creature can't be the target of spells or abilities your opponents control.)
+Whenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.
+**Type line**: Legendary Creature — Spirit Cleric
+**Mana cost**: {1}{W}{U}
+**P/T**: 2/2
+**Rulings**: Angel can attack different player/planeswalker (irrelevant in 2-player). Angel entering does not trigger "attacks" triggers. Propaganda-like effects don't stop it. Multiple tokens from Doubling Season all exiled.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified:
+- Mana cost {1}{W}{U}: correct (Generic(1), White, Blue)
+- Type: Creature with Legendary supertype: correct
+- Subtypes: Spirit, Cleric: correct
+- P/T: 2/2: correct
+- Keywords: Hexproof: correct
+- Oracle text field: matches Scryfall
+- triggered_abilities: Attacks + EndCombat: correct
+- on_resolve: moves to battlefield, sets `is_legendary = true`: correct
+
+Behavior verified:
+- `on_attacks`: creates 4/4 white Angel token with Flying via `create_token_with_subtypes` with subtypes `["Angel"]`: correct
+- Token set tapped (line 69): correct
+- Token added to combat attackers with defender = `state.opponent(controller)` (line 74-76): correct for 2-player game
+- Token registered for exile via `state.end_of_combat_exiles.push(token_id)` (line 81): correct -- game-level storage, fires even if Geist leaves battlefield
+- No `on_end_combat` method needed -- exile handled by `end_of_combat_exiles` in `combat::end_combat`
+- Uses `move_object` for entering battlefield (correct for creature permanent)
+
+No anti-patterns detected. Not in LLM card knowledge section.
+
+### Tricky interactions checked
+- Angel enters tapped and attacking (not "declared" -- won't re-trigger "attacks" triggers): pass
+- Delayed exile fires independently of Geist's presence via game-level `end_of_combat_exiles`: pass (tested)
+- Multiple tokens tracked via Vec push (not overwrite): pass
+- Hexproof keyword correctly declared: pass
+- Token has Angel creature subtype via `create_token_with_subtypes`: pass
+- Angel is white: pass (Color::White passed to token creation)
+- Angel has flying: pass (Keyword::Flying passed to token creation)
+
+### Test coverage
+- Angel created on attack with correct stats: `mtg-engine/tests/geist_of_saint_traft.rs:20` (geist_creates_angel_on_attack)
+- Angel exiled at end of combat: `mtg-engine/tests/geist_of_saint_traft.rs:44` (angel_exiled_at_end_of_combat)
+- Angel exiled even if Geist dies before end of combat: `mtg-engine/tests/geist_of_saint_traft.rs:70` (angel_exiled_even_if_geist_dies)
+- Angel token flying keyword: NOT TESTED (token creation passes keyword)
+- Angel token color (white): NOT TESTED (token creation passes color)
+- Ruling: Angel can attack different player/planeswalker: NOT TESTED (acceptable in 2-player engine)
+- Ruling: Angel entering does not trigger "attacks" triggers: NOT TESTED (engine-level)
+- Multiple combat phases: NOT TESTED (code structure is correct -- Vec push)

@@ -288,3 +288,52 @@ Not in LLM card knowledge section.
 - Only exiles own graveyard: `mtg-engine/tests/tier8_cards.rs:653`
 - Fizzle (target leaves battlefield): NOT TESTED
 - Spell countered (cards should already be exiled as cost): NOT TESTED
+
+## Audit — 2026-04-01 14:48
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard.
+Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Mana cost**: {1}{R}
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified:
+- Mana cost {1}{R}: correct (Generic(1), Red)
+- Card types: Instant: correct
+- No supertypes, subtypes, P/T, keywords: correct
+- Oracle text field: matches Scryfall ("exile X cards" / "deals X damage")
+- Target requirement: `TargetRequirement::Creature`: correct per oracle "target creature"
+- additional_cost: `Some(AdditionalCost::ExileXFromGraveyard)`: correct -- cards exiled at cast time as additional cost
+
+Behavior verified:
+- `on_resolve`: reads exile count from `card_state["exile_count"]` (line 40-43), deals that much damage to target creature if count > 0 (line 45-57)
+- Damage applied via `obj.damage_marked += count` (line 49): consistent with engine damage pattern
+- `obj.damaged_by.push(object_id)` (line 50): correctly tracks damage source
+- Emits `NonCombatDamageDealt` event (line 52-55): correct for spell damage (not `CombatDamageDealt`)
+- Zone check on target (`obj.zone == Zone::Battlefield`, line 48): correct fizzle protection
+- Uses `move_spell_after_resolve(object_id)` (line 63): correct (not raw `move_object`)
+- X=0 deals no damage (the `if count > 0` guard at line 45): correct
+
+No anti-patterns detected. Not in LLM card knowledge section.
+
+### Tricky interactions checked
+- Additional cost paid at cast time (survives counterspell): pass (`ExileXFromGraveyard` handled in engine at cast time)
+- Player chooses X (0 to graveyard size): pass (engine generates per-X legal actions)
+- NonCombatDamageDealt event emitted (not CombatDamageDealt): pass
+- damaged_by tracking for death trigger interactions: pass
+- Only exiles caster's own graveyard: pass (engine filters by owner)
+- Spell cleanup via move_spell_after_resolve: pass
+- Only targets creatures (not players): pass (matches oracle "target creature")
+
+### Test coverage
+- Deals X damage (X=4): `mtg-engine/tests/tier8_cards.rs:528` (harvest_pyre_deals_damage_equal_to_chosen_x)
+- Player chooses partial X (X=2 of 4): `mtg-engine/tests/tier8_cards.rs:562` (harvest_pyre_player_chooses_partial_x)
+- X=0 deals no damage: `mtg-engine/tests/tier8_cards.rs:600` (harvest_pyre_x_zero_deals_no_damage)
+- Legal actions include different X values: `mtg-engine/tests/tier8_cards.rs:624` (harvest_pyre_legal_actions_include_different_x_values)
+- Only exiles own graveyard: `mtg-engine/tests/tier8_cards.rs:653` (harvest_pyre_only_exiles_own_graveyard)
+- Fizzle (target leaves battlefield): NOT TESTED
+- Spell countered (cards should already be exiled as cost): NOT TESTED

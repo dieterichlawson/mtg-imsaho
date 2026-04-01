@@ -324,3 +324,41 @@ Engine note: Activated abilities resolve immediately in this engine (not placed 
 - Ruling: losing control of Olivia before ability 1 resolves: NOT TESTED (engine limitation)
 - Ruling: lethal damage creature becomes Vampire before dying: NOT TESTED (covered by code structure)
 - Not in LLM card knowledge: acceptable (complex card, AI can read oracle text)
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+{1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren.
+{3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
+**Type line**: Legendary Creature — Vampire
+**P/T**: 3/3
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data is correct: {2}{B}{R}, Legendary Creature - Vampire, 3/3, Flying keyword. Both activated abilities have correct costs, targeting, and effects. Ability 0 correctly uses TargetFilter::Another to enforce "another target creature". Ability 1 correctly uses TargetFilter::HasSubtype("Vampire") to restrict to Vampires. The on_activate_ability correctly: (1) deals 1 damage with damage_marked and damaged_by, (2) adds Vampire subtype while preserving existing subtypes, (3) adds +1/+1 counter on Olivia, (4) emits NonCombatDamageDealt event. Ability 1 correctly changes controller and tracks original controller for reversion. The on_leave_battlefield correctly returns all stolen creatures to original controllers.
+
+Note: The "for as long as you control Olivia Voldaren" condition is only partially implemented. It handles Olivia leaving the battlefield but does not handle Olivia changing controllers (e.g., opponent steals Olivia). This would require a controller-change hook that doesn't exist in the engine. This is an engine-level limitation, not a card-specific bug.
+
+Note: Activated abilities resolve immediately via on_activate_ability rather than going on the stack. This is an engine-level simplification that affects the ruling about losing control of Olivia before ability 1 resolves. Not a card-specific issue.
+
+### Tricky interactions checked
+- "Another" target restriction on ability 0: PASS - TargetFilter::Another and runtime check at line 100
+- Creature becomes Vampire "in addition to its other types": PASS - subtypes.push without clearing existing
+- NonCombatDamageDealt event (not CombatDamageDealt): PASS - line 112
+- damaged_by tracked for death triggers: PASS - line 106
+- Ruling: lethal damage target becomes Vampire before dying: PASS - subtype added in same block as damage
+- Stolen creatures return when Olivia leaves: PASS - on_leave_battlefield at line 161
+- move_spell_after_resolve not needed (creature): PASS
+
+### Test coverage
+- Ability 0 deals damage, makes Vampire, +1/+1: `olivia_voldaren.rs:23` and `tier14_cards.rs:463`
+- Ability 0 cannot target self: `olivia_voldaren.rs:51`
+- Ability 1 steals Vampire: `olivia_voldaren.rs:68` and `tier14_cards.rs:500`
+- Ability 1 rejects non-Vampire: `olivia_voldaren.rs:86`
+- Stolen creatures return when Olivia leaves: `olivia_voldaren.rs:104`
+- Ability 1 target filter requires Vampire: `olivia_voldaren.rs:134`
+- Ruling: lethal damage creature becomes Vampire before dying: NOT TESTED (covered by code structure)
+- Ruling: losing control of Olivia before ability 1 resolves: NOT TESTED (engine limitation)

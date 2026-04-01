@@ -157,3 +157,35 @@ Uses `move_spell_after_resolve(object_id)` -- correct. Flag cleared at end of tu
 - Transform of back-face Human DFC (e.g., Thraben Militia): NOT TESTED
 - Werewolf creature still deals combat damage: NOT TESTED (only Wolf tested)
 - Non-DFC Human not affected: NOT TESTED
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Transform all Humans. Prevent all combat damage that would be dealt this turn by creatures other than Werewolves and Wolves. (Only double-faced cards can be transformed.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data is correct: {1}{G} Instant, no keywords beyond Transform (not stored as keyword), oracle text matches. The on_resolve correctly: (1) finds all DFC Humans on the battlefield and transforms them, checking both front and back face subtypes, (2) sets the state-level prevent_non_wolf_werewolf_combat_damage flag. The combat damage prevention is enforced in combat.rs via is_non_wolf_damage_prevented which checks subtypes at damage-deal time (correct per ruling). The flag is cleared at end of turn (engine.rs:2543). Uses move_spell_after_resolve correctly.
+
+### Tricky interactions checked
+- Only DFC Humans transform (non-DFC Humans unaffected): PASS - code checks has_back_face at line 58-61
+- Back-face Humans also transform (e.g., Thraben Militia): PASS - code checks is_transformed and back_face_data at line 46-49
+- Wolf/Werewolf type checked at damage time, not Moonmist resolution: PASS - is_non_wolf_damage_prevented called in deal_damage_to_creature and deal_damage_to_player
+- Creatures entering after Moonmist still prevented: PASS - flag is state-level, applies to all creatures
+- Prevention clears at end of turn: PASS - engine.rs:2543
+- move_spell_after_resolve used: PASS
+
+### Test coverage
+- Prevention flag set: `moonmist.rs:20` sets_prevention_flag
+- Non-Wolf combat damage to player prevented: `moonmist.rs:33` prevents_non_wolf_combat_damage_to_player
+- Wolf still deals damage: `moonmist.rs:51` wolf_still_deals_damage
+- Non-Wolf combat damage to creature prevented: `moonmist.rs:69` prevents_non_wolf_combat_damage_to_creature
+- Front-face Human transforms: `moonmist.rs:91` transforms_front_face_human
+- Back-face Human transforms: `moonmist.rs:110` transforms_back_face_human
+- Non-DFC Human not transformed: `moonmist.rs:135` does_not_transform_non_dfc_human
+- Card data: `innistrad_simple_cards.rs:530` moonmist_card_data
+- Werewolf creature still deals combat damage: NOT TESTED (only Wolf tested)
+- Ruling: creature entering after Moonmist still prevented: NOT TESTED

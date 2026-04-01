@@ -346,3 +346,58 @@ All three issues from the previous audit have been fixed:
 - Cannot activate loyalty abilities on both faces in same turn (ruling): NOT TESTED
 - Front face ability 0 creature fights back: NOT TESTED (implemented correctly)
 - LLM card knowledge: NOT PRESENT
+
+## Audit — 2026-04-01 14:49
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed?utm_source=api
+**Oracle text (front)**: When Garruk has two or fewer loyalty counters on him, transform him. 0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him. 0: Create a 2/2 green Wolf creature token.
+**Oracle text (back)**: +1: Create a 1/1 black Wolf creature token with deathtouch. -1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle. -3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+**Type line**: Legendary Planeswalker — Garruk // Legendary Planeswalker — Garruk
+**Starting loyalty**: 3
+**Rulings**:
+- [2011-09-22] Garruk Relentless's first ability is a state-triggered ability.
+- [2011-09-22] You don't add or remove loyalty counters from Garruk Relentless when he transforms.
+- [2011-09-22] You can't activate a loyalty ability of Garruk Relentless and later that turn after he transforms activate a loyalty ability of Garruk, the Veil-Cursed.
+- [2011-09-22] The -1 ability doesn't target a creature, but you must sacrifice one if you control one.
+- [2011-09-22] The -3 bonus is locked in at resolution and doesn't change later.
+- [2011-09-22] Only creatures you control when -3 resolves get the bonus.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data matches oracle text. Mana cost {3}{G} (Generic(3), Green). Legendary Planeswalker - Garruk. Starting loyalty 3 via `starting_loyalty()` returning `Some(3)`, with `on_resolve` adding 3 loyalty counters (line 305). Front face ability 0 (fight, ability_index 0): deals 3 damage to target creature via `NonCombatDamageDealt` event (lines 169-177), creature deals power back as loyalty loss using `state.effective_power()` (line 166) with its own `NonCombatDamageDealt` event (lines 185-189). Front face ability 1 (wolf, ability_index 1): creates 2/2 green Wolf token with `create_token_with_subtypes` and subtype ["Wolf"] (lines 197-205). Transform handled as state-triggered ability in SBA (`sba.rs` lines 247-266), checking for Garruk Relentless on battlefield with <= 2 loyalty counters and transforming. This fires from any source of loyalty loss. No loyalty is added or removed during transform (matching ruling). Back face +1 (ability_index 10): creates 1/1 black Wolf with deathtouch and subtype ["Wolf"] (lines 213-223). Back face -1 (ability_index 11): presents sacrifice choice when multiple creatures available (lines 247-257), auto-sacrifices when only one creature (lines 240-244), searches library for creature card, shuffles library (lines 54-56, 66-67 via `shuffle(&mut rng)`). Back face -3 (ability_index 12): counts creature cards in graveyard at resolution (lines 262-273), applies +X/+X and trample to controlled creatures at resolution (lines 275-293).
+
+Missing `back_face_data()` implementation -- Garruk is the only DFC in the set that doesn't provide back face data. However, since the back face has no keywords, no continuous effects, and no triggered abilities, this has no functional impact.
+
+### Tricky interactions checked
+- Starting loyalty 3: PASS (starting_loyalty returns Some(3), on_resolve adds 3 counters)
+- Legendary supertype: PASS (line 93)
+- State-triggered transform at <= 2 loyalty: PASS (SBA check in sba.rs lines 247-266)
+- No loyalty change on transform (ruling): PASS (SBA only flips is_transformed and name)
+- Front face ability 0 targets any creature via player choice: PASS (reads from `targets` parameter at line 165)
+- Front face ability 0 uses effective_power for creature damage back: PASS (line 166)
+- Creature damage back to Garruk emits NonCombatDamageDealt: PASS (lines 185-189)
+- Front face wolf token 2/2 green with Wolf subtype: PASS (lines 197-205)
+- Back face +1 wolf 1/1 black with deathtouch and Wolf subtype: PASS (lines 213-223)
+- Back face -1 sacrifice is mandatory if creature controlled (ruling): PASS (lines 230-244)
+- Back face -1 does not target (ruling): PASS (no targeting in implementation)
+- Back face -1 presents sacrifice choice for multiple creatures: PASS (lines 246-257)
+- Back face -1 library shuffle after search: PASS (lines 54-56, 66-67)
+- Back face -3 counts creatures in graveyard at resolution (ruling): PASS (lines 262-273)
+- Back face -3 only affects creatures controlled at resolution (ruling): PASS (lines 275-279)
+- Back face -3 applies both +X/+X and trample: PASS (lines 281-293)
+- Loyalty abilities show correct costs (0/0 for front, +1/-1/-3 for back): PASS
+
+### Test coverage
+- Front face creates 2/2 Wolf token: `tier15_cards.rs:1116` (garruk_creates_wolf_token)
+- Transforms at 2 or fewer loyalty (via SBA): `tier15_cards.rs:1138` (garruk_transforms_at_two_or_fewer_loyalty)
+- Back face creates 1/1 black Wolf with deathtouch: `tier15_cards.rs:1161` (garruk_back_face_creates_deathtouch_wolf)
+- Back face sacrifice-to-tutor: `tier15_cards.rs:1189` (garruk_back_face_sacrifice_to_tutor)
+- Back face tutor presents sacrifice choice: `tier15_cards.rs:1227` (garruk_back_face_tutor_presents_sacrifice_choice)
+- Back face tutor shuffles library: `tier15_cards.rs:1271` (garruk_back_face_tutor_shuffles_library)
+- Back face -3 overrun effect: `tier15_cards.rs:1319` (garruk_back_face_overrun)
+- Back face loyalty abilities list: `tier15_cards.rs:1359` (garruk_back_face_loyalty_abilities_shown_when_transformed)
+- Transform from non-loyalty-ability damage source (e.g., combat): NOT TESTED (implemented correctly via SBA)
+- Cannot activate loyalty abilities on both faces in same turn (ruling): NOT TESTED
+- Front face ability 0 creature fights back: NOT TESTED (implemented correctly)

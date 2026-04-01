@@ -243,3 +243,31 @@ Per Stony Silence + artifact lands interaction (from judges' blog): artifact lan
 - Opponent's artifacts also blocked: NOT TESTED
 - Artifact creatures' activated abilities blocked: NOT TESTED
 - Not in LLM card knowledge: acceptable (static effect, AI reads oracle text)
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Activated abilities of artifacts can't be activated.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data is correct: {1}{W} Enchantment, oracle text matches. The enforcement is entirely in the engine at engine.rs:234-287. The engine checks if any Stony Silence is on the battlefield (by name, regardless of controller), then skips both mana abilities (line 244) and non-mana activated abilities (line 281) for artifacts. The artifact check correctly looks at both registry card_data types and instance card_types (to handle cards whose types may have been modified). The check applies to both players since legal_actions is called for each player when they have priority. The effect only applies to battlefield artifacts (since legal_actions only generates actions for battlefield permanents), which is correct per the ruling: "Stony Silence's ability affects only artifacts on the battlefield."
+
+### Tricky interactions checked
+- Blocks mana abilities of artifacts: PASS - engine.rs:244
+- Blocks non-mana activated abilities of artifacts: PASS - engine.rs:281
+- Does not block non-artifact abilities: PASS - only skips when is_artifact is true
+- Applies regardless of Stony Silence's controller: PASS - checks all objects by name
+- Only affects battlefield artifacts (not cycling etc.): PASS - legal_actions only generates actions for battlefield objects
+- Does not affect triggered abilities: PASS - only filters in activated/mana ability generation
+
+### Test coverage
+- Card data: `innistrad_simple_cards.rs:586`
+- Blocks artifact mana abilities (Sol Ring): `innistrad_simple_cards.rs:595`
+- Does not block non-artifact mana (Forest): `innistrad_simple_cards.rs:625`
+- Blocks non-mana activated abilities of artifacts: NOT TESTED
+- Artifact creatures' activated abilities blocked: NOT TESTED
+- Multiple Stony Silences (redundant but should work): NOT TESTED

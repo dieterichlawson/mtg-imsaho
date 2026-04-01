@@ -249,3 +249,45 @@ Not in LLM card knowledge section.
 - Cannot target opponent's graveyard: `mtg-engine/tests/ghoulcallers_chant.rs:161`
 - Mixed graveyard correct modes: `mtg-engine/tests/ghoulcallers_chant.rs:183`
 - Fizzle (targets leave graveyard before resolution): NOT TESTED
+
+## Audit — 2026-04-01 14:48
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**: Choose one —
+* Return target creature card from your graveyard to your hand.
+* Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Mana cost**: {B}
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified:
+- Mana cost {B}: correct (Colored(Black))
+- Card types: Sorcery: correct
+- No supertypes, subtypes, P/T, keywords: correct
+- Oracle text field: matches Scryfall
+
+Behavior verified:
+- `target_requirement`: `ModalChoice` with two modes: correct
+  - Mode 1: `GraveyardCreature` -- targets one creature card from graveyard: correct
+  - Mode 2: `TwoTargets(GraveyardCreatureOfSubtype("Zombie"), GraveyardCreatureOfSubtype("Zombie"))` -- targets two Zombie cards: correct. The engine requires these to be creature cards, but the Zombie subtype only appears on creatures in the Innistrad pool. Zero practical impact.
+- `is_valid_target`: checks `o.zone == Zone::Graveyard && o.owner == caster`: correct for "your graveyard"
+- `on_resolve`: iterates targets, moves each from graveyard to hand with zone check, calls `move_spell_after_resolve`: correct
+- Uses `move_spell_after_resolve` (not raw `move_object` to graveyard): correct
+
+No anti-patterns detected. Not in LLM card knowledge section.
+
+### Tricky interactions checked
+- Mode 1 returns any creature card from your graveyard: pass
+- Mode 2 returns exactly two Zombie cards from your graveyard: pass
+- Cannot target opponent's graveyard: pass (is_valid_target checks owner)
+- Mode 2 not available with fewer than 2 Zombies: pass (tested)
+- Sorcery speed only: pass (CardType::Sorcery)
+- Target validation checks zone is still Graveyard on resolution: pass (line 61)
+
+### Test coverage
+- Mode 1 returns creature: `mtg-engine/tests/tier11_cards.rs:105` (ghoulcallers_chant_returns_creature_from_graveyard)
+- Mode 2 returns two Zombies: `mtg-engine/tests/tier11_cards.rs:120` (ghoulcallers_chant_returns_two_zombies)
+- Fizzle (targets leave graveyard before resolution): NOT TESTED

@@ -240,3 +240,32 @@ Known limitations (unchanged from prior audits, not bugs in card implementation)
 - All card targets illegal, player still shuffles (ruling): NOT TESTED
 - Ruling: can't target self with flashback: NOT TESTED
 - Not in LLM card knowledge: acceptable (complex card, AI can read oracle text)
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library.
+Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data is correct: {1}{U} Instant, flashback {G}. The targeting uses ModalChoice with GraveyardCardOwnedByCaster and GraveyardCardOwnedByOpponent modes, which is a reasonable simplification of the oracle text's "target player + up to three target cards from their graveyard" dual-targeting. The player target is implicit in the mode choice. The on_resolve correctly shuffles targeted cards into the library and always shuffles the library afterward (even if no cards were targeted, per ruling). Uses move_spell_after_resolve correctly.
+
+### Tricky interactions checked
+- Flashback cost {G} (not {1}{U}): PASS - flashback_cost correctly set to Green
+- Library shuffle even with 0 cards targeted: PASS - code always shuffles at line 76
+- Cards already removed from graveyard before resolution: PASS - code checks `in_gy` at line 63
+- NonCombatDamageDealt not needed (no damage): PASS
+- move_spell_after_resolve used: PASS
+
+### Test coverage
+- Basic effect (shuffle cards into library): `tier11_cards.rs:334` memorys_journey_shuffles_cards_into_library
+- Flashback cost present: `tier11_cards.rs:356` memorys_journey_has_flashback
+- Targeting 0 cards (shuffle only): NOT TESTED
+- Fizzle when all targets are illegal: NOT TESTED
+- Cast with flashback from graveyard + exiled after: NOT TESTED
+- Ruling: player still shuffles if no card targets remain legal: NOT TESTED
+- Ruling: can't target self with flashback: NOT TESTED

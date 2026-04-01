@@ -252,3 +252,36 @@ Engine handling:
 - Ruling: can't exile self to pay cost: NOT TESTED (covered by engine code)
 - Spell countered after casting (creatures still exiled): NOT TESTED
 - Not in LLM card knowledge: acceptable (complex card, AI can read oracle text)
+
+## Audit — 2026-04-01 16:00
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard.
+Flying
+You may cast this card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**P/T**: 5/6
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data is correct: {1}{U}{U}, Creature - Zombie Horror, 5/6, Flying keyword, additional_cost ExileCreaturesFromGraveyard(3). The can_cast_from_graveyard returns true, correctly enabling casting from graveyard without using flashback. The engine at engine.rs:1280 correctly distinguishes cast-from-graveyard (uses normal mana cost, no exile after resolution) from flashback (uses flashback cost, exiled after resolution). The on_resolve correctly moves to battlefield. The additional cost of exiling 3 creature cards is handled by the engine at cast time.
+
+### Tricky interactions checked
+- Additional cost (exile 3 creatures) paid at cast time, not resolution: PASS - handled by engine, on_resolve just moves to battlefield
+- Cast from graveyard uses normal mana cost (not flashback cost): PASS - engine.rs:1280 checks is_cast_from_graveyard
+- Not marked as flashback when cast from graveyard: PASS - engine.rs:1281 sets is_flashback = false for cast_from_graveyard
+- Cannot exile itself as part of additional cost (on stack): PASS - per ruling, and it's on the stack when costs are paid
+- Not castable without 3 creature cards in graveyard: PASS - tested
+- Flying keyword present: PASS
+- Subtypes Zombie and Horror both present: PASS
+- move_object(Zone::Battlefield) correct for creature: PASS
+
+### Test coverage
+- Exiles 3 creatures from graveyard on cast: `tier15_cards.rs:484`
+- Cast from graveyard (not flashback): `tier15_cards.rs:510`
+- Not castable without enough creatures: `tier15_cards.rs:554`
+- Ruling: can't exile self (on stack when paying costs): NOT TESTED (implicitly correct)
+- Ruling: additional cost applies from any zone: NOT TESTED
+- Spell countered after casting (creatures still exiled): NOT TESTED

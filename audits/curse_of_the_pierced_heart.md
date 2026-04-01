@@ -206,3 +206,34 @@ Card data matches oracle text exactly. The oracle text field at line 26 correctl
 - Planeswalker damage redirect option: NOT TESTED
 - Curse removed when enchanted player leaves: NOT TESTED
 - LLM card knowledge: NOT PRESENT
+
+## Audit — 2026-04-01 14:49
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/138/curse-of-the-pierced-heart?utm_source=api
+**Oracle text**: Enchant player. At the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.
+**Type line**: Enchantment — Aura Curse
+**Mana cost**: {1}{R}
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data matches oracle text exactly. Mana cost {1}{R} (Generic(1), Red), type Enchantment with subtypes Aura/Curse. Oracle text field at line 26 matches Scryfall verbatim, using "this Aura" and including the planeswalker clause. `TargetRequirement::PlayerOnly` for enchant player. Resolves via `resolve_curse` helper. `triggered_abilities` declares `TriggerKind::Upkeep` matching the `on_upkeep` hook. The `on_upkeep` method (line 48) correctly checks `state.active_player != cursed_player` to only trigger on the enchanted player's upkeep. When no planeswalkers are present, deals 1 damage directly to the player with `NonCombatDamageDealt` and `LifeChanged` events (lines 71-81). When planeswalkers exist, presents a `ChooseTarget` choice to the curse's controller (line 84 uses `player: controller`) with both the player and all planeswalkers as options, using `PendingEffect::DealDamage` (lines 83-99).
+
+### Tricky interactions checked
+- Triggers only on enchanted player's upkeep: PASS (line 58 checks `state.active_player != cursed_player`)
+- Planeswalker damage redirect option: PASS (lines 63-99 present choice when planeswalkers exist)
+- Choice presented to curse's controller (not enchanted player): PASS (line 84 uses `player: controller`)
+- NonCombatDamageDealt event: PASS (line 74 for direct path, and via PendingEffect::DealDamage for planeswalker path)
+- LifeChanged event: PASS (line 79 for direct player damage path)
+- Enchant player targeting: PASS (TargetRequirement::PlayerOnly at line 41)
+- Aura/Curse subtypes: PASS (subtypes: ["Aura", "Curse"])
+- Resolve via helper: PASS (calls `resolve_curse` at line 46)
+- triggered_abilities declaration matches on_upkeep hook: PASS (TriggerKind::Upkeep at line 33)
+
+### Test coverage
+- Deals 1 damage on enchanted player's upkeep: `tier7_cards.rs:176` (curse_of_pierced_heart_deals_damage_on_upkeep)
+- Referenced in Bitterheart Witch test: `tier15_cards.rs:183` (bitterheart_witch_finds_curse_on_death)
+- Does not trigger on non-enchanted player's upkeep: NOT TESTED
+- Planeswalker damage redirect option: NOT TESTED
+- Curse removed when enchanted player leaves: NOT TESTED
