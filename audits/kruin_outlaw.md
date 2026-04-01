@@ -58,3 +58,22 @@ Issues found:
 2. **Back face missing Upkeep triggered_abilities declaration**: The back face `triggered_abilities` vec is empty, but the back face has "At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass." The `on_upkeep` handler does handle both directions, but the metadata is incomplete. This was noted in a previous Kruin Outlaw audit as correct, but the back_face_data's triggered_abilities is empty.
 
 Tests present in `tests/kruin_outlaw.rs` and `tests/werewolf_cards.rs`. No move_object/graveyard or CombatDamageDealt anti-patterns.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text (front)**: First strike / At the beginning of each upkeep, if no spells were cast last turn, transform Kruin Outlaw.
+**Oracle text (back)**: Double strike / Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.) / At the beginning of each upkeep, if a player cast two or more spells last turn, transform Terror of Kruin Pass.
+**Type line (front)**: Creature — Human Rogue Werewolf
+**Type line (back)**: Creature — Werewolf
+**Status**: ISSUE
+
+Front face: mana cost {1}{R}{R} correct. Subtypes Human/Rogue/Werewolf: correct. P/T 2/2: correct. FirstStrike keyword: correct. Upkeep triggered ability declared: correct. Transform logic (no spells cast last turn, not first turn): correct.
+
+Back face: P/T 3/3 via dynamic_pt: correct. DoubleStrike keyword: correct. Subtypes ["Werewolf"]: correct.
+
+Issues found:
+1. **Back face grants "can't be blocked except by two or more" via MinimumBlockers instead of the menace keyword**: The current Scryfall oracle text says "Werewolves you control have menace." The code implements this as `ContinuousEffect::MinimumBlockers` rather than granting the Menace keyword to all Werewolves. While mechanically equivalent for blocking purposes, this means Werewolves would not be recognized as "having menace" by effects that check for the menace keyword (e.g., "whenever a creature you control with menace attacks"). The code's `oracle_text` field also uses the pre-errata wording.
+2. **Back face missing Upkeep triggered_abilities declaration**: The back face `triggered_abilities` vec is empty, but the back face has an upkeep transform trigger. The `on_upkeep` handler covers both faces, but the metadata is incomplete.
+
+Tests in `tests/werewolf_cards.rs` cover transform, double strike, and P/T. No graveyard or damage anti-patterns.

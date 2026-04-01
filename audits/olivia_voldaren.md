@@ -62,3 +62,23 @@ Issues found:
 1. **Ability 0 target filter is TargetFilter::Any instead of excluding self**: The `ActivatedAbilityDef` for ability 0 uses `TargetFilter::Any` which allows targeting any creature including Olivia herself at the UI/targeting level. The "another" restriction is only enforced in `on_activate_ability` (line 100). This means the engine may present self-targeting as a valid option before the ability resolves. The filter should ideally exclude self at the definition level for correct target presentation.
 
 Tests present in `tests/olivia_voldaren.rs` and `tests/tier14_cards.rs`. No graveyard move anti-pattern (not a spell).
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Flying / {1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren. / {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
+**Type line**: Legendary Creature — Vampire
+**Status**: ISSUE
+
+Mana cost {2}{B}{R}: correct. Supertype Legendary: correct. Subtype Vampire: correct. P/T 3/3: correct. Flying keyword: correct.
+
+Ability 0 ({1}{R}): Cost correct. Deals 1 damage: correct. Adds Vampire subtype (in addition to existing types): correct. Adds +1/+1 counter on Olivia: correct. Emits `NonCombatDamageDealt` event: correct (not CombatDamageDealt). Tracks `damaged_by`: correct. "Another" restriction enforced in `on_activate_ability` with `*target_id == object_id` check: correct.
+
+Ability 1 ({3}{B}{B}): Cost correct. Target filter `HasSubtype("Vampire")`: correct. Steals creature, tracks original controller via card_state, returns on Olivia leaving via `on_leave_battlefield`: correct. `LeavesBattlefield` triggered ability declared: correct.
+
+Per Scryfall ruling: "If Olivia Voldaren deals lethal damage to a creature with its first activated ability, that creature will become a Vampire before dying." The code sets damage and adds Vampire subtype in the same block before SBAs would be checked: correct.
+
+Issues found (persisting from prior audit):
+1. **Ability 0 target filter is TargetFilter::Any instead of excluding self**: The `ActivatedAbilityDef` for ability 0 uses `TargetFilter::Any` which allows the UI/targeting system to present Olivia as a valid target. The "another" restriction is only enforced in `on_activate_ability` (line 100). Ideally the filter should exclude self at the definition level for correct target presentation. Low severity since the ability resolves correctly.
+
+Tests in `tests/olivia_voldaren.rs`: 6 tests covering damage+vampire+counter, self-targeting rejection, vampire stealing, non-vampire rejection, stolen creature return on leave, and target filter validation. Good coverage. No graveyard anti-patterns.

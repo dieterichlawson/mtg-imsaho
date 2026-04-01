@@ -41,3 +41,29 @@ Findings:
 Issues carried forward:
 1. Additional cost executed at resolve time instead of cast time (anti-pattern).
 2. Player cannot choose how many cards to exile (always exiles all).
+
+## Audit — 2026-04-01 14:13
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/146/harvest-pyre)
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard. Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Mana cost**: {1}{R}
+**Status**: ISSUE
+
+Findings:
+1. **Name**: "Harvest Pyre" -- correct.
+2. **Mana cost {1}{R}**: Correct (Generic(1), Red).
+3. **Type (Instant)**: Correct.
+4. **Oracle text in code**: Says "exile any number of cards" and "deals damage equal to the number of cards exiled this way." Scryfall's current oracle uses "exile X cards" and "deals X damage to target creature." The code's oracle text uses older templating but is functionally equivalent.
+5. **Target requirement (Creature)**: Correct per Scryfall ("target creature").
+6. **Spell cleanup**: Uses `state.move_spell_after_resolve(object_id)` (line 77) -- correct.
+7. **NonCombatDamageDealt**: Emitted (line 64). Correct for spell damage.
+8. **`damaged_by` tracking**: Present at line 62 (`obj.damaged_by.push(object_id)`). Correct.
+9. **Additional cost at resolve time**: The `additional_cost` field is `None` (line 29), and the exile happens in `on_resolve` (lines 44-52). Per rules, additional costs are paid at cast time. If the spell is countered, the exiled cards should still be exiled but currently would not be.
+10. **Always exiles all cards**: Code exiles all graveyard cards (lines 44-47) instead of letting the player choose X. The comment on line 43 acknowledges this limitation ("the engine lacks a 'choose a number' UI"). This means the player cannot strategically keep cards in graveyard (e.g., flashback cards, Gnaw to the Bone fuel).
+11. **Only exiles own graveyard**: Code filters `o.owner == controller` (line 45). Correct per oracle.
+12. **Tests**: Found in `mtg-engine/tests/tier8_cards.rs`. Tests cover: dealing damage equal to exiled count, empty graveyard deals no damage, only exiles own graveyard. All assertions correct.
+
+Issues:
+1. Additional cost (exile cards) is executed at resolve time instead of cast time.
+2. Player cannot choose how many cards to exile -- always exiles all (documented limitation).

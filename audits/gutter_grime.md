@@ -32,3 +32,18 @@ No issues found. Dynamic P/T for Ooze tokens now correctly tracks slime counter 
 **Status**: PASS
 
 Mana cost {4}{G}: correct. Type Enchantment: correct. No subtypes: correct. Trigger on nontoken creature you control dying: correct (checks `is_token` and `dead_controller`). Adds slime counter via `CounterType::Slime`: correct. Creates green Ooze creature token with dynamic P/T linked to slime counters on source Gutter Grime: correct. Token created with subtypes `["Ooze"]`: correct. Uses `AnyCreatureDies` trigger kind with `triggered_abilities` declaration: correct. Tests present in `tests/gutter_grime.rs` and `tests/tier15_cards.rs`. No anti-patterns found (no `move_object` to graveyard for spells, no `CombatDamageDealt` misuse).
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Whenever a nontoken creature you control dies, put a slime counter on Gutter Grime, then create a green Ooze creature token with "This creature's power and toughness are each equal to the number of slime counters on Gutter Grime."
+**Type line**: Enchantment
+**Status**: PASS
+
+Mana cost {4}{G}: correct. Type Enchantment: correct. No supertypes or subtypes: correct.
+
+Triggered ability: triggers on `AnyCreatureDies`, checks that dead creature was nontoken (`is_token` check) and controlled by the enchantment's controller: correct. Adds slime counter via `CounterType::Slime`: correct. Creates a green Ooze creature token with base 0/0 and dynamic P/T linked to slime counter count on source Gutter Grime via `card_state["pt_source_counter"]`: correct per rulings that tokens update dynamically. Token has correct subtypes `["Ooze"]` and color green: correct.
+
+Oracle text in code says "This creature's power and toughness" while Scryfall says "This creature's power and toughness" (Scryfall also shows "This token's power and toughness" in some entries -- minor wording variant, functionally identical).
+
+Tests: 4 tests in `tests/gutter_grime.rs` covering creation, growth, token death exclusion, opponent death exclusion, and source removal causing 0/0. Good coverage. No anti-patterns found.

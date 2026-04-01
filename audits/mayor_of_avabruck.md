@@ -57,3 +57,25 @@ Issues found:
 1. **Back face missing Upkeep triggered_abilities declaration** (persists from prior audit): The back face `triggered_abilities` includes `TriggerKind::EndStep` for Wolf token creation but is missing `TriggerKind::Upkeep` for the transform-back trigger. The `on_upkeep` handler correctly handles both directions of transform, but the metadata in `back_face_data` is incomplete. This could cause issues if the engine uses `triggered_abilities` to determine whether to call `on_upkeep` for a card.
 
 Tests present in `tests/werewolf_cards.rs`. No anti-patterns found.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch, tappedout.net, Scryfall search results
+**Oracle text (front)**: Other Human creatures you control get +1/+1. / At the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.
+**Oracle text (back)**: Each other creature you control that's a Werewolf or a Wolf gets +1/+1. / At the beginning of your end step, create a 2/2 green Wolf creature token. / At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.
+**Type line (front)**: Creature — Human Advisor Werewolf
+**Type line (back)**: Creature — Werewolf
+**Status**: ISSUE
+
+Front face: mana cost {1}{G} correct. Subtypes Human/Advisor/Werewolf: correct. P/T 1/1: correct. ModifyPT +1/+1 with scope GlobalOther(You AND Human): correct. Upkeep triggered ability declared: correct. Transform logic: correct.
+
+Back face: P/T 3/3 via dynamic_pt: correct. Subtypes ["Werewolf"]: correct. ModifyPT +1/+1 with scope GlobalOther(You AND (Werewolf OR Wolf)): correct. EndStep creates 2/2 green Wolf creature token with "Wolf" subtype: correct. Only triggers on controller's end step when transformed: correct.
+
+Issues found:
+1. **Back face missing Upkeep triggered_abilities declaration** (persists from prior audits): The back face `triggered_abilities` includes `TriggerKind::EndStep` and `TriggerKind::Upkeep` -- wait, on re-inspection of the code (lines 84-93), the back face DOES include both `TriggerKind::Upkeep` (description: "transform if a player cast 2+ spells last turn") and `TriggerKind::EndStep` (description: "create a 2/2 Wolf token"). This issue has been fixed since the prior audit. No issues remain.
+
+Correction: After re-reading the code, the back face `triggered_abilities` vec at lines 84-93 contains BOTH entries. The prior audit's issue #1 has been resolved. Changing status to PASS.
+
+**Revised Status**: PASS
+
+Tests in `tests/werewolf_cards.rs`: human buff, werewolf buff after transform, Wolf token creation on end step, no token on front face. Good coverage. No anti-patterns found.
