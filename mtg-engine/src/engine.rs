@@ -484,6 +484,19 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     if creatures.is_empty() { continue; }
                     creatures
                 }
+                Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => {
+                    // Check that there are enough creature cards in graveyard.
+                    let creature_count = state.objects.values()
+                        .filter(|o| {
+                            o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
+                                && (o.power.is_some() || registry.card_data(o.card_id)
+                                    .map(|d| d.card_types.contains(&CardType::Creature))
+                                    .unwrap_or(false))
+                        })
+                        .count();
+                    if creature_count < *n { continue; } // Not enough creatures to exile
+                    vec![] // No sacrifice needed — exile handled at cast time in submit_action
+                }
                 _ => vec![],
             };
 
@@ -1280,6 +1293,42 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         crate::destruction::sacrifice(&mut new_state, cid, registry);
                         new_state.log(LogLevel::Event,
                             format!("Sacrificed {} as additional cost", sac_name));
+                    }
+                }
+            }
+
+            // Handle ExileCreaturesFromGraveyard additional cost (Skaab Ruinator, Corpse Lunge, etc.).
+            {
+                use crate::cards::AdditionalCost;
+                if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = registry.get(card_id)
+                    .map(|b| b.card_data().additional_cost).flatten()
+                {
+                    // Pick highest-power creatures first (better default for Corpse Lunge).
+                    let mut exile_candidates: Vec<(ObjectId, i32)> = new_state.objects.values()
+                        .filter(|o| {
+                            o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
+                                && (o.power.is_some() || registry.card_data(o.card_id)
+                                    .map(|d| d.card_types.contains(&CardType::Creature))
+                                    .unwrap_or(false))
+                        })
+                        .map(|o| (o.id, o.power.unwrap_or(0)))
+                        .collect();
+                    exile_candidates.sort_by(|a, b| b.1.cmp(&a.1)); // Highest power first
+                    let exile_candidates: Vec<_> = exile_candidates.into_iter().take(n).collect();
+
+                    // Store the first exiled creature's power for cards that need it
+                    // (Corpse Lunge uses the power to determine damage).
+                    if let Some((_, power)) = exile_candidates.first() {
+                        if let Some(obj) = new_state.get_object_mut(*object_id) {
+                            obj.card_state.insert("exiled_power".into(), ObjectId(*power as u64));
+                        }
+                    }
+
+                    for (exile_id, _) in &exile_candidates {
+                        let name = card_name(&new_state, registry, *exile_id);
+                        new_state.move_object(*exile_id, Zone::Exile);
+                        new_state.log(LogLevel::Event,
+                            format!("Exiled {} from graveyard as additional cost", name));
                     }
                 }
             }

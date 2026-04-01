@@ -929,8 +929,8 @@ fn geist_angel_exiled_at_end_of_combat() {
         .map(|o| o.id)
         .unwrap();
 
-    // End of combat — angel should be exiled.
-    behavior.on_end_combat(&mut state, geist, &reg);
+    // End of combat — angel should be exiled via delayed trigger in end_combat.
+    mtg_engine::combat::end_combat(&mut state);
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile);
 }
 

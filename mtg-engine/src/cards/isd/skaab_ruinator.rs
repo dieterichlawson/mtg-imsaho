@@ -34,29 +34,9 @@ impl CardBehavior for SkaabRuinator {
 
     fn can_cast_from_graveyard(&self) -> bool { true }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-
-        // Exile three creature cards from graveyard as additional cost.
-        let exile_candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .filter(|o| {
-                o.id != object_id && // Don't exile self
-                registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                    .unwrap_or(o.power.is_some())
-            })
-            .map(|o| o.id)
-            .take(3)
-            .collect();
-
-        for exile_id in &exile_candidates {
-            let name = state.get_object(*exile_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*exile_id, Zone::Exile);
-            state.log(crate::state::LogLevel::Event,
-                format!("Skaab Ruinator exiled {} from graveyard", name));
-        }
-
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+        // The exile of 3 creature cards happens at cast time (additional cost),
+        // handled by the engine. On resolve, just enter the battlefield.
         state.move_object(object_id, Zone::Battlefield);
     }
 }
