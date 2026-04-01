@@ -13,3 +13,11 @@
 - Vanilla creature with keyword, no special behavior needed
 - Tests exist in `innistrad_cards.rs` and `keywords.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Intimidate
+**Scryfall type line**: Creature — Spirit Knight
+**Status**: PASS
+
+No issues found. Simple creature with intimidate keyword. Card data all correct.

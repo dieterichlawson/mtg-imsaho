@@ -13,3 +13,11 @@
 - Spell moves to graveyard after resolve via `move_spell_after_resolve`
 - Tests exist in `tier12_cards.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Creatures you control gain protection from non-Human creatures until end of turn.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly applies to creatures at resolution time only, uses `move_spell_after_resolve`, and properly uses CreatureFilter::Not(HasSubtype("Human")).

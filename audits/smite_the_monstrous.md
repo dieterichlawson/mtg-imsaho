@@ -13,3 +13,11 @@ Implementation correctly models:
 - Tests: `smite_the_monstrous_kills_big_creature` in tier2_spells.rs
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Destroy target creature with power 4 or greater.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly uses `effective_power` for target validation and `resolve_destroy` (which uses `try_destroy` pipeline).

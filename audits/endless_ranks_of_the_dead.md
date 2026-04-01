@@ -12,3 +12,11 @@
 - X = zombie_count / 2 (integer division = rounded down): correct.
 - Creates 2/2 black Zombie creature tokens with correct subtypes: correct.
 - Tests exist in `tier7_cards.rs` (`endless_ranks_creates_zombie_tokens`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.
+**Scryfall type line**: Enchantment
+**Status**: ISSUE
+
+1. **No test coverage**: No test files found for this card. Missing at least a basic test for the upkeep trigger creating tokens proportional to zombie count.

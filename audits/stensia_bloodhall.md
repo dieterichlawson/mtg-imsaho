@@ -15,3 +15,12 @@
 
 - Tests exist in `tier10_cards.rs`
 - Minor issue: damage is applied by directly modifying life rather than using a unified damage pipeline, which could miss damage triggers (e.g., Rage Thrower). However this is consistent with other cards in the engine.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {T}: Add {C}.
+{3}{B}{R}, {T}: This land deals 2 damage to target player or planeswalker.
+**Scryfall type line**: Land
+**Status**: ISSUE
+
+1. **Target restriction too narrow** (stensia_bloodhall.rs:61): Uses `TargetRequirement::PlayerOnly` but Oracle text says "target player or planeswalker." Should also allow targeting planeswalkers. Minor issue since the card pool likely has few planeswalkers.

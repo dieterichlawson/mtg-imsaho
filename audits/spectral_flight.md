@@ -12,3 +12,12 @@
 - Uses `resolve_aura` helper for standard aura attachment
 - Tests exist in `bug_fixes.rs`, `innistrad_cards.rs`, and `keywords.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Enchant creature
+Enchanted creature gets +2/+2 and has flying.
+**Scryfall type line**: Enchantment — Aura
+**Status**: PASS
+
+No issues found. Card data, continuous effects (+2/+2 and flying), aura resolution all correct.

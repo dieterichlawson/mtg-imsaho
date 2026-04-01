@@ -14,3 +14,11 @@
 - When only one target, auto-applies: acceptable simplification.
 - Uses `PendingEffect::AddCounters { count: 1, human_bonus: true }` for deferred choice: correct.
 - Tests exist in `tier3_cards.rs` (`elder_cathar_grants_counter_on_death`) and `card_mechanics.rs` (`elder_cathar_gives_two_counters_to_human`, `elder_cathar_gives_one_counter_to_non_human`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead.
+**Scryfall type line**: Creature — Human Soldier
+**Status**: ISSUE
+
+1. **Human check misses tokens**: The Human detection at line 50-53 only checks `registry.card_data(o.card_id)` subtypes, but tokens have `card_id: CardId(0)` which returns None from the registry. Human tokens (e.g. from other card effects) would not be detected as Human. Should also check `o.subtypes`. File: `mtg-engine/src/cards/elder_cathar.rs`, lines 50-53.

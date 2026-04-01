@@ -12,3 +12,11 @@ Implementation correctly models:
 - Tests: No dedicated test found, but this is a straightforward mana ability.
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: {T}: Add {C}{C}.
+**Scryfall type line**: Artifact
+**Status**: PASS
+
+No issues found. Card data, cost, type, and mana ability all correct.

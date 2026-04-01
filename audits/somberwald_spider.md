@@ -13,3 +13,12 @@ Implementation correctly models:
 - Tests: `somberwald_spider_morbid_counters`, `somberwald_spider_no_morbid_no_counters` in card_mechanics.rs, and `somberwald_spider_has_reach` in innistrad_cards.rs
 
 No issues found.
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Reach
+Morbid — Somberwald Spider enters the battlefield with two +1/+1 counters on it if a creature died this turn.
+**Scryfall type line**: Creature — Spider
+**Status**: PASS
+
+Minor note: Oracle text says "enters with" (replacement effect) but code implements as ETB trigger. Functionally equivalent in this engine since there is no stifle/replacement-effect ordering. Card data, cost, types, subtypes, P/T, keywords all correct.

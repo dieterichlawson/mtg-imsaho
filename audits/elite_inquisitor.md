@@ -10,3 +10,11 @@
 - Keywords: FirstStrike, Vigilance: correct.
 - Protection from Vampires, Werewolves, Zombies via `ProtectionFromSubtype`: correct.
 - Tests exist in `tier12_cards.rs` (`elite_inquisitor_keywords`, `elite_inquisitor_protection_prevents_damage`, `elite_inquisitor_cant_be_blocked_by_zombies`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: First strike, vigilance. Protection from Vampires, from Werewolves, and from Zombies.
+**Scryfall type line**: Creature — Human Soldier
+**Status**: PASS
+
+No issues found. Keywords, protection subtypes, and stats all correct.

@@ -13,3 +13,11 @@
 - Life gain skipped if power <= 0 -- correct (you can't gain negative life)
 - Tests exist in `spells.rs`, `fizzle.rs`, `spell_fizzle.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Exile target creature. Its controller gains life equal to its power.
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Correctly uses effective_power before exiling (matching "last known information" ruling). Life gain emits LifeChanged event. Uses `move_spell_after_resolve`. Fizzle test exists.

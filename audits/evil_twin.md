@@ -16,3 +16,12 @@
 **Issue 2 — Player doesn't choose which creature to copy.** The implementation auto-selects (preferring opponent's creatures by `max_by_key`), but the Oracle says "any creature on the battlefield" — the player should choose.
 
 - Tests exist in `tier15_cards.rs` (`evil_twin_copies_creature_on_etb`).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: You may have this creature enter as a copy of any creature on the battlefield, except it has "{U}{B}, {T}: Destroy target creature with the same name as this creature."
+**Scryfall type line**: Creature — Shapeshifter
+**Status**: ISSUE
+
+1. **"You may" not optional**: Oracle says "You may have Evil Twin enter..." but the code auto-copies the first creature an opponent controls (or any creature). The player should be able to choose not to copy anything, or choose which creature to copy. File: `mtg-engine/src/cards/evil_twin.rs`, lines 46-49.
+2. **Oracle text mismatch (cosmetic)**: Code says "enter the battlefield" but Scryfall uses "enter". File: `mtg-engine/src/cards/evil_twin.rs`, line 30.

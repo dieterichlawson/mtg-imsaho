@@ -12,3 +12,12 @@
 - On resolve: draws 1 card -- correct
 - Tests exist in `flashback.rs`, `innistrad_simple_cards.rs`, `tier12_cards.rs`
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Draw a card.
+Flashback {2}{U}
+**Scryfall type line**: Instant
+**Status**: PASS
+
+No issues found. Card data, cost, type, flashback cost all correct. Uses `move_spell_after_resolve`.

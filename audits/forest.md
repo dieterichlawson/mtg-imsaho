@@ -10,3 +10,11 @@
 - Only available when on battlefield and untapped: correct.
 - `requires_tap: true`: correct.
 - Tests exist across multiple test files (lands_and_mana.rs etc.).
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: ({T}: Add {G}.)
+**Scryfall type line**: Basic Land — Forest
+**Status**: PASS
+
+No issues found.

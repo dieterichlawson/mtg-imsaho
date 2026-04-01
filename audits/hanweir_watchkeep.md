@@ -18,3 +18,11 @@ At the beginning of each upkeep, if a player cast two or more spells last turn, 
 - Werewolf transform logic: correct
 - NOTE: When transforming to back face, the Defender keyword from the front face is no longer active (dynamic_pt overrides stats). The back face correctly does not have Defender.
 - Tests exist in werewolf_cards.rs covering transform and defender/force-attack behavior
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: (Front) Defender / At the beginning of each upkeep, if no spells were cast last turn, transform Hanweir Watchkeep. (Back — Bane of Hanweir) Bane of Hanweir attacks each combat if able. / At the beginning of each upkeep, if a player cast two or more spells last turn, transform Bane of Hanweir.
+**Scryfall type line**: Creature — Human Warrior Werewolf // Creature — Werewolf
+**Status**: PASS
+
+No issues found. Front face: subtypes [Human, Warrior, Werewolf] correct, P/T 1/5 correct, Defender keyword present. Back face: subtypes [Werewolf] correct, P/T 5/5 correct, ForceAttack continuous effect present. Transform logic correct. Tests exist (werewolf_cards.rs).

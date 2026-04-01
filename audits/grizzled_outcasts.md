@@ -14,3 +14,11 @@
 - Werewolf transform logic: correct
 - dynamic_pt returns (7,7) when transformed: correct
 - Tests exist in werewolf_cards.rs
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: (Front) At the beginning of each upkeep, if no spells were cast last turn, transform Grizzled Outcasts. (Back — Krallenhorde Wantons) At the beginning of each upkeep, if a player cast two or more spells last turn, transform Krallenhorde Wantons.
+**Scryfall type line**: Creature — Human Werewolf // Creature — Werewolf
+**Status**: PASS
+
+No issues found. Front face subtypes [Human, Werewolf] correct. Back face subtypes [Werewolf] correct. P/T 4/4 front, 7/7 back correct. Transform logic correct. Tests exist (werewolf_cards.rs).

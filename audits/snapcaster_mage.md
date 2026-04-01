@@ -15,3 +15,12 @@
 - Only targets cards without existing flashback (correct)
 
 - Tests: `snapcaster_mage_grants_flashback` in tier14_cards.rs
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: Flash
+When this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.
+**Scryfall type line**: Creature — Human Wizard
+**Status**: ISSUE
+
+1. **Auto-selects target instead of presenting choice** (snapcaster_mage.rs:46-61): Oracle text says "target instant or sorcery card in your graveyard" which requires the player to choose. The code auto-selects the highest mana value card. This should present a target choice to the player.

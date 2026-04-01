@@ -13,3 +13,12 @@
 - Combat damage trigger: adds +1/+1 counter via `on_combat_damage_to_player` -- correct
 - Tests exist in `tier6_cards.rs` covering both the block restriction and the counter trigger
 - No issues found
+
+## Audit — 2026-04-01
+
+**Scryfall Oracle text**: This creature can't be blocked by Humans.
+Whenever this creature deals combat damage to a player, put a +1/+1 counter on it.
+**Scryfall type line**: Creature — Vampire Noble
+**Status**: PASS
+
+No issues found. Card data correct. Block restriction uses `CreatureFilter::Not(HasSubtype("Human"))`. Combat damage trigger correctly adds counter. Both abilities have tests.
