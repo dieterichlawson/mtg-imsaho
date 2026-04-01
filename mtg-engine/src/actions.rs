@@ -22,7 +22,8 @@ pub enum Action {
 
     /// Cast a spell (puts it on the stack).
     /// For targeted spells, targets must be chosen at cast time.
-    CastSpell { object_id: ObjectId, targets: Vec<Target> },
+    /// If the spell has an additional cost (e.g. sacrifice a creature), `sacrifice` holds the chosen creature.
+    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId> },
 
     /// Activate a mana ability (doesn't use the stack, player retains priority).
     ActivateManaAbility { object_id: ObjectId, ability_index: usize },
@@ -58,6 +59,8 @@ pub enum ResolvedChoice {
     ChosenTarget(Option<Target>),
     /// Choose a card from a revealed set.
     ChosenCard(ObjectId),
+    /// Choose an option by index from a numbered list.
+    ChosenIndex(usize),
 }
 
 /// Prompt returned by legal_actions for combat.
@@ -105,9 +108,11 @@ impl std::fmt::Display for Action {
         match self {
             Action::PassPriority => write!(f, "Pass priority"),
             Action::PlayLand { object_id } => write!(f, "Play land {}", object_id),
-            Action::CastSpell { object_id, targets } => {
-                if targets.is_empty() {
+            Action::CastSpell { object_id, targets, sacrifice } => {
+                if targets.is_empty() && sacrifice.is_none() {
                     write!(f, "Cast spell {}", object_id)
+                } else if let Some(sac) = sacrifice {
+                    write!(f, "Cast spell {} (sacrifice {}) targeting {:?}", object_id, sac, targets)
                 } else {
                     write!(f, "Cast spell {} targeting {:?}", object_id, targets)
                 }

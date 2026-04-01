@@ -3,16 +3,20 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Garruk Relentless {3}{G} Planeswalker — Garruk (3 loyalty).
-/// When Garruk Relentless has two or fewer loyalty counters on him, transform him.
-/// 0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power
-///    to Garruk.
-/// 0: Create a 2/2 green Wolf creature token.
+/// Garruk Relentless {3}{G} Legendary Planeswalker — Garruk (3 loyalty).
 ///
-/// Simplified: Front face only. Back face (Garruk, the Veil-Cursed) is not implemented.
-/// The transform condition is noted but the back face abilities are omitted.
-/// When Garruk reaches 2 or fewer loyalty, he transforms (but we just log it; back face
-/// abilities aren't available).
+/// Front face (Garruk Relentless):
+///   When Garruk Relentless has two or fewer loyalty counters on him, transform him.
+///   0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power
+///      to Garruk.
+///   0: Create a 2/2 green Wolf creature token.
+///
+/// Back face (Garruk, the Veil-Cursed):
+///   +1: Create a 1/1 black Wolf creature token with deathtouch.
+///   -1: Sacrifice a creature. If you do, search your library for a creature card, reveal it,
+///       put it into your hand, then shuffle.
+///   -3: Creatures you control gain trample and get +X/+X until end of turn, where X is the
+///       number of creature cards in your graveyard.
 pub struct GarrukRelentless;
 
 impl CardBehavior for GarrukRelentless {
@@ -41,19 +45,43 @@ impl CardBehavior for GarrukRelentless {
         Some(3)
     }
 
-    fn loyalty_abilities(&self) -> Vec<LoyaltyAbilityDef> {
-        vec![
-            LoyaltyAbilityDef {
-                ability_index: 0,
-                loyalty_change: 0,
-                description: "0: Deal 3 damage to target creature, it fights back".into(),
-            },
-            LoyaltyAbilityDef {
-                ability_index: 1,
-                loyalty_change: 0,
-                description: "0: Create a 2/2 Wolf token".into(),
-            },
-        ]
+    fn loyalty_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<LoyaltyAbilityDef> {
+        let is_transformed = state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false);
+
+        if is_transformed {
+            // Back face: Garruk, the Veil-Cursed
+            vec![
+                LoyaltyAbilityDef {
+                    ability_index: 10,
+                    loyalty_change: 1,
+                    description: "+1: Create a 1/1 black Wolf with deathtouch".into(),
+                },
+                LoyaltyAbilityDef {
+                    ability_index: 11,
+                    loyalty_change: -1,
+                    description: "-1: Sacrifice a creature, search library for a creature card".into(),
+                },
+                LoyaltyAbilityDef {
+                    ability_index: 12,
+                    loyalty_change: -3,
+                    description: "-3: Creatures you control get +X/+X and trample (X = creature cards in graveyard)".into(),
+                },
+            ]
+        } else {
+            // Front face: Garruk Relentless
+            vec![
+                LoyaltyAbilityDef {
+                    ability_index: 0,
+                    loyalty_change: 0,
+                    description: "0: Deal 3 damage to target creature, it fights back".into(),
+                },
+                LoyaltyAbilityDef {
+                    ability_index: 1,
+                    loyalty_change: 0,
+                    description: "0: Create a 2/2 Wolf token".into(),
+                },
+            ]
+        }
     }
 
     fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, registry: &CardRegistry) {
@@ -64,6 +92,7 @@ impl CardBehavior for GarrukRelentless {
         let opponent = state.opponent(controller);
 
         match ability_index {
+            // ── Front face abilities ─────────────────────────────────────
             0 => {
                 // 0: Deal 3 damage to target creature. That creature deals damage equal to its
                 // power to Garruk. Simplified: pick the strongest opponent creature.
@@ -111,6 +140,106 @@ impl CardBehavior for GarrukRelentless {
                 state.log(crate::state::LogLevel::Event,
                     "Garruk: created a 2/2 Wolf token".into());
             }
+
+            // ── Back face abilities (Garruk, the Veil-Cursed) ────────────
+            10 => {
+                // +1: Create a 1/1 black Wolf creature token with deathtouch.
+                state.create_token_with_subtypes(
+                    "Wolf",
+                    controller,
+                    1, 1,
+                    vec![Color::Black],
+                    vec![CardType::Creature],
+                    vec![Keyword::Deathtouch],
+                    vec!["Wolf".into()],
+                );
+                state.log(crate::state::LogLevel::Event,
+                    "Garruk, the Veil-Cursed: created a 1/1 black Wolf token with deathtouch".into());
+            }
+            11 => {
+                // -1: Sacrifice a creature. If you do, search your library for a creature card,
+                // reveal it, put it into your hand, then shuffle.
+                // Find a creature to sacrifice (pick weakest own creature).
+                let sac_target: Option<(ObjectId, i32)> = state.objects_in_zone(Zone::Battlefield, controller)
+                    .iter()
+                    .filter(|o| o.card_types.contains(&CardType::Creature))
+                    .map(|o| (o.id, state.effective_power(o.id, registry).unwrap_or(0)))
+                    .min_by_key(|(_, p)| *p);
+
+                if let Some((sac_id, _)) = sac_target {
+                    let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
+                    crate::destruction::sacrifice(state, sac_id, registry);
+                    state.log(crate::state::LogLevel::Event,
+                        format!("Garruk, the Veil-Cursed: sacrificed {}", sac_name));
+
+                    // Search library for a creature card.
+                    let creature_id = state.get_player(controller).library_order.iter().find(|&&lib_id| {
+                        if let Some(obj) = state.get_object(lib_id) {
+                            // Check object card_types or registry
+                            if !obj.card_types.is_empty() {
+                                obj.card_types.contains(&CardType::Creature)
+                            } else {
+                                registry.card_data(obj.card_id)
+                                    .map(|d| d.card_types.contains(&CardType::Creature))
+                                    .unwrap_or(false)
+                            }
+                        } else {
+                            false
+                        }
+                    }).copied();
+
+                    if let Some(found_id) = creature_id {
+                        let found_name = state.get_object(found_id).map(|o| o.name.clone()).unwrap_or_default();
+                        let player = state.get_player_mut(controller);
+                        player.library_order.retain(|&id| id != found_id);
+                        state.move_object(found_id, Zone::Hand);
+                        state.log(crate::state::LogLevel::Event,
+                            format!("Garruk, the Veil-Cursed: searched and found {}", found_name));
+                    } else {
+                        state.log(crate::state::LogLevel::Event,
+                            "Garruk, the Veil-Cursed: no creature card found in library".into());
+                    }
+                } else {
+                    state.log(crate::state::LogLevel::Event,
+                        "Garruk, the Veil-Cursed: no creature to sacrifice".into());
+                }
+            }
+            12 => {
+                // -3: Creatures you control gain trample and get +X/+X until end of turn,
+                // where X is the number of creature cards in your graveyard.
+                let x = state.objects_in_zone(Zone::Graveyard, controller)
+                    .iter()
+                    .filter(|o| {
+                        if !o.card_types.is_empty() {
+                            o.card_types.contains(&CardType::Creature)
+                        } else {
+                            registry.card_data(o.card_id)
+                                .map(|d| d.card_types.contains(&CardType::Creature))
+                                .unwrap_or(false)
+                        }
+                    })
+                    .count() as i32;
+
+                let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
+                    .iter()
+                    .filter(|o| o.card_types.contains(&CardType::Creature))
+                    .map(|o| o.id)
+                    .collect();
+
+                for cid in &creatures {
+                    state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
+                        target: *cid,
+                        power_mod: x,
+                        toughness_mod: x,
+                    });
+                    state.until_end_of_turn_keywords.push(crate::state::UntilEndOfTurnKeyword {
+                        target: *cid,
+                        keyword: Keyword::Trample,
+                    });
+                }
+                state.log(crate::state::LogLevel::Event,
+                    format!("Garruk, the Veil-Cursed: creatures get +{}/+{} and trample until end of turn", x, x));
+            }
             _ => {}
         }
 
@@ -122,7 +251,7 @@ impl CardBehavior for GarrukRelentless {
                     obj.is_transformed = true;
                     obj.name = "Garruk, the Veil-Cursed".into();
                     state.log(crate::state::LogLevel::Event,
-                        "Garruk Relentless transforms into Garruk, the Veil-Cursed (back face abilities not implemented)".into());
+                        "Garruk Relentless transforms into Garruk, the Veil-Cursed".into());
                 }
             }
         }

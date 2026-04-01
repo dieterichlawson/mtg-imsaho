@@ -54,7 +54,7 @@ pub fn declare_blockers(
 }
 
 /// Set up blockers with validation. Filters out illegal block assignments
-/// (e.g., non-flyer blocking a flyer).
+/// (e.g., non-flyer blocking a flyer, or menace with only 1 blocker).
 pub fn declare_blockers_with_registry(
     state: &mut GameState,
     assignments: &[(ObjectId, ObjectId)],
@@ -64,6 +64,63 @@ pub fn declare_blockers_with_registry(
         .filter(|&&(blocker, attacker)| can_block_attacker(state, blocker, attacker, registry))
         .cloned()
         .collect();
+
+    // Minimum blocker enforcement: for attackers with menace or MinimumBlockers
+    // effects, verify they have enough blockers. If not, remove the block
+    // assignments for that attacker (can't be blocked by fewer than N creatures).
+    let mut blocker_counts: std::collections::HashMap<ObjectId, usize> = std::collections::HashMap::new();
+    for &(_, attacker) in &valid {
+        *blocker_counts.entry(attacker).or_insert(0) += 1;
+    }
+
+    // Determine minimum blocker requirement for each attacker.
+    let attacker_ids: Vec<ObjectId> = blocker_counts.keys().cloned().collect();
+    let mut min_blockers: std::collections::HashMap<ObjectId, u32> = std::collections::HashMap::new();
+    for &att_id in &attacker_ids {
+        let mut min_req: u32 = 1; // default: any single creature can block
+        // Menace keyword: need at least 2 blockers.
+        if state.has_keyword(att_id, Keyword::Menace, registry) {
+            min_req = min_req.max(2);
+        }
+        // MinimumBlockers continuous effects (e.g., Terror of Kruin Pass).
+        for source in state.objects.values() {
+            if source.zone != crate::types::Zone::Battlefield {
+                continue;
+            }
+            let effects = if let Some(ref inst) = source.instance_continuous_effects {
+                inst.clone()
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                }
+            } else {
+                vec![]
+            };
+            for effect in &effects {
+                if let crate::types::ContinuousEffect::MinimumBlockers { count, scope } = effect {
+                    if state.effect_applies_to(att_id, scope, source.id, source.controller, registry) {
+                        min_req = min_req.max(*count);
+                    }
+                }
+            }
+        }
+        if min_req > 1 {
+            min_blockers.insert(att_id, min_req);
+        }
+    }
+
+    let valid: Vec<_> = valid.into_iter()
+        .filter(|&(_, attacker)| {
+            if let Some(&min) = min_blockers.get(&attacker) {
+                blocker_counts.get(&attacker).copied().unwrap_or(0) >= min as usize
+            } else {
+                true
+            }
+        })
+        .collect();
+
     declare_blockers(state, &valid);
 }
 
@@ -206,6 +263,59 @@ fn deal_damage_step(
     }
 }
 
+/// Check if a creature has a "prevent damage, remove counter" replacement effect
+/// (e.g., Unbreathing Horde). If so, prevent the damage and remove a +1/+1 counter.
+/// Returns true if damage was prevented.
+fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, registry: &CardRegistry) -> bool {
+    let has_effect = state.has_continuous_effect(target, &|e| {
+        match e {
+            crate::types::ContinuousEffect::PreventDamageRemoveCounter { scope } => Some(scope),
+            _ => None,
+        }
+    }, registry);
+    if has_effect {
+        let counter_count = state.get_object(target)
+            .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied())
+            .unwrap_or(0);
+        if counter_count > 0 {
+            if let Some(obj) = state.get_object_mut(target) {
+                let entry = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
+                *entry = entry.saturating_sub(1);
+                if *entry == 0 {
+                    obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
+                }
+            }
+            let name = state.get_object(target).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event,
+                format!("{}: damage prevented, removed a +1/+1 counter", name));
+        }
+        // Damage is always prevented even if no counters remain.
+        true
+    } else {
+        false
+    }
+}
+
+/// Check if a creature's combat damage should be prevented because it's not a Wolf/Werewolf
+/// (set by Moonmist's effect for the rest of the turn).
+fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
+    if !state.prevent_non_wolf_werewolf_combat_damage {
+        return false;
+    }
+    let subtypes = get_subtypes(state, source, registry);
+    !subtypes.iter().any(|s| s == "Wolf" || s == "Werewolf")
+}
+
+/// Check if a creature has the DoubleCombatDamage effect (e.g., Inquisitor's Flail).
+fn has_double_combat_damage(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
+    state.has_continuous_effect(creature_id, &|e| {
+        match e {
+            crate::types::ContinuousEffect::DoubleCombatDamage { scope } => Some(scope),
+            _ => None,
+        }
+    }, registry)
+}
+
 /// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
 fn has_damage_prevention(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
     state.has_continuous_effect(creature_id, &|e| {
@@ -319,9 +429,28 @@ fn deal_damage_to_creature(
         return;
     }
 
+    // Moonmist: prevent combat damage from non-Wolf/non-Werewolf creatures.
+    if is_non_wolf_damage_prevented(state, source, registry) {
+        return;
+    }
+
     // Protection: if target has protection from the source creature, prevent damage.
     if has_protection_from_creature(state, target, source, registry) {
         return;
+    }
+
+    // Unbreathing Horde: prevent damage, remove counter.
+    if apply_prevent_damage_remove_counter(state, target, registry) {
+        return;
+    }
+
+    // Inquisitor's Flail: double damage if source or target has the effect.
+    let mut amount = amount;
+    if has_double_combat_damage(state, source, registry) {
+        amount *= 2;
+    }
+    if has_double_combat_damage(state, target, registry) {
+        amount *= 2;
     }
 
     let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
@@ -366,6 +495,17 @@ fn deal_damage_to_player(
     // Skip if source has combat damage prevention (e.g., Ghostly Possession).
     if has_damage_prevention(state, source, registry) {
         return;
+    }
+
+    // Moonmist: prevent combat damage from non-Wolf/non-Werewolf creatures.
+    if is_non_wolf_damage_prevented(state, source, registry) {
+        return;
+    }
+
+    // Inquisitor's Flail: double damage if source has the effect.
+    let mut amount = amount;
+    if has_double_combat_damage(state, source, registry) {
+        amount *= 2;
     }
 
     let old_life = state.get_player(player).life;

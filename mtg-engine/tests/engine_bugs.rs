@@ -218,6 +218,7 @@ fn spell_resolves_correctly_through_game_loop() {
             return mtg_engine::actions::Action::CastSpell {
                 object_id: bolt_id,
                 targets: vec![mtg_engine::actions::Target::Player(P1)],
+                sacrifice: None,
             };
         }
 

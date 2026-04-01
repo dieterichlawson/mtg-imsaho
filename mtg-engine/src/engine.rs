@@ -204,6 +204,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             .map(|&id| Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) })
                             .collect()
                     }
+                    ResolutionChoiceKind::ChooseCardType { options, .. } => {
+                        (0..options.len())
+                            .map(|i| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i) })
+                            .collect()
+                    }
                 };
                 LegalActions { actions, combat_prompt: None, castable_spells: vec![] }
             }
@@ -286,8 +291,19 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
 
         for (source_card_id, ab) in abilities {
-            // Check mana cost.
-            if !mana::can_pay(mana_pool, &ab.cost) { continue; }
+            // Check mana cost. For X-cost abilities, check that non-X portion is affordable.
+            let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+            if has_x_cost {
+                let non_x_cost = ManaCost::new(
+                    ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                );
+                // Need at least non-X cost + 1 extra mana for X >= 1.
+                // Actually, X can be 0, so just need the non-X portion.
+                // But X=0 is usually pointless — still allow it for correctness.
+                if !mana::can_pay(mana_pool, &non_x_cost) { continue; }
+            } else {
+                if !mana::can_pay(mana_pool, &ab.cost) { continue; }
+            }
             // Check tap cost.
             if ab.requires_tap && obj_tapped { continue; }
             // Check once-per-turn.
@@ -345,7 +361,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             if already_used { continue; }
 
             if let Some(behavior) = registry.get(obj_card_id) {
-                let loyalty_abs = behavior.loyalty_abilities();
+                let loyalty_abs = behavior.loyalty_abilities(state, obj_id);
                 if loyalty_abs.is_empty() { continue; }
 
                 let current_loyalty = state.get_counter_count(obj_id, CounterType::Loyalty);
@@ -435,6 +451,21 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 }
             }
 
+            // Check additional costs.
+            use crate::cards::AdditionalCost;
+            let eligible_sacrifices: Vec<ObjectId> = match &data.additional_cost {
+                Some(AdditionalCost::SacrificeCreature) => {
+                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
+                        .iter()
+                        .filter(|o| o.power.is_some())
+                        .map(|o| o.id)
+                        .collect();
+                    if creatures.is_empty() { continue; }
+                    creatures
+                }
+                _ => vec![],
+            };
+
             // Generate cast actions with valid targets.
             let target_req = behavior.target_requirement();
 
@@ -446,9 +477,27 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 seen_untargeted_casts.push(obj.card_id);
             }
 
-            let cast_actions = generate_cast_actions_with_targets(
+            let mut cast_actions = generate_cast_actions_with_targets(
                 state, player, obj.id, &target_req, behavior,
             );
+
+            // If the spell requires a creature sacrifice, expand each action
+            // into one per eligible creature.
+            if !eligible_sacrifices.is_empty() {
+                let base_actions = std::mem::take(&mut cast_actions);
+                for action in base_actions {
+                    if let Action::CastSpell { object_id, targets, .. } = action {
+                        for &sac_id in &eligible_sacrifices {
+                            cast_actions.push(Action::CastSpell {
+                                object_id,
+                                targets: targets.clone(),
+                                sacrifice: Some(sac_id),
+                            });
+                        }
+                    }
+                }
+            }
+
             if !cast_actions.is_empty() {
                 actions.extend(cast_actions);
                 let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
@@ -550,6 +599,15 @@ fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, reg
     true
 }
 
+/// Check if a player can be targeted by a given caster.
+/// Players with hexproof can't be targeted by opponents.
+fn can_target_player(state: &GameState, target_player: PlayerId, caster: PlayerId, registry: &CardRegistry) -> bool {
+    if target_player != caster && state.player_has_hexproof(target_player, registry) {
+        return false;
+    }
+    true
+}
+
 /// Generate CastSpell actions with all valid target combinations.
 fn generate_cast_actions_with_targets(
     state: &GameState,
@@ -564,7 +622,7 @@ fn generate_cast_actions_with_targets(
 
     match target_req {
         TargetRequirement::None => {
-            vec![Action::CastSpell { object_id: spell_id, targets: vec![] }]
+            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None }]
         }
         TargetRequirement::AnyTarget => {
             // Can target any creature on the battlefield or any player.
@@ -577,17 +635,19 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
             }
             for player in &state.players {
-                if !player.lost {
+                if !player.lost && can_target_player(state, player.id, caster, registry) {
                     let target = Target::Player(player.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
@@ -604,6 +664,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
@@ -613,12 +674,13 @@ fn generate_cast_actions_with_targets(
         TargetRequirement::PlayerOnly => {
             let mut actions = Vec::new();
             for player in &state.players {
-                if !player.lost {
+                if !player.lost && can_target_player(state, player.id, caster, registry) {
                     let target = Target::Player(player.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
+                            sacrifice: None,
                         });
                     }
                 }
@@ -639,6 +701,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
+                        sacrifice: None,
                     });
                 }
             }
@@ -655,16 +718,26 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
+                        sacrifice: None,
                     });
                 }
             }
             actions
         }
-        TargetRequirement::GraveyardCard | TargetRequirement::ExileCard => {
+        TargetRequirement::GraveyardCard | TargetRequirement::ExileCard
+        | TargetRequirement::GraveyardCreature | TargetRequirement::GraveyardCreatureOfSubtype(_)
+        | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t] })
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None })
                 .collect()
+        }
+        TargetRequirement::ModalChoice(ref modes) => {
+            let mut actions = Vec::new();
+            for mode_req in modes {
+                actions.extend(generate_cast_actions_with_targets(state, caster, spell_id, mode_req, behavior));
+            }
+            actions
         }
         TargetRequirement::TwoTargets(ref req1, ref req2) => {
             // Generate Cartesian product of valid targets for each requirement.
@@ -678,6 +751,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
+                            sacrifice: None,
                         });
                     }
                 }
@@ -705,6 +779,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: combo,
+                        sacrifice: None,
                     });
                 }
             }
@@ -758,7 +833,7 @@ fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost {
+                if !p.lost && can_target_player(state, p.id, caster, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, caster, &t, registry) {
                         targets.push(t);
@@ -770,6 +845,7 @@ fn valid_targets_for_req(
         TargetRequirement::PlayerOnly => {
             state.players.iter()
                 .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, caster, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
@@ -778,6 +854,55 @@ fn valid_targets_for_req(
             // All cards in all graveyards.
             state.objects.values()
                 .filter(|o| o.zone == Zone::Graveyard)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCreature => {
+            // Creature cards in all graveyards. Check both object and registry data.
+            state.objects.values()
+                .filter(|o| {
+                    o.zone == Zone::Graveyard
+                        && (o.power.is_some()
+                            || registry.card_data(o.card_id)
+                                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                                .unwrap_or(false))
+                })
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCreatureOfSubtype(ref subtype) => {
+            // Creature cards with a specific subtype in all graveyards.
+            // Check subtypes on both the object and the registry card data.
+            state.objects.values()
+                .filter(|o| {
+                    o.zone == Zone::Graveyard
+                        && (o.power.is_some()
+                            || registry.card_data(o.card_id)
+                                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                                .unwrap_or(false))
+                        && (o.subtypes.iter().any(|s| s == subtype)
+                            || registry.card_data(o.card_id)
+                                .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                                .unwrap_or(false))
+                })
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCardOwnedByCaster => {
+            // Cards in the caster's own graveyard.
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Graveyard && o.owner == caster)
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::GraveyardCardOwnedByOpponent => {
+            // Cards in any opponent's graveyard.
+            state.objects.values()
+                .filter(|o| o.zone == Zone::Graveyard && o.owner != caster)
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
@@ -817,6 +942,15 @@ fn build_cast_target_spec(
             let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);
             CastTargetSpec::UpToTargets { max: *max, options }
         }
+        TargetRequirement::ModalChoice(ref modes) => {
+            // Collect all possible targets across all modes.
+            let mut all_options = Vec::new();
+            for mode_req in modes {
+                all_options.extend(valid_targets_for_req(state, caster, spell_id, mode_req, behavior, registry));
+            }
+            all_options.dedup();
+            CastTargetSpec::SingleTarget(all_options)
+        }
         // All single-target types
         _ => {
             let options = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
@@ -854,6 +988,7 @@ fn generate_ability_targets(
         TargetRequirement::PlayerOnly => {
             state.players.iter()
                 .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, controller, registry))
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
@@ -866,7 +1001,7 @@ fn generate_ability_targets(
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
             for p in &state.players {
-                if !p.lost {
+                if !p.lost && can_target_player(state, p.id, controller, registry) {
                     let t = Target::Player(p.id);
                     if behavior.is_valid_target(state, controller, &t, registry) {
                         targets.push(t);
@@ -912,6 +1047,7 @@ fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::
         }
         TargetFilter::Noncreature => obj.power.is_none(),
         TargetFilter::Nonblack => !obj.colors.contains(&crate::types::Color::Black),
+        TargetFilter::HasSubtype(subtype) => obj.subtypes.iter().any(|s| s == subtype),
         _ => true, // Other filters not yet needed for abilities.
     }
 }
@@ -993,7 +1129,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets } => {
+        Action::CastSpell { object_id, targets, sacrifice } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback: card is being cast from the graveyard.
@@ -1045,6 +1181,33 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             } else {
                 mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
                     .expect("legal_actions should have verified mana availability");
+            }
+
+            // Pay additional costs (sacrifice) at cast time, before the spell goes on the stack.
+            if let Some(sac_id) = sacrifice {
+                let sac_name = card_name(&new_state, registry, *sac_id);
+                crate::destruction::sacrifice(&mut new_state, *sac_id, registry);
+                new_state.log(LogLevel::Event,
+                    format!("Sacrificed {} as additional cost", sac_name));
+            } else {
+                // Backward compatibility: if sacrifice is None but the spell has
+                // AdditionalCost::SacrificeCreature, auto-sacrifice the first creature.
+                use crate::cards::AdditionalCost;
+                let needs_sac = registry.get(card_id)
+                    .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::SacrificeCreature)))
+                    .unwrap_or(false);
+                if needs_sac {
+                    let creature = new_state.objects_in_zone(Zone::Battlefield, player)
+                        .iter()
+                        .find(|o| o.power.is_some())
+                        .map(|o| o.id);
+                    if let Some(cid) = creature {
+                        let sac_name = card_name(&new_state, registry, cid);
+                        crate::destruction::sacrifice(&mut new_state, cid, registry);
+                        new_state.log(LogLevel::Event,
+                            format!("Sacrificed {} as additional cost", sac_name));
+                    }
+                }
             }
 
             // Move to stack and store targets.
@@ -1122,9 +1285,25 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 });
 
             if let Some(ab) = ability {
-                // Pay mana cost.
-                mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)
-                    .expect("legal_actions should have verified mana availability");
+                // Pay mana cost (with X-cost support).
+                let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+                if has_x_cost {
+                    let non_x_cost = ManaCost::new(
+                        ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                    );
+                    let pool = &new_state.get_player(player).mana_pool;
+                    let total_mana = pool.total();
+                    let non_x_amount = non_x_cost.mana_value();
+                    let x = total_mana.saturating_sub(non_x_amount);
+                    mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
+                        .expect("legal_actions should have verified mana availability");
+                    new_state.get_player_mut(player).mana_pool.empty();
+                    new_state.last_activated_x_value = Some(x);
+                } else {
+                    mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)
+                        .expect("legal_actions should have verified mana availability");
+                    new_state.last_activated_x_value = None;
+                }
 
                 // Pay tap cost.
                 if ab.requires_tap {
@@ -1303,7 +1482,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             if let Some(behavior) = registry.get(
                 new_state.get_object(*object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
             ) {
-                let abilities = behavior.loyalty_abilities();
+                let abilities = behavior.loyalty_abilities(&new_state, *object_id);
                 if let Some(ab) = abilities.iter().find(|a| a.ability_index == *ability_index) {
                     // Pay loyalty cost: add or remove loyalty counters.
                     let change = ab.loyalty_change;
@@ -1426,6 +1605,40 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.log(LogLevel::Event, format!("Kept {}", keep_name));
                         new_state.move_spell_after_resolve(*spell_id);
                     }
+                    (ResolutionChoiceKind::ChooseCardType { options, spell_id, controller, .. },
+                     ResolvedChoice::ChosenIndex(index)) => {
+                        let chosen_type = options.get(*index).cloned().unwrap_or_default();
+                        let card_type = match chosen_type.as_str() {
+                            "Creature" => CardType::Creature,
+                            "Artifact" => CardType::Artifact,
+                            "Enchantment" => CardType::Enchantment,
+                            "Land" => CardType::Land,
+                            "Planeswalker" => CardType::Planeswalker,
+                            _ => CardType::Creature,
+                        };
+                        let to_return: Vec<ObjectId> = new_state.objects_in_zone(Zone::Graveyard, *controller)
+                            .iter()
+                            .filter(|o| {
+                                // Check object's own card_types first, fall back to registry
+                                if !o.card_types.is_empty() {
+                                    o.card_types.contains(&card_type)
+                                } else {
+                                    registry.card_data(o.card_id)
+                                        .map(|d| d.card_types.contains(&card_type))
+                                        .unwrap_or(false)
+                                }
+                            })
+                            .map(|o| o.id)
+                            .collect();
+                        let count = to_return.len();
+                        for id in to_return {
+                            new_state.move_object(id, Zone::Hand);
+                        }
+                        new_state.log(LogLevel::Event,
+                            format!("Creeping Renaissance: chose {}. Returned {} cards from graveyard to hand",
+                                chosen_type, count));
+                        new_state.move_spell_after_resolve(*spell_id);
+                    }
                     _ => {}
                 }
             }
@@ -1443,7 +1656,31 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
 
     match (target, effect) {
         (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name }) => {
-            if let Some(obj) = state.get_object_mut(*id) {
+            // Check for "prevent damage, remove counter" replacement (Unbreathing Horde).
+            let has_prevent = state.has_continuous_effect(*id, &|e| {
+                match e {
+                    crate::types::ContinuousEffect::PreventDamageRemoveCounter { scope } => Some(scope),
+                    _ => None,
+                }
+            }, registry);
+            if has_prevent {
+                let counter_count = state.get_object(*id)
+                    .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied())
+                    .unwrap_or(0);
+                if counter_count > 0 {
+                    if let Some(obj) = state.get_object_mut(*id) {
+                        let entry = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
+                        *entry = entry.saturating_sub(1);
+                        if *entry == 0 {
+                            obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
+                        }
+                    }
+                    let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+                    state.log(LogLevel::Event,
+                        format!("{}: damage prevented, removed a +1/+1 counter", name));
+                }
+                // Damage prevented — skip normal damage application.
+            } else if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
                     obj.damage_marked += amount;
                     obj.damaged_by.push(*source_id);
@@ -1595,6 +1832,31 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             }
 
             state.move_spell_after_resolve(*spell_id);
+        }
+        (Target::Object(id), PendingEffect::ExileFromGraveyardGainLife { controller }) => {
+            let is_creature = state.get_object(*id)
+                .map(|o| {
+                    registry.card_data(o.card_id)
+                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                        .unwrap_or(o.power.is_some())
+                })
+                .unwrap_or(false);
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*id, Zone::Exile);
+            state.log(LogLevel::Event, format!("Graveyard Shovel: exiled {} from graveyard", name));
+
+            if is_creature {
+                let old_life = state.get_player(*controller).life;
+                let new_life = old_life + 2;
+                state.get_player_mut(*controller).life = new_life;
+                state.events.push(GameEvent::LifeChanged {
+                    player: *controller,
+                    old: old_life,
+                    new_life,
+                });
+                state.log(LogLevel::Event,
+                    format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));
+            }
         }
         _ => {}
     }
@@ -1994,6 +2256,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             state.until_end_of_turn_cant_block.clear();
             state.until_end_of_turn_protection.clear();
             state.until_end_of_turn_removed_keywords.clear();
+            state.prevent_non_wolf_werewolf_combat_damage = false;
 
             // Clear unused regeneration shields.
             for obj in state.objects.values_mut() {

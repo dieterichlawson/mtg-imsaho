@@ -35,3 +35,76 @@ The oracle text says "Blazing Torch deals 2 damage" — the damage source should
 ## Verdict: FAIL — 2 issues found
 1. **Missing `damaged_by.push()`** when dealing damage to creatures (real bug)
 2. **Wrong damage source** — uses creature ID instead of torch ID (acknowledged in comment, but technically incorrect)
+
+## Audit -- 2026-04-01 09:00
+
+**Scryfall Oracle text**: Equipped creature can't be blocked by Vampires or Zombies. Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target." Equip {1}
+**Scryfall type line**: Artifact -- Equipment
+**Status**: ISSUE
+
+Findings:
+1. **Mana cost {1}**: Correct.
+2. **Type (Artifact -- Equipment)**: Correct. `card_types: [Artifact]`, `subtypes: ["Equipment"]`.
+3. **Oracle text**: Matches Scryfall.
+4. **Block restriction (Vampires/Zombies)**: Correctly implemented via `ContinuousEffect::BlockRestriction` with `CreatureFilter::Not(Or([HasSubtype("Vampire"), HasSubtype("Zombie")]))`.
+5. **Equip {1}**: Correct. `ability_index: 0`, cost Generic(1), sorcery_speed_only: true.
+6. **Damage ability**: Correctly requires tap, targets any target, deals 2 damage, sacrifices torch.
+7. **`damaged_by` tracking**: Previous audit claimed this was missing, but re-reading the code at lines 128-129, `obj.damaged_by.push(object_id)` IS present. Previous audit finding #1 appears to be incorrect -- the code does track damaged_by.
+8. **Damage source**: The `NonCombatDamageDealt` event and `damaged_by` both use `object_id` (the creature), not the torch. Per oracle, "Blazing Torch deals 2 damage" -- the source should be the torch. The code comment on line 122 acknowledges this. Since the torch is sacrificed before damage is dealt, using the torch's ID may cause issues (it's in the graveyard). This is a pragmatic trade-off but technically incorrect per oracle.
+9. **Anti-patterns**: Uses `NonCombatDamageDealt` (correct, not combat damage). No `move_object(id, Zone::Graveyard)` for spells (it's a permanent).
+10. **Tests**: Found in `mtg-engine/tests/tier9_cards.rs`.
+
+Issues:
+- Wrong damage source (creature ID instead of torch ID) -- acknowledged in code comment, technically incorrect per oracle text.
+
+## Audit — 2026-04-01 14:13
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/216/blazing-torch)
+**Oracle text**: Equipped creature can't be blocked by Vampires or Zombies. Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target." Equip {1}
+**Type line**: Artifact — Equipment
+**Mana cost**: {1}
+**Status**: ISSUE
+
+Findings:
+1. **Name**: "Blazing Torch" -- correct.
+2. **Mana cost {1}**: Correct (Generic(1)).
+3. **Type (Artifact — Equipment)**: Correct. `card_types: [Artifact]`, `subtypes: ["Equipment"]`.
+4. **Block restriction (Vampires/Zombies)**: Correctly implemented via `ContinuousEffect::BlockRestriction` with `CreatureFilter::Not(Or([HasSubtype("Vampire"), HasSubtype("Zombie")]))`. Matches oracle.
+5. **Equip {1}**: Correct. ability_index 0, cost Generic(1), sorcery_speed_only: true.
+6. **Damage ability**: ability_index 1, requires_tap: true, target: AnyTarget, deals 2 damage. Sacrifice handled via `crate::destruction::sacrifice`. All correct.
+7. **`damaged_by` tracking**: Present at line 129 (`obj.damaged_by.push(object_id)`). Correct.
+8. **NonCombatDamageDealt**: Emitted for both creature and player targets (lines 130, 140). Correct.
+9. **Damage source issue**: Both `damaged_by` and `NonCombatDamageDealt` use `object_id` (the equipped creature) as the source. Per oracle text and rulings, "the source of the damage is Blazing Torch, not the equipped creature." The code comment on line 122 acknowledges this. Since the torch is sacrificed before damage is dealt (line 118-119), using the torch's ID could be problematic (it's in the graveyard), but it's still technically the correct source. This affects protection interactions: a creature with protection from creatures should not prevent this damage (it's from an artifact), but with the current source being the creature, it would.
+10. **Tests**: Found in `mtg-engine/tests/tier9_cards.rs`. Tests cover card data, damage ability grant, damage to player, damage to creature, and equip. All assertions match oracle text.
+
+Issues:
+- Wrong damage source: Uses equipped creature's ID instead of torch's ID as damage source. Per Scryfall rulings: "The source of the damage is Blazing Torch, not the equipped creature."
+
+## Audit — 2026-04-01 14:38
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/216/blazing-torch)
+**Oracle text**: Equipped creature can't be blocked by Vampires or Zombies. Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target." Equip {1}
+**Type line**: Artifact — Equipment
+**Mana cost**: {1}
+**Status**: ISSUE
+
+Findings:
+1. **Name**: "Blazing Torch" -- correct.
+2. **Mana cost {1}**: Correct (`ManaSymbol::Generic(1)`).
+3. **Type (Artifact — Equipment)**: Correct. `card_types: [Artifact]`, `subtypes: ["Equipment"]`.
+4. **Oracle text in code** (line 27): Matches Scryfall oracle text.
+5. **Block restriction**: Oracle says: `Equipped creature can't be blocked by Vampires or Zombies.` Code implements: `ContinuousEffect::BlockRestriction` with `CreatureFilter::Not(Or([HasSubtype("Vampire"), HasSubtype("Zombie")]))` and `scope: EffectScope::Attached`. Correct.
+6. **Equip {1}**: ability_index 0, cost Generic(1), sorcery_speed_only: true, target Creature. Correct.
+7. **Damage ability**: ability_index 1, requires_tap: true, sacrifice handled manually, target AnyTarget, deals 2 damage. Correct structure.
+8. **`damaged_by` tracking**: Present at line 129 (`obj.damaged_by.push(object_id)`). Correct.
+9. **NonCombatDamageDealt**: Emitted for both creature (line 130) and player (line 140) targets. Correct.
+10. **LifeChanged**: Emitted for player damage (line 145). Correct.
+11. **Spell cleanup**: Not needed -- Equipment is a permanent that stays on battlefield. Correct.
+12. **Tests**: No dedicated test file found. Previously noted in tier9_cards.rs.
+
+Issue:
+- **Wrong damage source** (file: `mtg-engine/src/cards/blazing_torch.rs`, lines 128-134):
+  - Oracle text says: `Blazing Torch deals 2 damage to any target.`
+  - Scryfall ruling says: "The source of the damage is Blazing Torch, not the equipped creature."
+  - Code does: `obj.damaged_by.push(object_id)` and `source: object_id` in the NonCombatDamageDealt event, where `object_id` is the equipped creature (per comment on line 106: "object_id is the creature").
+  - The damage source should be the Blazing Torch equipment object, not the equipped creature. This affects protection interactions (e.g., protection from creatures should not prevent this damage since the source is an artifact).

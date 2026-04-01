@@ -19,3 +19,56 @@
 
 ## Verdict
 **FAIL** -- 1 issue: Graveyard card selection is auto-picked (first 3) instead of targeted.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: Target player shuffles up to three target cards from their graveyard into their library. / Flashback {G}
+**Scryfall type line**: Instant
+**Status**: ISSUE
+
+Mana cost {1}{U}: correct. Type Instant: correct. Flashback cost {G}: correct. Uses `move_spell_after_resolve`: correct (no graveyard anti-pattern).
+
+on_resolve: moves targeted cards from graveyard to library, then shuffles the owning player's library: correct behavior.
+
+Issues found:
+1. **Targeting model uses ModalChoice instead of proper multi-target**: The oracle says "Target player shuffles up to three target cards from their graveyard into their library." This means the spell has two sets of targets: (1) a target player, and (2) up to three target cards from that player's graveyard. The implementation uses `TargetRequirement::ModalChoice` with two modes (caster's graveyard vs opponent's graveyard), which is a workaround. The actual oracle targeting does not have modes -- it targets a player and then cards from that player's graveyard. The current approach could break if there are more than 2 players, or if the caster wants to target themselves but choose cards from their own graveyard specifically.
+2. **Player target not explicit**: The spell should explicitly target a player (which matters for hexproof/shroud on players), but the current implementation infers the player from which mode is chosen, never explicitly targeting a player object.
+
+Tests present in `tests/memorys_journey.rs` and `tests/tier11_cards.rs`.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library. Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: ISSUE
+
+Mana cost {1}{U}: correct. Type Instant: correct. Flashback cost {G}: correct (`flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]))`). Uses `move_spell_after_resolve`: correct.
+
+`on_resolve`: Moves targeted cards from graveyard to library (adding to `library_order`), then shuffles the owning player's library: correct behavior. Player determination is inferred from the first targeted card's owner: functional but indirect.
+
+Issues found:
+1. **Targeting model uses ModalChoice instead of proper player+cards targeting** (persists from prior audit): Oracle says "Target player shuffles up to three target cards from their graveyard into their library." This means the spell has two categories of targets: a target player and up to three target cards from that player's graveyard. The implementation uses `TargetRequirement::ModalChoice` with two modes (caster's graveyard vs opponent's graveyard), which is a workaround. This does not correctly model the player as a separate target -- per Scryfall ruling, if the player becomes an illegal target, the entire spell fizzles even if the cards are still legal targets. The current implementation would not enforce this.
+2. **Player not explicitly targeted**: Per Scryfall rulings, player hexproof/shroud should prevent this spell from targeting that player. The current implementation never explicitly targets a player, so player-targeting protections would be bypassed.
+3. **Per ruling, if no cards targeted or all card targets are illegal, the player still shuffles their library**: The current implementation would not shuffle the library if all card targets become illegal (the `target_player` would be None since it's derived from the first card target).
+
+Tests in `tests/tier11_cards.rs` cover: shuffling cards into library, flashback cost verification. No graveyard or damage anti-patterns.
+
+## Audit — 2026-04-01 12:00
+
+**Oracle text source**: Scryfall via WebSearch
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library. Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: ISSUE
+
+Mana cost {1}{U}: correct. Type Instant: correct. Flashback cost {G}: correct. Uses `move_spell_after_resolve`: correct. `on_resolve` moves targeted cards from graveyard to library and shuffles the owning player's library: correct basic behavior.
+
+Tests in `tests/memorys_journey.rs` cover: shuffling own graveyard card, shuffling opponent's graveyard card, up to 3 cards, no mixing graveyards, flashback cost verification. Good coverage.
+
+Issues found:
+1. **Targeting model uses ModalChoice instead of targeting a player** (`/home/user/mtg-imsaho/mtg-engine/src/cards/memorys_journey.rs`, lines 39-42):
+   - Oracle text says: `Target player shuffles up to three target cards from their graveyard into their library.`
+   - Code does: `TargetRequirement::ModalChoice` with two modes (`GraveyardCardOwnedByCaster` and `GraveyardCardOwnedByOpponent`) instead of explicitly targeting a player. Per Scryfall ruling: "If the player is an illegal target by the time Memory's Journey resolves, the spell will have no effect, even if the cards are still legal targets." The current implementation never targets a player object, so player hexproof/shroud protections would be bypassed.
+2. **Player not shuffled when all card targets are illegal** (`/home/user/mtg-imsaho/mtg-engine/src/cards/memorys_journey.rs`, lines 47-53):
+   - Oracle text says (per Scryfall ruling): "If no cards were targeted by Memory's Journey or if all the targeted cards are illegal targets by the time Memory's Journey resolves, the targeted player will still shuffle their library."
+   - Code does: `target_player` is derived from the first card target's owner (line 47-53). If all card targets become illegal and are removed from the targets list, `target_player` would be `None` and no shuffle would occur.

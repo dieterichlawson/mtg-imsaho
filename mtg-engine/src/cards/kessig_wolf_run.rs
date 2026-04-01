@@ -7,10 +7,6 @@ use crate::types::*;
 /// Kessig Wolf Run — Land.
 /// {T}: Add {C}.
 /// {X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.
-///
-/// Simplified: Since the engine doesn't yet support choosing X for activated abilities,
-/// the ability costs {1}{R}{G} and gives +1/+0 and trample. Players can activate
-/// it multiple times for larger boosts.
 pub struct KessigWolfRun;
 
 impl CardBehavior for KessigWolfRun {
@@ -23,7 +19,7 @@ impl CardBehavior for KessigWolfRun {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn. (Simplified: {1}{R}{G} for +1/+0)".into(),
+            oracle_text: "{T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
@@ -54,9 +50,9 @@ impl CardBehavior for KessigWolfRun {
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ActivatedAbilityDef {
                 ability_index: 1,
-                description: "{1}{R}{G}, {T}: Target creature gets +1/+0 and trample until EOT (simplified X=1)".into(),
+                description: "{X}{R}{G}, {T}: Target creature gets +X/+0 and trample until EOT".into(),
                 cost: ManaCost::new(vec![
-                    ManaSymbol::Generic(1),
+                    ManaSymbol::X,
                     ManaSymbol::Colored(Color::Red),
                     ManaSymbol::Colored(Color::Green),
                 ]),
@@ -72,12 +68,13 @@ impl CardBehavior for KessigWolfRun {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+        let x = state.last_activated_x_value.unwrap_or(0) as i32;
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                // Grant +1/+0 until end of turn.
+                // Grant +X/+0 until end of turn.
                 state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
                     target: *target_id,
-                    power_mod: 1,
+                    power_mod: x,
                     toughness_mod: 0,
                 });
                 // Grant trample until end of turn.
@@ -87,7 +84,7 @@ impl CardBehavior for KessigWolfRun {
                 });
                 let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Kessig Wolf Run gives {} +1/+0 and trample until end of turn", name));
+                    format!("Kessig Wolf Run gives {} +{}/+0 and trample until end of turn", name, x));
             }
         }
     }

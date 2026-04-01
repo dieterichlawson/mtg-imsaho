@@ -6,9 +6,6 @@ use crate::types::*;
 /// Witchbane Orb — {4} Artifact.
 /// When Witchbane Orb enters the battlefield, destroy all Curses attached to you.
 /// You have hexproof.
-///
-/// Known limitation: player hexproof is not implemented (would need a new engine
-/// system). The ETB curse destruction is implemented.
 pub struct WitchbaneOrb;
 
 impl CardBehavior for WitchbaneOrb {
@@ -36,6 +33,8 @@ impl CardBehavior for WitchbaneOrb {
             ],
         }
     }
+
+    fn grants_player_hexproof(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));

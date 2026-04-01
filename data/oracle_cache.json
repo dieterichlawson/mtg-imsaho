@@ -1,0 +1,16 @@
+{
+  "cards": {
+    "Curse of the Pierced Heart": {
+      "name": "Curse of the Pierced Heart",
+      "mana_cost": "{1}{R}",
+      "type_line": "Enchantment — Aura Curse",
+      "oracle_text": "Enchant player\nAt the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall via WebSearch",
+      "source_url": "https://scryfall.com/card/isd/138/curse-of-the-pierced-heart",
+      "cached_at": "2026-04-01"
+    }
+  },
+  "rulings": {}
+}

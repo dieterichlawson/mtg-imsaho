@@ -126,6 +126,16 @@ pub struct GameState {
     #[serde(default)]
     pub spells_cast_last_turn: HashMap<PlayerId, u32>,
 
+    /// When true, prevent all combat damage dealt by creatures that are not
+    /// Wolves or Werewolves (set by Moonmist). Cleared at end of turn.
+    #[serde(default)]
+    pub prevent_non_wolf_werewolf_combat_damage: bool,
+
+    /// X value chosen for the most recently activated X-cost ability.
+    /// Set by the engine before calling on_activate_ability; cards read this.
+    #[serde(default)]
+    pub last_activated_x_value: Option<u32>,
+
     /// Index for trigger processing resumption after a resolution choice.
     #[serde(default)]
     pub trigger_event_index: usize,
@@ -214,6 +224,8 @@ impl GameState {
             day_night: None,
             spells_cast_this_turn: HashMap::new(),
             spells_cast_last_turn: HashMap::new(),
+            prevent_non_wolf_werewolf_combat_damage: false,
+            last_activated_x_value: None,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
         }
@@ -722,8 +734,20 @@ impl GameState {
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
-        // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
-        let mut power = if let Some(behavior) = registry.get(obj.card_id) {
+        // Check if this token has dynamic P/T tied to counter count on a source permanent
+        // (e.g., Gutter Grime Ooze tokens whose P/T = slime counters on Gutter Grime).
+        let mut power = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
+            let counter_type_val = obj.card_state.get("pt_source_counter_type")
+                .map(|v| v.0).unwrap_or(0);
+            let counter_type = match counter_type_val {
+                1 => crate::types::CounterType::Slime,
+                _ => crate::types::CounterType::PlusOnePlusOne,
+            };
+            self.get_object(*source_id)
+                .map(|src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
+                .unwrap_or(0)
+        } else if let Some(behavior) = registry.get(obj.card_id) {
+            // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
             if let Some((p, _)) = behavior.dynamic_pt(self, id) {
                 p
             } else {
@@ -755,8 +779,19 @@ impl GameState {
     pub fn effective_toughness(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
-        // Check if this creature's own card has dynamic P/T.
-        let mut toughness = if let Some(behavior) = registry.get(obj.card_id) {
+        // Check if this token has dynamic P/T tied to counter count on a source permanent.
+        let mut toughness = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
+            let counter_type_val = obj.card_state.get("pt_source_counter_type")
+                .map(|v| v.0).unwrap_or(0);
+            let counter_type = match counter_type_val {
+                1 => crate::types::CounterType::Slime,
+                _ => crate::types::CounterType::PlusOnePlusOne,
+            };
+            self.get_object(*source_id)
+                .map(|src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
+                .unwrap_or(0)
+        } else if let Some(behavior) = registry.get(obj.card_id) {
+            // Check if this creature's own card has dynamic P/T.
             if let Some((_, t)) = behavior.dynamic_pt(self, id) {
                 t
             } else {
@@ -988,6 +1023,17 @@ impl GameState {
         }
     }
 
+    /// Check if a player has hexproof (e.g., from Witchbane Orb).
+    pub fn player_has_hexproof(&self, player: PlayerId, registry: &crate::cards::CardRegistry) -> bool {
+        self.objects.values().any(|o| {
+            o.zone == Zone::Battlefield
+                && o.controller == player
+                && registry.get(o.card_id)
+                    .map(|b| b.grants_player_hexproof())
+                    .unwrap_or(false)
+        })
+    }
+
     /// Add counters to a permanent.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
         if let Some(obj) = self.objects.get_mut(&id) {
@@ -1207,6 +1253,13 @@ pub enum ResolutionChoiceKind {
         revealed: Vec<ObjectId>,
         spell_id: ObjectId,
     },
+    /// Choose a permanent type from a list of options (Creeping Renaissance).
+    ChooseCardType {
+        description: String,
+        options: Vec<String>,
+        spell_id: ObjectId,
+        controller: PlayerId,
+    },
 }
 
 /// What happens to the chosen target when a ResolutionChoice is resolved.
@@ -1242,6 +1295,8 @@ pub enum PendingEffect {
     /// Sacrifice the chosen creature and gain life equal to its toughness (Tribute to Hunger).
     /// `beneficiary` gains the life; `spell_id` is cleaned up after resolution.
     SacrificeAndGainLife { beneficiary: PlayerId, spell_id: ObjectId },
+    /// Exile a card from graveyard; if it's a creature card, controller gains 2 life (Graveyard Shovel).
+    ExileFromGraveyardGainLife { controller: PlayerId },
 }
 
 /// Game result.

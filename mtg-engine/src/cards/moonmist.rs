@@ -7,10 +7,6 @@ use crate::types::*;
 /// Moonmist — {1}{G} Instant.
 /// Transform all Humans. Prevent all combat damage that would be dealt this turn
 /// by creatures other than Werewolves and Wolves.
-///
-/// Simplified: transforms all Human Werewolf DFCs (sets is_transformed = true).
-/// Combat damage prevention for non-Wolf/non-Werewolf creatures is not implemented
-/// (would require a combat damage prevention system that doesn't exist yet).
 pub struct Moonmist;
 
 impl CardBehavior for Moonmist {
@@ -77,7 +73,10 @@ impl CardBehavior for Moonmist {
             state.log(crate::state::LogLevel::Event,
                 format!("Moonmist transformed {} Human(s)", count));
         }
-        // Note: combat damage prevention for non-Wolf/Werewolf is not implemented.
+        // Prevent all combat damage from non-Wolf/non-Werewolf creatures this turn.
+        state.prevent_non_wolf_werewolf_combat_damage = true;
+        state.log(crate::state::LogLevel::Event,
+            "Moonmist: preventing combat damage from non-Wolf/non-Werewolf creatures this turn".into());
 
         state.move_spell_after_resolve(object_id);
     }

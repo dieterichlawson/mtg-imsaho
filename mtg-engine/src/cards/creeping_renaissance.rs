@@ -1,15 +1,12 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Creeping Renaissance — {3}{G}{G} Sorcery.
 /// Choose a permanent type. Return all cards of the chosen type from your graveyard
 /// to your hand. Flashback {5}{G}{G}.
-///
-/// Simplified: automatically chooses "creature" as the permanent type, since that's
-/// the most commonly relevant type for graveyard recursion in Innistrad.
 pub struct CreepingRenaissance;
 
 impl CardBehavior for CreepingRenaissance {
@@ -39,26 +36,27 @@ impl CardBehavior for CreepingRenaissance {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Auto-choose "creature" as the permanent type.
-        let to_return: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .filter(|o| {
-                registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                    .unwrap_or(o.power.is_some())
-            })
-            .map(|o| o.id)
-            .collect();
+        // Present a choice of permanent types.
+        let options = vec![
+            "Creature".to_string(),
+            "Artifact".to_string(),
+            "Enchantment".to_string(),
+            "Land".to_string(),
+            "Planeswalker".to_string(),
+        ];
 
-        let count = to_return.len();
-        for id in to_return {
-            state.move_object(id, Zone::Hand);
-        }
-        state.log(crate::state::LogLevel::Event,
-            format!("Creeping Renaissance returned {} creature cards from graveyard to hand", count));
-        state.move_spell_after_resolve(object_id);
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: object_id,
+            choice: ResolutionChoiceKind::ChooseCardType {
+                description: "Creeping Renaissance: choose a permanent type".into(),
+                options,
+                spell_id: object_id,
+                controller,
+            },
+        });
     }
 }

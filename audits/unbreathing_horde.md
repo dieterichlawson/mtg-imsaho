@@ -27,3 +27,40 @@
 
 ## Verdict
 **FAIL** — Missing damage prevention replacement effect. ETB counters work correctly.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: This creature enters with a +1/+1 counter on it for each other Zombie you control and each Zombie card in your graveyard. If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it.
+**Scryfall type line**: Creature -- Zombie
+**Status**: PASS
+
+Previous damage prevention issue has been fixed. The implementation now includes `ContinuousEffect::PreventDamageRemoveCounter { scope: EffectScope::OnSelf }` in `continuous_effects`, which hooks into the engine's damage system to prevent damage and remove a +1/+1 counter.
+
+Verified correct:
+- Mana cost: {2}{B} -- matches
+- Types: Creature -- matches
+- Subtypes: Zombie -- matches
+- P/T: 0/0 -- matches
+- ETB: counts other Zombies on battlefield under controller + Zombie cards in graveyard, adds that many +1/+1 counters -- correct
+- Damage prevention: `PreventDamageRemoveCounter` continuous effect on self -- correct
+- `triggered_abilities`: EntersBattlefield -- correct
+- Note: oracle text in code uses older templating ("Unbreathing Horde enters the battlefield" vs Scryfall's "This creature enters") -- cosmetic only, no functional impact
+- No anti-patterns detected
+- Tests found in `mtg-engine/tests/tier15_cards.rs` and `mtg-engine/tests/unbreathing_horde.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: This creature enters with a +1/+1 counter on it for each other Zombie you control and each Zombie card in your graveyard. If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+Card data correct: name, mana cost ({2}{B}), type (Creature), subtypes (Zombie), P/T (0/0).
+
+ETB logic: counts other battlefield Zombies under controller (excludes self) + graveyard Zombies, adds that many +1/+1 counters. Correct.
+
+Damage prevention: implemented via ContinuousEffect::PreventDamageRemoveCounter with EffectScope::OnSelf. Correct.
+
+triggered_abilities declares EntersBattlefield. Correct.
+
+Tests in unbreathing_horde.rs cover damage prevention with counter removal, still dealing damage to others, and ETB counter count. All correct. No anti-patterns found.

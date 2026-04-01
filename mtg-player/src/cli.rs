@@ -827,15 +827,15 @@ impl CliPlayer {
 
         match &spell.target_spec {
             CastTargetSpec::NoTargets => {
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![] })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None })
             }
             CastTargetSpec::SingleTarget(options) => {
                 if options.len() == 1 {
                     // Only one valid target — skip the sub-prompt.
-                    return Some(Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()] });
+                    return Some(Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None });
                 }
                 let target = self.prompt_target(view, options, &format!("Choose target for {}", spell.name))?;
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![target] })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None })
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
                 let t1 = self.prompt_target(view, options1, &format!("{}: choose first target", spell.name))?;
@@ -844,7 +844,7 @@ impl CliPlayer {
                     return None; // no valid second target
                 }
                 let t2 = self.prompt_target(view, &remaining, &format!("{}: choose second target", spell.name))?;
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2] })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None })
             }
             CastTargetSpec::UpToTargets { max, options } => {
                 let mut chosen = Vec::new();
@@ -863,7 +863,7 @@ impl CliPlayer {
                 if chosen.is_empty() {
                     return None; // must pick at least one
                 }
-                Some(Action::CastSpell { object_id: spell.object_id, targets: chosen })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None })
             }
         }
     }
@@ -1010,6 +1010,7 @@ impl CliPlayer {
                     }
                     ResolvedChoice::ChosenTarget(None) => "Decline (do nothing)".into(),
                     ResolvedChoice::ChosenCard(id) => Self::perm_name(view, *id),
+                    ResolvedChoice::ChosenIndex(i) => format!("Option {}", i),
                 }
             }
         }

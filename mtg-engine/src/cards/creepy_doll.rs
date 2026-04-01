@@ -28,38 +28,26 @@ impl CardBehavior for CreepyDoll {
             additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
-                    kind: TriggerKind::Blocks,
-                    description: "flip a coin; if you win, destroy that creature".into(),
-                },
-                TriggeredAbilityDef {
-                    kind: TriggerKind::BecomesBlocked,
+                    kind: TriggerKind::DealsCombatDamageToCreature,
                     description: "flip a coin; if you win, destroy that creature".into(),
                 },
             ],
         }
     }
 
-    fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, blocked_attacker: ObjectId, registry: &CardRegistry) {
-        coin_flip_destroy(state, self_id, blocked_attacker, registry);
-    }
-
-    fn on_becomes_blocked(&self, state: &mut GameState, self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) {
-        coin_flip_destroy(state, self_id, blocker_id, registry);
-    }
-}
-
-fn coin_flip_destroy(state: &mut GameState, self_id: ObjectId, target: ObjectId, registry: &CardRegistry) {
-    if state.get_object(self_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
-        return;
-    }
-    let won = rand::thread_rng().gen_bool(0.5);
-    if won {
-        let name = state.get_object(target).map(|o| o.name.clone()).unwrap_or_default();
-        state.log(crate::state::LogLevel::Event,
-            format!("Creepy Doll won the coin flip! Destroying {}", name));
-        crate::destruction::try_destroy(state, target, registry);
-    } else {
-        state.log(crate::state::LogLevel::Event,
-            "Creepy Doll lost the coin flip.".to_string());
+    fn on_deals_combat_damage_to_creature(&self, state: &mut GameState, self_id: ObjectId, damaged_creature: ObjectId, _amount: u32, registry: &CardRegistry) {
+        if state.get_object(self_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+            return;
+        }
+        let won = rand::thread_rng().gen_bool(0.5);
+        if won {
+            let name = state.get_object(damaged_creature).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event,
+                format!("Creepy Doll won the coin flip! Destroying {}", name));
+            crate::destruction::try_destroy(state, damaged_creature, registry);
+        } else {
+            state.log(crate::state::LogLevel::Event,
+                "Creepy Doll lost the coin flip.".to_string());
+        }
     }
 }

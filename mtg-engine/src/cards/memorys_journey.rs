@@ -32,30 +32,48 @@ impl CardBehavior for MemorysJourney {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        // Up to 3 graveyard cards. The "target player" part is simplified —
-        // we target graveyard cards from any player's graveyard.
-        TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCard))
+        // Oracle: "Target player shuffles up to three target cards from their graveyard."
+        // Cards must all come from one player's graveyard.
+        // Mode 1: up to 3 cards from caster's graveyard (targeting self).
+        // Mode 2: up to 3 cards from opponent's graveyard (targeting opponent).
+        TargetRequirement::ModalChoice(vec![
+            TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCardOwnedByCaster)),
+            TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCardOwnedByOpponent)),
+        ])
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+        // Determine which player's graveyard the cards come from.
+        let target_player = targets.first().and_then(|t| {
+            if let Target::Object(id) = t {
+                state.get_object(*id).map(|o| o.owner)
+            } else {
+                None
+            }
+        });
+
         for target in targets {
             if let Target::Object(card_id) = target {
-                let owner = state.get_object(*card_id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
-                let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.move_object(*card_id, Zone::Library);
-                state.get_player_mut(owner).library_order.push(*card_id);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Memory's Journey: {} shuffled into library", name));
+                let (name, owner, in_gy) = match state.get_object(*card_id) {
+                    Some(o) => (o.name.clone(), o.owner, o.zone == Zone::Graveyard),
+                    None => continue,
+                };
+                if in_gy {
+                    state.move_object(*card_id, Zone::Library);
+                    state.get_player_mut(owner).library_order.push(*card_id);
+                    state.log(crate::state::LogLevel::Event,
+                        format!("Memory's Journey: {} shuffled into library", name));
+                }
             }
         }
 
-        // Shuffle the library of affected players.
-        if !targets.is_empty() {
+        // Shuffle the targeted player's library.
+        if let Some(player_id) = target_player {
             use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
-            for player in &mut state.players {
-                player.library_order.shuffle(&mut rng);
-            }
+            state.get_player_mut(player_id).library_order.shuffle(&mut rng);
+            state.log(crate::state::LogLevel::Event,
+                format!("Memory's Journey: p{}'s library shuffled", player_id.0));
         }
 
         state.move_spell_after_resolve(object_id);

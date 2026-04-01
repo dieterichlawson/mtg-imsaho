@@ -420,6 +420,8 @@ pub enum TriggerKind {
     BecomesBlocked,
     /// Whenever any creature attacks — watcher on other permanents (like AnyCreatureDies).
     AnyCreatureAttacks,
+    /// When this creature deals combat damage to a creature.
+    DealsCombatDamageToCreature,
     /// At the beginning of end of combat step.
     EndCombat,
     /// When this permanent leaves the battlefield.
@@ -459,6 +461,8 @@ pub enum TargetFilter {
     HasCardType(Vec<CardType>),
     /// Only permanents with specific subtypes or card types (Urgent Exorcism: Spirit or enchantment).
     SubtypeOrCardType { subtypes: Vec<String>, card_types: Vec<CardType> },
+    /// Only creatures with a specific subtype (Olivia Voldaren: target Vampire).
+    HasSubtype(String),
 }
 
 impl std::fmt::Display for TargetFilter {
@@ -484,6 +488,7 @@ impl std::fmt::Display for TargetFilter {
                 }).collect();
                 write!(f, "{}", names.join(" or "))
             }
+            TargetFilter::HasSubtype(subtype) => write!(f, "{}", subtype),
             TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
                 let mut parts: Vec<String> = subtypes.clone();
                 for t in card_types {
@@ -522,8 +527,18 @@ pub enum TargetRequirement {
     UpToTargets(usize, Box<TargetRequirement>),
     /// Target a card in any player's graveyard (Purify the Grave).
     GraveyardCard,
+    /// Target a creature card in any graveyard (Ghoulcaller's Chant mode 1).
+    GraveyardCreature,
+    /// Target a creature card with a specific subtype in any graveyard (Ghoulcaller's Chant mode 2).
+    GraveyardCreatureOfSubtype(String),
+    /// Target a card in the caster's own graveyard (Memory's Journey mode 1).
+    GraveyardCardOwnedByCaster,
+    /// Target a card in an opponent's graveyard (Memory's Journey mode 2).
+    GraveyardCardOwnedByOpponent,
     /// Target a card in exile (Runic Repetition).
     ExileCard,
+    /// Choose one of several targeting modes (Ghoulcaller's Chant). Engine generates actions for each mode independently.
+    ModalChoice(Vec<TargetRequirement>),
 }
 
 /// The trait that every card implements.
@@ -573,6 +588,10 @@ pub trait CardBehavior: Send + Sync {
     /// Used by Stromkirk Noble, Falkenrath Marauders, Sturmgeist, etc.
     fn on_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
 
+    /// Called when this creature deals combat damage to another creature.
+    /// Used by Creepy Doll.
+    fn on_deals_combat_damage_to_creature(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_creature: ObjectId, _amount: u32, _registry: &CardRegistry) {}
+
     /// Called when ANY creature deals combat damage to a player.
     /// `self_id` is this permanent (the watcher), `source_id` is the creature that dealt damage.
     /// Used by Rakish Heir (watches Vampires).
@@ -596,7 +615,7 @@ pub trait CardBehavior: Send + Sync {
     fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Loyalty abilities for planeswalkers.
-    fn loyalty_abilities(&self) -> Vec<LoyaltyAbilityDef> { vec![] }
+    fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
 
     /// Called when a loyalty ability is activated.
     fn on_loyalty_ability(&self, _state: &mut GameState, _self_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
@@ -640,6 +659,9 @@ pub trait CardBehavior: Send + Sync {
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
         vec![]
     }
+
+    /// Whether this permanent grants its controller hexproof (e.g., Witchbane Orb).
+    fn grants_player_hexproof(&self) -> bool { false }
 
     /// Called after a mana ability is activated. Used for mana abilities with side effects
     /// (e.g., Deranged Assistant mills a card when tapped for mana).

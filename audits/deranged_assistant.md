@@ -22,3 +22,37 @@
 
 ## Issues
 1. **ISSUE: Mill cost is not actually implemented.** The mana_abilities method checks that the library is not empty (which implies the mill cost exists), but the actual milling of the top card is not performed when the ability activates. There is no on_activate_mana_ability or similar hook that puts the top card into the graveyard. The description says "Mill a card, add {C}" but the code only checks the precondition, it doesn't move the card.
+
+## Audit — 2026-04-01 09:00
+
+**Scryfall Oracle text**: {T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)
+**Scryfall type line**: Creature -- Human Wizard
+**Status**: PASS
+
+Previous mill cost issue has been fixed. The implementation now has an `on_activate_mana_ability` hook that calls `crate::engine::mill_cards(state, controller, 1)` to mill a card as part of the mana ability activation.
+
+Verified correct:
+- Mana cost: {1}{U} -- matches
+- Types: Creature -- matches
+- Subtypes: Human, Wizard -- matches
+- P/T: 1/1 -- matches
+- Mana ability: requires tap, library not empty, produces 1 colorless -- correct
+- Mill cost: performed during `on_activate_mana_ability` -- correct
+- Summoning sickness check: yes (`!obj.summoning_sick`) -- correct
+- No anti-patterns detected
+- Tests found in `mtg-engine/tests/innistrad_simple_cards.rs`
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: {T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)
+**Type line**: Creature — Human Wizard
+**Status**: PASS
+
+Card data correct: name, mana cost ({1}{U}), type (Creature), subtypes (Human, Wizard), P/T (1/1).
+
+mana_abilities: correctly checks battlefield, untapped, not summoning sick, and library not empty. Produces 1 colorless mana with tap required.
+
+on_activate_mana_ability: mills one card via crate::engine::mill_cards as part of the mana ability cost.
+
+Tests in innistrad_simple_cards.rs cover card data and tapping for colorless mana. No anti-patterns found.

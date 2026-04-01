@@ -7,10 +7,24 @@ Thoroughly audit Magic: The Gathering card implementations for correctness, test
 
 When multiple cards are given, run the full procedure for EACH card and compile a summary at the end.
 
+## CRITICAL: Batching over agents
+
+If you need to split work across multiple agents (e.g., auditing many cards in parallel), you **MUST** include the **full text of this skill prompt** in each agent's instructions — not a summary or abbreviation. Every agent must receive the complete procedure, checklists, anti-patterns, and rules verbatim. Summarizing or abbreviating the prompt will result in shallow, incomplete audits.
+
 ## CRITICAL RULES
 - **DO NOT read any previous audit logs before conducting your audit.** Your audit must be independent. You will write your results to the log AFTER completing your audit.
-- **Scryfall is the ONLY authoritative source for Oracle text.** NEVER trust your training data for card text, types, subtypes, or costs. Cards are errata'd regularly. Always verify via the API.
-- **Do NOT use WebFetch for Scryfall** — it returns 403. Use `curl` via the Bash tool.
+- **NEVER USE YOUR TRAINING DATA AS A SOURCE FOR ORACLE TEXT, RULINGS, TYPES, SUBTYPES, COSTS, OR ANY OTHER CARD DATA.** Your memory of Magic cards is unreliable. Cards are errata'd regularly (e.g., "Hound" → "Dog", planeswalker damage redirect removal, "dies" templating changes, "mill" keyword addition). You MUST fetch the oracle text from an external source (Scryfall, Gatherer, etc.) for EVERY card you audit. There are ZERO exceptions to this rule.
+- **Do NOT compare code against what you think the card does.** Compare ONLY against text you fetched from an external source during this audit session. If you did not fetch it, you do not have it.
+- **Do NOT mark a card as ISSUE based on your memory of the oracle text.** If you couldn't fetch the oracle text from any source, say so explicitly and mark the card as SKIPPED — do NOT guess or fall back to memory.
+- **Every audit entry MUST cite its source** (e.g., "Source: Scryfall via WebSearch" or "Source: Gatherer via WebSearch"). If there is no source citation, the audit is invalid.
+
+### Why these rules exist
+Previous audits produced false positives because:
+1. **Hallucinated oracle text**: Auditors "remembered" old oracle text (e.g., pre-2018 planeswalker damage redirect wording) and flagged working code as wrong. The card had been errata'd but the auditor's training data was stale.
+2. **Fabricated mismatches**: Auditors claimed "Scryfall says X but code says Y" without actually quoting both — and X was hallucinated. When forced to produce exact quotes, these phantom issues evaporate.
+3. **Self-contradictions**: Auditors found an issue, then later in the same audit realized it was fine, but forgot to update the status from ISSUE to PASS.
+
+The write-it-down-verbatim rule, the side-by-side quoting rule, and the reconciliation step exist specifically to prevent these failure modes. Follow them exactly.
 
 ## Procedure (repeat for each card)
 
@@ -19,29 +33,62 @@ When multiple cards are given, run the full procedure for EACH card and compile 
 - Assume the card is real — do NOT question whether a card exists
 - Note which set(s) the card appears in
 
-### 2. Pull the correct Oracle text from Scryfall
-Use the Bash tool to curl the Scryfall API:
-```
-curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); print('Name:', d['name']); print('Cost:', d.get('mana_cost','')); print('Type:', d['type_line']); print('Oracle:', d.get('oracle_text','')); print('P/T:', d.get('power',''), '/', d.get('toughness',''))"
-```
+### 2. Obtain the CURRENT Oracle text — THIS IS MANDATORY
 
-**For DFCs (double-faced cards)**, also check card_faces:
-```
-curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'Face {i}: Name={f[\"name\"]}, Type={f.get(\"type_line\",\"\")}, Oracle={f.get(\"oracle_text\",\"\")}, P/T={f.get(\"power\",\"\")} / {f.get(\"toughness\",\"\")}') for i,f in enumerate(d.get('card_faces',[]))]"
-```
+You **MUST** obtain the current Oracle text from an authoritative source before proceeding. Do not skip this step. Do not rely on your training data. Oracle text changes over time due to errata, and auditing against stale text produces false positives.
 
-Record: name, mana cost, type line (including ALL creature subtypes), Oracle text, power/toughness.
+**Try these approaches in order until one works:**
 
-**IMPORTANT**: Creature types change over time ("Hound" → "Dog"). Always use the Scryfall result.
+**Approach 1: Local oracle cache (ALWAYS try this first)**
+```bash
+python3 scripts/oracle_lookup.py lookup "Card Name"
+```
+If the card is in the cache, this is your source of truth. The cache contains verified oracle text with source citations. **Write down the oracle text from the cache output** — this is your single source of truth for the rest of the audit.
 
-### 3. Pull rulings from Scryfall
+**Approach 2: If not cached, use the oracle-text skill to fetch and cache it**
+Run the `/oracle-text "Card Name"` skill, which will fetch from WebSearch, cache the result, and return the oracle text. If running inside a subagent without access to the skill, do the following manually:
+
+1. Use WebSearch: `{card name} scryfall oracle text` (restrict to scryfall.com)
+2. If that doesn't show full text: `{card name} MTG oracle text gatherer`
+3. If still not found: `{card name} MTG card text type line` (any source)
+
+**After fetching, immediately cache it:**
+```bash
+python3 scripts/oracle_lookup.py add-card "Card Name" \
+  --mana-cost "{1}{R}" \
+  --type-line "Enchantment — Aura Curse" \
+  --oracle-text "The exact oracle text here..." \
+  --source "Scryfall via WebSearch" \
+  --source-url "https://scryfall.com/card/set/number/card-name"
 ```
-curl -s "https://api.scryfall.com/cards/named?fuzzy=card+name" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); uri=d.get('rulings_uri',''); print(uri)"
+For creatures add `--power` and `--toughness`. For DFCs, also run `add-back-face`.
+
+**You are not done until you have the oracle text.** If after all attempts you truly cannot find it, state this explicitly in the audit log — do NOT fall back to your training data and pretend it's authoritative.
+
+**Write down the oracle text verbatim** (from cache output or from what you just fetched). Copy-paste it exactly — do not paraphrase, summarize, or reword. This written record is your single source of truth for the rest of the audit. All comparisons in later steps MUST reference this written-down text, not your memory. (Why: previous auditors unconsciously drifted from fetched text back to training-data memories mid-audit. Writing it down anchors you to the real text.)
+
+Record: name, mana cost, type line (including ALL creature subtypes), Oracle text (verbatim), power/toughness, and which source you got it from.
+
+### 3. Obtain rulings
+
+**Approach 1: Check local cache first**
+If you ran `python3 scripts/oracle_lookup.py lookup "Card Name"` in step 2 and rulings were shown, you already have them. Use those.
+
+**Approach 2: If no cached rulings, fetch via WebSearch**
+- Search: `{card name} scryfall rulings` (restrict to scryfall.com)
+- Search: `{card name} MTG rulings gatherer`
+- Check Gatherer rulings, MTGAssist rulings, or MTG Salvation forums
+
+**After fetching, cache EACH ruling with its source URL:**
+```bash
+python3 scripts/oracle_lookup.py add-ruling "Card Name" \
+  --date "2011-09-22" \
+  --text "The exact ruling text..." \
+  --source "Scryfall rulings via WebSearch" \
+  --source-url "https://scryfall.com/card/set/number/card-name"
 ```
-Then fetch the rulings URI:
-```
-curl -s "RULINGS_URI" -H "User-Agent: MTG/1.0" | python3 -c "import json,sys; d=json.load(sys.stdin); [print(f'{r[\"published_at\"]}: {r[\"comment\"]}') for r in d.get('data',[])]"
-```
+**Every cached ruling MUST have a `--source-url`.** This is mandatory — rulings without source links are unverifiable and useless.
+
 Pay special attention to rulings about timing, targeting, "you may" vs mandatory, "another" vs "a", and "each opponent" vs "target player".
 
 ### 4. Research community knowledge (for complex cards)
@@ -97,7 +144,12 @@ This is the most important step. Consider:
 ### 7. Check the code
 Read the card's implementation file. Verify:
 
-**Card data (compare EXACTLY against Scryfall):**
+**IMPORTANT: When claiming ANY mismatch between oracle text and code, you MUST quote both sides exactly:**
+- "Oracle text says: `{exact quote from your written-down oracle text}`"
+- "Code says: `{exact quote from the code}`"
+If you cannot produce both exact quotes, the mismatch is not verified and MUST NOT be flagged.
+
+**Card data (compare EXACTLY against your written-down oracle text from step 2):**
 - [ ] Mana cost matches (correct colors and generic amount)
 - [ ] Card types correct (Creature, Instant, Sorcery, Enchantment, Artifact, Land, Planeswalker)
 - [ ] Supertypes correct (Legendary, Basic) — Scryfall type_line is authoritative
@@ -155,24 +207,39 @@ For EXISTING tests:
 - [ ] Tests verify mechanism, not just outcome?
 - [ ] Any tests that enshrine wrong behavior?
 
-### 12. Write audit log
+### 12. Reconcile findings before writing
+
+Before writing anything, review every issue you flagged:
+- Re-read your written-down oracle text from step 2.
+- For each flagged issue, confirm the discrepancy still holds by quoting the oracle text AND the code side by side.
+- Drop any issue where the quotes actually match or where you cannot produce an exact quote from the oracle text supporting the issue.
+- Check for **outdated rules** — if your issue depends on a rule that may have changed (e.g., planeswalker damage redirect removed in 2018, "Hound" → "Dog" errata, "dies" templating), verify the current rule applies.
+- If you corrected yourself during the audit (e.g., "actually, this is fine"), make sure the correction is reflected in your final status. Do NOT leave a stale ISSUE status from before the correction.
+
+### 13. Write audit log
 **IMPORTANT**: After completing your audit, append your findings to the audit log file:
 
 For each card audited, append to `audits/{card_file_name}.md` (create if it doesn't exist):
 ```markdown
 ## Audit — {YYYY-MM-DD HH:MM}
 
-**Scryfall Oracle text**: {exact text from API}
-**Scryfall type line**: {exact type line from API}
-**Status**: PASS / ISSUE
+**Oracle text source**: {e.g., "Scryfall card page via WebSearch", "Gatherer via WebSearch", "Scryfall API via curl"}
+**Oracle text**: {exact text from external source}
+**Type line**: {exact type line from external source}
+**Status**: PASS / ISSUE / SKIPPED (if oracle text could not be obtained)
 
-{If ISSUE, describe each issue with file path and line number}
+{If ISSUE, for each issue provide:}
+{  - Description with file path and line number}
+{  - Oracle text says: `{exact quote from written-down oracle text}`}
+{  - Code does: `{exact quote or description of code behavior}`}
 {If PASS, write "No issues found."}
 ```
 
+**If you do not have an external source citation, do NOT write the audit entry. Mark as SKIPPED instead.**
+
 Use the current date/time. Append — never overwrite previous audit entries.
 
-### 13. Final report
+### 14. Final report
 Output a structured report:
 
 ```
