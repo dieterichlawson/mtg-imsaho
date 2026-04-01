@@ -35,3 +35,37 @@ Issues found:
 1. **Mode 2 filters for "Zombie creature cards" but oracle says "Zombie cards"**: The `TargetRequirement` for mode 2 uses `GraveyardCreatureOfSubtype("Zombie")`, which requires the target to be both a creature card and have the Zombie subtype. The current Scryfall oracle text says "two target Zombie cards" (not "Zombie creature cards"). While all Zombie cards in Innistrad are creatures, this is technically a stricter filter than the oracle requires. Low severity since Zombie is a creature subtype and non-creature Zombie cards are extremely rare.
 
 Tests present in `tests/ghoulcallers_chant.rs`, `tests/innistrad_simple_cards.rs`, and `tests/tier11_cards.rs`.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Choose one — Return target creature card from your graveyard to your hand; or return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Status**: ISSUE
+
+Mana cost {B}: correct. Type Sorcery: correct. No subtypes: correct. Uses `move_spell_after_resolve`: correct. Modal targeting via `TargetRequirement::ModalChoice`: correct structure. `on_resolve` moves each targeted card from graveyard to hand: correct.
+
+`is_valid_target` checks that the target is in the caster's graveyard (`o.owner == caster`): correct -- both modes return cards from "your graveyard".
+
+Issues found:
+1. **Mode 2 filters for "Zombie creature cards" but oracle says "Zombie cards"** (persists from prior audit): The `TargetRequirement` for mode 2 uses `GraveyardCreatureOfSubtype("Zombie")`, requiring the target to be both a creature card and have the Zombie subtype. Current Scryfall oracle says "two target Zombie cards" not "Zombie creature cards." While all Zombie-subtyped cards in Innistrad are creatures, this is technically a stricter filter than oracle requires. Low severity.
+
+Tests in `tests/tier11_cards.rs` cover: mode 1 returning a creature, mode 2 returning two zombies. No anti-patterns found.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Choose one — / • Return target creature card from your graveyard to your hand. / • Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Status**: ISSUE
+
+Mana cost {B}: correct. Type Sorcery: correct. Uses `move_spell_after_resolve`: correct.
+
+Modal targeting via `TargetRequirement::ModalChoice`: correct structure. Mode 1: `GraveyardCreature` (return target creature card): correct. Mode 2: `TwoTargets` of `GraveyardCreatureOfSubtype("Zombie")`: functionally correct.
+
+on_resolve: iterates targets, moves each from graveyard to hand, calls `move_spell_after_resolve`: correct.
+
+Issues found (persisting from prior audit):
+1. **Mode 2 uses "Zombie creature cards" filter but oracle says "Zombie cards"**: The `GraveyardCreatureOfSubtype("Zombie")` requirement checks for both creature type and Zombie subtype. Current Scryfall oracle says "two target Zombie cards" not "Zombie creature cards." While Zombie is a creature subtype (making non-creature Zombie cards extremely rare in practice), the filter is technically more restrictive than the oracle requires. Low severity.
+
+Tests in `tests/tier11_cards.rs`: returns creature from graveyard, returns two zombies. Good basic coverage. No anti-patterns found.

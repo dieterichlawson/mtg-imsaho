@@ -60,6 +60,24 @@ Tests present in `tests/werewolf_cards.rs`. No anti-patterns found.
 
 ## Audit — 2026-04-01 10:00
 
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text (front)**: Other Human creatures you control get +1/+1. At the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.
+**Oracle text (back)**: Each other creature you control that's a Werewolf or a Wolf gets +1/+1. At the beginning of your end step, create a 2/2 green Wolf creature token. At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.
+**Type line (front)**: Creature — Human Advisor Werewolf
+**Type line (back)**: Creature — Werewolf
+**Status**: ISSUE
+
+Front face: Mana cost {1}{G}: correct. Subtypes Human/Advisor/Werewolf: correct. P/T 1/1: correct. ModifyPT +1/+1 with scope GlobalOther(You AND Human): correct ("Other Human creatures you control get +1/+1"). Upkeep triggered ability declared: correct. Transform logic (no spells last turn, not first turn): correct.
+
+Back face: P/T 3/3 via `dynamic_pt`: correct. Subtypes ["Werewolf"]: correct. ModifyPT +1/+1 with scope GlobalOther(You AND (Werewolf OR Wolf)): correct ("Each other creature you control that's a Werewolf or a Wolf gets +1/+1"). EndStep Wolf token creation: 2/2 green Wolf creature token with "Wolf" subtype, only during controller's end step when transformed: correct. Wolf token colors [Green] and card_types [Creature]: correct.
+
+Issues found:
+1. **Back face `triggered_abilities` missing Upkeep entry** (persists from prior audits): The back face `triggered_abilities` includes `TriggerKind::EndStep` for Wolf token creation but omits `TriggerKind::Upkeep` for the transform-back trigger. The `on_upkeep` handler correctly handles both transform directions, but the metadata in `back_face_data()` is incomplete. If the engine relies on `triggered_abilities` to decide whether to invoke `on_upkeep` for a specific card, the back face's transform-back trigger would not fire.
+
+Tests in `tests/werewolf_cards.rs` cover: front face Human buff, transform and Werewolf/Wolf buff, Wolf token creation on end step, no token on front face. No anti-patterns found.
+
+## Audit — 2026-04-01 10:00
+
 **Oracle text source**: Scryfall card page via WebSearch, tappedout.net, Scryfall search results
 **Oracle text (front)**: Other Human creatures you control get +1/+1. / At the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.
 **Oracle text (back)**: Each other creature you control that's a Werewolf or a Wolf gets +1/+1. / At the beginning of your end step, create a 2/2 green Wolf creature token. / At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.

@@ -66,6 +66,24 @@ Tests present in `tests/olivia_voldaren.rs` and `tests/tier14_cards.rs`. No grav
 ## Audit — 2026-04-01 10:00
 
 **Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Flying. {1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren. {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
+**Type line**: Legendary Creature — Vampire
+**Status**: ISSUE
+
+Mana cost {2}{B}{R}: correct. Supertype Legendary: correct. Subtype Vampire: correct. P/T 3/3: correct. Flying keyword: correct.
+
+Ability 0 ({1}{R}): Cost correct. `requires_tap: false`: correct (not a tap ability). Deals 1 damage, adds Vampire subtype, adds +1/+1 counter on Olivia: all correct. Emits `NonCombatDamageDealt` event: correct. Tracks `damaged_by`: correct. "Another" self-targeting check (`*target_id == object_id` returns early): correct.
+
+Ability 1 ({3}{B}{B}): Cost correct. `requires_tap: false`: correct. Target filter `HasSubtype("Vampire")`: correct. Steals Vampire, tracks original controller in card_state, returns on Olivia leaving battlefield via `on_leave_battlefield`: correct ("for as long as you control Olivia Voldaren"). `LeavesBattlefield` triggered ability declared: correct.
+
+Issues found:
+1. **Ability 0 target filter is `TargetFilter::Any` instead of excluding self** (persists from prior audit): The `ActivatedAbilityDef` for ability 0 uses `TargetFilter::Any`, which means the UI/targeting system would present Olivia herself as a valid target. The "another" restriction is only enforced in `on_activate_ability` (line 100). The filter should ideally use a filter that excludes self at the definition level for correct target presentation. Functionally the ability works correctly since the self-target is rejected at resolution, but it's a UI/targeting correctness issue.
+
+Tests in `tests/olivia_voldaren.rs` cover: ability 0 damage+vampire+counter, ability 0 can't target self, ability 1 steals vampire, ability 1 rejects non-vampire, stolen creatures return when Olivia leaves, ability 1 target filter requires vampire. No graveyard or damage anti-patterns.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
 **Oracle text**: Flying / {1}{R}: Olivia Voldaren deals 1 damage to another target creature. That creature becomes a Vampire in addition to its other types. Put a +1/+1 counter on Olivia Voldaren. / {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia Voldaren.
 **Type line**: Legendary Creature — Vampire
 **Status**: ISSUE

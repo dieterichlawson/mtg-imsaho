@@ -38,6 +38,19 @@ Creatures are moved to battlefield and controller is set: correct. Tests present
 ## Audit — 2026-04-01 10:00
 
 **Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Trample. When Moldgraf Monstrosity dies, exile it, then return two creature cards at random from your graveyard to the battlefield.
+**Type line**: Creature — Insect
+**Status**: PASS
+
+Mana cost {4}{G}{G}{G}: correct (Generic(4) + 3x Green). Type Creature, subtype Insect: correct. P/T 8/8: correct. Keyword Trample: correct. Triggered ability `SelfDies` declared: correct.
+
+`on_dies` behavior: (1) Gets controller from owner field. (2) Exiles self via `move_object(object_id, Zone::Exile)`: correct. (3) Finds creature cards in controller's graveyard, excluding self (already exiled): correct. (4) Shuffles candidates using `rand::thread_rng()` and `SliceRandom::shuffle`, takes up to 2: correct random selection matching "at random" oracle text. (5) Moves selected creatures to battlefield and sets controller: correct. Per Scryfall ruling, if Moldgraf Monstrosity can't be exiled (not in graveyard), the two creatures are still returned -- the code does `move_object` unconditionally which handles this. Per ruling, the ability has no targets (selects at random on resolution): correct, the `on_dies` handler doesn't use targets.
+
+Tests in `tests/tier15_cards.rs` cover: basic death trigger with two graveyard creatures returned. No anti-patterns found (uses `move_object` to Exile for self, which is correct since this is a triggered ability moving the card, not a spell resolving).
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
 **Oracle text**: Trample / When Moldgraf Monstrosity dies, exile it, then return two creature cards at random from your graveyard to the battlefield.
 **Type line**: Creature — Insect
 **Status**: PASS

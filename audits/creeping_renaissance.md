@@ -46,3 +46,22 @@ Findings:
 - No triggered_abilities declared, none needed: correct.
 - Tests found in tier15_cards.rs.
 - Previous issue (hardcoded creature type) confirmed still fixed.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/174/creeping-renaissance)
+**Oracle text**: Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand. Flashback {5}{G}{G}
+**Type line**: Sorcery
+**Status**: PASS
+
+Findings:
+- Mana cost {3}{G}{G}: correct.
+- Type Sorcery: correct.
+- P/T N/A: correct.
+- Flashback cost {5}{G}{G}: correct.
+- on_resolve presents ChooseCardType choice with all 5 permanent types (Creature, Artifact, Enchantment, Land, Planeswalker): correct per oracle.
+- Resolution handler in engine.rs (line 1608-1641) processes the choice correctly: maps type string to CardType, filters graveyard cards matching chosen type, moves them to hand, calls move_spell_after_resolve: correct.
+- Anti-pattern check: move_spell_after_resolve called in engine handler (line 1640): correct.
+- No CombatDamageDealt misuse.
+- No triggered_abilities declared, none needed: correct.
+- Tests: 3 tests in tier15_cards.rs (creeping_renaissance_returns_creatures_from_graveyard, creeping_renaissance_only_returns_chosen_type, creeping_renaissance_flashback_exiles). Good coverage including flashback exile behavior.

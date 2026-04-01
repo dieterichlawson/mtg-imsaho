@@ -39,3 +39,22 @@ Findings:
 - Anti-pattern check: No `move_object(id, Zone::Graveyard)` for spells (this is an enchantment, stays on battlefield). No issues.
 - Oracle discrepancy (carried forward): implementation cannot redirect damage to a planeswalker the enchanted player controls. Minor accepted simplification.
 - Tests found in tier15_cards.rs and tier7_cards.rs.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/138/curse-of-the-pierced-heart)
+**Oracle text**: Enchant player. At the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.
+**Type line**: Enchantment — Aura Curse
+**Status**: ISSUE
+
+Findings:
+- Mana cost {1}{R}: correct.
+- Types Enchantment, subtypes Aura/Curse: correct.
+- P/T N/A: correct.
+- TargetRequirement::PlayerOnly for enchant player: correct.
+- Triggered ability declared in triggered_abilities vec (TriggerKind::Upkeep): correct.
+- on_upkeep checks active_player == cursed_player: correct (only fires on enchanted player's upkeep).
+- Damage dealt via direct life subtraction + NonCombatDamageDealt event: correct (not CombatDamageDealt).
+- Anti-pattern check: No move_object to graveyard for spells (this is an enchantment staying on battlefield). No issues.
+- ISSUE: Oracle text says "deals 1 damage to that player **or a planeswalker that player controls**." The implementation (line 62-64) always deals damage to the player only, with no option to redirect to a planeswalker. The code's oracle_text field (line 26) also omits the "or a planeswalker that player controls" clause, not matching current Scryfall oracle text.
+- Tests found in tier7_cards.rs (1 test: curse_of_pierced_heart_deals_damage_on_upkeep). Test coverage is minimal -- only tests damage to player on upkeep, no test for non-enchanted-player upkeep (no trigger).

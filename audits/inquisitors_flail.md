@@ -42,3 +42,24 @@ Findings:
 - No CombatDamageDealt misuse (the card modifies damage, does not deal it).
 - No triggered_abilities declared, none needed: correct.
 - Tests found in tier9_cards.rs and inquisitors_flail.rs.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/227/inquisitors-flail)
+**Oracle text**: If equipped creature would deal combat damage, it deals double that damage instead. If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead. Equip {2}
+**Type line**: Artifact — Equipment
+**Status**: ISSUE
+
+Findings:
+- Mana cost {2}: correct.
+- Types Artifact, subtypes Equipment: correct.
+- P/T N/A: correct.
+- Equip {2} activated ability, sorcery_speed_only: true, targets creature controller owns: correct.
+- on_resolve moves to battlefield and sets is_equipment = true: correct for equipment.
+- on_activate_ability sets attached_to: correct.
+- ISSUE 1: The code's oracle_text field (line 26) says "another source" but Scryfall oracle text says "another creature". The oracle_text string is incorrect.
+- ISSUE 2 (carried forward): Defensive doubling (incoming combat damage to equipped creature is doubled) relies on the continuous_effects DoubleCombatDamage implementation. The continuous_effects vec has a single DoubleCombatDamage entry with EffectScope::Attached. Whether the engine correctly doubles BOTH outgoing and incoming damage depends on the DoubleCombatDamage implementation, which is outside this card's file. Tests confirm both directions work (doubles_damage_to_player, doubles_damage_to_creature, doubles_damage_taken_from_blocker).
+- Anti-pattern check: on_resolve uses move_object to battlefield (correct for artifact permanent). No spell-to-graveyard anti-pattern.
+- No CombatDamageDealt misuse.
+- No triggered_abilities declared, none needed: correct.
+- Tests: 4 tests in inquisitors_flail.rs (doubles_damage_to_player, doubles_damage_to_creature, doubles_damage_taken_from_blocker, no_doubling_without_flail) plus tests in tier9_cards.rs. Good coverage of both offensive and defensive doubling.

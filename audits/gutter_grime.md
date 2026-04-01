@@ -40,6 +40,15 @@ Mana cost {4}{G}: correct. Type Enchantment: correct. No subtypes: correct. Trig
 **Type line**: Enchantment
 **Status**: PASS
 
+Mana cost {4}{G}: correct (Generic(4) + Green). Type Enchantment: correct. No supertypes or subtypes: correct. No P/T: correct. Oracle text in code says "This creature's power and toughness" while Scryfall says "This token's power and toughness" -- minor text discrepancy, but functionally identical since the token IS a creature. Trigger condition: `AnyCreatureDies` trigger kind, filters for nontoken (`is_token` check) and controller-owned (`dead_controller`): correct. Adds slime counter via `CounterType::Slime`: correct. Creates green Ooze creature token with base 0/0 and dynamic P/T linked to source Gutter Grime via `card_state["pt_source_counter"]`: correct per rulings (tokens dynamically track counter count). Token has subtypes `["Ooze"]` and colors `[Green]`: correct. `triggered_abilities` declaration matches the `on_any_creature_dies` hook: correct. Tests in `tests/gutter_grime.rs` cover: basic trigger, multiple deaths growing all tokens, token death ignored, opponent death ignored, Gutter Grime removal makes tokens 0/0. No anti-patterns found.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch
+**Oracle text**: Whenever a nontoken creature you control dies, put a slime counter on Gutter Grime, then create a green Ooze creature token with "This creature's power and toughness are each equal to the number of slime counters on Gutter Grime."
+**Type line**: Enchantment
+**Status**: PASS
+
 Mana cost {4}{G}: correct. Type Enchantment: correct. No supertypes or subtypes: correct.
 
 Triggered ability: triggers on `AnyCreatureDies`, checks that dead creature was nontoken (`is_token` check) and controlled by the enchantment's controller: correct. Adds slime counter via `CounterType::Slime`: correct. Creates a green Ooze creature token with base 0/0 and dynamic P/T linked to slime counter count on source Gutter Grime via `card_state["pt_source_counter"]`: correct per rulings that tokens update dynamically. Token has correct subtypes `["Ooze"]` and color green: correct.

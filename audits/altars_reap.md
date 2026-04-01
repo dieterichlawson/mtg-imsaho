@@ -36,3 +36,21 @@ Findings:
 - No triggered_abilities declared, none needed: correct.
 - Tests found in tier8_cards.rs.
 - Carried forward: sacrifice timing simplification (acknowledged in code comments).
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/86/altars-reap)
+**Oracle text**: As an additional cost to cast this spell, sacrifice a creature. Draw two cards.
+**Type line**: Instant
+**Status**: PASS
+
+Findings:
+- Mana cost {1}{B}: correct.
+- Type Instant: correct.
+- P/T N/A: correct.
+- additional_cost: SacrificeCreature: correct.
+- on_resolve draws 2 cards via crate::engine::draw_cards(state, controller, 2): correct.
+- Uses move_spell_after_resolve(object_id) (line 42): correct, no anti-pattern.
+- No CombatDamageDealt misuse (card deals no damage).
+- No triggered_abilities declared, none needed: correct.
+- Tests: 1 test in tier8_cards.rs (altars_reap_sacrifices_and_draws_two). Minimal coverage but tests core functionality (sacrifice + draw 2).

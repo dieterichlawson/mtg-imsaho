@@ -77,3 +77,28 @@ Findings:
 - No CombatDamageDealt misuse for non-combat damage: correct (uses NonCombatDamageDealt).
 - triggered_abilities vec is empty despite having a state-triggered transform ability. This is technically a missing declaration, though the transform check is handled inline in on_loyalty_ability.
 - Tests found in tier15_cards.rs.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed) and Gatherer (https://gatherer.wizards.com/ISD/en-us/181/garruk-the-veil-cursed)
+**Oracle text (front)**: When Garruk Relentless has two or fewer loyalty counters on him, transform Garruk Relentless. 0: Garruk Relentless deals 3 damage to target creature. That creature deals damage equal to its power to him. 0: Create a 2/2 green Wolf creature token.
+**Oracle text (back)**: +1: Create a 1/1 black Wolf creature token with deathtouch. -1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle. -3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+**Type line**: Legendary Planeswalker — Garruk // Legendary Planeswalker — Garruk
+**Status**: ISSUE
+
+Findings:
+- Mana cost {3}{G}: correct.
+- Types: Legendary Planeswalker, subtypes Garruk: correct.
+- Starting loyalty 3: correct.
+- Front face ability 0 (fight): Deals 3 damage to target creature (NonCombatDamageDealt emitted, damaged_by tracked): correct. Creature deals power damage back removing loyalty counters: correct.
+- Front face ability 0 (wolf): Creates 2/2 green Wolf token with subtypes ["Wolf"]: correct.
+- Back face ability +1: Creates 1/1 black Wolf with deathtouch, subtypes ["Wolf"]: correct.
+- Back face ability -1: Sacrifices creature, searches library for creature card, moves to hand: correct.
+- Back face ability -3: Creatures get +X/+X and trample where X = creature cards in graveyard: correct.
+- on_resolve moves to battlefield and adds 3 loyalty counters: correct.
+- ISSUE 1 (carried forward): Transform condition ("When Garruk has two or fewer loyalty counters") is a state-triggered ability but is only checked after on_loyalty_ability. If Garruk loses loyalty from combat damage or other sources (e.g., being attacked), the transform will not trigger. The triggered_abilities vec is empty.
+- ISSUE 2 (carried forward): When target creature deals damage back to Garruk (front face ability 0, lines 118-123), no NonCombatDamageDealt event is emitted for the creature-to-planeswalker damage direction. Only loyalty counters are decremented directly.
+- ISSUE 3: Front face ability 0 (fight) auto-selects the strongest opponent creature (line 99-103) rather than letting the controller choose a target. The oracle says "target creature" which should allow any creature, not just opponent's strongest.
+- Anti-pattern check: on_resolve uses move_object to battlefield (correct for planeswalker). No spell-to-graveyard anti-pattern.
+- Uses NonCombatDamageDealt for Garruk's 3 damage: correct.
+- Tests: 6 tests in tier15_cards.rs covering wolf creation, transform at 2 loyalty, back face deathtouch wolf, sacrifice-to-tutor, overrun, and ability list. Reasonable coverage.

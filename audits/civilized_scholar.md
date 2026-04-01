@@ -51,3 +51,29 @@ Findings:
 - No CombatDamageDealt misuse.
 - No missing token subtypes (no tokens created).
 - Tests found in tier15_cards.rs.
+
+## Audit — 2026-04-01 10:00
+
+**Oracle text source**: Scryfall card page via WebSearch (https://scryfall.com/card/isd/47/civilized-scholar-homicidal-brute)
+**Oracle text (front)**: {T}: Draw a card, then discard a card. If a creature card is discarded this way, untap Civilized Scholar, then transform it.
+**Oracle text (back)**: At the beginning of your end step, if Homicidal Brute didn't attack this turn, tap Homicidal Brute, then transform it.
+**Type line**: Creature — Human Advisor // Creature — Human Mutant
+**Status**: ISSUE
+
+Findings:
+- Mana cost {2}{U}: correct.
+- Front face: Creature, subtypes Human/Advisor, P/T 0/1: correct.
+- Back face (via back_face_data): Creature, subtypes Human/Mutant, P/T 5/1: correct.
+- Activated ability: {T}, no mana cost, draw then discard, if creature discarded untap + transform: correct.
+- dynamic_pt returns (5,1) when transformed: correct.
+- End step: checks is_transformed, active_player == controller, and attacked_this_turn flag: correct.
+- Taps before transforming back (line 159: obj.tapped = true): correct per oracle.
+- on_attacks sets "attacked_this_turn" card_state flag: correct.
+- End step clears "attacked_this_turn" flag after check: correct.
+- triggered_abilities vec declares TriggerKind::Attacks and TriggerKind::EndStep: correct.
+- ISSUE 1: The discard is automatic -- the code always prefers discarding a creature card (lines 111-114) rather than giving the player a choice of which card to discard. Oracle says "draw a card, then discard a card" which implies the controller chooses which card to discard. This matters because the player might want to discard a non-creature card to avoid transforming.
+- ISSUE 2: The code checks if a card is a creature by `o.power.is_some()` (line 105). This heuristic could be wrong for cards that have power/toughness defined but are not creatures in their current zone, or for creature cards that might not have power set on the object. However, this is a reasonable simplification.
+- Anti-pattern check: Uses move_object(discard_id, Zone::Graveyard) for the discard (line 117), which is correct for discarding a card (not a spell resolution). No spell-to-graveyard anti-pattern.
+- No CombatDamageDealt misuse.
+- No missing token subtypes (no tokens created).
+- Tests: 1 test in tier15_cards.rs (civilized_scholar_draw_discard_creature_transforms). Minimal coverage -- only tests the transform case. No test for: discarding non-creature (should not transform), Homicidal Brute transforming back on end step, Homicidal Brute NOT transforming back if it attacked.
