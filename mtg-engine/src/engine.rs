@@ -796,7 +796,9 @@ fn generate_cast_actions_with_targets(
             // Generate all combinations of 1..=max targets for LLM/random expanded list.
             let options = valid_targets_for_req(state, caster, spell_id, inner_req, behavior, registry);
             let mut actions = Vec::new();
-            for k in 1..=(*max).min(options.len()) {
+            // Start from 0 to allow "up to N" to mean "0 or more" (e.g., Memory's Journey
+            // can be cast targeting just a player with 0 cards).
+            for k in 0..=(*max).min(options.len()) {
                 fn target_combinations(targets: &[crate::actions::Target], k: usize) -> Vec<Vec<crate::actions::Target>> {
                     if k == 0 { return vec![vec![]]; }
                     if targets.len() < k { return vec![]; }

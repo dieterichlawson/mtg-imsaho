@@ -43,14 +43,16 @@ impl CardBehavior for MemorysJourney {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+
         // Determine which player's graveyard the cards come from.
-        let target_player = targets.first().and_then(|t| {
+        let target_player = targets.iter().find_map(|t| {
             if let Target::Object(id) = t {
                 state.get_object(*id).map(|o| o.owner)
             } else {
                 None
             }
-        });
+        }).unwrap_or(controller); // If no card targets, default to self
 
         for target in targets {
             if let Target::Object(card_id) = target {
@@ -67,13 +69,13 @@ impl CardBehavior for MemorysJourney {
             }
         }
 
-        // Shuffle the targeted player's library.
-        if let Some(player_id) = target_player {
+        // Shuffle the targeted player's library (even if no cards were shuffled in).
+        {
             use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
-            state.get_player_mut(player_id).library_order.shuffle(&mut rng);
+            state.get_player_mut(target_player).library_order.shuffle(&mut rng);
             state.log(crate::state::LogLevel::Event,
-                format!("Memory's Journey: p{}'s library shuffled", player_id.0));
+                format!("Memory's Journey: p{}'s library shuffled", target_player.0));
         }
 
         state.move_spell_after_resolve(object_id);
