@@ -28,23 +28,15 @@ impl CardBehavior for CreepyDoll {
             additional_cost: None,
             triggered_abilities: vec![
                 TriggeredAbilityDef {
-                    kind: TriggerKind::Blocks,
-                    description: "flip a coin; if you win, destroy that creature".into(),
-                },
-                TriggeredAbilityDef {
-                    kind: TriggerKind::BecomesBlocked,
+                    kind: TriggerKind::CombatDamageToCreature,
                     description: "flip a coin; if you win, destroy that creature".into(),
                 },
             ],
         }
     }
 
-    fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, blocked_attacker: ObjectId, registry: &CardRegistry) {
-        coin_flip_destroy(state, self_id, blocked_attacker, registry);
-    }
-
-    fn on_becomes_blocked(&self, state: &mut GameState, self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) {
-        coin_flip_destroy(state, self_id, blocker_id, registry);
+    fn on_combat_damage_to_creature(&self, state: &mut GameState, self_id: ObjectId, damaged_creature: ObjectId, _amount: u32, registry: &CardRegistry) {
+        coin_flip_destroy(state, self_id, damaged_creature, registry);
     }
 }
 
