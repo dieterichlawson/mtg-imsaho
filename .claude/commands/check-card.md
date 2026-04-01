@@ -18,6 +18,14 @@ If you need to split work across multiple agents (e.g., auditing many cards in p
 - **Do NOT mark a card as ISSUE based on your memory of the oracle text.** If you couldn't fetch the oracle text from any source, say so explicitly and mark the card as SKIPPED — do NOT guess or fall back to memory.
 - **Every audit entry MUST cite its source** (e.g., "Source: Scryfall via WebSearch" or "Source: Gatherer via WebSearch"). If there is no source citation, the audit is invalid.
 
+### Why these rules exist
+Previous audits produced false positives because:
+1. **Hallucinated oracle text**: Auditors "remembered" old oracle text (e.g., pre-2018 planeswalker damage redirect wording) and flagged working code as wrong. The card had been errata'd but the auditor's training data was stale.
+2. **Fabricated mismatches**: Auditors claimed "Scryfall says X but code says Y" without actually quoting both — and X was hallucinated. When forced to produce exact quotes, these phantom issues evaporate.
+3. **Self-contradictions**: Auditors found an issue, then later in the same audit realized it was fine, but forgot to update the status from ISSUE to PASS.
+
+The write-it-down-verbatim rule, the side-by-side quoting rule, and the reconciliation step exist specifically to prevent these failure modes. Follow them exactly.
+
 ## Procedure (repeat for each card)
 
 ### 1. Identify the card
@@ -53,7 +61,9 @@ The Scryfall card page in search results usually shows the full oracle text in t
 
 **You are not done until you have the oracle text.** If after all attempts you truly cannot find it, state this explicitly in the audit log — do NOT fall back to your training data and pretend it's authoritative.
 
-Record: name, mana cost, type line (including ALL creature subtypes), Oracle text, power/toughness, and which source you got it from.
+**Immediately after fetching, write down the oracle text verbatim.** Copy-paste it exactly — do not paraphrase, summarize, or reword. This written record is your single source of truth for the rest of the audit. All comparisons in later steps MUST reference this written-down text, not your memory. (Why: previous auditors unconsciously drifted from fetched text back to training-data memories mid-audit. Writing it down anchors you to the real text.)
+
+Record: name, mana cost, type line (including ALL creature subtypes), Oracle text (verbatim), power/toughness, and which source you got it from.
 
 ### 3. Obtain rulings
 
@@ -126,7 +136,12 @@ This is the most important step. Consider:
 ### 7. Check the code
 Read the card's implementation file. Verify:
 
-**Card data (compare EXACTLY against Scryfall):**
+**IMPORTANT: When claiming ANY mismatch between oracle text and code, you MUST quote both sides exactly:**
+- "Oracle text says: `{exact quote from your written-down oracle text}`"
+- "Code says: `{exact quote from the code}`"
+If you cannot produce both exact quotes, the mismatch is not verified and MUST NOT be flagged.
+
+**Card data (compare EXACTLY against your written-down oracle text from step 2):**
 - [ ] Mana cost matches (correct colors and generic amount)
 - [ ] Card types correct (Creature, Instant, Sorcery, Enchantment, Artifact, Land, Planeswalker)
 - [ ] Supertypes correct (Legendary, Basic) — Scryfall type_line is authoritative
@@ -184,7 +199,16 @@ For EXISTING tests:
 - [ ] Tests verify mechanism, not just outcome?
 - [ ] Any tests that enshrine wrong behavior?
 
-### 12. Write audit log
+### 12. Reconcile findings before writing
+
+Before writing anything, review every issue you flagged:
+- Re-read your written-down oracle text from step 2.
+- For each flagged issue, confirm the discrepancy still holds by quoting the oracle text AND the code side by side.
+- Drop any issue where the quotes actually match or where you cannot produce an exact quote from the oracle text supporting the issue.
+- Check for **outdated rules** — if your issue depends on a rule that may have changed (e.g., planeswalker damage redirect removed in 2018, "Hound" → "Dog" errata, "dies" templating), verify the current rule applies.
+- If you corrected yourself during the audit (e.g., "actually, this is fine"), make sure the correction is reflected in your final status. Do NOT leave a stale ISSUE status from before the correction.
+
+### 13. Write audit log
 **IMPORTANT**: After completing your audit, append your findings to the audit log file:
 
 For each card audited, append to `audits/{card_file_name}.md` (create if it doesn't exist):
@@ -196,7 +220,10 @@ For each card audited, append to `audits/{card_file_name}.md` (create if it does
 **Type line**: {exact type line from external source}
 **Status**: PASS / ISSUE / SKIPPED (if oracle text could not be obtained)
 
-{If ISSUE, describe each issue with file path and line number}
+{If ISSUE, for each issue provide:}
+{  - Description with file path and line number}
+{  - Oracle text says: `{exact quote from written-down oracle text}`}
+{  - Code does: `{exact quote or description of code behavior}`}
 {If PASS, write "No issues found."}
 ```
 
@@ -204,7 +231,7 @@ For each card audited, append to `audits/{card_file_name}.md` (create if it does
 
 Use the current date/time. Append — never overwrite previous audit entries.
 
-### 13. Final report
+### 14. Final report
 Output a structured report:
 
 ```
