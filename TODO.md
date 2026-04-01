@@ -67,7 +67,7 @@ The engine cannot target cards in graveyards or exile. These cards all need it:
 - [x] **Inquisitor's Flail** — combat damage doubling is approximated via power boost. Needs actual damage multiplication in combat damage step. Also missing defensive doubling entirely. (Fixed: removed dynamic_pt power hack, added DoubleCombatDamage continuous effect, damage now properly doubled in deal_damage_to_creature and deal_damage_to_player for both offensive and defensive cases.)
 
 ### Modal Spells
-- [ ] **Creeping Renaissance** — "Choose a permanent type." Needs a mode/type selection UI so the player picks creature/artifact/enchantment/land/planeswalker.
+- [x] **Creeping Renaissance** — "Choose a permanent type." Implemented ChooseCardType resolution choice system with 5 permanent type options. Player selects type, all matching cards return from graveyard to hand.
 
 ### Garruk Back Face
 - [ ] **Garruk Relentless** — back face (Garruk, the Veil-Cursed) abilities entirely unimplemented. Needs: loyalty ability implementations for the back face (-1 create Wolf with deathtouch, -1 sacrifice creature to tutor, -3 creatures get +X/+X trample).

@@ -204,6 +204,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             .map(|&id| Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(id) })
                             .collect()
                     }
+                    ResolutionChoiceKind::ChooseCardType { options, .. } => {
+                        (0..options.len())
+                            .map(|i| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i) })
+                            .collect()
+                    }
                 };
                 LegalActions { actions, combat_prompt: None, castable_spells: vec![] }
             }
@@ -1598,6 +1603,40 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             }
                         }
                         new_state.log(LogLevel::Event, format!("Kept {}", keep_name));
+                        new_state.move_spell_after_resolve(*spell_id);
+                    }
+                    (ResolutionChoiceKind::ChooseCardType { options, spell_id, controller, .. },
+                     ResolvedChoice::ChosenIndex(index)) => {
+                        let chosen_type = options.get(*index).cloned().unwrap_or_default();
+                        let card_type = match chosen_type.as_str() {
+                            "Creature" => CardType::Creature,
+                            "Artifact" => CardType::Artifact,
+                            "Enchantment" => CardType::Enchantment,
+                            "Land" => CardType::Land,
+                            "Planeswalker" => CardType::Planeswalker,
+                            _ => CardType::Creature,
+                        };
+                        let to_return: Vec<ObjectId> = new_state.objects_in_zone(Zone::Graveyard, *controller)
+                            .iter()
+                            .filter(|o| {
+                                // Check object's own card_types first, fall back to registry
+                                if !o.card_types.is_empty() {
+                                    o.card_types.contains(&card_type)
+                                } else {
+                                    registry.card_data(o.card_id)
+                                        .map(|d| d.card_types.contains(&card_type))
+                                        .unwrap_or(false)
+                                }
+                            })
+                            .map(|o| o.id)
+                            .collect();
+                        let count = to_return.len();
+                        for id in to_return {
+                            new_state.move_object(id, Zone::Hand);
+                        }
+                        new_state.log(LogLevel::Event,
+                            format!("Creeping Renaissance: chose {}. Returned {} cards from graveyard to hand",
+                                chosen_type, count));
                         new_state.move_spell_after_resolve(*spell_id);
                     }
                     _ => {}

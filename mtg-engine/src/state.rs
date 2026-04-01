@@ -1253,6 +1253,13 @@ pub enum ResolutionChoiceKind {
         revealed: Vec<ObjectId>,
         spell_id: ObjectId,
     },
+    /// Choose a permanent type from a list of options (Creeping Renaissance).
+    ChooseCardType {
+        description: String,
+        options: Vec<String>,
+        spell_id: ObjectId,
+        controller: PlayerId,
+    },
 }
 
 /// What happens to the chosen target when a ResolutionChoice is resolved.

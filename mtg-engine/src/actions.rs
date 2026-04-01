@@ -59,6 +59,8 @@ pub enum ResolvedChoice {
     ChosenTarget(Option<Target>),
     /// Choose a card from a revealed set.
     ChosenCard(ObjectId),
+    /// Choose an option by index from a numbered list.
+    ChosenIndex(usize),
 }
 
 /// Prompt returned by legal_actions for combat.

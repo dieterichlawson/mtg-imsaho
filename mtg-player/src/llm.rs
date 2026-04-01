@@ -482,6 +482,7 @@ impl LlmPlayer {
                     }
                     ResolvedChoice::ChosenTarget(None) => "Decline".into(),
                     ResolvedChoice::ChosenCard(id) => Self::obj_name(view, *id),
+                    ResolvedChoice::ChosenIndex(i) => format!("Option {}", i),
                 }
             }
             other => format!("{}", other),

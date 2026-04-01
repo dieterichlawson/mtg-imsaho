@@ -313,23 +313,140 @@ fn undead_alchemist_mills_instead_of_damage() {
 
 #[test]
 fn creeping_renaissance_returns_creatures_from_graveyard() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put creature cards in graveyard.
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 2, 2);
+        state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
         state.move_object(c, Zone::Graveyard);
     }
 
     let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
-    let new_state = cast_and_resolve(&state, &reg, spell, vec![]);
+    // Cast the spell and put it on the stack.
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None },
+        &reg,
+    );
+    // Resolve: this triggers a ChooseCardType choice.
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+    assert!(state.awaiting_action.is_some(), "Should be awaiting card type choice");
+
+    // Choose "Creature" (index 0).
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0) },
+        &reg,
+    );
 
     // All 3 creatures should be in hand now.
-    let hand_creatures = new_state.objects.values()
+    let hand_creatures = state.objects.values()
         .filter(|o| o.zone == Zone::Hand && o.owner == P0 && o.power.is_some())
         .count();
     assert_eq!(hand_creatures, 3, "Should return all creature cards from graveyard to hand");
+}
+
+#[test]
+fn creeping_renaissance_only_returns_chosen_type() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put creatures and enchantments in graveyard.
+    for _ in 0..2 {
+        let c = ready_creature(&mut state, P0, 2, 2);
+        state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
+        state.move_object(c, Zone::Graveyard);
+    }
+    for _ in 0..2 {
+        let e = state.create_object(CardId(9999), P0, Zone::Battlefield, None, None);
+        state.get_object_mut(e).unwrap().card_types = vec![CardType::Enchantment];
+        state.move_object(e, Zone::Graveyard);
+    }
+
+    let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None },
+        &reg,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Choose "Enchantment" (index 2).
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(2) },
+        &reg,
+    );
+
+    // Only enchantments should be in hand.
+    let hand_enchantments = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0 && o.card_types.contains(&CardType::Enchantment))
+        .count();
+    assert_eq!(hand_enchantments, 2, "Should return enchantments to hand");
+
+    // Creatures should still be in graveyard.
+    let gy_creatures = state.objects.values()
+        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0 && o.card_types.contains(&CardType::Creature))
+        .count();
+    assert_eq!(gy_creatures, 2, "Creatures should remain in graveyard");
+}
+
+#[test]
+fn creeping_renaissance_flashback_exiles() {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put a creature in graveyard.
+    let c = ready_creature(&mut state, P0, 3, 3);
+    state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
+    state.move_object(c, Zone::Graveyard);
+
+    // Put Creeping Renaissance itself in graveyard for flashback.
+    let card_id = reg.get_id_by_name("Creeping Renaissance").unwrap();
+    let spell = state.create_object(card_id, P0, Zone::Graveyard, None, None);
+    state.get_object_mut(spell).unwrap().name = "Creeping Renaissance".into();
+    state.get_object_mut(spell).unwrap().card_types = vec![CardType::Sorcery];
+
+    // Add flashback mana (5GG = 7 total).
+    for _ in 0..5 { state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1); }
+    for _ in 0..2 { state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1); }
+
+    // Cast via flashback.
+    let actions = mtg_engine::engine::legal_actions(&state, &reg);
+    let fb = actions.actions.iter().find(|a| match a {
+        Action::CastSpell { object_id, .. } => object_id == &spell,
+        _ => false,
+    });
+    assert!(fb.is_some(), "Should be able to flashback Creeping Renaissance");
+
+    state = mtg_engine::engine::submit_action(&state, fb.unwrap(), &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
+
+    // Choose "Creature" (index 0).
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0) },
+        &reg,
+    );
+
+    // Creature in hand.
+    let hand = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0 && o.card_types.contains(&CardType::Creature))
+        .count();
+    assert_eq!(hand, 1, "Creature should be in hand");
+
+    // Creeping Renaissance should be exiled (flashback).
+    let cr = state.get_object(spell);
+    assert!(cr.is_none() || cr.unwrap().zone == Zone::Exile,
+        "Creeping Renaissance should be exiled after flashback");
 }
 
 // ── Cellar Door ──────────────────────────────────────────────────
