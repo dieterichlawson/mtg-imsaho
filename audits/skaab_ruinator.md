@@ -202,3 +202,53 @@ Card data is correct: name "Skaab Ruinator", mana cost {1}{U}{U} (Generic(1), Bl
 - Cast with fewer than 3 creatures (should be illegal): NOT TESTED
 - Ruling: can't exile self to pay cost: NOT TESTED (covered by engine code)
 - Ruling: must exile 3 regardless of casting zone: NOT TESTED
+
+## Audit — 2026-04-01 22:00
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py cache)
+**Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard.
+Flying
+You may cast this card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**P/T**: 5/6
+**Status**: PASS
+
+### Code issues
+No issues found. All previously reported issues have been fixed. Card data and behavior verified correct:
+
+- Name "Skaab Ruinator": correct
+- Mana cost {1}{U}{U}: correct (Generic(1), Blue, Blue)
+- Type Creature: correct
+- Subtypes Zombie, Horror: correct (both present)
+- P/T 5/6: correct
+- Flying keyword: correct
+- Oracle text: correct
+- `additional_cost: Some(AdditionalCost::ExileCreaturesFromGraveyard(3))`: correct
+- `can_cast_from_graveyard()` returns `true` (line 35): correct ("You may cast this card from your graveyard")
+- `on_resolve` moves to battlefield via `state.move_object(object_id, Zone::Battlefield)` (line 40): correct for a creature spell
+
+Engine handling:
+- **Additional cost at cast time**: engine.rs lines 1349-1382 exile creature cards from graveyard at cast time (before moving to stack). Correct per MTG rules (CR 601.2b).
+- **Eligibility check (hand cast)**: engine.rs lines 491-501 verify 3+ creature cards in graveyard, excluding the spell itself (`o.id != obj.id`). Correct per ruling "Skaab Ruinator is on the stack when you pay its costs. It can't be exiled to pay for itself."
+- **Eligibility check (graveyard cast)**: engine.rs lines 618-633 replicate the same check for graveyard-cast path, also excluding self (`o.id != obj.id`). Correct.
+- **Cast-from-graveyard vs flashback**: engine.rs lines 1275-1276 correctly distinguish `is_cast_from_graveyard` (true for Skaab Ruinator) from `is_flashback` (false), so normal mana cost is used and `cast_with_flashback` is not set. Correct per ruling: "You must exile three creature cards from your graveyard no matter what zone you're casting Skaab Ruinator from."
+- **Exile candidate auto-selection**: engine picks highest-power creatures first (line 1365). Acceptable simplification (player choice not presented, but functionally correct).
+
+### Tricky interactions checked
+- Additional cost paid at cast time (not resolve): pass (engine.rs lines 1349-1382)
+- Eligibility check for 3 graveyard creatures (hand cast): pass (engine.rs lines 491-501)
+- Eligibility check for 3 graveyard creatures (graveyard cast): pass (engine.rs lines 618-633)
+- Self-exclusion from exile candidates: pass (engine.rs line 495 and 625: `o.id != obj.id`)
+- Cast from graveyard uses normal mana cost (not flashback): pass (engine.rs lines 1275-1289)
+- `cast_with_flashback` not set when cast from graveyard: pass (test confirms at tier15_cards.rs:549)
+- on_resolve enters battlefield (not graveyard): pass
+- Creature card identification for exile: pass (checks `power.is_some()` and `card_types.contains(Creature)`)
+
+### Test coverage
+- Exiles 3 creatures and enters battlefield (from hand): `tests/tier15_cards.rs:484`
+- Cast from graveyard (castable with enough creatures): `tests/tier15_cards.rs:510`
+- Cast from graveyard not marked as flashback: `tests/tier15_cards.rs:549`
+- Not castable without enough creatures (from graveyard): `tests/tier15_cards.rs:554`
+- Ruling: can't exile self to pay cost: NOT TESTED (covered by engine code)
+- Spell countered after casting (creatures still exiled): NOT TESTED
+- Not in LLM card knowledge: acceptable (complex card, AI can read oracle text)

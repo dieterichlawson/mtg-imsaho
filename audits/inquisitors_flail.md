@@ -223,3 +223,60 @@ Behavior verified:
 - Doubles damage taken from blocker: NOT TESTED directly in main test file, but logic is in combat.rs multiplier
 - Two Flails quadruple: NOT TESTED in tier9 but noted in prior audit
 - Trample + Flail divide-then-double: NOT TESTED
+
+## Audit — 2026-04-01 18:00
+
+**Oracle text source**: Scryfall API (cached via oracle_lookup.py)
+**Oracle text**: If equipped creature would deal combat damage, it deals double that damage instead.
+If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.
+Equip {2}
+**Type line**: Artifact — Equipment
+**Mana cost**: {2}
+**Rulings**:
+- Multiple Flails multiply independently (2 Flails = x4, 3 = x8).
+- Trample: divide original amount then double each portion.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verified:
+- Mana cost {2}: correct (Generic(2))
+- Card types: Artifact: correct
+- Subtypes: Equipment: correct
+- No supertypes, P/T, keywords: correct
+- Oracle text field: matches Scryfall exactly (says "another creature", not "another source")
+- Continuous effect: `DoubleCombatDamage { scope: EffectScope::Attached }`: correct
+
+Behavior verified:
+- `on_resolve`: moves to battlefield, sets `is_equipment = true`: correct for equipment
+- Equip activated ability: cost {2}, `sorcery_speed_only: true`, target `CreatureWithFilter(YouControl)`: correct
+- `is_valid_target`: checks `o.zone == Battlefield && o.power.is_some() && o.controller == caster`: correct (equip only own creatures)
+- `on_activate_ability`: sets `attached_to = Some(*creature_id)`: correct
+- Combat damage doubling in `combat.rs`:
+  - `deal_damage_to_creature` (lines 449-454): `amount *= combat_damage_multiplier(state, source, registry)` then `amount *= combat_damage_multiplier(state, target, registry)` -- correctly doubles BOTH outgoing and incoming damage
+  - `deal_damage_to_player` (lines 505-507): only source multiplier applied -- correct (player doesn't have Flail)
+  - `combat_damage_multiplier` uses `count_continuous_effect` and returns `1u32 << count` (2^count) -- correctly stacks multiple Flails
+- Trample interaction: combat code assigns original damage first, then each portion is doubled by `deal_damage_to_creature`/`deal_damage_to_player` -- matches ruling
+
+Not in LLM card knowledge section.
+
+### Tricky interactions checked
+- Doubles outgoing combat damage: pass (tested)
+- Doubles incoming combat damage from other creatures: pass (tested)
+- Multiple Flails stack multiplicatively (x4 for 2 Flails): pass (tested)
+- No doubling without Flail equipped: pass (tested)
+- Equip only targets own creatures: pass (is_valid_target checks controller)
+- Equip is sorcery speed only: pass
+- Non-combat damage not doubled: pass (DoubleCombatDamage only checked in combat code)
+- Trample divide-then-double: pass (verified in combat.rs logic, matches ruling)
+- "Another creature" distinction: in normal combat a creature never damages itself, so functionally correct
+
+### Test coverage
+- Doubles damage to player: `mtg-engine/tests/inquisitors_flail.rs:21`
+- Doubles damage to creature: `mtg-engine/tests/inquisitors_flail.rs:44`
+- Doubles damage taken from blocker: `mtg-engine/tests/inquisitors_flail.rs:67`
+- No doubling without Flail: `mtg-engine/tests/inquisitors_flail.rs:90`
+- Two Flails quadruple damage: `mtg-engine/tests/inquisitors_flail.rs:114`
+- Trample + Flail divide-then-double: NOT TESTED (verified correct in code)
+- Multiple Flails incoming damage stacking: NOT TESTED

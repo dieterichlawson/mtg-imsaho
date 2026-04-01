@@ -192,3 +192,54 @@ Code comment in `stony_silence.rs` (lines 6-9) accurately describes the enforcem
 - Artifact non-mana activated abilities blocked: NOT TESTED
 - Triggered abilities of artifacts unaffected: NOT TESTED
 - Opponent's artifacts also blocked: NOT TESTED
+
+## Audit — 2026-04-01 22:00
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py cache)
+**Oracle text**: Activated abilities of artifacts can't be activated.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. All card data and engine enforcement verified correct:
+
+- Name "Stony Silence": correct
+- Mana cost {1}{W}: correct (Generic(1), White)
+- Type Enchantment: correct
+- No subtypes, no supertypes: correct
+- No P/T: correct (not a creature)
+- Oracle text matches Scryfall exactly: correct
+- No keywords, no flashback, no triggered abilities, no continuous_effects: correct
+
+Engine enforcement (engine.rs lines 229-282):
+- `stony_silence_active` check scans all battlefield objects for name "Stony Silence" regardless of controller (line 230-232): correct (symmetric effect, affects both players' artifacts)
+- Mana abilities of artifacts blocked (lines 238-244): correct per ruling "No abilities of artifacts can be activated, including mana abilities"
+- Non-mana activated abilities of artifacts blocked (lines 276-282): correct
+- Artifact detection checks both registry card types and runtime `obj.card_types` (lines 240-243 and 277-280): correct (handles artifact creatures, tokens, and type-changing effects)
+- Non-artifact permanents unaffected: correct (only skips when `is_artifact` is true)
+- Only affects battlefield artifacts: correct per ruling (action generation only iterates `objects_in_zone(Zone::Battlefield, player)` for activated abilities)
+- Triggered abilities unaffected: correct per ruling (engine only gates activated ability actions, not trigger processing)
+
+Code comment in `stony_silence.rs` (lines 6-9) accurately describes the enforcement mechanism.
+
+Per Stony Silence + artifact lands interaction (from judges' blog): artifact lands have their mana abilities blocked by Stony Silence because they are artifacts. The engine handles this correctly since the artifact type check (`d.card_types.contains(&CardType::Artifact)`) would match artifact lands.
+
+### Tricky interactions checked
+- Mana abilities of artifacts blocked: pass (engine.rs lines 238-244, confirmed by test)
+- Non-mana activated abilities of artifacts blocked: pass (engine.rs lines 276-282)
+- Non-artifact mana abilities unaffected: pass (confirmed by test)
+- Only affects battlefield artifacts (ruling): pass
+- Triggered abilities unaffected (ruling): pass
+- Both players' artifacts affected: pass (stony_silence_active checks all objects)
+- Artifact creatures' abilities also blocked: pass (artifact type check catches artifact creatures)
+- Detection by name ("Stony Silence"): acceptable simplification for this engine
+
+### Test coverage
+- Card data verification: `tests/innistrad_simple_cards.rs:586`
+- Artifact mana abilities blocked: `tests/innistrad_simple_cards.rs:595`
+- Non-artifact mana abilities unaffected: `tests/innistrad_simple_cards.rs:625`
+- Artifact non-mana activated abilities blocked: NOT TESTED
+- Triggered abilities of artifacts unaffected: NOT TESTED
+- Opponent's artifacts also blocked: NOT TESTED
+- Artifact creatures' activated abilities blocked: NOT TESTED
+- Not in LLM card knowledge: acceptable (static effect, AI reads oracle text)

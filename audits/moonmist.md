@@ -114,3 +114,46 @@ Uses `move_spell_after_resolve(object_id)` -- correct. Flag cleared at end of tu
 - Card data verification: `tests/innistrad_simple_cards.rs` (line 530)
 - Transform functionality (actual Human DFC transforms): NOT TESTED
 - Werewolf creature deals combat damage after Moonmist: NOT TESTED (only Wolf tested)
+
+## Audit — 2026-04-01 (independent)
+
+**Oracle text source**: Scryfall API (cached via oracle_lookup.py)
+**Oracle text**: Transform all Humans. Prevent all combat damage that would be dealt this turn by creatures other than Werewolves and Wolves. (Only double-faced cards can be transformed.)
+**Type line**: Instant
+**Mana cost**: {1}{G}
+**Rulings**:
+- Moonmist causes any double-faced Human to transform, not just Werewolves.
+- Whether or not a creature is a Werewolf or a Wolf is checked only as combat damage is dealt.
+- Moonmist will prevent combat damage dealt by a creature that isn't a Werewolf or a Wolf even if that creature wasn't on the battlefield (or was a Werewolf or a Wolf) when Moonmist resolved.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Transform filter incorrectly excludes already-transformed Humans** (`mtg-engine/src/cards/isd/moonmist.rs` line 34)
+   - Oracle text says: `Transform all Humans.`
+   - Code does: `.filter(|o| o.zone == Zone::Battlefield && !o.is_transformed)` — the `!o.is_transformed` guard skips any creature already showing its back face. This is incorrect when a DFC's back face also has the Human subtype. Concrete example: Thraben Sentry's back face Thraben Militia is a Human Soldier (subtypes: `["Human", "Soldier"]` in `thraben_sentry.rs` line 43). A transformed Thraben Militia on the battlefield is a Human but would not be transformed back to Thraben Sentry by Moonmist because the `!o.is_transformed` filter excludes it. The fix should remove `!o.is_transformed` from the filter and add bidirectional transform logic: if the creature is not transformed, transform to back face; if already transformed, transform to front face.
+   - NOTE: A previous audit (18:00) incorrectly marked this PASS, reasoning that "a creature that is already transformed would have its back-face subtypes (not Human)". This is factually wrong for Thraben Militia, which IS a Human on its back face.
+
+2. **Not in LLM card knowledge** (`mtg-player/src/llm.rs`)
+   - AI players have no awareness of Moonmist. For a card that functions as both a one-sided combat trick (preventing opponent's non-Wolf damage) and a mass transform enabler, this is a notable gap.
+
+### Tricky interactions checked
+- Non-Werewolf Human DFCs (e.g., Cloistered Youth) transform correctly when on front face: pass
+- Already-transformed back-face Humans (e.g., Thraben Militia) should transform back: FAIL (issue #1)
+- Combat damage prevention checked at damage-dealing time (not resolution): pass (per ruling #2)
+- Prevention applies to creatures entering after Moonmist resolves: pass (per ruling #3, flag is global)
+- Flag cleared at end of turn (`engine.rs` line 2464): pass
+- Only DFCs can transform (non-DFC Humans are skipped via `has_back_face` check): pass
+- Wolf AND Werewolf creatures still deal combat damage (`combat.rs` line 306 checks both subtypes): pass
+- `move_spell_after_resolve(object_id)` used correctly: pass
+
+### Test coverage
+- Prevention flag set after resolve: `tests/moonmist.rs:19`
+- Non-Wolf combat damage to player prevented: `tests/moonmist.rs:32`
+- Wolf still deals combat damage: `tests/moonmist.rs:50`
+- Non-Wolf combat damage to creature prevented: `tests/moonmist.rs:68`
+- Card data verification: `tests/innistrad_simple_cards.rs:530`
+- Transform of front-face Human DFC: NOT TESTED
+- Transform of back-face Human DFC (e.g., Thraben Militia): NOT TESTED
+- Werewolf creature still deals combat damage: NOT TESTED (only Wolf tested)
+- Non-DFC Human not affected: NOT TESTED

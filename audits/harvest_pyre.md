@@ -237,3 +237,54 @@ Other card data verified:
 - Fizzle (target leaves battlefield): NOT TESTED
 - Spell countered (cards should already be exiled as cost): NOT TESTED
 - Player chooses X (subset of graveyard): NOT TESTED (known limitation — the bug)
+
+## Audit — 2026-04-01 18:00
+
+**Oracle text source**: Scryfall API (cached via oracle_lookup.py)
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard.
+Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Mana cost**: {1}{R}
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All previously flagged issues have been fixed:
+- Additional cost timing: now uses `additional_cost: Some(AdditionalCost::ExileXFromGraveyard)` which is handled at cast time in engine.rs. Cards are exiled as a cost before the spell resolves. If the spell is countered, the exile has already happened. Fixed.
+- Player choice of X: now implemented. Engine generates one legal action per possible X value (0 to graveyard size). The `exile_count` field in `CastSpell` action carries the chosen X. Tests confirm partial exile (X=2 out of 4 available) and X=0 both work correctly.
+- Oracle text field: now uses current "exile X cards" / "deals X damage" wording, matching Scryfall.
+- damaged_by tracking: present at line 50 (`obj.damaged_by.push(object_id)`).
+
+Card data verified:
+- Mana cost {1}{R}: correct (Generic(1), Red)
+- Card types: Instant: correct
+- No supertypes, subtypes, P/T, keywords: correct
+- Oracle text field: matches Scryfall
+- Target requirement: `TargetRequirement::Creature`: correct per oracle "target creature"
+- additional_cost: `ExileXFromGraveyard`: correct
+
+Behavior verified:
+- `on_resolve`: reads exile count from `card_state["exile_count"]`, deals that much damage to target creature if count > 0, emits `NonCombatDamageDealt`, tracks `damaged_by`, calls `move_spell_after_resolve`: correct
+- Damage only dealt if count > 0: correct (X=0 deals no damage)
+- Zone check on target (Zone::Battlefield): correct (fizzle protection)
+- Uses `move_spell_after_resolve` (not raw `move_object`): correct
+
+Not in LLM card knowledge section.
+
+### Tricky interactions checked
+- Additional cost paid at cast time (survives counterspell): pass
+- Player chooses X (0 to graveyard size): pass (engine generates per-X actions)
+- NonCombatDamageDealt event emitted (not CombatDamageDealt): pass
+- damaged_by tracking for death trigger interactions: pass
+- Only exiles caster's own graveyard: pass (engine filters by owner)
+- Spell cleanup via move_spell_after_resolve: pass
+
+### Test coverage
+- Deals X damage (X=4): `mtg-engine/tests/tier8_cards.rs:528`
+- Player chooses partial X (X=2 of 4): `mtg-engine/tests/tier8_cards.rs:562`
+- X=0 deals no damage: `mtg-engine/tests/tier8_cards.rs:600`
+- Legal actions include different X values: `mtg-engine/tests/tier8_cards.rs:624`
+- Only exiles own graveyard: `mtg-engine/tests/tier8_cards.rs:653`
+- Fizzle (target leaves battlefield): NOT TESTED
+- Spell countered (cards should already be exiled as cost): NOT TESTED
