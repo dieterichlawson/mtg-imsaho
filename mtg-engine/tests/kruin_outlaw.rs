@@ -2,7 +2,7 @@
 //!
 //! Terror of Kruin Pass (back face):
 //! - Double strike
-//! - Each Werewolf you control can't be blocked except by two or more creatures.
+//! - Werewolves you control have menace.
 //! - Transform back if a player cast 2+ spells last turn.
 
 mod common;
@@ -194,4 +194,31 @@ fn terror_of_kruin_pass_does_not_affect_opponent_werewolves() {
         .blocker_assignments.get(&opp_wolf).unwrap();
     assert_eq!(blockers.len(), 1,
         "Opponent's Werewolves should not be affected by our Terror of Kruin Pass");
+}
+
+/// Terror of Kruin Pass grants the menace keyword (not just blocking restriction).
+#[test]
+fn terror_of_kruin_pass_grants_menace_keyword() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let terror = named_creature(&mut state, &reg, "Kruin Outlaw", P0);
+    if let Some(obj) = state.get_object_mut(terror) {
+        obj.is_transformed = true;
+        obj.name = "Terror of Kruin Pass".into();
+    }
+
+    // Another Werewolf you control.
+    let wolf = ready_creature(&mut state, P0, 2, 2);
+    if let Some(obj) = state.get_object_mut(wolf) {
+        obj.subtypes = vec!["Werewolf".into()];
+    }
+
+    // Terror of Kruin Pass itself should have menace.
+    assert!(state.has_keyword(terror, Keyword::Menace, &reg),
+        "Terror of Kruin Pass should have menace");
+
+    // Other Werewolves you control should also have menace.
+    assert!(state.has_keyword(wolf, Keyword::Menace, &reg),
+        "Other Werewolves you control should have menace");
 }
