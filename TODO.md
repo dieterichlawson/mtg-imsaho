@@ -24,7 +24,7 @@ Each must be fixed — no shortcuts, no deferred work.
 - [x] **Civilized Scholar** — Homicidal Brute doesn't tap before transforming back. Add `obj.tapped = true` before transform. (Already fixed)
 - [x] **Gutter Grime** — Ooze token P/T should be dynamic (equal to slime counters on Gutter Grime), not static.
 - [x] **Kruin Outlaw** — Back face (Terror of Kruin Pass) menace only on self. Should be a global continuous effect: "Each Werewolf you control can't be blocked except by two or more creatures."
-- [ ] **Mayor of Avabruck** — Back face (Howlpack Alpha) missing Upkeep trigger metadata in triggered_abilities. The on_upkeep is implemented but never called because no TriggerKind::Upkeep is declared on back face.
+- [x] **Mayor of Avabruck** — Back face (Howlpack Alpha) missing Upkeep trigger metadata in triggered_abilities. The on_upkeep is implemented but never called because no TriggerKind::Upkeep is declared on back face. (Already fixed — back face has both Upkeep and EndStep triggers declared)
 - [ ] **Moldgraf Monstrosity** — Creature selection from graveyard is deterministic (first 2). Oracle says random. Use rand.
 - [ ] **Olivia Voldaren** — (a) Steal effect should end when Olivia leaves the battlefield. (b) Ability 1 should filter targets to Vampires only.
 
