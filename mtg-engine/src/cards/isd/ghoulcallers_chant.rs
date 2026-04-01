@@ -6,7 +6,7 @@ use crate::types::*;
 
 /// Ghoulcaller's Chant — {B} Sorcery.
 /// Choose one — Return target creature card from your graveyard to your hand;
-/// or return two target Zombie creature cards from your graveyard to your hand.
+/// or return two target Zombie cards from your graveyard to your hand.
 pub struct GhoulcallersChant;
 
 impl CardBehavior for GhoulcallersChant {
@@ -21,7 +21,7 @@ impl CardBehavior for GhoulcallersChant {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie creature cards from your graveyard to your hand.".into(),
+            oracle_text: "Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -31,7 +31,7 @@ impl CardBehavior for GhoulcallersChant {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        // Modal: mode 1 = one creature card; mode 2 = two Zombie creature cards.
+        // Modal: mode 1 = one creature card; mode 2 = two Zombie cards.
         TargetRequirement::ModalChoice(vec![
             TargetRequirement::GraveyardCreature,
             TargetRequirement::TwoTargets(
