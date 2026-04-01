@@ -38,6 +38,23 @@ impl CardBehavior for MemorysJourney {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+        // Collect the targeted player's id before moving any cards, since
+        // get_object may not find objects after they change zones.
+        let targeted_player: Option<crate::ids::PlayerId> = targets.iter()
+            .find_map(|t| if let Target::Player(pid) = t { Some(*pid) } else { None });
+
+        // Fall back to the owner of the first targeted card when no explicit
+        // player target is present (current simplified targeting model).
+        let targeted_player = targeted_player.or_else(|| {
+            targets.iter().find_map(|t| {
+                if let Target::Object(id) = t {
+                    state.get_object(*id).map(|o| o.owner)
+                } else {
+                    None
+                }
+            })
+        });
+
         for target in targets {
             if let Target::Object(card_id) = target {
                 let owner = state.get_object(*card_id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
@@ -49,18 +66,12 @@ impl CardBehavior for MemorysJourney {
             }
         }
 
-        // Shuffle only the affected player's library (owner of the cards).
-        if !targets.is_empty() {
+        // Shuffle only the targeted player's library, not all players'.
+        if let Some(pid) = targeted_player {
             use rand::seq::SliceRandom;
-            use std::collections::HashSet;
             let mut rng = rand::thread_rng();
-            let affected_players: HashSet<u8> = targets.iter()
-                .filter_map(|t| if let Target::Object(id) = t { state.get_object(*id).map(|o| o.owner.0) } else { None })
-                .collect();
-            for &pid in &affected_players {
-                if let Some(player) = state.players.get_mut(pid as usize) {
-                    player.library_order.shuffle(&mut rng);
-                }
+            if let Some(player) = state.players.get_mut(pid.0 as usize) {
+                player.library_order.shuffle(&mut rng);
             }
         }
 

@@ -65,6 +65,6 @@ impl CardBehavior for BurningVengeance {
             false,
         );
         state.log(crate::state::LogLevel::Event,
-            "Burning Vengeance triggered (flashback spell cast)".into());
+            "Burning Vengeance triggered (flashback spell cast): awaiting target selection".into());
     }
 }

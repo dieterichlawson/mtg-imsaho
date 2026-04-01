@@ -5,9 +5,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Heretic's Punishment — {4}{R} Enchantment.
-/// {3}{R}: Choose target creature or player. Reveal the top 3 cards of your library.
-/// Heretic's Punishment deals damage to that target equal to the greatest mana value
-/// among the revealed cards. Put the revealed cards on the bottom of your library.
+/// {3}{R}: Choose target creature or player. Mill three cards, then Heretic's Punishment
+/// deals damage to that target equal to the highest mana value among the milled cards.
 pub struct HereticsPunishment;
 
 impl CardBehavior for HereticsPunishment {
