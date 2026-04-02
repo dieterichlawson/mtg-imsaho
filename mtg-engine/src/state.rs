@@ -1489,6 +1489,10 @@ pub enum PendingEffect {
         /// The spell that initiated this effect (for logging).
         source_name: String,
     },
+    /// Attach a Curse card from library onto the battlefield attached to the chosen player
+    /// (Bitterheart Witch). The curse_id is the library object to move; searcher is the
+    /// controller whose library is shuffled afterwards.
+    AttachCurseToPlayer { curse_id: ObjectId, searcher: PlayerId },
 }
 
 /// Game result.

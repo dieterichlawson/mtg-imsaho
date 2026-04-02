@@ -324,14 +324,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         // Collect abilities from this permanent's card and attached auras.
         let mut abilities: Vec<(crate::ids::CardId, crate::cards::ActivatedAbilityDef)> = Vec::new();
         if let Some(behavior) = registry.get(obj_card_id) {
-            for ab in behavior.activated_abilities(state, obj_id) {
+            for ab in behavior.activated_abilities(state, obj_id, registry) {
                 abilities.push((obj_card_id, ab));
             }
         }
         for attached in state.objects.values() {
             if attached.zone == Zone::Battlefield && attached.attached_to == Some(obj_id) {
                 if let Some(behavior) = registry.get(attached.card_id) {
-                    for ab in behavior.activated_abilities(state, obj_id) {
+                    for ab in behavior.activated_abilities(state, obj_id, registry) {
                         abilities.push((attached.card_id, ab));
                     }
                 }
@@ -1701,7 +1701,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             // Find the ability — check the permanent's own card, then attached auras.
             let ability = registry.get(card_id)
-                .and_then(|b| b.activated_abilities(&new_state, *object_id)
+                .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
                     .into_iter().find(|a| a.ability_index == *ability_index))
                 .or_else(|| {
                     // Check attached auras.
@@ -1709,7 +1709,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
                         .find_map(|a| {
                             registry.get(a.card_id)
-                                .and_then(|b| b.activated_abilities(&new_state, *object_id)
+                                .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
                                     .into_iter().find(|ab| ab.ability_index == *ability_index))
                         })
                 });
@@ -1781,7 +1781,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
                 // Find which behavior to call (card itself or attached aura).
                 let behavior_card_id = if registry.get(card_id)
-                    .map(|b| !b.activated_abilities(&new_state, *object_id).is_empty())
+                    .map(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
                     .unwrap_or(false)
                 {
                     card_id
@@ -1791,7 +1791,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
                         .find(|a| {
                             registry.get(a.card_id)
-                                .map(|b| !b.activated_abilities(&new_state, *object_id).is_empty())
+                                .map(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
                                 .unwrap_or(false)
                         })
                         .map(|a| a.card_id)
@@ -2576,6 +2576,23 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 }
             }
         }
+        (Target::Player(pid), PendingEffect::AttachCurseToPlayer { curse_id, searcher }) => {
+            let name = state.get_object(*curse_id).map(|o| o.name.clone()).unwrap_or_default();
+            // Remove from library.
+            state.get_player_mut(*searcher).library_order.retain(|&id| id != *curse_id);
+            // Put on battlefield attached to the chosen player.
+            state.move_object(*curse_id, Zone::Battlefield);
+            if let Some(obj) = state.get_object_mut(*curse_id) {
+                obj.attached_to_player = Some(*pid);
+                obj.summoning_sick = false;
+            }
+            state.log(LogLevel::Event,
+                format!("Bitterheart Witch: attached {} to p{}", name, pid.0));
+            // Shuffle library.
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
+        }
         _ => {}
     }
 }
@@ -2800,7 +2817,7 @@ fn has_castable_with_potential_mana(
     // Also check activated abilities that cost mana.
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
-            for ab in behavior.activated_abilities(state, obj.id) {
+            for ab in behavior.activated_abilities(state, obj.id, registry) {
                 if mana::can_pay(&potential, &ab.cost) {
                     if !ab.requires_tap || !obj.tapped {
                         return true;

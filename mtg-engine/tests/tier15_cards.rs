@@ -185,14 +185,97 @@ fn bitterheart_witch_finds_curse_on_death() {
     state.get_object_mut(curse_obj).unwrap().name = "Curse of the Pierced Heart".into();
     state.get_player_mut(P0).library_order.push(curse_obj);
 
-    // Trigger death.
+    // Trigger death — should present a YesNo choice ("you may").
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
     behavior.on_dies(&mut state, witch, &reg);
+    assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
+
+    // Player chooses yes to search.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Should now be awaiting a player target choice.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting player target choice");
+
+    // Choose opponent (P1) as the target player.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))) },
+        &reg,
+    );
 
     // The curse should be on the battlefield attached to opponent.
     let curse = state.get_object(curse_obj).unwrap();
     assert_eq!(curse.zone, Zone::Battlefield, "Curse should be on battlefield");
     assert_eq!(curse.attached_to_player, Some(P1), "Curse should be attached to opponent");
+}
+
+#[test]
+fn bitterheart_witch_can_attach_curse_to_self() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+
+    // Put a curse in the library.
+    let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
+    let curse_obj = state.create_object(curse_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(curse_obj).unwrap().name = "Curse of the Pierced Heart".into();
+    state.get_player_mut(P0).library_order.push(curse_obj);
+
+    // Trigger death and accept search.
+    let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
+    behavior.on_dies(&mut state, witch, &reg);
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Choose self (P0) as the target player.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P0))) },
+        &reg,
+    );
+
+    // The curse should be on the battlefield attached to self.
+    let curse = state.get_object(curse_obj).unwrap();
+    assert_eq!(curse.zone, Zone::Battlefield, "Curse should be on battlefield");
+    assert_eq!(curse.attached_to_player, Some(P0), "Curse should be attached to self");
+}
+
+#[test]
+fn bitterheart_witch_decline_search() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let witch = named_creature(&mut state, &reg, "Bitterheart Witch", P0);
+
+    // Put a curse in the library.
+    let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
+    let curse_obj = state.create_object(curse_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(curse_obj).unwrap().name = "Curse of the Pierced Heart".into();
+    state.get_player_mut(P0).library_order.push(curse_obj);
+
+    // Trigger death.
+    let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
+    behavior.on_dies(&mut state, witch, &reg);
+    assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
+
+    // Player declines to search.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &reg,
+    );
+
+    // Curse should still be in the library.
+    let curse = state.get_object(curse_obj).unwrap();
+    assert_eq!(curse.zone, Zone::Library, "Curse should remain in library when search declined");
 }
 
 // ── Gutter Grime ─────────────────────────────────────────────────
@@ -743,7 +826,10 @@ fn back_from_the_brink_creates_token_copy() {
     state.move_object(dead, Zone::Graveyard);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, enchant, 0, &[], &reg);
+
+    // The ability_index encodes the creature's ObjectId.
+    let ability_index = dead.0 as usize;
+    behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
 
     // The creature should be exiled.
     assert_eq!(state.get_object(dead).unwrap().zone, Zone::Exile,
@@ -754,6 +840,97 @@ fn back_from_the_brink_creates_token_copy() {
         .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Kalonian Tusker")
         .count();
     assert_eq!(token_copies, 1, "Should have created a token copy");
+}
+
+#[test]
+fn back_from_the_brink_ability_per_creature_in_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    if let Some(obj) = state.get_object_mut(enchant) {
+        obj.power = None;
+        obj.toughness = None;
+    }
+
+    // Put two different creatures in the graveyard.
+    let tusker = named_creature(&mut state, &reg, "Kalonian Tusker", P0);
+    state.move_object(tusker, Zone::Graveyard);
+    let piker = named_creature(&mut state, &reg, "Goblin Piker", P0);
+    state.move_object(piker, Zone::Graveyard);
+
+    let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
+    let abilities = behavior.activated_abilities(&state, enchant, &reg);
+
+    // Should have one ability per creature in the graveyard.
+    assert_eq!(abilities.len(), 2, "Should have one ability per creature in graveyard");
+
+    // Each ability should reference a different creature and have its mana cost.
+    let tusker_ability = abilities.iter().find(|a| a.description.contains("Kalonian Tusker"));
+    let piker_ability = abilities.iter().find(|a| a.description.contains("Goblin Piker"));
+    assert!(tusker_ability.is_some(), "Should have ability for Kalonian Tusker");
+    assert!(piker_ability.is_some(), "Should have ability for Goblin Piker");
+
+    // Kalonian Tusker costs {G}{G} — 2 colored symbols.
+    let tusker_cost = &tusker_ability.unwrap().cost;
+    assert_eq!(tusker_cost.symbols.len(), 2, "Kalonian Tusker costs {{G}}{{G}}");
+
+    // Goblin Piker costs {1}{R} — 2 symbols.
+    let piker_cost = &piker_ability.unwrap().cost;
+    assert_eq!(piker_cost.symbols.len(), 2, "Goblin Piker costs {{1}}{{R}}");
+}
+
+#[test]
+fn back_from_the_brink_no_abilities_without_creatures_in_graveyard() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    if let Some(obj) = state.get_object_mut(enchant) {
+        obj.power = None;
+        obj.toughness = None;
+    }
+
+    let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
+    let abilities = behavior.activated_abilities(&state, enchant, &reg);
+
+    assert_eq!(abilities.len(), 0, "No abilities when graveyard has no creatures");
+}
+
+#[test]
+fn back_from_the_brink_uses_creature_mana_cost() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let enchant = named_creature(&mut state, &reg, "Back from the Brink", P0);
+    if let Some(obj) = state.get_object_mut(enchant) {
+        obj.power = None;
+        obj.toughness = None;
+    }
+
+    // Savannah Lions costs {W}.
+    let lions = named_creature(&mut state, &reg, "Savannah Lions", P0);
+    state.move_object(lions, Zone::Graveyard);
+
+    let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
+    let abilities = behavior.activated_abilities(&state, enchant, &reg);
+    assert_eq!(abilities.len(), 1);
+
+    let ability = &abilities[0];
+    // Savannah Lions costs {W} — 1 white mana symbol.
+    assert_eq!(ability.cost.symbols.len(), 1, "Savannah Lions costs {{W}}");
+    assert!(ability.sorcery_speed_only, "Activate only as a sorcery");
+
+    // Activate the ability — use the creature's ObjectId as the ability index.
+    let ability_index = lions.0 as usize;
+    behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
+
+    assert_eq!(state.get_object(lions).unwrap().zone, Zone::Exile,
+        "Lions should be exiled");
+    let token_copies = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Savannah Lions")
+        .count();
+    assert_eq!(token_copies, 1, "Should have created a token copy of Savannah Lions");
 }
 
 // ── Delver of Secrets ──────────────────────────────────────────
