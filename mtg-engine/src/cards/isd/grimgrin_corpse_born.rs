@@ -2,14 +2,14 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Grimgrin, Corpse-Born {3}{U}{B} 5/5 Legendary Zombie Warrior.
-/// Grimgrin enters the battlefield tapped and doesn't untap during your untap step.
+/// Grimgrin enters tapped and doesn't untap during your untap step.
 /// Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
-/// Whenever Grimgrin attacks, destroy target creature defending player controls.
-/// Grimgrin gets a +1/+1 counter.
+/// Whenever Grimgrin attacks, destroy target creature defending player controls,
+/// then put a +1/+1 counter on Grimgrin.
 pub struct GrimgrinCorpseBorn;
 
 impl CardBehavior for GrimgrinCorpseBorn {
@@ -26,7 +26,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             subtypes: vec!["Zombie".into(), "Warrior".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "Grimgrin, Corpse-Born enters the battlefield tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls. Put a +1/+1 counter on Grimgrin.".into(),
+            oracle_text: "Grimgrin, Corpse-Born enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
@@ -38,7 +38,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
-                    description: "destroy target creature defending player controls, +1/+1 counter".into(),
+                    description: "destroy target creature defending player controls, then +1/+1 counter".into(),
                 },
             ],
         }
@@ -66,62 +66,62 @@ impl CardBehavior for GrimgrinCorpseBorn {
             description: "Sacrifice another creature: Untap Grimgrin, +1/+1 counter".into(),
             cost: ManaCost::free(),
             requires_tap: false,
-            sacrifice_cost: SacrificeCost::None,
+            sacrifice_cost: SacrificeCost::SacrificeAnotherCreature,
             target_requirement: None,
             once_per_turn: false,
             sorcery_speed_only: false,
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(object_id) {
-            Some(o) => o.controller,
-            None => return,
-        };
-
-        // Sacrifice another creature (pick the first available that isn't Grimgrin).
-        let sacrifice_target: Option<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            .find(|o| o.id != object_id && o.power.is_some())
-            .map(|o| o.id);
-
-        if let Some(sac_id) = sacrifice_target {
-            let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::sacrifice(state, sac_id, registry);
-            // Untap Grimgrin.
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.tapped = false;
-            }
-            // +1/+1 counter.
-            state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-            state.log(crate::state::LogLevel::Event,
-                format!("Grimgrin: sacrificed {}, untapped, +1/+1 counter", sac_name));
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+        // The engine already sacrificed another creature as part of paying the cost.
+        // Now untap Grimgrin and add a +1/+1 counter.
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.tapped = false;
         }
+        state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
+        state.log(crate::state::LogLevel::Event,
+            "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into());
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
 
-        // Destroy target creature defending player controls.
-        let defender = state.opponent(controller);
-        let target: Option<ObjectId> = state.objects_in_zone(Zone::Battlefield, defender)
-            .iter()
-            .find(|o| o.power.is_some())
-            .map(|o| o.id);
+        // Get the defending player from combat state, falling back to opponent.
+        let defender = state.combat.as_ref()
+            .and_then(|c| c.attackers.get(&self_id).copied())
+            .unwrap_or_else(|| state.opponent(controller));
 
-        if let Some(target_id) = target {
-            let target_name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-            crate::destruction::try_destroy(state, target_id, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Grimgrin attacks: destroys {}", target_name));
+        // Collect creatures the defending player controls as potential targets.
+        let targets: Vec<Target> = state.objects_in_zone(Zone::Battlefield, defender)
+            .iter()
+            .filter(|o| o.power.is_some())
+            .map(|o| Target::Object(o.id))
+            .collect();
+
+        // Per ruling: "If the defending player controls no creatures when Grimgrin attacks,
+        // the last ability will be removed from the stack and have no effect."
+        // This means no +1/+1 counter either.
+        if targets.is_empty() {
+            return;
         }
 
-        // +1/+1 counter.
-        state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
-        state.log(crate::state::LogLevel::Event,
-            "Grimgrin: +1/+1 counter from attack trigger".into());
+        // Present target choice to the controller. The effect destroys the target
+        // and then adds a +1/+1 counter to Grimgrin.
+        crate::cards::helpers::present_target_choice(
+            state,
+            self_id,
+            controller,
+            targets,
+            PendingEffect::DestroyThenCounter {
+                source_id: self_id,
+                source_name: "Grimgrin, Corpse-Born".into(),
+            },
+            "Grimgrin, Corpse-Born: destroy target creature defending player controls",
+            false,
+        );
     }
 }
