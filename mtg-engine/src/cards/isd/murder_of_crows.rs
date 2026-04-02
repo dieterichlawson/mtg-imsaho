@@ -1,6 +1,8 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::engine::draw_cards;
+use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
+use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Murder of Crows — {3}{U}{U} 4/4 Bird. Flying.
@@ -49,5 +51,32 @@ impl CardBehavior for MurderOfCrows {
                 source_card: self_id,
             },
         });
+    }
+
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+        if !yes {
+            return;
+        }
+        // "You may draw a card. If you do, discard a card."
+        let controller = state.get_object(self_id)
+            .map(|o| o.controller).unwrap_or(PlayerId(0));
+        draw_cards(state, controller, 1);
+        let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
+            .iter().map(|o| o.id).collect();
+        if hand.len() == 1 {
+            state.move_object(hand[0], Zone::Graveyard);
+            state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
+            state.log(LogLevel::Event, format!("Drew and discarded a card"));
+        } else if !hand.is_empty() {
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseCardFromHand {
+                    description: "Murder of Crows: choose a card to discard".into(),
+                    player: controller,
+                    cards: hand,
+                },
+            });
+        }
     }
 }

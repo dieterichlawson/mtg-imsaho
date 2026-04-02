@@ -408,6 +408,10 @@ pub trait CardBehavior: Send + Sync {
     /// if the discarded card was a creature and trigger untap/transform.
     fn on_discard_choice(&self, _state: &mut GameState, _self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {}
 
+    /// Called after the player answers a YesNo resolution choice initiated by this permanent.
+    /// `yes` is true if the player chose yes, false if they declined.
+    fn on_yes_no_choice(&self, _state: &mut GameState, _self_id: ObjectId, _yes: bool, _registry: &CardRegistry) {}
+
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.
     /// For permanents: default moves to battlefield.

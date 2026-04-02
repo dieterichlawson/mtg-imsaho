@@ -1756,30 +1756,11 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                     (ResolutionChoiceKind::YesNo { source_card, .. },
                      ResolvedChoice::PayDecision(yes)) => {
-                        if *yes {
-                            // "You may draw a card. If you do, discard a card."
-                            let controller = new_state.get_object(*source_card)
-                                .map(|o| o.controller).unwrap_or(PlayerId(0));
-                            draw_cards(&mut new_state, controller, 1);
-                            let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
-                                .iter().map(|o| o.id).collect();
-                            if hand.len() == 1 {
-                                new_state.move_object(hand[0], Zone::Graveyard);
-                                new_state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
-                                new_state.log(LogLevel::Event, format!("Drew and discarded a card"));
-                            } else if !hand.is_empty() {
-                                new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                                    player: controller,
-                                    source: *source_card,
-                                    choice: ResolutionChoiceKind::ChooseCardFromHand {
-                                        description: "Murder of Crows: choose a card to discard".into(),
-                                        player: controller,
-                                        cards: hand,
-                                    },
-                                });
-                            }
+                        // Dispatch to the card's on_yes_no_choice hook.
+                        let source_card_id = new_state.get_object(*source_card).map(|o| o.card_id);
+                        if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {
+                            behavior.on_yes_no_choice(&mut new_state, *source_card, *yes, registry);
                         }
-                        // If no, nothing happens.
                     }
                     (ResolutionChoiceKind::ChooseTarget { effect, .. },
                      ResolvedChoice::ChosenTarget(target)) => {
