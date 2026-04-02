@@ -2020,8 +2020,13 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let mut final_count = *count;
             if *human_bonus {
                 let is_human = state.get_object(*id)
-                    .and_then(|o| registry.card_data(o.card_id))
-                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .map(|o| {
+                        let obj_has = o.subtypes.iter().any(|s| s == "Human");
+                        let card_has = registry.card_data(o.card_id)
+                            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                            .unwrap_or(false);
+                        obj_has || card_has
+                    })
                     .unwrap_or(false);
                 if is_human {
                     final_count = count * 2;
