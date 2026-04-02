@@ -94,3 +94,52 @@ including tokens. There is no test verifying this interaction.
 
 ## Audit Date
 2026-04-02
+
+---
+
+## Re-audit (2026-04-02)
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+"Creatures you control enter as a copy of this creature."
+
+### Card Data Verification
+- **Name:** CORRECT -- "Essence of the Wild"
+- **Mana Cost:** CORRECT -- Generic(3), Green, Green, Green = {3}{G}{G}{G}
+- **Card Types:** CORRECT -- [Creature]
+- **Subtypes:** CORRECT -- ["Avatar"]
+- **P/T:** CORRECT -- 6/6
+- **Keywords:** CORRECT -- none (vec![])
+- **Oracle Text:** CORRECT -- "Creatures you control enter as a copy of this creature."
+
+### Issue Status
+
+**Issue 1 (replacement vs trigger): OPEN (engine limitation)**
+Still uses `AnyCreatureEnters` triggered ability rather than a true replacement effect.
+The creature briefly exists in its original form before being overwritten.
+Acknowledged engine limitation per code comment (lines 9-11).
+
+**Issue 2 (incomplete copy): FIXED**
+The copy effect now sets all copiable values available on GameObject:
+- name, power, toughness, colors (Green), card_types (Creature), subtypes (Avatar),
+  keywords (cleared), instance_continuous_effects (cleared), instance_oracle_text (set).
+Only remaining gap is mana cost, which cannot be set because `GameObject` has no
+`mana_cost` field -- this is an engine limitation, not a card bug.
+
+**Issue 3 (outdated oracle text): FIXED**
+CardData.oracle_text now reads "Creatures you control enter as a copy of this creature."
+matching Scryfall exactly.
+
+**Issue 4 (no token test): OPEN**
+No dedicated test file exists for Essence of the Wild.
+
+### New Observations
+
+**Observation A (Low): Doc comment uses outdated wording**
+Line 7 of the source file reads:
+  "Creatures you control enter the battlefield as a copy of Essence of the Wild."
+The current oracle text is:
+  "Creatures you control enter as a copy of this creature."
+This is a Rust doc comment only and does not affect behavior.
+
+### Re-audit Date
+2026-04-02

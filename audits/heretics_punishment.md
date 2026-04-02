@@ -100,3 +100,78 @@ Missing test coverage:
 - 2 critical issues (outdated oracle text describing wrong mechanic; wrong order of operations)
 - 2 bugs (missing damaged_by tracking; no target legality check)
 - 2 minor issues (missing Mill keyword; inconsistent oracle_text vs target_requirement)
+
+---
+
+## Re-Audit (2026-04-02)
+
+Previous critical and bug issues have been fixed. Re-auditing the current implementation against oracle text.
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+```
+{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards.
+```
+
+### Checks Passed
+
+1. **Mill-then-damage order:** Code (lines 79-101) mills cards to graveyard first, then (lines 103-136) deals damage equal to the greatest mana value. Correct.
+2. **Target legality check:** Lines 60-77 verify the target is still legal before any milling occurs. If illegal, the entire ability fizzles (no mill, no damage). Matches ruling #1.
+3. **damaged_by tracking:** Line 111 pushes `object_id` to `obj.damaged_by` when dealing damage to a creature. Correct.
+4. **Fewer than 3 cards in library:** Line 81 uses `min(3, library.len())`. Matches ruling #2.
+5. **MV 0 case:** Line 104 gates damage behind `if max_mv > 0`. Matches ruling #4.
+6. **Mana cost:** `{4}{R}` — correct.
+7. **Card type:** `Enchantment` — correct.
+8. **Activation cost:** `{3}{R}`, no tap required — correct.
+9. **Target requirement:** `AnyTarget` — correct.
+10. **Cards moved to graveyard:** Lines 97-101 drain from library and call `move_object(card_id, Zone::Graveyard)` — correct (mill).
+
+### Issues Still Present
+
+#### 1. MINOR — `oracle_text` field does not match current oracle text
+
+**Code (line 25):**
+```
+{3}{R}: Mill three cards, then Heretic's Punishment deals damage to any target equal to the highest mana value among the milled cards.
+```
+
+**Oracle (Scryfall):**
+```
+{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards.
+```
+
+Differences:
+- Code says "Mill three cards, then ... deals damage to any target"; oracle says "Choose any target, then mill three cards. This enchantment deals damage to that permanent or player".
+- Code says "highest"; oracle says "greatest".
+- Code says "Heretic's Punishment"; oracle says "This enchantment".
+
+The functional behavior is implemented correctly (target chosen at activation, mill then damage on resolution), but the `oracle_text` string itself is a paraphrase rather than the verbatim oracle text.
+
+#### 2. MINOR — `keywords` field is empty; oracle lists Mill
+
+**Code (line 28):**
+```rust
+keywords: vec![],
+```
+
+Should include the Mill keyword per Scryfall data.
+
+### Test Coverage
+
+Three tests exist in `mtg-engine/tests/tier15_cards.rs`:
+
+| Test | What it covers | Status |
+|------|---------------|--------|
+| `heretics_punishment_mills_then_deals_damage` | Mills 3 cards, deals damage to player equal to greatest MV, cards end up in graveyard | PASS (correct) |
+| `heretics_punishment_tracks_damaged_by_on_creature` | Deals damage to creature, tracks `damaged_by` source | PASS (correct) |
+| `heretics_punishment_fizzles_when_target_illegal` | Target moved off battlefield before resolution; ability fizzles, no mill occurs | PASS (correct) |
+
+Still missing:
+- Fewer than 3 cards in library
+- All milled cards with MV 0 (no damage dealt)
+- Targeting a planeswalker
+
+### Verdict: MINOR ISSUES ONLY
+
+All critical and bug-level issues from the previous audit have been fixed. Two minor issues remain:
+- `oracle_text` string is a paraphrase, not the verbatim oracle text
+- `keywords` field missing Mill
