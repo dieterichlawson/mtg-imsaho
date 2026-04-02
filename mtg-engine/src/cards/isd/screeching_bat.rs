@@ -1,4 +1,5 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::helpers;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::*;
@@ -30,7 +31,7 @@ impl CardBehavior for ScreechingBat {
             subtypes: vec!["Bat".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Flying\nAt the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Screeching Bat.".into(),
+            oracle_text: "Flying\nAt the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -53,7 +54,7 @@ impl CardBehavior for ScreechingBat {
             subtypes: vec!["Vampire".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform Stalking Vampire.".into(),
+            oracle_text: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -128,13 +129,8 @@ impl CardBehavior for ScreechingBat {
             return;
         }
 
-        // Transform.
-        let is_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
-        if let Some(obj) = state.get_object_mut(self_id) {
-            obj.is_transformed = !is_transformed;
-            let name = if obj.is_transformed { "Stalking Vampire" } else { "Screeching Bat" };
-            obj.name = name.into();
-        }
+        // Transform — uses the generic helper to update name, keywords, and subtypes.
+        helpers::apply_transform(state, self_id, _registry);
         let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
         state.log(LogLevel::Event,
             format!("Transforms into {}", new_name));
