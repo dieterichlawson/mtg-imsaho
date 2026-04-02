@@ -70,3 +70,11 @@ None. Implementation is fully correct and matches oracle text.
 
 ### Code issues
 Oracle text in code is `"Enchanted creature gets -2/-2."` but should be `"Enchant creature\nEnchanted creature gets -2/-2."` — missing the "Enchant creature" keyword line. Behavior is fully correct: target requirement is Creature, resolves via resolve_aura, continuous effect ModifyPT -2/-2 with scope Attached. Cost {B} and type/subtypes all match.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.

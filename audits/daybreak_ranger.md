@@ -348,3 +348,11 @@ Note: `crate::combat::fight` internally calls `deal_damage_to_creature` which em
 1. Minor oracle text mismatch: code front face uses `"Daybreak Ranger deals 2 damage"` and `"transform Daybreak Ranger"` instead of current oracle template `"This creature deals 2 damage"` / `"transform this creature"`. Same issue on back face: `"Nightfall Predator fights"` vs `"This creature fights"`. Behavior is correct regardless.
 2. The front face TargetRequirement is `Creature` (any creature), but `is_valid_target` further restricts to flying creatures. This works correctly but is an unusual pattern — ideally a `CreatureWithFlying` target requirement would be used if available. No behavioral issue.
 3. Transform logic is correct: front transforms if no spells cast last turn (and not first turn), back transforms if any player cast 2+ spells. P/T 2/2 front, 4/4 back via dynamic_pt. Subtypes match oracle for both faces.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.

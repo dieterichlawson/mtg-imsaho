@@ -52,3 +52,11 @@ Since this is the only card in the library, top == bottom, so it does not verify
 
 ### Code issues
 1. **Oracle text mismatch**: Oracle says "Target player puts the bottom card of their library into their graveyard" but code oracle_text says "Target player mills the bottom card of their library." The oracle uses the older "puts into graveyard" template, not the "mills" keyword. Code oracle_text should be updated. No gameplay impact — behavior correctly moves the bottom card to graveyard.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.

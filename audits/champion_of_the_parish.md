@@ -62,3 +62,11 @@ Same outdated wording as the oracle_text field. Cosmetic only.
 
 ### Code issues
 1. **Oracle text mismatch**: Oracle says "Whenever another Human you control enters, put a +1/+1 counter on this creature." but code oracle_text says "Whenever another Human creature enters the battlefield under your control, put a +1/+1 counter on Champion of the Parish." The oracle has been updated to modern template (dropping "creature", "the battlefield", and using self-referential "this creature"). No gameplay impact — behavior is correct.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.

@@ -98,3 +98,11 @@ The major issue from the prior audit (forced morbid) has been fixed:
 
 ### Code issues
 1. **Oracle text mismatch**: Oracle says "then shuffle" but code oracle_text says "then shuffle your library." The oracle has been updated to modern template wording. No gameplay impact — behavior is correct.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.

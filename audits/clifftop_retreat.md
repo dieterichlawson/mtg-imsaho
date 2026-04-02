@@ -43,3 +43,11 @@ No functional bugs. One cosmetic oracle text mismatch with modern templating.
 
 ### Code issues
 Oracle text mismatch: code stores `"Clifftop Retreat enters the battlefield tapped unless you control a Mountain or a Plains."` but current oracle text is `"This land enters tapped unless you control a Mountain or a Plains."`. Behavior is correct; only the stored oracle_text string needs updating to match the modern Scryfall wording.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.

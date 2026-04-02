@@ -228,3 +228,11 @@ Sources:
 
 ### Code issues
 1. **Oracle text mismatch**: Oracle says "this enchantment deals 2 damage to any target" but code oracle_text says "Burning Vengeance deals 2 damage to any target." The oracle has been updated to use "this enchantment" self-referential language. The code oracle_text should be updated to match. Behavior is functionally equivalent — no gameplay impact.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.
