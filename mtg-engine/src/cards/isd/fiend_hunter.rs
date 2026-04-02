@@ -60,6 +60,10 @@ impl CardBehavior for FiendHunter {
             if state.get_object(target_id).map(|o| o.zone == Zone::Exile).unwrap_or(false) {
                 let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.move_object(target_id, Zone::Battlefield);
+                // "under its owner's control" — reset controller to owner
+                if let Some(obj) = state.get_object_mut(target_id) {
+                    obj.controller = obj.owner;
+                }
                 state.log(crate::state::LogLevel::Event, format!("{} returned to the battlefield", name));
             }
         }
