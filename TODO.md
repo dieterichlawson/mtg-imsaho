@@ -8,8 +8,7 @@
 
 ### ~~Bitterheart Witch~~ — FIXED (player now chooses which Curse via ChooseTarget chain)
 
-### Mirror-Mad Phantasm
-- Doesn't shuffle before reveal. The implementation appends the card to the bottom of the library (`push`) instead of shuffling it into a random position. Oracle says "shuffles it into their library" — the card should be at a random position before the reveal loop begins.
+### ~~Mirror-Mad Phantasm~~ — FIXED (now shuffles library after inserting card)
 
 ### Snapcaster Mage
 - Auto-selects highest-MV instant/sorcery in graveyard instead of presenting a target choice to the player. Oracle says "target instant or sorcery card in your graveyard" which requires player selection.
