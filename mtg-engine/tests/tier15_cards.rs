@@ -5,7 +5,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::cards::CardRegistry;
+use mtg_engine::cards::{CardRegistry, TriggerKind};
 use mtg_engine::ids::CardId;
 use mtg_engine::engine;
 use mtg_engine::actions::{Action, ResolvedChoice};
@@ -785,7 +785,7 @@ fn delver_does_not_transform_when_top_card_is_creature() {
 // ── Cloistered Youth ──────────────────────────────────────────
 
 #[test]
-fn cloistered_youth_transforms_at_upkeep() {
+fn cloistered_youth_presents_transform_choice_at_upkeep() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
@@ -794,9 +794,46 @@ fn cloistered_youth_transforms_at_upkeep() {
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, youth, &reg);
 
+    // Should NOT be transformed yet — awaiting player choice.
+    assert!(!state.get_object(youth).unwrap().is_transformed);
+    assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
+
+    // Player chooses yes to transform.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Now should be transformed.
     assert!(state.get_object(youth).unwrap().is_transformed);
     assert_eq!(state.get_object(youth).unwrap().name, "Unholy Fiend");
     assert_eq!(behavior.dynamic_pt(&state, youth), Some((3, 3)));
+}
+
+#[test]
+fn cloistered_youth_can_decline_transform() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
+
+    let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, youth, &reg);
+
+    // Should be awaiting player choice.
+    assert!(state.awaiting_action.is_some());
+
+    // Player declines to transform.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &reg,
+    );
+
+    // Should NOT be transformed.
+    assert!(!state.get_object(youth).unwrap().is_transformed);
+    assert_eq!(state.get_object(youth).unwrap().name, "Cloistered Youth");
 }
 
 #[test]
@@ -814,6 +851,30 @@ fn unholy_fiend_drains_life_at_end_step() {
     behavior.on_end_step(&mut state, youth, &reg);
 
     assert_eq!(state.players[0].life, life_before - 1);
+}
+
+#[test]
+fn cloistered_youth_front_face_has_upkeep_trigger_only() {
+    let reg = registry();
+    let card_id = reg.get_id_by_name("Cloistered Youth").unwrap();
+    let behavior = reg.get(card_id).unwrap();
+    let data = behavior.card_data();
+
+    // Front face should only have the upkeep trigger.
+    assert_eq!(data.triggered_abilities.len(), 1);
+    assert_eq!(data.triggered_abilities[0].kind, TriggerKind::Upkeep);
+}
+
+#[test]
+fn unholy_fiend_back_face_has_end_step_trigger_only() {
+    let reg = registry();
+    let card_id = reg.get_id_by_name("Cloistered Youth").unwrap();
+    let behavior = reg.get(card_id).unwrap();
+    let back = behavior.back_face_data().expect("Should have back face");
+
+    // Back face should only have the end step trigger.
+    assert_eq!(back.triggered_abilities.len(), 1);
+    assert_eq!(back.triggered_abilities[0].kind, TriggerKind::EndStep);
 }
 
 // ── Screeching Bat ──────────────────────────────────────────

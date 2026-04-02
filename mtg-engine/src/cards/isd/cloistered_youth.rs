@@ -1,15 +1,12 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::helpers;
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::*;
 
-/// Cloistered Youth {1}{W} 3/2 Human // Unholy Fiend 3/3 Horror.
-/// At the beginning of your upkeep, you may transform Cloistered Youth.
-/// Unholy Fiend: At the beginning of your upkeep, you lose 1 life.
-///
-/// Simplified: Automatically transforms at your upkeep (front→back). Back face deals 1 damage
-/// to you each upkeep and doesn't transform back (per the original card, back face has no
-/// transform-back trigger — it stays as Unholy Fiend).
+/// Cloistered Youth {1}{W} 1/1 Human // Unholy Fiend 3/3 Horror.
+/// Front: At the beginning of your upkeep, you may transform Cloistered Youth.
+/// Back: At the beginning of your end step, you lose 1 life.
 pub struct CloisteredYouth;
 
 impl CardBehavior for CloisteredYouth {
@@ -33,11 +30,7 @@ impl CardBehavior for CloisteredYouth {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
-                    description: "may transform".into(),
-                },
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EndStep,
-                    description: "lose 1 life".into(),
+                    description: "you may transform Cloistered Youth".into(),
                 },
             ],
         }
@@ -57,7 +50,12 @@ impl CardBehavior for CloisteredYouth {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EndStep,
+                    description: "lose 1 life".into(),
+                },
+            ],
         })
     }
 
@@ -78,14 +76,30 @@ impl CardBehavior for CloisteredYouth {
             return;
         }
         if !is_transformed {
-            // Transform from Cloistered Youth to Unholy Fiend at upkeep.
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = true;
-                obj.name = "Unholy Fiend".into();
-            }
-            state.log(crate::state::LogLevel::Event,
-                "Cloistered Youth transforms into Unholy Fiend".into());
+            // "You may transform Cloistered Youth" — present choice to the player.
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::YesNo {
+                    description: "Cloistered Youth: transform into Unholy Fiend?".into(),
+                    source_card: self_id,
+                },
+            });
         }
+    }
+
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+        if !yes {
+            state.log(LogLevel::Event,
+                "Cloistered Youth: chose not to transform".into());
+            return;
+        }
+
+        // Transform using the generic helper (updates name, keywords, subtypes, is_transformed).
+        helpers::apply_transform(state, self_id, _registry);
+        let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
+        state.log(LogLevel::Event,
+            format!("Cloistered Youth transforms into {}", new_name));
     }
 
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
@@ -102,7 +116,7 @@ impl CardBehavior for CloisteredYouth {
             let new_life = old - 1;
             state.get_player_mut(controller).life = new_life;
             state.events.push(crate::events::GameEvent::LifeChanged { player: controller, old, new_life });
-            state.log(crate::state::LogLevel::Event,
+            state.log(LogLevel::Event,
                 format!("Unholy Fiend: p{} loses 1 life", controller.0));
         }
     }
