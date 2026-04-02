@@ -19,7 +19,7 @@ impl CardBehavior for DeadWeight {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchanted creature gets -2/-2.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature gets -2/-2.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
