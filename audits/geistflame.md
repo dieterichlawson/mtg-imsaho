@@ -1,15 +1,21 @@
 # Audit: Geistflame
 
-## Oracle Reference (Scryfall)
-- Cost: {R}
-- Type: Instant
-- Oracle: "Geistflame deals 1 damage to any target.
-  Flashback {3}{R}"
+## Oracle Reference
+- **Name:** Geistflame
+- **Mana Cost:** {R}
+- **Type:** Instant
+- **Oracle Text:** Geistflame deals 1 damage to any target. / Flashback {3}{R}
+- **Keywords:** Flashback
 
-## Implementation: geistflame.rs
+## Card Data Audit
+- **Name:** Correct ("Geistflame")
+- **Mana Cost:** Correct (Red)
+- **Type:** Correct (Instant)
+- **Flashback Cost:** Correct (Generic(3), Red)
 
-## Issues Found
+## Behavior Audit
+- **Targeting:** `TargetRequirement::AnyTarget`. Correct.
+- **Damage:** `resolve_damage` with amount 1. Correct.
+- **Flashback:** `flashback_cost` is set to {3}{R}. Correct.
 
-No issues found. Name, cost ({R}), type (Instant), oracle text, flashback cost ({3}{R}), target requirement (AnyTarget), and damage amount (1) all match. Uses resolve_damage helper which correctly handles damaged_by tracking and NonCombatDamageDealt events.
-
-## Verdict: PASS
+## Result: PASS

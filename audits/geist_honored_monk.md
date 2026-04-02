@@ -1,19 +1,24 @@
 # Audit: Geist-Honored Monk
 
-## Oracle Reference (Scryfall)
-- Cost: {3}{W}{W}
-- Type: Creature -- Human Monk
-- P/T: */*
-- Oracle: "Vigilance
-  Geist-Honored Monk's power and toughness are each equal to the number of creatures you control.
-  When Geist-Honored Monk enters the battlefield, create two 1/1 white Spirit creature tokens with flying."
+## Oracle Reference
+- **Name:** Geist-Honored Monk
+- **Mana Cost:** {3}{W}{W}
+- **Type:** Creature — Human Monk
+- **P/T:** */*
+- **Oracle Text:** Vigilance / Geist-Honored Monk's power and toughness are each equal to the number of creatures you control. / When this creature enters, create two 1/1 white Spirit creature tokens with flying.
 
-## Implementation: geist_honored_monk.rs
+## Card Data Audit
+- **Name:** Correct ("Geist-Honored Monk")
+- **Mana Cost:** Correct (Generic(3), White, White)
+- **Type:** Correct (Creature)
+- **Subtypes:** Correct ("Human", "Monk")
+- **Base P/T:** Set to (0, 0) with dynamic_pt override. Acceptable for */* implementation.
+- **Keywords:** Correct (Keyword::Vigilance)
 
-## Issues Found
+## Behavior Audit
+- **Dynamic P/T:** `dynamic_pt` counts all creatures on the battlefield controlled by the same player (including itself). Matches oracle "equal to the number of creatures you control." Correct.
+- **ETB trigger:** `on_enter_battlefield` creates two 1/1 white Spirit tokens with flying via `create_token_with_subtypes`. Correct.
+- **Token details:** Color White, type Creature, keyword Flying, subtype "Spirit", P/T 1/1. All correct.
+- **Oracle text wording:** Code uses "enters the battlefield" while current oracle uses "When this creature enters". This is a cosmetic oracle text string difference only; behavior is correct.
 
-1. **MINOR: Base P/T listed as 0/0 instead of */** - The card_data sets power: Some(0), toughness: Some(0). While functionally equivalent since dynamic_pt overrides it, the base should ideally represent the characteristic-defining ability. This is cosmetic since the dynamic_pt function correctly computes creature count.
-
-Otherwise all correct: cost {3}{W}{W}, types, subtypes (Human Monk), vigilance keyword, ETB trigger creates two 1/1 white Spirit tokens with flying, dynamic P/T counts creatures controller controls.
-
-## Verdict: PASS (1 minor cosmetic note)
+## Result: PASS

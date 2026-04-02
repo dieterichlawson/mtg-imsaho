@@ -1,15 +1,19 @@
 # Audit: Gavony Township
 
-## Oracle Reference (Scryfall)
-- Cost: (none, land)
-- Type: Land
-- Oracle: "{T}: Add {C}.
-  {2}{G}{W}, {T}: Put a +1/+1 counter on each creature you control."
+## Oracle Reference
+- **Name:** Gavony Township
+- **Type:** Land
+- **Oracle Text:** {T}: Add {C}. / {2}{G}{W}, {T}: Put a +1/+1 counter on each creature you control.
 
-## Implementation: gavony_township.rs
+## Card Data Audit
+- **Name:** Correct ("Gavony Township")
+- **Mana Cost:** Correct (None -- it is a land)
+- **Type:** Correct (Land)
 
-## Issues Found
+## Behavior Audit
+- **Mana ability:** Produces 1 colorless mana, requires tap, only available when untapped on battlefield. Correct.
+- **Activated ability:** Costs {2}{G}{W} and tap. Correct.
+- **Counter placement:** `on_activate_ability` finds all creatures controlled by the activator (filtered by `o.power.is_some()`) and adds 1 PlusOnePlusOne counter to each. Correct.
+- **No sorcery speed restriction:** `sorcery_speed_only: false`. Correct -- the oracle text has no timing restriction beyond the tap cost.
 
-No issues found. Name, type, oracle text, mana ability ({T}: Add {C}), and activated ability ({2}{G}{W}, {T}: +1/+1 counter on each creature you control) all match. The activated ability correctly requires tap and the right mana cost. Counters are correctly applied as PlusOnePlusOne.
-
-## Verdict: PASS
+## Result: PASS

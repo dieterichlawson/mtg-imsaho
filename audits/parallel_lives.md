@@ -1,22 +1,26 @@
 # Audit: Parallel Lives
 
-## Official Oracle
+## Reference (Scryfall/API)
 - **Name:** Parallel Lives
-- **Cost:** {3}{G}
+- **Mana Cost:** {3}{G}
 - **Type:** Enchantment
-- **Oracle Text:** If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.
-- **P/T:** N/A
+- **Oracle:** If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {3}{G} — OK
-- **Type:** Enchantment — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **Keywords:** None — OK
-- **Behavior:** Token doubling handled externally in GameState::create_token_with_subtypes — OK (no on_resolve needed for a static enchantment)
-
-## Issues
-None found.
+## Implementation: `parallel_lives.rs`
+- **Name:** Parallel Lives -- CORRECT
+- **Mana Cost:** {3}{G} -- CORRECT
+- **Type:** Enchantment -- CORRECT
+- **P/T:** None -- CORRECT
+- **Keywords:** None -- CORRECT
+- **oracle_text field:** Matches oracle -- CORRECT
+- **Behavior:** Token doubling is handled externally in GameState::create_token_with_subtypes (per code comment) -- CORRECT approach for a replacement effect
 
 ## Verdict: PASS
+
+## Audit -- 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: If an effect would create one or more tokens under your control, it creates twice that many of those tokens instead.
+**Type line**: Enchantment
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name, cost {3}{G}, type Enchantment, token-doubling replacement effect. Behavior is correctly delegated to the engine's token creation logic.
