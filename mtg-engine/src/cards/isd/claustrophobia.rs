@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
+use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry, TriggeredAbilityDef, TriggerKind};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -22,13 +22,19 @@ impl CardBehavior for Claustrophobia {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "When Claustrophobia enters the battlefield, tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step.".into(),
+            oracle_text: "Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature doesn't untap during its controller's untap step.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
                 ContinuousEffect::PreventUntap { scope: EffectScope::Attached },
             ],
-            additional_cost: None, triggered_abilities: vec![],
+            additional_cost: None,
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EntersBattlefield,
+                    description: "tap enchanted creature".into(),
+                },
+            ],
         }
     }
 
