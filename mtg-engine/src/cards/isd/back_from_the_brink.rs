@@ -105,11 +105,12 @@ impl CardBehavior for BackFromTheBrink {
 
         let name = state.get_object(creature_id).map(|o| o.name.clone()).unwrap_or_default();
 
-        // Create a token copy.
-        state.create_token_copy(creature_id, controller, registry);
-
-        // Exile the creature card.
+        // Exile the creature card first (part of the cost — everything before the colon).
+        // Per oracle: "Exile a creature card from your graveyard and pay its mana cost:"
         state.move_object(creature_id, Zone::Exile);
+
+        // Create a token copy (the effect — after the colon).
+        state.create_token_copy(creature_id, controller, registry);
 
         state.log(crate::state::LogLevel::Event,
             format!("Back from the Brink: exiled {} from graveyard, created token copy", name));

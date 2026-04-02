@@ -2,11 +2,9 @@
 
 ## Real Bugs (6)
 
-### Charmbreaker Devils
-- `on_spell_cast` triggers on ANY spell cast by the controller, not just instant/sorcery spells. Oracle says "Whenever you cast an instant or sorcery spell" but the implementation doesn't check the spell's card type before applying +4/+0.
+### ~~Charmbreaker Devils~~ — FALSE POSITIVE (triggers.rs already gates SpellCast on instant/sorcery)
 
-### Back from the Brink
-- Exile/token creation order reversed. Oracle: "Exile a creature card from your graveyard and pay its mana cost: Create a token that's a copy of that card." The exile is part of the cost (before the colon), so it should happen before the token is created. The implementation creates the token first and exiles second.
+### ~~Back from the Brink~~ — FIXED (exile now happens before token creation)
 
 ### Bitterheart Witch
 - Auto-selects first Curse when multiple Curse cards exist in library. Oracle says "search your library for a Curse card" — player should choose which Curse to put onto the battlefield.
