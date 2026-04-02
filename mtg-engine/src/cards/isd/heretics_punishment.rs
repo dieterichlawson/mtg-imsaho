@@ -22,7 +22,7 @@ impl CardBehavior for HereticsPunishment {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{3}{R}: Mill three cards, then Heretic's Punishment deals damage to any target equal to the highest mana value among the milled cards.".into(),
+            oracle_text: "{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
