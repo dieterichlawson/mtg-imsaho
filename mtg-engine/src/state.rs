@@ -1493,6 +1493,8 @@ pub enum PendingEffect {
     /// (Bitterheart Witch). The curse_id is the library object to move; searcher is the
     /// controller whose library is shuffled afterwards.
     AttachCurseToPlayer { curse_id: ObjectId, searcher: PlayerId },
+    /// Two-step Curse selection: player chose a Curse from library, now need to choose a player.
+    ChooseCurseThenAttach { searcher: PlayerId, source: ObjectId },
 }
 
 /// Game result.

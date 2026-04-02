@@ -8,6 +8,29 @@ use crate::types::*;
 /// put it onto the battlefield attached to target player, then shuffle.
 pub struct BitterheartWitch;
 
+impl BitterheartWitch {
+    /// Present the "target player" choice after a Curse has been selected.
+    fn present_player_choice(&self, state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId) {
+        let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
+            .map(|i| crate::actions::Target::Player(PlayerId(i as u8)))
+            .collect();
+
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "Bitterheart Witch: choose a player to attach the Curse to".into(),
+                options: player_targets,
+                optional: false,
+                effect: PendingEffect::AttachCurseToPlayer {
+                    curse_id,
+                    searcher: controller,
+                },
+            },
+        });
+    }
+}
+
 impl CardBehavior for BitterheartWitch {
     fn card_data(&self) -> CardData {
         CardData {
@@ -77,26 +100,28 @@ impl CardBehavior for BitterheartWitch {
             return;
         }
 
-        // Pick the first matching Curse (single-card tutor).
-        let chosen_curse = curse_ids[0];
-
-        // Present a player choice for "target player" to attach the Curse to.
-        let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
-            .map(|i| crate::actions::Target::Player(PlayerId(i as u8)))
-            .collect();
-
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: controller,
-            source: self_id,
-            choice: ResolutionChoiceKind::ChooseTarget {
-                description: "Bitterheart Witch: choose a player to attach the Curse to".into(),
-                options: player_targets,
-                optional: false,
-                effect: PendingEffect::AttachCurseToPlayer {
-                    curse_id: chosen_curse,
-                    searcher: controller,
+        if curse_ids.len() == 1 {
+            // Only one Curse — auto-select it, then choose target player.
+            let chosen_curse = curse_ids[0];
+            self.present_player_choice(state, self_id, controller, chosen_curse);
+        } else {
+            // Multiple Curses — player chooses which one via ChooseTarget.
+            let curse_targets: Vec<crate::actions::Target> = curse_ids.iter()
+                .map(|&id| crate::actions::Target::Object(id))
+                .collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Bitterheart Witch: choose a Curse card from your library".into(),
+                    options: curse_targets,
+                    optional: false,
+                    effect: PendingEffect::ChooseCurseThenAttach {
+                        searcher: controller,
+                        source: self_id,
+                    },
                 },
-            },
-        });
+            });
+        }
     }
 }

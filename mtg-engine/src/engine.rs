@@ -2576,6 +2576,25 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 }
             }
         }
+        (Target::Object(curse_id), PendingEffect::ChooseCurseThenAttach { searcher, source }) => {
+            // Player chose which Curse from library — now present the "target player" choice.
+            let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
+                .map(|i| crate::actions::Target::Player(PlayerId(i as u8)))
+                .collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: *searcher,
+                source: *source,
+                choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                    description: "Bitterheart Witch: choose a player to attach the Curse to".into(),
+                    options: player_targets,
+                    optional: false,
+                    effect: PendingEffect::AttachCurseToPlayer {
+                        curse_id: *curse_id,
+                        searcher: *searcher,
+                    },
+                },
+            });
+        }
         (Target::Player(pid), PendingEffect::AttachCurseToPlayer { curse_id, searcher }) => {
             let name = state.get_object(*curse_id).map(|o| o.name.clone()).unwrap_or_default();
             // Remove from library.
