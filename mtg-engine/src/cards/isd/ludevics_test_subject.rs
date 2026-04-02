@@ -5,12 +5,12 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Ludevic's Test Subject {1}{U} 0/3 Lizard // Ludevic's Abomination 13/13 Lizard Horror
+/// Ludevic's Test Subject {1}{U} 0/3 Lizard Egg // Ludevic's Abomination 13/13 Lizard Horror
 /// with Trample.
-/// {1}{U}: Put a hatch counter on this creature. Then if there are five or more hatch counters
+/// {1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters
 /// on it, remove all of them and transform it.
 ///
-/// Implementation: Uses card_state to track hatch counters. We store the count as ObjectId(count).
+/// Implementation: Uses card_state to track hatchling counters. We store the count as ObjectId(count).
 pub struct LudevicsTestSubject;
 
 impl CardBehavior for LudevicsTestSubject {
@@ -23,10 +23,10 @@ impl CardBehavior for LudevicsTestSubject {
             ])),
             card_types: vec![CardType::Creature],
             supertypes: vec![],
-            subtypes: vec!["Lizard".into()],
+            subtypes: vec!["Lizard".into(), "Egg".into()],
             power: Some(0),
             toughness: Some(3),
-            oracle_text: "Defender\n{1}{U}: Put a hatch counter on this creature. Then if there are five or more hatch counters on it, remove all of them and transform it.".into(),
+            oracle_text: "Defender\n{1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.".into(),
             keywords: vec![Keyword::Defender],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -69,7 +69,7 @@ impl CardBehavior for LudevicsTestSubject {
         let _ = obj;
         vec![ActivatedAbilityDef {
             ability_index: 0,
-            description: "{1}{U}: Put a hatch counter. At 5, transform.".into(),
+            description: "{1}{U}: Put a hatchling counter. At 5, transform.".into(),
             cost: ManaCost::new(vec![
                 ManaSymbol::Generic(1),
                 ManaSymbol::Colored(Color::Blue),
@@ -83,27 +83,31 @@ impl CardBehavior for LudevicsTestSubject {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        // Add a hatch counter.
+        // If already transformed, this ability shouldn't do anything (back face has no activated abilities).
+        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+            return;
+        }
+        // Add a hatchling counter.
         let current = state.get_object(object_id)
-            .and_then(|o| o.card_state.get("hatch_counters"))
+            .and_then(|o| o.card_state.get("hatchling_counters"))
             .map(|id| id.0 as u32)
             .unwrap_or(0);
         let new_count = current + 1;
 
         if new_count >= 5 {
-            // Remove all hatch counters and transform.
+            // Remove all hatchling counters and transform.
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.card_state.remove("hatch_counters");
+                obj.card_state.remove("hatchling_counters");
             }
             helpers::apply_transform(state, object_id, registry);
             state.log(crate::state::LogLevel::Event,
                 "Ludevic's Test Subject transforms into Ludevic's Abomination (13/13 Trample)!".into());
         } else {
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.card_state.insert("hatch_counters".into(), ObjectId(new_count as u64));
+                obj.card_state.insert("hatchling_counters".into(), ObjectId(new_count as u64));
             }
             state.log(crate::state::LogLevel::Event,
-                format!("Ludevic's Test Subject: hatch counter added ({}/5)", new_count));
+                format!("Ludevic's Test Subject: hatchling counter added ({}/5)", new_count));
         }
     }
 
