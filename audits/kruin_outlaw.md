@@ -456,3 +456,62 @@ No anti-patterns detected. Not in LLM card knowledge section.
 - Transform gains double strike: `mtg-engine/tests/werewolf_cards.rs:431` (kruin_outlaw_transforms_gains_double_strike_and_menace)
 - Transform back to front (2+ spells): NOT TESTED (directly)
 - Ruling: transform mid-combat keeps blocks: NOT TESTED (engine-level behavior)
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+
+**Oracle text (front face — Kruin Outlaw)**:
+> First strike
+> At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+
+**Type line (front)**: Creature — Human Rogue Werewolf
+**Mana cost**: {1}{R}{R}
+**P/T**: 2/2
+
+**Oracle text (back face — Terror of Kruin Pass)**:
+> Double strike
+> Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)
+> At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+
+**Type line (back)**: Creature — Werewolf
+**P/T**: 3/3
+
+**Status**: PASS
+
+### Code issues
+
+No issues found. The implementation in `mtg-engine/src/cards/isd/kruin_outlaw.rs` matches the oracle text on both faces:
+
+- **Front face card data**: Mana cost `{1}{R}{R}`, types `Creature`, subtypes `["Human", "Rogue", "Werewolf"]`, P/T 2/2, keyword `FirstStrike` — all correct.
+- **Back face card data**: Types `Creature`, subtypes `["Werewolf"]`, P/T 3/3 (via `dynamic_pt`), keyword `DoubleStrike` — all correct.
+- **Menace grant**: Implemented as a continuous effect `GrantKeyword { keyword: Menace, scope: Global(And(You, HasSubtype("Werewolf"))) }` on the back face. This correctly grants menace to all Werewolves you control (including itself, since it is a Werewolf). This matches the oracle text "Werewolves you control have menace."
+- **Transform (front to back)**: `total_spells_last_turn == 0 && !state.is_first_turn` — correctly implements "if no spells were cast last turn" with the first-turn guard.
+- **Transform (back to front)**: `state.spells_cast_last_turn.values().any(|&count| count >= 2)` — correctly implements "if a player cast two or more spells last turn".
+- **Triggered abilities**: Both faces have `TriggerKind::Upkeep` entries, matching the upkeep transform triggers.
+
+### Tricky interactions checked
+
+- **Menace is granted, not intrinsic**: The oracle text says "Werewolves you control have menace" — this is a static ability that grants menace to a class of creatures, not an intrinsic keyword of Terror of Kruin Pass. The implementation correctly uses a `ContinuousEffect::GrantKeyword` rather than listing `Menace` in the back face's `keywords` vec. Terror of Kruin Pass receives menace from its own effect because it is a Werewolf you control.
+- **Double strike replaces first strike**: The front face has first strike; the back face has double strike (not both). The implementation correctly lists only `FirstStrike` on front and only `DoubleStrike` on back.
+- **Ruling (2011-09-22)**: "If Kruin Outlaw somehow transforms after blockers have been declared but before combat ends, any Werewolves you control that are blocked by a single creature will remain blocked." This is standard menace behavior (blocking restrictions are checked at declare-blockers time). The engine handles this at the framework level.
+- **Transform back condition**: Checks `any` player cast 2+ spells, not total across all players. Code uses `.values().any(|&count| count >= 2)` which is correct per oracle "if a player cast two or more spells last turn".
+
+### LLM knowledge
+
+No entry found in `mtg-player/src/llm.rs` for Kruin Outlaw or Terror of Kruin Pass.
+
+### Test coverage
+
+Dedicated test file `mtg-engine/tests/kruin_outlaw.rs` (6 tests):
+- `terror_of_kruin_pass_self_requires_two_blockers` — menace blocks self with 1 blocker (rejected)
+- `terror_of_kruin_pass_allows_two_blockers` — menace allows 2 blockers
+- `terror_of_kruin_pass_grants_restriction_to_other_werewolves` — menace applies to other werewolves you control
+- `terror_of_kruin_pass_does_not_affect_non_werewolves` — non-werewolves not affected
+- `terror_of_kruin_pass_does_not_affect_opponent_werewolves` — opponent's werewolves not affected
+- `terror_of_kruin_pass_grants_menace_keyword` — verifies keyword is granted to self and other werewolves
+
+Additional coverage in `mtg-engine/tests/werewolf_cards.rs`:
+- `kruin_outlaw_transforms_gains_double_strike_and_menace` — verifies front face has first strike, back face has double strike after transform
+
+Not directly tested: transform back from Terror of Kruin Pass to Kruin Outlaw (covered indirectly by shared werewolf transform logic tested on other cards).
