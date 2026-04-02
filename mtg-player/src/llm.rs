@@ -135,6 +135,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Abattoir Ghoul ({3}{B} creature 3/2 first strike): When a creature it damaged this turn dies, you gain life equal to its toughness.
 - Crossway Vampire ({1}{R}{R} creature 3/2): When it enters, target creature can't block this turn. Clears the way for attackers.
 - Rakish Heir ({2}{R} creature 2/2): Whenever a Vampire you control deals combat damage to a player, that Vampire gets a +1/+1 counter.
+- Grimoire of the Dead ({4} legendary artifact): Has two activated abilities. First: pay {1}, tap, discard a card to add a study counter. Second: tap, remove 3 study counters, sacrifice it to put ALL creature cards from ALL graveyards onto the battlefield under your control as black Zombies. Build up counters over 3 turns (discard your worst cards), then sacrifice for a massive board. The reanimation ability is a game-winner — plan around it.
 
 ## Flashback
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. Tap lands to get mana, then the Flashback option appears.

@@ -280,6 +280,7 @@ pub enum CounterType {
     MinusOneMinusOne,
     Loyalty,
     Slime,
+    Study,
     // extend as needed
 }
 

@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Grimoire of the Dead {4} Legendary Artifact.
@@ -9,9 +9,6 @@ use crate::types::*;
 /// {T}, Remove three study counters from Grimoire of the Dead and sacrifice it:
 /// Put all creature cards from all graveyards onto the battlefield under your control.
 /// They're black Zombies in addition to their other colors and types.
-///
-/// Simplified: Discard ability auto-picks a card from hand. Study counters tracked via
-/// card_state. The sacrifice ability returns all graveyard creatures.
 pub struct GrimoireOfTheDead;
 
 impl CardBehavior for GrimoireOfTheDead {
@@ -48,18 +45,16 @@ impl CardBehavior for GrimoireOfTheDead {
             _ => return vec![],
         };
         let controller = obj.controller;
-        let study_counters = obj.card_state.get("study_counters")
-            .map(|id| id.0 as u32)
-            .unwrap_or(0);
+        let study_counters = state.get_counter_count(object_id, CounterType::Study);
         let has_cards_in_hand = !state.objects_in_zone(Zone::Hand, controller).is_empty();
 
         let mut abilities = vec![];
 
-        // Ability 0: {1}, {T}, Discard a card: Put a study counter.
+        // Ability 0: {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.
         if has_cards_in_hand {
             abilities.push(ActivatedAbilityDef {
                 ability_index: 0,
-                description: "{1}, {T}, Discard: Put a study counter on Grimoire".into(),
+                description: "{1}, {T}, Discard a card: Put a study counter on Grimoire".into(),
                 cost: ManaCost::new(vec![ManaSymbol::Generic(1)]),
                 requires_tap: true,
                 sacrifice_cost: SacrificeCost::None,
@@ -86,7 +81,7 @@ impl CardBehavior for GrimoireOfTheDead {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -94,10 +89,18 @@ impl CardBehavior for GrimoireOfTheDead {
 
         match ability_index {
             0 => {
-                // Discard a card, add a study counter.
+                // {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.
+                // Present the discard choice to the player.
                 let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, controller)
                     .iter().map(|o| o.id).collect();
-                if let Some(&card_id) = hand.first() {
+
+                if hand.is_empty() {
+                    return;
+                }
+
+                if hand.len() == 1 {
+                    // Only one card in hand -- auto-discard it.
+                    let card_id = hand[0];
                     let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
                     state.move_object(card_id, Zone::Graveyard);
                     state.events.push(crate::events::GameEvent::Discarded {
@@ -106,36 +109,51 @@ impl CardBehavior for GrimoireOfTheDead {
                     });
                     state.log(crate::state::LogLevel::Event,
                         format!("Grimoire of the Dead: p{} discarded {}", controller.0, name));
-                }
 
-                let current = state.get_object(object_id)
-                    .and_then(|o| o.card_state.get("study_counters"))
-                    .map(|id| id.0 as u32)
-                    .unwrap_or(0);
-                if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.card_state.insert("study_counters".into(), ObjectId((current + 1) as u64));
+                    // Add the study counter.
+                    state.add_counters(object_id, CounterType::Study, 1);
+                    let count = state.get_counter_count(object_id, CounterType::Study);
+                    state.log(crate::state::LogLevel::Event,
+                        format!("Grimoire of the Dead: study counter added ({}/3)", count));
+                } else {
+                    // Multiple cards -- present choice to player.
+                    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                        player: controller,
+                        source: object_id,
+                        choice: ResolutionChoiceKind::ChooseCardFromHand {
+                            description: "Grimoire of the Dead: choose a card to discard".into(),
+                            player: controller,
+                            cards: hand,
+                        },
+                    });
                 }
-                state.log(crate::state::LogLevel::Event,
-                    format!("Grimoire of the Dead: study counter added ({}/3)", current + 1));
             }
             1 => {
-                // Remove 3 study counters, sacrifice Grimoire, return all graveyard creatures.
-                // Sacrifice Grimoire.
-                crate::destruction::sacrifice(state, object_id, registry);
+                // {T}, Remove 3 study counters, sacrifice: Return all graveyard creatures.
+                // Note: The engine already handled tapping and sacrificing as part of the cost.
+                // The study counters were already checked in activated_abilities().
+                // (Since the Grimoire is now in the graveyard, counter removal is moot.)
 
                 // Collect all creature cards from all graveyards.
-                let creatures: Vec<(ObjectId, crate::ids::PlayerId)> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Graveyard && o.power.is_some())
-                    .map(|o| (o.id, o.owner))
+                // "Creature cards" includes each card with the type creature, even if
+                // it has additional types (ruling 2011-09-22). We check card_types
+                // for Creature in addition to checking power (which is the heuristic
+                // for creatures created by the engine).
+                let creatures: Vec<ObjectId> = state.objects.values()
+                    .filter(|o| o.zone == Zone::Graveyard && o.id != object_id)
+                    .filter(|o| {
+                        o.power.is_some() || o.card_types.contains(&CardType::Creature)
+                    })
+                    .map(|o| o.id)
                     .collect();
 
                 let count = creatures.len();
-                for (cid, _owner) in creatures {
+                for cid in creatures {
                     let name = state.get_object(cid).map(|o| o.name.clone()).unwrap_or_default();
                     state.move_object(cid, Zone::Battlefield);
                     if let Some(obj) = state.get_object_mut(cid) {
                         obj.controller = controller;
-                        // They're black Zombies in addition to their other types.
+                        // They're black Zombies in addition to their other colors and types.
                         if !obj.subtypes.contains(&"Zombie".into()) {
                             obj.subtypes.push("Zombie".into());
                         }
@@ -144,12 +162,20 @@ impl CardBehavior for GrimoireOfTheDead {
                         }
                     }
                     state.log(crate::state::LogLevel::Event,
-                        format!("Grimoire of the Dead: {} returned as a Zombie", name));
+                        format!("Grimoire of the Dead: {} returned as a black Zombie", name));
                 }
                 state.log(crate::state::LogLevel::Event,
                     format!("Grimoire of the Dead: {} creatures returned from all graveyards", count));
             }
             _ => {}
         }
+    }
+
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {
+        // After the player chooses a card to discard, add a study counter to the Grimoire.
+        state.add_counters(self_id, CounterType::Study, 1);
+        let count = state.get_counter_count(self_id, CounterType::Study);
+        state.log(crate::state::LogLevel::Event,
+            format!("Grimoire of the Dead: study counter added ({}/3)", count));
     }
 }

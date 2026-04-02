@@ -1449,7 +1449,7 @@ fn mirror_mad_phantasm_mills_to_find_itself() {
 // ── Grimoire of the Dead ──────────────────────────────────────────
 
 #[test]
-fn grimoire_accumulates_study_counters() {
+fn grimoire_discard_presents_choice_and_adds_study_counter() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -1457,25 +1457,109 @@ fn grimoire_accumulates_study_counters() {
     let grimoire = state.create_object(card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(grimoire).unwrap().name = "Grimoire of the Dead".into();
 
-    // Give P0 cards to discard.
-    let _c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    let _c2 = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    let _c3 = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
+    // Give P0 multiple cards in hand so a choice is presented.
+    let c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let c2 = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
 
-    let behavior = reg.get(card_id).unwrap();
+    // Add {1} mana for the ability cost.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
-    // Activate 3 times.
-    behavior.on_activate_ability(&mut state, grimoire, 0, &[], &reg);
-    let counters = state.get_object(grimoire).unwrap().card_state.get("study_counters")
-        .map(|id| id.0 as u32).unwrap_or(0);
-    assert_eq!(counters, 1);
+    // Activate ability 0 via the engine.
+    state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![] },
+        &reg,
+    );
 
-    behavior.on_activate_ability(&mut state, grimoire, 0, &[], &reg);
-    behavior.on_activate_ability(&mut state, grimoire, 0, &[], &reg);
+    // Should be awaiting a discard choice.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting discard choice");
 
-    let counters = state.get_object(grimoire).unwrap().card_state.get("study_counters")
-        .map(|id| id.0 as u32).unwrap_or(0);
-    assert_eq!(counters, 3);
+    // Choose to discard c1.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(c1) },
+        &reg,
+    );
+
+    // c1 should be in graveyard.
+    assert_eq!(state.get_object(c1).unwrap().zone, Zone::Graveyard);
+    // c2 should still be in hand.
+    assert_eq!(state.get_object(c2).unwrap().zone, Zone::Hand);
+    // Study counter should be added via the proper counter system.
+    assert_eq!(state.get_counter_count(grimoire, CounterType::Study), 1);
+}
+
+#[test]
+fn grimoire_single_card_in_hand_auto_discards() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = reg.get_id_by_name("Grimoire of the Dead").unwrap();
+    let grimoire = state.create_object(card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(grimoire).unwrap().name = "Grimoire of the Dead".into();
+
+    // Give P0 only one card in hand.
+    let c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+
+    // Add {1} mana for the ability cost.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Activate ability 0 via the engine.
+    state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![] },
+        &reg,
+    );
+
+    // With only one card, discard should be automatic (no choice needed).
+    assert!(state.awaiting_action.is_none(), "Should not be awaiting a choice with one card");
+    // c1 should be discarded.
+    assert_eq!(state.get_object(c1).unwrap().zone, Zone::Graveyard);
+    // Study counter should be added.
+    assert_eq!(state.get_counter_count(grimoire, CounterType::Study), 1);
+}
+
+#[test]
+fn grimoire_accumulates_three_study_counters() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = reg.get_id_by_name("Grimoire of the Dead").unwrap();
+    let grimoire = state.create_object(card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(grimoire).unwrap().name = "Grimoire of the Dead".into();
+
+    // Give P0 three cards to discard (one at a time).
+    let c1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let c2 = spell_in_hand(&mut state, &reg, "Giant Growth", P0);
+    let c3 = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+
+    // Activate 3 times, discarding one card each time.
+    // Each time: add mana, submit activate, choose a card.
+    for (i, card_to_discard) in [c1, c2, c3].iter().enumerate() {
+        state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+        // Untap Grimoire for subsequent activations.
+        if i > 0 {
+            state.get_object_mut(grimoire).unwrap().tapped = false;
+        }
+
+        state = engine::submit_action(
+            &state,
+            &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![] },
+            &reg,
+        );
+
+        // For the last card in hand, auto-discard happens.
+        if state.awaiting_action.is_some() {
+            state = engine::submit_action(
+                &state,
+                &Action::ResolveChoice { choice: ResolvedChoice::ChosenCard(*card_to_discard) },
+                &reg,
+            );
+        }
+    }
+
+    // Should have 3 study counters.
+    assert_eq!(state.get_counter_count(grimoire, CounterType::Study), 3);
 }
 
 #[test]
@@ -1486,8 +1570,8 @@ fn grimoire_reanimates_all_graveyard_creatures() {
     let card_id = reg.get_id_by_name("Grimoire of the Dead").unwrap();
     let grimoire = state.create_object(card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(grimoire).unwrap().name = "Grimoire of the Dead".into();
-    state.get_object_mut(grimoire).unwrap().card_state.insert("study_counters".into(),
-        mtg_engine::ids::ObjectId(3));
+    // Add 3 study counters via the proper counter system.
+    state.add_counters(grimoire, CounterType::Study, 3);
 
     // Put creatures in both graveyards.
     let gy1 = ready_creature(&mut state, P0, 3, 3);
@@ -1498,18 +1582,43 @@ fn grimoire_reanimates_all_graveyard_creatures() {
     state.get_object_mut(gy2).unwrap().name = "Creature B".into();
     state.move_object(gy2, Zone::Graveyard);
 
-    let behavior = reg.get(card_id).unwrap();
-    behavior.on_activate_ability(&mut state, grimoire, 1, &[], &reg);
+    // Activate ability 1 via the engine (tap + sacrifice + remove counters).
+    state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility { object_id: grimoire, ability_index: 1, targets: vec![] },
+        &reg,
+    );
 
     // Both creatures should be on the battlefield under P0's control.
     assert_eq!(state.get_object(gy1).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(gy1).unwrap().controller, P0);
     assert_eq!(state.get_object(gy2).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(gy2).unwrap().controller, P0);
-    // They should have the Zombie subtype.
+    // They should have the Zombie subtype and black color.
+    assert!(state.get_object(gy1).unwrap().subtypes.contains(&"Zombie".into()));
     assert!(state.get_object(gy2).unwrap().subtypes.contains(&"Zombie".into()));
+    assert!(state.get_object(gy1).unwrap().colors.contains(&Color::Black));
+    assert!(state.get_object(gy2).unwrap().colors.contains(&Color::Black));
     // Grimoire should be sacrificed (in graveyard).
     assert_eq!(state.get_object(grimoire).unwrap().zone, Zone::Graveyard);
+}
+
+#[test]
+fn grimoire_ability_1_not_available_without_3_counters() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let card_id = reg.get_id_by_name("Grimoire of the Dead").unwrap();
+    let grimoire = state.create_object(card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(grimoire).unwrap().name = "Grimoire of the Dead".into();
+    // Only 2 study counters -- not enough.
+    state.add_counters(grimoire, CounterType::Study, 2);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let has_sacrifice_ability = legal.actions.iter().any(|a| {
+        matches!(a, Action::ActivateAbility { ability_index: 1, .. })
+    });
+    assert!(!has_sacrifice_ability, "Should not be able to activate ability 1 with only 2 study counters");
 }
 
 // ── Civilized Scholar ──────────────────────────────────────────
