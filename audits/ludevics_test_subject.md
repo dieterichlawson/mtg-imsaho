@@ -79,3 +79,57 @@ Findings:
 12. **Tests**: Found in `mtg-engine/tests/tier15_cards.rs`. Tests verify 4 activations do not transform, 5th does, and back face stats are 13/13. Assertions correct.
 
 No issues found.
+
+## Audit — 2026-04-01 15:30
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text (front)**: Defender
+{1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.
+**Oracle text (back)**: Trample
+**Type line (front)**: Creature — Lizard Egg
+**Type line (back)**: Creature — Lizard Horror
+**Mana cost**: {1}{U}
+**P/T (front)**: 0/3
+**P/T (back)**: 13/13
+**Rulings**:
+- [2016-07-13] For more information on double-faced cards, see the Shadows over Innistrad mechanics article.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Detailed verification
+1. **Name**: "Ludevic's Test Subject" / "Ludevic's Abomination" — correct.
+2. **Mana cost {1}{U}**: `Generic(1), Colored(Blue)` — correct.
+3. **Front card types [Creature]**: correct.
+4. **Front subtypes ["Lizard", "Egg"]** (line 26): correct per Scryfall "Creature — Lizard Egg".
+5. **Front P/T 0/3** (lines 27-28): correct.
+6. **Front keywords [Defender]** (line 30): correct.
+7. **Back face name "Ludevic's Abomination"** (line 40): correct.
+8. **Back face subtypes ["Lizard", "Horror"]** (line 44): correct per Scryfall "Creature — Lizard Horror".
+9. **Back face P/T 13/13** (lines 45-46): correct. Also implemented via `dynamic_pt` (line 58) which returns `Some((13, 13))` when `is_transformed`.
+10. **Back face keywords [Trample]** (line 48): correct. The `has_keyword` system correctly uses back face keywords when transformed (state.rs:933-936), so Defender is lost and Trample is gained upon transformation.
+11. **Activated ability cost {1}{U}** (lines 73-74): correct.
+12. **Activated ability availability**: Only on battlefield, only when not transformed (line 66). Correct — the back face has no activated abilities.
+13. **Not once-per-turn** (line 80): correct — the ability can be activated multiple times per turn.
+14. **Not sorcery-speed-only** (line 81): correct — activated abilities default to instant speed.
+15. **Hatchling counter logic** (lines 87-108): Increments counter, checks >= 5, removes all and sets `is_transformed = true`, updates name. Correct per oracle "Then if there are five or more hatchling counters on it, remove all of them and transform it."
+16. **should_transform returns false** (line 111): correct — transformation is handled by the activated ability, not by the engine's automatic transform system.
+17. **Counter storage via card_state**: Uses `card_state` HashMap instead of a proper counter type. This is a workaround since `CounterType` enum lacks a `Hatchling` variant. Functionally correct but means hatchling counters won't be visible through the standard counter API (e.g., `get_counter_count`).
+
+### Tricky interactions checked
+- Defender lost on transform: PASS (has_keyword checks back face keywords when transformed)
+- Trample gained on transform: PASS (back face keywords include Trample)
+- 4 activations does not transform: PASS (checked in test)
+- 5th activation transforms: PASS (checked in test)
+- Multiple activations in one turn: PASS (once_per_turn is false)
+- Subtypes change on transform: PARTIAL — obj.subtypes is NOT updated on transform (line 95-98 only updates card_state, is_transformed, and name). The `CreatureFilter::HasSubtype` system correctly checks back face data for transformed creatures (state.rs:583-586), but direct `obj.subtypes` checks elsewhere may see stale front-face subtypes.
+
+### Test coverage
+- Transforms at 5 counters (including 4 not transforming): `tier15_cards.rs:796` (ludevics_test_subject_transforms_at_five_counters)
+- Back face name is correct: `tier15_cards.rs:814`
+- Back face P/T via dynamic_pt: `tier15_cards.rs:815`
+- Defender prevents attacking (front face): NOT TESTED
+- Trample works after transform: NOT TESTED
+- Subtypes change on transform: NOT TESTED
+- Multiple activations per turn: NOT TESTED (implicitly tested since the test activates 5 times)

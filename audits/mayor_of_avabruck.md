@@ -116,3 +116,77 @@ Details:
 - Wolf token created via create_token_with_subtypes with colors [Green], types [Creature], subtypes ["Wolf"]: correct.
 - Tests in werewolf_cards.rs cover: human buff, werewolf/wolf buff after transform, Wolf token creation on end step, no token on front face. Good coverage.
 - No anti-patterns found. No missing triggered_abilities declarations.
+
+## Audit — 2026-04-01 14:00
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/193/mayor-of-avabruck-howlpack-alpha
+**Oracle text (front)**:
+Other Human creatures you control get +1/+1.
+At the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.
+**Oracle text (back)**:
+Each other creature you control that's a Werewolf or a Wolf gets +1/+1.
+At the beginning of your end step, create a 2/2 green Wolf creature token.
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.
+**Type line (front)**: Creature — Human Advisor Werewolf
+**Type line (back)**: Creature — Werewolf
+**P/T (front)**: 1/1
+**P/T (back)**: 3/3
+**Mana cost**: {1}{G}
+**Ruling**: [2025-01-24] A creature that is both a Werewolf and a Wolf will only get +1/+1 from Howlpack Alpha's first ability.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Detailed verification
+
+**Card data (front face)**:
+- Name "Mayor of Avabruck": correct
+- Cost {1}{G} (Generic(1), Green): correct
+- card_types [Creature]: correct
+- subtypes ["Human", "Advisor", "Werewolf"]: correct — matches "Creature — Human Advisor Werewolf"
+- P/T 1/1: correct
+- keywords []: correct (no keywords on oracle)
+- continuous_effects ModifyPT +1/+1 with scope GlobalOther(You AND HasSubtype("Human")): correct — matches "Other Human creatures you control get +1/+1"
+- triggered_abilities [Upkeep]: correct
+
+**Card data (back face)**:
+- Name "Howlpack Alpha": correct
+- card_types [Creature]: correct
+- subtypes ["Werewolf"]: correct — matches "Creature — Werewolf"
+- P/T 3/3 (via dynamic_pt): correct
+- keywords []: correct
+- continuous_effects ModifyPT +1/+1 with scope GlobalOther(You AND (Werewolf OR Wolf)): correct — matches "Each other creature you control that's a Werewolf or a Wolf gets +1/+1"
+- triggered_abilities [Upkeep, EndStep]: correct — both triggers present in back face data (lines 84-93)
+
+**Transform logic** (werewolf_should_transform method):
+- Front-to-back: total spells cast last turn == 0 AND not first turn: correct
+- Back-to-front: any player cast 2+ spells last turn: correct — matches "if a player cast two or more spells last turn"
+- Transform handled in on_upkeep: correct — both faces check at "beginning of each upkeep"
+
+**End step token creation** (on_end_step method):
+- Only when transformed (is_transformed check): correct
+- Only during controller's end step (active_player == controller): correct — matches "At the beginning of your end step"
+- Creates 2/2 green Wolf token with "Wolf" subtype via create_token_with_subtypes: correct
+
+**Ruling check**: "A creature that is both a Werewolf and a Wolf will only get +1/+1 from Howlpack Alpha's first ability." The code uses a single ModifyPT with scope Or(Werewolf, Wolf), which is a single +1/+1 effect applied once per creature. A creature matching both subtypes still only gets +1/+1 from this one effect. Correct.
+
+### Tricky interactions checked
+- Front face doesn't buff Werewolves (only Humans): PASS
+- Back face doesn't buff Humans (only Werewolves/Wolves): PASS
+- GlobalOther excludes self from buff: PASS
+- Werewolf+Wolf creature only gets +1/+1 once: PASS (single effect, not two separate effects)
+- Wolf token gets +1/+1 from Howlpack Alpha (Wolf subtype matches): PASS (token has "Wolf" subtype)
+- No token created on front face: PASS (on_end_step checks is_transformed)
+- No token on opponent's end step: PASS (checks active_player == controller)
+- Transform doesn't happen on first turn: PASS (werewolf_should_transform checks !state.is_first_turn)
+
+### Test coverage
+- Front face buffs other Humans: `werewolf_cards.rs:238` — TESTED
+- Mayor doesn't buff itself: `werewolf_cards.rs:248` — TESTED
+- Transform and buff Werewolves: `werewolf_cards.rs:252` — TESTED
+- Wolf token creation on end step: `werewolf_cards.rs:273` — TESTED
+- No token on front face: `werewolf_cards.rs:294` — TESTED
+- Ruling: Werewolf+Wolf only gets +1/+1 once: NOT TESTED
+- No token on opponent's end step: NOT TESTED
+- Transform on first turn blocked: NOT TESTED

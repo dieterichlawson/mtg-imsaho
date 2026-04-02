@@ -23,3 +23,33 @@
 1. **Minor: dynamic_pt counts from equipment's controller, not equipped creature's controller**: The dynamic_pt uses the equipment's own controller. If the equipment were somehow controlled by a different player than the equipped creature (unusual), this could differ. In practice this is fine.
 
 ## Verdict: PASS
+
+## Audit — 2026-04-01 15:09
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Equipped creature has first strike and gets +X/+0, where X is the number of instant and sorcery cards in your graveyard.
+Equip {2}
+**Type line**: Artifact — Equipment
+**Ruling**: [2011-09-22] The value of X is constantly updated as instant cards and sorcery cards are put into or removed from your graveyard.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- First strike granted via continuous effect: PASS — `ContinuousEffect::GrantKeyword { keyword: Keyword::FirstStrike, scope: EffectScope::Attached }`
+- Dynamic +X/+0 based on instant/sorcery count: PASS — `dynamic_pt` counts cards with `CardType::Instant` or `CardType::Sorcery` in controller's graveyard
+- X is constantly updated (ruling): PASS — `dynamic_pt` is called each time P/T is computed, not cached
+- Counts only controller's graveyard: PASS — filters by `o.owner == controller` where controller is the Pike's controller
+- Equip cost {2} at sorcery speed: PASS — `cost: ManaCost::new(vec![ManaSymbol::Generic(2)])`, `sorcery_speed_only: true`
+- Equipment enters battlefield unattached: PASS — `on_resolve` moves to battlefield and sets `is_equipment = true`
+- Card types: PASS — `Artifact` with subtype `Equipment`
+- Mana cost {2}: PASS
+
+### Test coverage
+- Card data correctness: `tier9_cards.rs:runechanters_pike_card_data`
+- First strike + power bonus: `tier9_cards.rs:runechanters_pike_grants_first_strike_and_power_bonus`
+- Equip ability: `tier9_cards.rs:runechanters_pike_equip_ability`
+- X updates dynamically when cards enter/leave graveyard (ruling): `tier9_cards.rs:runechanters_pike_grants_first_strike_and_power_bonus` (adds cards to GY and checks updated power)
+- 0 instants/sorceries gives +0/+0: `tier9_cards.rs:runechanters_pike_grants_first_strike_and_power_bonus` (checks base power before adding GY cards)
+- Opponent's instant/sorcery cards not counted: NOT TESTED
