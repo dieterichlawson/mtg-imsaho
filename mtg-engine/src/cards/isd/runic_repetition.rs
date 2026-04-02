@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Runic Repetition — {2}{U} Sorcery.
-/// Return target exiled card you own with flashback to your hand.
+/// Return target exiled card with flashback you own to your hand.
 pub struct RunicRepetition;
 
 impl CardBehavior for RunicRepetition {
@@ -21,7 +21,7 @@ impl CardBehavior for RunicRepetition {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Return target exiled card you own with flashback to your hand.".into(),
+            oracle_text: "Return target exiled card with flashback you own to your hand.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

@@ -397,3 +397,55 @@ No functional issues found. Both damage doubling directions are correctly implem
 - `tier9_cards.rs:259` inquisitors_flail_equip_ability: equip attaches correctly
 
 ### Verdict: PASS — no functional issues
+
+## Audit — 2026-04-02
+
+### Oracle Text (Scryfall)
+```
+If equipped creature would deal combat damage, it deals double that damage instead.
+If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.
+Equip {2}
+```
+
+### Card Data (`inquisitors_flail.rs`)
+- **Name:** Correct — `"Inquisitor's Flail"`
+- **Cost:** Correct — `{2}` (Generic 2)
+- **Types:** Correct — `Artifact`, subtype `Equipment`
+- **oracle_text field:** Correct — matches Scryfall verbatim.
+- **Equip cost:** Correct — `{2}`, sorcery-speed only, targets creature you control.
+
+### Doc Comment Bug
+Line 9 of `inquisitors_flail.rs` reads:
+> `/// If another source would deal combat damage to equipped creature`
+
+Oracle text says:
+> `If another creature would deal combat damage to equipped creature`
+
+The word **"source"** should be **"creature"**. This is a cosmetic doc-comment-only issue; the `oracle_text` field in `card_data()` is correct.
+
+### Continuous Effect Registration
+- Registers a single `ContinuousEffect::DoubleCombatDamage { scope: EffectScope::Attached }`.
+- The combat engine in `combat.rs` applies `combat_damage_multiplier()` on **both sides** of creature-vs-creature combat (lines 453–454: source multiplier AND target multiplier), correctly implementing both "deals double" and "takes double".
+- For creature-to-player damage (line 507), only the source multiplier is applied, which is correct (players don't have equipment).
+
+### Damage Doubling Implementation (`combat.rs`)
+- `combat_damage_multiplier()` counts all `DoubleCombatDamage` effects attached to a creature and returns `2^count`. This correctly handles multiple Flails per the ruling (2 Flails = 4x, etc.).
+- Creature-to-creature: both source and target multipliers applied — correct.
+- Creature-to-player: only source multiplier applied — correct.
+
+### Equipment Mechanics
+- `on_resolve`: moves to battlefield, sets `is_equipment = true` — correct.
+- `activated_abilities`: returns Equip ability only when on battlefield and not a creature (`power.is_none()`) — correct.
+- `on_activate_ability`: sets `attached_to` on the equipment — correct.
+- `is_valid_target`: checks battlefield, is a creature (`power.is_some()`), controlled by caster — correct.
+
+### Test Coverage
+- `tests/tier9_cards.rs`: 3 tests (card data, doubles combat damage to player, equip ability).
+- `tests/inquisitors_flail.rs`: 5 tests (doubles to player, doubles to creature, doubles damage taken from blocker, no doubling without equip, two flails quadruple).
+- Both the dealing and receiving sides of damage doubling are tested.
+
+### Test File Doc Comment Bug
+Lines 5–6 of `tests/inquisitors_flail.rs` repeat the same "another source" wording instead of "another creature". Cosmetic only.
+
+### Verdict
+**PASS** — Implementation is correct. Both damage-doubling directions work properly, equip mechanics are sound, and test coverage is thorough. One cosmetic doc-comment issue noted (says "source" instead of "creature" in two locations).
