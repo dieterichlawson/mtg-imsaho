@@ -230,7 +230,7 @@ fn gutter_grime_creates_ooze_on_creature_death() {
 // ── Heretic's Punishment ─────────────────────────────────────────
 
 #[test]
-fn heretics_punishment_deals_damage_from_revealed_cards() {
+fn heretics_punishment_mills_then_deals_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -256,6 +256,75 @@ fn heretics_punishment_deals_damage_from_revealed_cards() {
     // Should have dealt 2 damage (MV of Kalonian Tusker).
     let new_life = state.get_player(P1).life;
     assert_eq!(initial_life - new_life, 2, "Should deal damage equal to greatest MV (2)");
+
+    // Milled cards should be in graveyard, not library.
+    let lib_count = state.get_player(P0).library_order.len();
+    assert_eq!(lib_count, 0, "Library should be empty after milling 3 cards");
+
+    let gy_count = state.objects.values()
+        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0 && o.name == "Kalonian Tusker")
+        .count();
+    assert_eq!(gy_count, 3, "All 3 milled cards should be in graveyard");
+}
+
+#[test]
+fn heretics_punishment_tracks_damaged_by_on_creature() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
+    if let Some(obj) = state.get_object_mut(hp) {
+        obj.power = None;
+        obj.toughness = None;
+    }
+
+    // Put cards in library.
+    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
+    for _ in 0..3 {
+        let card = state.create_object(tusker_id, P0, Zone::Library, Some(3), Some(3));
+        state.get_object_mut(card).unwrap().name = "Kalonian Tusker".into();
+        state.get_player_mut(P0).library_order.insert(0, card);
+    }
+
+    let target_creature = ready_creature(&mut state, P1, 5, 5);
+
+    let behavior = reg.get(state.get_object(hp).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, hp, 0, &[Target::Object(target_creature)], &reg);
+
+    let obj = state.get_object(target_creature).unwrap();
+    assert_eq!(obj.damage_marked, 2, "Creature should have 2 damage marked");
+    assert!(obj.damaged_by.contains(&hp), "damaged_by should track the source");
+}
+
+#[test]
+fn heretics_punishment_fizzles_when_target_illegal() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let hp = named_creature(&mut state, &reg, "Heretic's Punishment", P0);
+    if let Some(obj) = state.get_object_mut(hp) {
+        obj.power = None;
+        obj.toughness = None;
+    }
+
+    // Put cards in library.
+    let tusker_id = reg.get_id_by_name("Kalonian Tusker").unwrap();
+    for _ in 0..3 {
+        let card = state.create_object(tusker_id, P0, Zone::Library, Some(3), Some(3));
+        state.get_object_mut(card).unwrap().name = "Kalonian Tusker".into();
+        state.get_player_mut(P0).library_order.insert(0, card);
+    }
+
+    // Create a creature target then move it off the battlefield (illegal target).
+    let target_creature = ready_creature(&mut state, P1, 3, 3);
+    state.move_object(target_creature, Zone::Graveyard);
+
+    let behavior = reg.get(state.get_object(hp).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, hp, 0, &[Target::Object(target_creature)], &reg);
+
+    // Entire ability should fizzle: no cards milled.
+    let lib_count = state.get_player(P0).library_order.len();
+    assert_eq!(lib_count, 3, "Library should be unchanged when ability fizzles");
 }
 
 // ── Undead Alchemist ─────────────────────────────────────────────
