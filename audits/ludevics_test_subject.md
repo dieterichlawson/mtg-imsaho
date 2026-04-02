@@ -133,3 +133,81 @@ No issues found.
 - Trample works after transform: NOT TESTED
 - Subtypes change on transform: NOT TESTED
 - Multiple activations per turn: NOT TESTED (implicitly tested since the test activates 5 times)
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text (front — Ludevic's Test Subject)**:
+> Defender
+> {1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.
+
+**Oracle text (back — Ludevic's Abomination)**:
+> Trample
+
+**Type line (front)**: Creature — Lizard Egg
+**Type line (back)**: Creature — Lizard Horror
+**Mana cost**: {1}{U}
+**P/T (front)**: 0/3
+**P/T (back)**: 13/13
+**Keywords**: Transform, Trample, Defender
+**Status**: ISSUE
+
+### Code issues
+
+1. **Manual transform instead of `helpers::apply_transform`** (medium severity)
+
+   In `on_activate_ability` (lines 95-99), the transform is done manually:
+   ```rust
+   obj.card_state.remove("hatchling_counters");
+   obj.is_transformed = true;
+   obj.name = "Ludevic's Abomination".into();
+   ```
+   This does NOT update `obj.keywords` or `obj.subtypes`. After transforming, the object still carries `keywords: [Defender]` and `subtypes: ["Lizard", "Egg"]` on the object itself.
+
+   Other DFCs in the codebase (e.g., `cloistered_youth.rs`, `screeching_bat.rs`) correctly use `helpers::apply_transform(state, self_id, _registry)` which updates name, keywords, and subtypes atomically, as documented at `helpers.rs` lines 228-230:
+   > "This is the correct way to transform a DFC. Card-specific code should call this instead of manually flipping `obj.is_transformed` and `obj.name`, which leaves `obj.keywords` and `obj.subtypes` stale."
+
+   The engine's `has_keyword()` (state.rs lines 931-941) and `matches_filter()` (state.rs lines 582-590) compensate by checking `back_face_data()` when `is_transformed` is true, so runtime behavior is **mostly correct**. However, any code that directly reads `obj.keywords` or `obj.subtypes` (e.g., display, logging, some filter paths) would see stale front-face data.
+
+   **Fix**: Replace the manual transform block (lines 95-99) with:
+   ```rust
+   obj.card_state.remove("hatchling_counters");
+   // drop obj borrow before calling apply_transform
+   helpers::apply_transform(state, object_id, _registry);
+   ```
+
+2. **Stacked activations can re-trigger transform log** (low severity)
+
+   If 10+ activations are stacked, the first 5 resolutions transform the creature. Subsequent resolutions continue calling `on_activate_ability` which does not check `is_transformed`. Counter accumulation continues on the back face, and at 10 total activations the code would hit `new_count >= 5` again, re-executing the transform block (setting `is_transformed = true` again — a no-op — and logging "transforms into Ludevic's Abomination" a second time). This is cosmetically incorrect but functionally harmless since the back face has no ability to activate and the creature is already transformed.
+
+### Tricky interactions checked
+
+- **Defender on front face**: Correctly declared in `keywords: vec![Keyword::Defender]`. Engine resolves keywords from `back_face_data()` when transformed, so Defender is correctly lost after transform.
+- **Trample on back face**: Correctly declared in back face `keywords: vec![Keyword::Trample]`. Correctly gained after transform via engine keyword resolution.
+- **Multiple activations per turn**: `once_per_turn: false` — correct per oracle (no restriction).
+- **Instant-speed activation**: `sorcery_speed_only: false` — correct.
+- **No tap cost**: `requires_tap: false` — correct.
+- **Ability unavailable on back face**: `activated_abilities()` returns empty when `is_transformed` (line 66) — correct, Ludevic's Abomination has no activated abilities.
+- **Stacking activations**: Counters are added one at a time on resolution. If multiple copies resolve after transform, counters accumulate on the back face but have no meaningful effect (see issue #2 above).
+
+### Test coverage
+
+File: `mtg-engine/tests/tier15_cards.rs`, test `ludevics_test_subject_transforms_at_five_counters` (line 1117).
+
+Covered:
+- 4 activations do not transform
+- 5th activation transforms
+- Back face name is "Ludevic's Abomination"
+- Back face P/T is 13/13 via `dynamic_pt`
+
+Not covered:
+- Defender prevents attacking on front face
+- Defender is lost after transform
+- Trample is gained after transform
+- Subtypes change from "Lizard Egg" to "Lizard Horror" after transform
+- Stacking multiple activations on the stack
+- Activated ability is unavailable on the back face
+
+### LLM knowledge
+
+No entry for Ludevic's Test Subject in `mtg-player/src/llm.rs`.
