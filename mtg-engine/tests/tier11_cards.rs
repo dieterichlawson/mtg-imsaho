@@ -3,7 +3,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::Target;
+use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
@@ -185,7 +185,7 @@ fn caravan_vigil_finds_basic_land() {
 }
 
 #[test]
-fn caravan_vigil_morbid_puts_land_on_battlefield() {
+fn caravan_vigil_morbid_choose_battlefield() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.creature_died_this_turn = true;
@@ -197,9 +197,17 @@ fn caravan_vigil_morbid_puts_land_on_battlefield() {
     state.get_player_mut(P0).library_order.push(forest);
 
     let vigil = castable_spell(&mut state, &reg, "Caravan Vigil", P0);
-    let new_state = cast_and_resolve(&state, &reg, vigil, vec![]);
+    let mut new_state = cast_and_resolve(&state, &reg, vigil, vec![]);
 
-    // Forest should be on the battlefield (morbid).
+    // Should be awaiting a YesNo choice for morbid "you may" put on battlefield.
+    if new_state.awaiting_action.is_some() {
+        // Accept the morbid choice (put on battlefield).
+        new_state = mtg_engine::engine::submit_action(
+            &new_state, &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) }, &reg,
+        );
+    }
+
+    // Forest should be on the battlefield (morbid, player chose yes).
     assert_eq!(new_state.get_object(forest).unwrap().zone, Zone::Battlefield);
 }
 

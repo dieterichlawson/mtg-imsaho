@@ -36,6 +36,25 @@ pub struct LegalActions {
     pub castable_spells: Vec<crate::actions::CastableSpell>,
 }
 
+/// Check if Rooftop Storm is on the battlefield and provides a {0} alternative cost
+/// for a Zombie creature spell cast by the given player.
+fn rooftop_storm_applies(state: &GameState, registry: &CardRegistry, card_id: CardId, caster: PlayerId) -> bool {
+    // Check if the spell is a Zombie creature spell.
+    let is_zombie_creature = registry.card_data(card_id).map(|d| {
+        d.card_types.contains(&CardType::Creature)
+            && d.subtypes.iter().any(|s| s == "Zombie")
+    }).unwrap_or(false);
+    if !is_zombie_creature {
+        return false;
+    }
+    // Check if the caster controls a Rooftop Storm on the battlefield.
+    state.objects.values().any(|o| {
+        o.zone == Zone::Battlefield
+            && o.controller == caster
+            && o.name == "Rooftop Storm"
+    })
+}
+
 /// Compute the effective mana cost of a spell after applying cost reduction effects.
 /// Returns a reduced ManaCost (generic portion lowered, colored requirements unchanged).
 pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id: CardId, base_cost: &ManaCost, caster: PlayerId) -> ManaCost {
@@ -499,11 +518,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
 
             // Check mana (applying cost reduction effects).
-            if let Some(cost) = &data.cost {
+            // Also check if Rooftop Storm provides an alternative {0} cost.
+            let has_rooftop_alt = rooftop_storm_applies(state, registry, obj.card_id, player);
+            let can_pay_normal = if let Some(cost) = &data.cost {
                 let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                if !mana::can_pay(&player_state.mana_pool, &effective_cost) {
-                    continue;
-                }
+                mana::can_pay(&player_state.mana_pool, &effective_cost)
+            } else {
+                true
+            };
+            if !can_pay_normal && !has_rooftop_alt {
+                continue;
             }
 
             // Check additional costs.
@@ -564,7 +588,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice: Some(sac_id),
-                                exile_count: None,
+                                exile_count: None, alternative_cost: None,
                             });
                         }
                     }
@@ -584,8 +608,48 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice,
-                                exile_count: Some(x),
+                                exile_count: Some(x), alternative_cost: None,
                             });
+                        }
+                    }
+                }
+            }
+
+            // Rooftop Storm: generate alternative {0} cost actions for Zombie creatures.
+            // The player chooses between the normal cost and the free alternative cost.
+            let is_zombie_creature = data.card_types.contains(&CardType::Creature)
+                && data.subtypes.iter().any(|s| s == "Zombie");
+            let has_rooftop_alt = is_zombie_creature && state.objects.values().any(|o| {
+                o.zone == Zone::Battlefield && o.controller == player && o.name == "Rooftop Storm"
+            });
+            let can_pay_normal = if let Some(cost) = &data.cost {
+                let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
+                mana::can_pay(&player_state.mana_pool, &effective_cost)
+            } else {
+                false
+            };
+            if has_rooftop_alt {
+                if can_pay_normal {
+                    // Player can pay normally — add alternative cost copies alongside normal ones.
+                    let alt_actions: Vec<Action> = cast_actions.iter().filter_map(|a| {
+                        if let Action::CastSpell { object_id, targets, sacrifice, exile_count, .. } = a {
+                            Some(Action::CastSpell {
+                                object_id: *object_id,
+                                targets: targets.clone(),
+                                sacrifice: *sacrifice,
+                                exile_count: *exile_count,
+                                alternative_cost: Some(ManaCost::free()),
+                            })
+                        } else {
+                            None
+                        }
+                    }).collect();
+                    cast_actions.extend(alt_actions);
+                } else {
+                    // Player can't pay normally — replace all actions with alternative cost versions.
+                    for action in &mut cast_actions {
+                        if let Action::CastSpell { alternative_cost, .. } = action {
+                            *alternative_cost = Some(ManaCost::free());
                         }
                     }
                 }
@@ -718,6 +782,47 @@ fn can_target_player(state: &GameState, target_player: PlayerId, caster: PlayerI
     true
 }
 
+/// Determine which mode of a ModalChoice was selected, based on the chosen targets.
+/// For each mode, checks if all chosen targets are valid. Returns the first matching
+/// mode index, defaulting to 0 if ambiguous (e.g. empty targets valid for all modes).
+fn detect_modal_choice_mode(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    targets: &[crate::actions::Target],
+    modes: &[crate::cards::TargetRequirement],
+    behavior: &dyn crate::cards::CardBehavior,
+) -> usize {
+    let registry = &CardRegistry::with_all_cards();
+    // For non-empty targets, find the first mode whose valid targets contain all chosen targets.
+    if !targets.is_empty() {
+        for (i, mode_req) in modes.iter().enumerate() {
+            let valid = valid_targets_for_mode(state, caster, spell_id, mode_req, behavior, registry);
+            if targets.iter().all(|t| valid.contains(t)) {
+                return i;
+            }
+        }
+    }
+    // For empty targets (or no mode matched), default to mode 0.
+    0
+}
+
+/// Get valid targets for a single mode requirement, unwrapping UpToTargets.
+fn valid_targets_for_mode(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    mode_req: &crate::cards::TargetRequirement,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Vec<crate::actions::Target> {
+    use crate::cards::TargetRequirement;
+    match mode_req {
+        TargetRequirement::UpToTargets(_, inner) => valid_targets_for_req(state, caster, spell_id, inner, behavior, registry),
+        other => valid_targets_for_req(state, caster, spell_id, other, behavior, registry),
+    }
+}
+
 /// Generate CastSpell actions with all valid target combinations.
 fn generate_cast_actions_with_targets(
     state: &GameState,
@@ -732,7 +837,7 @@ fn generate_cast_actions_with_targets(
 
     match target_req {
         TargetRequirement::None => {
-            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None }]
+            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None }]
         }
         TargetRequirement::AnyTarget => {
             // Can target any creature on the battlefield or any player.
@@ -745,7 +850,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -757,7 +862,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -774,7 +879,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -790,7 +895,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -811,7 +916,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None,
+                        sacrifice: None, exile_count: None, alternative_cost: None,
                     });
                 }
             }
@@ -828,7 +933,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None,
+                        sacrifice: None, exile_count: None, alternative_cost: None,
                     });
                 }
             }
@@ -839,7 +944,7 @@ fn generate_cast_actions_with_targets(
         | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None })
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, alternative_cost: None })
                 .collect()
         }
         TargetRequirement::ModalChoice(ref modes) => {
@@ -861,7 +966,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -891,7 +996,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: combo,
-                        sacrifice: None, exile_count: None,
+                        sacrifice: None, exile_count: None, alternative_cost: None,
                     });
                 }
             }
@@ -1294,7 +1399,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets, sacrifice, exile_count } => {
+        Action::CastSpell { object_id, targets, sacrifice, exile_count, alternative_cost } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback vs cast-from-graveyard.
@@ -1310,7 +1415,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let is_flashback = in_graveyard && !is_cast_from_graveyard;
 
             // Pay the appropriate mana cost (applying cost reduction for non-flashback).
-            let cost = if is_flashback {
+            // If an alternative_cost is provided (e.g. Rooftop Storm's {0}), use it directly.
+            let cost = if let Some(alt) = alternative_cost {
+                alt.clone()
+            } else if is_flashback {
                 // Check until_end_of_turn_flashback for dynamically granted flashback.
                 let dynamic_fb = new_state.until_end_of_turn_flashback.iter()
                     .find(|(id, _)| *id == *object_id)
@@ -1455,6 +1563,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     obj.x_value = Some(x);
                 }
             }
+
+            // For ModalChoice spells, determine and store which mode was chosen
+            // by checking which mode's valid targets match the actual targets.
+            if let Some(behavior) = registry.get(card_id) {
+                if let crate::cards::TargetRequirement::ModalChoice(ref modes) = behavior.target_requirement() {
+                    let chosen = detect_modal_choice_mode(&new_state, player, *object_id, targets, modes, behavior);
+                    if let Some(obj) = new_state.get_object_mut(*object_id) {
+                        obj.chosen_mode = Some(chosen);
+                    }
+                }
+            }
+
             new_state.stack.push(crate::state::StackEntry::Spell(*object_id));
 
             new_state.events.push(GameEvent::SpellCast {

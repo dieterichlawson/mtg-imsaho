@@ -24,7 +24,9 @@ pub enum Action {
     /// For targeted spells, targets must be chosen at cast time.
     /// If the spell has an additional cost (e.g. sacrifice a creature), `sacrifice` holds the chosen creature.
     /// `exile_count` is used for "exile X cards from graveyard" costs (Harvest Pyre).
-    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId>, exile_count: Option<u32> },
+    /// `alternative_cost` is an optional alternative mana cost (e.g. Rooftop Storm's {0}).
+    /// When set, this cost is used instead of the normal mana cost.
+    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId>, exile_count: Option<u32>, alternative_cost: Option<crate::types::ManaCost> },
 
     /// Activate a mana ability (doesn't use the stack, player retains priority).
     ActivateManaAbility { object_id: ObjectId, ability_index: usize },
@@ -111,13 +113,14 @@ impl std::fmt::Display for Action {
         match self {
             Action::PassPriority => write!(f, "Pass priority"),
             Action::PlayLand { object_id } => write!(f, "Play land {}", object_id),
-            Action::CastSpell { object_id, targets, sacrifice, .. } => {
+            Action::CastSpell { object_id, targets, sacrifice, alternative_cost, .. } => {
+                let alt_prefix = if alternative_cost.is_some() { "Cast spell (alt cost) " } else { "Cast spell " };
                 if targets.is_empty() && sacrifice.is_none() {
-                    write!(f, "Cast spell {}", object_id)
+                    write!(f, "{}{}", alt_prefix, object_id)
                 } else if let Some(sac) = sacrifice {
-                    write!(f, "Cast spell {} (sacrifice {}) targeting {:?}", object_id, sac, targets)
+                    write!(f, "{}{} (sacrifice {}) targeting {:?}", alt_prefix, object_id, sac, targets)
                 } else {
-                    write!(f, "Cast spell {} targeting {:?}", object_id, targets)
+                    write!(f, "{}{} targeting {:?}", alt_prefix, object_id, targets)
                 }
             }
             Action::ActivateManaAbility { object_id, ability_index } =>

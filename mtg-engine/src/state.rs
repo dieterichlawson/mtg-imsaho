@@ -285,6 +285,7 @@ impl GameState {
             is_equipment: false,
             is_transformed: false,
             x_value: None,
+            chosen_mode: None,
             abilities_activated_this_turn: std::collections::HashSet::new(),
         };
         self.objects.insert(id, obj);
@@ -390,6 +391,7 @@ impl GameState {
             is_transformed: false,
             x_value: None,
             abilities_activated_this_turn: std::collections::HashSet::new(),
+            chosen_mode: None,
         };
         self.objects.insert(id, obj);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
@@ -1187,6 +1189,11 @@ pub struct GameObject {
     /// Chosen X value for X-cost spells (stored while on the stack).
     #[serde(default)]
     pub x_value: Option<u32>,
+
+    /// Chosen mode index for ModalChoice spells (stored while on the stack).
+    /// Set when a spell with a ModalChoice target requirement is cast.
+    #[serde(default)]
+    pub chosen_mode: Option<usize>,
 
     /// Activated abilities used this turn (for once-per-turn tracking).
     #[serde(default)]

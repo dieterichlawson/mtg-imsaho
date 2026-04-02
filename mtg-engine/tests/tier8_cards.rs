@@ -542,7 +542,7 @@ fn harvest_pyre_deals_damage_equal_to_chosen_x() {
     // Cast with X=4 (exile all 4).
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(4) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(4), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
@@ -574,7 +574,7 @@ fn harvest_pyre_player_chooses_partial_x() {
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(2) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(2), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
@@ -611,7 +611,7 @@ fn harvest_pyre_x_zero_deals_no_damage() {
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(0) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(0), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
@@ -671,7 +671,7 @@ fn harvest_pyre_only_exiles_own_graveyard() {
     // Cast with X=3 (exile all 3 of P0's graveyard cards).
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(3) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(3), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
