@@ -244,6 +244,7 @@ fn multi_target_spell_with_one_target_dying() {
             object_id: dread,
             targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
             sacrifice: None,
+            exile_count: None,
         },
         &reg,
     );
@@ -276,6 +277,7 @@ fn multi_target_spell_with_all_targets_dying() {
             object_id: dread,
             targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
             sacrifice: None,
+            exile_count: None,
         },
         &reg,
     );

@@ -219,6 +219,7 @@ fn spell_resolves_correctly_through_game_loop() {
                 object_id: bolt_id,
                 targets: vec![mtg_engine::actions::Target::Player(P1)],
                 sacrifice: None,
+                exile_count: None,
             };
         }
 
