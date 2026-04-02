@@ -214,6 +214,28 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             .map(|i| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i) })
                             .collect()
                     }
+                    ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, .. } => {
+                        // Generate all possible subsets of permanents (each subset = pile 1).
+                        // With N permanents there are 2^N subsets. This is fine for typical
+                        // board states (up to ~15 permanents = 32768 actions).
+                        let n = permanents.len();
+                        (0..(1u64 << n))
+                            .map(|mask| {
+                                let subset: Vec<ObjectId> = (0..n)
+                                    .filter(|&i| mask & (1u64 << i) != 0)
+                                    .map(|i| permanents[i])
+                                    .collect();
+                                Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(subset) }
+                            })
+                            .collect()
+                    }
+                    ResolutionChoiceKind::ChoosePile { .. } => {
+                        // Two options: choose pile 1 or pile 2.
+                        vec![
+                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0) },
+                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(1) },
+                        ]
+                    }
                 };
                 LegalActions { actions, combat_prompt: None, castable_spells: vec![] }
             }
@@ -1863,6 +1885,59 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                 chosen_type, count));
                         new_state.move_spell_after_resolve(*spell_id);
                     }
+                    (ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, source_id, .. },
+                     ResolvedChoice::ChosenSubset(pile_1_ids)) => {
+                        // Controller has divided permanents into two piles.
+                        // pile_1 = the chosen subset, pile_2 = the rest.
+                        let pile_1: Vec<ObjectId> = pile_1_ids.clone();
+                        let pile_2: Vec<ObjectId> = permanents.iter()
+                            .filter(|id| !pile_1_ids.contains(id))
+                            .copied()
+                            .collect();
+
+                        // Log the division.
+                        let pile_1_names: Vec<String> = pile_1.iter()
+                            .filter_map(|id| new_state.get_object(*id).map(|o| o.name.clone()))
+                            .collect();
+                        let pile_2_names: Vec<String> = pile_2.iter()
+                            .filter_map(|id| new_state.get_object(*id).map(|o| o.name.clone()))
+                            .collect();
+                        new_state.log(LogLevel::Event,
+                            format!("Liliana -6: Pile 1: [{}], Pile 2: [{}]",
+                                if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
+                                if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }));
+
+                        // Now the target player chooses which pile to sacrifice.
+                        new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                            player: *target_player,
+                            source: *source_id,
+                            choice: ResolutionChoiceKind::ChoosePile {
+                                description: format!(
+                                    "Liliana -6: Choose a pile to sacrifice.\nPile 1: [{}]\nPile 2: [{}]",
+                                    if pile_1_names.is_empty() { "empty".into() } else { pile_1_names.join(", ") },
+                                    if pile_2_names.is_empty() { "empty".into() } else { pile_2_names.join(", ") }),
+                                pile_1,
+                                pile_2,
+                                source_id: *source_id,
+                            },
+                        });
+                    }
+                    (ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. },
+                     ResolvedChoice::ChosenIndex(index)) => {
+                        // Target player chose which pile to sacrifice.
+                        let chosen_pile = if *index == 0 { pile_1 } else { pile_2 };
+                        let pile_label = if *index == 0 { "Pile 1" } else { "Pile 2" };
+                        new_state.log(LogLevel::Event,
+                            format!("Liliana -6: chose to sacrifice {}", pile_label));
+                        for &perm_id in chosen_pile {
+                            let name = new_state.get_object(perm_id).map(|o| o.name.clone()).unwrap_or_default();
+                            if new_state.get_object(perm_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                                crate::destruction::sacrifice(&mut new_state, perm_id, registry);
+                                new_state.log(LogLevel::Event,
+                                    format!("Liliana -6: sacrificed {}", name));
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -2141,6 +2216,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     },
                 });
             }
+        }
+        (Target::Object(id), PendingEffect::SacrificeCreature { source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            crate::destruction::sacrifice(state, *id, registry);
+            state.log(LogLevel::Event, format!("{}: sacrificed {}", source_name, name));
         }
         (Target::Object(id), PendingEffect::DestroyThenCounter { source_id, source_name }) => {
             // Destroy the target creature, then add a +1/+1 counter to the source.

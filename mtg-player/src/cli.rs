@@ -1011,6 +1011,12 @@ impl CliPlayer {
                     ResolvedChoice::ChosenTarget(None) => "Decline (do nothing)".into(),
                     ResolvedChoice::ChosenCard(id) => Self::perm_name(view, *id),
                     ResolvedChoice::ChosenIndex(i) => format!("Option {}", i),
+                    ResolvedChoice::ChosenSubset(ids) => {
+                        let names: Vec<String> = ids.iter()
+                            .map(|id| Self::perm_name(view, *id))
+                            .collect();
+                        format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
+                    }
                 }
             }
         }

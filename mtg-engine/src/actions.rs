@@ -62,6 +62,8 @@ pub enum ResolvedChoice {
     ChosenCard(ObjectId),
     /// Choose an option by index from a numbered list.
     ChosenIndex(usize),
+    /// Choose a subset of objects (e.g., pile division — chosen objects form pile 1, rest form pile 2).
+    ChosenSubset(Vec<ObjectId>),
 }
 
 /// Prompt returned by legal_actions for combat.

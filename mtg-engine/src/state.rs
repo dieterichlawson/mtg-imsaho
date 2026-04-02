@@ -1316,6 +1316,28 @@ pub enum ResolutionChoiceKind {
         spell_id: ObjectId,
         controller: PlayerId,
     },
+    /// Divide permanents into two piles (Liliana of the Veil -6).
+    /// The choosing player selects a subset to form pile 1; the rest form pile 2.
+    /// After division, the target player chooses which pile to sacrifice.
+    DividePermanentsIntoPiles {
+        description: String,
+        /// All permanents to divide.
+        permanents: Vec<ObjectId>,
+        /// The player who will choose which pile to sacrifice (the target player).
+        target_player: PlayerId,
+        /// The source permanent (Liliana).
+        source_id: ObjectId,
+    },
+    /// Choose one of two piles to sacrifice (Liliana of the Veil -6, step 2).
+    ChoosePile {
+        description: String,
+        /// Permanents in pile 1.
+        pile_1: Vec<ObjectId>,
+        /// Permanents in pile 2.
+        pile_2: Vec<ObjectId>,
+        /// The source permanent (Liliana).
+        source_id: ObjectId,
+    },
 }
 
 /// What happens to the chosen target when a ResolutionChoice is resolved.
@@ -1359,6 +1381,8 @@ pub enum PendingEffect {
     /// The counter is added regardless of whether destruction succeeds (indestructible/regenerate),
     /// but the entire effect is skipped if the target is illegal.
     DestroyThenCounter { source_id: ObjectId, source_name: String },
+    /// Sacrifice the chosen creature (generic sacrifice, e.g. Liliana -2).
+    SacrificeCreature { source_name: String },
 }
 
 /// Game result.
