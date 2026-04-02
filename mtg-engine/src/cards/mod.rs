@@ -384,6 +384,11 @@ pub trait CardBehavior: Send + Sync {
     /// For DFCs: check if the transform condition is met (called during upkeep for werewolves).
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool { false }
 
+    /// Called when a state-triggered ability (CR 603.8) for this permanent resolves.
+    /// State-triggered abilities check a condition continuously and trigger when the
+    /// condition is first true. They don't trigger again while already on the stack.
+    fn on_state_trigger(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 

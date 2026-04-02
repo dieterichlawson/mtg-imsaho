@@ -150,6 +150,15 @@ pub enum PendingTrigger {
         blocker_id: ObjectId,
         description: String,
     },
+    /// A state-triggered ability (CR 603.8). These are checked during SBA processing
+    /// and go on the stack like normal triggered abilities. The trigger won't fire again
+    /// while it's already on the stack.
+    StateTriggered {
+        object_id: ObjectId,
+        card_id: CardId,
+        controller: PlayerId,
+        description: String,
+    },
 }
 
 impl PendingTrigger {
@@ -173,6 +182,7 @@ impl PendingTrigger {
             PendingTrigger::AttackWatch { controller, .. } => *controller,
             PendingTrigger::CombatDamageToCreature { controller, .. } => *controller,
             PendingTrigger::BecomesBlockedTrigger { controller, .. } => *controller,
+            PendingTrigger::StateTriggered { controller, .. } => *controller,
         }
     }
 
@@ -283,6 +293,13 @@ impl PendingTrigger {
                     format!("{}'s block trigger", card_name(*card_id))
                 } else {
                     format!("{}'s block trigger ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::StateTriggered { card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s state-triggered ability", card_name(*card_id))
+                } else {
+                    format!("{}'s state-triggered ability ({})", card_name(*card_id), description)
                 }
             }
         }
@@ -832,6 +849,16 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
         }
     }
 
+    // Drain any pending triggers (e.g., state-triggered abilities added during SBA)
+    // into the appropriate APNAP bucket.
+    for t in state.pending_triggers.drain(..) {
+        if t.controller() == active_player {
+            ap_triggers.push(t);
+        } else {
+            nap_triggers.push(t);
+        }
+    }
+
     // APNAP: Active player's triggers go on stack first (bottom),
     // non-active player's go on top. LIFO = NAP resolves first.
     use crate::state::StackEntry;
@@ -975,6 +1002,19 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_becomes_blocked(state, object_id, blocker_id, registry);
+                }
+            }
+        }
+        PendingTrigger::StateTriggered { object_id, card_id, .. } => {
+            // Clear the "on stack" flag so the trigger can fire again if the
+            // condition is still true after resolution.
+            if let Some(obj) = state.get_object_mut(object_id) {
+                obj.state_trigger_on_stack = false;
+            }
+            // Only resolve if the object is still on the battlefield.
+            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(card_id) {
+                    behavior.on_state_trigger(state, object_id, registry);
                 }
             }
         }

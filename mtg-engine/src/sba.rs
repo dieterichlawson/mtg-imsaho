@@ -244,30 +244,37 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             took_action = true;
         }
 
-        // State-triggered ability: Garruk Relentless transforms when he has 2 or fewer loyalty.
-        // This is an SBA-like check that fires regardless of what caused the loyalty loss.
-        //
-        // ENGINE LIMITATION: Per MTG rules (CR 603.8), this is a state-triggered ability that
-        // should go on the stack and be respondable. This engine does not yet have a mechanism
-        // for state-triggered abilities on the stack, so it is implemented as an immediate
-        // transformation during SBA processing. This is functionally correct for normal gameplay
-        // (the transform condition is checked correctly), but means opponents cannot respond to
-        // the transform trigger (e.g., removing Garruk before the transform resolves).
+        // State-triggered abilities (CR 603.8): checked during SBA processing.
+        // When the condition is met and the trigger is not already on the stack,
+        // push a trigger onto pending_triggers so it goes on the stack and can
+        // be responded to. The trigger won't fire again while it's on the stack.
         if let Some(reg) = registry {
             let garruk_card_id = reg.get_id_by_name("Garruk Relentless");
             if let Some(gid) = garruk_card_id {
-                let garruk_to_transform: Vec<_> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Battlefield && o.card_id == gid && !o.is_transformed)
-                    .filter(|o| *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) <= 2)
-                    .map(|o| o.id)
+                let garruk_to_trigger: Vec<_> = state.objects.values()
+                    .filter(|o| {
+                        o.zone == Zone::Battlefield
+                            && o.card_id == gid
+                            && !o.is_transformed
+                            && !o.state_trigger_on_stack
+                            && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) <= 2
+                    })
+                    .map(|o| (o.id, o.controller))
                     .collect();
-                for id in garruk_to_transform {
+                for (id, controller) in garruk_to_trigger {
                     if let Some(obj) = state.get_object_mut(id) {
-                        obj.is_transformed = true;
-                        obj.name = "Garruk, the Veil-Cursed".into();
+                        obj.state_trigger_on_stack = true;
                     }
+                    state.pending_triggers.push(
+                        crate::triggers::PendingTrigger::StateTriggered {
+                            object_id: id,
+                            card_id: gid,
+                            controller,
+                            description: "When Garruk Relentless has two or fewer loyalty counters on him, transform him".into(),
+                        }
+                    );
                     state.log(LogLevel::Event,
-                        "Garruk Relentless transforms into Garruk, the Veil-Cursed (state-triggered)".into());
+                        "Garruk Relentless's state-triggered ability triggers (transform)".into());
                     took_action = true;
                 }
             }

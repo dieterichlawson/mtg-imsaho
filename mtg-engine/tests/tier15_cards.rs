@@ -2091,8 +2091,10 @@ fn garruk_transforms_at_two_or_fewer_loyalty() {
     // Use the wolf token ability (costs 0 loyalty).
     behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
 
-    // Transform is now handled by SBA, not inside on_loyalty_ability.
+    // Transform is now a state-triggered ability: SBA detects the condition and
+    // queues a trigger, which then goes on the stack and resolves.
     check_state_based_actions_with_registry(&mut state, Some(&reg));
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     // Should have transformed.
     assert!(state.get_object(garruk).unwrap().is_transformed);
@@ -2330,19 +2332,24 @@ fn essence_overrides_entering_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let essence = named_creature(&mut state, &reg, "Essence of the Wild", P0);
+    // Put Essence of the Wild on the battlefield via cast_and_resolve,
+    // which calls on_resolve and sets entering_copy_source.
+    let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
+    state = cast_and_resolve(&state, &reg, essence, vec![]);
 
-    // Simulate another creature entering.
-    let bear = ready_creature(&mut state, P0, 2, 2);
-    state.get_object_mut(bear).unwrap().name = "Grizzly Bears".into();
+    // Verify Essence itself is on the battlefield with the copy source flag.
+    assert!(state.get_object(essence).unwrap().entering_copy_source);
 
-    let behavior = reg.get(state.get_object(essence).unwrap().card_id).unwrap();
-    behavior.on_any_creature_enters(&mut state, essence, bear, P0, &reg);
+    // Now cast a creature — it should enter as a 6/6 copy of Essence
+    // via the replacement effect (before ETB triggers fire).
+    let bear = castable_spell(&mut state, &reg, "Grizzly Bears", P0);
+    state = cast_and_resolve(&state, &reg, bear, vec![]);
 
-    // Bear should now be a 6/6 Essence copy.
+    // Bear should now be a 6/6 Essence copy (replacement effect, not trigger).
     assert_eq!(state.get_object(bear).unwrap().power, Some(6));
     assert_eq!(state.get_object(bear).unwrap().toughness, Some(6));
     assert_eq!(state.get_object(bear).unwrap().name, "Essence of the Wild");
+    assert_eq!(state.get_object(bear).unwrap().subtypes, vec!["Avatar".to_string()]);
 }
 
 #[test]
@@ -2350,15 +2357,19 @@ fn essence_does_not_override_opponent_creatures() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let essence = named_creature(&mut state, &reg, "Essence of the Wild", P0);
+    // Put Essence on the battlefield for P0.
+    let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
+    state = cast_and_resolve(&state, &reg, essence, vec![]);
 
-    let opp_bear = ready_creature(&mut state, P1, 2, 2);
-
-    let behavior = reg.get(state.get_object(essence).unwrap().card_id).unwrap();
-    behavior.on_any_creature_enters(&mut state, essence, opp_bear, P1, &reg);
+    // Opponent's creature enters via move_object — should NOT be affected
+    // because Essence only applies to its controller's creatures.
+    let opp_bear = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    state.move_object(opp_bear, Zone::Battlefield);
 
     // Opponent's creature should be unchanged.
     assert_eq!(state.get_object(opp_bear).unwrap().power, Some(2));
+    assert_eq!(state.get_object(opp_bear).unwrap().toughness, Some(2));
+    assert_eq!(state.get_object(opp_bear).unwrap().name, "Grizzly Bears");
 }
 
 // ── Mirror-Mad Phantasm ──────────────────────────────────────────
