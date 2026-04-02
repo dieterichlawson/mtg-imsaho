@@ -1,23 +1,27 @@
 # Audit: Pitchburn Devils
 
-## Official Oracle
+## Reference (Scryfall/API)
 - **Name:** Pitchburn Devils
-- **Cost:** {4}{R}
-- **Type:** Creature — Devil
-- **Oracle Text:** When Pitchburn Devils dies, it deals 3 damage to any target.
+- **Mana Cost:** {4}{R}
+- **Type:** Creature -- Devil
+- **Oracle:** When this creature dies, it deals 3 damage to any target.
 - **P/T:** 3/3
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {4}{R} — OK
-- **Type:** Creature, subtypes ["Devil"] — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** 3/3 — OK
-- **Triggered Abilities:** SelfDies trigger — OK
-- **on_dies:** Presents target choice to controller with "any target" (all creatures + all players), PendingEffect::DealDamage { amount: 3 } — OK
-- **Damage event:** DealDamage pending effect correctly emits NonCombatDamageDealt via the engine's resolution handler — OK
-
-## Issues
-None found.
+## Implementation: `pitchburn_devils.rs`
+- **Name:** Pitchburn Devils -- CORRECT
+- **Mana Cost:** {4}{R} -- CORRECT
+- **Type:** Creature -- Devil -- CORRECT (subtypes: ["Devil"])
+- **P/T:** 3/3 -- CORRECT
+- **Keywords:** None -- CORRECT
+- **Triggered ability:** SelfDies -- CORRECT
+- **Behavior:** On dies, presents controller with target choice (any target = creatures + players), then deals 3 damage via PendingEffect::DealDamage -- CORRECT
 
 ## Verdict: PASS
+
+## Audit -- 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: When this creature dies, it deals 3 damage to any target.
+**Type line**: Creature -- Devil
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name, cost {4}{R}, 3/3, Creature -- Devil, dies trigger deals 3 damage to any target. Uses any_targets helper and present_target_choice for proper target selection. Behavior is correct.
