@@ -35,30 +35,39 @@ impl CardBehavior for NightTerrors {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
         if let Some(Target::Player(target_player)) = targets.first() {
-            // Reveal target player's hand and exile the first nonland card found.
-            let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
+            // Reveal target player's hand — find all nonland cards.
+            let nonland_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
                 .iter()
+                .filter(|o| {
+                    let is_land = registry.card_data(o.card_id)
+                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)))
+                        .unwrap_or(false);
+                    !is_land
+                })
                 .map(|o| o.id)
                 .collect();
 
-            let nonland = hand.iter().find(|&&card_id| {
-                let is_land = registry.card_data(
-                    state.get_object(card_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
-                )
-                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)))
-                .unwrap_or(false);
-                !is_land
-            }).copied();
-
-            if let Some(exile_id) = nonland {
+            if nonland_cards.is_empty() {
+                state.log(crate::state::LogLevel::Event,
+                    format!("Night Terrors: no nonland card in p{}'s hand", target_player.0));
+            } else if nonland_cards.len() == 1 {
+                // Only one option — auto-select.
+                let exile_id = nonland_cards[0];
                 let name = state.get_object(exile_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.move_object(exile_id, Zone::Exile);
                 state.log(crate::state::LogLevel::Event,
                     format!("Night Terrors: exiled {} from p{}'s hand", name, target_player.0));
             } else {
-                state.log(crate::state::LogLevel::Event,
-                    format!("Night Terrors: no nonland card in p{}'s hand", target_player.0));
+                // Multiple nonland cards — controller chooses which to exile.
+                crate::cards::helpers::present_target_choice(
+                    state, object_id, controller, nonland_cards.iter().map(|&id| Target::Object(id)).collect(),
+                    crate::state::PendingEffect::ExileAndStore { source_id: object_id, source_name: "Night Terrors".into() },
+                    "Night Terrors: choose a nonland card to exile",
+                    false,
+                );
+                return; // Don't move spell yet — awaiting choice.
             }
         }
         state.move_spell_after_resolve(object_id);
