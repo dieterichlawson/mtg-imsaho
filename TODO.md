@@ -1,35 +1,32 @@
-# TODO
+# TODO — ISD Audit Issues
 
-## Game state serialization
-Add the ability to serialize a game state to a file and resume from it. This would let us set up specific board/hand/mana configurations to test particular interactions (e.g. Counterspell with 2 untapped Islands and an opponent's spell on the stack) without relying on RNG to produce the right conditions.
+## Real Bugs (6)
 
-## Audit issues
+### Charmbreaker Devils
+- `on_spell_cast` triggers on ANY spell cast by the controller, not just instant/sorcery spells. Oracle says "Whenever you cast an instant or sorcery spell" but the implementation doesn't check the spell's card type before applying +4/+0.
 
-### Liliana of the Veil (5 issues)
-- +1: auto-picks first card from hand instead of letting each player choose their discard
-- -2: no targeting (should target a player), auto-picks creature to sacrifice instead of letting the targeted player choose
-- -6: completely simplified — no pile division or player choice, just sacrifices ~half of opponent's permanents
-- -6: `half.max(1)` forces at least 1 sacrifice; per rulings a pile can be empty
-- Oracle text field says "pile of your choice" but oracle says "pile of their choice"
+### Back from the Brink
+- Exile/token creation order reversed. Oracle: "Exile a creature card from your graveyard and pay its mana cost: Create a token that's a copy of that card." The exile is part of the cost (before the colon), so it should happen before the token is created. The implementation creates the token first and exiles second.
 
-### Grimgrin, Corpse-Born (5 issues)
-- Sacrifice ability auto-selects creature instead of letting player choose
-- Sacrifice cost not declared in ActivatedAbilityDef (uses SacrificeCost::None)
-- Attack trigger auto-targets instead of letting player choose which creature to destroy
-- +1/+1 counter added unconditionally even when attack trigger has no valid target
-- Attack trigger uses `state.opponent()` instead of combat state for defending player
+### Bitterheart Witch
+- Auto-selects first Curse when multiple Curse cards exist in library. Oracle says "search your library for a Curse card" — player should choose which Curse to put onto the battlefield.
 
-### Instigator Gang (1 issue — engine-level)
-- Doesn't buff itself when attacking — `AnyCreatureAttacks` watcher in `triggers.rs:708` excludes the attacker from seeing its own attack event. Affects both Instigator Gang (+1/+0) and Wildblood Pack (+3/+0).
+### Mirror-Mad Phantasm
+- Doesn't shuffle before reveal. The implementation appends the card to the bottom of the library (`push`) instead of shuffling it into a random position. Oracle says "shuffles it into their library" — the card should be at a random position before the reveal loop begins.
 
-### Screeching Bat (1 issue)
-- "You may" upkeep transform auto-decided — always pays and transforms when mana available
+### Snapcaster Mage
+- Auto-selects highest-MV instant/sorcery in graveyard instead of presenting a target choice to the player. Oracle says "target instant or sorcery card in your graveyard" which requires player selection.
 
-### Cloistered Youth (3 issues)
-- "You may" upkeep transform auto-decided — always transforms with no player choice
-- Front face declares EndStep triggered_ability that belongs only to back face (Unholy Fiend), causing phantom trigger
-- Back face declares empty triggered_abilities, so Upkeep trigger dispatches to front face logic spuriously
+### Into the Maw of Hell
+- Missing `damaged_by` tracking when dealing 13 damage to the target creature. Other non-combat damage sources (e.g., Heretic's Punishment) correctly push to `damaged_by`. This means death triggers that check `damaged_by` will not correctly identify Into the Maw of Hell as the damage source.
 
-### Fiend Hunter (1 issue)
-- LLM card knowledge (`mtg-player/src/llm.rs:102`) says "exiles an opponent's creature" but card targets any creature and exile is optional ("you may")
+## Behavioral Edge Cases (3)
 
+### Festerhide Boar
+- "Enters with" replacement effect modeled as ETB trigger. Current oracle says "This creature enters with two +1/+1 counters on it if a creature died this turn" (replacement effect), but code implements it as `TriggerKind::EntersBattlefield` / `on_enter_battlefield` (triggered ability). Counters should be on the creature as it enters, not added after.
+
+### Splinterfright
+- `*/*` P/T uses `Some(0)` base instead of `None`. Card has `*/*` P/T defined by a characteristic-defining ability. Base should be `None` to indicate the CDA defines P/T entirely, not `Some(0)`.
+
+### Unbreathing Horde
+- Doesn't count itself when entering from graveyard. Per ruling: "If Unbreathing Horde enters from a graveyard, it will count itself when determining how many +1/+1 counters it enters with." The ETB handler counts graveyard Zombies after the card has already moved to battlefield, so it misses itself.
