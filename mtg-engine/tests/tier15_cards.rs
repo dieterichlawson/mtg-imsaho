@@ -1265,15 +1265,189 @@ fn grimgrin_sacrifice_untaps_and_counters() {
 
     let zombie = ready_creature(&mut state, P0, 2, 2);
 
-    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_activate_ability(&mut state, grimgrin, 0, &[], &reg);
+    // Activate through the engine so the sacrifice cost is paid properly.
+    let new_state = engine::submit_action(
+        &state,
+        &Action::ActivateAbility {
+            object_id: grimgrin,
+            ability_index: 0,
+            targets: vec![],
+        },
+        &reg,
+    );
 
     // Grimgrin should be untapped.
-    assert!(!state.get_object(grimgrin).unwrap().tapped);
+    assert!(!new_state.get_object(grimgrin).unwrap().tapped);
     // Grimgrin should have a +1/+1 counter.
-    assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1);
-    // Zombie should be dead.
-    assert_eq!(state.get_object(zombie).unwrap().zone, Zone::Graveyard);
+    assert_eq!(new_state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1);
+    // Zombie should be dead (sacrificed as cost).
+    assert_eq!(new_state.get_object(zombie).unwrap().zone, Zone::Graveyard);
+}
+
+#[test]
+fn grimgrin_sacrifice_not_available_without_other_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    state.get_object_mut(grimgrin).unwrap().tapped = true;
+
+    // No other creatures — sacrifice ability should NOT be available.
+    let legal = engine::legal_actions(&state, &reg);
+    let has_activate = legal.actions.iter().any(|a| matches!(a,
+        Action::ActivateAbility { object_id, ability_index: 0, .. } if *object_id == grimgrin
+    ));
+    assert!(!has_activate, "Grimgrin sacrifice ability should not be available without another creature");
+}
+
+#[test]
+fn grimgrin_attack_trigger_destroys_and_adds_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let defender_creature = ready_creature(&mut state, P1, 3, 3);
+
+    // Set up combat state with Grimgrin attacking P1.
+    state.combat = Some(mtg_engine::state::CombatState {
+        attackers: [(grimgrin, P1)].into_iter().collect(),
+        blocker_assignments: std::collections::HashMap::new(),
+    });
+
+    // Call on_attacks directly (simulating trigger resolution).
+    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, grimgrin, &reg);
+
+    // With only one defender creature, the choice auto-applies (mandatory + 1 target).
+    // The target should be destroyed and Grimgrin should get a +1/+1 counter.
+    assert_eq!(state.get_object(defender_creature).unwrap().zone, Zone::Graveyard,
+        "Defending creature should be destroyed");
+    assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1,
+        "Grimgrin should have a +1/+1 counter from attack trigger");
+}
+
+#[test]
+fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
+    use mtg_engine::actions::Target;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let creature_a = ready_creature(&mut state, P1, 2, 2);
+    let creature_b = ready_creature(&mut state, P1, 3, 3);
+
+    // Set up combat state with Grimgrin attacking P1.
+    state.combat = Some(mtg_engine::state::CombatState {
+        attackers: [(grimgrin, P1)].into_iter().collect(),
+        blocker_assignments: std::collections::HashMap::new(),
+    });
+
+    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, grimgrin, &reg);
+
+    // With multiple targets, the controller should be presented a choice.
+    assert!(state.awaiting_action.is_some(),
+        "Should present target choice when defender has multiple creatures");
+
+    // Resolve the choice — pick creature_a.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(creature_a))),
+        },
+        &reg,
+    );
+
+    assert_eq!(state.get_object(creature_a).unwrap().zone, Zone::Graveyard,
+        "Chosen creature should be destroyed");
+    assert_eq!(state.get_object(creature_b).unwrap().zone, Zone::Battlefield,
+        "Unchosen creature should remain");
+    assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1,
+        "Grimgrin should have a +1/+1 counter");
+}
+
+// Ruling: "If the defending player controls no creatures when Grimgrin attacks,
+// the last ability will be removed from the stack and have no effect."
+#[test]
+fn grimgrin_attack_no_targets_no_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    // Defender has NO creatures.
+
+    state.combat = Some(mtg_engine::state::CombatState {
+        attackers: [(grimgrin, P1)].into_iter().collect(),
+        blocker_assignments: std::collections::HashMap::new(),
+    });
+
+    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, grimgrin, &reg);
+
+    // No valid targets — ability does nothing, no +1/+1 counter.
+    assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 0,
+        "Grimgrin should NOT get a +1/+1 counter when defender has no creatures");
+}
+
+// Ruling: "If Grimgrin's last ability resolves, but the targeted creature isn't destroyed
+// (perhaps because it regenerated or has indestructible), you'll still put a +1/+1 on Grimgrin."
+#[test]
+fn grimgrin_attack_indestructible_target_still_gets_counter() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    let indestructible = ready_creature(&mut state, P1, 4, 4);
+    // Make the creature indestructible by adding the keyword.
+    if let Some(obj) = state.get_object_mut(indestructible) {
+        obj.keywords.push(Keyword::Indestructible);
+    }
+
+    state.combat = Some(mtg_engine::state::CombatState {
+        attackers: [(grimgrin, P1)].into_iter().collect(),
+        blocker_assignments: std::collections::HashMap::new(),
+    });
+
+    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, grimgrin, &reg);
+
+    // The indestructible creature should still be on the battlefield.
+    assert_eq!(state.get_object(indestructible).unwrap().zone, Zone::Battlefield,
+        "Indestructible creature should survive destruction");
+    // But Grimgrin still gets the +1/+1 counter.
+    assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1,
+        "Grimgrin should still get +1/+1 counter even if target survives");
+}
+
+// Ruling: "If the targeted creature is an illegal target by the time Grimgrin's last ability
+// resolves, the entire ability doesn't resolve and none of its effects will occur."
+// This test verifies the attack trigger uses the defending player from combat state.
+#[test]
+fn grimgrin_attack_uses_defending_player_from_combat() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let grimgrin = named_creature(&mut state, &reg, "Grimgrin, Corpse-Born", P0);
+    // Defender has a creature.
+    let defender_creature = ready_creature(&mut state, P1, 2, 2);
+    // Controller also has another creature (should NOT be targetable).
+    let own_creature = ready_creature(&mut state, P0, 3, 3);
+
+    state.combat = Some(mtg_engine::state::CombatState {
+        attackers: [(grimgrin, P1)].into_iter().collect(),
+        blocker_assignments: std::collections::HashMap::new(),
+    });
+
+    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, grimgrin, &reg);
+
+    // With only one defender creature, auto-applies. The defender's creature should
+    // be destroyed, not the controller's own creature.
+    assert_eq!(state.get_object(defender_creature).unwrap().zone, Zone::Graveyard,
+        "Defending player's creature should be targeted");
+    assert_eq!(state.get_object(own_creature).unwrap().zone, Zone::Battlefield,
+        "Controller's own creature should not be targeted");
 }
 
 // ── Geist of Saint Traft ──────────────────────────────────────────
