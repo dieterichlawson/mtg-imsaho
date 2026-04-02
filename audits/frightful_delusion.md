@@ -19,3 +19,31 @@
 
 ## Issues
 None found. (The PayOrNot resolution handler in engine.rs correctly forces a discard regardless of whether the player pays or not.)
+
+## Audit (2026-04-02)
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+Counter target spell unless its controller pays {1}. That player discards a card.
+
+### Rulings
+- You must target a spell in order to cast Frightful Delusion.
+- The player discards a card even if they pay {1}.
+
+### Implementation Review (`mtg-engine/src/cards/isd/frightful_delusion.rs`)
+1. **Mana cost {2}{U}**: CORRECT -- `ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Blue)])`.
+2. **Type (Instant)**: CORRECT -- `card_types: vec![CardType::Instant]`.
+3. **Targeting (target spell)**: CORRECT -- `TargetRequirement::Spell`; `is_valid_target` checks `Target::Object` with `zone == Zone::Stack`, rejects `Target::Player`.
+4. **Counter unless pays {1}**: CORRECT -- `on_resolve` checks `mana_pool.total() >= 1`; if payable, presents `PayOrNot` choice; if not, auto-counters. The `PayOrNot` handler in `engine.rs` (line ~1760) deducts {1} via `auto_pay` when paid, or counters the spell when declined.
+5. **Mandatory discard ("That player discards a card")**: CORRECT -- Discard happens in both the pay and don't-pay branches of the `PayOrNot` handler (`engine.rs` lines 1774-1796). Also handled in the auto-counter path in `on_resolve` (lines 73-93). Matches ruling: "The player discards a card even if they pay {1}."
+6. **"That player" = spell's controller**: CORRECT -- `controller` is derived from the targeted spell object's `.controller` field.
+7. **Empty hand**: No discard triggered if hand is empty. Correct behavior.
+8. **Single card in hand**: Auto-discards without choice prompt. Acceptable optimization.
+
+### Test Coverage
+- `frightful_delusion_counters_and_discards` (tier2_spells.rs): Covers basic counter + discard when opponent has no mana. PASS.
+- `frightful_delusion_discard_on_pay` (card_fixes.rs): Verifies discard still happens when opponent pays {1}. PASS.
+- `frightful_delusion_choice_when_opponent_has_mana` (card_mechanics.rs): Verifies PayOrNot choice is presented; opponent declines and spell is countered. PASS.
+- `frightful_delusion_auto_counters_without_mana` (card_mechanics.rs): Verifies auto-counter with no choice when opponent has 0 mana. PASS.
+
+### Verdict
+**PASS** -- No issues found. Implementation correctly matches oracle text and rulings.
