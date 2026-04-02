@@ -98,15 +98,9 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
         }
     }
 
-    // Check for Rooftop Storm: Zombie creature spells cost {0}.
-    if is_creature && subtypes.iter().any(|s| s == "Zombie") {
-        let has_rooftop_storm = state.objects.values().any(|o| {
-            o.zone == Zone::Battlefield && o.controller == caster && o.name == "Rooftop Storm"
-        });
-        if has_rooftop_storm {
-            return ManaCost::free();
-        }
-    }
+    // Rooftop Storm's alternative cost is handled via the alternative_cost field
+    // on CastSpell actions (see rooftop_storm_applies() and action generation).
+    // It is NOT a cost reduction — it's an alternative cost chosen at cast time.
 
     if total_reduction == 0 {
         return base_cost.clone();

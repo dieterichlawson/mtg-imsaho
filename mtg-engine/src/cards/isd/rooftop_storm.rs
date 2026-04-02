@@ -4,10 +4,9 @@ use crate::types::*;
 /// Rooftop Storm — {5}{U} Enchantment.
 /// You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.
 ///
-/// Implementation: Uses ReduceCost with a high reduction value for Zombie creature spells.
-/// Since the reduction applies to generic costs first and then the engine treats any
-/// remaining reduction as excess, using reduction=20 effectively makes most Zombie
-/// creatures free (handles any realistic CMC).
+/// Implementation: The engine checks for Rooftop Storm via `rooftop_storm_applies()`
+/// in `engine.rs` and generates alternative-cost CastSpell actions with `ManaCost::free()`
+/// when the controller casts a Zombie creature spell.
 pub struct RooftopStorm;
 
 impl CardBehavior for RooftopStorm {
