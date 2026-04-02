@@ -190,3 +190,69 @@ No issues found.
 - Ruling: Werewolf+Wolf only gets +1/+1 once: NOT TESTED
 - No token on opponent's end step: NOT TESTED
 - Transform on first turn blocked: NOT TESTED
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API cache (fetched 2026-04-01) — https://scryfall.com/card/isd/193/mayor-of-avabruck-howlpack-alpha
+**Oracle text (front)**:
+Other Human creatures you control get +1/+1.
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back)**:
+Each other creature you control that's a Werewolf or a Wolf gets +1/+1.
+At the beginning of your end step, create a 2/2 green Wolf creature token.
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line (front)**: Creature — Human Advisor Werewolf
+**Type line (back)**: Creature — Werewolf
+**P/T (front)**: 1/1
+**P/T (back)**: 3/3
+**Ruling**: [2025-01-24] A creature that is both a Werewolf and a Wolf will only get +1/+1 from Howlpack Alpha's first ability.
+**Status**: PASS (minor cosmetic nits only)
+
+### Detailed verification
+
+**Front face card_data()**:
+- Name "Mayor of Avabruck": correct
+- Cost Generic(1) + Green = {1}{G}: correct
+- card_types [Creature]: correct
+- subtypes ["Human", "Advisor", "Werewolf"]: correct
+- P/T 1/1: correct
+- continuous_effects: `ModifyPT { power: 1, toughness: 1, scope: GlobalOther(And(You, HasSubtype("Human"))) }` -- correctly implements "Other Human creatures you control get +1/+1". Uses `GlobalOther` (not `Global`), so self is excluded: correct.
+- triggered_abilities: `[TriggerKind::Upkeep]`: correct
+
+**Back face back_face_data()**:
+- Name "Howlpack Alpha": correct
+- subtypes ["Werewolf"]: correct
+- P/T 3/3 via `dynamic_pt` returning `Some((3, 3))` when `is_transformed`: correct
+- continuous_effects: `ModifyPT { power: 1, toughness: 1, scope: GlobalOther(And(You, Or(HasSubtype("Werewolf"), HasSubtype("Wolf")))) }` -- correctly implements "Each other creature you control that's a Werewolf or a Wolf gets +1/+1". Uses `GlobalOther`: correct. Uses `Or` so a creature with both subtypes still gets only +1/+1 from this single effect: correct per ruling.
+- triggered_abilities: `[TriggerKind::Upkeep, TriggerKind::EndStep]` (lines 84-93): both present, correct.
+
+**Transform logic** (`werewolf_should_transform`, lines 11-19):
+- Front-to-back (`!is_transformed`): `total_spells_last_turn == 0 && !state.is_first_turn` -- correct. Oracle: "if no spells were cast last turn". The `is_first_turn` guard prevents transform on the very first upkeep (no "last turn" exists).
+- Back-to-front (`is_transformed`): `spells_cast_last_turn.values().any(|&count| count >= 2)` -- correct. Oracle: "if a player cast two or more spells last turn". Checks per-player counts so any single player casting 2+ triggers it.
+
+**on_upkeep** (lines 109-122): Checks zone == Battlefield, calls `should_transform`, toggles `is_transformed` and updates name. Fires for all upkeeps (both players): correct per "each upkeep".
+
+**on_end_step** (lines 124-144): Checks zone == Battlefield, `is_transformed`, and `active_player == controller`. Creates token via `create_token_with_subtypes("Wolf", controller, 2, 2, [Green], [Creature], [], ["Wolf"])`. Correct: 2/2 green Wolf creature token, only on controller's end step, only on back face.
+
+### Cosmetic nits (non-functional)
+
+1. **oracle_text string (front)**: Code stores `"...transform Mayor of Avabruck."` but current Scryfall oracle reads `"...transform this creature."` (updated template). No behavioral impact -- the string is metadata only.
+2. **oracle_text string (back)**: Code stores `"Other Werewolf and Wolf creatures you control get +1/+1."` but current Scryfall oracle reads `"Each other creature you control that's a Werewolf or a Wolf gets +1/+1."` Again metadata only; the actual `ContinuousEffect` filter is correct.
+
+### Anti-pattern checks
+- EffectScope::Global vs GlobalOther: Both faces correctly use `GlobalOther` to exclude self. PASS.
+- Token subtypes: Wolf token includes `subtypes: vec!["Wolf".into()]`. PASS.
+- Missing token color: Token includes `colors: vec![Color::Green]`. PASS.
+
+### Test coverage (`mtg-engine/tests/werewolf_cards.rs`)
+- Front face buffs other Humans: line 238 -- TESTED
+- Mayor doesn't buff itself: line 248 -- TESTED
+- Transform and buff Werewolves after transform: line 252 -- TESTED
+- Wolf token creation on end step: line 273 -- TESTED
+- No token on front face: line 294 -- TESTED
+- Ruling (Werewolf+Wolf only gets +1/+1 once): NOT TESTED
+- No token on opponent's end step: NOT TESTED
+- Transform blocked on first turn: NOT TESTED
+
+### LLM knowledge
+No Mayor of Avabruck / Howlpack Alpha entries found in `mtg-player/src/llm.rs`.
