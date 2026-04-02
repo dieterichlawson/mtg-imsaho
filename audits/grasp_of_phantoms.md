@@ -34,3 +34,13 @@ The prior audit flagged a "POTENTIAL ISSUE: Library insertion may double-add." T
 
 ## Verdict
 **NO ISSUES FOUND.** The implementation correctly matches the oracle text.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Put target creature on top of its owner's library.\nFlashback {7}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {3}{U}, type Sorcery, flashback cost {7}{U}. The on_resolve correctly moves target creature to Zone::Library and inserts at position 0 in library_order (top of library). Follows established codebase pattern for library placement (same as engine.rs PutOnTopOfLibrary handler). move_spell_after_resolve called. Target requirement is Creature. No anti-patterns.

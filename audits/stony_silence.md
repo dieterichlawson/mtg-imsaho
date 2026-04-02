@@ -320,3 +320,13 @@ Card data is correct: {1}{W} Enchantment, oracle text matches. The enforcement i
 
 ### Verdict
 **PASS** — The implementation correctly prevents activation of all activated abilities (including mana abilities) of artifacts on the battlefield for both players. No mismatches between oracle text and engine behavior.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Activated abilities of artifacts can't be activated.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. Card data is correct: {1}{W}, Enchantment, no subtypes. Oracle text matches exactly. The restriction is documented as enforced by the engine in `legal_actions()`, blocking both mana and non-mana activated abilities of artifacts on the battlefield. This is consistent with the rulings that all activated abilities (including mana abilities) are affected, and only battlefield artifacts are restricted. Implementation is clean and correct.

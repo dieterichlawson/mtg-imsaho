@@ -312,3 +312,13 @@ Card data is correct: {1}{U} Instant, flashback {G}. The targeting uses ModalCho
 - Cast with flashback from graveyard + exiled after: NOT TESTED
 - Ruling: player still shuffles if no card targets remain legal: NOT TESTED
 - Ruling: can't target self with flashback: NOT TESTED
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library. / Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {1}{U}, Instant type, flashback cost {G}. The targeting uses ModalChoice to select up to 3 graveyard cards from either the caster's or opponent's graveyard, which is a reasonable simplification of the oracle's dual-target structure (target player + up to 3 target cards from their graveyard). Resolution correctly moves cards to library, adds to library_order, and shuffles the target player's library even if no cards were moved. The `move_spell_after_resolve` call handles flashback exile correctly.

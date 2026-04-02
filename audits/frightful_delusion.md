@@ -47,3 +47,13 @@ Counter target spell unless its controller pays {1}. That player discards a card
 
 ### Verdict
 **PASS** -- No issues found. Implementation correctly matches oracle text and rulings.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Counter target spell unless its controller pays {1}. That player discards a card.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found. Verified that the PayOrNot resolution handler in engine.rs forces the discard regardless of whether the opponent pays {1}, matching the ruling that "The player discards a card even if they pay {1}."

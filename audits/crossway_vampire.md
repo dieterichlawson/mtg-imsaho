@@ -54,3 +54,13 @@ None
 
 ### Issues Found
 None. The implementation faithfully matches the oracle text.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this creature enters, target creature can't block this turn.
+**Type line**: Creature — Vampire
+**Status**: ISSUE
+
+### Code issues
+Oracle text mismatch: code stores `"When Crossway Vampire enters the battlefield, target creature can't block this turn."` but current oracle text is `"When this creature enters, target creature can't block this turn."`. Behavior is correct; only the stored oracle_text string needs updating to match the modern Scryfall wording.

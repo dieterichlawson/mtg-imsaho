@@ -396,3 +396,13 @@ None found. The implementation is faithful to the oracle text.
 ### Verdict
 
 **PASS** — No mismatches found. Implementation correctly handles the variable exile cost, damage calculation, targeting, damage tracking, and event emission.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {1}{R}, Instant. Additional cost ExileXFromGraveyard correctly set. Target requirement is Creature. On resolve, reads exile_count from card_state (set at cast time by engine), deals that much damage to target creature with damage_marked and NonCombatDamageDealt event. Checks zone == Battlefield before dealing damage. move_spell_after_resolve called. No anti-patterns.

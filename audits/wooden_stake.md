@@ -102,3 +102,15 @@ Minor oracle_text field discrepancies (cosmetic, not behavioral):
 
 ### Verdict
 Two minor text-only issues in the `oracle_text` field and comments. All functional behavior is correct.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Equipped creature gets +1/+0.
+Whenever equipped creature blocks or becomes blocked by a Vampire, destroy that creature. It can't be regenerated.
+Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found. Card data is correct: {2}, Artifact -- Equipment. The +1/+0 buff is modeled as `ContinuousEffect::ModifyPT` with `EffectScope::Attached`. Both `on_blocks` and `on_becomes_blocked` correctly check if the other creature is a Vampire (via both card data subtypes and instance subtypes for tokens) and destroy it using `try_destroy_no_regen`, which correctly implements "It can't be regenerated." Equip {1} is implemented as a sorcery-speed activated ability targeting a creature you control. The `oracle_text` field says "destroy that Vampire" instead of "destroy that creature. It can't be regenerated." -- a minor text discrepancy, but the behavior is fully correct. The code comment in the doc string also says "destroy that Vampire" rather than matching oracle exactly, but this is cosmetic only.

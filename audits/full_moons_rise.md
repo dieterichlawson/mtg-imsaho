@@ -81,3 +81,13 @@ The continuous effects have correct scope (your creatures with Werewolf subtype)
 
 ### Verdict
 **PASS (with cosmetic nits).** The gameplay logic is correct. The doc comment and ability description string incorrectly mention "Wolf" creatures, but the actual filtering logic only targets "Werewolf" creatures as per oracle text. Test coverage is minimal and should be expanded.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Werewolf creatures you control get +1/+0 and have trample.\nSacrifice this enchantment: Regenerate all Werewolf creatures you control.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. The comment and activated ability description string mention "Wolf and Werewolf" but the actual filter logic in both continuous_effects and on_activate_ability correctly filters for "Werewolf" only, matching the oracle text. The description strings are cosmetic and do not affect behavior.

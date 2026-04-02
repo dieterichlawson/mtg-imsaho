@@ -132,3 +132,13 @@ Tests found in `mtg-engine/tests/tier15_cards.rs`:
 ### UI coverage
 
 Present in `mtg-player/src/llm.rs` line 143 with accurate description of all three abilities, including strategic advice.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: +1: Each player discards a card. / -2: Target player sacrifices a creature. / -6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.
+**Type line**: Legendary Planeswalker — Liliana
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {1}{B}{B}, Legendary supertype, Planeswalker type, Liliana subtype. Starting loyalty 3 matches Scryfall. All three loyalty abilities implemented with correct loyalty changes (+1, -2, -6). Ability 0 (+1): correctly implements simultaneous discard with active player choosing first per ruling. Handles auto-discard for single-card hands and chains through multiple players. Ability 1 (-2): targets a player, presents sacrifice choice to that player. Ability 2 (-6): controller divides permanents into piles, target player chooses which pile to sacrifice. All target requirements correctly use PlayerOnly.

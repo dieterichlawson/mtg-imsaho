@@ -256,3 +256,13 @@ At the beginning of each upkeep, if a player cast two or more spells last turn, 
 
 ### LLM knowledge
 No Mayor of Avabruck / Howlpack Alpha entries found in `mtg-player/src/llm.rs`.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Other Human creatures you control get +1/+1. / At the beginning of each upkeep, if no spells were cast last turn, transform this creature. // Back: Each other creature you control that's a Werewolf or a Wolf gets +1/+1. / At the beginning of your end step, create a 2/2 green Wolf creature token. / At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line**: Creature — Human Advisor Werewolf // Creature — Werewolf
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {1}{G}, P/T 1/1 front / 3/3 back. Front face correctly grants +1/+1 to other Humans you control via `ModifyPT` with `GlobalOther` scope. Back face grants +1/+1 to other Werewolves or Wolves via `Or` filter. Wolf token creation on end step correctly checks `is_transformed` and `active_player == controller` (your end step only). Token is 2/2 green Wolf creature. Werewolf transform logic correct in both directions.

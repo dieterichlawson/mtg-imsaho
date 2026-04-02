@@ -89,3 +89,13 @@ The previously identified issue has been fixed:
 ### Test coverage
 - `ghoulraiser_returns_zombie_from_graveyard` -- basic functionality.
 - Missing: empty graveyard case, multiple Zombies (randomness verification), non-creature Zombie card.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this creature enters, return a Zombie card at random from your graveyard to your hand.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+### Code issues
+No issues found. The ETB trigger correctly searches for any card with the Zombie subtype in the graveyard (not restricted to creature cards, matching oracle text which says "Zombie card"). Random selection is properly implemented using rand::thread_rng() and shuffle.

@@ -48,3 +48,13 @@ Whenever another creature dies, untap Galvanic Juggernaut.
 
 ### Verdict
 PASS -- no issues found. Implementation matches oracle text.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: This creature attacks each combat if able.\nThis creature doesn't untap during your untap step.\nWhenever another creature dies, untap this creature.
+**Type line**: Artifact Creature — Juggernaut
+**Status**: PASS
+
+### Code issues
+No issues found. The oracle_text field uses the card name instead of "This creature" (modern oracle templating), but this is cosmetic only. The "another creature" condition is correctly enforced by the trigger dispatch in triggers.rs which filters out dead_id == self_id. ForceAttack and PreventUntap continuous effects are correctly scoped to OnSelf.

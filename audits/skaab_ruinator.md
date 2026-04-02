@@ -347,3 +347,15 @@ Card data is correct: {1}{U}{U}, Creature - Zombie Horror, 5/6, Flying keyword, 
 - [MTG Salvation: Skaab Ruinator rulings](https://www.mtgsalvation.com/forums/magic-fundamentals/magic-rulings/781863-skaab-ruinator)
 - [MTG Salvation: Skaab Ruinator and Yixlid Jailer](https://www.mtgsalvation.com/forums/magic-fundamentals/magic-rulings/magic-rulings-archives/299645-skaab-ruinator-and-yxlid-jailer)
 - [MTG Assist: Skaab Ruinator rulings](https://www.mtgassist.com/cards/Innistrad/Skaab-Ruinator/rulings/)
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, exile three creature cards from your graveyard.
+Flying
+You may cast this card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**Status**: PASS
+
+### Code issues
+No issues found. Card data is correct: {1}{U}{U}, 5/6, creature types Zombie Horror, Flying keyword. The additional cost is modeled as `AdditionalCost::ExileCreaturesFromGraveyard(3)`. Graveyard casting is enabled via `can_cast_from_graveyard() -> true`. The `oracle_text` field reorders the abilities (Flying first, then additional cost, then graveyard cast) compared to oracle order (additional cost, Flying, graveyard cast), but this is a cosmetic string difference with no behavioral impact. All mechanics are correctly implemented.

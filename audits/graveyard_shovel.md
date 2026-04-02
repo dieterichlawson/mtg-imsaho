@@ -64,3 +64,13 @@ Life gain: "you" = controller of Graveyard Shovel, correctly captured. `LifeChan
 Tests (6, all passing): `targets_player_not_card`, `auto_exiles_single_card`, `no_life_gain_for_non_creature`, `multiple_cards_creates_resolution_choice`, `resolution_choice_exiles_and_gains_life`, `cannot_target_player_with_empty_graveyard`. Good coverage of all paths.
 
 No issues found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {2}, {T}: Target player exiles a card from their graveyard. If it's a creature card, you gain 2 life.
+**Type line**: Artifact
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {2}, type Artifact. Activated ability costs {2} + tap correctly. Targets a player (PlayerOnly), validates that the targeted player has cards in graveyard. The targeted player chooses which card to exile (per ruling 2011-09-22), implemented via AwaitingAction for multiple cards or auto-exile for single card. Creature check uses registry card_data with power fallback. Life gain of 2 applied to controller with LifeChanged event. ExileFromGraveyardGainLife pending effect confirmed in engine.rs. No anti-patterns.

@@ -61,3 +61,13 @@ The Scryfall ruling says the player is not forced to pay costs to attack. The en
 ### Verdict
 
 **PASS** — Implementation is correct. The card faithfully implements all oracle text abilities. The only minor note is the `oracle_text` field omits the "Enchant creature" line, which is consistent with most other auras in the codebase but inconsistent with Curiosity. No functional impact.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+No issues found.

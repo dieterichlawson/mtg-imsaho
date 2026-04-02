@@ -90,3 +90,13 @@ Tests in tier11_cards.rs cover core functionality (exile from graveyard, flashba
 
 ### Issues Found
 None. All fields match oracle text. Targeting, exile mechanic, and flashback cost are correctly implemented.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Exile target card from a graveyard. / Flashback {W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {W}, Instant type, flashback cost {W}. Target requirement is `GraveyardCard` which correctly targets any card in any graveyard. Resolution moves the target to Exile zone. `move_spell_after_resolve` handles flashback exile. Simple and correct implementation.

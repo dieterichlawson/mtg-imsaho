@@ -331,3 +331,13 @@ No anti-patterns detected. Not in LLM card knowledge section.
 - Mode 2 returns two Zombies from graveyard: `mtg-engine/tests/tier11_cards.rs:120`
 - Both tests pass.
 - Fizzle (targets leave graveyard before resolution): NOT TESTED
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. Modal targeting is correctly implemented with ModalChoice containing GraveyardCreature for mode 1 and TwoTargets of GraveyardCreatureOfSubtype("Zombie") for mode 2. The is_valid_target correctly ensures targets are in the caster's graveyard. On resolve, all targeted cards are moved from graveyard to hand.

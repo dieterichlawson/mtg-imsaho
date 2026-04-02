@@ -267,3 +267,13 @@ No behavioral issues found. One minor cosmetic note:
 **Not tested:**
 - Fizzle when target becomes illegal before resolution (ruling 2) -- engine limitation
 - Sacrifice ability activation when Grimgrin is already untapped (for +1/+1 growth only)
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Grimgrin enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.
+**Type line**: Legendary Creature — Zombie Warrior
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name "Grimgrin, Corpse-Born", mana cost {3}{U}{B}, Legendary Creature — Zombie Warrior, 5/5. Enters tapped (set in on_resolve). PreventUntap continuous effect on self. Activated ability: sacrifice another creature (SacrificeCost::SacrificeAnotherCreature), no mana cost, untaps and adds +1/+1 counter. Attack trigger: finds defending player from combat state, collects their creatures, presents target choice via DestroyThenCounter pending effect. Correctly returns early if no creatures (per ruling). is_legendary set on resolve. No anti-patterns.

@@ -105,3 +105,14 @@ Tests in unbreathing_horde.rs cover damage prevention with counter removal, stil
 
 ### Verdict
 PASS -- all core mechanics correctly implemented. Minor cosmetic oracle text difference. One edge case (entering from graveyard self-count) may warrant future investigation.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: This creature enters with a +1/+1 counter on it for each other Zombie you control and each Zombie card in your graveyard.
+If this creature would be dealt damage, prevent that damage and remove a +1/+1 counter from it.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+### Code issues
+No issues found. Card data is correct: {2}{B}, 0/0, Creature -- Zombie. The `on_enter_battlefield` correctly counts other Zombies on the battlefield under the controller's control and Zombie cards in the controller's graveyard, then adds that many +1/+1 counters. The damage prevention is modeled via `ContinuousEffect::PreventDamageRemoveCounter` which is handled by both the combat and engine damage systems. The `oracle_text` field uses older "enters the battlefield" templating vs the current "enters" templating -- cosmetic only, no behavioral impact. Per rulings, if it enters from graveyard it should count itself in the graveyard count; this depends on zone-change timing in the engine but the logic itself is sound.

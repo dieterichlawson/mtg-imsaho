@@ -293,3 +293,13 @@ File: `mtg-engine/tests/tier15_cards.rs`
 - Stacking 10+ activations (regression): NOT covered
 - Defender prevents attacking on front face: NOT covered
 - Trample gained after transform: NOT covered
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Defender / {1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it. // Back: Trample
+**Type line**: Creature — Lizard Egg // Creature — Lizard Horror
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {1}{U}, P/T 0/3 front / 13/13 back, subtypes Lizard Egg / Lizard Horror. Defender keyword on front. Trample keyword on back. Activated ability costs {1}{U}, correctly tracks hatchling counters in card_state, transforms at 5+ counters after removing all. Ability is only available on front face (not transformed). `dynamic_pt` correctly overrides to 13/13 when transformed. `should_transform` returns false since transformation is handled by the activated ability, not upkeep triggers.

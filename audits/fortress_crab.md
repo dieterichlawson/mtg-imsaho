@@ -42,3 +42,13 @@ None found.
 
 ### Result
 **ALL PASS** — no mismatches found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: (no oracle text — vanilla creature)
+**Type line**: Creature — Crab
+**Status**: PASS
+
+### Code issues
+No issues found.

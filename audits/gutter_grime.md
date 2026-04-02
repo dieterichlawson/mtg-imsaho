@@ -131,3 +131,13 @@ Sources:
 - [Scryfall - Gutter Grime](https://scryfall.com/card/isd/186/gutter-grime)
 - [MTG Assist - Gutter Grime Rulings](https://www.mtgassist.com/cards/Innistrad/Gutter-Grime/rulings/)
 - [MTG Salvation - Gutter Grime Rulings Discussion](https://www.mtgsalvation.com/forums/magic-fundamentals/magic-rulings/786249-gutter-grime)
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Whenever a nontoken creature you control dies, put a slime counter on this enchantment, then create a green Ooze creature token with "This token's power and toughness are each equal to the number of slime counters on Gutter Grime."
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {4}{G}, Enchantment. Trigger: AnyCreatureDies, filters for controller match and nontoken (is_token check). Adds Slime counter to self, creates 0/0 green Ooze creature token with dynamic P/T linked to this Gutter Grime via card_state pt_source_counter. Token correctly created with subtypes ["Ooze"], colors [Green], types [Creature]. Per rulings, tokens track their specific Gutter Grime instance (implemented via pt_source_counter pointing to self_id). No anti-patterns.

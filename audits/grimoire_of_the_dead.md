@@ -126,3 +126,13 @@ Five tests in `mtg-engine/tests/tier15_cards.rs`:
 5. `grimoire_ability_1_not_available_without_3_counters` (line 2465) — Tests ability 1 gating on 3 counters.
 
 **Not tested**: artifact creature in graveyard (ruling edge case), empty graveyards, summoning sickness of reanimated creatures.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.\n{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.
+**Type line**: Legendary Artifact
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {4}, Legendary Artifact. Ability 0: {1} + tap + discard (hand choice via AwaitingAction or auto-discard) adds Study counter. Ability 1: tap + sacrifice (SacrificeCost::SacrificeThis), requires 3 study counters. Collects all creature cards from all graveyards (checks power or CardType::Creature per ruling), moves to battlefield under controller, adds Zombie subtype and Black color. is_legendary set on resolve. on_discard_choice callback adds study counter after player chooses. No anti-patterns.

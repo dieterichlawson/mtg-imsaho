@@ -140,3 +140,14 @@ The current oracle template uses "this artifact enters" rather than the card nam
 
 ### Verdict
 No functional mismatches. Implementation is correct. One cosmetic oracle text difference (old "enters the battlefield" template vs current "enters"). Test gap: ETB curse destruction is untested.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this artifact enters, destroy all Curses attached to you.
+You have hexproof. (You can't be the target of spells or abilities your opponents control, including Aura spells.)
+**Type line**: Artifact
+**Status**: PASS
+
+### Code issues
+No issues found. Card data is correct: {4}, Artifact. Player hexproof is granted via `grants_player_hexproof() -> true`, which the engine checks in targeting validation. The ETB trigger correctly finds all Curses (by subtype) attached to the controller and destroys them via `try_destroy`. The `oracle_text` field uses older "enters the battlefield" templating vs current "this artifact enters" -- cosmetic only, no behavioral impact. The `continuous_effects` field is empty, which is fine since hexproof is handled through the trait method rather than as a continuous effect. Implementation is correct and complete.

@@ -515,3 +515,13 @@ Additional coverage in `mtg-engine/tests/werewolf_cards.rs`:
 - `kruin_outlaw_transforms_gains_double_strike_and_menace` — verifies front face has first strike, back face has double strike after transform
 
 Not directly tested: transform back from Terror of Kruin Pass to Kruin Outlaw (covered indirectly by shared werewolf transform logic tested on other cards).
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: First strike / At the beginning of each upkeep, if no spells were cast last turn, transform this creature. // Back: Double strike / Werewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.) / At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line**: Creature — Human Rogue Werewolf // Creature — Werewolf
+**Status**: PASS
+
+### Code issues
+No issues found. Card data (name, cost {1}{R}{R}, types, subtypes, P/T 2/2 front / 3/3 back) matches oracle. First strike on front, double strike on back correctly assigned as keywords. Menace granted to all Werewolves via `ContinuousEffect::GrantKeyword` with correct scope (You + HasSubtype Werewolf). Werewolf transform logic correctly checks no spells cast last turn (front->back) and any player cast 2+ spells (back->front). `dynamic_pt` correctly overrides to 3/3 when transformed.

@@ -365,3 +365,13 @@ Dedicated test file: `mtg-engine/tests/geist_of_saint_traft.rs` (3 tests)
 - `angel_exiled_even_if_geist_dies` (line 70): verifies Angel exiled even after Geist moves to graveyard
 - NOT TESTED: Angel token flying keyword, color, or subtypes (token creation passes correct values)
 - NOT TESTED: Parallel Lives creating multiple Angel tokens and all being exiled
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Hexproof (This creature can't be the target of spells or abilities your opponents control.)\nWhenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.
+**Type line**: Legendary Creature — Spirit Cleric
+**Status**: PASS
+
+### Code issues
+No issues found. Token creation correctly sets 4/4, white, Angel subtype, flying keyword, tapped, and adds to combat as attacker. End-of-combat exile uses state.end_of_combat_exiles which persists even if Geist leaves the battlefield — correct behavior per rulings. Legendary supertype and hexproof keyword are properly set.
