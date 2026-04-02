@@ -6,6 +6,7 @@
 //! - Target collection helpers (any_targets, creature_targets, etc.)
 
 use crate::actions::Target;
+use crate::cards::CardRegistry;
 use crate::events::{DamageTarget, GameEvent};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
@@ -211,4 +212,54 @@ pub fn opponent_player(state: &GameState, controller: PlayerId) -> Target {
 /// Get the controller of a permanent, with a fallback.
 pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
     state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0))
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Transform helpers
+//
+// Generic transform logic for double-faced cards. Updates all
+// face-dependent properties (name, keywords, subtypes) so that
+// obj.keywords always reflects the active face.
+// ═══════════════════════════════════════════════════════════════════
+
+/// Toggle `is_transformed` on a permanent and update all face-dependent
+/// properties (name, keywords, subtypes) to match the new active face.
+///
+/// This is the correct way to transform a DFC. Card-specific code should
+/// call this instead of manually flipping `obj.is_transformed` and `obj.name`,
+/// which leaves `obj.keywords` and `obj.subtypes` stale.
+pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    let (card_id, was_transformed) = match state.get_object(object_id) {
+        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.is_transformed),
+        _ => return,
+    };
+
+    let behavior = match registry.get(card_id) {
+        Some(b) => b,
+        None => return,
+    };
+
+    // Flip the transform flag.
+    if let Some(obj) = state.get_object_mut(object_id) {
+        obj.is_transformed = !was_transformed;
+    }
+
+    if was_transformed {
+        // Was on back face -> now front face. Restore front face data.
+        let front = behavior.card_data();
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.name = front.name.clone();
+            obj.keywords = front.keywords.clone();
+            obj.subtypes = front.subtypes.clone();
+        }
+    } else {
+        // Was on front face -> now back face. Apply back face data.
+        if let Some(back) = behavior.back_face_data() {
+            if let Some(obj) = state.get_object_mut(object_id) {
+                obj.name = back.name.clone();
+                obj.keywords = back.keywords.clone();
+                obj.subtypes = back.subtypes.clone();
+            }
+        }
+    }
 }
