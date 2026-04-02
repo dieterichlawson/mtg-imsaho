@@ -139,6 +139,9 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Rakish Heir ({2}{R} creature 2/2): Whenever a Vampire you control deals combat damage to a player, that Vampire gets a +1/+1 counter.
 - Grimoire of the Dead ({4} legendary artifact): Has two activated abilities. First: pay {1}, tap, discard a card to add a study counter. Second: tap, remove 3 study counters, sacrifice it to put ALL creature cards from ALL graveyards onto the battlefield under your control as black Zombies. Build up counters over 3 turns (discard your worst cards), then sacrifice for a massive board. The reanimation ability is a game-winner — plan around it.
 
+### Planeswalkers
+- Liliana of the Veil ({1}{B}{B} legendary planeswalker, 3 loyalty): Three loyalty abilities. +1: Each player discards a card — use when your hand is empty or low-value to break parity. -2: Target player sacrifices a creature — the target player chooses which creature, so best when opponent has only one creature or only valuable ones. Can target yourself if needed. -6: Separate target player's permanents into two piles, that player sacrifices one pile — game-ending ultimate. When dividing piles, try to make both piles painful so the opponent loses either way. Build toward -6 with repeated +1 activations.
+
 ## Flashback
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. Tap lands to get mana, then the Flashback option appears.
 
@@ -486,6 +489,12 @@ impl LlmPlayer {
                     ResolvedChoice::ChosenTarget(None) => "Decline".into(),
                     ResolvedChoice::ChosenCard(id) => Self::obj_name(view, *id),
                     ResolvedChoice::ChosenIndex(i) => format!("Option {}", i),
+                    ResolvedChoice::ChosenSubset(ids) => {
+                        let names: Vec<String> = ids.iter()
+                            .map(|id| Self::obj_name(view, *id))
+                            .collect();
+                        format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
+                    }
                 }
             }
             other => format!("{}", other),

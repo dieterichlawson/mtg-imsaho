@@ -8,7 +8,7 @@ use common::*;
 use mtg_engine::cards::{CardRegistry, TriggerKind};
 use mtg_engine::ids::CardId;
 use mtg_engine::engine;
-use mtg_engine::actions::{Action, ResolvedChoice};
+use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::sba::check_state_based_actions_with_registry;
 
 use mtg_engine::types::*;
@@ -1567,7 +1567,10 @@ fn liliana_enters_with_loyalty() {
 }
 
 #[test]
-fn liliana_plus_one_each_player_discards() {
+fn liliana_plus_one_each_player_discards_with_choice() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    use mtg_engine::actions::ResolvedChoice;
+
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -1577,32 +1580,392 @@ fn liliana_plus_one_each_player_discards() {
         obj.card_types = vec![CardType::Planeswalker];
     }
 
-    // Give both players cards in hand.
+    // Give both players multiple cards so they must choose.
+    let p0_card_a = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
+    let p0_card_b = spell_in_hand(&mut state, &reg, "Bump in the Night", P0);
+    let p1_card_a = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
+    let p1_card_b = spell_in_hand(&mut state, &reg, "Bump in the Night", P1);
+
+    // Activate +1.
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
+
+    // Active player (P0) should be asked to choose which card to discard.
+    assert!(state.awaiting_action.is_some(), "Expected awaiting_action for P0 discard choice");
+    if let Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseCardFromHand { cards, .. }, .. }) = &state.awaiting_action {
+        assert_eq!(*player, P0, "Active player should choose first");
+        assert_eq!(cards.len(), 2, "P0 has 2 cards to choose from");
+    } else {
+        panic!("Expected ChooseCardFromHand for P0");
+    }
+
+    // P0 chooses to discard card A.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenCard(p0_card_a),
+    }, &reg);
+
+    // P0's chosen card should be in graveyard.
+    assert_eq!(state.get_object(p0_card_a).unwrap().zone, Zone::Graveyard);
+    // P0's other card should still be in hand.
+    assert_eq!(state.get_object(p0_card_b).unwrap().zone, Zone::Hand);
+
+    // Now P1 should be asked to choose.
+    assert!(state.awaiting_action.is_some(), "Expected awaiting_action for P1 discard choice");
+    if let Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseCardFromHand { cards, .. }, .. }) = &state.awaiting_action {
+        assert_eq!(*player, P1, "Other player should choose second");
+        assert_eq!(cards.len(), 2, "P1 has 2 cards to choose from");
+    } else {
+        panic!("Expected ChooseCardFromHand for P1");
+    }
+
+    // P1 chooses to discard card B.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenCard(p1_card_b),
+    }, &reg);
+
+    // P1's chosen card should be in graveyard.
+    assert_eq!(state.get_object(p1_card_b).unwrap().zone, Zone::Graveyard);
+    // P1's other card should still be in hand.
+    assert_eq!(state.get_object(p1_card_a).unwrap().zone, Zone::Hand);
+}
+
+#[test]
+fn liliana_plus_one_single_card_auto_discards() {
+    // When a player has exactly 1 card, it should auto-discard (no choice needed).
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    // Give P0 one card and P1 one card.
     let p0_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
     let p1_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
 
-    // Both players should have lost a card.
+    // Both players had 1 card each, so both auto-discard. No awaiting_action.
+    assert!(state.awaiting_action.is_none(), "Should auto-discard when only 1 card");
     assert_eq!(state.get_object(p0_card).unwrap().zone, Zone::Graveyard);
     assert_eq!(state.get_object(p1_card).unwrap().zone, Zone::Graveyard);
 }
 
 #[test]
-fn liliana_minus_two_opponent_sacrifices_creature() {
+fn liliana_plus_one_empty_hand_skipped() {
+    // Ruling: "You can activate Liliana's first ability even if some or all players
+    // will be unable to discard a card."
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
 
-    let opp_creature = ready_creature(&mut state, P1, 3, 3);
+    // P0 has no cards, P1 has one card.
+    let p1_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
-    behavior.on_loyalty_ability(&mut state, liliana, 1, &[], &reg);
+    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
 
-    // Opponent's creature should be dead.
-    assert_eq!(state.get_object(opp_creature).unwrap().zone, Zone::Graveyard);
+    // P0 is skipped (no cards), P1 auto-discards (1 card).
+    assert!(state.awaiting_action.is_none(), "P1 auto-discards");
+    assert_eq!(state.get_object(p1_card).unwrap().zone, Zone::Graveyard);
+}
+
+#[test]
+fn liliana_plus_one_both_empty_hands() {
+    // Both players have empty hands — ability resolves with no effect.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &reg);
+
+    // No awaiting_action, nothing happened.
+    assert!(state.awaiting_action.is_none());
+}
+
+#[test]
+fn liliana_minus_two_target_player_sacrifices_creature() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    use mtg_engine::actions::ResolvedChoice;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let creature_a = ready_creature(&mut state, P1, 3, 3);
+    let creature_b = ready_creature(&mut state, P1, 2, 2);
+
+    // Activate -2 targeting P1.
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 1, &[Target::Player(P1)], &reg);
+
+    // P1 should be asked which creature to sacrifice.
+    assert!(state.awaiting_action.is_some(), "Expected sacrifice choice for P1");
+    if let Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChooseTarget { options, .. }, .. }) = &state.awaiting_action {
+        assert_eq!(*player, P1, "Target player chooses which creature to sacrifice");
+        assert_eq!(options.len(), 2, "P1 has 2 creatures to choose from");
+    } else {
+        panic!("Expected ChooseTarget for P1");
+    }
+
+    // P1 chooses creature_a to sacrifice.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenTarget(Some(Target::Object(creature_a))),
+    }, &reg);
+
+    assert_eq!(state.get_object(creature_a).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(creature_b).unwrap().zone, Zone::Battlefield);
+}
+
+#[test]
+fn liliana_minus_two_single_creature_auto_sacrifices() {
+    // With only one creature, it's auto-sacrificed (no choice needed).
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 1, &[Target::Player(P1)], &reg);
+
+    // Only one creature, auto-sacrificed.
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
+}
+
+#[test]
+fn liliana_minus_two_no_creatures() {
+    // If the target player has no creatures, nothing happens.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 1, &[Target::Player(P1)], &reg);
+
+    // No creatures, no effect.
+    assert!(state.awaiting_action.is_none());
+}
+
+#[test]
+fn liliana_minus_two_can_target_self() {
+    // "Target player" means you can target yourself, not just opponent.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let own_creature = ready_creature(&mut state, P0, 2, 2);
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 1, &[Target::Player(P0)], &reg);
+
+    // P0 targeted themselves, their creature is auto-sacrificed.
+    assert_eq!(state.get_object(own_creature).unwrap().zone, Zone::Graveyard);
+}
+
+#[test]
+fn liliana_minus_six_pile_division_and_choice() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+    use mtg_engine::actions::ResolvedChoice;
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 9);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    // Give P1 three permanents.
+    let c1 = ready_creature(&mut state, P1, 3, 3);
+    let c2 = ready_creature(&mut state, P1, 2, 2);
+    let c3 = ready_creature(&mut state, P1, 1, 1);
+
+    // Activate -6 targeting P1.
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
+
+    // Step 1: Liliana's controller (P0) should divide permanents into two piles.
+    assert!(state.awaiting_action.is_some(), "Expected pile division choice");
+    if let Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, .. }, .. }) = &state.awaiting_action {
+        assert_eq!(*player, P0, "Controller divides the piles");
+        assert_eq!(*target_player, P1, "Target player is P1");
+        assert_eq!(permanents.len(), 3, "Three permanents to divide");
+    } else {
+        panic!("Expected DividePermanentsIntoPiles");
+    }
+
+    // P0 puts c1 in pile 1, c2 and c3 in pile 2.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenSubset(vec![c1]),
+    }, &reg);
+
+    // Step 2: P1 should choose which pile to sacrifice.
+    assert!(state.awaiting_action.is_some(), "Expected pile choice for P1");
+    if let Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. }, .. }) = &state.awaiting_action {
+        assert_eq!(*player, P1, "Target player chooses which pile to sacrifice");
+        assert_eq!(pile_1.len(), 1, "Pile 1 has 1 permanent");
+        assert_eq!(pile_2.len(), 2, "Pile 2 has 2 permanents");
+    } else {
+        panic!("Expected ChoosePile for P1");
+    }
+
+    // P1 chooses pile 1 (sacrifices c1 only).
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenIndex(0),
+    }, &reg);
+
+    assert_eq!(state.get_object(c1).unwrap().zone, Zone::Graveyard, "c1 should be sacrificed");
+    assert_eq!(state.get_object(c2).unwrap().zone, Zone::Battlefield, "c2 should survive");
+    assert_eq!(state.get_object(c3).unwrap().zone, Zone::Battlefield, "c3 should survive");
+}
+
+#[test]
+fn liliana_minus_six_empty_pile_allowed() {
+    // Ruling: "A pile can be empty. If the player chooses an empty pile, no permanents will be sacrificed."
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 9);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let c1 = ready_creature(&mut state, P1, 3, 3);
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
+
+    // P0 puts all permanents in pile 1 (pile 2 is empty).
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenSubset(vec![c1]),
+    }, &reg);
+
+    // P1 chooses the empty pile (pile 2, index 1) — nothing sacrificed.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenIndex(1),
+    }, &reg);
+
+    assert_eq!(state.get_object(c1).unwrap().zone, Zone::Battlefield, "Chose empty pile, nothing sacrificed");
+}
+
+#[test]
+fn liliana_minus_six_all_in_one_pile() {
+    // Controller can put all permanents in one pile. If target player chooses that pile,
+    // all permanents are sacrificed.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 9);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let c1 = ready_creature(&mut state, P1, 3, 3);
+    let c2 = ready_creature(&mut state, P1, 2, 2);
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
+
+    // P0 puts everything in pile 1 (empty pile 2).
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenSubset(vec![c1, c2]),
+    }, &reg);
+
+    // P1 chooses pile 1 — all sacrificed.
+    state = engine::submit_action(&state, &Action::ResolveChoice {
+        choice: ResolvedChoice::ChosenIndex(0),
+    }, &reg);
+
+    assert_eq!(state.get_object(c1).unwrap().zone, Zone::Graveyard);
+    assert_eq!(state.get_object(c2).unwrap().zone, Zone::Graveyard);
+}
+
+#[test]
+fn liliana_minus_six_no_permanents() {
+    // If target player has no permanents, nothing happens.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 9);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P1)], &reg);
+
+    assert!(state.awaiting_action.is_none(), "No permanents, no pile division needed");
+}
+
+#[test]
+fn liliana_minus_six_can_target_self() {
+    // -6 says "target player", so controller can target themselves.
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let liliana = named_creature(&mut state, &reg, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 9);
+    if let Some(obj) = state.get_object_mut(liliana) {
+        obj.card_types = vec![CardType::Planeswalker];
+    }
+
+    // P0 has a creature (besides Liliana herself, which is also a permanent).
+    let c1 = ready_creature(&mut state, P0, 2, 2);
+
+    let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P0)], &reg);
+
+    // P0 is both controller and target. Division choice should still go to P0.
+    assert!(state.awaiting_action.is_some(), "Expected pile division");
+    if let Some(AwaitingAction::ResolutionChoice { player, choice: ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, .. }, .. }) = &state.awaiting_action {
+        assert_eq!(*player, P0, "Controller is P0");
+        assert_eq!(*target_player, P0, "Target is also P0");
+        // P0 has Liliana and the creature on the battlefield.
+        assert!(permanents.len() >= 2, "At least Liliana + creature");
+    } else {
+        panic!("Expected DividePermanentsIntoPiles");
+    }
 }
 
 // ── Garruk Relentless ──────────────────────────────────────────
@@ -2257,8 +2620,20 @@ fn loyalty_abilities_appear_in_legal_actions() {
     let loyalty_actions: Vec<_> = legal.actions.iter()
         .filter(|a| matches!(a, Action::ActivateLoyaltyAbility { .. }))
         .collect();
-    // +1 and -2 should be available (not -6, since loyalty is only 3).
-    assert!(loyalty_actions.len() >= 2, "Expected at least 2 loyalty abilities, got {}", loyalty_actions.len());
+    // +1 (no target) + -2 targeting P0 + -2 targeting P1 = at least 3 actions.
+    // (Not -6, since loyalty is only 3.)
+    assert!(loyalty_actions.len() >= 3, "Expected at least 3 loyalty actions (+1 untargeted, -2 x2 player targets), got {}", loyalty_actions.len());
+
+    // Verify +1 has no targets and -2 has player targets.
+    let plus_one: Vec<_> = loyalty_actions.iter()
+        .filter(|a| matches!(a, Action::ActivateLoyaltyAbility { ability_index: 0, .. }))
+        .collect();
+    assert_eq!(plus_one.len(), 1, "+1 should have exactly one action (untargeted)");
+
+    let minus_two: Vec<_> = loyalty_actions.iter()
+        .filter(|a| matches!(a, Action::ActivateLoyaltyAbility { ability_index: 1, .. }))
+        .collect();
+    assert_eq!(minus_two.len(), 2, "-2 should have two actions (targeting P0 and P1)");
 }
 
 #[test]
