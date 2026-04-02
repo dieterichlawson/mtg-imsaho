@@ -1131,9 +1131,15 @@ fn ludevics_test_subject_transforms_at_five_counters() {
 
     // 5th activation — should transform.
     behavior.on_activate_ability(&mut state, subject, 0, &[], &reg);
-    assert!(state.get_object(subject).unwrap().is_transformed);
-    assert_eq!(state.get_object(subject).unwrap().name, "Ludevic's Abomination");
+    let obj = state.get_object(subject).unwrap();
+    assert!(obj.is_transformed);
+    assert_eq!(obj.name, "Ludevic's Abomination");
     assert_eq!(behavior.dynamic_pt(&state, subject), Some((13, 13)));
+    // Verify keywords and subtypes are updated by apply_transform (not stale).
+    assert!(obj.keywords.contains(&Keyword::Trample), "back face should have Trample");
+    assert!(!obj.keywords.contains(&Keyword::Defender), "back face should not have Defender");
+    assert!(obj.subtypes.contains(&"Lizard".to_string()));
+    assert!(obj.subtypes.contains(&"Horror".to_string()));
 }
 
 // ── Thraben Sentry ──────────────────────────────────────────
