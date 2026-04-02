@@ -306,3 +306,54 @@ Card data matches oracle text for both faces. Front face: {2}{U}, Creature - Hum
 - Homicidal Brute does NOT transform back if attacked: NOT TESTED
 - Ruling: no priority between untap and transform: NOT TESTED (implemented correctly)
 - Ruling: Scholar attacks then transforms, Brute ability doesn't trigger: NOT TESTED
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/47/civilized-scholar-homicidal-brute?utm_source=api
+**Oracle text (front)**: {T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.
+**Oracle text (back)**: At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.
+**Type line**: Creature — Human Advisor // Creature — Human Mutant
+**Front P/T**: 0/1
+**Back P/T**: 5/1
+**Rulings**:
+- [2011-09-22] You don't have priority between untapping Civilized Scholar and transforming it.
+- [2011-09-22] If Civilized Scholar attacks, and later in the turn it transforms, Homicidal Brute's last ability won't trigger.
+- [2011-09-22] You'll tap and transform Homicidal Brute even if it couldn't attack.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Back face oracle_text field is incorrect** (`mtg-engine/src/cards/isd/civilized_scholar.rs`, line 60):
+   - Oracle text says: `"At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it."`
+   - Code has: `"At the beginning of your end step, if Homicidal Brute didn't attack this turn, transform Homicidal Brute."`
+   - Two problems: (a) missing "tap this creature, then" before "transform", and (b) uses old printed card-name wording ("Homicidal Brute") instead of current oracle wording ("this creature"/"it").
+   - **Behavior is correct** -- the `on_end_step` handler does tap before transforming (line 180: `obj.tapped = true`). This is a text-only issue in the `oracle_text` field.
+
+2. **Front face oracle_text field uses old wording** (`mtg-engine/src/cards/isd/civilized_scholar.rs`, line 33):
+   - Oracle text says: `"...untap this creature, then transform it."`
+   - Code has: `"...untap Civilized Scholar, then transform Civilized Scholar."`
+   - Uses card name where current oracle uses "this creature" / "it". Minor text-only discrepancy; behavior is correct.
+
+3. **No LLM knowledge entry**: No entry found in `mtg-player/src/llm.rs` for Civilized Scholar or Homicidal Brute.
+
+### Tricky interactions checked
+- Draw then discard order: PASS (draws first at line 102 via `draw_cards`, then discards)
+- Player choice for discard: PASS (lines 131-142 present `ChooseCardFromHand` when multiple cards in hand; auto-discard only with single card at lines 107-130)
+- Untap then transform (no priority between, per ruling): PASS (lines 123-126 set `tapped=false` then `is_transformed=true` atomically)
+- End step transform back only on controller's end step: PASS (line 171 checks `state.active_player != controller`)
+- End step taps before transforming back: PASS (line 180 sets `obj.tapped = true` before `is_transformed = false`)
+- Attack flag tracking: PASS (`on_attacks` sets "attacked_this_turn" flag at line 162; `on_end_step` checks at line 175 and clears at lines 188-189)
+- Ruling: Scholar attacks then transforms, Brute ability won't trigger: PASS (attack flag is set on the object regardless of which face is up, so the flag persists after transform)
+- Ruling: tapping/transforming Brute even if couldn't attack: PASS (end step only checks the attack flag, not whether the creature could have attacked)
+- Discard event emitted: PASS (lines 115-118)
+- triggered_abilities declarations match hooks: PASS (front face declares `TriggerKind::Attacks` and `TriggerKind::EndStep`; `on_end_step` guards with `is_transformed` check so the EndStep trigger only has effect on back face)
+- Creature card detection via `power.is_some()`: PASS (consistent with engine conventions)
+
+### Test coverage
+- Draw, discard creature, transform: `tier15_cards.rs` (civilized_scholar_discard_creature_transforms)
+- Discard non-creature, no transform: `tier15_cards.rs` (civilized_scholar_discard_noncreature_no_transform)
+- Homicidal Brute transforms back on end step if didn't attack: NOT TESTED
+- Homicidal Brute does NOT transform back if attacked: NOT TESTED
+- Ruling: no priority between untap and transform: NOT TESTED (implemented correctly)
+- Ruling: Scholar attacks then transforms, Brute ability doesn't trigger: NOT TESTED
+- LLM card knowledge: NOT PRESENT

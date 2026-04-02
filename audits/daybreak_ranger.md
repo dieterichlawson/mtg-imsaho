@@ -283,3 +283,55 @@ Card data matches oracle text for both faces. Front face: {2}{G}, Creature - Hum
 - Nightfall Predator can fight own creature: `werewolf_cards.rs:353` (nightfall_predator_can_fight_own_creature)
 - Front face deals damage to creature with flying: NOT TESTED
 - Transform back when 2+ spells cast: NOT TESTED
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API), https://scryfall.com/card/isd/176/daybreak-ranger-nightfall-predator?utm_source=api
+**Oracle text (front)**: {T}: This creature deals 2 damage to target creature with flying. At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back)**: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.) At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line (front)**: Creature — Human Archer Ranger Werewolf
+**Type line (back)**: Creature — Werewolf
+**Front P/T**: 2/2
+**Back P/T**: 4/4
+**Keywords (Scryfall)**: Transform, Fight
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Both faces match oracle text. Detailed verification:
+
+- **Mana cost**: Code `ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Green)])` matches `{2}{G}`.
+- **Front face subtypes**: Code `["Human", "Archer", "Ranger", "Werewolf"]` (line 34) matches oracle type line "Human Archer Ranger Werewolf".
+- **Back face subtypes**: Code `["Werewolf"]` (line 57) matches oracle type line "Werewolf".
+- **Front face P/T**: Code `power: Some(2), toughness: Some(2)` (lines 35-36). Correct.
+- **Back face P/T**: `dynamic_pt` returns `Some((4, 4))` when transformed (line 74). `back_face_data` also declares `power: Some(4), toughness: Some(4)` (lines 59-60). Correct.
+- **Front face ability**: `is_valid_target` checks `state.has_keyword(*id, Keyword::Flying, registry)` (line 132) when not transformed. Damage is applied manually: `obj.damage_marked += 2` (line 150), `obj.damaged_by.push(object_id)` (line 151), and `NonCombatDamageDealt` event emitted (line 154). Correct -- this is non-combat damage, not fight.
+- **Back face ability**: Cost is `ManaCost::new(vec![ManaSymbol::Colored(Color::Red)])` with `requires_tap: true` (lines 91-93). Matches oracle `{R}, {T}`. When transformed, `is_valid_target` returns `true` for any creature (line 129) -- no controller restriction. Matches oracle "target creature" with no restriction. Fight is dispatched via `crate::combat::fight(state, object_id, *target_id, registry)` (line 144).
+- **Transform conditions**: Front transforms when `total_spells_last_turn == 0 && !state.is_first_turn` (line 17). Back transforms when `state.spells_cast_last_turn.values().any(|&count| count >= 2)` (line 19). Both correct per oracle text.
+- **Trigger declaration**: Front face `triggered_abilities` includes `TriggerKind::Upkeep` (line 43). Back face has `triggered_abilities: vec![]` (line 65). This matches the pattern used by all other werewolves (e.g., Reckless Waif) where `on_upkeep` handles both faces and only the front face declares the trigger.
+
+Note: Scryfall lists "Transform" and "Fight" as keywords, but these are action keywords/mechanics rather than static keyword abilities. The code uses `keywords: vec![]` for both faces, which is consistent with all other werewolf implementations (e.g., Reckless Waif). Transform is handled via `should_transform`/`on_upkeep`, and Fight is an activated ability action, not a keyword like Flying or Trample.
+
+Note: `crate::combat::fight` internally calls `deal_damage_to_creature` which emits `CombatDamageDealt` rather than `NonCombatDamageDealt`. Fight damage is not combat damage per MTG rules. This is a systemic issue in the fight function (`mtg-engine/src/combat.rs:158`), not specific to Daybreak Ranger.
+
+### Tricky interactions checked
+- Front face targets only creatures with flying: PASS (`is_valid_target` line 132 checks `has_keyword(Keyword::Flying)`)
+- Front face deals 2 non-combat damage (not fight): PASS (manually marks damage, emits `NonCombatDamageDealt`)
+- Front face damage source tracked: PASS (`damaged_by.push(object_id)` at line 151)
+- Back face fight allows any creature target (including own): PASS (line 129 returns `true` unconditionally)
+- Back face costs {R} + tap: PASS (ManaCost(Red), requires_tap: true at lines 91-93)
+- Werewolf transform conditions correct for both directions: PASS
+- Transform fires on each upkeep (not just controller's): PASS (no active_player check in `on_upkeep`)
+- First turn no-transform: PASS (line 17 checks `!state.is_first_turn`)
+- dynamic_pt returns (4,4) when transformed: PASS (line 74)
+- `is_valid_target` multi-copy fragility: The code searches all objects to find the source's transformed state (lines 121-125) rather than receiving the source object_id. If a player controls two Daybreak Rangers in different states, this could misidentify which is transformed. Minor architectural concern, unlikely to cause bugs in practice.
+
+### Test coverage
+- Transforms to Nightfall Predator: `werewolf_cards.rs:312` (daybreak_ranger_transforms_to_nightfall_predator)
+- Front face has activated ability with "flying" in description: `werewolf_cards.rs:328` (daybreak_ranger_has_activated_ability_on_front_face)
+- Back face has fight ability: `werewolf_cards.rs:340` (nightfall_predator_has_fight_ability)
+- Nightfall Predator can fight own creature: `werewolf_cards.rs:353` (nightfall_predator_can_fight_own_creature)
+- Front face deals damage to creature with flying: NOT TESTED
+- Transform back when 2+ spells cast: NOT TESTED (covered generically by reckless_waif tests)
+- LLM card knowledge entry: NOT PRESENT in `mtg-player/src/llm.rs`
