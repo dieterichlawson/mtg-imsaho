@@ -12,8 +12,7 @@
 
 ### ~~Snapcaster Mage~~ — FIXED (player choice via ChooseTarget + GrantFlashback effect)
 
-### Into the Maw of Hell
-- Missing `damaged_by` tracking when dealing 13 damage to the target creature. Other non-combat damage sources (e.g., Heretic's Punishment) correctly push to `damaged_by`. This means death triggers that check `damaged_by` will not correctly identify Into the Maw of Hell as the damage source.
+### ~~Into the Maw of Hell~~ — FIXED (added damaged_by.push)
 
 ## Behavioral Edge Cases (3)
 
