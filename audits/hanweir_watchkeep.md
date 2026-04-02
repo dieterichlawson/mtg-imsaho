@@ -52,3 +52,7 @@ The current Scryfall oracle uses "This creature" instead of the card name. Behav
 
 ### Verdict: ISSUE
 Back face oracle text in code uses "Bane of Hanweir" where current oracle uses "This creature".
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall for both faces: "transform this creature" (was "transform Hanweir Watchkeep"/"transform Bane of Hanweir"), and "This creature attacks each combat if able" (was "Bane of Hanweir attacks each combat if able"). Behavior unchanged.

@@ -40,3 +40,7 @@
 1. **ISSUE — Additional cost executed at resolution instead of cast time**: The `on_resolve` method exiles a creature card from the graveyard. Per oracle, this should happen as an additional cost to *cast* the spell (before it goes on the stack), not when the spell resolves. The card_data correctly declares `AdditionalCost::ExileCreaturesFromGraveyard(1)`, but `on_resolve` redundantly exiles again. If the engine already handles the additional cost at cast time, this causes a double-exile; if not, the timing is wrong.
    - Code on_resolve: searches graveyard for creature, exiles it, then moves self to battlefield
    - Oracle: "As an additional cost to cast this spell, exile a creature card from your graveyard."
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: AdditionalCost::ExileCreaturesFromGraveyard(1) correctly implemented. Oracle text updated to match Scryfall: reordered to "As an additional cost to cast this spell, exile a creature card from your graveyard.\nFlying" and uses "this spell". Doc comment updated. Behavior unchanged.

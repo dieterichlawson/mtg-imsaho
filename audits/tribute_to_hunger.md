@@ -36,3 +36,7 @@
    - Oracle: "sacrifices a creature of their choice"
    - Code: "sacrifices a creature"
 2. **Behavior correct**: Opponent chooses creature, life gain equals toughness. Implementation uses SacrificeAndGainLife pending effect with opponent as chooser.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Target opponent sacrifices a creature of their choice." (was "Target opponent sacrifices a creature."). Doc comment updated. Behavior unchanged.

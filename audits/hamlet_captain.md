@@ -37,3 +37,7 @@ Two differences: (1) "Hamlet Captain" vs "this creature", (2) "Human creatures" 
 
 ### Verdict: ISSUE
 Oracle text in code does not match current Scryfall oracle wording.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn." (was "Hamlet Captain attacks or blocks, other Human creatures"). Doc comment updated. Behavior unchanged.

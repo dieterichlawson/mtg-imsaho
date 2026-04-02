@@ -40,3 +40,7 @@
 1. **ISSUE — Sacrifice selection is automated instead of player-chosen**: The oracle text says "then sacrifice a creature" which means the controller chooses which creature to sacrifice. The code auto-selects a creature, preferring non-tokens over tokens, which is incorrect — the player should be given the choice.
    - Code: `creatures.iter().find(|(_, is_token)| !is_token).or_else(|| creatures.first())`
    - Oracle: "then sacrifice a creature" (controller's choice)
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: activated ability correctly creates token then presents sacrifice choice. Oracle text matches Scryfall verbatim. Behavior unchanged.

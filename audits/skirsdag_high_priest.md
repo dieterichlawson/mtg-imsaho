@@ -46,3 +46,7 @@
 - sorcery_speed_only: true — this is NOT in the oracle text. The oracle restriction is the morbid condition ("Activate only if a creature died this turn"), not sorcery speed. The morbid check is already enforced by the `creature_died_this_turn` guard. The `sorcery_speed_only` flag adds an extra restriction not present in the oracle.
 
 **Result: ISSUE** — (1) oracle_text string says "Activate only as a sorcery" but oracle says "Activate only if a creature died this turn." (2) `sorcery_speed_only: true` imposes a restriction not present in the oracle text — the ability can be activated at instant speed as long as morbid is satisfied.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: activated ability correctly requires morbid condition, tapping self + two other creatures, and creates 5/5 Demon token with flying. Oracle text matches Scryfall verbatim. Behavior unchanged.

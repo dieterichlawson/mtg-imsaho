@@ -28,3 +28,7 @@
    - Oracle: `"Create thirteen tapped 2/2 black Zombie creature tokens."`
 
 Behavior is otherwise correct: creates 13 tokens with correct stats (2/2 black Zombie creature), sets each tapped, flashback_cost is {7}{B}{B}{B}. All functional behavior matches.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Create thirteen tapped 2/2 black Zombie creature tokens." (was "Create thirteen 2/2 black Zombie creature tokens. They enter the battlefield tapped."). Doc comment updated. Behavior unchanged.

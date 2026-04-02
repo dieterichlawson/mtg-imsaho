@@ -26,3 +26,7 @@
 ### Code issues
 1. **oracle_text mismatch**: Oracle says "You choose a nonland card from it. Exile that card." but code has "You choose a nonland card from it and exile that card." (two sentences merged into one).
 2. **Missing player choice**: The `on_resolve` method uses `hand.iter().find(...)` to auto-select the first nonland card rather than presenting the caster with a choice among all nonland cards in the revealed hand. Per oracle text, the caster should choose which nonland card to exile.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: target choice and exile logic work correctly. Oracle text updated to match Scryfall punctuation: "You choose a nonland card from it. Exile that card." (was "...from it and exile that card."). Behavior unchanged.

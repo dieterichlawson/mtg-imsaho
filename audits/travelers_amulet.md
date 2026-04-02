@@ -28,3 +28,7 @@
 1. **Oracle text wording mismatch**: Oracle says `"Sacrifice this artifact"` but code has `"Sacrifice Traveler's Amulet"`. Modern oracle template uses "this artifact" as self-reference.
 ### Behavior
 Correct. Activated ability costs {1} with SacrificeCost::SacrificeThis. on_activate_ability searches library for a basic land (checks CardType::Land and Supertype::Basic), moves it to hand. Shuffle is noted as no-op. All mechanical behavior matches oracle.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Sacrifice this artifact" (was "Sacrifice Traveler's Amulet"). Doc comment updated. Behavior unchanged.

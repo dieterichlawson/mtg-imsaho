@@ -30,3 +30,7 @@
    - Oracle: `"Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature."`
 
 Behavior is otherwise correct: two triggered abilities (Blocks and BecomesBlocked) each call deal_1_damage which marks 1 damage on the other creature. Stats (2/1), cost ({1}{R}), subtypes (Elemental, Dog) all match.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature." (was self-referential "Ashmouth Hound" wording). Doc comment updated. Behavior unchanged.

@@ -49,3 +49,7 @@ None found.
 
 ### Result
 **ISSUE** -- Oracle text string missing "as that creature" at the end. Code: `"Exile target creature and all other creatures with the same name."` vs oracle: `"Exile target creature and all other creatures with the same name as that creature."`.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "with the same name as that creature" (was "with the same name"). Doc comment updated. Behavior unchanged.

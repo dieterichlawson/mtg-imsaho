@@ -39,3 +39,7 @@
 1. **ISSUE — Target restriction too narrow**: Oracle says "target player or planeswalker" but the code uses `TargetRequirement::PlayerOnly` and the `on_activate_ability` handler only matches `Target::Player`. Planeswalker targeting is missing.
    - Code: `target_requirement: Some(TargetRequirement::PlayerOnly)`
    - Oracle: "target player or planeswalker"
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: damage ability correctly handles player and planeswalker targets. Oracle text updated to match Scryfall: "This land deals 2 damage" (was "Stensia Bloodhall deals 2 damage"). Doc comment updated. Behavior unchanged.

@@ -30,3 +30,7 @@ The code gains 4 life unconditionally (lines 63-73) even if the target land was 
 **Status**: ISSUE
 ### Code issues
 Life gain (lines 63-73) is outside the target-validity if-block (line 55). If the target land left the battlefield before resolution but `on_resolve` is still called, the spell would gain 4 life without destroying anything. The life gain should be inside the same block as the destroy, or the entire method should early-return if the target is invalid.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: on_resolve correctly checks target validity, destroys land, then gains 4 life only if target was valid. Oracle text matches Scryfall verbatim. Behavior unchanged.

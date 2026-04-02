@@ -82,3 +82,7 @@ No issues found.
    - Oracle: "The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard."
    - Code: "That player puts all cards revealed this way into their graveyard. Equipped creature gets +1/+0 until end of turn for each card put into a graveyard this way."
 2. **Behavior is functionally correct**: The land card IS counted in the +1/+0 bonus (matching the ruling), cards are milled to graveyard, equip cost is {2} at sorcery speed. No gameplay bug.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard." (was old wording with "each card put into a graveyard this way"). Doc comment updated. Behavior unchanged.

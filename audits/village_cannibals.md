@@ -31,3 +31,7 @@
 1. **Oracle text string mismatch**: Oracle says `"put a +1/+1 counter on this creature"` but code has `"put a +1/+1 counter on Village Cannibals"`. The oracle template uses "this creature" rather than the card name.
 ### Behavior
 Behavior is correct: on_any_creature_dies checks self is on battlefield, checks the dead creature had the "Human" subtype, and adds a +1/+1 counter. Trigger kind is AnyCreatureDies. Logic is sound.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "put a +1/+1 counter on this creature" (was "on Village Cannibals"). Doc comment updated. Behavior unchanged.

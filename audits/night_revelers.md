@@ -38,3 +38,7 @@
 - Behavior: ConditionalKeyword with Haste, condition OpponentControlsSubtype("Human"), scope OnSelf -- PASS (correctly models the ability)
 
 **Verdict: ISSUE** — oracle_text field says "Night Revelers has haste" instead of current oracle "This creature has haste"
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "This creature has haste as long as an opponent controls a Human." (was "Night Revelers has haste..."). Doc comment updated. Behavior unchanged.

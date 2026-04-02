@@ -47,3 +47,7 @@ None found (same "Enchant creature" omission convention as other Auras).
 
 ### Result
 **ISSUE** -- Oracle text string missing "Enchant creature" line. Code: `"Enchanted creature gets -3/-0."` vs oracle: `"Enchant creature\nEnchanted creature gets -3/-0."`.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: added "Enchant creature\n" prefix (was missing). Doc comment updated. Behavior unchanged.

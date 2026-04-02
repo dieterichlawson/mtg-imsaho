@@ -52,3 +52,7 @@ None found (planeswalker omission is an engine-level limitation, not a card bug)
   - **Code:** `let targets: Vec<Target> = state.players.iter().filter(|p| !p.lost).map(|p| Target::Player(p.id)).collect();`
 
 ## Result: ISSUE
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: on_any_creature_dies correctly presents target choice for player or planeswalker. Oracle text updated to match Scryfall: "this creature deals 2 damage" (was "Rage Thrower deals 2 damage"). Doc comment updated. Behavior unchanged.

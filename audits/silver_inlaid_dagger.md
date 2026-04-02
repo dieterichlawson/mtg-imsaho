@@ -50,3 +50,7 @@
 
 ### Result
 **ISSUE** -- Oracle text string mismatch: code says `"it gets +3/+0 instead"` but oracle says `"it gets an additional +1/+0"`. Also potential double-counting if both `continuous_effects` and `instance_continuous_effects` are applied simultaneously (would yield +5/+0 for Humans instead of correct +3/+0).
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Equipped creature gets +2/+0.\nAs long as equipped creature is a Human, it gets an additional +1/+0.\nEquip {2}" (was "+3/+0 instead" on a single line). Doc comment updated. Behavior unchanged — code correctly gives +3/+0 total to Humans, +2/+0 to non-Humans.

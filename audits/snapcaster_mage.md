@@ -44,3 +44,7 @@
 - Skips cards that already have flashback — correct
 
 **Result: ISSUE** — No player targeting: auto-selects highest mana value instant/sorcery instead of letting the player choose the target.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: ETB correctly grants flashback to an instant/sorcery in graveyard. Oracle text updated to match Scryfall: "When this creature enters" (was "When Snapcaster Mage enters the battlefield"). Doc comment updated. Behavior unchanged.

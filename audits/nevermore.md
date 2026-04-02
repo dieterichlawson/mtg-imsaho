@@ -38,3 +38,7 @@
 - Behavior (prevention): Relies on engine checking for Nevermore in `legal_actions` -- not verified here but documented
 
 **Verdict: ISSUE** — oracle_text field uses outdated wording "As Nevermore enters the battlefield" instead of current oracle "As this enchantment enters"
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "As this enchantment enters, choose a nonland card name." (was "As Nevermore enters the battlefield, choose a nonland card name."). Doc comment updated. Behavior unchanged.

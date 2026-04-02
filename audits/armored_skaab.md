@@ -28,3 +28,7 @@
    - Oracle: `"When this creature enters, mill four cards."`
 
 Behavior is otherwise correct: triggered ability on EntersBattlefield calls mill_cards(state, controller, 4). Stats (1/4), cost ({2}{U}), types (Creature — Zombie Warrior) all match.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "When this creature enters, mill four cards." (was "When Armored Skaab enters the battlefield, mill four cards."). Doc comment updated. Behavior unchanged.

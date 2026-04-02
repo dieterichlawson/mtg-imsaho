@@ -50,3 +50,7 @@ None found.
 
 ### Result
 **ISSUE** -- Oracle text string uses card name ("Selhoff Occultist") where current oracle uses "this creature".
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Whenever this creature or another creature dies, target player mills a card." (was "Selhoff Occultist or another creature dies"). Doc comment updated. Behavior unchanged.

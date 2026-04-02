@@ -32,3 +32,7 @@
 2. **Struct name typo**: Struct is named `TraiterousBlood` (misspelled) instead of `TraitorousBlood`. This is cosmetic but incorrect.
 ### Behavior
 Correct. on_resolve gains control of target creature, untaps it, grants haste and trample until end of turn. Control change is tracked for end-of-turn revert. All mechanical behavior matches oracle.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Untap it. It gains trample and haste until end of turn." (was "Untap that creature. It gains haste and trample until end of turn."). Doc comment updated. Behavior unchanged.

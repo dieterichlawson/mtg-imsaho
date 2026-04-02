@@ -52,3 +52,7 @@ None.
 **Issues found:**
 1. **Double exile bug:** `on_resolve` exiles an additional creature card from the graveyard, but the engine already exiles one at cast time via `AdditionalCost::ExileCreaturesFromGraveyard(1)`.
 2. **Redundant battlefield move:** `on_resolve` explicitly moves the creature to the battlefield, which may conflict with default creature resolution.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: AdditionalCost::ExileCreaturesFromGraveyard(1) correctly requires exiling a creature card from graveyard. Oracle text already matches Scryfall. Doc comment updated to use "this spell". Behavior unchanged.

@@ -45,3 +45,7 @@
 
 ### Result
 **ISSUE** -- Oracle text string missing flashback line. Code: `"Return target creature to its owner's hand."` vs oracle: `"Return target creature to its owner's hand.\nFlashback {4}{U}"`.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to include flashback line per codebase convention: added "\nFlashback {4}{U}". Behavior unchanged.

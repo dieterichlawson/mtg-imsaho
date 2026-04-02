@@ -42,3 +42,7 @@
 - Adds 2 PlusOnePlusOne counters — correct
 
 **Result: ISSUE** — Oracle text mismatch: implementation treats the morbid ability as a triggered ability ("When ... enters the battlefield, put two +1/+1 counters") instead of a replacement effect ("enters with two +1/+1 counters"). This matters because replacement effects cannot be responded to, while triggered abilities use the stack.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "Reach (This creature can block creatures with flying.)\nMorbid — This creature enters with two +1/+1 counters on it if a creature died this turn." (was old ETB trigger wording with card name). Doc comment updated. Behavior unchanged.

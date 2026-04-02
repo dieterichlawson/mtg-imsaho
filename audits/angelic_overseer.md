@@ -28,3 +28,7 @@
    - Oracle: `"As long as you control a Human, this creature has hexproof and indestructible."`
 
 Behavior is otherwise correct: two ConditionalKeyword continuous effects (Hexproof, Indestructible) both conditioned on YouControlSubtype("Human") with OnSelf scope. Stats, cost, types, and keywords all match.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "this creature has hexproof and indestructible" (was "Angelic Overseer has hexproof and is indestructible"). Doc comment updated. Behavior unchanged.

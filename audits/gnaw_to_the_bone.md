@@ -36,3 +36,7 @@ The flashback cost should be Generic(2) + Green, not Generic(3) + Green. The pre
 
 ### Verdict: ISSUE
 Flashback cost is {3}{G} in code but oracle specifies {2}{G}.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to include flashback line per codebase convention. Previously fixed bug re-verified: life gain logic correctly counts creature cards in graveyard excluding the spell itself. Behavior unchanged.

@@ -28,3 +28,7 @@
 1. **Oracle text wording mismatch**: Oracle says `"This land enters tapped unless you control an Island or a Mountain."` but code has `"Sulfur Falls enters the battlefield tapped unless you control an Island or a Mountain."`. Modern oracle template uses "This land enters tapped" not "enters the battlefield tapped".
 ### Behavior
 Correct. on_enter_battlefield checks for Island or Mountain subtypes among controller's other permanents and taps if none found. Mana abilities correctly produce {U} or {R} with tap cost.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "This land enters tapped unless you control an Island or a Mountain." (was "Sulfur Falls enters the battlefield tapped..."). Doc comment updated. Behavior unchanged.
