@@ -401,3 +401,73 @@ Missing `back_face_data()` implementation -- Garruk is the only DFC in the set t
 - Transform from non-loyalty-ability damage source (e.g., combat): NOT TESTED (implemented correctly via SBA)
 - Cannot activate loyalty abilities on both faces in same turn (ruling): NOT TESTED
 - Front face ability 0 creature fights back: NOT TESTED (implemented correctly)
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text (front)**: "When Garruk has two or fewer loyalty counters on him, transform him.\n0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.\n0: Create a 2/2 green Wolf creature token."
+**Oracle text (back)**: "+1: Create a 1/1 black Wolf creature token with deathtouch.\n−1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.\n−3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard."
+**Type line**: Legendary Planeswalker — Garruk
+**Status**: ISSUE
+
+### Code issues
+
+1. **Transform trigger is not a proper state-triggered ability (moderate)**
+
+   The oracle text says: `"When Garruk has two or fewer loyalty counters on him, transform him."` The ruling states: "Garruk Relentless's first ability is a state-triggered ability. It triggers once Garruk has two or fewer loyalty counters on him and it can't retrigger while that ability is on the stack."
+
+   The code in `sba.rs` lines 247-265 implements this as an immediate transformation during SBA processing:
+   ```rust
+   // State-triggered ability: Garruk Relentless transforms when he has 2 or fewer loyalty.
+   // This is an SBA-like check that fires regardless of what caused the loyalty loss.
+   ```
+   The transformation happens immediately without going on the stack. In correct MTG rules, a state-triggered ability goes on the stack and can be responded to (e.g., an opponent could remove Garruk in response before the transform resolves). This is a known simplification but may produce incorrect gameplay in edge cases.
+
+2. **Oracle text cosmetic mismatch (trivial)**
+
+   Oracle text from Scryfall: `"When Garruk has two or fewer loyalty counters on him, transform him."`
+   Code oracle_text field: `"When Garruk Relentless has two or fewer loyalty counters on him, transform Garruk Relentless."`
+   Functionally equivalent but does not match Scryfall verbatim.
+
+3. **Card not present in LLM knowledge (`mtg-player/src/llm.rs`)**
+
+   No mention of Garruk Relentless or Garruk, the Veil-Cursed found in the LLM card knowledge section.
+
+### Card data verification
+
+- Mana cost: `{3}{G}` — CORRECT (Generic(3), Colored(Green))
+- Card types: `[Planeswalker]` — CORRECT
+- Supertypes: `[Legendary]` — CORRECT
+- Subtypes: `["Garruk"]` — CORRECT
+- Starting loyalty: `3` — CORRECT
+- Keywords: `[]` — ACCEPTABLE (no Transform variant in Keyword enum)
+- Both faces: front face via `card_data()`, back face via `loyalty_abilities()` with `is_transformed` check — CORRECT
+
+### Behavior verification
+
+- **Front [0] fight ability**: Deals 3 damage to target creature, creature deals power back to Garruk as loyalty counter removal. Emits NonCombatDamageDealt events for both directions. Target requirement is `Creature`. — CORRECT
+- **Front [0] wolf token**: Creates 2/2 green Wolf creature token with subtype "Wolf". — CORRECT
+- **Back [+1] deathtouch wolf**: Creates 1/1 black Wolf creature token with deathtouch. — CORRECT
+- **Back [-1] sacrifice and tutor**: Does not target (per ruling). Presents sacrifice choice if multiple creatures. Searches library for creature card, puts in hand, shuffles. — CORRECT
+- **Back [-3] overrun**: Counts creature cards in graveyard at resolution. Grants +X/+X and trample until end of turn only to creatures controlled at resolution. — CORRECT (matches ruling about snapshot behavior)
+- **Loyalty costs**: 0, 0 (front); +1, -1, -3 (back) — CORRECT
+
+### Tricky interactions checked
+
+- **Transform at 0 loyalty**: SBA checks loyalty=0 death before the transform check (line 242 death, line 247 transform), so Garruk at 0 loyalty will die before transforming — CORRECT per rules.
+- **No double activation after transform**: The engine enforces one loyalty ability per turn per planeswalker — handled at the engine level, not card level. CORRECT.
+- **Sacrifice is mandatory**: The -1 ability uses `optional: false` in the ChooseTarget — CORRECT per ruling "you must sacrifice a creature if you control one."
+
+### Test coverage
+
+Found 7 tests in `mtg-engine/tests/tier15_cards.rs`:
+- `garruk_creates_wolf_token` — front face wolf creation
+- `garruk_transforms_at_two_or_fewer_loyalty` — transform via SBA
+- `garruk_back_face_creates_deathtouch_wolf` — back face +1
+- `garruk_back_face_sacrifice_to_tutor` — back face -1 with single creature
+- `garruk_back_face_tutor_presents_sacrifice_choice` — back face -1 with multiple creatures
+- `garruk_back_face_tutor_shuffles_library` — library shuffle after tutor
+- `garruk_back_face_overrun` — back face -3
+- `garruk_back_face_loyalty_abilities_shown_when_transformed` — correct abilities per face
+
+Coverage is good. Missing test for front face fight ability (ability_index 0).
