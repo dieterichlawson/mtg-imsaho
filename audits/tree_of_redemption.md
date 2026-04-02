@@ -20,3 +20,13 @@
 
 ## Verdict
 **PASS** — Correctly implemented including the life exchange mechanic.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Defender\n{T}: Exchange your life total with this creature's toughness.
+**Type line**: Creature — Plant
+**Mana Cost**: {3}{G}
+**P/T**: 0/13
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name "Tree of Redemption", cost {3}{G}, type Creature, subtype Plant, P/T 0/13, Defender keyword. Oracle text in code says "Tree of Redemption's toughness" vs oracle "this creature's toughness" — minor self-referential wording difference acceptable for card implementations. Activated ability requires tap, costs no mana, exchanges life total with effective toughness. on_activate_ability correctly reads effective_toughness, swaps life and base toughness values, and logs the exchange. All correct.

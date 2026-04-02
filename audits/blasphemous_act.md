@@ -1,21 +1,22 @@
 # Audit: Blasphemous Act
 
-## Oracle (Scryfall)
+## Oracle Text (Scryfall)
 - **Name:** Blasphemous Act
-- **Cost:** {8}{R}
+- **Mana Cost:** {8}{R}
 - **Type:** Sorcery
-- **Oracle:** This spell costs {1} less to cast for each creature on the battlefield. Blasphemous Act deals 13 damage to each creature.
-- **P/T:** N/A
+- **Oracle Text:** This spell costs {1} less to cast for each creature on the battlefield. / Blasphemous Act deals 13 damage to each creature.
 
-## Implementation: `mtg-engine/src/cards/blasphemous_act.rs`
-- **Name:** Blasphemous Act ✅
-- **Cost:** {8}{R} ✅
-- **Type:** Sorcery ✅
-- **Oracle text:** matches ✅
-- **Cost reduction:** `modified_cost` counts creatures, reduces generic by that count, capped at 8 ✅
-- **Damage:** 13 to each creature ✅
-- **NonCombatDamageDealt events:** emitted for each creature ✅
-- **damaged_by tracking:** pushes `object_id` for each creature ✅
-- **move_spell_after_resolve:** called ✅
+## Implementation File
+`mtg-engine/src/cards/isd/blasphemous_act.rs`
 
-## Verdict: PASS — no issues found
+## Card Data Checks
+- **Name:** Correct
+- **Mana Cost:** Correct ({8}{R})
+- **Card Types:** Correct (Sorcery)
+- **Oracle Text:** Correct
+
+## Behavior Checks
+- **Cost reduction:** `modified_cost` counts creatures on the battlefield and reduces generic cost by that amount, capped at 8 (cannot reduce below {R}). Correct per rulings.
+- **On resolve:** Deals 13 damage to each creature on the battlefield. Correctly marks damage and emits `NonCombatDamageDealt` events. Correctly moves spell to graveyard after resolve.
+
+## Verdict: PASS

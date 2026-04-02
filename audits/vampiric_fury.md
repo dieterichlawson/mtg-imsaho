@@ -18,3 +18,17 @@
 
 ## Verdict
 **PASS** — Correctly implements the Vampire tribal pump spell.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Vampire creatures you control get +2/+0 and gain first strike until end of turn.
+**Type line**: Instant
+**Status**: PASS
+
+### Card Data
+- **Name:** Vampiric Fury -- CORRECT
+- **Mana Cost:** {1}{R} -- CORRECT
+- **Type:** Instant -- CORRECT
+
+### Code issues
+None. On resolve, finds all creatures controlled by caster with Vampire subtype, gives +2/+0 via UntilEndOfTurnEffect and FirstStrike via UntilEndOfTurnKeyword. Only affects Vampires on the battlefield at resolution time (matching the ruling). Spell is cleaned up after resolve. All data and behavior match oracle.

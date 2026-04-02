@@ -1,21 +1,24 @@
 # Audit: Bloodcrazed Neonate
 
-## Oracle (Scryfall)
+## Oracle Text (Scryfall)
 - **Name:** Bloodcrazed Neonate
-- **Cost:** {1}{R}
+- **Mana Cost:** {1}{R}
 - **Type:** Creature — Vampire
-- **Oracle:** Bloodcrazed Neonate attacks each combat if able. Whenever Bloodcrazed Neonate deals combat damage to a player, put a +1/+1 counter on it.
 - **P/T:** 2/1
+- **Oracle Text:** This creature attacks each combat if able. / Whenever this creature deals combat damage to a player, put a +1/+1 counter on it.
 
-## Implementation: `mtg-engine/src/cards/bloodcrazed_neonate.rs`
-- **Name:** Bloodcrazed Neonate ✅
-- **Cost:** {1}{R} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Vampire ✅
-- **P/T:** 2/1 ✅
-- **Force attack:** ContinuousEffect::ForceAttack with OnSelf scope ✅
-- **Triggered ability:** CombatDamageToPlayer ✅
-- **on_combat_damage_to_player:** adds +1/+1 counter via `state.add_counters` ✅
-- **Zone check:** checks self is on battlefield ✅
+## Implementation File
+`mtg-engine/src/cards/isd/bloodcrazed_neonate.rs`
 
-## Verdict: PASS — no issues found
+## Card Data Checks
+- **Name:** Correct
+- **Mana Cost:** Correct ({1}{R})
+- **Card Types:** Correct (Creature)
+- **Subtypes:** Correct (Vampire)
+- **P/T:** Correct (2/1)
+
+## Behavior Checks
+- **Must attack:** `ContinuousEffect::ForceAttack { scope: EffectScope::OnSelf }` -- correct.
+- **+1/+1 counter on combat damage to player:** `on_combat_damage_to_player` adds a PlusOnePlusOne counter. Correct. Zone check is present.
+
+## Verdict: PASS
