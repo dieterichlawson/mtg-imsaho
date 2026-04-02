@@ -3,7 +3,7 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Village Bell-Ringer — {2}{W} 1/4 Human Scout. Flash. ETB: untap all creatures you control.
+/// Village Bell-Ringer — {2}{W} 1/4 Human Scout. Flash. When this creature enters, untap all creatures you control.
 pub struct VillageBellRinger;
 
 impl CardBehavior for VillageBellRinger {
@@ -19,7 +19,7 @@ impl CardBehavior for VillageBellRinger {
             subtypes: vec!["Human".into(), "Scout".into()],
             power: Some(1),
             toughness: Some(4),
-            oracle_text: "Flash\nWhen Village Bell-Ringer enters the battlefield, untap all creatures you control.".into(),
+            oracle_text: "Flash (You may cast this spell any time you could cast an instant.)\nWhen this creature enters, untap all creatures you control.".into(),
             keywords: vec![Keyword::Flash],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Night Terrors — {2}{B} Sorcery.
-/// Target player reveals their hand. You choose a nonland card from it and exile that card.
+/// Target player reveals their hand. You choose a nonland card from it. Exile that card.
 pub struct NightTerrors;
 
 impl CardBehavior for NightTerrors {
@@ -21,7 +21,7 @@ impl CardBehavior for NightTerrors {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Target player reveals their hand. You choose a nonland card from it and exile that card.".into(),
+            oracle_text: "Target player reveals their hand. You choose a nonland card from it. Exile that card.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

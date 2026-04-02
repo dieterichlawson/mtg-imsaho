@@ -4,9 +4,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Snapcaster Mage — {1}{U} 2/1 Human Wizard. Flash.
-/// When Snapcaster Mage enters the battlefield, target instant or sorcery card
-/// in your graveyard gains flashback until end of turn. The flashback cost is
-/// equal to its mana cost.
+/// When this creature enters, target instant or sorcery card in your graveyard
+/// gains flashback until end of turn. The flashback cost is equal to its mana cost.
 ///
 /// Simplified: On ETB, finds the best instant/sorcery in the graveyard and
 /// grants it flashback until end of turn.
@@ -25,7 +24,7 @@ impl CardBehavior for SnapcasterMage {
             subtypes: vec!["Human".into(), "Wizard".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: "Flash\nWhen Snapcaster Mage enters the battlefield, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.".into(),
+            oracle_text: "Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.".into(),
             keywords: vec![Keyword::Flash],
             flashback_cost: None,
             continuous_effects: vec![],

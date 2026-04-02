@@ -6,7 +6,7 @@ use crate::types::*;
 
 /// Stensia Bloodhall — Land.
 /// {T}: Add {C}.
-/// {3}{B}{R}, {T}: Stensia Bloodhall deals 2 damage to target player or planeswalker.
+/// {3}{B}{R}, {T}: This land deals 2 damage to target player or planeswalker.
 pub struct StensiaBloodhall;
 
 impl CardBehavior for StensiaBloodhall {
@@ -19,7 +19,7 @@ impl CardBehavior for StensiaBloodhall {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{T}: Add {C}.\n{3}{B}{R}, {T}: Stensia Bloodhall deals 2 damage to target player or planeswalker.".into(),
+            oracle_text: "{T}: Add {C}.\n{3}{B}{R}, {T}: This land deals 2 damage to target player or planeswalker.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

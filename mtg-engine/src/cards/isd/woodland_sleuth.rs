@@ -6,7 +6,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Woodland Sleuth — {3}{G} 2/3 Human Scout.
-/// Morbid — When Woodland Sleuth enters the battlefield, if a creature died this turn,
+/// Morbid — When this creature enters, if a creature died this turn,
 /// return a creature card at random from your graveyard to your hand.
 pub struct WoodlandSleuth;
 
@@ -23,7 +23,7 @@ impl CardBehavior for WoodlandSleuth {
             subtypes: vec!["Human".into(), "Scout".into()],
             power: Some(2),
             toughness: Some(3),
-            oracle_text: "Morbid — When Woodland Sleuth enters the battlefield, if a creature died this turn, return a creature card at random from your graveyard to your hand.".into(),
+            oracle_text: "Morbid — When this creature enters, if a creature died this turn, return a creature card at random from your graveyard to your hand.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

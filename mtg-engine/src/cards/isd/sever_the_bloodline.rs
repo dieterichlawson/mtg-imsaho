@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Sever the Bloodline — {3}{B} Sorcery.
-/// Exile target creature and all other creatures with the same name.
+/// Exile target creature and all other creatures with the same name as that creature.
 /// Flashback {5}{B}{B}.
 pub struct SeverTheBloodline;
 
@@ -22,7 +22,7 @@ impl CardBehavior for SeverTheBloodline {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Exile target creature and all other creatures with the same name.\nFlashback {5}{B}{B}".into(),
+            oracle_text: "Exile target creature and all other creatures with the same name as that creature.\nFlashback {5}{B}{B}".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),

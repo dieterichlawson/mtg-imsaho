@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Village Cannibals — {2}{B} 2/2 Human.
-/// Whenever another Human creature dies, put a +1/+1 counter on Village Cannibals.
+/// Whenever another Human creature dies, put a +1/+1 counter on this creature.
 pub struct VillageCannibals;
 
 impl CardBehavior for VillageCannibals {
@@ -20,7 +20,7 @@ impl CardBehavior for VillageCannibals {
             subtypes: vec!["Human".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Whenever another Human creature dies, put a +1/+1 counter on Village Cannibals.".into(),
+            oracle_text: "Whenever another Human creature dies, put a +1/+1 counter on this creature.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

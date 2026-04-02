@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Sulfur Falls — Land.
-/// Sulfur Falls enters the battlefield tapped unless you control an Island or a Mountain.
+/// This land enters tapped unless you control an Island or a Mountain.
 /// {T}: Add {U} or {R}.
 pub struct SulfurFalls;
 
@@ -34,7 +34,7 @@ impl CardBehavior for SulfurFalls {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Sulfur Falls enters the battlefield tapped unless you control an Island or a Mountain.\n{T}: Add {U} or {R}.".into(),
+            oracle_text: "This land enters tapped unless you control an Island or a Mountain.\n{T}: Add {U} or {R}.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

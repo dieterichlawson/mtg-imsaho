@@ -4,7 +4,7 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Sensory Deprivation — {U} aura enchantment. Enchanted creature gets -3/-0.
+/// Sensory Deprivation — {U} aura enchantment. Enchant creature. Enchanted creature gets -3/-0.
 pub struct SensoryDeprivation;
 
 impl CardBehavior for SensoryDeprivation {
@@ -19,7 +19,7 @@ impl CardBehavior for SensoryDeprivation {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchanted creature gets -3/-0.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature gets -3/-0.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

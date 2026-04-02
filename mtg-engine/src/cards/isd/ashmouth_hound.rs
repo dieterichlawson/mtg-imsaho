@@ -4,8 +4,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Ashmouth Hound — {1}{R} 2/1 Elemental Hound.
-/// Whenever Ashmouth Hound blocks or becomes blocked by a creature,
-/// Ashmouth Hound deals 1 damage to that creature.
+/// Whenever this creature blocks or becomes blocked by a creature,
+/// this creature deals 1 damage to that creature.
 pub struct AshmouthHound;
 
 impl CardBehavior for AshmouthHound {
@@ -21,7 +21,7 @@ impl CardBehavior for AshmouthHound {
             subtypes: vec!["Elemental".into(), "Dog".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: "Whenever Ashmouth Hound blocks or becomes blocked by a creature, Ashmouth Hound deals 1 damage to that creature.".into(),
+            oracle_text: "Whenever this creature blocks or becomes blocked by a creature, this creature deals 1 damage to that creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

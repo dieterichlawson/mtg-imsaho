@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Woodland Cemetery — Land.
-/// Woodland Cemetery enters the battlefield tapped unless you control a Swamp or a Forest.
+/// This land enters tapped unless you control a Swamp or a Forest.
 /// {T}: Add {B} or {G}.
 pub struct WoodlandCemetery;
 
@@ -34,7 +34,7 @@ impl CardBehavior for WoodlandCemetery {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Woodland Cemetery enters the battlefield tapped unless you control a Swamp or a Forest.\n{T}: Add {B} or {G}.".into(),
+            oracle_text: "This land enters tapped unless you control a Swamp or a Forest.\n{T}: Add {B} or {G}.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

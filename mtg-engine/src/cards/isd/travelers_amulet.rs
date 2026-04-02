@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Traveler's Amulet — {1} Artifact.
-/// {1}, Sacrifice Traveler's Amulet: Search your library for a basic land card,
+/// {1}, Sacrifice this artifact: Search your library for a basic land card,
 /// reveal it, put it into your hand, then shuffle.
 pub struct TravelersAmulet;
 
@@ -21,7 +21,7 @@ impl CardBehavior for TravelersAmulet {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{1}, Sacrifice Traveler's Amulet: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.".into(),
+            oracle_text: "{1}, Sacrifice this artifact: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

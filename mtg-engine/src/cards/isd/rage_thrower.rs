@@ -5,7 +5,7 @@ use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Rage Thrower — {5}{R} 4/2 Human Shaman.
-/// Whenever another creature dies, Rage Thrower deals 2 damage to target player or planeswalker.
+/// Whenever another creature dies, this creature deals 2 damage to target player or planeswalker.
 pub struct RageThrower;
 
 impl CardBehavior for RageThrower {
@@ -21,7 +21,7 @@ impl CardBehavior for RageThrower {
             subtypes: vec!["Human".into(), "Shaman".into()],
             power: Some(4),
             toughness: Some(2),
-            oracle_text: "Whenever another creature dies, Rage Thrower deals 2 damage to target player or planeswalker.".into(),
+            oracle_text: "Whenever another creature dies, this creature deals 2 damage to target player or planeswalker.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

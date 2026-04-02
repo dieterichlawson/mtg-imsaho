@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Skaab Goliath — {5}{U} 6/9 Zombie Giant with Trample.
-/// As an additional cost to cast Skaab Goliath, exile two creature cards from your graveyard.
+/// As an additional cost to cast this spell, exile two creature cards from your graveyard. Trample.
 pub struct SkaabGoliath;
 
 impl CardBehavior for SkaabGoliath {
@@ -21,7 +21,7 @@ impl CardBehavior for SkaabGoliath {
             subtypes: vec!["Zombie".into(), "Giant".into()],
             power: Some(6),
             toughness: Some(9),
-            oracle_text: "Trample\nAs an additional cost to cast Skaab Goliath, exile two creature cards from your graveyard.".into(),
+            oracle_text: "As an additional cost to cast this spell, exile two creature cards from your graveyard.\nTrample".into(),
             keywords: vec![Keyword::Trample],
             flashback_cost: None,
             continuous_effects: vec![],

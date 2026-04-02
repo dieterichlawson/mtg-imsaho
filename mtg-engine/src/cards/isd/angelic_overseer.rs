@@ -3,7 +3,7 @@ use crate::types::*;
 
 /// Angelic Overseer — {3}{W}{W} 5/3 Angel.
 /// Flying.
-/// As long as you control a Human, Angelic Overseer has hexproof and is indestructible.
+/// As long as you control a Human, this creature has hexproof and indestructible.
 pub struct AngelicOverseer;
 
 impl CardBehavior for AngelicOverseer {
@@ -20,7 +20,7 @@ impl CardBehavior for AngelicOverseer {
             subtypes: vec!["Angel".into()],
             power: Some(5),
             toughness: Some(3),
-            oracle_text: "Flying\nAs long as you control a Human, Angelic Overseer has hexproof and is indestructible.".into(),
+            oracle_text: "Flying\nAs long as you control a Human, this creature has hexproof and indestructible.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![

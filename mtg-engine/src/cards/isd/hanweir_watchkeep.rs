@@ -31,7 +31,7 @@ impl CardBehavior for HanweirWatchkeep {
             subtypes: vec!["Human".into(), "Warrior".into(), "Werewolf".into()],
             power: Some(1),
             toughness: Some(5),
-            oracle_text: "Defender\nAt the beginning of each upkeep, if no spells were cast last turn, transform Hanweir Watchkeep.".into(),
+            oracle_text: "Defender\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![Keyword::Defender],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -54,7 +54,7 @@ impl CardBehavior for HanweirWatchkeep {
             subtypes: vec!["Werewolf".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "Bane of Hanweir attacks each combat if able.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Bane of Hanweir.".into(),
+            oracle_text: "This creature attacks each combat if able.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

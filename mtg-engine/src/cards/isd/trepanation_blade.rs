@@ -6,9 +6,9 @@ use crate::types::*;
 
 /// Trepanation Blade — {3} Artifact — Equipment.
 /// Whenever equipped creature attacks, defending player reveals cards from the top
-/// of their library until they reveal a land card. That player puts all cards revealed
-/// this way into their graveyard. Equipped creature gets +1/+0 until end of turn for
-/// each card put into a graveyard this way.
+/// of their library until they reveal a land card. The creature gets +1/+0 until end
+/// of turn for each card revealed this way. That player puts the revealed cards into
+/// their graveyard.
 /// Equip {2}.
 pub struct TrepanationBlade;
 
@@ -24,7 +24,7 @@ impl CardBehavior for TrepanationBlade {
             subtypes: vec!["Equipment".into()],
             power: None,
             toughness: None,
-            oracle_text: "Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. That player puts all cards revealed this way into their graveyard. Equipped creature gets +1/+0 until end of turn for each card put into a graveyard this way.\nEquip {2}".into(),
+            oracle_text: "Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard.\nEquip {2}".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

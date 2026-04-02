@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Stitched Drake — {1}{U}{U} 3/4 Zombie Drake with Flying.
-/// As an additional cost to cast Stitched Drake, exile a creature card from your graveyard.
+/// As an additional cost to cast this spell, exile a creature card from your graveyard. Flying.
 pub struct StitchedDrake;
 
 impl CardBehavior for StitchedDrake {
@@ -22,7 +22,7 @@ impl CardBehavior for StitchedDrake {
             subtypes: vec!["Zombie".into(), "Drake".into()],
             power: Some(3),
             toughness: Some(4),
-            oracle_text: "Flying\nAs an additional cost to cast Stitched Drake, exile a creature card from your graveyard.".into(),
+            oracle_text: "As an additional cost to cast this spell, exile a creature card from your graveyard.\nFlying".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],

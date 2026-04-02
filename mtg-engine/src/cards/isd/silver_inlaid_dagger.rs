@@ -6,7 +6,7 @@ use crate::types::*;
 
 /// Silver-Inlaid Dagger — {1} Artifact — Equipment.
 /// Equipped creature gets +2/+0.
-/// As long as equipped creature is a Human, it gets +3/+0 instead.
+/// As long as equipped creature is a Human, it gets an additional +1/+0.
 /// Equip {2}.
 pub struct SilverInlaidDagger;
 
@@ -40,7 +40,7 @@ impl CardBehavior for SilverInlaidDagger {
             subtypes: vec!["Equipment".into()],
             power: None,
             toughness: None,
-            oracle_text: "Equipped creature gets +2/+0. As long as equipped creature is a Human, it gets +3/+0 instead.\nEquip {2}".into(),
+            oracle_text: "Equipped creature gets +2/+0.\nAs long as equipped creature is a Human, it gets an additional +1/+0.\nEquip {2}".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

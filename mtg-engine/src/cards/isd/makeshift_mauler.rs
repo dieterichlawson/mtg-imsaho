@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Makeshift Mauler — {3}{U} 4/5 Zombie.
-/// As an additional cost to cast Makeshift Mauler, exile a creature card from your graveyard.
+/// As an additional cost to cast this spell, exile a creature card from your graveyard.
 pub struct MakeshiftMauler;
 
 impl CardBehavior for MakeshiftMauler {
