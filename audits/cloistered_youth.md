@@ -67,3 +67,71 @@ No functional issues.
 - Declining to transform: NOT TESTED (and not possible due to issue #1)
 - No life loss when NOT transformed at end step: NOT TESTED
 - Spurious trigger visibility: NOT TESTED
+
+## Audit — 2026-04-01 21:32
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text (front)**: At the beginning of your upkeep, you may transform this creature.
+**Oracle text (back)**: At the beginning of your end step, you lose 1 life.
+**Type line (front)**: Creature — Human
+**Type line (back)**: Creature — Horror
+**Mana cost**: {1}{W}
+**P/T (front)**: 1/1
+**P/T (back)**: 3/3
+**Keywords**: Transform (not modeled as a Keyword enum variant; consistent with all other DFCs in the codebase)
+**Rulings**: [2016-07-13] For more information on double-faced cards, see the Shadows over Innistrad mechanics article.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+**Detailed verification (all checks against oracle text from Scryfall API):**
+
+| Check | Oracle | Code | Result |
+|-------|--------|------|--------|
+| Mana cost | {1}{W} | `Generic(1), Colored(Color::White)` | MATCH |
+| Card type | Creature | `CardType::Creature` | MATCH |
+| Supertypes | (none) | `vec![]` | MATCH |
+| Subtypes (front) | Human | `vec!["Human".into()]` | MATCH |
+| Subtypes (back) | Horror | `vec!["Horror".into()]` | MATCH |
+| P/T (front) | 1/1 | `power: Some(1), toughness: Some(1)` | MATCH |
+| P/T (back) | 3/3 | `power: Some(3), toughness: Some(3)` + `dynamic_pt` returns `Some((3, 3))` when transformed | MATCH |
+| Oracle text (front) | "At the beginning of your upkeep, you may transform this creature." | `"At the beginning of your upkeep, you may transform Cloistered Youth."` | MATCH (minor wording: "this creature" vs card name) |
+| Oracle text (back) | "At the beginning of your end step, you lose 1 life." | `"At the beginning of your end step, you lose 1 life."` | MATCH |
+| Front triggered_abilities | Upkeep trigger | `TriggerKind::Upkeep` | MATCH |
+| Back triggered_abilities | End step trigger | `TriggerKind::EndStep` | MATCH |
+| Back face name | Unholy Fiend | `"Unholy Fiend".into()` | MATCH |
+| Doc comment | 1/1 front, 3/3 back | `"Cloistered Youth {1}{W} 1/1 Human // Unholy Fiend 3/3 Horror."` | MATCH |
+
+**Behavior verification:**
+
+- "you may" is correctly optional: `on_upkeep` presents a `YesNo` choice via `AwaitingAction::ResolutionChoice` (line 80-88). Player can accept or decline.
+- Declining transform: `on_yes_no_choice` with `yes=false` logs "chose not to transform" and returns (line 92-96). No state change.
+- Accepting transform: calls `helpers::apply_transform` which flips `is_transformed`, updates name/keywords/subtypes (line 99).
+- `apply_transform` helper correctly updates name, keywords, subtypes but NOT power/toughness (P/T handled via `dynamic_pt`).
+- `on_end_step` correctly checks both `is_transformed` and `active_player == controller` before applying life loss (lines 106-113).
+- Life loss correctly emits `LifeChanged` event with old and new values (line 118).
+- `on_upkeep` guards against firing when already transformed via `if !is_transformed` (line 78).
+- `on_end_step` guards against firing when not transformed via `if is_transformed` (line 113).
+
+### Tricky interactions checked
+- Upkeep trigger only fires for controller (active_player check): PASS
+- End step trigger only fires for controller (active_player check): PASS
+- "You may" is properly optional via YesNo choice: PASS
+- Life loss emits LifeChanged event: PASS
+- Back face P/T via dynamic_pt: PASS (returns (3, 3) when transformed, None otherwise)
+- Already-transformed creature does not re-present transform choice at upkeep: PASS
+- Non-transformed creature does not lose life at end step: PASS
+- Transform updates name/subtypes/keywords via apply_transform helper: PASS
+- Trigger system queues upkeep trigger for front face correctly: PASS (trigger_description finds Upkeep in front face triggered_abilities)
+- Trigger system queues end step trigger for back face correctly: PASS (trigger_description finds EndStep in back face triggered_abilities when is_transformed)
+
+### Test coverage
+- Transform at upkeep with player choice (yes): `tier15_cards.rs:788` (cloistered_youth_presents_transform_choice_at_upkeep) -- verifies awaiting_action is set, player chooses yes, creature transforms, name changes, dynamic_pt returns (3,3)
+- Declining to transform: `tier15_cards.rs:815` (cloistered_youth_can_decline_transform) -- verifies player can choose no, creature stays untransformed
+- Life loss at end step when transformed: `tier15_cards.rs:840` (unholy_fiend_drains_life_at_end_step) -- verifies life decreases by 1
+- Front face has exactly one Upkeep trigger: `tier15_cards.rs:857` (cloistered_youth_front_face_has_upkeep_trigger_only)
+- Back face has exactly one EndStep trigger: `tier15_cards.rs:869` (unholy_fiend_back_face_has_end_step_trigger_only)
+- LifeChanged event explicitly verified in events list: NOT TESTED (life total is checked but event vector is not inspected)
+- No life loss when NOT transformed at end step: NOT TESTED (implicitly covered by the transform choice tests, but no dedicated test)
+- Card NOT in LLM card knowledge section (`mtg-player/src/llm.rs`): minor gap for AI player guidance
