@@ -2393,6 +2393,112 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event,
                 format!("Evil Twin enters as a copy of {}", name));
         }
+        (Target::Object(id), PendingEffect::KeepOneDestroyRest {
+            remaining_players, kept_so_far, source_name,
+        }) => {
+            // Record this player's choice.
+            let mut kept = kept_so_far.clone();
+            kept.push(*id);
+            let chosen_name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let chooser = state.get_object(*id).map(|o| o.controller).unwrap_or(PlayerId(0));
+            state.log(LogLevel::Event, format!("{}: p{} keeps {}", source_name, chooser.0, chosen_name));
+
+            if remaining_players.is_empty() {
+                // All players have chosen. Destroy every creature not in the kept set.
+                let all_creatures: Vec<ObjectId> = state.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                    .map(|o| o.id)
+                    .collect();
+                for cid in all_creatures {
+                    if !kept.contains(&cid) {
+                        crate::destruction::try_destroy(state, cid, registry);
+                    }
+                }
+            } else {
+                // Chain to the next player's choice.
+                let next_player = remaining_players[0];
+                let rest = remaining_players[1..].to_vec();
+
+                let options: Vec<crate::actions::Target> = state.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield && o.controller == next_player && o.power.is_some())
+                    .map(|o| crate::actions::Target::Object(o.id))
+                    .collect();
+
+                if options.len() <= 1 {
+                    // 0 or 1 creature — auto-keep and continue.
+                    if let Some(crate::actions::Target::Object(auto_id)) = options.first() {
+                        kept.push(*auto_id);
+                        let auto_name = state.get_object(*auto_id).map(|o| o.name.clone()).unwrap_or_default();
+                        state.log(LogLevel::Event, format!("{}: p{} keeps {} (only creature)", source_name, next_player.0, auto_name));
+                    }
+                    // Continue chaining: apply as if this was a recursive call with rest.
+                    // Use a simple loop to handle all auto-selects.
+                    let mut remaining = rest;
+                    loop {
+                        if remaining.is_empty() {
+                            // All done — destroy the rest.
+                            let all_creatures: Vec<ObjectId> = state.objects.values()
+                                .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                                .map(|o| o.id)
+                                .collect();
+                            for cid in all_creatures {
+                                if !kept.contains(&cid) {
+                                    crate::destruction::try_destroy(state, cid, registry);
+                                }
+                            }
+                            break;
+                        }
+                        let np = remaining[0];
+                        let nr = remaining[1..].to_vec();
+                        let np_options: Vec<crate::actions::Target> = state.objects.values()
+                            .filter(|o| o.zone == Zone::Battlefield && o.controller == np && o.power.is_some())
+                            .map(|o| crate::actions::Target::Object(o.id))
+                            .collect();
+                        if np_options.len() <= 1 {
+                            if let Some(crate::actions::Target::Object(auto_id)) = np_options.first() {
+                                kept.push(*auto_id);
+                                let auto_name = state.get_object(*auto_id).map(|o| o.name.clone()).unwrap_or_default();
+                                state.log(LogLevel::Event, format!("{}: p{} keeps {} (only creature)", source_name, np.0, auto_name));
+                            }
+                            remaining = nr;
+                        } else {
+                            // Present choice to this player.
+                            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                                player: np,
+                                source: ObjectId(0),
+                                choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                                    description: format!("{}: choose a creature you control to keep", source_name),
+                                    options: np_options,
+                                    optional: false,
+                                    effect: PendingEffect::KeepOneDestroyRest {
+                                        remaining_players: nr,
+                                        kept_so_far: kept.clone(),
+                                        source_name: source_name.clone(),
+                                    },
+                                },
+                            });
+                            break;
+                        }
+                    }
+                } else {
+                    // Present choice to the next player.
+                    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                        player: next_player,
+                        source: ObjectId(0),
+                        choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                            description: format!("{}: choose a creature you control to keep", source_name),
+                            options,
+                            optional: false,
+                            effect: PendingEffect::KeepOneDestroyRest {
+                                remaining_players: rest,
+                                kept_so_far: kept,
+                                source_name: source_name.clone(),
+                            },
+                        },
+                    });
+                }
+            }
+        }
         _ => {}
     }
 }

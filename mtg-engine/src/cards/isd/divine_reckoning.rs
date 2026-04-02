@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{GameState, LogLevel};
+use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Divine Reckoning — {2}{W}{W} Sorcery.
@@ -36,46 +36,75 @@ impl CardBehavior for DivineReckoning {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // ENGINE LIMITATION: Each player should choose which creature to keep.
-        // The engine doesn't support multi-player sequential choice during resolution.
-        // Auto-keeping highest toughness is a reasonable heuristic.
-        let player_ids: Vec<PlayerId> = state.players.iter().map(|p| p.id).collect();
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+        // Collect players in turn order starting with the active player.
+        let active = state.active_player;
+        let mut player_order: Vec<PlayerId> = state.players.iter().map(|p| p.id).collect();
+        // Rotate so active player is first.
+        if let Some(pos) = player_order.iter().position(|&p| p == active) {
+            player_order.rotate_left(pos);
+        }
 
-        for player_id in player_ids {
-            let creatures: Vec<(ObjectId, i32)> = state.objects.values()
+        // Filter to only players who control 2+ creatures (those with 0-1 are auto-handled).
+        let mut kept: Vec<ObjectId> = Vec::new();
+        let mut pending_players: Vec<PlayerId> = Vec::new();
+
+        for &player_id in &player_order {
+            let creatures: Vec<ObjectId> = state.objects.values()
                 .filter(|o| o.zone == Zone::Battlefield && o.controller == player_id && o.power.is_some())
-                .map(|o| {
-                    let toughness = state.effective_toughness(o.id, registry).unwrap_or(0);
-                    (o.id, toughness)
-                })
+                .map(|o| o.id)
                 .collect();
 
             if creatures.len() <= 1 {
-                // 0 or 1 creatures — nothing to sacrifice.
-                continue;
-            }
-
-            // Find the creature with the highest toughness to keep.
-            let keeper = creatures.iter()
-                .max_by_key(|&&(_, t)| t)
-                .map(|&(id, _)| id)
-                .unwrap();
-
-            let keeper_name = state.get_object(keeper).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(LogLevel::Event, format!("p{} keeps {}", player_id.0, keeper_name));
-
-            // Destroy the rest (not sacrifice — respects indestructible).
-            let to_destroy: Vec<ObjectId> = creatures.iter()
-                .filter(|&&(id, _)| id != keeper)
-                .map(|&(id, _)| id)
-                .collect();
-
-            for id in to_destroy {
-                crate::destruction::try_destroy(state, id, registry);
+                // 0 or 1 creature: auto-keep (no choice needed).
+                if let Some(&only) = creatures.first() {
+                    kept.push(only);
+                    let name = state.get_object(only).map(|o| o.name.clone()).unwrap_or_default();
+                    state.log(LogLevel::Event, format!("Divine Reckoning: p{} keeps {} (only creature)", player_id.0, name));
+                }
+            } else {
+                pending_players.push(player_id);
             }
         }
 
+        // Clean up the spell first.
         state.move_spell_after_resolve(object_id);
+
+        if pending_players.is_empty() {
+            // All players had 0-1 creatures; destroy everything not kept.
+            let all_creatures: Vec<ObjectId> = state.objects.values()
+                .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                .map(|o| o.id)
+                .collect();
+            for cid in all_creatures {
+                if !kept.contains(&cid) {
+                    crate::destruction::try_destroy(state, cid, _registry);
+                }
+            }
+        } else {
+            // Present choice to the first pending player.
+            let first_player = pending_players[0];
+            let remaining = pending_players[1..].to_vec();
+
+            let options: Vec<Target> = state.objects.values()
+                .filter(|o| o.zone == Zone::Battlefield && o.controller == first_player && o.power.is_some())
+                .map(|o| Target::Object(o.id))
+                .collect();
+
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: first_player,
+                source: object_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Divine Reckoning: choose a creature you control to keep".into(),
+                    options,
+                    optional: false,
+                    effect: PendingEffect::KeepOneDestroyRest {
+                        remaining_players: remaining,
+                        kept_so_far: kept,
+                        source_name: "Divine Reckoning".into(),
+                    },
+                },
+            });
+        }
     }
 }
