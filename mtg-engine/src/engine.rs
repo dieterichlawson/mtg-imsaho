@@ -2367,14 +2367,14 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
             // Copy the target creature's characteristics onto the source permanent.
-            let (name, power, toughness, card_id, card_types, subtypes, keywords) =
+            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors) =
                 match state.get_object(*target_id) {
                     Some(o) => {
                         let kw = registry.card_data(o.card_id)
                             .map(|d| d.keywords.clone())
                             .unwrap_or_default();
                         (o.name.clone(), o.power, o.toughness, o.card_id,
-                         o.card_types.clone(), o.subtypes.clone(), kw)
+                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone())
                     }
                     None => return,
                 };
@@ -2387,6 +2387,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 obj.keywords = keywords;
                 obj.card_types = card_types;
                 obj.subtypes = subtypes;
+                obj.colors = colors;
             }
             state.log(LogLevel::Event,
                 format!("Evil Twin enters as a copy of {}", name));

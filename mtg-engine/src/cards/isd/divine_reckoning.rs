@@ -5,7 +5,7 @@ use crate::state::{GameState, LogLevel};
 use crate::types::*;
 
 /// Divine Reckoning — {2}{W}{W} Sorcery.
-/// Each player chooses a creature they control, then sacrifices the rest.
+/// Each player chooses a creature they control. Destroy the rest.
 /// Flashback {5}{W}{W}.
 pub struct DivineReckoning;
 
@@ -23,7 +23,7 @@ impl CardBehavior for DivineReckoning {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Each player chooses a creature they control, then destroys the rest.\nFlashback {5}{W}{W}".into(),
+            oracle_text: "Each player chooses a creature they control. Destroy the rest.\nFlashback {5}{W}{W}".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),
@@ -37,8 +37,9 @@ impl CardBehavior for DivineReckoning {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // For each player, auto-keep the creature with the highest toughness.
-        // (Simplification: in real MTG, each player would choose.)
+        // ENGINE LIMITATION: Each player should choose which creature to keep.
+        // The engine doesn't support multi-player sequential choice during resolution.
+        // Auto-keeping highest toughness is a reasonable heuristic.
         let player_ids: Vec<PlayerId> = state.players.iter().map(|p| p.id).collect();
 
         for player_id in player_ids {
