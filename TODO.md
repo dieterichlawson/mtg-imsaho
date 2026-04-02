@@ -16,8 +16,7 @@
 
 ## Behavioral Edge Cases (3)
 
-### Festerhide Boar
-- "Enters with" replacement effect modeled as ETB trigger. Current oracle says "This creature enters with two +1/+1 counters on it if a creature died this turn" (replacement effect), but code implements it as `TriggerKind::EntersBattlefield` / `on_enter_battlefield` (triggered ability). Counters should be on the creature as it enters, not added after.
+### ~~Festerhide Boar~~ — FIXED (moved to on_resolve, counters added as part of entering)
 
 ### Splinterfright
 - `*/*` P/T uses `Some(0)` base instead of `None`. Card has `*/*` P/T defined by a characteristic-defining ability. Base should be `None` to indicate the CDA defines P/T entirely, not `Some(0)`.
