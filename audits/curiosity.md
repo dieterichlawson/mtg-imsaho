@@ -79,3 +79,34 @@ One test exists in `mtg-engine/tests/tier6_cards.rs`:
 | 2 | LLM hint omits "you may" | Low |
 
 Overall the implementation is functionally solid for typical gameplay. The main deviation is the non-optional draw, which matters in self-decking scenarios.
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant creature
+Whenever enchanted creature deals damage to an opponent, you may draw a card.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+
+The major issue from the prior audit (forced draw) has been fixed:
+
+1. **"You may" draw is now optional: FIXED.** Lines 66-73 present a `YesNo` choice to the player via `AwaitingAction::ResolutionChoice` with description "Curiosity: draw a card?". The `on_yes_no_choice` handler (lines 76-84) only draws if `yes` is chosen. This correctly implements the "you may" clause.
+
+2. **Card data correct.** Cost `{U}` (line 17), types Enchantment with Aura subtype (lines 19-21), oracle text matches (line 24).
+
+3. **Trigger correctly scoped.** `TriggerKind::AnyDamageToPlayer` fires on both combat and non-combat damage (matching oracle "deals damage", not "deals combat damage"). Ruling confirms: "Any damage dealt by the enchanted creature to an opponent will cause Curiosity to trigger, not just combat damage."
+
+4. **Enchanted creature check correct.** `source_id != attached_to` guard at line 57.
+
+5. **Opponent check correct.** `damaged_player == controller` guard at line 62 ensures it only triggers on opponents, not the controller.
+
+### Tricky interactions checked
+- Curiosity on an opponent's creature: the controller check uses `aura.controller` (line 61), so it correctly checks opponents of Curiosity's controller, not the creature's controller.
+- Draw count: exactly 1 card per trigger (line 82), matching ruling.
+- Self-decking: now handled correctly since player can decline the draw.
+
+### Test coverage
+- `curiosity_draw_on_enchanted_creature_combat_damage` -- combat damage trigger.
+- Missing: non-combat damage trigger, no-trigger on own-controller damage, no-trigger on different creature's damage.

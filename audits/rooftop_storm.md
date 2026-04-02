@@ -117,3 +117,130 @@ Sources:
 - [Rooftop Storm does not apply to non-creature spells - Magic Rules Tips](https://blogs.magicjudges.org/rulestips/2011/09/rooftop-storm-does-not-apply-to-non-creature-spells/)
 - [MTG Salvation Rooftop Storm rulings](https://www.mtgsalvation.com/forums/magic-fundamentals/magic-rulings/784301-rooftop-storm)
 - [Commander tax interaction - TappedOut](https://tappedout.net/mtg-questions/reducing-commander-costs-rooftop-storm/)
+
+---
+
+# Re-Audit: Rooftop Storm
+
+**Date:** 2026-04-02
+**Auditor:** Claude (Opus 4.6)
+**Reason:** Re-audit after fixes were applied to address previous audit findings.
+
+## Official Oracle Text (Scryfall, cached 2026-04-01)
+
+- **Name:** Rooftop Storm
+- **Cost:** {5}{U}
+- **Type:** Enchantment
+- **Oracle Text:** "You may pay {0} rather than pay the mana cost for Zombie creature spells you cast."
+
+### Official Rulings
+1. [2011-09-22] You must still pay any mandatory additional costs, such as exiling a creature card from your graveyard for Makeshift Mauler.
+2. [2011-09-22] The mana cost and mana value of the spell are unchanged. Rooftop Storm only changes what you pay.
+
+## Card Data Review
+
+| Field            | Expected      | Implemented   | Status |
+|------------------|---------------|---------------|--------|
+| Name             | Rooftop Storm | Rooftop Storm | OK     |
+| Mana Cost        | {5}{U}        | Generic(5), Colored(Blue) | OK |
+| Card Types       | Enchantment   | Enchantment   | OK     |
+| Supertypes       | (none)        | (none)        | OK     |
+| Subtypes         | (none)        | (none)        | OK     |
+| P/T              | N/A           | None/None     | OK     |
+| Oracle Text      | "You may pay {0} rather than pay the mana cost for Zombie creature spells you cast." | "You may pay {0} rather than pay the mana cost for Zombie creature spells you cast." | OK |
+| Keywords         | (none)        | (none)        | OK     |
+| continuous_effects | (none used) | empty `vec![]`| OK (behavior in engine) |
+
+## Previous Issues -- Status After Fixes
+
+### ISSUE 1 (was Medium): Alternative cost / player choice / additional costs
+
+**Previous finding:** No player choice; unconditional free cast; bypasses additional costs.
+
+**Current status: PARTIALLY FIXED.**
+
+The alternative cost mechanic is now properly modeled with an `alternative_cost` field on `CastSpell` actions. The action generation code at `engine.rs:618-656` correctly:
+- Generates both normal-cost and alternative-cost (`ManaCost::free()`) actions when the player can afford the normal cost (player choice preserved).
+- Replaces all actions with alternative-cost versions when the player cannot afford the normal cost.
+- The `alternative_cost` field at resolution time (line 1425) only replaces the mana payment; additional costs (sacrifice at line 1471, exile at lines following) are still enforced separately. This aligns with ruling #1.
+
+**Remaining problem:** The `effective_spell_cost` function (`engine.rs:101-109`) still contains a Rooftop Storm special case that returns `ManaCost::free()` unconditionally for Zombie creature spells:
+
+```rust
+// engine.rs:101-109
+if is_creature && subtypes.iter().any(|s| s == "Zombie") {
+    let has_rooftop_storm = state.objects.values().any(|o| {
+        o.zone == Zone::Battlefield && o.controller == caster && o.name == "Rooftop Storm"
+    });
+    if has_rooftop_storm {
+        return ManaCost::free();
+    }
+}
+```
+
+This means even the "normal cost" path computes to {0}. When the player is offered a choice between "normal" and "alternative cost {0}", both options result in paying {0}. The player is never actually able to pay the full mana cost. In practice this rarely matters (paying more is almost never desired), but it is technically incorrect per the oracle text's "you **may**" wording and could matter with cost-increase effects or Trinisphere.
+
+Additionally, the `rooftop_storm_applies` check in `legal_actions` (line 522) and the `effective_spell_cost` Rooftop Storm block (line 101) are now redundant with each other and with the `alternative_cost` action generation at lines 618-656. The `effective_spell_cost` block should be removed so that the normal-cost path computes the true normal cost.
+
+### ISSUE 2 (was Low): Hardcoded engine special-case
+
+**Current status: UNCHANGED.** The card file still declares `continuous_effects: vec![]` and the behavior is implemented via name-string checks (`o.name == "Rooftop Storm"`) in three locations in the engine:
+1. `rooftop_storm_applies()` function (line 41)
+2. `effective_spell_cost()` special case (line 101)
+3. Action generation block (line 622)
+
+A dedicated `rooftop_storm_applies()` helper function was added, which is an improvement in structure, but the fundamental approach is still hardcoded by card name in the engine rather than declared on the card.
+
+### ISSUE 3 (was Low): Misleading doc comment
+
+**Current status: UNCHANGED.** The doc comment on `RooftopStorm` (rooftop_storm.rs:7-10) still reads:
+
+> "Implementation: Uses ReduceCost with a high reduction value for Zombie creature spells."
+
+The implementation does **not** use `ReduceCost`. It uses name-based checks in the engine and an `alternative_cost` field on `CastSpell`. The doc comment is factually wrong.
+
+### ISSUE 4 (was Low): No test for non-creature Zombie spells
+
+**Current status: UNCHANGED.** No new test was added. The engine correctly checks `CardType::Creature` in all three Rooftop Storm code paths, so this is likely correct but untested.
+
+### ISSUE 5 (was Low): No test for optionality
+
+**Current status: PARTIALLY ADDRESSED.** The action generation code now creates both normal and alternative cost actions when the player can pay, which is the right approach. However, as noted in Issue 1 above, the `effective_spell_cost` block makes both paths compute to {0}, so a test for meaningful optionality would currently fail. No new test was added.
+
+## New Issues Found
+
+### ISSUE 6 (Low): Redundant Rooftop Storm logic in `effective_spell_cost`
+
+The `effective_spell_cost` function at lines 101-109 still returns `ManaCost::free()` for Zombie creatures when Rooftop Storm is on the battlefield. This is now redundant with the `alternative_cost` mechanism and actively harmful because it eliminates the normal-cost option. The block should be removed so that:
+- `effective_spell_cost` returns the true effective cost (with other reductions applied but NOT Rooftop Storm's alternative).
+- The alternative cost path via `alternative_cost: Some(ManaCost::free())` provides the free option.
+- The player genuinely has a choice between the two.
+
+## Tests
+
+Two existing tests, both passing:
+1. `rooftop_storm_makes_zombies_free` -- Walking Corpse castable with no mana when Rooftop Storm is on battlefield. PASS.
+2. `rooftop_storm_no_free_non_zombies` -- Grizzly Bears not made free by Rooftop Storm. PASS.
+
+No tests for: non-creature Zombie spells, optionality of the alternative cost, interaction with additional costs on Zombie creatures.
+
+## Summary
+
+| #  | Severity | Category       | Description                                              | Status vs Previous |
+|----|----------|----------------|----------------------------------------------------------|--------------------|
+| 1  | Low      | Semantic       | `effective_spell_cost` still unconditionally returns free, eliminating true player choice | Was Medium, downgraded: alternative cost mechanic added but residual code undermines optionality |
+| 2  | Low      | Structural     | Hardcoded engine special-case instead of card-declared effect | Unchanged |
+| 3  | Low      | Documentation  | Doc comment claims ReduceCost but that is not what happens | Unchanged |
+| 4  | Low      | Test Coverage  | No test for non-creature Zombie spells                   | Unchanged |
+| 5  | Low      | Test Coverage  | No test for optionality of the alternative cost          | Unchanged |
+| 6  | Low      | Redundancy     | `effective_spell_cost` Rooftop Storm block is now redundant and undermines the new alternative-cost mechanism | New |
+
+## Verdict: CONDITIONAL PASS (6 low issues, 0 medium/high)
+
+The core alternative cost mechanic has been properly implemented via the `alternative_cost` field on `CastSpell` actions. The action generation correctly offers both normal and free options, and additional costs are preserved during resolution. The remaining issues are:
+
+- The redundant `effective_spell_cost` block (Issue 6/1) that makes the "normal cost" path also free, undermining the optionality. This is low-severity because paying {0} instead of full cost is almost always the correct choice anyway.
+- Structural and documentation debt (Issues 2, 3) that do not affect correctness.
+- Missing edge-case test coverage (Issues 4, 5).
+
+The card functions correctly for standard gameplay scenarios. The implementation is a significant improvement over the previous audit's findings.

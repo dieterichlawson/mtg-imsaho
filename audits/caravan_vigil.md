@@ -55,3 +55,36 @@ Oracle says "reveal it" but the engine has no reveal mechanism. Known limitation
 
 ## Verdict
 One functional bug (forced morbid instead of optional). Two engine-limitation notes.
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.
+Morbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+
+The major issue from the prior audit (forced morbid) has been fixed:
+
+1. **Morbid "you may" choice: FIXED.** Lines 58-75 now present a `YesNo` choice to the player via `AwaitingAction::ResolutionChoice` when `creature_died_this_turn` is true. The `on_yes_no_choice` handler (lines 99-126) correctly puts the land on the battlefield if yes, or into hand if no. This matches the oracle text "You may put that card onto the battlefield instead" and the ruling "You can choose to put the basic land card into your hand even if a creature died."
+
+2. **Card data correct.** Cost `{G}` (line 18), type Sorcery (line 21).
+
+3. **Non-morbid path correct.** Lines 77-81 put the land into hand when no creature died this turn.
+
+4. **Library shuffle correct.** Shuffle occurs in all paths: non-morbid (lines 84-86), no-land-found (lines 91-93), and after yes/no choice (lines 121-123).
+
+5. **Oracle text field (minor).** Code says "then shuffle your library" vs oracle "then shuffle". This is a modernized wording difference with no gameplay impact.
+
+6. **Engine limitations unchanged.** Library search is deterministic (`.find()` picks first match), and there is no reveal mechanism.
+
+### Tricky interactions checked
+- Empty library (no basic land found): handled at line 87, still shuffles.
+- Morbid choice deferred correctly: `move_spell_after_resolve` is called only after the choice is made (line 125), not before.
+
+### Test coverage
+- `caravan_vigil_finds_basic_land` -- non-morbid path.
+- `caravan_vigil_morbid_puts_land_on_battlefield` -- morbid path.
+- No test for morbid-active-but-player-chooses-hand path (would be good to add).

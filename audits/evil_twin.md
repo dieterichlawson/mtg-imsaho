@@ -112,3 +112,79 @@ No Evil Twin-specific entries found in `mtg-player/src/llm.rs`.
 | 4 | Medium | Subtypes are merged instead of cleanly replaced |
 | 5 | Medium | Target filter is `Any` instead of same-name restriction |
 | 6 | Low | `is_evil_twin` marker is not copiable by other clone effects |
+
+---
+
+## Re-Audit (2026-04-02)
+
+### Oracle Text (Scryfall, verbatim)
+"You may have this creature enter as a copy of any creature on the battlefield, except it has "{U}{B}, {T}: Destroy target creature with the same name as this creature.""
+
+### Previous Issues -- Status
+
+| # | Previous Issue | Status | Notes |
+|---|---------------|--------|-------|
+| 1 | Copy is mandatory; should be optional | FIXED | Now uses `present_optional_target_choice` (helpers.rs) with `optional: true`. Player can decline. |
+| 2 | Copy target is auto-selected; player should choose | FIXED | All creatures presented as targets via `creature_targets_except`; player picks. |
+| 3 | Copy does not update card_types | FIXED | `CopyCreature` handler (engine.rs:2388) now assigns `obj.card_types = card_types;`. |
+| 4 | Subtypes are merged instead of replaced | FIXED | `CopyCreature` handler (engine.rs:2389) now does clean replacement: `obj.subtypes = subtypes;`. |
+| 5 | Target filter is `Any` instead of same-name | FIXED | Activated ability now uses `TargetFilter::SameNameAsSource` (evil_twin.rs:87). Engine filter (engine.rs:1219-1224) checks `source.name == obj.name`. |
+| 6 | `is_evil_twin` marker is not copiable | OPEN | `card_state` map is still not part of the standard `CopyCreature` copy path. Another clone copying Evil Twin will not inherit the destroy ability. Ruling: "The activated ability that Evil Twin gains as part of its copy effect is a copiable value that other effects may copy." |
+
+### New Issues Found
+
+#### ISSUE 7 (Gameplay, Low): Copy does not include colors
+
+**Oracle text**: "enter as a **copy** of any creature"
+
+**Ruling**: "Evil Twin copies exactly what was printed on the original creature..."
+
+The `CopyCreature` handler (engine.rs:2368-2392) copies: `name`, `power`, `toughness`, `card_id`, `keywords`, `card_types`, `subtypes`. It does **not** copy `colors` (GameObject field at state.rs:1129). If the copied creature is e.g. a red creature, Evil Twin's `colors` vec will not be updated. Since `card_id` is reassigned, some systems may derive color from the card definition, but any runtime color state on the object will be stale.
+
+#### ISSUE 8 (Cosmetic, Low): Oracle text uses old template wording
+
+**Scryfall oracle**: "You may have this creature **enter** as a copy..."
+
+**Code oracle_text** (evil_twin.rs:27): "You may have Evil Twin **enter the battlefield** as a copy..."
+
+The code uses the pre-2024 wording template. Not gameplay-affecting but does not match the current Scryfall oracle text.
+
+### Card Data Verification
+
+| Field | Oracle | Code | Match |
+|-------|--------|------|-------|
+| Name | Evil Twin | "Evil Twin" | CORRECT |
+| Mana cost | {2}{U}{B} | Generic(2), Blue, Black | CORRECT |
+| Type line | Creature -- Shapeshifter | Creature, subtypes: ["Shapeshifter"] | CORRECT |
+| P/T | 0/0 | power: Some(0), toughness: Some(0) | CORRECT |
+| Clone mechanic | Optional ("you may"), player chooses | `present_optional_target_choice` | CORRECT |
+| Destroy ability cost | {U}{B}, {T} | Blue + Black mana, requires_tap: true | CORRECT |
+| Destroy ability target | creature with same name | `SameNameAsSource` filter | CORRECT |
+| once_per_turn | No restriction in oracle | false | CORRECT |
+| sorcery_speed_only | No restriction in oracle | false | CORRECT |
+
+### Tests
+
+One test exists: `evil_twin_copies_creature_on_etb` (tier15_cards.rs). It verifies:
+- ETB presents an optional choice
+- After applying `CopyCreature` effect, name/power/toughness match the copied creature
+- `is_evil_twin` marker persists after copy
+
+Test passes. Missing test coverage:
+- Destroy activated ability (targeting, resolution, same-name check)
+- Declining the optional copy (Evil Twin stays 0/0, dies to SBA)
+- Another clone copying Evil Twin (copiable value issue, ISSUE 6)
+- Copying a multitype creature (colors propagation, ISSUE 7)
+
+### Re-Audit Summary
+
+| # | Severity | Issue | Status |
+|---|----------|-------|--------|
+| 1 | High | Copy is mandatory | FIXED |
+| 2 | High | Copy target auto-selected | FIXED |
+| 3 | Medium | Copy missing card_types | FIXED |
+| 4 | Medium | Subtypes merged not replaced | FIXED |
+| 5 | Medium | Target filter was `Any` | FIXED |
+| 6 | Low | `is_evil_twin` not copiable | OPEN |
+| 7 | Low | Copy does not include colors | NEW |
+| 8 | Low | Oracle text uses old wording template | NEW |

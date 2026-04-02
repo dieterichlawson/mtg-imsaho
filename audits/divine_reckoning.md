@@ -75,3 +75,43 @@ Flashback {5}{W}{W} (You may cast this card from your graveyard for its flashbac
 
 **Minor issues**: Oracle text string does not match Scryfall verbatim (line 26); doc comment incorrectly says "sacrifices" (line 8).
 **Major issue**: Player choice is replaced by automatic highest-toughness selection. This is a known simplification (commented in code) but deviates from the rules.
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Each player chooses a creature they control. Destroy the rest.
+Flashback {5}{W}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: ISSUE
+
+### Code issues
+
+1. **Oracle text string mismatch (minor, unchanged from prior audit).**
+   - Oracle: `"Each player chooses a creature they control. Destroy the rest."`
+   - Code (line 26): `"Each player chooses a creature they control, then destroys the rest."`
+   The wording differs: oracle uses two sentences; implementation uses comma-delimited phrasing.
+
+2. **Doc comment says "sacrifices" (minor, unchanged from prior audit).**
+   - Code (line 8): `"Each player chooses a creature they control, then sacrifices the rest."`
+   - Oracle says "Destroy", not "sacrifice". These are mechanically different (sacrifice bypasses indestructible; destroy does not).
+
+3. **Player choice auto-selected (major, unchanged from prior audit).**
+   - Oracle: "Each player chooses a creature they control."
+   - Code (lines 40-41): `// For each player, auto-keep the creature with the highest toughness. // (Simplification: in real MTG, each player would choose.)`
+   - The code automatically selects the creature with the highest toughness instead of presenting a choice to each player.
+
+4. **Destruction method is correct.** Uses `try_destroy` (line 74), which respects indestructible. Matches "Destroy".
+
+5. **Flashback cost correct.** `{5}{W}{W}` (lines 28-31).
+
+6. **Mana cost correct.** `{2}{W}{W}` (lines 16-20).
+
+### Tricky interactions checked
+- Players with 0 or 1 creatures: correctly skipped (lines 53-56).
+- Indestructible creatures: `try_destroy` handles this correctly.
+- Turn order for choices: not respected, but moot since choices are auto-selected.
+
+### Test coverage
+- `divine_reckoning_keeps_one_per_player` -- validates auto-selection behavior.
+- `divine_reckoning_with_one_creature_keeps_it` -- edge case of single creature.
+- `divine_reckoning_has_flashback` -- validates flashback cost.
