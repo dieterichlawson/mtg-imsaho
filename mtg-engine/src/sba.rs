@@ -246,6 +246,13 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
 
         // State-triggered ability: Garruk Relentless transforms when he has 2 or fewer loyalty.
         // This is an SBA-like check that fires regardless of what caused the loyalty loss.
+        //
+        // ENGINE LIMITATION: Per MTG rules (CR 603.8), this is a state-triggered ability that
+        // should go on the stack and be respondable. This engine does not yet have a mechanism
+        // for state-triggered abilities on the stack, so it is implemented as an immediate
+        // transformation during SBA processing. This is functionally correct for normal gameplay
+        // (the transform condition is checked correctly), but means opponents cannot respond to
+        // the transform trigger (e.g., removing Garruk before the transform resolves).
         if let Some(reg) = registry {
             let garruk_card_id = reg.get_id_by_name("Garruk Relentless");
             if let Some(gid) = garruk_card_id {

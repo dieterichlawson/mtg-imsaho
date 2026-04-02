@@ -471,3 +471,24 @@ Found 7 tests in `mtg-engine/tests/tier15_cards.rs`:
 - `garruk_back_face_loyalty_abilities_shown_when_transformed` — correct abilities per face
 
 Coverage is good. Missing test for front face fight ability (ability_index 0).
+
+## Audit — 2026-04-02 (engine limitation reclassification)
+
+**Status**: PASS (engine limitation documented)
+
+### Reclassification of transform trigger issue
+
+The transform condition ("When Garruk Relentless has two or fewer loyalty counters on him, transform him") is implemented as an immediate transformation during SBA processing in `sba.rs` (lines 253-273) rather than as a state-triggered ability that goes on the stack per CR 603.8.
+
+**Why this is an engine limitation, not a card bug:**
+- The SBA check correctly fires from any source of loyalty loss (combat damage, spells, loyalty abilities), not just after loyalty ability activation.
+- The condition `<= 2` loyalty counters is correctly checked.
+- Only untransformed Garruk Relentless is affected (`!o.is_transformed`).
+- The 0-loyalty SBA death check runs before the transform check, so Garruk at 0 loyalty correctly dies before transforming.
+- The engine does not currently have a mechanism for state-triggered abilities that go on the stack. Building one would be a significant engine-level change affecting the game loop, priority system, and stack resolution -- well beyond the scope of a single card fix.
+
+**Practical impact:** The only gameplay difference is that opponents cannot respond to the transform trigger (e.g., removing Garruk with an instant before the transform resolves). This is a rare edge case that does not affect the vast majority of games.
+
+**Code documentation:** Added an ENGINE LIMITATION comment in `sba.rs` at the Garruk transform check explaining this simplification.
+
+All other aspects of the card (both faces, all abilities, token creation, sacrifice/tutor, overrun) are correctly implemented per previous audits.

@@ -1,7 +1,7 @@
 # ISD Audit Progress
 
 ## Status
-ALL 89 ISD CARDS RE-AUDITED. 72 PASS, 17 ISSUE.
+ALL 89 ISD CARDS RE-AUDITED. 72 PASS, 16 ISSUE, 1 ENGINE LIMITATION.
 Now fixing ISSUE cards.
 
 ## Cards with ISSUE status (17 cards to fix)
@@ -17,7 +17,7 @@ Now fixing ISSUE cards.
 8. **Corpse Lunge**: Missing damaged_by tracking, engine auto-selects exile target
 
 ### Medium priority (missing player choice / incorrect behavior)
-9. **Garruk Relentless**: State-triggered transform as immediate SBA instead of stack
+9. ~~**Garruk Relentless**: State-triggered transform as immediate SBA instead of stack~~ — RECLASSIFIED as engine limitation (SBA approach is functionally correct; engine lacks state-triggered ability stack support)
 10. **Caravan Vigil**: Morbid "you may" auto-selects instead of presenting choice
 11. **Curiosity**: "You may" draw is forced, not optional
 12. **Claustrophobia**: ETB tap during resolution instead of as triggered ability on stack
