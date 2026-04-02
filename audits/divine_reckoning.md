@@ -115,3 +115,52 @@ Flashback {5}{W}{W} (You may cast this card from your graveyard for its flashbac
 - `divine_reckoning_keeps_one_per_player` -- validates auto-selection behavior.
 - `divine_reckoning_with_one_creature_keeps_it` -- edge case of single creature.
 - `divine_reckoning_has_flashback` -- validates flashback cost.
+
+## Re-audit — 2026-04-02 (post player-choice engine changes)
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**:
+```
+Each player chooses a creature they control. Destroy the rest.
+Flashback {5}{W}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+```
+**Type line**: Sorcery
+**Status**: PASS
+
+### Previous issues — resolution
+
+1. **Oracle text string mismatch (was minor) — FIXED.**
+   - Previous code: `"Each player chooses a creature they control, then destroys the rest."`
+   - Current code (line 26): `"Each player chooses a creature they control. Destroy the rest.\nFlashback {5}{W}{W}"`
+   - Now matches oracle verbatim (two sentences, correct wording).
+
+2. **Doc comment said "sacrifices" (was minor) — FIXED.**
+   - Previous code: `"Each player chooses a creature they control, then sacrifices the rest."`
+   - Current code (line 8): `"Each player chooses a creature they control. Destroy the rest."`
+   - Now matches oracle correctly.
+
+3. **Player choice auto-selected (was major) — FIXED.**
+   - Previous code auto-kept the creature with the highest toughness.
+   - Current code (lines 84-108) presents a `ResolutionChoiceKind::ChooseTarget` prompt to each player with 2+ creatures, chaining via `PendingEffect::KeepOneDestroyRest`.
+   - Players with 0-1 creatures are auto-handled (correct — no meaningful choice exists).
+
+4. **Turn order for choices (was not respected) — FIXED.**
+   - Current code (lines 41-45) rotates `player_order` so the active player is first, matching the ruling: "Starting with the player whose turn it is, each player chooses a creature in turn order."
+   - Sequential chaining via `KeepOneDestroyRest` ensures each player sees prior choices.
+
+### Verification of current implementation
+
+- **Mana cost**: {2}{W}{W} (lines 16-19) — CORRECT
+- **Card type**: Sorcery (line 21) — CORRECT
+- **Flashback cost**: {5}{W}{W} (lines 28-31) — CORRECT
+- **Player choice**: Presented via ChooseTarget with `optional: false` — CORRECT (oracle says "chooses", not "may choose")
+- **Destruction**: Uses `try_destroy` (lines 81, 2413-2414 in engine.rs) — CORRECT (respects indestructible, matches "Destroy")
+- **0-creature players**: Skipped with no action (lines 58-64) — CORRECT
+- **1-creature players**: Auto-kept, logged (lines 59-64) — CORRECT (no meaningful choice)
+- **Chaining in engine handler**: Auto-handles 0-1 creature edge cases during chain (lines 2427-2482 in engine.rs) — CORRECT
+
+### Tests (all passing)
+
+- `divine_reckoning_keeps_one_per_player` — P0 (3 creatures) and P1 (2 creatures) each submit a choice; verifies exactly 1 creature per player survives and it is the chosen one.
+- `divine_reckoning_with_one_creature_keeps_it` — P0 has 1 creature, P1 has 0; no choice prompt; single creature survives.
+- `divine_reckoning_has_flashback` — Flashback cost present, mana value 7.

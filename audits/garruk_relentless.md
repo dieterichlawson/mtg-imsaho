@@ -287,6 +287,61 @@ All three issues from the previous audit have been fixed:
 - Back face loyalty abilities list: `tier15_cards.rs:1197` (garruk_back_face_loyalty_abilities_shown_when_transformed)
 - Library shuffle after -1 tutor: NOT TESTED (bug: shuffle not implemented)
 - Transform from non-loyalty-ability damage source (e.g., combat): NOT TESTED (fixed but test uses loyalty ability path)
+
+---
+
+## Re-Audit: State-Triggered Ability on the Stack (2026-04-02)
+
+### Oracle text (verbatim, Scryfall)
+
+**Front face — Garruk Relentless** {3}{G} Legendary Planeswalker — Garruk (loyalty 3):
+> When Garruk has two or fewer loyalty counters on him, transform him.
+> 0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.
+> 0: Create a 2/2 green Wolf creature token.
+
+**Back face — Garruk, the Veil-Cursed** Legendary Planeswalker — Garruk:
+> +1: Create a 1/1 black Wolf creature token with deathtouch.
+> −1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.
+> −3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+
+### Audit scope
+Full re-audit after engine changes to put state-triggered abilities on the stack (CR 603.8).
+
+### Card data
+- **PASS** — Name "Garruk Relentless", cost {3}{G}, Legendary Planeswalker — Garruk. Starting loyalty 3. All correct.
+- **PASS** — Back face handled via `is_transformed` flag; `loyalty_abilities()` switches ability set based on that flag.
+
+### State-triggered ability (CR 603.8)
+- **PASS** — `sba.rs` checks all battlefield Garruks for `loyalty <= 2 && !is_transformed && !state_trigger_on_stack`. When met, sets `state_trigger_on_stack = true` and pushes a `PendingTrigger::StateTriggered` into `pending_triggers`.
+- **PASS** — Transform does NOT happen during SBA. It happens in `on_state_trigger()` which is called when the `StateTriggered` trigger resolves from the stack (`triggers.rs`).
+- **PASS** — CR 603.8 non-re-triggering: the `state_trigger_on_stack` flag prevents the SBA from queuing a second trigger while one is already pending/on stack. The flag is cleared on resolution (`triggers.rs` line ~1012), allowing the trigger to fire again if the condition is still met.
+- **PASS** — If Garruk leaves the battlefield before the trigger resolves, `triggers.rs` checks `zone == Battlefield` before calling `on_state_trigger`, so no stale transform occurs.
+
+### Front face abilities
+- **PASS** — Ability 0 (loyalty cost 0): Deals 3 damage to target creature, creature deals its power back as loyalty loss. Targets creature (correct). Uses `damaged_by` tracking for SBA lethal-damage checks.
+- **PASS** — Ability 1 (loyalty cost 0): Creates a 2/2 green Wolf creature token with subtype Wolf. Matches oracle.
+
+### Back face abilities (Garruk, the Veil-Cursed)
+- **PASS** — Ability 10 (+1): Creates 1/1 black Wolf creature token with deathtouch. Matches oracle.
+- **PASS** — Ability 11 (-1): Does not target (per ruling 2011-09-22). Sacrifices a creature; if successful ("if you do"), searches library for a creature card, reveals (logged), puts into hand, then shuffles. Presents choice when multiple creatures available. Correct.
+- **PASS** — Ability 12 (-3): Counts creature cards in graveyard at resolution (X). Gives +X/+X and trample to creatures controller controls at resolution time. Uses `until_end_of_turn_effects` and `until_end_of_turn_keywords`. Matches oracle and rulings (only affects creatures at resolution, X locked at resolution).
+
+### Minor notes (non-blocking)
+- The `oracle_text` field in `card_data()` says "transform Garruk Relentless" but Scryfall oracle says "transform him." This is cosmetic only; the functional implementation is correct.
+
+### Test coverage
+- `garruk_creates_wolf_token` — front face wolf token: covered
+- `garruk_transforms_at_two_or_fewer_loyalty` — SBA triggers state-triggered ability, processes trigger, confirms transform: covered
+- `garruk_back_face_creates_deathtouch_wolf` — back face +1: covered
+- `garruk_back_face_sacrifice_to_tutor` — back face -1 single creature: covered
+- `garruk_back_face_tutor_presents_sacrifice_choice` — back face -1 multiple creatures: covered
+- `garruk_back_face_tutor_shuffles_library` — library shuffle after -1: covered
+- `garruk_back_face_overrun` — back face -3: covered
+- `garruk_back_face_loyalty_abilities_shown_when_transformed` — ability list switching: covered
+- Front face fight ability (ability 0): NOT TESTED
+- CR 603.8 non-re-trigger while on stack: NOT TESTED (but implementation is correct)
+
+### Status: PASS
 - Cannot activate loyalty abilities on both faces in same turn (ruling): NOT TESTED
 - -1 is mandatory if creature is controlled (ruling): NOT TESTED (implemented correctly)
 - Front face ability 0 creature fights back: NOT TESTED (implemented correctly)

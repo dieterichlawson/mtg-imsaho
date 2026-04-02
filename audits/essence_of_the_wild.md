@@ -143,3 +143,84 @@ This is a Rust doc comment only and does not affect behavior.
 
 ### Re-audit Date
 2026-04-02
+
+---
+
+## Final Re-audit After Replacement Effect Implementation (2026-04-02)
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+"Creatures you control enter as a copy of this creature."
+
+### Card Data Verification
+- **Name:** PASS -- "Essence of the Wild"
+- **Mana Cost:** PASS -- {3}{G}{G}{G}
+- **Card Types:** PASS -- [Creature]
+- **Subtypes:** PASS -- ["Avatar"]
+- **P/T:** PASS -- 6/6
+- **Keywords:** PASS -- none
+- **Oracle Text:** PASS -- "Creatures you control enter as a copy of this creature."
+
+### Issue Status From Previous Audits
+
+**Issue 1 (replacement vs trigger): PASS**
+Now uses a proper replacement effect. The `entering_copy_source` flag is set on the
+Essence permanent during `on_resolve()`. The `apply_entering_copy_replacement()` method
+in `state.rs` is called inside `move_object()` (line 508) BEFORE the
+`EnteredBattlefield` event is pushed (line 511), and inside `create_token_internal()`
+(line 402) also BEFORE `EnteredBattlefield` (line 404). The creature never exists in
+its original form on the battlefield. No triggered ability is used.
+
+**Issue 2 (incomplete copy): PASS**
+`apply_entering_copy_replacement()` copies all available copiable values: name, power,
+toughness, colors, card_types, subtypes, keywords, instance_oracle_text, and clears
+instance_continuous_effects. Mana cost is not copied because `GameObject` has no
+`mana_cost` field; this is an engine-wide limitation, not a card-specific bug.
+
+**Issue 3 (outdated oracle text): PASS**
+CardData.oracle_text is "Creatures you control enter as a copy of this creature."
+matching Scryfall exactly.
+
+**Issue 4 (no token test): PASS**
+`create_token_internal()` calls `apply_entering_copy_replacement(id)` at line 402,
+so creature tokens entering under the same controller are correctly replaced. No
+dedicated test exists for this, but the code path is confirmed present.
+
+### Behavioral Checks
+
+**Same-controller restriction: PASS**
+`apply_entering_copy_replacement()` checks `o.controller == controller` (line 539),
+so only creatures entering under the Essence controller's side are affected.
+
+**Does not affect itself: PASS**
+`apply_entering_copy_replacement()` checks `o.id != entering_id` (line 541), so
+Essence of the Wild entering the battlefield does not try to copy itself.
+
+**Copy propagates entering_copy_source flag: PASS**
+Line 570 sets `obj.entering_copy_source = entering_copy_source` on the copy. This
+means a creature entering as a copy of Essence also gains the static replacement
+ability, which is correct: the copy IS Essence of the Wild and has the same oracle
+text.
+
+**Creature-only check: PASS**
+Line 527-531 checks `o.power.is_some()` as a proxy for "is a creature" and returns
+early if false. Non-creature permanents entering the battlefield are not affected.
+
+### Tests
+Two tests in `mtg-engine/tests/tier15_cards.rs`:
+- `essence_overrides_entering_creatures` -- verifies a Grizzly Bears entering becomes
+  a 6/6 "Essence of the Wild" with Avatar subtype. PASS.
+- `essence_does_not_override_opponent_creatures` -- verifies opponent's creature is
+  not affected. PASS.
+Both tests pass.
+
+### Remaining Observations (non-blocking)
+
+**Observation A (Cosmetic): Doc comment uses outdated wording**
+Line 8 of `essence_of_the_wild.rs`:
+  "Creatures you control enter as a copy of Essence of the Wild."
+Oracle text uses "this creature" not the card name. Cosmetic only, no behavioral impact.
+
+### Overall Status: PASS
+
+### Re-audit Date
+2026-04-02

@@ -188,3 +188,49 @@ Test passes. Missing test coverage:
 | 6 | Low | `is_evil_twin` not copiable | OPEN |
 | 7 | Low | Copy does not include colors | NEW |
 | 8 | Low | Oracle text uses old wording template | NEW |
+
+---
+
+## Final Re-Audit (2026-04-02)
+
+### Oracle Text (Scryfall, verbatim)
+"You may have this creature enter as a copy of any creature on the battlefield, except it has "{U}{B}, {T}: Destroy target creature with the same name as this creature.""
+
+### Previous Open/New Issues -- Status
+
+| # | Previous Issue | Status | Notes |
+|---|---------------|--------|-------|
+| 6 | `is_evil_twin` not copiable | FIXED | `CopyCreature` handler (engine.rs:2370,2389-2391) now reads `is_evil_twin` from the target's `card_state` and propagates it to the copy: `if is_evil_twin { obj.card_state.insert("is_evil_twin".into(), ObjectId(1)); }`. Another clone copying an Evil Twin will inherit the destroy ability. |
+| 7 | Copy does not include colors | FIXED | `CopyCreature` handler (engine.rs:2372,2385) now copies colors: `(o.colors.clone(), ...)` extracted from target, then `obj.colors = colors;` assigned to source. |
+| 8 | Oracle text uses old wording template | FIXED | Code oracle_text (evil_twin.rs:27) now reads `"You may have this creature enter as a copy..."` which matches the current Scryfall oracle text. |
+
+### Full Checklist
+
+| Check | Result |
+|-------|--------|
+| Clone is optional ("you may") -- player choice presented | PASS -- uses `present_optional_target_choice` which allows declining |
+| Copy includes name | PASS -- `obj.name = name.clone()` (engine.rs:2378) |
+| Copy includes P/T | PASS -- `obj.power = power; obj.toughness = toughness` (engine.rs:2379-2380) |
+| Copy includes card_types | PASS -- `obj.card_types = card_types` (engine.rs:2383) |
+| Copy includes subtypes | PASS -- `obj.subtypes = subtypes` (engine.rs:2384) |
+| Copy includes keywords | PASS -- `obj.keywords = keywords` (engine.rs:2382) |
+| Copy includes colors | PASS -- `obj.colors = colors` (engine.rs:2385) |
+| is_evil_twin marker is copiable | PASS -- explicitly propagated in CopyCreature handler (engine.rs:2389-2391) |
+| Destroy ability targets creatures with same name | PASS -- `TargetFilter::SameNameAsSource` (evil_twin.rs:87); engine filter checks `source.name == obj.name` (engine.rs:1213-1217) |
+| Destroy ability costs {U}{B}, {T} | PASS -- Blue + Black mana cost, `requires_tap: true` (evil_twin.rs:81-85) |
+| Card data: name | PASS -- "Evil Twin" |
+| Card data: mana cost | PASS -- {2}{U}{B} |
+| Card data: type line | PASS -- Creature, subtypes: ["Shapeshifter"] |
+| Card data: P/T | PASS -- 0/0 |
+| Card data: oracle text | PASS -- matches Scryfall verbatim |
+
+### Tests
+
+One test: `evil_twin_copies_creature_on_etb` (tier15_cards.rs:1580). Passes. Verifies:
+- ETB presents optional choice
+- After CopyCreature effect, name/power/toughness match copied creature
+- `is_evil_twin` marker persists after copy
+
+### Status: PASS
+
+All six originally reported issues (1-6) and two issues from the second audit (7-8) are now fixed. The implementation correctly handles optional clone choice, copies all relevant characteristics (name, P/T, card_types, subtypes, keywords, colors), propagates the is_evil_twin marker as a copiable value, and uses SameNameAsSource targeting for the destroy ability.
