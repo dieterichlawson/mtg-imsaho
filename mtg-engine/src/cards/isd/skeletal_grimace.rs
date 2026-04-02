@@ -40,7 +40,7 @@ impl CardBehavior for SkeletalGrimace {
 
     /// The aura grants "{B}: Regenerate" to the enchanted creature.
     /// `object_id` is the creature this is attached to.
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         // Only grant regenerate to the enchanted creature (must have power, i.e. be a creature),
         // not to the aura itself.
         if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield && o.power.is_some()).unwrap_or(false) {

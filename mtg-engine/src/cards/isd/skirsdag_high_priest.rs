@@ -6,7 +6,7 @@ use crate::types::*;
 
 /// Skirsdag High Priest — {1}{B} 1/2 Human Cleric.
 /// Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon
-/// creature token with flying. Activate only as a sorcery.
+/// creature token with flying. Activate only if a creature died this turn.
 pub struct SkirsdagHighPriest;
 
 impl CardBehavior for SkirsdagHighPriest {
@@ -22,13 +22,13 @@ impl CardBehavior for SkirsdagHighPriest {
             subtypes: vec!["Human".into(), "Cleric".into()],
             power: Some(1),
             toughness: Some(2),
-            oracle_text: "Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon creature token with flying. Activate only as a sorcery.".into(),
+            oracle_text: "Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon creature token with flying. Activate only if a creature died this turn.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -57,7 +57,7 @@ impl CardBehavior for SkirsdagHighPriest {
             sacrifice_cost: SacrificeCost::None,
             target_requirement: None,
             once_per_turn: false,
-            sorcery_speed_only: true,
+            sorcery_speed_only: false,
         }]
     }
 

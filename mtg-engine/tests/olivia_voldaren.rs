@@ -142,7 +142,7 @@ fn olivia_ability_1_target_filter_requires_vampire() {
     state.get_object_mut(human).unwrap().subtypes = vec!["Human".into()];
 
     let behavior = reg.get(state.get_object(olivia).unwrap().card_id).unwrap();
-    let abilities = behavior.activated_abilities(&state, olivia);
+    let abilities = behavior.activated_abilities(&state, olivia, &reg);
 
     // Ability 1 should have a Vampire target filter.
     let ability_1 = &abilities[1];
