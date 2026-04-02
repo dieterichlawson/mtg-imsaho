@@ -20,7 +20,7 @@ impl CardBehavior for ChampionOfTheParish {
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Whenever another Human creature enters the battlefield under your control, put a +1/+1 counter on Champion of the Parish.".into(),
+            oracle_text: "Whenever another Human you control enters, put a +1/+1 counter on this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

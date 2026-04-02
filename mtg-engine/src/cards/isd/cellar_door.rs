@@ -21,7 +21,7 @@ impl CardBehavior for CellarDoor {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{3}, {T}: Target player mills the bottom card of their library. If a creature card is milled this way, create a 2/2 black Zombie creature token.".into(),
+            oracle_text: "{3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

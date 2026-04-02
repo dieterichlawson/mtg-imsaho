@@ -22,7 +22,7 @@ impl CardBehavior for CaravanVigil {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Search your library for a basic land card, reveal it, put it into your hand, then shuffle your library. Morbid — You may put that card onto the battlefield instead of into your hand.".into(),
+            oracle_text: "Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nMorbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

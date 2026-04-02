@@ -21,7 +21,7 @@ impl CardBehavior for BurningVengeance {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Whenever you cast a spell from your graveyard, Burning Vengeance deals 2 damage to any target.".into(),
+            oracle_text: "Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
