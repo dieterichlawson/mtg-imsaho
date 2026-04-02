@@ -2361,14 +2361,15 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
             // Copy the target creature's characteristics onto the source permanent.
-            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors) =
+            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_evil_twin) =
                 match state.get_object(*target_id) {
                     Some(o) => {
                         let kw = registry.card_data(o.card_id)
                             .map(|d| d.keywords.clone())
                             .unwrap_or_default();
+                        let evil_twin = o.card_state.contains_key("is_evil_twin");
                         (o.name.clone(), o.power, o.toughness, o.card_id,
-                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone())
+                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone(), evil_twin)
                     }
                     None => return,
                 };
@@ -2382,6 +2383,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 obj.card_types = card_types;
                 obj.subtypes = subtypes;
                 obj.colors = colors;
+                // The "is_evil_twin" marker grants the destroy ability and is a
+                // copiable characteristic — if another creature copies an Evil Twin,
+                // it should also gain the activated ability.
+                if is_evil_twin {
+                    obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
+                }
             }
             state.log(LogLevel::Event,
                 format!("Evil Twin enters as a copy of {}", name));
