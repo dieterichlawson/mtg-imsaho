@@ -32,3 +32,11 @@ Behavior is otherwise correct: creates 13 tokens with correct stats (2/2 black Z
 ## Re-audit — 2026-04-02
 **Status**: PASS
 Oracle text updated to match Scryfall: "Create thirteen tapped 2/2 black Zombie creature tokens." (was "Create thirteen 2/2 black Zombie creature tokens. They enter the battlefield tapped."). Doc comment updated. Behavior unchanged.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.

@@ -32,3 +32,11 @@ Behavior is otherwise correct: triggered ability on EntersBattlefield calls mill
 ## Re-audit — 2026-04-02
 **Status**: PASS
 Oracle text updated to match Scryfall: "When this creature enters, mill four cards." (was "When Armored Skaab enters the battlefield, mill four cards."). Doc comment updated. Behavior unchanged.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.

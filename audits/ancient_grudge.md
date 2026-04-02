@@ -24,3 +24,11 @@
 **Status**: PASS
 ### Code issues
 None. Card data matches oracle: name "Ancient Grudge", cost {1}{R}, type Instant, flashback_cost {G}. Target requirement correctly filters for artifacts on the battlefield. on_resolve delegates to resolve_destroy helper. All correct.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.

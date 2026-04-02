@@ -25,3 +25,11 @@
 **Status**: PASS
 ### Code issues
 None. Card data matches oracle: name "Angel of Flight Alabaster", cost {4}{W}, 4/4, type Creature — Angel, keywords [Flying]. Triggered ability on Upkeep correctly filters Spirit cards in owner's graveyard and presents choice via present_target_choice with ReturnToHand effect. Only triggers for active_player == controller. All correct.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.

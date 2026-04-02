@@ -26,3 +26,11 @@
 **Status**: PASS
 ### Code issues
 None. Card data matches oracle: name "Abattoir Ghoul", cost {3}{B}, 3/2, type Creature — Zombie, keywords [FirstStrike], triggered ability on AnyCreatureDies correctly checks `dead_damaged_by` and gains life equal to `dead_toughness`. Behavior is correct.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.

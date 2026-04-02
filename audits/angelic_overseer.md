@@ -32,3 +32,11 @@ Behavior is otherwise correct: two ConditionalKeyword continuous effects (Hexpro
 ## Re-audit — 2026-04-02
 **Status**: PASS
 Oracle text updated to match Scryfall: "this creature has hexproof and indestructible" (was "Angelic Overseer has hexproof and is indestructible"). Doc comment updated. Behavior unchanged.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.
