@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Burning Vengeance — {2}{R} enchantment.
-/// Whenever you cast a spell from your graveyard, Burning Vengeance deals 2 damage
+/// Whenever you cast a spell from your graveyard, this enchantment deals 2 damage
 /// to any target.
 pub struct BurningVengeance;
 

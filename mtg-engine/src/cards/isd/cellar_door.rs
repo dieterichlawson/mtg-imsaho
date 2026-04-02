@@ -5,8 +5,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Cellar Door — {2} Artifact.
-/// {3}, {T}: Target player mills a card. If a creature card is milled this way,
-/// create a 2/2 black Zombie creature token.
+/// {3}, {T}: Target player puts the bottom card of their library into their
+/// graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.
 pub struct CellarDoor;
 
 impl CardBehavior for CellarDoor {

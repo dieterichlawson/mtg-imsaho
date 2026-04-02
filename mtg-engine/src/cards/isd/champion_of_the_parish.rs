@@ -4,8 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Champion of the Parish — {W} 1/1 Human Soldier.
-/// Whenever another Human creature enters the battlefield under your control,
-/// put a +1/+1 counter on Champion of the Parish.
+/// Whenever another Human you control enters, put a +1/+1 counter on this creature.
 pub struct ChampionOfTheParish;
 
 impl CardBehavior for ChampionOfTheParish {

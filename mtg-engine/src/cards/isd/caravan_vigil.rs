@@ -6,8 +6,8 @@ use crate::types::*;
 
 /// Caravan Vigil — {G} Sorcery.
 /// Search your library for a basic land card, reveal it, put it into your hand,
-/// then shuffle your library. Morbid — You may put that card onto the battlefield
-/// instead of into your hand.
+/// then shuffle. Morbid — You may put that card onto the battlefield
+/// instead of putting it into your hand if a creature died this turn.
 pub struct CaravanVigil;
 
 impl CardBehavior for CaravanVigil {
