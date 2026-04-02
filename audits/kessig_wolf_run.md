@@ -65,3 +65,23 @@ Findings:
 - No CombatDamageDealt misuse.
 - No triggered_abilities declared, none needed: correct.
 - Tests: 4 tests in kessig_wolf_run.rs (can_activate_with_rg_only, cannot_activate_without_rg, x_equals_3_gives_plus_3, x_equals_0_gives_trample_only) plus tests in tier14_cards.rs. Good coverage.
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: {T}: Add {C}. {X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.
+**Type line**: Land
+**Status**: PASS
+
+Findings:
+- Card data: name "Kessig Wolf Run", cost None (land), card_types Land, no supertypes/subtypes, no P/T: all correct.
+- oracle_text field matches Scryfall verbatim: correct.
+- Mana ability (ability_index 0): {T} for {C}, requires_tap true, checks battlefield and untapped: correct.
+- Activated ability (ability_index 1): cost ManaSymbol::X + Colored(Red) + Colored(Green), requires_tap true, target TargetRequirement::Creature: correct.
+- X cost handling: on_activate_ability reads state.last_activated_x_value, applies power_mod = x, toughness_mod = 0 via UntilEndOfTurnEffect: correct (+X/+0).
+- Trample grant: pushes Keyword::Trample via until_end_of_turn_keywords: correct.
+- Zone check on target (must be on battlefield) before applying effects: correct.
+- sorcery_speed_only: false, once_per_turn: false: correct.
+- sacrifice_cost: None: correct.
+- Tests: 4 tests all pass (can_activate_with_rg_only, cannot_activate_without_rg, x_equals_3_gives_plus_3, x_equals_0_gives_trample_only).
+- No mismatches found.
