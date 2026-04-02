@@ -249,6 +249,8 @@ pub enum TargetRequirement {
     CreatureWithFilter(TargetFilter),
     /// Target a player only (Lava Axe)
     PlayerOnly,
+    /// Target a player or planeswalker (Stensia Bloodhall)
+    PlayerOrPlaneswalker,
     /// Target a spell on the stack (Counterspell)
     Spell,
     /// Target any permanent on the battlefield matching a filter (Naturalize, Bramblecrush)

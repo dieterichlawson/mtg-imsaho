@@ -896,6 +896,41 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut actions = Vec::new();
+            // Players
+            for player in &state.players {
+                if !player.lost && can_target_player(state, player.id, caster, registry) {
+                    let target = Target::Player(player.id);
+                    if behavior.is_valid_target(state, caster, &target, registry) {
+                        actions.push(Action::CastSpell {
+                            object_id: spell_id,
+                            targets: vec![target],
+                            sacrifice: None, exile_count: None, alternative_cost: None,
+                        });
+                    }
+                }
+            }
+            // Planeswalkers on the battlefield
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
+                    || registry.card_data(obj.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
+                        .unwrap_or(false);
+                if is_pw {
+                    if !can_be_targeted(state, obj.id, caster, registry) { continue; }
+                    let target = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, caster, &target, registry) {
+                        actions.push(Action::CastSpell {
+                            object_id: spell_id,
+                            targets: vec![target],
+                            sacrifice: None, exile_count: None, alternative_cost: None,
+                        });
+                    }
+                }
+            }
+            actions
+        }
         TargetRequirement::Spell => {
             let mut actions = Vec::new();
             for entry in &state.stack {
@@ -1060,6 +1095,27 @@ fn valid_targets_for_req(
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
+        }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut targets: Vec<Target> = state.players.iter()
+                .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, caster, registry))
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect();
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
+                    || registry.card_data(obj.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
+                        .unwrap_or(false);
+                if is_pw && can_be_targeted(state, obj.id, caster, registry) {
+                    let t = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, caster, &t, registry) {
+                        targets.push(t);
+                    }
+                }
+            }
+            targets
         }
         TargetRequirement::GraveyardCard => {
             // All cards in all graveyards.
@@ -1262,6 +1318,27 @@ fn generate_ability_targets(
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
+        }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut targets: Vec<Target> = state.players.iter()
+                .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, controller, registry))
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+                .collect();
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
+                    || registry.card_data(obj.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
+                        .unwrap_or(false);
+                if is_pw && can_be_targeted(state, obj.id, controller, registry) {
+                    let t = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, controller, &t, registry) {
+                        targets.push(t);
+                    }
+                }
+            }
+            targets
         }
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
