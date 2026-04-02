@@ -26,7 +26,7 @@ impl CardBehavior for EssenceOfTheWild {
             subtypes: vec!["Avatar".into()],
             power: Some(6),
             toughness: Some(6),
-            oracle_text: "Creatures you control enter the battlefield as a copy of Essence of the Wild.".into(),
+            oracle_text: "Creatures you control enter as a copy of this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -49,15 +49,20 @@ impl CardBehavior for EssenceOfTheWild {
         if entered_controller != controller || entered_id == self_id {
             return;
         }
-        // Override the entering creature to be a 6/6 Avatar (copy of Essence).
+        // Override the entering creature to be a copy of Essence of the Wild.
+        // Copy all copiable values: name, mana cost, colors, card types, subtypes,
+        // power/toughness, keywords, oracle text, and abilities.
         if let Some(obj) = state.get_object_mut(entered_id) {
+            let old_name = obj.name.clone();
+            obj.name = "Essence of the Wild".into();
             obj.power = Some(6);
             obj.toughness = Some(6);
+            obj.colors = vec![Color::Green];
+            obj.card_types = vec![CardType::Creature];
             obj.subtypes = vec!["Avatar".into()];
             obj.keywords.clear();
             obj.instance_continuous_effects = Some(vec![]);
-            let old_name = obj.name.clone();
-            obj.name = "Essence of the Wild".into();
+            obj.instance_oracle_text = Some("Creatures you control enter as a copy of this creature.".into());
             state.log(crate::state::LogLevel::Event,
                 format!("Essence of the Wild: {} enters as a copy of Essence of the Wild (6/6)", old_name));
         }
