@@ -52,25 +52,28 @@ impl CardBehavior for MawOfTheMire {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         if let Some(Target::Object(land_id)) = targets.first() {
-            if state.get_object(*land_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
-                crate::destruction::try_destroy(state, *land_id, registry);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Maw of the Mire destroyed {}", name));
+            // If the target is illegal (not on battlefield), the spell fizzles — no effects.
+            if !state.get_object(*land_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                state.move_spell_after_resolve(object_id);
+                return;
             }
-        }
+            let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
+            crate::destruction::try_destroy(state, *land_id, registry);
+            state.log(crate::state::LogLevel::Event,
+                format!("Maw of the Mire destroyed {}", name));
 
-        // Gain 4 life.
-        let old_life = state.get_player(controller).life;
-        let new_life = old_life + 4;
-        state.get_player_mut(controller).life = new_life;
-        state.events.push(crate::events::GameEvent::LifeChanged {
-            player: controller,
-            old: old_life,
-            new_life,
-        });
-        state.log(crate::state::LogLevel::Event,
-            format!("Maw of the Mire: p{} gained 4 life", controller.0));
+            // Gain 4 life (only if target was valid).
+            let old_life = state.get_player(controller).life;
+            let new_life = old_life + 4;
+            state.get_player_mut(controller).life = new_life;
+            state.events.push(crate::events::GameEvent::LifeChanged {
+                player: controller,
+                old: old_life,
+                new_life,
+            });
+            state.log(crate::state::LogLevel::Event,
+                format!("Maw of the Mire: p{} gained 4 life", controller.0));
+        }
 
         state.move_spell_after_resolve(object_id);
     }
