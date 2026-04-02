@@ -54,3 +54,36 @@ Findings:
 - No CombatDamageDealt misuse (card deals no damage).
 - No triggered_abilities declared, none needed: correct.
 - Tests: 1 test in tier8_cards.rs (altars_reap_sacrifices_and_draws_two). Minimal coverage but tests core functionality (sacrifice + draw 2).
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API via `scripts/oracle_lookup.py` (cached 2026-04-01)
+**Oracle text**: As an additional cost to cast this spell, sacrifice a creature. Draw two cards.
+**Type line**: Instant
+**Mana cost**: {1}{B}
+**Status**: PASS
+
+### Card Data
+- Name "Altar's Reap": correct.
+- Mana cost `Generic(1), Colored(Color::Black)` = {1}{B}: correct.
+- Type `CardType::Instant`: correct.
+- Oracle text string matches Scryfall verbatim: correct.
+- `additional_cost: Some(AdditionalCost::SacrificeCreature)`: correct.
+
+### Behavior Audit
+- **Sacrifice timing**: Contrary to the note in the first audit entry (which claimed sacrifice happens on resolution), the current engine code in `engine.rs` (lines ~1356-1377) performs the sacrifice at cast time as an additional cost, before the spell goes on the stack. This is correct per MTG rules. The engine checks for eligible creatures in the cast-legality logic (line ~512-519) and refuses the cast if no creature is available.
+- **Draw effect**: `on_resolve` calls `crate::engine::draw_cards(state, controller, 2)` -- draws exactly 2 cards. Correct.
+- **move_spell_after_resolve**: Present at line 42. Correctly moves the spell to graveyard (or exile if flashback). No anti-pattern.
+- **Controller fallback**: `unwrap_or(crate::ids::PlayerId(0))` on line 37 is a safe fallback; the object should always exist at resolution time.
+
+### Test Coverage (`mtg-engine/tests/tier8_cards.rs`, line 169)
+- `altars_reap_sacrifices_and_draws_two`: Sets up a creature and 3 library cards, casts and resolves spell, verifies creature is in graveyard and 2 cards drawn to hand. Adequate for core functionality.
+
+### LLM Player
+- No special handling in `mtg-player/src/llm.rs`. None needed -- engine handles the additional cost automatically.
+
+### Correction to Prior Audits
+- The first audit entry states "The sacrifice happens on resolution rather than as part of casting." This appears to be outdated. The current engine code performs the sacrifice at cast time via the `AdditionalCost::SacrificeCreature` path in `engine.rs`.
+
+### Verdict
+PASS -- No mismatches between oracle text and implementation.
