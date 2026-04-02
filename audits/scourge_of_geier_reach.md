@@ -56,3 +56,13 @@ None found. Verified that the engine's effective_power/effective_toughness uses 
 None.
 
 ### Verdict: PASS
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: This creature gets +1/+1 for each creature your opponents control.
+**Type line**: Creature — Elemental
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {3}{R}{R}, P/T 3/3, Elemental subtype. The oracle_text in code uses "Scourge of Geier Reach" instead of the updated oracle template "This creature" -- this is a minor cosmetic difference reflecting original print vs. current oracle templating, not a behavioral issue. `dynamic_pt` correctly counts opponent creatures (objects on battlefield with `power.is_some()` controlled by opponent) and returns `(3 + N, 3 + N)` which overrides the base 3/3. The `opponent()` function returns a single opponent, appropriate for the 2-player engine scope.

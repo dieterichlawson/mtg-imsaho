@@ -175,3 +175,15 @@ Still missing:
 All critical and bug-level issues from the previous audit have been fixed. Two minor issues remain:
 - `oracle_text` string is a paraphrase, not the verbatim oracle text
 - `keywords` field missing Mill
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards.
+**Type line**: Enchantment
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text mismatch**: The stored oracle_text in the code reads "{3}{R}: Mill three cards, then Heretic's Punishment deals damage to any target equal to the highest mana value among the milled cards." The current Scryfall oracle text reads "{3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards." The code uses outdated oracle wording. The functional behavior is correct (target is chosen at activation, mill happens on resolution before damage), but the oracle_text string should be updated.
+
+No other issues. Card data correct: name, mana cost {4}{R}, Enchantment. Activated ability: {3}{R}, no tap, AnyTarget. Mills up to 3 cards, computes max mana value via registry, deals damage to target (creature via damage_marked or player via life reduction). Handles fewer than 3 cards in library. Target legality check on resolution (fizzle if illegal). NonCombatDamageDealt and LifeChanged events emitted. No anti-patterns.

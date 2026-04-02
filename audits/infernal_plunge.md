@@ -89,3 +89,13 @@ Findings:
 
 ### Verdict
 **PASS** — No issues found. The card data, additional cost, mana production, and spell cleanup all match the oracle text.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, sacrifice a creature.\nAdd {R}{R}{R}.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {R}, Sorcery. Additional cost SacrificeCreature correctly set (creature sacrifice happens at cast time). On resolve, adds 3 Red mana to controller's mana pool via mana_pool.add(ManaType::Red, 3). move_spell_after_resolve called. No anti-patterns.

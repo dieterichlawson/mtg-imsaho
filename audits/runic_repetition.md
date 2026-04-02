@@ -141,3 +141,13 @@ Tests in innistrad_simple_cards.rs cover card data and returning a flashback car
 
 ### Verdict
 **PASS.** The implementation correctly implements all aspects of the oracle text: targeting (exiled cards with flashback owned by caster), zone movement (exile to hand), and spell type (sorcery). The oracle_text string now matches Scryfall verbatim.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Return target exiled card with flashback you own to your hand.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {2}{U}, Sorcery type, oracle text matches exactly. Target requirement uses `ExileCard` with custom `is_valid_target` that correctly checks: (1) card is in Exile zone, (2) card is owned by the caster, and (3) card has flashback (checked via registry `card_data` for the card's `flashback_cost`). Resolution moves the target from exile to hand. Per rulings, cards that were granted flashback temporarily won't have it in exile, and the registry check for innate flashback_cost handles this correctly.

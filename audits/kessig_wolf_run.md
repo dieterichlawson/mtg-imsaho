@@ -85,3 +85,13 @@ Findings:
 - sacrifice_cost: None: correct.
 - Tests: 4 tests all pass (can_activate_with_rg_only, cannot_activate_without_rg, x_equals_3_gives_plus_3, x_equals_0_gives_trample_only).
 - No mismatches found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {T}: Add {C}.\n{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample until end of turn.
+**Type line**: Land
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, no mana cost (Land), type Land. Mana ability 0: tap to add {C} (Colorless). Activated ability 1: {X}{R}{G} + tap, targets Creature. On activation, reads X from last_activated_x_value, grants +X/+0 via UntilEndOfTurnEffect and trample via UntilEndOfTurnKeyword. Both abilities check zone == Battlefield and !tapped. No anti-patterns.

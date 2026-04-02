@@ -244,3 +244,13 @@ The core alternative cost mechanic has been properly implemented via the `altern
 - Missing edge-case test coverage (Issues 4, 5).
 
 The card functions correctly for standard gameplay scenarios. The implementation is a significant improvement over the previous audit's findings.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {5}{U}, Enchantment type, oracle text matches exactly. The alternative cost effect is correctly implemented in the engine (`rooftop_storm_applies()` in engine.rs) rather than in the card file, which is the right pattern for a static ability that modifies casting costs. Engine checks that the spell is a Zombie creature and that the caster controls a Rooftop Storm, then offers an alternative {0} cost CastSpell action. Additional costs are preserved per rulings.
