@@ -37,7 +37,7 @@ impl CardBehavior for MirrorMadPhantasm {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
@@ -64,10 +64,15 @@ impl CardBehavior for MirrorMadPhantasm {
             None => return,
         };
 
-        // Move Mirror-Mad Phantasm to the library (shuffle effect).
+        // "shuffles it into their library" — move to library zone, add to library order,
+        // then shuffle so the card is at a random position before the reveal loop.
         state.move_object(object_id, Zone::Library);
-        // Add to library order at a random position (simplified: at the bottom).
         state.get_player_mut(owner).library_order.push(object_id);
+        {
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            state.get_player_mut(owner).library_order.shuffle(&mut rng);
+        }
 
         state.log(crate::state::LogLevel::Event,
             "Mirror-Mad Phantasm shuffled into library".into());

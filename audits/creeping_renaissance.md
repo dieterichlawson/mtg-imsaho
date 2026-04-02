@@ -65,3 +65,33 @@ Findings:
 - No CombatDamageDealt misuse.
 - No triggered_abilities declared, none needed: correct.
 - Tests: 3 tests in tier15_cards.rs (creeping_renaissance_returns_creatures_from_graveyard, creeping_renaissance_only_returns_chosen_type, creeping_renaissance_flashback_exiles). Good coverage including flashback exile behavior.
+
+## Audit — 2026-04-02
+
+**Oracle text** (Scryfall, cached 2026-04-01): Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand. Flashback {5}{G}{G}
+**Type line**: Sorcery
+**Status**: PASS
+
+Findings:
+- Mana cost {3}{G}{G}: correct.
+- Type Sorcery: correct.
+- Flashback cost {5}{G}{G}: correct (`flashback_cost` field in card_data).
+- on_resolve presents `ChooseCardType` choice with all 5 permanent types (Creature, Artifact, Enchantment, Land, Planeswalker): correct per ruling "[2011-09-22] The permanent types are artifact, creature, enchantment, land, and planeswalker."
+- Player must actively choose a type (not auto-selected): correct. The choice is presented via `AwaitingAction::ResolutionChoice`.
+- Resolution handler in engine.rs (line 1854-1886) processes the choice: maps type string to CardType, filters all graveyard cards of chosen type, moves ALL matching to hand: correct. Oracle says "Return all cards of the chosen type" -- no targeting involved.
+- `move_spell_after_resolve` called at engine.rs:1886: correct. This method checks `cast_with_flashback` flag and exiles if true, sends to graveyard otherwise.
+- Tests: 3 tests in tier15_cards.rs covering basic return, type-filtering, and flashback exile.
+
+Minor note (not a rules bug):
+- In `mtg-player/src/llm.rs:491`, `ChosenIndex(i)` is displayed as `"Option {i}"` rather than the actual type name (e.g., "Creature"). The LLM player sees opaque labels like "Option 0" instead of meaningful type names. This is a UX concern for the AI player, not a game-rules issue.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand.
+Flashback {5}{G}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found.

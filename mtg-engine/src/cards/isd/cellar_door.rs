@@ -5,8 +5,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Cellar Door — {2} Artifact.
-/// {3}, {T}: Target player mills a card. If a creature card is milled this way,
-/// create a 2/2 black Zombie creature token.
+/// {3}, {T}: Target player puts the bottom card of their library into their
+/// graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.
 pub struct CellarDoor;
 
 impl CardBehavior for CellarDoor {
@@ -21,7 +21,7 @@ impl CardBehavior for CellarDoor {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "{3}, {T}: Target player mills the bottom card of their library. If a creature card is milled this way, create a 2/2 black Zombie creature token.".into(),
+            oracle_text: "{3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -30,7 +30,7 @@ impl CardBehavior for CellarDoor {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],

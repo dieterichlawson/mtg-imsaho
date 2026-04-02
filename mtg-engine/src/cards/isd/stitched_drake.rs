@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Stitched Drake — {1}{U}{U} 3/4 Zombie Drake with Flying.
-/// As an additional cost to cast Stitched Drake, exile a creature card from your graveyard.
+/// As an additional cost to cast this spell, exile a creature card from your graveyard. Flying.
 pub struct StitchedDrake;
 
 impl CardBehavior for StitchedDrake {
@@ -22,7 +22,7 @@ impl CardBehavior for StitchedDrake {
             subtypes: vec!["Zombie".into(), "Drake".into()],
             power: Some(3),
             toughness: Some(4),
-            oracle_text: "Flying\nAs an additional cost to cast Stitched Drake, exile a creature card from your graveyard.".into(),
+            oracle_text: "As an additional cost to cast this spell, exile a creature card from your graveyard.\nFlying".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -31,27 +31,9 @@ impl CardBehavior for StitchedDrake {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-
-        // Exile a creature card from graveyard as additional cost.
-        let exile_candidate = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .filter(|o| {
-                registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                    .unwrap_or(o.power.is_some())
-            })
-            .map(|o| o.id)
-            .next();
-
-        if let Some(exile_id) = exile_candidate {
-            let name = state.get_object(exile_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(exile_id, Zone::Exile);
-            state.log(crate::state::LogLevel::Event,
-                format!("Stitched Drake exiled {} from graveyard", name));
-        }
-
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+        // The additional cost (exile a creature from graveyard) is handled by the
+        // engine at cast time via AdditionalCost::ExileCreaturesFromGraveyard(1).
         state.move_object(object_id, Zone::Battlefield);
     }
 }

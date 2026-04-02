@@ -56,3 +56,57 @@ mana_abilities: correctly checks battlefield, untapped, not summoning sick, and 
 on_activate_mana_ability: mills one card via crate::engine::mill_cards as part of the mana ability cost.
 
 Tests in innistrad_simple_cards.rs cover card data and tapping for colorless mana. No anti-patterns found.
+
+## Audit — 2026-04-02
+
+**Oracle text (Scryfall, cached 2026-04-01):**
+> {T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)
+
+**Type line:** Creature — Human Wizard | **P/T:** 1/1 | **Cost:** {1}{U} | **Keywords:** Mill
+
+**Status**: PASS (minor items noted)
+
+### Card Data Verification
+
+All fields match oracle:
+- Name: "Deranged Assistant" -- matches
+- Mana cost: Generic(1) + Colored(Blue) = {1}{U} -- matches
+- Card types: Creature -- matches
+- Subtypes: Human, Wizard -- matches
+- P/T: 1/1 -- matches
+- Oracle text field: "{T}, Mill a card: Add {C}." -- matches
+
+Keywords field is `vec![]` (empty) while Scryfall lists Mill. Mill is a keyword action, not a keyword ability, so this is acceptable.
+
+### Mana Ability
+
+- Tap cost enforced: `requires_tap: true` and `!obj.tapped` guard -- correct
+- Summoning sickness: `!obj.summoning_sick` -- correct
+- Zone: `Zone::Battlefield` -- correct
+- Library guard: `!library_order.is_empty()` prevents activation with empty library -- correct (mill is a cost)
+- Produced: `vec![(ManaType::Colorless, 1)]` = {C} -- correct
+
+### Mill Execution
+
+`on_activate_mana_ability` calls `crate::engine::mill_cards(state, controller, 1)` which removes the top card from `library_order` and calls `move_object(card_id, Zone::Graveyard)`. Correct.
+
+### Tests
+
+Both in `mtg-engine/tests/innistrad_simple_cards.rs`, both PASS:
+- `deranged_assistant_card_data` -- verifies P/T, MV=2, subtypes
+- `deranged_assistant_taps_for_colorless` -- verifies mana ability produces 1 colorless
+
+### Minor Items
+
+1. **TEST GAP:** No test asserts the mill actually occurs (library shrinks / graveyard grows after activation). The existing test only checks mana production.
+2. **Keywords field empty:** `keywords: vec![]` vs Scryfall `Mill`. Low functional impact.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)
+**Type line**: Creature — Human Wizard
+**Status**: PASS
+
+### Code issues
+No issues found.

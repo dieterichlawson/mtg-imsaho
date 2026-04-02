@@ -68,3 +68,22 @@ No issues found.
 - Actually using regenerate ability (activating and gaining shield): NOT TESTED
 - Regenerate shield persisting after transform back: NOT TESTED
 - Transform back when 2+ spells cast: NOT DIRECTLY TESTED (covered by generic werewolf tests)
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text (front)**: At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back)**: {G}: Regenerate this creature. / At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line (front)**: Creature — Human Shaman Werewolf
+**Type line (back)**: Creature — Werewolf
+**Status**: PASS
+
+### Card Data
+- **Name:** Ulvenwald Mystics / Ulvenwald Primordials -- CORRECT
+- **Mana Cost:** {2}{G}{G} -- CORRECT
+- **Type (front):** Creature — Human Shaman Werewolf -- CORRECT
+- **Type (back):** Creature — Werewolf -- CORRECT
+- **P/T (front):** 3/3 -- CORRECT
+- **P/T (back):** 5/5 -- CORRECT (via dynamic_pt)
+
+### Code issues
+None. Transform condition checks spells_cast_last_turn correctly (0 spells to transform front, any player with 2+ spells to transform back). Back face has {G}: Regenerate activated ability. First-turn guard prevents immediate transform. All data and behavior match oracle.

@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Army of the Damned — {5}{B}{B}{B} sorcery.
-/// Create thirteen 2/2 black Zombie creature tokens. They enter the battlefield tapped.
+/// Create thirteen tapped 2/2 black Zombie creature tokens.
 /// Flashback {7}{B}{B}{B}.
 pub struct ArmyOfTheDamned;
 
@@ -24,7 +24,7 @@ impl CardBehavior for ArmyOfTheDamned {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Create thirteen 2/2 black Zombie creature tokens. They enter the battlefield tapped.\nFlashback {7}{B}{B}{B}".into(),
+            oracle_text: "Create thirteen tapped 2/2 black Zombie creature tokens.\nFlashback {7}{B}{B}{B}".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(7),

@@ -36,6 +36,25 @@ pub struct LegalActions {
     pub castable_spells: Vec<crate::actions::CastableSpell>,
 }
 
+/// Check if Rooftop Storm is on the battlefield and provides a {0} alternative cost
+/// for a Zombie creature spell cast by the given player.
+fn rooftop_storm_applies(state: &GameState, registry: &CardRegistry, card_id: CardId, caster: PlayerId) -> bool {
+    // Check if the spell is a Zombie creature spell.
+    let is_zombie_creature = registry.card_data(card_id).map(|d| {
+        d.card_types.contains(&CardType::Creature)
+            && d.subtypes.iter().any(|s| s == "Zombie")
+    }).unwrap_or(false);
+    if !is_zombie_creature {
+        return false;
+    }
+    // Check if the caster controls a Rooftop Storm on the battlefield.
+    state.objects.values().any(|o| {
+        o.zone == Zone::Battlefield
+            && o.controller == caster
+            && o.name == "Rooftop Storm"
+    })
+}
+
 /// Compute the effective mana cost of a spell after applying cost reduction effects.
 /// Returns a reduced ManaCost (generic portion lowered, colored requirements unchanged).
 pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id: CardId, base_cost: &ManaCost, caster: PlayerId) -> ManaCost {
@@ -79,15 +98,9 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
         }
     }
 
-    // Check for Rooftop Storm: Zombie creature spells cost {0}.
-    if is_creature && subtypes.iter().any(|s| s == "Zombie") {
-        let has_rooftop_storm = state.objects.values().any(|o| {
-            o.zone == Zone::Battlefield && o.controller == caster && o.name == "Rooftop Storm"
-        });
-        if has_rooftop_storm {
-            return ManaCost::free();
-        }
-    }
+    // Rooftop Storm's alternative cost is handled via the alternative_cost field
+    // on CastSpell actions (see rooftop_storm_applies() and action generation).
+    // It is NOT a cost reduction — it's an alternative cost chosen at cast time.
 
     if total_reduction == 0 {
         return base_cost.clone();
@@ -311,14 +324,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         // Collect abilities from this permanent's card and attached auras.
         let mut abilities: Vec<(crate::ids::CardId, crate::cards::ActivatedAbilityDef)> = Vec::new();
         if let Some(behavior) = registry.get(obj_card_id) {
-            for ab in behavior.activated_abilities(state, obj_id) {
+            for ab in behavior.activated_abilities(state, obj_id, registry) {
                 abilities.push((obj_card_id, ab));
             }
         }
         for attached in state.objects.values() {
             if attached.zone == Zone::Battlefield && attached.attached_to == Some(obj_id) {
                 if let Some(behavior) = registry.get(attached.card_id) {
-                    for ab in behavior.activated_abilities(state, obj_id) {
+                    for ab in behavior.activated_abilities(state, obj_id, registry) {
                         abilities.push((attached.card_id, ab));
                     }
                 }
@@ -499,11 +512,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
 
             // Check mana (applying cost reduction effects).
-            if let Some(cost) = &data.cost {
+            // Also check if Rooftop Storm provides an alternative {0} cost.
+            let has_rooftop_alt = rooftop_storm_applies(state, registry, obj.card_id, player);
+            let can_pay_normal = if let Some(cost) = &data.cost {
                 let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                if !mana::can_pay(&player_state.mana_pool, &effective_cost) {
-                    continue;
-                }
+                mana::can_pay(&player_state.mana_pool, &effective_cost)
+            } else {
+                true
+            };
+            if !can_pay_normal && !has_rooftop_alt {
+                continue;
             }
 
             // Check additional costs.
@@ -564,7 +582,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice: Some(sac_id),
-                                exile_count: None,
+                                exile_count: None, alternative_cost: None,
                             });
                         }
                     }
@@ -584,8 +602,48 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice,
-                                exile_count: Some(x),
+                                exile_count: Some(x), alternative_cost: None,
                             });
+                        }
+                    }
+                }
+            }
+
+            // Rooftop Storm: generate alternative {0} cost actions for Zombie creatures.
+            // The player chooses between the normal cost and the free alternative cost.
+            let is_zombie_creature = data.card_types.contains(&CardType::Creature)
+                && data.subtypes.iter().any(|s| s == "Zombie");
+            let has_rooftop_alt = is_zombie_creature && state.objects.values().any(|o| {
+                o.zone == Zone::Battlefield && o.controller == player && o.name == "Rooftop Storm"
+            });
+            let can_pay_normal = if let Some(cost) = &data.cost {
+                let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
+                mana::can_pay(&player_state.mana_pool, &effective_cost)
+            } else {
+                false
+            };
+            if has_rooftop_alt {
+                if can_pay_normal {
+                    // Player can pay normally — add alternative cost copies alongside normal ones.
+                    let alt_actions: Vec<Action> = cast_actions.iter().filter_map(|a| {
+                        if let Action::CastSpell { object_id, targets, sacrifice, exile_count, .. } = a {
+                            Some(Action::CastSpell {
+                                object_id: *object_id,
+                                targets: targets.clone(),
+                                sacrifice: *sacrifice,
+                                exile_count: *exile_count,
+                                alternative_cost: Some(ManaCost::free()),
+                            })
+                        } else {
+                            None
+                        }
+                    }).collect();
+                    cast_actions.extend(alt_actions);
+                } else {
+                    // Player can't pay normally — replace all actions with alternative cost versions.
+                    for action in &mut cast_actions {
+                        if let Action::CastSpell { alternative_cost, .. } = action {
+                            *alternative_cost = Some(ManaCost::free());
                         }
                     }
                 }
@@ -718,6 +776,47 @@ fn can_target_player(state: &GameState, target_player: PlayerId, caster: PlayerI
     true
 }
 
+/// Determine which mode of a ModalChoice was selected, based on the chosen targets.
+/// For each mode, checks if all chosen targets are valid. Returns the first matching
+/// mode index, defaulting to 0 if ambiguous (e.g. empty targets valid for all modes).
+fn detect_modal_choice_mode(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    targets: &[crate::actions::Target],
+    modes: &[crate::cards::TargetRequirement],
+    behavior: &dyn crate::cards::CardBehavior,
+) -> usize {
+    let registry = &CardRegistry::with_all_cards();
+    // For non-empty targets, find the first mode whose valid targets contain all chosen targets.
+    if !targets.is_empty() {
+        for (i, mode_req) in modes.iter().enumerate() {
+            let valid = valid_targets_for_mode(state, caster, spell_id, mode_req, behavior, registry);
+            if targets.iter().all(|t| valid.contains(t)) {
+                return i;
+            }
+        }
+    }
+    // For empty targets (or no mode matched), default to mode 0.
+    0
+}
+
+/// Get valid targets for a single mode requirement, unwrapping UpToTargets.
+fn valid_targets_for_mode(
+    state: &GameState,
+    caster: PlayerId,
+    spell_id: ObjectId,
+    mode_req: &crate::cards::TargetRequirement,
+    behavior: &dyn crate::cards::CardBehavior,
+    registry: &CardRegistry,
+) -> Vec<crate::actions::Target> {
+    use crate::cards::TargetRequirement;
+    match mode_req {
+        TargetRequirement::UpToTargets(_, inner) => valid_targets_for_req(state, caster, spell_id, inner, behavior, registry),
+        other => valid_targets_for_req(state, caster, spell_id, other, behavior, registry),
+    }
+}
+
 /// Generate CastSpell actions with all valid target combinations.
 fn generate_cast_actions_with_targets(
     state: &GameState,
@@ -732,7 +831,7 @@ fn generate_cast_actions_with_targets(
 
     match target_req {
         TargetRequirement::None => {
-            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None }]
+            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None }]
         }
         TargetRequirement::AnyTarget => {
             // Can target any creature on the battlefield or any player.
@@ -745,7 +844,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -757,7 +856,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -774,7 +873,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -790,7 +889,42 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
+                        });
+                    }
+                }
+            }
+            actions
+        }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut actions = Vec::new();
+            // Players
+            for player in &state.players {
+                if !player.lost && can_target_player(state, player.id, caster, registry) {
+                    let target = Target::Player(player.id);
+                    if behavior.is_valid_target(state, caster, &target, registry) {
+                        actions.push(Action::CastSpell {
+                            object_id: spell_id,
+                            targets: vec![target],
+                            sacrifice: None, exile_count: None, alternative_cost: None,
+                        });
+                    }
+                }
+            }
+            // Planeswalkers on the battlefield
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
+                    || registry.card_data(obj.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
+                        .unwrap_or(false);
+                if is_pw {
+                    if !can_be_targeted(state, obj.id, caster, registry) { continue; }
+                    let target = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, caster, &target, registry) {
+                        actions.push(Action::CastSpell {
+                            object_id: spell_id,
+                            targets: vec![target],
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -811,7 +945,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None,
+                        sacrifice: None, exile_count: None, alternative_cost: None,
                     });
                 }
             }
@@ -828,7 +962,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None,
+                        sacrifice: None, exile_count: None, alternative_cost: None,
                     });
                 }
             }
@@ -839,7 +973,7 @@ fn generate_cast_actions_with_targets(
         | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None })
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, alternative_cost: None })
                 .collect()
         }
         TargetRequirement::ModalChoice(ref modes) => {
@@ -861,7 +995,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
-                            sacrifice: None, exile_count: None,
+                            sacrifice: None, exile_count: None, alternative_cost: None,
                         });
                     }
                 }
@@ -891,7 +1025,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: combo,
-                        sacrifice: None, exile_count: None,
+                        sacrifice: None, exile_count: None, alternative_cost: None,
                     });
                 }
             }
@@ -961,6 +1095,27 @@ fn valid_targets_for_req(
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
+        }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut targets: Vec<Target> = state.players.iter()
+                .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, caster, registry))
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect();
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
+                    || registry.card_data(obj.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
+                        .unwrap_or(false);
+                if is_pw && can_be_targeted(state, obj.id, caster, registry) {
+                    let t = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, caster, &t, registry) {
+                        targets.push(t);
+                    }
+                }
+            }
+            targets
         }
         TargetRequirement::GraveyardCard => {
             // All cards in all graveyards.
@@ -1111,6 +1266,12 @@ fn matches_ability_target_filter(
         TargetFilter::HasSubtype(subtype) => {
             obj.subtypes.contains(subtype)
         }
+        TargetFilter::SameNameAsSource => {
+            // Only target creatures with the same name as the source permanent.
+            state.get_object(source_id)
+                .map(|source| source.name == obj.name)
+                .unwrap_or(false)
+        }
         _ => true, // Other filters not commonly used for ability targeting
     }
 }
@@ -1157,6 +1318,27 @@ fn generate_ability_targets(
                 .map(|p| Target::Player(p.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
+        }
+        TargetRequirement::PlayerOrPlaneswalker => {
+            let mut targets: Vec<Target> = state.players.iter()
+                .filter(|p| !p.lost)
+                .filter(|p| can_target_player(state, p.id, controller, registry))
+                .map(|p| Target::Player(p.id))
+                .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+                .collect();
+            for obj in state.all_objects_in_zone(Zone::Battlefield) {
+                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
+                    || registry.card_data(obj.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
+                        .unwrap_or(false);
+                if is_pw && can_be_targeted(state, obj.id, controller, registry) {
+                    let t = Target::Object(obj.id);
+                    if behavior.is_valid_target(state, controller, &t, registry) {
+                        targets.push(t);
+                    }
+                }
+            }
+            targets
         }
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
@@ -1294,7 +1476,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets, sacrifice, exile_count } => {
+        Action::CastSpell { object_id, targets, sacrifice, exile_count, alternative_cost } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback vs cast-from-graveyard.
@@ -1310,7 +1492,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let is_flashback = in_graveyard && !is_cast_from_graveyard;
 
             // Pay the appropriate mana cost (applying cost reduction for non-flashback).
-            let cost = if is_flashback {
+            // If an alternative_cost is provided (e.g. Rooftop Storm's {0}), use it directly.
+            let cost = if let Some(alt) = alternative_cost {
+                alt.clone()
+            } else if is_flashback {
                 // Check until_end_of_turn_flashback for dynamically granted flashback.
                 let dynamic_fb = new_state.until_end_of_turn_flashback.iter()
                     .find(|(id, _)| *id == *object_id)
@@ -1455,6 +1640,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     obj.x_value = Some(x);
                 }
             }
+
+            // For ModalChoice spells, determine and store which mode was chosen
+            // by checking which mode's valid targets match the actual targets.
+            if let Some(behavior) = registry.get(card_id) {
+                if let crate::cards::TargetRequirement::ModalChoice(ref modes) = behavior.target_requirement() {
+                    let chosen = detect_modal_choice_mode(&new_state, player, *object_id, targets, modes, behavior);
+                    if let Some(obj) = new_state.get_object_mut(*object_id) {
+                        obj.chosen_mode = Some(chosen);
+                    }
+                }
+            }
+
             new_state.stack.push(crate::state::StackEntry::Spell(*object_id));
 
             new_state.events.push(GameEvent::SpellCast {
@@ -1504,7 +1701,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             // Find the ability — check the permanent's own card, then attached auras.
             let ability = registry.get(card_id)
-                .and_then(|b| b.activated_abilities(&new_state, *object_id)
+                .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
                     .into_iter().find(|a| a.ability_index == *ability_index))
                 .or_else(|| {
                     // Check attached auras.
@@ -1512,7 +1709,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
                         .find_map(|a| {
                             registry.get(a.card_id)
-                                .and_then(|b| b.activated_abilities(&new_state, *object_id)
+                                .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
                                     .into_iter().find(|ab| ab.ability_index == *ability_index))
                         })
                 });
@@ -1584,7 +1781,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
                 // Find which behavior to call (card itself or attached aura).
                 let behavior_card_id = if registry.get(card_id)
-                    .map(|b| !b.activated_abilities(&new_state, *object_id).is_empty())
+                    .map(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
                     .unwrap_or(false)
                 {
                     card_id
@@ -1594,7 +1791,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
                         .find(|a| {
                             registry.get(a.card_id)
-                                .map(|b| !b.activated_abilities(&new_state, *object_id).is_empty())
+                                .map(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
                                 .unwrap_or(false)
                         })
                         .map(|a| a.card_id)
@@ -2020,8 +2217,13 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let mut final_count = *count;
             if *human_bonus {
                 let is_human = state.get_object(*id)
-                    .and_then(|o| registry.card_data(o.card_id))
-                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .map(|o| {
+                        let obj_has = o.subtypes.iter().any(|s| s == "Human");
+                        let card_has = registry.card_data(o.card_id)
+                            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                            .unwrap_or(false);
+                        obj_has || card_has
+                    })
                     .unwrap_or(false);
                 if is_human {
                     final_count = count * 2;
@@ -2233,6 +2435,195 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.add_counters(*source_id, crate::types::CounterType::PlusOnePlusOne, 1);
             state.log(LogLevel::Event,
                 format!("{}: +1/+1 counter from attack trigger", source_name));
+        }
+        (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
+            // Copy the target creature's characteristics onto the source permanent.
+            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_evil_twin) =
+                match state.get_object(*target_id) {
+                    Some(o) => {
+                        let kw = registry.card_data(o.card_id)
+                            .map(|d| d.keywords.clone())
+                            .unwrap_or_default();
+                        let evil_twin = o.card_state.contains_key("is_evil_twin");
+                        (o.name.clone(), o.power, o.toughness, o.card_id,
+                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone(), evil_twin)
+                    }
+                    None => return,
+                };
+
+            if let Some(obj) = state.get_object_mut(*source_id) {
+                obj.name = name.clone();
+                obj.power = power;
+                obj.toughness = toughness;
+                obj.card_id = card_id;
+                obj.keywords = keywords;
+                obj.card_types = card_types;
+                obj.subtypes = subtypes;
+                obj.colors = colors;
+                // The "is_evil_twin" marker grants the destroy ability and is a
+                // copiable characteristic — if another creature copies an Evil Twin,
+                // it should also gain the activated ability.
+                if is_evil_twin {
+                    obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
+                }
+            }
+            state.log(LogLevel::Event,
+                format!("Evil Twin enters as a copy of {}", name));
+        }
+        (Target::Object(id), PendingEffect::KeepOneDestroyRest {
+            remaining_players, kept_so_far, source_name,
+        }) => {
+            // Record this player's choice.
+            let mut kept = kept_so_far.clone();
+            kept.push(*id);
+            let chosen_name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let chooser = state.get_object(*id).map(|o| o.controller).unwrap_or(PlayerId(0));
+            state.log(LogLevel::Event, format!("{}: p{} keeps {}", source_name, chooser.0, chosen_name));
+
+            if remaining_players.is_empty() {
+                // All players have chosen. Destroy every creature not in the kept set.
+                let all_creatures: Vec<ObjectId> = state.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                    .map(|o| o.id)
+                    .collect();
+                for cid in all_creatures {
+                    if !kept.contains(&cid) {
+                        crate::destruction::try_destroy(state, cid, registry);
+                    }
+                }
+            } else {
+                // Chain to the next player's choice.
+                let next_player = remaining_players[0];
+                let rest = remaining_players[1..].to_vec();
+
+                let options: Vec<crate::actions::Target> = state.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield && o.controller == next_player && o.power.is_some())
+                    .map(|o| crate::actions::Target::Object(o.id))
+                    .collect();
+
+                if options.len() <= 1 {
+                    // 0 or 1 creature — auto-keep and continue.
+                    if let Some(crate::actions::Target::Object(auto_id)) = options.first() {
+                        kept.push(*auto_id);
+                        let auto_name = state.get_object(*auto_id).map(|o| o.name.clone()).unwrap_or_default();
+                        state.log(LogLevel::Event, format!("{}: p{} keeps {} (only creature)", source_name, next_player.0, auto_name));
+                    }
+                    // Continue chaining: apply as if this was a recursive call with rest.
+                    // Use a simple loop to handle all auto-selects.
+                    let mut remaining = rest;
+                    loop {
+                        if remaining.is_empty() {
+                            // All done — destroy the rest.
+                            let all_creatures: Vec<ObjectId> = state.objects.values()
+                                .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                                .map(|o| o.id)
+                                .collect();
+                            for cid in all_creatures {
+                                if !kept.contains(&cid) {
+                                    crate::destruction::try_destroy(state, cid, registry);
+                                }
+                            }
+                            break;
+                        }
+                        let np = remaining[0];
+                        let nr = remaining[1..].to_vec();
+                        let np_options: Vec<crate::actions::Target> = state.objects.values()
+                            .filter(|o| o.zone == Zone::Battlefield && o.controller == np && o.power.is_some())
+                            .map(|o| crate::actions::Target::Object(o.id))
+                            .collect();
+                        if np_options.len() <= 1 {
+                            if let Some(crate::actions::Target::Object(auto_id)) = np_options.first() {
+                                kept.push(*auto_id);
+                                let auto_name = state.get_object(*auto_id).map(|o| o.name.clone()).unwrap_or_default();
+                                state.log(LogLevel::Event, format!("{}: p{} keeps {} (only creature)", source_name, np.0, auto_name));
+                            }
+                            remaining = nr;
+                        } else {
+                            // Present choice to this player.
+                            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                                player: np,
+                                source: ObjectId(0),
+                                choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                                    description: format!("{}: choose a creature you control to keep", source_name),
+                                    options: np_options,
+                                    optional: false,
+                                    effect: PendingEffect::KeepOneDestroyRest {
+                                        remaining_players: nr,
+                                        kept_so_far: kept.clone(),
+                                        source_name: source_name.clone(),
+                                    },
+                                },
+                            });
+                            break;
+                        }
+                    }
+                } else {
+                    // Present choice to the next player.
+                    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                        player: next_player,
+                        source: ObjectId(0),
+                        choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                            description: format!("{}: choose a creature you control to keep", source_name),
+                            options,
+                            optional: false,
+                            effect: PendingEffect::KeepOneDestroyRest {
+                                remaining_players: rest,
+                                kept_so_far: kept,
+                                source_name: source_name.clone(),
+                            },
+                        },
+                    });
+                }
+            }
+        }
+        (Target::Object(curse_id), PendingEffect::ChooseCurseThenAttach { searcher, source }) => {
+            // Player chose which Curse from library — now present the "target player" choice.
+            let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
+                .map(|i| crate::actions::Target::Player(PlayerId(i as u8)))
+                .collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: *searcher,
+                source: *source,
+                choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                    description: "Bitterheart Witch: choose a player to attach the Curse to".into(),
+                    options: player_targets,
+                    optional: false,
+                    effect: PendingEffect::AttachCurseToPlayer {
+                        curse_id: *curse_id,
+                        searcher: *searcher,
+                    },
+                },
+            });
+        }
+        (Target::Player(pid), PendingEffect::AttachCurseToPlayer { curse_id, searcher }) => {
+            let name = state.get_object(*curse_id).map(|o| o.name.clone()).unwrap_or_default();
+            // Remove from library.
+            state.get_player_mut(*searcher).library_order.retain(|&id| id != *curse_id);
+            // Put on battlefield attached to the chosen player.
+            state.move_object(*curse_id, Zone::Battlefield);
+            if let Some(obj) = state.get_object_mut(*curse_id) {
+                obj.attached_to_player = Some(*pid);
+                obj.summoning_sick = false;
+            }
+            state.log(LogLevel::Event,
+                format!("Bitterheart Witch: attached {} to p{}", name, pid.0));
+            // Shuffle library.
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
+        }
+        (Target::Object(target_id), PendingEffect::GrantFlashback { source_name }) => {
+            // Grant flashback to the chosen card until end of turn.
+            if let Some(obj) = state.get_object(*target_id) {
+                let card_id = obj.card_id;
+                let cost = registry.card_data(card_id)
+                    .and_then(|d| d.cost.clone())
+                    .unwrap_or(ManaCost::free());
+                let name = obj.name.clone();
+                state.until_end_of_turn_flashback.push((*target_id, cost));
+                state.log(LogLevel::Event,
+                    format!("{} grants flashback to {}", source_name, name));
+            }
         }
         _ => {}
     }
@@ -2458,7 +2849,7 @@ fn has_castable_with_potential_mana(
     // Also check activated abilities that cost mana.
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
-            for ab in behavior.activated_abilities(state, obj.id) {
+            for ab in behavior.activated_abilities(state, obj.id, registry) {
                 if mana::can_pay(&potential, &ab.cost) {
                     if !ab.requires_tap || !obj.tapped {
                         return true;

@@ -5,7 +5,7 @@ use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Rage Thrower — {5}{R} 4/2 Human Shaman.
-/// Whenever another creature dies, Rage Thrower deals 2 damage to target player or planeswalker.
+/// Whenever another creature dies, this creature deals 2 damage to target player or planeswalker.
 pub struct RageThrower;
 
 impl CardBehavior for RageThrower {
@@ -21,7 +21,7 @@ impl CardBehavior for RageThrower {
             subtypes: vec!["Human".into(), "Shaman".into()],
             power: Some(4),
             toughness: Some(2),
-            oracle_text: "Whenever another creature dies, Rage Thrower deals 2 damage to target player or planeswalker.".into(),
+            oracle_text: "Whenever another creature dies, this creature deals 2 damage to target player or planeswalker.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -40,11 +40,17 @@ impl CardBehavior for RageThrower {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
-        // "Target player" — present choice between all players.
-        let targets: Vec<Target> = state.players.iter()
+        // "Target player or planeswalker" — include both players and planeswalkers.
+        let mut targets: Vec<Target> = state.players.iter()
             .filter(|p| !p.lost)
             .map(|p| Target::Player(p.id))
             .collect();
+        // Add planeswalkers on the battlefield as valid targets.
+        for obj in state.objects.values() {
+            if obj.zone == Zone::Battlefield && obj.card_types.contains(&CardType::Planeswalker) {
+                targets.push(Target::Object(obj.id));
+            }
+        }
         crate::cards::helpers::present_target_choice(
             state, self_id, controller, targets,
             PendingEffect::DealDamage { amount: 2, source_id: self_id, source_name: "Rage Thrower".into() },

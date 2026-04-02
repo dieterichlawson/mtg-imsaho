@@ -18,3 +18,19 @@
 - **NonCombatDamageDealt:** N/A (life gain, not damage)
 
 ## Verdict: PASS -- No issues found
+
+## Audit — 2026-04-02 (final)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.
+**Type line**: Creature — Zombie
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name "Abattoir Ghoul", cost {3}{B}, 3/2, type Creature — Zombie, keywords [FirstStrike], triggered ability on AnyCreatureDies correctly checks `dead_damaged_by` and gains life equal to `dead_toughness`. Behavior is correct.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.

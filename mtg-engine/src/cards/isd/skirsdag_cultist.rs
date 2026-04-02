@@ -28,7 +28,7 @@ impl CardBehavior for SkirsdagCultist {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         // Only available on the battlefield.
         if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             vec![ActivatedAbilityDef {

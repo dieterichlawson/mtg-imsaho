@@ -5,7 +5,7 @@ use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKin
 use crate::types::*;
 
 /// Selhoff Occultist — {2}{U} 2/3 Human Rogue.
-/// Whenever Selhoff Occultist or another creature dies, target player mills a card.
+/// Whenever this creature or another creature dies, target player mills a card.
 pub struct SelhoffOccultist;
 
 impl CardBehavior for SelhoffOccultist {
@@ -21,7 +21,7 @@ impl CardBehavior for SelhoffOccultist {
             subtypes: vec!["Human".into(), "Rogue".into()],
             power: Some(2),
             toughness: Some(3),
-            oracle_text: "Whenever Selhoff Occultist or another creature dies, target player mills a card.".into(),
+            oracle_text: "Whenever this creature or another creature dies, target player mills a card.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

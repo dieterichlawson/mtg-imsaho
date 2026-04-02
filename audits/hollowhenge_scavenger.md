@@ -22,3 +22,29 @@
 None.
 
 ## Verdict: PASS
+
+## Audit: Hollowhenge Scavenger
+**Date:** 2026-04-02
+
+### Oracle Text (Scryfall)
+- **Type:** Creature -- Elemental
+- **Cost:** {3}{G}{G}
+- **P/T:** 4/5
+- **Oracle:** Morbid -- When this creature enters, if a creature died this turn, you gain 5 life.
+
+### Card Data
+- **Name:** Hollowhenge Scavenger -- PASS
+- **Cost:** {3}{G}{G} -- PASS
+- **Types:** Creature -- PASS
+- **Subtypes:** Elemental -- PASS
+- **P/T:** 4/5 -- PASS
+
+### Oracle Text Match
+- Code uses old-style "enters the battlefield" vs current oracle "enters". Cosmetic only.
+- PASS (minor wording variance, no functional impact)
+
+### Behavior Audit
+- **Morbid ETB trigger:** Checks `state.creature_died_this_turn` flag. If true, gains 5 life for controller. Pushes LifeChanged event. -- PASS
+- **Life gain amount:** 5 -- PASS
+
+### Result: PASS

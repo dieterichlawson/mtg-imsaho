@@ -31,3 +31,36 @@
 None found.
 
 ## Verdict: PASS
+
+---
+
+# Audit: Reckless Waif // Merciless Predator (2026-04-02)
+
+## Oracle Text (Scryfall)
+- **Name (front):** Reckless Waif
+- **Mana Cost:** {R}
+- **Type:** Creature — Human Rogue Werewolf
+- **P/T:** 1/1
+- **Oracle Text:** At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+
+- **Name (back):** Merciless Predator
+- **Type:** Creature — Werewolf
+- **P/T:** 3/2
+- **Oracle Text:** At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+
+## Card Data Verification
+- **Name:** Correct ("Reckless Waif" / "Merciless Predator")
+- **Cost:** Correct ({R})
+- **Type:** Correct (Creature)
+- **Subtypes (front):** Correct (Human, Rogue, Werewolf)
+- **Subtypes (back):** Correct (Werewolf)
+- **P/T (front):** Correct (1/1)
+- **P/T (back):** Correct (3/2)
+
+## Behavior Verification
+- **Transform (front to back):** Correct — transforms when `total_spells_last_turn == 0` and not first turn.
+- **Transform (back to front):** Correct — transforms when any player cast 2+ spells last turn.
+- **Dynamic P/T:** Correct — returns (3, 2) when transformed, None otherwise (using base 1/1).
+- **Upkeep trigger:** Correct — checks battlefield zone, calls `should_transform`, toggles `is_transformed` and updates name.
+
+## Result: PASS

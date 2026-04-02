@@ -56,3 +56,47 @@ on_resolve correctly exiles the target card and calls move_spell_after_resolve(o
 Targeting uses TargetRequirement::GraveyardCard which allows targeting any card in any graveyard, matching "target card from a graveyard."
 
 Tests in tier11_cards.rs cover core functionality (exile from graveyard, flashback cost exists). No anti-patterns found.
+
+---
+
+## Audit (2026-04-02)
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+- **Name:** Purify the Grave
+- **Mana Cost:** {W}
+- **Type:** Instant
+- **Oracle Text:** Exile target card from a graveyard. / Flashback {W}
+- **Keywords:** Flashback
+
+### Implementation: `mtg-engine/src/cards/isd/purify_the_grave.rs`
+
+### Checklist
+
+| Field | Oracle | Implementation | Verdict |
+|---|---|---|---|
+| Name | Purify the Grave | `"Purify the Grave"` | MATCH |
+| Mana cost | {W} | `ManaCost::new(vec![ManaSymbol::Colored(Color::White)])` | MATCH |
+| Type | Instant | `vec![CardType::Instant]` | MATCH |
+| Oracle text | "Exile target card from a graveyard.\nFlashback {W}" | `"Exile target card from a graveyard.\nFlashback {W}"` | MATCH |
+| Targeting | "target card from a graveyard" | `TargetRequirement::GraveyardCard` (any card in any graveyard) | MATCH |
+| Effect | Exile target card | `state.move_object(*target_id, Zone::Exile)` | MATCH |
+| Flashback cost | {W} | `flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::White)]))` | MATCH |
+| Keywords | Flashback | `keywords: vec![]` | OK — no `Flashback` variant in `Keyword` enum; flashback modeled via `flashback_cost` field |
+| Spell cleanup | Flashback → exile, otherwise → graveyard | `move_spell_after_resolve` checks `cast_with_flashback` flag | MATCH |
+
+### Tests (`mtg-engine/tests/tier11_cards.rs`)
+- `purify_the_grave_exiles_card_from_graveyard` — puts a card in opponent's graveyard, casts Purify, verifies card moved to Exile zone. PASS.
+- `purify_the_grave_has_flashback` — verifies `flashback_cost` is `Some`. PASS.
+
+### Issues Found
+None. All fields match oracle text. Targeting, exile mechanic, and flashback cost are correctly implemented.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Exile target card from a graveyard. / Flashback {W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {W}, Instant type, flashback cost {W}. Target requirement is `GraveyardCard` which correctly targets any card in any graveyard. Resolution moves the target to Exile zone. `move_spell_after_resolve` handles flashback exile. Simple and correct implementation.

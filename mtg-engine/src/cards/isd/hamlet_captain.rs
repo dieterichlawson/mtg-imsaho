@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Hamlet Captain — {1}{G} 2/2 Human Warrior.
-/// Whenever Hamlet Captain attacks or blocks, other Human creatures you control
+/// Whenever this creature attacks or blocks, other Humans you control
 /// get +1/+1 until end of turn.
 pub struct HamletCaptain;
 
@@ -21,7 +21,7 @@ impl CardBehavior for HamletCaptain {
             subtypes: vec!["Human".into(), "Warrior".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Whenever Hamlet Captain attacks or blocks, other Human creatures you control get +1/+1 until end of turn.".into(),
+            oracle_text: "Whenever this creature attacks or blocks, other Humans you control get +1/+1 until end of turn.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

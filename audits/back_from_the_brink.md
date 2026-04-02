@@ -1,20 +1,15 @@
-# Audit: Back from the Brink
+## Audit — 2026-04-02 (final)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Exile a creature card from your graveyard and pay its mana cost: Create a token that's a copy of that card. Activate only as a sorcery.
+**Type line**: Enchantment
+**Status**: PASS
+### Code issues
+No issues found.
 
-## Oracle (Scryfall)
-- **Name:** Back from the Brink
-- **Cost:** {4}{U}{U}
-- **Type:** Enchantment
-- **Oracle:** Exile a creature card from your graveyard and pay its mana cost: Create a token that's a copy of that card. Activate only as a sorcery.
-- **P/T:** N/A
+## Audit — 2026-04-02 (full-reaudit)
 
-## Implementation: `mtg-engine/src/cards/back_from_the_brink.rs`
-- **Name:** Back from the Brink ✅
-- **Cost:** {4}{U}{U} ✅
-- **Type:** Enchantment ✅
-- **P/T:** N/A ✅
-- **Oracle text:** matches ✅
-- **sorcery_speed_only:** true ✅
-- **Token creation:** uses `create_token_copy` before exiling (correct order) ✅
-- **Activated ability cost:** Uses Generic(2) instead of the exiled card's mana cost — noted as known simplification in doc comment ✅ (documented)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
 
-## Verdict: PASS — no issues found (cost approximation is documented)
+### Code issues
+No issues found.

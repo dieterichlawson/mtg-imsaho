@@ -4,7 +4,7 @@ use crate::ids::ObjectId;
 use crate::state::{GameState, UntilEndOfTurnEffect};
 use crate::types::*;
 
-/// Darkthicket Wolf — {1}{G} 2/2 Wolf. {2}{G}: Darkthicket Wolf gets +2/+2 until end of turn.
+/// Darkthicket Wolf — {1}{G} 2/2 Wolf. {2}{G}: This creature gets +2/+2 until end of turn.
 /// Activate only once each turn.
 pub struct DarkthicketWolf;
 
@@ -21,7 +21,7 @@ impl CardBehavior for DarkthicketWolf {
             subtypes: vec!["Wolf".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. Activate only once each turn.".into(),
+            oracle_text: "{2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -30,7 +30,7 @@ impl CardBehavior for DarkthicketWolf {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,

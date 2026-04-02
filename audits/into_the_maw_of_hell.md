@@ -22,3 +22,30 @@
 None.
 
 ## Verdict: PASS
+
+## Audit: Into the Maw of Hell
+**Date:** 2026-04-02
+
+### Oracle Text (Scryfall)
+- **Type:** Sorcery
+- **Cost:** {4}{R}{R}
+- **Oracle:** Destroy target land. Into the Maw of Hell deals 13 damage to target creature.
+
+### Card Data
+- **Name:** Into the Maw of Hell -- PASS
+- **Cost:** {4}{R}{R} -- PASS
+- **Types:** Sorcery -- PASS
+- **P/T:** None -- PASS
+
+### Oracle Text Match
+- Exact match. -- PASS
+
+### Behavior Audit
+- **Targeting:** TwoTargets requiring a Land permanent and a Creature. -- PASS
+- **is_valid_target:** Checks battlefield zone, allows lands or creatures. -- PASS
+- **on_resolve (land):** Destroys target land via try_destroy. -- PASS
+- **on_resolve (creature):** Deals 13 damage (damage_marked += 13), emits NonCombatDamageDealt event. -- PASS
+- **Independent targets:** Each target checked independently; if one is illegal, the other still resolves. Consistent with rulings. -- PASS
+- **Cleanup:** Calls move_spell_after_resolve. -- PASS
+
+### Result: PASS

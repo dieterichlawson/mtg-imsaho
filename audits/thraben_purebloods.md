@@ -18,3 +18,13 @@
 
 ## Verdict
 **PASS** — Vanilla creature, correctly implemented.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: (none — vanilla creature)
+**Type line**: Creature — Dog
+**Mana Cost**: {4}{W}
+**P/T**: 3/5
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name "Thraben Purebloods", cost {4}{W}, type Creature, subtype Dog, P/T 3/5, no oracle text, no keywords. Vanilla creature correctly implemented.

@@ -92,3 +92,47 @@ No issues found.
 - Ruling (creature cards includes artifact creatures): NOT TESTED (no artifact creature in graveyard test)
 - Reanimating opponent's creatures under your control: tested in `grimoire_reanimates_all_graveyard_creatures` (P1's creature returns under P0 control)
 - Fizzle / empty graveyards: NOT TESTED
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/226/grimoire-of-the-dead
+**Oracle text**: {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.
+{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.
+**Type line**: Legendary Artifact
+**Status**: PASS
+
+### Code issues
+No issues found. The implementation correctly matches the oracle text.
+
+### Tricky interactions checked
+- **Mana cost**: PASS — Oracle says `{4}`, code has `ManaSymbol::Generic(4)`.
+- **Card types**: PASS — Oracle says `Legendary Artifact`, code has `card_types: vec![CardType::Artifact]` and `supertypes: vec![Supertype::Legendary]`.
+- **Ability 0 cost structure**: PASS — Oracle says `{1}, {T}, Discard a card:`. Code has `cost: ManaCost::new(vec![ManaSymbol::Generic(1)])`, `requires_tap: true`, and discard logic in `on_activate_ability` (lines 91-129). When multiple cards in hand, presents `ResolutionChoiceKind::ChooseCardFromHand`; when one card, auto-discards. Both paths call `state.add_counters(object_id, CounterType::Study, 1)`.
+- **Ability 1 cost structure**: PASS — Oracle says `{T}, Remove three study counters from Grimoire of the Dead and sacrifice it:`. Code gates availability on `study_counters >= 3` (line 68), uses `requires_tap: true` and `sacrifice_cost: SacrificeCost::SacrificeThis`. Counter removal is implicit via sacrifice (the object is destroyed, so counters are gone).
+- **Reanimation scope ("all graveyards")**: PASS — Code iterates `state.objects.values()` filtering by `o.zone == Zone::Graveyard` (line 143), which covers all players' graveyards.
+- **Creature card definition**: PASS — Code checks `o.power.is_some() || o.card_types.contains(&CardType::Creature)` (lines 144-146), consistent with ruling [2011-09-22] that creature cards include those with additional types like artifact.
+- **"black Zombies in addition to their other colors and types"**: PASS — Code adds `"Zombie"` to subtypes and `Color::Black` to colors without clearing existing values (lines 157-161). Uses `contains` check to avoid duplicates.
+- **Controller assignment**: PASS — Code sets `obj.controller = controller` (line 155) for each reanimated creature, matching "under your control".
+- **Grimoire excluded from reanimation**: PASS — Explicit `o.id != object_id` filter (line 143), plus Grimoire is an artifact (not a creature) so would not match the creature filter anyway.
+- **Legendary flag set on resolve**: PASS — `on_resolve` sets `obj.is_legendary = true` (line 39).
+- **LLM card knowledge**: PASS — Present in `mtg-player/src/llm.rs` line 140.
+
+### Test coverage
+Five tests in `mtg-engine/tests/tier15_cards.rs`:
+1. `grimoire_discard_presents_choice_and_adds_study_counter` (line 2310) — Tests discard choice with multiple cards in hand.
+2. `grimoire_single_card_in_hand_auto_discards` (line 2351) — Tests auto-discard with one card.
+3. `grimoire_accumulates_three_study_counters` (line 2381) — Tests accumulating 3 study counters across turns.
+4. `grimoire_reanimates_all_graveyard_creatures` (line 2424) — Tests reanimation from both players' graveyards, controller assignment, Zombie subtype, Black color, and Grimoire sacrifice.
+5. `grimoire_ability_1_not_available_without_3_counters` (line 2465) — Tests ability 1 gating on 3 counters.
+
+**Not tested**: artifact creature in graveyard (ruling edge case), empty graveyards, summoning sickness of reanimated creatures.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.\n{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.
+**Type line**: Legendary Artifact
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {4}, Legendary Artifact. Ability 0: {1} + tap + discard (hand choice via AwaitingAction or auto-discard) adds Study counter. Ability 1: tap + sacrifice (SacrificeCost::SacrificeThis), requires 3 study counters. Collects all creature cards from all graveyards (checks power or CardType::Creature per ruling), moves to battlefield under controller, adds Zombie subtype and Black color. is_legendary set on resolve. on_discard_choice callback adds study counter after player chooses. No anti-patterns.

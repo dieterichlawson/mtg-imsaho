@@ -285,7 +285,10 @@ impl GameState {
             is_equipment: false,
             is_transformed: false,
             x_value: None,
+            chosen_mode: None,
             abilities_activated_this_turn: std::collections::HashSet::new(),
+            entering_copy_source: false,
+            state_trigger_on_stack: false,
         };
         self.objects.insert(id, obj);
         id
@@ -390,11 +393,17 @@ impl GameState {
             is_transformed: false,
             x_value: None,
             abilities_activated_this_turn: std::collections::HashSet::new(),
+            chosen_mode: None,
+            entering_copy_source: false,
+            state_trigger_on_stack: false,
         };
         self.objects.insert(id, obj);
+        // Apply entering-battlefield replacement effects (CR 614.1d) for tokens too.
+        self.apply_entering_copy_replacement(id);
+        let controller = self.get_object(id).map(|o| o.controller).unwrap_or(owner);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
             object: id,
-            controller: owner,
+            controller,
         });
         id
     }
@@ -492,12 +501,76 @@ impl GameState {
                 });
             }
             if to == Zone::Battlefield && from_zone != Zone::Battlefield {
+                // Apply entering-battlefield replacement effects (CR 614.1d).
+                // If a permanent with entering_copy_source is on the battlefield
+                // under the same controller, the entering creature becomes a copy
+                // of that source before it officially "enters."
+                self.apply_entering_copy_replacement(id);
+
                 let controller = self.get_object(id).map(|o| o.controller).unwrap_or(PlayerId(0));
                 self.events.push(crate::events::GameEvent::EnteredBattlefield {
                     object: id,
                     controller,
                 });
             }
+        }
+    }
+
+    /// Apply entering-battlefield copy replacement effects (CR 614.1d).
+    /// If any permanent with `entering_copy_source` is on the battlefield under the
+    /// same controller as `entering_id`, the entering creature's characteristics are
+    /// replaced with those of the copy source. The entering creature keeps its own
+    /// identity (ObjectId, owner, controller) but gains the source's copiable values.
+    fn apply_entering_copy_replacement(&mut self, entering_id: ObjectId) {
+        // Get the entering creature's controller and check it's a creature.
+        let (controller, is_creature) = match self.get_object(entering_id) {
+            Some(o) => (o.controller, o.power.is_some()),
+            None => return,
+        };
+        if !is_creature {
+            return;
+        }
+
+        // Find a copy source on the battlefield under the same controller.
+        // The entering creature itself cannot be its own copy source.
+        let source_data: Option<(String, i32, i32, Vec<crate::types::Color>, Vec<crate::types::CardType>, Vec<String>, Vec<crate::types::Keyword>, String, bool)> = self.objects.values()
+            .find(|o| {
+                o.zone == Zone::Battlefield
+                    && o.controller == controller
+                    && o.entering_copy_source
+                    && o.id != entering_id
+            })
+            .map(|source| {
+                (
+                    source.name.clone(),
+                    source.power.unwrap_or(0),
+                    source.toughness.unwrap_or(0),
+                    source.colors.clone(),
+                    source.card_types.clone(),
+                    source.subtypes.clone(),
+                    source.keywords.clone(),
+                    source.instance_oracle_text.clone()
+                        .unwrap_or_else(|| String::new()),
+                    source.entering_copy_source,
+                )
+            });
+
+        if let Some((name, power, toughness, colors, card_types, subtypes, keywords, oracle_text, entering_copy_source)) = source_data {
+            let old_name = self.get_object(entering_id).map(|o| o.name.clone()).unwrap_or_default();
+            if let Some(obj) = self.get_object_mut(entering_id) {
+                obj.name = name.clone();
+                obj.power = Some(power);
+                obj.toughness = Some(toughness);
+                obj.colors = colors;
+                obj.card_types = card_types;
+                obj.subtypes = subtypes;
+                obj.keywords = keywords;
+                obj.instance_continuous_effects = Some(vec![]);
+                obj.instance_oracle_text = Some(oracle_text);
+                obj.entering_copy_source = entering_copy_source;
+            }
+            self.log(LogLevel::Event,
+                format!("{} enters as a copy of {} ({}/{})", old_name, name, power, toughness));
         }
     }
 
@@ -1184,13 +1257,30 @@ pub struct GameObject {
     #[serde(default)]
     pub is_transformed: bool,
 
+    /// Whether a state-triggered ability (CR 603.8) for this object is currently
+    /// on the stack. While true, the trigger won't fire again.
+    #[serde(default)]
+    pub state_trigger_on_stack: bool,
+
     /// Chosen X value for X-cost spells (stored while on the stack).
     #[serde(default)]
     pub x_value: Option<u32>,
 
+    /// Chosen mode index for ModalChoice spells (stored while on the stack).
+    /// Set when a spell with a ModalChoice target requirement is cast.
+    #[serde(default)]
+    pub chosen_mode: Option<usize>,
+
     /// Activated abilities used this turn (for once-per-turn tracking).
     #[serde(default)]
     pub abilities_activated_this_turn: std::collections::HashSet<usize>,
+
+    /// Whether this permanent is an entering-battlefield copy source (replacement effect).
+    /// When true, other creatures entering the battlefield under the same controller
+    /// enter as a copy of this permanent instead of their original form (CR 614.1d).
+    /// Used by Essence of the Wild and similar cards.
+    #[serde(default)]
+    pub entering_copy_source: bool,
 }
 
 /// A player's state.
@@ -1383,6 +1473,30 @@ pub enum PendingEffect {
     DestroyThenCounter { source_id: ObjectId, source_name: String },
     /// Sacrifice the chosen creature (generic sacrifice, e.g. Liliana -2).
     SacrificeCreature { source_name: String },
+    /// Copy the chosen creature onto the source permanent (Evil Twin clone effect).
+    /// The source becomes a copy of the target, except it retains any extra abilities
+    /// stored via card_state markers.
+    CopyCreature { source_id: ObjectId },
+    /// "Each player chooses a creature they control. Destroy the rest."
+    /// The chosen creature is added to `kept_so_far`. If `remaining_players` is non-empty,
+    /// the next player's choice is presented. Once all players have chosen, all creatures
+    /// on the battlefield that aren't in the kept set are destroyed.
+    KeepOneDestroyRest {
+        /// Players still needing to choose (in turn order), after the current chooser.
+        remaining_players: Vec<PlayerId>,
+        /// Creatures already chosen to keep by earlier players.
+        kept_so_far: Vec<ObjectId>,
+        /// The spell that initiated this effect (for logging).
+        source_name: String,
+    },
+    /// Attach a Curse card from library onto the battlefield attached to the chosen player
+    /// (Bitterheart Witch). The curse_id is the library object to move; searcher is the
+    /// controller whose library is shuffled afterwards.
+    AttachCurseToPlayer { curse_id: ObjectId, searcher: PlayerId },
+    /// Two-step Curse selection: player chose a Curse from library, now need to choose a player.
+    ChooseCurseThenAttach { searcher: PlayerId, source: ObjectId },
+    /// Grant flashback to a chosen card until end of turn (Snapcaster Mage).
+    GrantFlashback { source_name: String },
 }
 
 /// Game result.

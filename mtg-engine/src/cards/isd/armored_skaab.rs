@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Armored Skaab — 1/4 for {2}{U}. Zombie Warrior.
-/// When Armored Skaab enters the battlefield, mill four cards.
+/// When this creature enters, mill four cards.
 pub struct ArmoredSkaab;
 
 impl CardBehavior for ArmoredSkaab {
@@ -20,7 +20,7 @@ impl CardBehavior for ArmoredSkaab {
             subtypes: vec!["Zombie".into(), "Warrior".into()],
             power: Some(1),
             toughness: Some(4),
-            oracle_text: "When Armored Skaab enters the battlefield, mill four cards.".into(),
+            oracle_text: "When this creature enters, mill four cards.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

@@ -352,7 +352,7 @@ fn balefire_dragon_sweeps_opponent_creatures() {
 
 // ── Curiosity ─────────────────────────────────────────────────────
 
-/// Curiosity draws a card when enchanted creature deals combat damage to opponent.
+/// Curiosity draws a card when enchanted creature deals combat damage to opponent (player says yes).
 #[test]
 fn curiosity_draw_on_enchanted_creature_combat_damage() {
     let reg = registry();
@@ -382,10 +382,70 @@ fn curiosity_draw_on_enchanted_creature_combat_damage() {
 
     triggers::process_triggers(&mut state, &reg);
 
+    // Should be awaiting a yes/no choice for "you may draw a card".
+    assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
+
+    // Player chooses yes.
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        },
+        &reg,
+    );
+
     let hand_after = state.objects.values()
         .filter(|o| o.zone == Zone::Hand && o.owner == P0)
         .count();
     assert_eq!(hand_after, hand_before + 1, "Should have drawn 1 card from Curiosity");
+}
+
+/// Curiosity does NOT draw a card when the player declines.
+#[test]
+fn curiosity_decline_draw() {
+    let reg = registry();
+    let mut state = game_at_step(Step::CombatDamage, P0);
+
+    // Create a creature and attach Curiosity to it.
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    let curiosity_card_id = reg.get_id_by_name("Curiosity").unwrap();
+    let curiosity = state.create_object(curiosity_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(curiosity).unwrap().name = "Curiosity".into();
+    state.get_object_mut(curiosity).unwrap().attached_to = Some(creature);
+
+    // Give P0 a card in library to draw.
+    let lib_card = state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Library, None, None);
+    state.get_player_mut(P0).library_order.push(lib_card);
+
+    let hand_before = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0)
+        .count();
+
+    // Enchanted creature deals combat damage to opponent.
+    state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {
+        source: creature,
+        target: mtg_engine::events::DamageTarget::Player(P1),
+        amount: 2,
+    });
+
+    triggers::process_triggers(&mut state, &reg);
+
+    // Should be awaiting a yes/no choice.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
+
+    // Player chooses no.
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &mtg_engine::actions::Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(false),
+        },
+        &reg,
+    );
+
+    let hand_after = state.objects.values()
+        .filter(|o| o.zone == Zone::Hand && o.owner == P0)
+        .count();
+    assert_eq!(hand_after, hand_before, "Should NOT have drawn a card when declining");
 }
 
 // ── Stromkirk Patrol ──────────────────────────────────────────────

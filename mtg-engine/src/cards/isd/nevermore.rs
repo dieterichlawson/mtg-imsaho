@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Nevermore — {1}{W}{W} Enchantment.
-/// As Nevermore enters the battlefield, choose a nonland card name.
+/// As this enchantment enters, choose a nonland card name.
 /// Spells with the chosen name can't be cast.
 ///
 /// Stores the chosen card name in instance_oracle_text (prefixed with "nevermore:").
@@ -25,7 +25,7 @@ impl CardBehavior for Nevermore {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "As Nevermore enters the battlefield, choose a nonland card name.\nSpells with the chosen name can't be cast.".into(),
+            oracle_text: "As this enchantment enters, choose a nonland card name.\nSpells with the chosen name can't be cast.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

@@ -4,8 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Champion of the Parish — {W} 1/1 Human Soldier.
-/// Whenever another Human creature enters the battlefield under your control,
-/// put a +1/+1 counter on Champion of the Parish.
+/// Whenever another Human you control enters, put a +1/+1 counter on this creature.
 pub struct ChampionOfTheParish;
 
 impl CardBehavior for ChampionOfTheParish {
@@ -20,7 +19,7 @@ impl CardBehavior for ChampionOfTheParish {
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Whenever another Human creature enters the battlefield under your control, put a +1/+1 counter on Champion of the Parish.".into(),
+            oracle_text: "Whenever another Human you control enters, put a +1/+1 counter on this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

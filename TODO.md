@@ -1,35 +1,23 @@
-# TODO
+# TODO — ISD Audit Issues
 
-## Game state serialization
-Add the ability to serialize a game state to a file and resume from it. This would let us set up specific board/hand/mana configurations to test particular interactions (e.g. Counterspell with 2 untapped Islands and an opponent's spell on the stack) without relying on RNG to produce the right conditions.
+## Real Bugs (6)
 
-## Audit issues
+### ~~Charmbreaker Devils~~ — FALSE POSITIVE (triggers.rs already gates SpellCast on instant/sorcery)
 
-### Liliana of the Veil (5 issues)
-- +1: auto-picks first card from hand instead of letting each player choose their discard
-- -2: no targeting (should target a player), auto-picks creature to sacrifice instead of letting the targeted player choose
-- -6: completely simplified — no pile division or player choice, just sacrifices ~half of opponent's permanents
-- -6: `half.max(1)` forces at least 1 sacrifice; per rulings a pile can be empty
-- Oracle text field says "pile of your choice" but oracle says "pile of their choice"
+### ~~Back from the Brink~~ — FIXED (exile now happens before token creation)
 
-### Grimgrin, Corpse-Born (5 issues)
-- Sacrifice ability auto-selects creature instead of letting player choose
-- Sacrifice cost not declared in ActivatedAbilityDef (uses SacrificeCost::None)
-- Attack trigger auto-targets instead of letting player choose which creature to destroy
-- +1/+1 counter added unconditionally even when attack trigger has no valid target
-- Attack trigger uses `state.opponent()` instead of combat state for defending player
+### ~~Bitterheart Witch~~ — FIXED (player now chooses which Curse via ChooseTarget chain)
 
-### Instigator Gang (1 issue — engine-level)
-- Doesn't buff itself when attacking — `AnyCreatureAttacks` watcher in `triggers.rs:708` excludes the attacker from seeing its own attack event. Affects both Instigator Gang (+1/+0) and Wildblood Pack (+3/+0).
+### ~~Mirror-Mad Phantasm~~ — FIXED (now shuffles library after inserting card)
 
-### Screeching Bat (1 issue)
-- "You may" upkeep transform auto-decided — always pays and transforms when mana available
+### ~~Snapcaster Mage~~ — FIXED (player choice via ChooseTarget + GrantFlashback effect)
 
-### Cloistered Youth (3 issues)
-- "You may" upkeep transform auto-decided — always transforms with no player choice
-- Front face declares EndStep triggered_ability that belongs only to back face (Unholy Fiend), causing phantom trigger
-- Back face declares empty triggered_abilities, so Upkeep trigger dispatches to front face logic spuriously
+### ~~Into the Maw of Hell~~ — FIXED (added damaged_by.push)
 
-### Fiend Hunter (1 issue)
-- LLM card knowledge (`mtg-player/src/llm.rs:102`) says "exiles an opponent's creature" but card targets any creature and exile is optional ("you may")
+## Behavioral Edge Cases (3)
 
+### ~~Festerhide Boar~~ — FIXED (moved to on_resolve, counters added as part of entering)
+
+### ~~Splinterfright~~ — NOT A BUG (Some(0) is engine convention for */* creatures; needed for power.is_some() creature detection)
+
+### ~~Unbreathing Horde~~ — FIXED (counts graveyard before moving to battlefield in on_resolve)

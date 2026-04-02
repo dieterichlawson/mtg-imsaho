@@ -4,9 +4,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Snapcaster Mage — {1}{U} 2/1 Human Wizard. Flash.
-/// When Snapcaster Mage enters the battlefield, target instant or sorcery card
-/// in your graveyard gains flashback until end of turn. The flashback cost is
-/// equal to its mana cost.
+/// When this creature enters, target instant or sorcery card in your graveyard
+/// gains flashback until end of turn. The flashback cost is equal to its mana cost.
 ///
 /// Simplified: On ETB, finds the best instant/sorcery in the graveyard and
 /// grants it flashback until end of turn.
@@ -25,7 +24,7 @@ impl CardBehavior for SnapcasterMage {
             subtypes: vec!["Human".into(), "Wizard".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: "Flash\nWhen Snapcaster Mage enters the battlefield, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.".into(),
+            oracle_text: "Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.".into(),
             keywords: vec![Keyword::Flash],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -42,34 +41,46 @@ impl CardBehavior for SnapcasterMage {
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Find an instant or sorcery in the graveyard that doesn't already have flashback.
-        let target = state.objects.values()
+        // Find all eligible instant/sorcery cards in graveyard without innate flashback.
+        let eligible: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller)
-            .filter_map(|o| {
-                registry.card_data(o.card_id).and_then(|d| {
-                    let is_instant_or_sorcery = d.card_types.contains(&CardType::Instant)
-                        || d.card_types.contains(&CardType::Sorcery);
-                    if is_instant_or_sorcery && d.flashback_cost.is_none() {
-                        // Prefer the highest mana value card (most powerful to reuse).
-                        let cost = d.cost.as_ref().map(|c| c.mana_value()).unwrap_or(0);
-                        Some((o.id, d.cost.clone().unwrap_or(ManaCost::free()), cost))
-                    } else {
-                        None
-                    }
-                })
+            .filter(|o| {
+                registry.card_data(o.card_id)
+                    .map(|d| {
+                        (d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
+                            && d.flashback_cost.is_none()
+                    })
+                    .unwrap_or(false)
             })
-            .max_by_key(|(_, _, mv)| *mv);
+            .filter(|o| !state.until_end_of_turn_flashback.iter().any(|(id, _)| *id == o.id))
+            .map(|o| o.id)
+            .collect();
 
-        if let Some((target_id, cost, _)) = target {
-            // Also check if it's already been granted dynamic flashback.
-            let already_has = state.until_end_of_turn_flashback.iter()
-                .any(|(id, _)| *id == target_id);
-            if !already_has {
-                state.until_end_of_turn_flashback.push((target_id, cost));
-                let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.log(crate::state::LogLevel::Event,
-                    format!("Snapcaster Mage grants flashback to {}", name));
-            }
+        if eligible.is_empty() {
+            return;
+        }
+
+        if eligible.len() == 1 {
+            // Only one legal option — auto-select.
+            let target_id = eligible[0];
+            let cost = registry.card_data(state.get_object(target_id).unwrap().card_id)
+                .and_then(|d| d.cost.clone())
+                .unwrap_or(ManaCost::free());
+            state.until_end_of_turn_flashback.push((target_id, cost));
+            let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event,
+                format!("Snapcaster Mage grants flashback to {}", name));
+        } else {
+            // Multiple eligible — player chooses via ChooseTarget.
+            let targets: Vec<crate::actions::Target> = eligible.iter()
+                .map(|&id| crate::actions::Target::Object(id))
+                .collect();
+            crate::cards::helpers::present_target_choice(
+                state, object_id, controller, targets,
+                crate::state::PendingEffect::GrantFlashback { source_name: "Snapcaster Mage".into() },
+                "Snapcaster Mage: choose an instant or sorcery to grant flashback",
+                false,
+            );
         }
     }
 }

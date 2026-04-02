@@ -19,7 +19,7 @@ impl CardBehavior for SilentDeparture {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Return target creature to its owner's hand.".into(),
+            oracle_text: "Return target creature to its owner's hand.\nFlashback {4}{U}".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(4), ManaSymbol::Colored(Color::Blue)])),
             continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],

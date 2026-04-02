@@ -21,3 +21,29 @@
 None found.
 
 ## Verdict: PASS
+
+---
+
+# Audit: Rakish Heir (2026-04-02)
+
+## Oracle Text (Scryfall)
+- **Name:** Rakish Heir
+- **Mana Cost:** {2}{R}
+- **Type:** Creature — Vampire
+- **P/T:** 2/2
+- **Oracle Text:** Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on it.
+
+## Card Data Verification
+- **Name:** Correct ("Rakish Heir")
+- **Cost:** Correct ({2}{R})
+- **Type:** Correct (Creature)
+- **Subtypes:** Correct (Vampire)
+- **P/T:** Correct (2/2)
+- **Keywords:** Correct (none)
+
+## Behavior Verification
+- **Trigger:** Correct — `AnyCombatDamageToPlayer` hook fires for any combat damage to a player.
+- **Vampire check:** Correct — verifies the damage source is a Vampire controlled by the same controller as Rakish Heir.
+- **Counter placement:** Correct — places +1/+1 counter on the source creature (the Vampire that dealt damage) via `state.add_counters(source_id, CounterType::PlusOnePlusOne, 1)`.
+
+## Result: PASS

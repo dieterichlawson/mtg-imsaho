@@ -1,7 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::engine::draw_cards;
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Curiosity — {U} Aura. Enchant creature.
@@ -61,9 +62,24 @@ impl CardBehavior for Curiosity {
         if damaged_player == controller {
             return;
         }
-        // "You may draw a card" — auto-draw in 2-player (always beneficial).
-        crate::engine::draw_cards(state, controller, 1);
-        state.log(crate::state::LogLevel::Event,
-            "Curiosity: drew a card".into());
+        // "You may draw a card" — present choice to the player.
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description: "Curiosity: draw a card?".into(),
+                source_card: self_id,
+            },
+        });
+    }
+
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+        if !yes {
+            return;
+        }
+        let controller = state.get_object(self_id)
+            .map(|o| o.controller).unwrap_or(PlayerId(0));
+        draw_cards(state, controller, 1);
+        state.log(LogLevel::Event, "Curiosity: drew a card".into());
     }
 }

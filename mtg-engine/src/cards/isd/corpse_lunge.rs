@@ -50,6 +50,7 @@ impl CardBehavior for CorpseLunge {
                     if let Some(obj) = state.get_object_mut(*target_id) {
                         if obj.zone == Zone::Battlefield {
                             obj.damage_marked += damage;
+                            obj.damaged_by.push(object_id);
                             let name = obj.name.clone();
                             state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                                 source: object_id,

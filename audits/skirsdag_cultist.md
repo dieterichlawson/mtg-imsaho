@@ -20,3 +20,21 @@
 - **Damage to player:** reduces life by 2, emits NonCombatDamageDealt + LifeChanged events ✅
 
 ## Verdict: PASS -- no issues found
+
+## Audit — 2026-04-02
+
+**Oracle Text:**
+> {R}, {T}, Sacrifice a creature: This creature deals 2 damage to any target.
+
+**Card Data:**
+- Name: Skirsdag Cultist — correct
+- Cost: {2}{R}{R} — correct
+- Type: Creature — Human Shaman — correct
+- P/T: 2/2 — correct
+
+**Behavior:**
+- Activated ability: {R} mana cost, requires_tap: true, SacrificeCost::SacrificeCreature, AnyTarget — correct
+- on_activate_ability deals 2 damage to target (creature or player) — correct
+- Emits NonCombatDamageDealt and LifeChanged events — correct
+
+**Result: PASS**

@@ -7,9 +7,9 @@ use crate::types::*;
 
 /// Civilized Scholar {2}{U} 0/1 Human Advisor // Homicidal Brute 5/1 Human Mutant.
 /// {T}: Draw a card, then discard a card. If a creature card is discarded this way,
-/// untap Civilized Scholar, then transform Civilized Scholar.
-/// Homicidal Brute: At the beginning of your end step, if Homicidal Brute didn't attack
-/// this turn, transform Homicidal Brute.
+/// untap this creature, then transform it.
+/// Homicidal Brute: At the beginning of your end step, if this creature didn't attack
+/// this turn, tap this creature, then transform it.
 ///
 /// The draw-discard is implemented as an activated ability. After drawing, the player
 /// chooses which card to discard. If the discarded card is a creature, Civilized Scholar
@@ -30,7 +30,7 @@ impl CardBehavior for CivilizedScholar {
             subtypes: vec!["Human".into(), "Advisor".into()],
             power: Some(0),
             toughness: Some(1),
-            oracle_text: "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap Civilized Scholar, then transform Civilized Scholar.".into(),
+            oracle_text: "{T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -57,7 +57,7 @@ impl CardBehavior for CivilizedScholar {
             subtypes: vec!["Human".into(), "Mutant".into()],
             power: Some(5),
             toughness: Some(1),
-            oracle_text: "At the beginning of your end step, if Homicidal Brute didn't attack this turn, transform Homicidal Brute.".into(),
+            oracle_text: "At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -74,7 +74,7 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield && !o.is_transformed => o,
             _ => return vec![],

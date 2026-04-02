@@ -1,22 +1,15 @@
-# Audit: Avacyn's Pilgrim
+## Audit — 2026-04-02 (final)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {T}: Add {W}.
+**Type line**: Creature — Human Monk
+**Status**: PASS
+### Code issues
+No issues found.
 
-## Oracle (Scryfall)
-- **Name:** Avacyn's Pilgrim
-- **Cost:** {G}
-- **Type:** Creature — Human Monk
-- **Oracle:** {T}: Add {W}.
-- **P/T:** 1/1
+## Audit — 2026-04-02 (full-reaudit)
 
-## Implementation: `mtg-engine/src/cards/avacyns_pilgrim.rs`
-- **Name:** Avacyn's Pilgrim ✅
-- **Cost:** {G} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Monk ✅
-- **P/T:** 1/1 ✅
-- **Oracle text:** matches ✅
-- **Mana ability:** {T}: Add {W} ✅
-- **Produced mana:** White ✅
-- **requires_tap:** true ✅
-- **Summoning sickness check:** present in mana_abilities ✅
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
 
-## Verdict: PASS — no issues found
+### Code issues
+No issues found.

@@ -19,4 +19,90 @@
 - **Oracle text note:** Implementation oracle text says "then shuffle your library" vs Scryfall "then shuffle" (minor wording modernization, not functional)
 
 ## Issues
-None
+
+### Issue 1: Morbid choice is forced — missing "you may" optionality (Medium)
+
+**Oracle text:** "You may put that card onto the battlefield **instead** of putting it into your hand if a creature died this turn."
+
+**Ruling (2011-09-22):** "You can choose to put the basic land card into your hand even if a creature died the turn you cast Caravan Vigil."
+
+**Code (caravan_vigil.rs lines 58-63):**
+```rust
+if state.creature_died_this_turn {
+    // Morbid: "You may put that card onto the battlefield instead."
+    // Auto-choose battlefield (strictly better in almost all cases).
+    state.move_object(land_id, Zone::Battlefield);
+```
+
+The implementation always puts the land onto the battlefield when morbid is active. The comment acknowledges this ("Auto-choose battlefield (strictly better in almost all cases)") but it removes player agency. There are game situations where putting a land into hand is preferable (e.g., opponent has an Ankh of Mishra, or player wants to avoid triggering landfall for the opponent). The player should be given the choice.
+
+### Issue 2 (Engine Limitation): Library search is deterministic, not player-chosen
+
+The code uses `.find()` (line 39) to pick the first basic land in library order. Ideally the player should choose which basic land to get. This is a known engine-wide limitation for library search effects.
+
+### Issue 3 (Engine Limitation): No reveal step
+
+Oracle says "reveal it" but the engine has no reveal mechanism. Known limitation.
+
+## Resolve Behavior
+- `move_spell_after_resolve` is called (line 83). Correct for a sorcery.
+- Library is shuffled after the search (lines 71-73, 78-80), including when no card is found. Correct.
+
+## Tests
+- `caravan_vigil_finds_basic_land` — verifies non-morbid puts land in hand. Correct.
+- `caravan_vigil_morbid_puts_land_on_battlefield` — verifies morbid puts land on battlefield. Tests the current (forced) behavior, not the "you may" choice.
+- No test for the case where morbid is active but the player chooses hand instead.
+
+## Verdict
+One functional bug (forced morbid instead of optional). Two engine-limitation notes.
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.
+Morbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+
+The major issue from the prior audit (forced morbid) has been fixed:
+
+1. **Morbid "you may" choice: FIXED.** Lines 58-75 now present a `YesNo` choice to the player via `AwaitingAction::ResolutionChoice` when `creature_died_this_turn` is true. The `on_yes_no_choice` handler (lines 99-126) correctly puts the land on the battlefield if yes, or into hand if no. This matches the oracle text "You may put that card onto the battlefield instead" and the ruling "You can choose to put the basic land card into your hand even if a creature died."
+
+2. **Card data correct.** Cost `{G}` (line 18), type Sorcery (line 21).
+
+3. **Non-morbid path correct.** Lines 77-81 put the land into hand when no creature died this turn.
+
+4. **Library shuffle correct.** Shuffle occurs in all paths: non-morbid (lines 84-86), no-land-found (lines 91-93), and after yes/no choice (lines 121-123).
+
+5. **Oracle text field (minor).** Code says "then shuffle your library" vs oracle "then shuffle". This is a modernized wording difference with no gameplay impact.
+
+6. **Engine limitations unchanged.** Library search is deterministic (`.find()` picks first match), and there is no reveal mechanism.
+
+### Tricky interactions checked
+- Empty library (no basic land found): handled at line 87, still shuffles.
+- Morbid choice deferred correctly: `move_spell_after_resolve` is called only after the choice is made (line 125), not before.
+
+### Test coverage
+- `caravan_vigil_finds_basic_land` -- non-morbid path.
+- `caravan_vigil_morbid_puts_land_on_battlefield` -- morbid path.
+- No test for morbid-active-but-player-chooses-hand path (would be good to add).
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nMorbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.
+**Type line**: Sorcery
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text mismatch**: Oracle says "then shuffle" but code oracle_text says "then shuffle your library." The oracle has been updated to modern template wording. No gameplay impact — behavior is correct.
+
+## Audit — 2026-04-02 (final-pass)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found. Oracle text field matches current Scryfall template.

@@ -1,23 +1,26 @@
 # Audit: Paraselene
 
-## Official Oracle
+## Reference (Scryfall/API)
 - **Name:** Paraselene
-- **Cost:** {2}{W}
+- **Mana Cost:** {2}{W}
 - **Type:** Sorcery
-- **Oracle Text:** Destroy all enchantments. You gain 1 life for each enchantment destroyed this way.
-- **P/T:** N/A
+- **Oracle:** Destroy all enchantments. You gain 1 life for each enchantment destroyed this way.
 
-## Implementation Review
-- **Name:** OK
-- **Cost:** {2}{W} — OK
-- **Type:** Sorcery — OK
-- **Oracle Text:** Matches — OK
-- **P/T:** N/A — OK
-- **on_resolve:** Finds all enchantments on battlefield, uses try_destroy for each, counts successful destructions, gains that much life — OK
-- **Life gain event:** Emits LifeChanged event — OK
-- **Indestructible handling:** Uses try_destroy which respects indestructible — OK
-
-## Issues
-None found.
+## Implementation: `paraselene.rs`
+- **Name:** Paraselene -- CORRECT
+- **Mana Cost:** {2}{W} -- CORRECT
+- **Type:** Sorcery -- CORRECT
+- **P/T:** None -- CORRECT
+- **Keywords:** None -- CORRECT
+- **oracle_text field:** Matches oracle -- CORRECT
+- **Behavior:** Finds all enchantments on battlefield, calls try_destroy on each, counts successful destructions, gains that much life for controller -- CORRECT
 
 ## Verdict: PASS
+
+## Audit -- 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Destroy all enchantments. You gain 1 life for each enchantment destroyed this way.
+**Type line**: Sorcery
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name, cost {2}{W}, type Sorcery, destroys all enchantments and gains 1 life per enchantment destroyed. Correctly uses try_destroy and checks DestroyResult::Died to count only actually destroyed enchantments. Behavior is correct.

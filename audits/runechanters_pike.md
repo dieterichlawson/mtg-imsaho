@@ -53,3 +53,27 @@ No issues found.
 - X updates dynamically when cards enter/leave graveyard (ruling): `tier9_cards.rs:runechanters_pike_grants_first_strike_and_power_bonus` (adds cards to GY and checks updated power)
 - 0 instants/sorceries gives +0/+0: `tier9_cards.rs:runechanters_pike_grants_first_strike_and_power_bonus` (checks base power before adding GY cards)
 - Opponent's instant/sorcery cards not counted: NOT TESTED
+
+## Audit - 2026-04-02
+
+### Oracle Text (Scryfall)
+- **Name:** Runechanter's Pike
+- **Mana Cost:** {2}
+- **Type:** Artifact — Equipment
+- **Oracle Text:** Equipped creature has first strike and gets +X/+0, where X is the number of instant and sorcery cards in your graveyard. / Equip {2}
+
+### Card Data Audit
+- **Name:** Correct ("Runechanter's Pike")
+- **Cost:** Correct ({2} = Generic(2))
+- **Types:** Correct (Artifact, subtype Equipment)
+- **Oracle Text String:** Correct
+- **Keywords:** No keywords listed in code; first strike is granted via continuous effect to attached creature, not an intrinsic keyword. Acceptable.
+
+### Behavior Audit
+- **First strike:** Granted via `ContinuousEffect::GrantKeyword { keyword: Keyword::FirstStrike, scope: EffectScope::Attached }`. Correct.
+- **+X/+0 (instant/sorcery count):** `dynamic_pt` counts instants and sorceries in the controller's graveyard. Used as an attached source so the value is added to the creature's P/T. Correct.
+- **Equip {2}:** Activated ability with Generic(2) cost, sorcery-speed only, targets creature you control. Correct.
+- **Equipment behavior:** `on_resolve` sets `is_equipment = true` and moves to battlefield. `on_activate_ability` sets `attached_to`. Correct.
+
+### Result
+**PASS**

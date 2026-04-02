@@ -5,7 +5,7 @@ use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Tribute to Hunger — {2}{B} Instant.
-/// Target opponent sacrifices a creature. You gain life equal to that creature's toughness.
+/// Target opponent sacrifices a creature of their choice. You gain life equal to that creature's toughness.
 pub struct TributeToHunger;
 
 impl CardBehavior for TributeToHunger {
@@ -21,7 +21,7 @@ impl CardBehavior for TributeToHunger {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Target opponent sacrifices a creature. You gain life equal to that creature's toughness.".into(),
+            oracle_text: "Target opponent sacrifices a creature of their choice. You gain life equal to that creature's toughness.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

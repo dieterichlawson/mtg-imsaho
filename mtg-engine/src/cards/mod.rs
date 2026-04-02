@@ -191,6 +191,8 @@ pub enum TargetFilter {
     HasSubtype(String),
     /// "Another" — excludes the source permanent from valid targets.
     Another,
+    /// Only creatures with the same name as the source permanent (Evil Twin).
+    SameNameAsSource,
 }
 
 impl std::fmt::Display for TargetFilter {
@@ -218,6 +220,7 @@ impl std::fmt::Display for TargetFilter {
             }
             TargetFilter::HasSubtype(subtype) => write!(f, "{}", subtype),
             TargetFilter::Another => write!(f, "another"),
+            TargetFilter::SameNameAsSource => write!(f, "with the same name"),
             TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
                 let mut parts: Vec<String> = subtypes.clone();
                 for t in card_types {
@@ -246,6 +249,8 @@ pub enum TargetRequirement {
     CreatureWithFilter(TargetFilter),
     /// Target a player only (Lava Axe)
     PlayerOnly,
+    /// Target a player or planeswalker (Stensia Bloodhall)
+    PlayerOrPlaneswalker,
     /// Target a spell on the stack (Counterspell)
     Spell,
     /// Target any permanent on the battlefield matching a filter (Naturalize, Bramblecrush)
@@ -381,6 +386,11 @@ pub trait CardBehavior: Send + Sync {
     /// For DFCs: check if the transform condition is met (called during upkeep for werewolves).
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool { false }
 
+    /// Called when a state-triggered ability (CR 603.8) for this permanent resolves.
+    /// State-triggered abilities check a condition continuously and trigger when the
+    /// condition is first true. They don't trigger again while already on the stack.
+    fn on_state_trigger(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+
     /// Called when this permanent leaves the battlefield (moves to any other zone).
     fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 
@@ -397,7 +407,7 @@ pub trait CardBehavior: Send + Sync {
     fn on_activate_mana_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
 
     /// List of non-mana activated abilities this permanent has.
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![]
     }
 

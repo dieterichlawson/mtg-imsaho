@@ -1,23 +1,16 @@
-# Audit: Balefire Dragon
+## Audit — 2026-04-02 (final)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+Whenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls.
+**Type line**: Creature — Dragon
+**Status**: PASS
+### Code issues
+No issues found.
 
-## Oracle (Scryfall)
-- **Name:** Balefire Dragon
-- **Cost:** {5}{R}{R}
-- **Type:** Creature — Dragon
-- **Oracle:** Flying. Whenever Balefire Dragon deals combat damage to a player, it deals that much damage to each creature that player controls.
-- **P/T:** 6/6
+## Audit — 2026-04-02 (full-reaudit)
 
-## Implementation: `mtg-engine/src/cards/balefire_dragon.rs`
-- **Name:** Balefire Dragon ✅
-- **Cost:** {5}{R}{R} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Dragon ✅
-- **P/T:** 6/6 ✅
-- **Keywords:** Flying ✅
-- **Triggered ability:** CombatDamageToPlayer ✅
-- **on_combat_damage_to_player:** deals `amount` damage to each creature damaged player controls ✅
-- **Damage is non-combat:** Uses `damage_marked` + `NonCombatDamageDealt` event ✅
-- **damaged_by tracking:** pushes `self_id` ✅
-- **Zone check:** checks self is on battlefield ✅
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
 
-## Verdict: PASS — no issues found
+### Code issues
+No issues found.

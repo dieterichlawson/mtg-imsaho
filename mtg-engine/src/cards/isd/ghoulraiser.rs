@@ -6,8 +6,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Ghoulraiser — {1}{B}{B} 2/2 Zombie.
-/// When Ghoulraiser enters the battlefield, return a Zombie creature card at random
-/// from your graveyard to your hand.
+/// When this creature enters, return a Zombie card at random from your graveyard
+/// to your hand.
 pub struct Ghoulraiser;
 
 impl CardBehavior for Ghoulraiser {
@@ -24,7 +24,7 @@ impl CardBehavior for Ghoulraiser {
             subtypes: vec!["Zombie".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "When Ghoulraiser enters the battlefield, return a Zombie creature card at random from your graveyard to your hand.".into(),
+            oracle_text: "When this creature enters, return a Zombie card at random from your graveyard to your hand.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -44,17 +44,13 @@ impl CardBehavior for Ghoulraiser {
             _ => return,
         };
 
-        // Find Zombie creature cards in graveyard.
+        // Find Zombie cards in graveyard (not restricted to creatures).
         let mut zombies: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| {
-                let is_creature = registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                    .unwrap_or(o.power.is_some());
-                let is_zombie = registry.card_data(o.card_id)
+                registry.card_data(o.card_id)
                     .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                    .unwrap_or(false);
-                is_creature && is_zombie
+                    .unwrap_or(false)
             })
             .map(|o| o.id)
             .collect();

@@ -1,16 +1,16 @@
 use crate::actions::Target;
+use crate::cards::helpers;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Ludevic's Test Subject {1}{U} 0/3 Lizard // Ludevic's Abomination 13/13 Lizard Horror
+/// Ludevic's Test Subject {1}{U} 0/3 Lizard Egg // Ludevic's Abomination 13/13 Lizard Horror
 /// with Trample.
-/// {1}{U}: Put a hatchling counter on Ludevic's Test Subject. Then if there are five or more
-/// hatchling counters on it, remove all of them and transform Ludevic's Test Subject.
+/// {1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters
+/// on it, remove all of them and transform it.
 ///
-/// Implementation: Uses card_state to track hatchling counters since we don't have a
-/// Hatchling counter type. We store the count as ObjectId(count).
+/// Implementation: Uses card_state to track hatchling counters. We store the count as ObjectId(count).
 pub struct LudevicsTestSubject;
 
 impl CardBehavior for LudevicsTestSubject {
@@ -26,7 +26,7 @@ impl CardBehavior for LudevicsTestSubject {
             subtypes: vec!["Lizard".into(), "Egg".into()],
             power: Some(0),
             toughness: Some(3),
-            oracle_text: "Defender\n{1}{U}: Put a hatchling counter on Ludevic's Test Subject. Then if there are five or more hatchling counters on it, remove all of them and transform Ludevic's Test Subject.".into(),
+            oracle_text: "Defender\n{1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.".into(),
             keywords: vec![Keyword::Defender],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -61,7 +61,7 @@ impl CardBehavior for LudevicsTestSubject {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield && !o.is_transformed => o,
             _ => return vec![],
@@ -82,7 +82,11 @@ impl CardBehavior for LudevicsTestSubject {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        // If already transformed, this ability shouldn't do anything (back face has no activated abilities).
+        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+            return;
+        }
         // Add a hatchling counter.
         let current = state.get_object(object_id)
             .and_then(|o| o.card_state.get("hatchling_counters"))
@@ -94,9 +98,8 @@ impl CardBehavior for LudevicsTestSubject {
             // Remove all hatchling counters and transform.
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.card_state.remove("hatchling_counters");
-                obj.is_transformed = true;
-                obj.name = "Ludevic's Abomination".into();
             }
+            helpers::apply_transform(state, object_id, registry);
             state.log(crate::state::LogLevel::Event,
                 "Ludevic's Test Subject transforms into Ludevic's Abomination (13/13 Trample)!".into());
         } else {

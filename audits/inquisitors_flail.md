@@ -338,3 +338,124 @@ No anti-patterns detected. Not in LLM card knowledge section.
 - Equip ability: `mtg-engine/tests/tier9_cards.rs:259` (inquisitors_flail_equip_ability)
 - Trample + Flail divide-then-double: NOT TESTED (verified correct in combat.rs code)
 - Multiple Flails incoming damage stacking: NOT TESTED
+
+---
+
+## Audit 7 — 2026-04-02
+
+### Oracle text (Scryfall, cached 2026-04-01)
+```
+Name: Inquisitor's Flail
+Mana Cost: {2}
+Type Line: Artifact — Equipment
+Oracle Text:
+If equipped creature would deal combat damage, it deals double that damage instead.
+If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.
+Equip {2}
+```
+
+### Implementation: `mtg-engine/src/cards/isd/inquisitors_flail.rs`
+
+#### Card data
+- Name: "Inquisitor's Flail": correct
+- Mana cost: `Generic(2)`: correct ({2})
+- Card types: `[Artifact]`, subtypes: `["Equipment"]`: correct
+- oracle_text field: matches oracle text verbatim: correct
+- continuous_effects: `DoubleCombatDamage { scope: EffectScope::Attached }`: correct
+- keywords: `[]`: correct (Equip is implemented as an activated ability, not a keyword grant)
+
+#### Equipment mechanics
+- `on_resolve`: sets `is_equipment = true`, moves to battlefield: correct
+- `activated_abilities`: Equip {2}, sorcery speed only, targets creature you control: correct
+- `on_activate_ability`: sets `attached_to` on the equipment: correct
+- `is_valid_target`: checks battlefield, has power (is creature), controller matches caster: correct
+
+#### Combat damage doubling (engine: `mtg-engine/src/combat.rs`)
+- `combat_damage_multiplier` (line 311): counts `DoubleCombatDamage` effects on a creature, returns `2^count`: correct
+- `deal_damage_to_creature` (lines 452-454): multiplies by source's multiplier AND target's multiplier: correct (doubles outgoing AND incoming)
+- `deal_damage_to_player` (lines 506-507): multiplies by source's multiplier only: correct (players cannot be equipped)
+- Multiple Flails stack multiplicatively per ruling: correct (2^count)
+
+#### Minor cosmetic issue (non-functional)
+- Doc comment (line 9) says "another **source**" but oracle says "another **creature**":
+  - Implementation: `"If another source would deal combat damage to equipped creature"`
+  - Oracle: `"If another creature would deal combat damage to equipped creature"`
+  - The `oracle_text` field (line 26) is correct; only the Rust doc comment is wrong.
+- Same issue in test file header (`mtg-engine/tests/inquisitors_flail.rs`, line 5).
+
+### Functional correctness: PASS
+No functional issues found. Both damage doubling directions are correctly implemented.
+
+### Test coverage (all passing)
+- `inquisitors_flail.rs:21` doubles_damage_to_player: 4 power -> 8 damage to player
+- `inquisitors_flail.rs:45` doubles_damage_to_creature: 2 power -> 4 damage to blocker
+- `inquisitors_flail.rs:68` doubles_damage_taken_from_blocker: 2-power blocker -> 4 damage to equipped creature
+- `inquisitors_flail.rs:91` no_doubling_without_flail: 3 power -> 3 damage (no flail attached)
+- `inquisitors_flail.rs:114` two_flails_quadruple_damage: 3 power * 4 = 12 damage
+- `tier9_cards.rs:219` inquisitors_flail_card_data: type/subtype/cost checks
+- `tier9_cards.rs:229` inquisitors_flail_doubles_combat_damage: 3 power -> 6 damage
+- `tier9_cards.rs:259` inquisitors_flail_equip_ability: equip attaches correctly
+
+### Verdict: PASS — no functional issues
+
+## Audit — 2026-04-02
+
+### Oracle Text (Scryfall)
+```
+If equipped creature would deal combat damage, it deals double that damage instead.
+If another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.
+Equip {2}
+```
+
+### Card Data (`inquisitors_flail.rs`)
+- **Name:** Correct — `"Inquisitor's Flail"`
+- **Cost:** Correct — `{2}` (Generic 2)
+- **Types:** Correct — `Artifact`, subtype `Equipment`
+- **oracle_text field:** Correct — matches Scryfall verbatim.
+- **Equip cost:** Correct — `{2}`, sorcery-speed only, targets creature you control.
+
+### Doc Comment Bug
+Line 9 of `inquisitors_flail.rs` reads:
+> `/// If another source would deal combat damage to equipped creature`
+
+Oracle text says:
+> `If another creature would deal combat damage to equipped creature`
+
+The word **"source"** should be **"creature"**. This is a cosmetic doc-comment-only issue; the `oracle_text` field in `card_data()` is correct.
+
+### Continuous Effect Registration
+- Registers a single `ContinuousEffect::DoubleCombatDamage { scope: EffectScope::Attached }`.
+- The combat engine in `combat.rs` applies `combat_damage_multiplier()` on **both sides** of creature-vs-creature combat (lines 453–454: source multiplier AND target multiplier), correctly implementing both "deals double" and "takes double".
+- For creature-to-player damage (line 507), only the source multiplier is applied, which is correct (players don't have equipment).
+
+### Damage Doubling Implementation (`combat.rs`)
+- `combat_damage_multiplier()` counts all `DoubleCombatDamage` effects attached to a creature and returns `2^count`. This correctly handles multiple Flails per the ruling (2 Flails = 4x, etc.).
+- Creature-to-creature: both source and target multipliers applied — correct.
+- Creature-to-player: only source multiplier applied — correct.
+
+### Equipment Mechanics
+- `on_resolve`: moves to battlefield, sets `is_equipment = true` — correct.
+- `activated_abilities`: returns Equip ability only when on battlefield and not a creature (`power.is_none()`) — correct.
+- `on_activate_ability`: sets `attached_to` on the equipment — correct.
+- `is_valid_target`: checks battlefield, is a creature (`power.is_some()`), controlled by caster — correct.
+
+### Test Coverage
+- `tests/tier9_cards.rs`: 3 tests (card data, doubles combat damage to player, equip ability).
+- `tests/inquisitors_flail.rs`: 5 tests (doubles to player, doubles to creature, doubles damage taken from blocker, no doubling without equip, two flails quadruple).
+- Both the dealing and receiving sides of damage doubling are tested.
+
+### Test File Doc Comment Bug
+Lines 5–6 of `tests/inquisitors_flail.rs` repeat the same "another source" wording instead of "another creature". Cosmetic only.
+
+### Verdict
+**PASS** — Implementation is correct. Both damage-doubling directions work properly, equip mechanics are sound, and test coverage is thorough. One cosmetic doc-comment issue noted (says "source" instead of "creature" in two locations).
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches oracle: name, mana cost {2}, Artifact with Equipment subtype. Continuous effect DoubleCombatDamage with scope Attached. Combat.rs (line 449-454) applies combat_damage_multiplier to both source and target of combat damage, correctly implementing both offensive and defensive doubling. Multiple Flails stack multiplicatively (2^count) per ruling. Equip {2} is sorcery-speed-only, targets creature you control (CreatureWithFilter(YouControl)). is_equipment set on resolve. on_activate_ability attaches to target via attached_to. No anti-patterns.

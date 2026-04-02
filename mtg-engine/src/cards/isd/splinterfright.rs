@@ -20,6 +20,8 @@ impl CardBehavior for Splinterfright {
             card_types: vec![CardType::Creature],
             supertypes: vec![],
             subtypes: vec!["Elemental".into()],
+            // */* — the CDA (dynamic_pt) defines actual P/T. Some(0) is needed so
+            // the engine recognizes this as a creature (power.is_some() is used as proxy).
             power: Some(0),
             toughness: Some(0),
             oracle_text: "Trample\nSplinterfright's power and toughness are each equal to the number of creature cards in your graveyard.\nAt the beginning of your upkeep, mill two cards.".into(),

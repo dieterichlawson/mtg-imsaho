@@ -5,7 +5,7 @@ use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, Resolutio
 use crate::types::*;
 
 /// Crossway Vampire — 3/2 for {1}{R}{R}. Vampire.
-/// When Crossway Vampire enters the battlefield, target creature can't block this turn.
+/// When this creature enters, target creature can't block this turn.
 pub struct CrosswayVampire;
 
 impl CardBehavior for CrosswayVampire {
@@ -22,7 +22,7 @@ impl CardBehavior for CrosswayVampire {
             subtypes: vec!["Vampire".into()],
             power: Some(3),
             toughness: Some(2),
-            oracle_text: "When Crossway Vampire enters the battlefield, target creature can't block this turn.".into(),
+            oracle_text: "When this creature enters, target creature can't block this turn.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

@@ -27,7 +27,7 @@ impl CardBehavior for SilverchaseFox {
         }
     }
 
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{1}{W}, Sacrifice: Exile target enchantment".into(),

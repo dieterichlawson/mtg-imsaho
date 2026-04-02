@@ -41,3 +41,14 @@
 
 ## Verdict
 **PASS** — Implementation matches oracle text. The "you may" simplification is documented.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text (front)**: Vigilance\nWhenever another creature you control dies, you may transform this creature.
+**Oracle text (back — Thraben Militia)**: Trample
+**Type line**: Creature — Human Soldier // Creature — Human Soldier
+**Mana Cost**: {3}{W}
+**P/T**: 2/2 // 5/4
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: front face has Vigilance keyword, 2/2, subtypes Human Soldier, cost {3}{W}. Back face Thraben Militia is 5/4 with Trample. Transform trigger on AnyCreatureDies correctly filters to only controller's creatures and only on front face. dynamic_pt returns (5,4) when transformed. All correct.

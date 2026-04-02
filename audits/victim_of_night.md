@@ -17,3 +17,12 @@
 
 ## Verdict
 **PASS** — Correctly implements conditional destruction with subtype exclusions.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Destroy target non-Vampire, non-Werewolf, non-Zombie creature.
+**Mana cost**: {B}{B}
+**Type line**: Instant
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name "Victim of Night", cost {B}{B}, type Instant, oracle text matches exactly. Targeting logic correctly filters out Vampire, Werewolf, and Zombie subtypes. on_resolve delegates to resolve_destroy helper. No P/T (not a creature). All correct.

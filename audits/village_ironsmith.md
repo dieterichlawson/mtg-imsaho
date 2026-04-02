@@ -35,3 +35,14 @@
 
 ## Verdict
 **PASS** — Standard Innistrad werewolf with first strike, correctly implemented.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Front oracle text**: First strike / At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Back oracle text**: First strike / At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Mana cost**: {1}{R}
+**Type line**: Creature — Human Werewolf // Creature — Werewolf
+**P/T**: 1/1 // 3/1
+**Status**: PASS
+### Code issues
+None. Card data matches oracle for both faces. Front: name "Village Ironsmith", cost {1}{R}, 1/1, Human Werewolf, First strike, transform trigger on upkeep. Back: name "Ironfang", 3/1, Werewolf, First strike, transform back trigger. Transform logic correctly checks spells_cast_last_turn == 0 for front face and any player with >= 2 spells for back face. dynamic_pt returns (3,1) when transformed. All correct.

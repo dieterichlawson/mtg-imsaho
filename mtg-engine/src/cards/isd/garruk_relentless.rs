@@ -295,9 +295,19 @@ impl CardBehavior for GarrukRelentless {
             _ => {}
         }
 
-        // Transform check is now handled as a state-triggered ability in SBA
-        // (check_state_based_actions_with_registry). This ensures it fires from
-        // any source of loyalty loss, not just loyalty ability activation.
+    }
+
+    fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+        // State-triggered ability (CR 603.8): transform Garruk Relentless into
+        // Garruk, the Veil-Cursed when he has 2 or fewer loyalty counters.
+        if let Some(obj) = state.get_object_mut(self_id) {
+            if !obj.is_transformed {
+                obj.is_transformed = true;
+                obj.name = "Garruk, the Veil-Cursed".into();
+                state.log(crate::state::LogLevel::Event,
+                    "Garruk Relentless transforms into Garruk, the Veil-Cursed".into());
+            }
+        }
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[crate::actions::Target], _registry: &CardRegistry) {

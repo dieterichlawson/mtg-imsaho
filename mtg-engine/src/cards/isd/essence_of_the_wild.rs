@@ -1,14 +1,16 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::{ObjectId, PlayerId};
+use crate::actions::Target;
+use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
 /// Essence of the Wild {3}{G}{G}{G} 6/6 Avatar.
-/// Creatures you control enter the battlefield as a copy of Essence of the Wild.
+/// Creatures you control enter as a copy of Essence of the Wild.
 ///
-/// Implementation: When any creature enters the battlefield under our control, override its
-/// stats to 6/6 with no abilities. This is a replacement effect, but we implement it as an
-/// ETB watcher trigger for simplicity.
+/// This is a replacement effect (CR 614.1d): the creature never exists in its
+/// original form on the battlefield. Implemented by setting `entering_copy_source`
+/// on the GameObject so that `GameState::move_object` applies the copy replacement
+/// before the `EnteredBattlefield` event is emitted.
 pub struct EssenceOfTheWild;
 
 impl CardBehavior for EssenceOfTheWild {
@@ -26,40 +28,27 @@ impl CardBehavior for EssenceOfTheWild {
             subtypes: vec!["Avatar".into()],
             power: Some(6),
             toughness: Some(6),
-            oracle_text: "Creatures you control enter the battlefield as a copy of Essence of the Wild.".into(),
+            oracle_text: "Creatures you control enter as a copy of this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::AnyCreatureEnters,
-                    description: "creature enters as copy of Essence of the Wild".into(),
-                },
-            ],
+            triggered_abilities: vec![],
         }
     }
 
-    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, _registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
-        // Only affect creatures we control (not Essence itself).
-        if entered_controller != controller || entered_id == self_id {
-            return;
-        }
-        // Override the entering creature to be a 6/6 Avatar (copy of Essence).
-        if let Some(obj) = state.get_object_mut(entered_id) {
-            obj.power = Some(6);
-            obj.toughness = Some(6);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield);
+        // Mark this permanent as an entering-battlefield copy source.
+        // Any creature entering the battlefield under the same controller
+        // will enter as a copy of this permanent instead.
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.entering_copy_source = true;
+            obj.instance_oracle_text = Some("Creatures you control enter as a copy of this creature.".into());
+            // Populate copiable values on the object so that the replacement
+            // effect in move_object can read them without the registry.
             obj.subtypes = vec!["Avatar".into()];
-            obj.keywords.clear();
-            obj.instance_continuous_effects = Some(vec![]);
-            let old_name = obj.name.clone();
-            obj.name = "Essence of the Wild".into();
-            state.log(crate::state::LogLevel::Event,
-                format!("Essence of the Wild: {} enters as a copy of Essence of the Wild (6/6)", old_name));
+            obj.colors = vec![Color::Green];
         }
     }
 }

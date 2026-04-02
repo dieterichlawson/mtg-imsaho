@@ -1,25 +1,31 @@
 # Audit: Mirror-Mad Phantasm
 
-## Official Oracle
+## Reference (Scryfall/API)
 - **Name:** Mirror-Mad Phantasm
-- **Cost:** {3}{U}{U}
+- **Mana Cost:** {3}{U}{U}
 - **Type:** Creature — Spirit
-- **Oracle:** Flying. {1}{U}: Mirror-Mad Phantasm's owner shuffles it into their library. If that player does, they reveal cards from the top of that library until a card named Mirror-Mad Phantasm is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard.
+- **Oracle:** Flying / {1}{U}: This creature's owner shuffles it into their library. If that player does, they reveal cards from the top of that library until a card named Mirror-Mad Phantasm is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard.
 - **P/T:** 5/1
 
-## Implementation: `mtg-engine/src/cards/mirror_mad_phantasm.rs`
+## Implementation: `mirror_mad_phantasm.rs`
 - **Name:** Mirror-Mad Phantasm -- CORRECT
-- **Cost:** {3}{U}{U} -- CORRECT
-- **Type:** Creature -- CORRECT
-- **Subtypes:** Spirit -- CORRECT
+- **Mana Cost:** {3}{U}{U} -- CORRECT
+- **Type:** Creature — Spirit -- CORRECT
 - **P/T:** 5/1 -- CORRECT
 - **Keywords:** Flying -- CORRECT
-- **Activated ability:** {1}{U}, no tap required -- CORRECT
-- **on_activate_ability:** Shuffles into library, reveals until Mirror-Mad Phantasm found -- CORRECT
+- **Activated ability:** cost {1}{U}, requires_tap=false -- CORRECT
+- **Shuffle into library:** Moves to library zone, appends to library_order -- CORRECT (simplified shuffle)
+- **Reveal loop:** Draws cards from top until finding "Mirror-Mad Phantasm" by name -- CORRECT
+- **Found:** Puts onto battlefield with controller = owner -- CORRECT
+- **Not found:** All cards milled to graveyard -- CORRECT (matches ruling about tokens/copies)
+- **Milled cards:** All non-Phantasm revealed cards moved to graveyard -- CORRECT
 
-## Notes
-- Simplified shuffle: card is appended to bottom of library rather than shuffled to a random position. Minor simplification.
-- The ability correctly handles the case where the entire library is milled without finding a copy.
+## Verdict: PASS -- No issues found
 
-## Verdict
-**PASS** -- No issues found. Shuffle simplification is minor.
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Flying\n{1}{U}: This creature's owner shuffles it into their library. If that player does, they reveal cards from the top of that library until a card named Mirror-Mad Phantasm is revealed. The player puts that card onto the battlefield and all other cards revealed this way into their graveyard.
+**Type line**: Creature — Spirit
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name "Mirror-Mad Phantasm", cost {3}{U}{U}, 5/1, type Creature with subtype Spirit, keyword Flying. Activated ability costs {1}{U}, shuffles into owner's library, reveals cards until finding Mirror-Mad Phantasm by name, puts it onto the battlefield, and mills all other revealed cards. Behavior is correct.

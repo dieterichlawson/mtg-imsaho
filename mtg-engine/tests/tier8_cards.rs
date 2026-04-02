@@ -257,30 +257,56 @@ fn divine_reckoning_keeps_one_per_player() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 has 3 creatures: 2/1, 2/3, 1/5.
-    let _c1 = ready_creature(&mut state, P0, 2, 1);
+    let c1 = ready_creature(&mut state, P0, 2, 1);
     let _c2 = ready_creature(&mut state, P0, 2, 3);
-    let c3 = ready_creature(&mut state, P0, 1, 5); // highest toughness — should be kept
+    let _c3 = ready_creature(&mut state, P0, 1, 5);
 
     // P1 has 2 creatures: 4/2, 3/4.
-    let _c4 = ready_creature(&mut state, P1, 4, 2);
-    let c5 = ready_creature(&mut state, P1, 3, 4); // highest toughness — should be kept
+    let c4 = ready_creature(&mut state, P1, 4, 2);
+    let _c5 = ready_creature(&mut state, P1, 3, 4);
 
     let spell = castable_spell(&mut state, &reg, "Divine Reckoning", P0);
-    let state = cast_and_resolve(&state, &reg, spell, vec![]);
+    let mut state = cast_and_resolve(&state, &reg, spell, vec![]);
 
-    // P0 should have exactly 1 creature left on battlefield.
+    // P0 (active player) should be asked to choose first.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting P0's creature choice");
+
+    // P0 chooses to keep c1 (the 2/1).
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(c1))),
+        },
+        &reg,
+    );
+
+    // P1 should now be asked to choose.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting P1's creature choice");
+
+    // P1 chooses to keep c4 (the 4/2).
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(c4))),
+        },
+        &reg,
+    );
+
+    check_state_based_actions_with_registry(&mut state, Some(&reg));
+
+    // P0 should have exactly 1 creature left on battlefield (c1).
     let p0_creatures: Vec<_> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.controller == P0 && o.power.is_some())
         .collect();
     assert_eq!(p0_creatures.len(), 1, "P0 should have exactly 1 creature");
-    assert_eq!(p0_creatures[0].id, c3, "P0 should keep the highest-toughness creature");
+    assert_eq!(p0_creatures[0].id, c1, "P0 should keep the chosen creature");
 
-    // P1 should have exactly 1 creature left on battlefield.
+    // P1 should have exactly 1 creature left on battlefield (c4).
     let p1_creatures: Vec<_> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.power.is_some())
         .collect();
     assert_eq!(p1_creatures.len(), 1, "P1 should have exactly 1 creature");
-    assert_eq!(p1_creatures[0].id, c5, "P1 should keep the highest-toughness creature");
+    assert_eq!(p1_creatures[0].id, c4, "P1 should keep the chosen creature");
 }
 #[test]
 
@@ -410,22 +436,30 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
         &reg,
     );
 
-    // After activation: a 2/2 token was created, then a creature was sacrificed.
-    // The auto-sacrifice picks the first creature, which could be the token or
-    // an existing creature. Net result: one creature on battlefield.
+    // After activation: a 2/2 token was created, but now the controller must choose
+    // which creature to sacrifice. With 2 creatures (apprentice + token), a choice
+    // is presented.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting sacrifice choice");
+
+    // Find the token to sacrifice it.
+    let token_id = state.objects.values()
+        .find(|o| o.zone == Zone::Battlefield && o.is_token && o.power.is_some())
+        .map(|o| o.id)
+        .expect("Token should exist");
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(token_id))),
+        },
+        &reg,
+    );
+
+    // After choosing to sacrifice the token, only the apprentice remains.
     let creatures_after: Vec<_> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
         .collect();
-    // The apprentice was tapped and a creature was sacrificed. The token was created.
-    // Net: we should have exactly 1 creature (the one that wasn't sacrificed).
     assert_eq!(creatures_after.len(), 1, "Should have 1 creature on battlefield after create + sacrifice");
-
-    // One creature should be in the graveyard (the sacrificed one).
-    let graveyard: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0 && o.power.is_some())
-        .collect();
-    // Note: tokens cease to exist when they go to graveyard (SBA), but before SBA we still see it.
-    assert!(graveyard.len() >= 1, "A creature should have been sacrificed");
 }
 #[test]
 
@@ -542,7 +576,7 @@ fn harvest_pyre_deals_damage_equal_to_chosen_x() {
     // Cast with X=4 (exile all 4).
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(4) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(4), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
@@ -574,7 +608,7 @@ fn harvest_pyre_player_chooses_partial_x() {
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(2) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(2), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
@@ -611,7 +645,7 @@ fn harvest_pyre_x_zero_deals_no_damage() {
     let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(0) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(0), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
@@ -671,7 +705,7 @@ fn harvest_pyre_only_exiles_own_graveyard() {
     // Cast with X=3 (exile all 3 of P0's graveyard cards).
     let mut new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(3) },
+        &Action::CastSpell { object_id: spell, targets: vec![Target::Object(target)], sacrifice: None, exile_count: Some(3), alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);

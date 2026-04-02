@@ -1,14 +1,35 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::ids::{ObjectId, PlayerId};
+use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Bitterheart Witch — {4}{B} 1/2 Human Shaman with Deathtouch.
 /// When Bitterheart Witch dies, you may search your library for a Curse card,
 /// put it onto the battlefield attached to target player, then shuffle.
-///
-/// Simplified: auto-finds the first Curse in library, attaches to opponent.
 pub struct BitterheartWitch;
+
+impl BitterheartWitch {
+    /// Present the "target player" choice after a Curse has been selected.
+    fn present_player_choice(&self, state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId) {
+        let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
+            .map(|i| crate::actions::Target::Player(PlayerId(i as u8)))
+            .collect();
+
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "Bitterheart Witch: choose a player to attach the Curse to".into(),
+                options: player_targets,
+                optional: false,
+                effect: PendingEffect::AttachCurseToPlayer {
+                    curse_id,
+                    searcher: controller,
+                },
+            },
+        });
+    }
+}
 
 impl CardBehavior for BitterheartWitch {
     fn card_data(&self) -> CardData {
@@ -37,46 +58,70 @@ impl CardBehavior for BitterheartWitch {
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        let opponent = state.opponent(controller);
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
 
-        // Search library for a Curse card.
-        let curse_id = {
-            let player = state.get_player(controller);
-            player.library_order.iter()
-                .find(|&&obj_id| {
-                    let card_id = state.get_object(obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
-                    registry.card_data(card_id)
-                        .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
-                        .unwrap_or(false)
-                })
-                .copied()
-        };
+        // "you may" — present a yes/no choice before searching.
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: object_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description: "Bitterheart Witch: search your library for a Curse card?".into(),
+                source_card: object_id,
+            },
+        });
+    }
 
-        if let Some(curse_obj_id) = curse_id {
-            let name = state.get_object(curse_obj_id).map(|o| o.name.clone()).unwrap_or_default();
-            // Remove from library.
-            state.get_player_mut(controller).library_order.retain(|&id| id != curse_obj_id);
-            // Put on battlefield attached to opponent.
-            state.move_object(curse_obj_id, Zone::Battlefield);
-            if let Some(obj) = state.get_object_mut(curse_obj_id) {
-                obj.attached_to_player = Some(opponent);
-                obj.summoning_sick = false;
-            }
-            state.log(crate::state::LogLevel::Event,
-                format!("Bitterheart Witch found {} and attached it to p{}", name, opponent.0));
-            // Shuffle library.
-            use rand::seq::SliceRandom;
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(controller).library_order.shuffle(&mut rng);
-        } else {
-            state.log(crate::state::LogLevel::Event,
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
+        if !yes {
+            return;
+        }
+
+        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+
+        // Search library for Curse cards.
+        let curse_ids: Vec<ObjectId> = state.get_player(controller).library_order.iter()
+            .filter(|&&obj_id| {
+                let card_id = state.get_object(obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
+                registry.card_data(card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
+                    .unwrap_or(false)
+            })
+            .copied()
+            .collect();
+
+        if curse_ids.is_empty() {
+            state.log(LogLevel::Event,
                 "Bitterheart Witch: no Curse found in library".to_string());
             // Still shuffle.
             use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(controller).library_order.shuffle(&mut rng);
+            return;
+        }
+
+        if curse_ids.len() == 1 {
+            // Only one Curse — auto-select it, then choose target player.
+            let chosen_curse = curse_ids[0];
+            self.present_player_choice(state, self_id, controller, chosen_curse);
+        } else {
+            // Multiple Curses — player chooses which one via ChooseTarget.
+            let curse_targets: Vec<crate::actions::Target> = curse_ids.iter()
+                .map(|&id| crate::actions::Target::Object(id))
+                .collect();
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseTarget {
+                    description: "Bitterheart Witch: choose a Curse card from your library".into(),
+                    options: curse_targets,
+                    optional: false,
+                    effect: PendingEffect::ChooseCurseThenAttach {
+                        searcher: controller,
+                        source: self_id,
+                    },
+                },
+            });
         }
     }
 }

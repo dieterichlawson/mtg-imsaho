@@ -37,3 +37,14 @@
 
 ## Verdict
 **PASS** — Standard Innistrad werewolf, correctly implemented.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text (front)**: At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back — Rampaging Werewolf)**: At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line**: Creature — Human Warrior Werewolf // Creature — Werewolf
+**Mana Cost**: {3}{R}
+**P/T**: 3/2 // 6/4
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: front face 3/2 Human Warrior Werewolf for {3}{R}, back face Rampaging Werewolf 6/4. Standard werewolf transform logic: transforms to back if no spells cast last turn, transforms to front if a player cast 2+ spells. on_upkeep handles transformation. All correct.

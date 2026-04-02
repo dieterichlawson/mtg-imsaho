@@ -4,7 +4,7 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Clifftop Retreat — Land.
-/// Clifftop Retreat enters the battlefield tapped unless you control a Mountain or a Plains.
+/// This land enters tapped unless you control a Mountain or a Plains.
 /// {T}: Add {R} or {W}.
 pub struct ClifftopRetreat;
 
@@ -34,7 +34,7 @@ impl CardBehavior for ClifftopRetreat {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Clifftop Retreat enters the battlefield tapped unless you control a Mountain or a Plains.\n{T}: Add {R} or {W}.".into(),
+            oracle_text: "This land enters tapped unless you control a Mountain or a Plains.\n{T}: Add {R} or {W}.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

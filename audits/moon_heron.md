@@ -17,3 +17,21 @@
 
 ## Verdict
 **PASS** -- No issues found.
+
+## Audit — 2026-04-02
+
+**Oracle source**: Scryfall  
+**Card**: Moon Heron  
+**Type**: Creature — Spirit Bird | **Cost**: {3}{U} | **P/T**: 3/2  
+**Oracle text**: "Flying"
+
+### Checks
+- Name: "Moon Heron" -- PASS
+- Cost: {3}{U} -- PASS
+- Types: Creature -- PASS
+- Subtypes: Spirit, Bird -- PASS
+- P/T: 3/2 -- PASS
+- Keywords: Flying -- PASS
+- Behavior: Vanilla creature with flying, no special behavior needed -- PASS
+
+**Verdict: PASS**

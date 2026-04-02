@@ -1,20 +1,16 @@
-# Audit: Battleground Geist
+## Audit — 2026-04-02 (final)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+Other Spirit creatures you control get +1/+0.
+**Type line**: Creature — Spirit
+**Status**: PASS
+### Code issues
+No issues found.
 
-## Oracle (Scryfall)
-- **Name:** Battleground Geist
-- **Cost:** {4}{U}
-- **Type:** Creature — Spirit
-- **Oracle:** Flying. Other Spirit creatures you control get +1/+0.
-- **P/T:** 3/3
+## Audit — 2026-04-02 (full-reaudit)
 
-## Implementation: `mtg-engine/src/cards/battleground_geist.rs`
-- **Name:** Battleground Geist ✅
-- **Cost:** {4}{U} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Spirit ✅
-- **P/T:** 3/3 ✅
-- **Keywords:** Flying ✅
-- **Continuous effect:** ModifyPT +1/+0 with scope GlobalOther(And(You, HasSubtype("Spirit"))) ✅
-- **"Other" restriction:** Uses GlobalOther (excludes self) ✅
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
 
-## Verdict: PASS — no issues found
+### Code issues
+No issues found.

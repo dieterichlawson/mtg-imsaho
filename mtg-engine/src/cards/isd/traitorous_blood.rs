@@ -5,8 +5,8 @@ use crate::state::{GameState, UntilEndOfTurnKeyword};
 use crate::types::*;
 
 /// Traitorous Blood — {1}{R}{R} Sorcery.
-/// Gain control of target creature until end of turn. Untap that creature.
-/// It gains haste and trample until end of turn.
+/// Gain control of target creature until end of turn. Untap it.
+/// It gains trample and haste until end of turn.
 pub struct TraiterousBlood;
 
 impl CardBehavior for TraiterousBlood {
@@ -23,7 +23,7 @@ impl CardBehavior for TraiterousBlood {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Gain control of target creature until end of turn. Untap that creature. It gains haste and trample until end of turn.".into(),
+            oracle_text: "Gain control of target creature until end of turn. Untap it. It gains trample and haste until end of turn.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

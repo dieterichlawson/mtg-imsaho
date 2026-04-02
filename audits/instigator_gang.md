@@ -133,3 +133,35 @@ Instigator Gang / Wildblood Pack is NOT in the LLM card knowledge section (`mtg-
 - Transform back when 2+ spells: NOT DIRECTLY TESTED (covered by generic werewolf tests for the same transform logic)
 - Wildblood Pack buffs other attackers +3/+0: NOT TESTED (only self-buff tested for back face)
 - First turn no-transform: NOT DIRECTLY TESTED (covered by generic werewolf tests)
+
+## Audit: Instigator Gang // Wildblood Pack
+**Date:** 2026-04-02
+
+### Oracle Text (Scryfall)
+- **Front -- Type:** Creature -- Human Werewolf | **Cost:** {3}{R} | **P/T:** 2/3
+- **Front -- Oracle:** Attacking creatures you control get +1/+0. / At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+- **Back -- Type:** Creature -- Werewolf | **P/T:** 5/5
+- **Back -- Oracle:** Trample / Attacking creatures you control get +3/+0. / At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+
+### Card Data
+- **Name:** Instigator Gang -- PASS
+- **Cost:** {3}{R} -- PASS
+- **Types:** Creature -- PASS
+- **Subtypes:** Human, Werewolf -- PASS
+- **P/T:** 2/3 (front), 5/5 (back via dynamic_pt) -- PASS
+- **Back face name:** Wildblood Pack -- PASS
+- **Back face subtypes:** Werewolf -- PASS
+- **Back face keywords:** Trample -- PASS
+
+### Oracle Text Match
+- Front and back oracle text match. -- PASS
+
+### Behavior Audit
+- **Attacking buff (front):** +1/+0 to attacking creatures you control via on_any_creature_attacks. -- PASS
+- **Attacking buff (back):** +3/+0 to attacking creatures you control. -- PASS
+- **Transform (front->back):** Checks no spells cast last turn and not first turn. -- PASS
+- **Transform (back->front):** Checks if any player cast 2+ spells last turn. -- PASS
+- **Static vs triggered implementation:** Oracle describes a static continuous effect ("Attacking creatures you control get +1/+0") but code implements it as a triggered effect via on_any_creature_attacks with UntilEndOfTurnEffect. This is a reasonable approximation but technically differs from a true static ability (e.g., a creature that gains control mid-combat would not get the buff in code but would under oracle rules). Minor behavioral difference.
+- **Back face triggered_abilities:** Missing Upkeep TriggerKind in back_face_data's triggered_abilities vec. The on_upkeep handler still runs because it dispatches from the front face implementation, so this is a metadata omission rather than a functional bug.
+
+### Result: PASS

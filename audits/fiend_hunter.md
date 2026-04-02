@@ -59,3 +59,91 @@ None found.
 - Declining to exile (choosing "no"): NOT TESTED
 - Oblivion Ring trick (LTB before ETB): NOT TESTED
 - Token exiled doesn't return: NOT TESTED
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: When this creature enters, you may exile another target creature. When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.
+**Type line**: Creature — Human Cleric
+**Mana cost**: {1}{W}{W}
+**P/T**: 1/3
+**Status**: MINOR ISSUES
+
+### Card data verification
+- Name: CORRECT
+- Cost: CORRECT ({1}{W}{W})
+- Type: CORRECT (Creature)
+- Subtypes: CORRECT (Human, Cleric)
+- P/T: CORRECT (1/3)
+- ETB trigger: CORRECT (TriggerKind::EntersBattlefield in triggered_abilities)
+- LTB trigger: CORRECT (TriggerKind::LeavesBattlefield in triggered_abilities)
+- Two separate triggered abilities: CORRECT (both are independent entries in triggered_abilities vec; engine processes them as separate stack objects via PendingTrigger::EnteredBattlefield and PendingTrigger::LeftBattlefield in triggers.rs)
+- "Another" self-exclusion: CORRECT (`creature_targets_except(state, object_id)`)
+- "You may" optional: CORRECT (`present_optional_target_choice`)
+- Can target any creature (not just opponent's): CORRECT
+
+### Issues found
+
+**Issue 1 (Minor): LTB does not return creature under owner's control**
+
+Oracle text: "return the exiled card to the battlefield under its **owner's** control"
+
+Code (`fiend_hunter.rs:56-66`):
+```rust
+fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    let exiled_id = state.get_object(object_id)
+        .and_then(|o| o.card_state.get("exiled_creature").copied());
+    if let Some(target_id) = exiled_id {
+        if state.get_object(target_id).map(|o| o.zone == Zone::Exile).unwrap_or(false) {
+            let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(target_id, Zone::Battlefield);
+```
+
+`move_object` does not reset `controller` to `owner`. If a stolen creature (controller != owner) was exiled by Fiend Hunter, it would return under the wrong player's control. In typical gameplay owner == controller, so this has no observable effect, but the oracle explicitly specifies "under its owner's control."
+
+**Issue 2 (Testing gap): No test for the Oblivion Ring trick**
+
+Official ruling (2018-12-07): "If Fiend Hunter leaves the battlefield before its first ability has resolved, its second ability will trigger and do nothing. Then its first ability will resolve and exile the target creature indefinitely."
+
+The engine architecture supports this correctly — ETB and LTB are separate stack entries (PendingTrigger::EnteredBattlefield at triggers.rs:336, PendingTrigger::LeftBattlefield at triggers.rs:433). If LTB resolves first, `card_state` has no "exiled_creature" key yet, so LTB does nothing; then ETB resolves and exiles the target with no Fiend Hunter on the battlefield to later trigger an LTB return.
+
+However, no test exercises this interaction. A test should verify:
+1. Fiend Hunter ETB goes on the stack
+2. Fiend Hunter is removed before ETB resolves
+3. LTB resolves (does nothing — no stored exile)
+4. ETB resolves (exiles target permanently)
+5. Target remains in exile indefinitely
+
+**Issue 3 (Cosmetic, previously noted): Oracle text uses older template wording**
+
+Scryfall oracle: "When **this creature** enters, you may exile another target creature."
+Code oracle_text: `"When Fiend Hunter enters the battlefield, you may exile another target creature."`
+
+### LLM knowledge check (llm.rs:104)
+Current text: "Fiend Hunter ({1}{W}{W} creature 1/3): When it enters, you may exile another target creature (any creature, not just opponent's). When it leaves, the exiled card returns."
+
+This was corrected since the prior audit and is now accurate. It correctly notes the "you may" optional nature and that any creature can be targeted.
+
+### Test coverage
+- ETB exiles a creature: `tier3_cards.rs:211` — PASS
+- LTB returns exiled creature: `card_mechanics.rs:127` — PASS
+- Can target own creatures: `card_fixes.rs:30` — PASS
+- Presents choice with multiple targets: `card_fixes.rs:60` — PASS
+- Declining to exile (choosing "no"): NOT TESTED
+- Oblivion Ring trick (LTB before ETB): NOT TESTED
+- Token exiled doesn't return: NOT TESTED
+- Return under owner's control (controller != owner): NOT TESTED
+
+### Summary
+The implementation is **functionally correct for standard gameplay**. The two separate triggered abilities are properly structured to enable the Oblivion Ring trick. Two minor issues: (1) the LTB does not explicitly reset the returned creature's controller to its owner, and (2) the critical permanent-exile interaction (Oblivion Ring trick) lacks test coverage despite being architecturally supported.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this creature enters, you may exile another target creature.
+When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.
+**Type line**: Creature — Human Cleric
+**Status**: PASS
+
+### Code issues
+No issues found. The two separate triggers (ETB and LTB) correctly model the classic "Oblivion Ring" template where removing Fiend Hunter before the first trigger resolves results in permanent exile. The ETB is correctly optional ("you may"). The LTB correctly returns the card under its owner's control.

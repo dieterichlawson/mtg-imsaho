@@ -291,3 +291,53 @@ No anti-patterns detected. Not in LLM card knowledge section.
 - Mode 1 returns creature: `mtg-engine/tests/tier11_cards.rs:105` (ghoulcallers_chant_returns_creature_from_graveyard)
 - Mode 2 returns two Zombies: `mtg-engine/tests/tier11_cards.rs:120` (ghoulcallers_chant_returns_two_zombies)
 - Fizzle (targets leave graveyard before resolution): NOT TESTED
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (cached 2026-04-01, via oracle_lookup.py)
+**Oracle text**: Choose one —
+• Return target creature card from your graveyard to your hand.
+• Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Mana cost**: {B}
+**Status**: PASS
+
+### Card data
+- Mana cost {B} (Colored(Black)): correct
+- Card types: Sorcery: correct
+- No supertypes, subtypes, P/T, keywords: correct
+- Oracle text field (line 24): matches Scryfall verbatim
+
+### Behavior
+
+**Modal choice presentation**: `target_requirement` returns `ModalChoice` with two modes. The engine's `generate_cast_actions_with_targets` (engine.rs:845-851) iterates each mode and generates separate cast actions, so the player sees distinct options for mode 1 vs mode 2. Correct.
+
+**Mode 1 -- return target creature card from your graveyard to your hand**: Uses `GraveyardCreature`. The engine (engine.rs:973-985) filters for creature cards in all graveyards, then the card's `is_valid_target` restricts to `o.zone == Zone::Graveyard && o.owner == caster`. Correct -- targets one creature card in your graveyard.
+
+**Mode 2 -- return two target Zombie cards from your graveyard to your hand**: Uses `TwoTargets(GraveyardCreatureOfSubtype("Zombie"), GraveyardCreatureOfSubtype("Zombie"))`. The engine (engine.rs:852-866) generates the Cartesian product of valid targets and enforces `t1 != t2` (must be two different cards). The engine (engine.rs:987-1004) filters for creature cards with Zombie subtype in all graveyards, then `is_valid_target` restricts to caster's graveyard. The `GraveyardCreatureOfSubtype` additionally requires the card to be a creature, which the oracle does not strictly require (oracle says "Zombie cards" not "Zombie creature cards"). However, the Zombie subtype only appears on creatures in the Innistrad card pool, so this has zero practical impact. Not flagged as an issue.
+
+**on_resolve**: Iterates all targets, checks each is still in the graveyard (zone check on line 61), moves to hand, logs the event, then calls `move_spell_after_resolve`. Correct.
+
+### Tricky interactions checked
+- Mode 1 returns any creature card from your graveyard: pass
+- Mode 2 returns exactly two different Zombie cards from your graveyard: pass (TwoTargets + t1 != t2 check)
+- Cannot target opponent's graveyard: pass (is_valid_target checks owner == caster)
+- Mode 2 not available with fewer than 2 Zombies in graveyard: pass (Cartesian product yields nothing)
+- Sorcery speed only: pass (CardType::Sorcery)
+- Resolution zone check: pass (line 61 verifies target still in graveyard before moving)
+
+### Test coverage
+- Mode 1 returns creature from graveyard: `mtg-engine/tests/tier11_cards.rs:105`
+- Mode 2 returns two Zombies from graveyard: `mtg-engine/tests/tier11_cards.rs:120`
+- Both tests pass.
+- Fizzle (targets leave graveyard before resolution): NOT TESTED
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Choose one —\n• Return target creature card from your graveyard to your hand.\n• Return two target Zombie cards from your graveyard to your hand.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. Modal targeting is correctly implemented with ModalChoice containing GraveyardCreature for mode 1 and TwoTargets of GraveyardCreatureOfSubtype("Zombie") for mode 2. The is_valid_target correctly ensures targets are in the caster's graveyard. On resolve, all targeted cards are moved from graveyard to hand.

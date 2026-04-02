@@ -135,3 +135,77 @@ No issues found.
 - LifeChanged event explicitly verified in events list: NOT TESTED (life total is checked but event vector is not inspected)
 - No life loss when NOT transformed at end step: NOT TESTED (implicitly covered by the transform choice tests, but no dedicated test)
 - Card NOT in LLM card knowledge section (`mtg-player/src/llm.rs`): minor gap for AI player guidance
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text (front)**: At the beginning of your upkeep, you may transform this creature.
+**Oracle text (back)**: At the beginning of your end step, you lose 1 life.
+**Type line (front)**: Creature — Human
+**Type line (back)**: Creature — Horror
+**Mana cost**: {1}{W}
+**P/T (front)**: 1/1
+**P/T (back)**: 3/3
+**Status**: PASS
+
+### Code issues
+No issues found. All card data and behavior match oracle text.
+
+**Card data verification:**
+
+| Field | Oracle | Code | Match? |
+|-------|--------|------|--------|
+| Name (front) | Cloistered Youth | `"Cloistered Youth".into()` | YES |
+| Name (back) | Unholy Fiend | `"Unholy Fiend".into()` | YES |
+| Mana cost | {1}{W} | `Generic(1), Colored(Color::White)` | YES |
+| Card type (both) | Creature | `CardType::Creature` | YES |
+| Subtypes (front) | Human | `vec!["Human".into()]` | YES |
+| Subtypes (back) | Horror | `vec!["Horror".into()]` | YES |
+| P/T (front) | 1/1 | `power: Some(1), toughness: Some(1)` | YES |
+| P/T (back) | 3/3 | `power: Some(3), toughness: Some(3)` + `dynamic_pt` returns `(3,3)` when transformed | YES |
+| Oracle text (front) | "At the beginning of your upkeep, you may transform this creature." | `"At the beginning of your upkeep, you may transform Cloistered Youth."` | YES (card name vs "this creature" is acceptable) |
+| Oracle text (back) | "At the beginning of your end step, you lose 1 life." | `"At the beginning of your end step, you lose 1 life."` | YES |
+| Front triggered_abilities | Upkeep trigger | `TriggerKind::Upkeep` (1 entry) | YES |
+| Back triggered_abilities | End step trigger | `TriggerKind::EndStep` (1 entry) | YES |
+| Keywords | Transform (keyword action, not a gameplay keyword) | `keywords: vec![]` | YES (consistent with all DFCs in codebase; no `Keyword::Transform` variant exists) |
+
+**Behavior verification:**
+
+- **"You may" transform is optional**: `on_upkeep` (line 80-88) sets `AwaitingAction::ResolutionChoice` with `YesNo` choice. Player can accept or decline. Code: `ResolutionChoiceKind::YesNo { description: "Cloistered Youth: transform into Unholy Fiend?".into(), ... }` -- CORRECT
+- **Declining transform**: `on_yes_no_choice` with `yes=false` (line 92-96) logs and returns with no state change -- CORRECT
+- **Accepting transform**: calls `helpers::apply_transform` (line 99) which sets `is_transformed`, updates name/keywords/subtypes -- CORRECT
+- **Life loss is mandatory**: `on_end_step` (line 113-121) deducts 1 life with no player choice when `is_transformed` is true -- CORRECT
+- **Life loss is loss, not damage**: code directly modifies `life` field (line 117: `old - 1`) and emits `LifeChanged` event, not a damage event -- CORRECT per oracle "you lose 1 life"
+- **Controller check on upkeep**: line 75-77 `if state.active_player != controller { return; }` -- CORRECT
+- **Controller check on end step**: line 110-112 same guard -- CORRECT
+- **Guard against double-transform**: line 78 `if !is_transformed` prevents presenting choice when already transformed -- CORRECT
+- **Guard against life loss when untransformed**: line 113 `if is_transformed` -- CORRECT
+
+### Tricky interactions checked
+- Transform does not cause zone change (no ETB/LTB triggers) -- handled by `apply_transform` helper which only mutates in-place: PASS
+- Summoning sickness preserved across transform (same permanent): not explicitly relevant here but consistent with DFC rules: PASS
+- Upkeep trigger fires only for controller's upkeep: PASS (active_player check)
+- End step trigger fires only for controller's end step: PASS (active_player check)
+- Life loss emits `LifeChanged` event (line 118): PASS
+- `dynamic_pt` returns `None` when not transformed, allowing base P/T to apply: PASS
+
+### Test coverage
+Five tests in `mtg-engine/tests/tier15_cards.rs`:
+1. `cloistered_youth_presents_transform_choice_at_upkeep` (line 788) -- verifies YesNo choice presented, transformation on yes
+2. `cloistered_youth_can_decline_transform` (line 815) -- verifies no transformation on decline
+3. `unholy_fiend_drains_life_at_end_step` (line 840) -- verifies 1 life lost
+4. `cloistered_youth_front_face_has_upkeep_trigger_only` (line 857) -- verifies exactly 1 Upkeep trigger on front
+5. `unholy_fiend_back_face_has_end_step_trigger_only` (line 869) -- verifies exactly 1 EndStep trigger on back
+
+**Minor gap**: No LLM knowledge entry in `mtg-player/src/llm.rs` (other DFCs like Delver of Secrets and Screeching Bat have entries). Not a correctness issue.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: At the beginning of your upkeep, you may transform this creature.
+// Unholy Fiend: At the beginning of your end step, you lose 1 life.
+**Type line**: Creature — Human // Creature — Horror
+**Status**: PASS
+
+### Code issues
+No issues found.

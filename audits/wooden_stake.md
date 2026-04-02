@@ -60,3 +60,57 @@ Minor oracle_text field discrepancies (cosmetic, not behavioral):
 - Equipped creature attacks and is blocked by Vampire (becomes_blocked direction): NOT TESTED
 - "Can't be regenerated" (Vampire with regeneration shield): NOT TESTED
 - Ruling — Vampire destroyed before combat damage: NOT TESTED (implicitly covered by trigger timing)
+
+## Audit — 2026-04-02
+
+### Oracle Text (Scryfall)
+> Equipped creature gets +1/+0.
+> Whenever equipped creature blocks or becomes blocked by a Vampire, destroy that creature. It can't be regenerated.
+> Equip {1}
+
+### Implementation: `mtg-engine/src/cards/isd/wooden_stake.rs`
+
+### Checklist
+- [x] Mana cost: `{2}` — correct
+- [x] Card types: Artifact with Equipment subtype — correct
+- [x] Continuous effect: +1/+0 via `ContinuousEffect::ModifyPT { power: 1, toughness: 0, scope: EffectScope::Attached }` — correct
+- [x] Equip cost: `{1}`, sorcery speed only, targets creature you control — correct
+- [x] Triggered ability fires on both "blocks" and "becomes blocked by" — correct (two `TriggeredAbilityDef` entries with `TriggerKind::Blocks` and `TriggerKind::BecomesBlocked`)
+- [x] Vampire subtype check: checks both registry `card_data` subtypes AND `obj.subtypes` on the game object — correct
+- [x] Destruction uses `try_destroy_no_regen` — correct, matches "It can't be regenerated"
+- [x] `on_resolve` moves to battlefield and sets `is_equipment = true` — correct
+
+### Issues
+
+1. **Oracle text string mismatch — "destroy that Vampire" vs "destroy that creature"**
+   - Oracle says: `destroy that creature. It can't be regenerated.`
+   - Implementation `oracle_text` field says: `destroy that Vampire`
+   - The code comment (line 9) and trigger descriptions (lines 33, 37) also say "destroy that Vampire".
+   - Functional behavior is correct (the Vampire is correctly identified and destroyed). Only the stored text string is inaccurate.
+
+2. **Missing "It can't be regenerated" in oracle_text string**
+   - Oracle says: `destroy that creature. It can't be regenerated.`
+   - Implementation `oracle_text` omits: `It can't be regenerated.`
+   - Behavior is correct (`try_destroy_no_regen` is used), but the text is incomplete.
+
+### Tests
+- `wooden_stake_has_correct_data` — verifies card data basics
+- `wooden_stake_grants_power` — verifies +1/+0 buff
+- `wooden_stake_destroys_vampire_on_block` — verifies block trigger destroys vampire
+- `wooden_stake_does_not_destroy_non_vampire` — verifies non-vampires are unaffected
+- No test for the "becomes blocked by" direction (equipped creature attacks, vampire blocks)
+
+### Verdict
+Two minor text-only issues in the `oracle_text` field and comments. All functional behavior is correct.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Equipped creature gets +1/+0.
+Whenever equipped creature blocks or becomes blocked by a Vampire, destroy that creature. It can't be regenerated.
+Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found. Card data is correct: {2}, Artifact -- Equipment. The +1/+0 buff is modeled as `ContinuousEffect::ModifyPT` with `EffectScope::Attached`. Both `on_blocks` and `on_becomes_blocked` correctly check if the other creature is a Vampire (via both card data subtypes and instance subtypes for tokens) and destroy it using `try_destroy_no_regen`, which correctly implements "It can't be regenerated." Equip {1} is implemented as a sorcery-speed activated ability targeting a creature you control. The `oracle_text` field says "destroy that Vampire" instead of "destroy that creature. It can't be regenerated." -- a minor text discrepancy, but the behavior is fully correct. The code comment in the doc string also says "destroy that Vampire" rather than matching oracle exactly, but this is cosmetic only.

@@ -21,3 +21,35 @@
 None found.
 
 ## Verdict: PASS
+
+## Audit - 2026-04-02
+
+### Oracle Text (Scryfall)
+- **Name:** Sever the Bloodline
+- **Mana Cost:** {3}{B}
+- **Type:** Sorcery
+- **Oracle Text:** Exile target creature and all other creatures with the same name as that creature. / Flashback {5}{B}{B}
+
+### Card Data Audit
+- **Name:** Correct ("Sever the Bloodline")
+- **Cost:** Correct ({3}{B})
+- **Types:** Correct (Sorcery)
+- **Oracle Text String:** MISMATCH
+  - **Oracle:** "Exile target creature and all other creatures with the same name as that creature."
+  - **Code:** "Exile target creature and all other creatures with the same name."
+  - Missing "as that creature" suffix.
+- **Flashback Cost:** Correct ({5}{B}{B})
+
+### Behavior Audit
+- **Target requirement:** `TargetRequirement::Creature`. Correct.
+- **Exile target + same-name creatures:** Gets target's name, filters all battlefield creatures with matching name, exiles all. Correct.
+- **Only battlefield creatures:** Filters `o.zone == Zone::Battlefield`. Correct per ruling.
+- **Flashback:** `flashback_cost` set to {5}{B}{B}. Correct.
+- **Spell cleanup:** Calls `move_spell_after_resolve`. Correct.
+
+### Result
+**ISSUE** -- Oracle text string missing "as that creature" at the end. Code: `"Exile target creature and all other creatures with the same name."` vs oracle: `"Exile target creature and all other creatures with the same name as that creature."`.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Oracle text updated to match Scryfall: "with the same name as that creature" (was "with the same name"). Doc comment updated. Behavior unchanged.

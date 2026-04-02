@@ -271,3 +271,62 @@ Card data is correct: {1}{W} Enchantment, oracle text matches. The enforcement i
 - Blocks non-mana activated abilities of artifacts: NOT TESTED
 - Artifact creatures' activated abilities blocked: NOT TESTED
 - Multiple Stony Silences (redundant but should work): NOT TESTED
+
+---
+
+## Audit — 2026-04-02
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+- **Name:** Stony Silence
+- **Cost:** {1}{W}
+- **Type:** Enchantment
+- **Oracle Text:** "Activated abilities of artifacts can't be activated."
+
+### Key Rulings
+1. Activated abilities contain a colon ("[Cost]: [Effect]"), including keyword abilities like equip.
+2. No abilities of artifacts can be activated, **including mana abilities**.
+3. Only affects artifacts on the battlefield. Activated abilities in other zones (e.g., cycling) are unaffected. Triggered abilities are unaffected.
+
+### Implementation Review (`mtg-engine/src/cards/isd/stony_silence.rs`)
+- **Card data:** Correct. Name "Stony Silence", cost {1}{W}, type Enchantment, oracle text matches.
+- **`continuous_effects` field is empty.** The restriction is not modeled as a continuous effect on the card itself. Instead, it is hard-coded in `engine.rs` `legal_actions()` (lines 256-309).
+
+### Engine Enforcement (`mtg-engine/src/engine.rs`, lines 256-309)
+- **Detection:** `stony_silence_active` is true if any object on the battlefield has `name == "Stony Silence"`. This is controller-agnostic (correct — the oracle text does not restrict by controller).
+- **Mana abilities (lines 266-272):** When `stony_silence_active`, any object in `objects_in_zone(Battlefield, player)` whose card types include `Artifact` is skipped entirely. Mana abilities of artifacts are correctly blocked.
+- **Non-mana activated abilities (lines 302-308):** Same artifact check; all activated abilities of artifacts are skipped. Correct.
+- **Scope — both players:** `legal_actions()` computes actions for whichever player has priority. Since the `stony_silence_active` flag is global (not controller-filtered), it correctly restricts both players.
+- **Non-artifact permanents unaffected:** The `continue` only fires when the object is an artifact. Non-artifact permanents (lands, creatures, enchantments) retain their activated abilities. Correct.
+
+### Issues Found
+
+**No rule-correctness bugs found.** The implementation is faithful to the oracle text and rulings.
+
+#### Minor Design Notes (non-blocking)
+1. **Hard-coded in engine rather than declared as a continuous effect.** The `continuous_effects: vec![]` field on the card is empty. If the engine ever refactors to use a continuous-effect system for restrictions, this card will need updating. However, the current hard-coded approach is functionally correct.
+2. **Name-based detection.** The check uses `o.name == "Stony Silence"` rather than a card ID or effect flag. This is fragile if there were ever a different card with the same name or if a copy effect changed a permanent's name, but is acceptable for the current engine scope.
+
+### Test Coverage (`mtg-engine/tests/innistrad_simple_cards.rs`)
+| Scenario | Status | Location |
+|---|---|---|
+| Card data (type, CMC) | PASS | `stony_silence_card_data` (line 586) |
+| Blocks artifact mana abilities (Sol Ring) | PASS | `stony_silence_blocks_artifact_mana_abilities` (line 595) |
+| Does not block non-artifact mana (Forest) | PASS | `stony_silence_does_not_block_non_artifact_mana` (line 625) |
+| Blocks non-mana activated abilities of artifacts | NOT TESTED | — |
+| Opponent's artifacts blocked | NOT TESTED | — |
+| Artifact creatures' activated abilities blocked | NOT TESTED | — |
+| Multiple Stony Silences (redundant) | NOT TESTED | — |
+| Artifacts in other zones (cycling) unaffected | NOT TESTED | — |
+
+### Verdict
+**PASS** — The implementation correctly prevents activation of all activated abilities (including mana abilities) of artifacts on the battlefield for both players. No mismatches between oracle text and engine behavior.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Activated abilities of artifacts can't be activated.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found. Card data is correct: {1}{W}, Enchantment, no subtypes. Oracle text matches exactly. The restriction is documented as enforced by the engine in `legal_actions()`, blocking both mana and non-mana activated abilities of artifacts on the battlefield. This is consistent with the rulings that all activated abilities (including mana abilities) are affected, and only battlefield artifacts are restricted. Implementation is clean and correct.

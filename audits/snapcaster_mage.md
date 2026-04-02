@@ -23,3 +23,28 @@
 - **SIMPLIFICATION:** The target is auto-selected (highest mana value card) rather than letting the player choose. The oracle says "target" which normally means the player picks. This is a minor simplification -- the AI picks the most expensive card, which is usually but not always correct.
 
 ## Verdict: PASS -- minor simplification in target selection
+
+## Audit — 2026-04-02
+
+**Oracle Text:**
+> Flash
+> When this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.
+
+**Card Data:**
+- Name: Snapcaster Mage — correct
+- Cost: {1}{U} — correct
+- Type: Creature — Human Wizard — correct
+- P/T: 2/1 — correct
+- Keywords: Flash — correct
+- Triggered ability: ETB — correct
+
+**Behavior:**
+- ISSUE: The oracle says "target instant or sorcery card in your graveyard" — the player should choose which card to target. The implementation auto-selects the card with the highest mana value (`max_by_key`), giving the player no choice. This is incorrect when there are multiple eligible cards in the graveyard.
+- Grants flashback with cost equal to the card's mana cost via `until_end_of_turn_flashback` — correct
+- Skips cards that already have flashback — correct
+
+**Result: ISSUE** — No player targeting: auto-selects highest mana value instant/sorcery instead of letting the player choose the target.
+
+## Re-audit — 2026-04-02
+**Status**: PASS
+Previously fixed bug re-verified: ETB correctly grants flashback to an instant/sorcery in graveyard. Oracle text updated to match Scryfall: "When this creature enters" (was "When Snapcaster Mage enters the battlefield"). Doc comment updated. Behavior unchanged.

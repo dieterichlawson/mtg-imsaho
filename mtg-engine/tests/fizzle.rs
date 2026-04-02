@@ -36,7 +36,7 @@ fn fizzled_spell_does_not_emit_resolved_event() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
 
@@ -65,7 +65,7 @@ fn resolved_spell_emits_resolved_event() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
     state.events.clear();
@@ -104,7 +104,7 @@ fn swords_fizzle_no_side_effects() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: swords, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: swords, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
 
@@ -152,7 +152,7 @@ fn flashback_spell_fizzle_goes_to_exile() {
     // Cast with flashback.
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: geistflame, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: geistflame, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
     assert!(state.get_object(geistflame).unwrap().cast_with_flashback);
@@ -188,7 +188,7 @@ fn flashback_spell_fizzle_no_resolved_event() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: geistflame, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: geistflame, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
 
@@ -227,7 +227,7 @@ fn counterspell_fizzle_no_resolved_event() {
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
 
@@ -235,7 +235,7 @@ fn counterspell_fizzle_no_resolved_event() {
     let counter = castable_spell(&mut state, &reg, "Counterspell", P1);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
 
@@ -273,7 +273,7 @@ fn no_target_spell_always_resolves() {
     let div = castable_spell(&mut state, &reg, "Divination", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: div, targets: vec![], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: div, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
     state.events.clear();
@@ -303,7 +303,7 @@ fn player_target_never_fizzles() {
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, alternative_cost: None },
         &reg,
     );
     state.events.clear();

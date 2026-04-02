@@ -4,7 +4,7 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Wreath of Geists — {G} Aura enchantment.
+/// Wreath of Geists — {G} Aura enchantment. Enchant creature.
 /// Enchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.
 pub struct WreathOfGeists;
 
@@ -20,7 +20,7 @@ impl CardBehavior for WreathOfGeists {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

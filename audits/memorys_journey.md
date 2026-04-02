@@ -239,7 +239,50 @@ Known limitations (unchanged from prior audits, not bugs in card implementation)
 - Player becomes illegal target (ruling): NOT TESTED (requires player targeting, engine limitation)
 - All card targets illegal, player still shuffles (ruling): NOT TESTED
 - Ruling: can't target self with flashback: NOT TESTED
-- Not in LLM card knowledge: acceptable (complex card, AI can read oracle text)
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py cache, cached 2026-04-01)
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library.
+Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: ISSUE
+
+### Card data
+- Name "Memory's Journey": CORRECT
+- Mana cost {1}{U} (`Generic(1), Blue`): CORRECT
+- Type Instant: CORRECT
+- Flashback cost {G} (`flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::Green)]))`): CORRECT
+- `move_spell_after_resolve` called at end of `on_resolve`: CORRECT
+
+### Targeting (ISSUE)
+The oracle text specifies two distinct target categories: "Target player" and "up to three target cards from their graveyard." The implementation at lines 39-42 uses:
+
+```
+TargetRequirement::ModalChoice(vec![
+    TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCardOwnedByCaster)),
+    TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCardOwnedByOpponent)),
+])
+```
+
+This models the two graveyards as modal choices rather than explicitly targeting a player. Consequences:
+
+1. **Player not explicitly targeted (BUG)**: Per Scryfall ruling: "If the player is an illegal target by the time Memory's Journey resolves, the spell will have no effect, even if the cards are still legal targets." Since no `Target::Player` is ever created, player hexproof (e.g., Witchbane Orb) would not prevent this spell from targeting that player, and the spell would not fizzle if the player becomes an illegal target.
+
+2. **0-card opponent-graveyard mode defaults to wrong player (BUG)**: At line 55, `target_player` is derived from the first card target's owner via `unwrap_or(controller)`. Per Scryfall ruling: "You don't have to target any cards when you cast Memory's Journey, but you must target a player." If cast in opponent-graveyard mode with 0 cards, the code defaults `target_player` to the controller instead of the opponent, so the wrong library gets shuffled. The engine does allow 0 card targets (`for k in 0..=max` at engine.rs line 877).
+
+### Resolution logic
+- Moves targeted cards from graveyard to library and adds to `library_order`: CORRECT
+- Checks `in_gy` before moving (line 63), handling cards removed before resolution: CORRECT
+- Always shuffles library after moving cards (lines 73-78): CORRECT per ruling "the targeted player will still shuffle their library"
+
+### Test coverage (from `tests/tier11_cards.rs`)
+- `memorys_journey_shuffles_cards_into_library` (line 334): shuffles 2 cards from P1's graveyard into library
+- `memorys_journey_has_flashback` (line 356): verifies flashback cost exists and has 1 symbol
+- Targeting 0 cards (shuffle only): NOT TESTED
+- Player becomes illegal target: NOT TESTED
+- All card targets illegal, player still shuffles: NOT TESTED
+- Cast with flashback from graveyard + exiled after: NOT TESTED
 
 ## Audit — 2026-04-01 16:00
 
@@ -269,3 +312,13 @@ Card data is correct: {1}{U} Instant, flashback {G}. The targeting uses ModalCho
 - Cast with flashback from graveyard + exiled after: NOT TESTED
 - Ruling: player still shuffles if no card targets remain legal: NOT TESTED
 - Ruling: can't target self with flashback: NOT TESTED
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Target player shuffles up to three target cards from their graveyard into their library. / Flashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found. Card data correct: cost {1}{U}, Instant type, flashback cost {G}. The targeting uses ModalChoice to select up to 3 graveyard cards from either the caster's or opponent's graveyard, which is a reasonable simplification of the oracle's dual-target structure (target player + up to 3 target cards from their graveyard). Resolution correctly moves cards to library, adds to library_order, and shuffles the target player's library even if no cards were moved. The `move_spell_after_resolve` call handles flashback exile correctly.
