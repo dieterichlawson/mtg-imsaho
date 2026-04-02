@@ -5,8 +5,8 @@ use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
 
-/// Daybreak Ranger {2}{G} 2/2 Human Archer Werewolf — {T}: deal 2 to flying creature
-/// // Nightfall Predator 4/4 Werewolf — {R},{T}: fight target creature
+/// Daybreak Ranger {2}{G} 2/2 Human Archer Werewolf — {T}: this creature deals 2 to flying creature
+/// // Nightfall Predator 4/4 Werewolf — {R},{T}: this creature fights target creature
 pub struct DaybreakRanger;
 
 impl DaybreakRanger {
@@ -34,7 +34,7 @@ impl CardBehavior for DaybreakRanger {
             subtypes: vec!["Human".into(), "Archer".into(), "Ranger".into(), "Werewolf".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "{T}: Daybreak Ranger deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Daybreak Ranger.".into(),
+            oracle_text: "{T}: This creature deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
@@ -57,7 +57,7 @@ impl CardBehavior for DaybreakRanger {
             subtypes: vec!["Werewolf".into()],
             power: Some(4),
             toughness: Some(4),
-            oracle_text: "{R}, {T}: Nightfall Predator fights target creature.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Nightfall Predator.".into(),
+            oracle_text: "{R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
