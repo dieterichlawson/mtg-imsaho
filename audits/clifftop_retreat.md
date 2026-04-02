@@ -19,4 +19,16 @@
 - **Mana abilities:** Add {R} or {W} -- CORRECT
 
 ## Issues
-None
+
+### Issue 1: Oracle text uses outdated templating (cosmetic)
+
+**Scryfall oracle text:**
+> This land enters tapped unless you control a Mountain or a Plains.
+
+**Implementation oracle_text (line 37 of clifftop_retreat.rs):**
+> Clifftop Retreat enters the battlefield tapped unless you control a Mountain or a Plains.
+
+The current official oracle text uses "This land enters tapped" (post-Bloomburrow templating update), but the implementation still uses the older "Clifftop Retreat enters the battlefield tapped" wording. The doc comment on line 7 has the same outdated phrasing. This is a text-only mismatch; the functional behavior (ETB tapped check, mana production) is correct.
+
+### Verdict
+No functional bugs. One cosmetic oracle text mismatch with modern templating.
