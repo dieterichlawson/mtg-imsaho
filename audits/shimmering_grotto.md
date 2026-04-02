@@ -21,3 +21,25 @@
 None found. The "any color" is correctly modeled as 5 separate abilities.
 
 ## Verdict: PASS
+
+## Audit - 2026-04-02
+
+### Oracle Text (Scryfall)
+- **Name:** Shimmering Grotto
+- **Mana Cost:** (none, Land)
+- **Type:** Land
+- **Oracle Text:** {T}: Add {C}. / {1}, {T}: Add one mana of any color.
+
+### Card Data Audit
+- **Name:** Correct ("Shimmering Grotto")
+- **Cost:** Correct (None)
+- **Types:** Correct (Land)
+- **Oracle Text String:** Correct
+
+### Behavior Audit
+- **{T}: Add {C}:** Mana ability producing (ManaType::Colorless, 1), requires tap, only when untapped on battlefield. Correct.
+- **{1}, {T}: Add one mana of any color:** Implemented as 5 separate activated abilities (W, U, B, R, G), each costing Generic(1) and requiring tap. Correctly models color choice.
+- **Tap exclusivity:** Both ability types require tap, so only one can be used per untap cycle. Correct.
+
+### Result
+**PASS**
