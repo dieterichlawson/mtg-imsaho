@@ -63,6 +63,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Diregraf Ghoul ({B} 2/2): Enters tapped.
 - Grave Bramble ({1}{G}{G} 3/4 defender): Can't attack, but great blocker.
 - One-Eyed Scarecrow ({3} 2/3 artifact creature, defender): Can't attack.
+- Screeching Bat ({2}{B} 2/2 flying, DFC): At your upkeep, you may pay {2}{B}{B} to transform into Stalking Vampire (5/5, no flying). Transform back the same way. Pay to transform when you need a bigger body for attacking or blocking; stay as the Bat when flying evasion matters more.
 
 ### Spells
 - Lightning Bolt ({R} instant): Deal 3 damage to any target. Use to kill creatures or finish off opponent.
