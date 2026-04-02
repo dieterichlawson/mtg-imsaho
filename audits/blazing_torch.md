@@ -389,3 +389,13 @@ These are edge-case robustness concerns, not standard-play bugs.
 
 ### Summary
 **PASS** — The implementation correctly handles all standard-play scenarios for Blazing Torch. All previous audit issues (wrong damage source, equip targeting) have been resolved. The only remaining concern is edge-case robustness around the manual sacrifice handling when the torch is unexpectedly absent.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Equipped creature can't be blocked by Vampires or Zombies.\nEquipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target."\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found. Damage source correctly attributed to Blazing Torch (not the equipped creature) per rulings. Block restriction, granted activated ability, and equip ability all correctly implemented.

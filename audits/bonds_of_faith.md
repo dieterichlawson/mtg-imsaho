@@ -90,3 +90,13 @@ All existing tests use either named creatures from the registry (Elder Cathar, a
 ### Verdict: CONDITIONAL PASS
 
 The card is functionally correct for the common case (enchanting a non-token, non-transformed creature). Bug #1 (token subtypes not checked) is a real correctness issue that would produce wrong behavior when enchanting Human tokens. Bug #2 (snapshot vs continuous) is a known engine limitation.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+No issues found. Target requirement correctly set to Creature for the Aura. Human check grants +2/+2, non-Human prevents attack and block. The "Enchant creature" keyword ability is handled via target_requirement rather than oracle_text, which is acceptable.

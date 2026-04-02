@@ -87,3 +87,13 @@ Findings:
 
 ### Verdict
 PASS -- No mismatches between oracle text and implementation.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, sacrifice a creature.\nDraw two cards.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.

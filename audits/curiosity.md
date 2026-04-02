@@ -110,3 +110,13 @@ The major issue from the prior audit (forced draw) has been fixed:
 ### Test coverage
 - `curiosity_draw_on_enchanted_creature_combat_damage` -- combat damage trigger.
 - Missing: non-combat damage trigger, no-trigger on own-controller damage, no-trigger on different creature's damage.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant creature\nWhenever enchanted creature deals damage to an opponent, you may draw a card.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+No issues found. Card data (name, cost {U}, types, subtypes, oracle text) all match. Trigger on AnyDamageToPlayer correctly checks that the source is the enchanted creature and that the damaged player is an opponent (not the controller). The "may" is properly implemented as a YesNo choice. Draw is handled correctly.
