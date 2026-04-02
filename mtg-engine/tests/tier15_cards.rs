@@ -935,6 +935,121 @@ fn stalking_vampire_transforms_back_when_player_pays() {
     assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
 }
 
+#[test]
+fn stalking_vampire_does_not_have_flying() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+
+    // Simulate real game setup: obj.keywords is populated from front face card_data.
+    if let Some(obj) = state.get_object_mut(bat) {
+        obj.keywords = vec![Keyword::Flying];
+    }
+
+    // Verify front face has Flying.
+    assert!(state.has_keyword(bat, Keyword::Flying, &reg));
+
+    // Add mana and transform.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &reg);
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Now Stalking Vampire — should NOT have Flying.
+    assert!(state.get_object(bat).unwrap().is_transformed);
+    assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
+    assert!(!state.has_keyword(bat, Keyword::Flying, &reg),
+        "Stalking Vampire should not have Flying");
+    // obj.keywords should be empty (back face has no keywords).
+    assert!(state.get_object(bat).unwrap().keywords.is_empty(),
+        "obj.keywords should be cleared on transform to back face");
+}
+
+#[test]
+fn screeching_bat_regains_flying_on_transform_back() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+
+    // Simulate real game: front face keywords populated.
+    if let Some(obj) = state.get_object_mut(bat) {
+        obj.keywords = vec![Keyword::Flying];
+    }
+
+    // Transform to Stalking Vampire via the helper directly.
+    // (Set up as if already transformed, with back face data.)
+    if let Some(obj) = state.get_object_mut(bat) {
+        obj.is_transformed = true;
+        obj.name = "Stalking Vampire".into();
+        obj.keywords = vec![]; // Back face has no keywords.
+        obj.subtypes = vec!["Vampire".into()];
+    }
+
+    // Add mana and transform back.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &reg);
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Should be back to Screeching Bat with Flying restored.
+    assert!(!state.get_object(bat).unwrap().is_transformed);
+    assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
+    assert!(state.has_keyword(bat, Keyword::Flying, &reg),
+        "Screeching Bat should have Flying after transforming back");
+    assert!(state.get_object(bat).unwrap().keywords.contains(&Keyword::Flying),
+        "obj.keywords should contain Flying after transforming back");
+}
+
+#[test]
+fn screeching_bat_transform_updates_subtypes() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+
+    // Simulate real game setup: front face subtypes.
+    if let Some(obj) = state.get_object_mut(bat) {
+        obj.keywords = vec![Keyword::Flying];
+        obj.subtypes = vec!["Bat".into()];
+    }
+
+    // Verify front face subtype.
+    assert!(state.get_object(bat).unwrap().subtypes.contains(&"Bat".to_string()));
+
+    // Add mana and transform.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &reg);
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Stalking Vampire should have "Vampire" subtype, not "Bat".
+    let obj = state.get_object(bat).unwrap();
+    assert!(obj.subtypes.contains(&"Vampire".to_string()),
+        "Stalking Vampire should have Vampire subtype");
+    assert!(!obj.subtypes.contains(&"Bat".to_string()),
+        "Stalking Vampire should not have Bat subtype");
+}
+
 // ── Ludevic's Test Subject ──────────────────────────────────────────
 
 #[test]
