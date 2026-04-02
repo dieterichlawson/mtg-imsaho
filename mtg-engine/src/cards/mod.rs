@@ -191,6 +191,8 @@ pub enum TargetFilter {
     HasSubtype(String),
     /// "Another" — excludes the source permanent from valid targets.
     Another,
+    /// Only creatures with the same name as the source permanent (Evil Twin).
+    SameNameAsSource,
 }
 
 impl std::fmt::Display for TargetFilter {
@@ -218,6 +220,7 @@ impl std::fmt::Display for TargetFilter {
             }
             TargetFilter::HasSubtype(subtype) => write!(f, "{}", subtype),
             TargetFilter::Another => write!(f, "another"),
+            TargetFilter::SameNameAsSource => write!(f, "with the same name"),
             TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
                 let mut parts: Vec<String> = subtypes.clone();
                 for t in card_types {

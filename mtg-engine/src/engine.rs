@@ -1216,6 +1216,12 @@ fn matches_ability_target_filter(
         TargetFilter::HasSubtype(subtype) => {
             obj.subtypes.contains(subtype)
         }
+        TargetFilter::SameNameAsSource => {
+            // Only target creatures with the same name as the source permanent.
+            state.get_object(source_id)
+                .map(|source| source.name == obj.name)
+                .unwrap_or(false)
+        }
         _ => true, // Other filters not commonly used for ability targeting
     }
 }
@@ -2358,6 +2364,32 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.add_counters(*source_id, crate::types::CounterType::PlusOnePlusOne, 1);
             state.log(LogLevel::Event,
                 format!("{}: +1/+1 counter from attack trigger", source_name));
+        }
+        (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
+            // Copy the target creature's characteristics onto the source permanent.
+            let (name, power, toughness, card_id, card_types, subtypes, keywords) =
+                match state.get_object(*target_id) {
+                    Some(o) => {
+                        let kw = registry.card_data(o.card_id)
+                            .map(|d| d.keywords.clone())
+                            .unwrap_or_default();
+                        (o.name.clone(), o.power, o.toughness, o.card_id,
+                         o.card_types.clone(), o.subtypes.clone(), kw)
+                    }
+                    None => return,
+                };
+
+            if let Some(obj) = state.get_object_mut(*source_id) {
+                obj.name = name.clone();
+                obj.power = power;
+                obj.toughness = toughness;
+                obj.card_id = card_id;
+                obj.keywords = keywords;
+                obj.card_types = card_types;
+                obj.subtypes = subtypes;
+            }
+            state.log(LogLevel::Event,
+                format!("Evil Twin enters as a copy of {}", name));
         }
         _ => {}
     }

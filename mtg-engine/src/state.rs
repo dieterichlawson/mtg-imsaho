@@ -1390,6 +1390,10 @@ pub enum PendingEffect {
     DestroyThenCounter { source_id: ObjectId, source_name: String },
     /// Sacrifice the chosen creature (generic sacrifice, e.g. Liliana -2).
     SacrificeCreature { source_name: String },
+    /// Copy the chosen creature onto the source permanent (Evil Twin clone effect).
+    /// The source becomes a copy of the target, except it retains any extra abilities
+    /// stored via card_state markers.
+    CopyCreature { source_id: ObjectId },
 }
 
 /// Game result.

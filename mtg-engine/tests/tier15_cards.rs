@@ -1581,11 +1581,20 @@ fn evil_twin_copies_creature_on_etb() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let _opponent_creature = named_creature(&mut state, &reg, "Grizzly Bears", P1);
+    let opponent_creature = named_creature(&mut state, &reg, "Grizzly Bears", P1);
     let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
 
     let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
     behavior.on_enter_battlefield(&mut state, twin, &reg);
+
+    // ETB now presents an optional choice instead of auto-copying.
+    assert!(state.awaiting_action.is_some(), "Should present a copy choice");
+
+    // Resolve the choice by selecting the opponent's creature.
+    let target = mtg_engine::actions::Target::Object(opponent_creature);
+    let effect = mtg_engine::state::PendingEffect::CopyCreature { source_id: twin };
+    state.awaiting_action = None;
+    mtg_engine::engine::apply_pending_effect(&mut state, &target, &effect, &reg);
 
     // Evil Twin should have copied Grizzly Bears stats.
     assert_eq!(state.get_object(twin).unwrap().name, "Grizzly Bears");
