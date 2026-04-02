@@ -50,3 +50,42 @@ Otherwise correct: cost ({1}{B}{B}), type (Creature), subtype (Zombie), P/T (2/2
 - **Missing tests:** No test for empty graveyard (no-op case), no test for non-Zombie cards being excluded, no test for multiple Zombies verifying randomness.
 
 ### Verdict: ISSUES FOUND (1 known bug, no new issues)
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this creature enters, return a Zombie card at random from your graveyard to your hand.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+### Code issues
+
+The previously identified issue has been fixed:
+
+1. **"Zombie card" filter: FIXED.** Lines 50-54 now filter only by Zombie subtype:
+   ```rust
+   .filter(|o| {
+       registry.card_data(o.card_id)
+           .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
+           .unwrap_or(false)
+   })
+   ```
+   There is no creature-type check -- the filter matches any card with the Zombie subtype, which correctly implements "a Zombie card" (not "a Zombie creature card").
+
+2. **Oracle text field matches exactly.** Line 28: `"When this creature enters, return a Zombie card at random from your graveyard to your hand."` -- matches Scryfall oracle verbatim.
+
+3. **Card data correct.** Cost `{1}{B}{B}` (lines 18-20), type Creature (line 22), subtype Zombie (line 24), P/T 2/2 (lines 25-26).
+
+4. **Random selection correct.** Uses `shuffle` then picks index 0 (lines 60-61). Uniform random selection.
+
+5. **ETB trigger correct.** `TriggerKind::EntersBattlefield` (line 33), `on_enter_battlefield` handler (line 41).
+
+6. **Zone handling correct.** Checks object is on battlefield (line 43), scans graveyard (line 48), moves chosen card to hand (line 63).
+
+### Tricky interactions checked
+- Empty graveyard (no Zombies): the `if !zombies.is_empty()` guard at line 58 correctly handles this as a no-op.
+- Ghoulraiser itself is not in the graveyard when ETB triggers (it is on the battlefield), so it cannot return itself.
+
+### Test coverage
+- `ghoulraiser_returns_zombie_from_graveyard` -- basic functionality.
+- Missing: empty graveyard case, multiple Zombies (randomness verification), non-creature Zombie card.

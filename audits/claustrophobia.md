@@ -83,3 +83,37 @@ No Claustrophobia-specific logic found.
 ## Verdict
 
 Two issues found, both low-to-medium severity. The core gameplay behavior (tap on entry, prevent untap) is functionally correct for typical gameplay scenarios. The triggered-ability timing is incorrect but unlikely to matter in the Innistrad-only card pool unless trigger-interaction cards are present.
+
+## Audit — 2026-04-02
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant creature
+When this Aura enters, tap enchanted creature.
+Enchanted creature doesn't untap during its controller's untap step.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+
+Both previously identified issues have been fixed:
+
+1. **Oracle text field now includes "Enchant creature" and uses modern templating: FIXED.** Line 25: `"Enchant creature\nWhen this Aura enters, tap enchanted creature.\nEnchanted creature doesn't untap during its controller's untap step."` -- matches oracle text exactly.
+
+2. **ETB tap is now a proper triggered ability: FIXED.**
+   - `triggered_abilities` (lines 32-36) now includes `TriggerKind::EntersBattlefield` with description "tap enchanted creature".
+   - `on_enter_battlefield` handler (lines 49-57) performs the tap by looking up `attached_to` and setting `tapped = true`.
+   - `on_resolve` (lines 45-47) now only calls `resolve_aura`, no longer taps during resolution.
+
+3. **Card data correct.** Cost `{1}{U}{U}` (lines 16-18), types Enchantment with Aura subtype (lines 19-21).
+
+4. **Continuous effect correct.** `PreventUntap { scope: Attached }` (line 29) implements "doesn't untap during its controller's untap step".
+
+5. **Target requirement correct.** `TargetRequirement::Creature` (line 41) implements "Enchant creature".
+
+### Tricky interactions checked
+- Tapping an already-tapped creature: `on_enter_battlefield` sets `tapped = true` unconditionally, which is correct (no-op if already tapped). Matches ruling: "Claustrophobia can target and enchant a tapped or untapped creature."
+- Other untap effects: `PreventUntap` only blocks the untap step; other effects can still untap. Matches ruling: "The enchanted creature can still be untapped in other ways."
+
+### Test coverage
+- `claustrophobia_taps_creature` -- verifies tap on entry and aura attachment.
+- `claustrophobia_prevents_untap` -- verifies creature stays tapped through untap step.
