@@ -1355,6 +1355,10 @@ pub enum PendingEffect {
     ExileFromGraveyardGainLife { controller: PlayerId },
     /// Sacrifice the chosen creature, then search library for a creature card (Garruk -1).
     SacrificeAndTutor { garruk_id: ObjectId },
+    /// Destroy the target creature, then put a +1/+1 counter on the source permanent.
+    /// The counter is added regardless of whether destruction succeeds (indestructible/regenerate),
+    /// but the entire effect is skipped if the target is illegal.
+    DestroyThenCounter { source_id: ObjectId, source_name: String },
 }
 
 /// Game result.
