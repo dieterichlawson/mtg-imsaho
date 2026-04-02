@@ -21,3 +21,44 @@
 
 ## Issues
 None
+
+---
+
+## Re-Audit (2026-04-02)
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+> Enchant player
+> At the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard.
+
+**Ruling [2011-09-22]:** If the enchanted player has only one card in their graveyard, they exile that card.
+
+### Card Data Verification
+All fields verified correct: name, mana cost ({3}{B}), types (Enchantment -- Aura Curse), oracle text, `TargetRequirement::PlayerOnly`, `TriggerKind::Upkeep`.
+
+### Trigger Logic Verification
+- Correctly gates on `state.active_player != cursed_player` (fires only on enchanted player's upkeep).
+- Empty graveyard: returns early (correct).
+- 1-2 cards in graveyard: auto-exiles all (correct per ruling).
+- 3+ cards: presents sequential player choices via `ExileCurseOfOblivion { remaining: 1 }` (correct).
+
+### Issue 1 (Minor): Hardcoded ObjectId(0) for second exile choice source
+
+In `mtg-engine/src/engine.rs` line 2088, the second exile prompt uses a dummy source ID:
+
+```rust
+source: crate::ids::ObjectId(0), // curse source
+```
+
+The first choice (in `curse_of_oblivion.rs:86`) correctly uses `source: self_id`, but the curse's object ID is not stored in `PendingEffect::ExileCurseOfOblivion`, so it is lost when the engine presents the second choice. Could matter if source tracking is used for UI or interactions.
+
+**Severity:** Low.
+
+### Issue 2 (Minor): Test coverage gap
+
+Test `curse_of_oblivion_exiles_from_graveyard` in `mtg-engine/tests/tier7_cards.rs` only covers the auto-exile path (<=2 cards). No test covers the >2 cards player-choice path.
+
+### LLM Player
+No special-case handling in `mtg-player/src/llm.rs`. The generic `ResolutionChoice`/`ChooseTarget` path should handle this card.
+
+### Verdict
+**PASS** -- Implementation correctly matches oracle text and ruling. Two minor issues noted but no functional correctness bugs.
