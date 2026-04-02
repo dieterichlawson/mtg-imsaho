@@ -6,3 +6,11 @@ When this creature dies, you may search your library for a Curse card, put it on
 **Status**: PASS
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.

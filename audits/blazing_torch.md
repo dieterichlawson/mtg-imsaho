@@ -399,3 +399,11 @@ These are edge-case robustness concerns, not standard-play bugs.
 
 ### Code issues
 No issues found. Damage source correctly attributed to Blazing Torch (not the equipped creature) per rulings. Block restriction, granted activated ability, and equip ability all correctly implemented.
+
+## Audit — 2026-04-02 (full-reaudit)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Status**: PASS
+
+### Code issues
+No issues found.
