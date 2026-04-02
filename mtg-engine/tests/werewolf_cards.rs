@@ -401,6 +401,86 @@ fn instigator_gang_transforms_and_gains_trample() {
         "Wildblood Pack should have Trample");
 }
 
+#[test]
+fn instigator_gang_buffs_itself_when_attacking() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+
+    // Base power is 2.
+    assert_eq!(state.effective_power(gang, &reg).unwrap(), 2);
+
+    // Declare Instigator Gang as attacker — it should buff itself +1/+0.
+    state.events.push(GameEvent::AttackersDeclared {
+        attackers: vec![(gang, P1)],
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    // Should be 2 base + 1 from own buff = 3.
+    assert_eq!(state.effective_power(gang, &reg).unwrap(), 3,
+        "Instigator Gang should buff itself when attacking (+1/+0)");
+}
+
+#[test]
+fn instigator_gang_buffs_other_attackers_you_control() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let ally = ready_creature(&mut state, P0, 3, 3);
+
+    // Declare both as attackers.
+    state.events.push(GameEvent::AttackersDeclared {
+        attackers: vec![(gang, P1), (ally, P1)],
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    // Gang: 2 + 1 = 3 (buffs itself too).
+    assert_eq!(state.effective_power(gang, &reg).unwrap(), 3,
+        "Instigator Gang should be 3 power when attacking");
+    // Ally: 3 + 1 = 4 (buffed by Instigator Gang).
+    assert_eq!(state.effective_power(ally, &reg).unwrap(), 4,
+        "Ally should get +1/+0 from Instigator Gang");
+}
+
+#[test]
+fn instigator_gang_does_not_buff_opponent_attackers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P1);
+    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let enemy = ready_creature(&mut state, P1, 2, 2);
+
+    // Opponent's creature attacks.
+    state.events.push(GameEvent::AttackersDeclared {
+        attackers: vec![(enemy, P0)],
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    // Enemy should NOT be buffed (different controller).
+    assert_eq!(state.effective_power(enemy, &reg).unwrap(), 2,
+        "Opponent's creature should not get Instigator Gang's buff");
+}
+
+#[test]
+fn wildblood_pack_buffs_itself_plus_3() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+
+    // Transform to Wildblood Pack.
+    state.get_object_mut(gang).unwrap().is_transformed = true;
+    assert_eq!(state.effective_power(gang, &reg).unwrap(), 5);
+
+    // Declare Wildblood Pack as attacker — should buff itself +3/+0.
+    state.events.push(GameEvent::AttackersDeclared {
+        attackers: vec![(gang, P1)],
+    });
+    triggers::process_triggers(&mut state, &reg);
+
+    // Should be 5 base + 3 from own buff = 8.
+    assert_eq!(state.effective_power(gang, &reg).unwrap(), 8,
+        "Wildblood Pack should buff itself +3/+0 when attacking");
+}
+
 // ── Ulvenwald Mystics ─────────────────────────────────────────────
 
 #[test]
