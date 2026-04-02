@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef, helpers};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -114,13 +114,11 @@ impl CardBehavior for InstigatorGang {
             return;
         }
         if self.should_transform(state, self_id, registry) {
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = !obj.is_transformed;
-                let name = if obj.is_transformed { "Wildblood Pack" } else { "Instigator Gang" };
-                obj.name = name.into();
-                state.log(crate::state::LogLevel::Event,
-                    format!("Instigator Gang transforms into {}", name));
-            }
+            let was_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
+            helpers::apply_transform(state, self_id, registry);
+            let name = if was_transformed { "Instigator Gang" } else { "Wildblood Pack" };
+            state.log(crate::state::LogLevel::Event,
+                format!("Instigator Gang transforms into {}", name));
         }
     }
 }
