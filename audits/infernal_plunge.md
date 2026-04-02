@@ -56,3 +56,36 @@ Findings:
 - No CombatDamageDealt misuse (card deals no damage).
 - No triggered_abilities declared, none needed: correct.
 - Tests: 4 tests in infernal_plunge.rs (cannot_cast_without_creature, can_cast_with_creature, sacrifice_at_cast_time, adds_three_red_mana, one_action_per_sacrifice_target) plus test in tier8_cards.rs. Good coverage.
+
+## Audit (2026-04-02)
+
+### Oracle Text (Scryfall)
+- **Name:** Infernal Plunge
+- **Cost:** {R}
+- **Type:** Sorcery
+- **Oracle Text:** As an additional cost to cast this spell, sacrifice a creature. / Add {R}{R}{R}.
+
+### Implementation: `mtg-engine/src/cards/isd/infernal_plunge.rs`
+
+#### Card Data
+- **name:** "Infernal Plunge" — correct.
+- **cost:** `{R}` — correct.
+- **card_types:** `[Sorcery]` — correct.
+- **supertypes/subtypes:** empty — correct.
+- **oracle_text:** `"As an additional cost to cast this spell, sacrifice a creature.\nAdd {R}{R}{R}."` — matches oracle.
+- **additional_cost:** `Some(AdditionalCost::SacrificeCreature)` — correct. Engine enforces sacrifice at cast time via `SacrificeCreature` variant in `engine.rs`.
+- **keywords, power, toughness, flashback_cost, continuous_effects, triggered_abilities:** all empty/None — correct for a sorcery with no extras.
+
+#### on_resolve
+- Gets controller from the object — correct.
+- Adds 3 red mana: `state.get_player_mut(controller).mana_pool.add(ManaType::Red, 3)` — correct, matches "Add {R}{R}{R}".
+- Calls `state.move_spell_after_resolve(object_id)` — correct. Sends to graveyard (or exile if flashback).
+
+#### Additional Cost Mechanism
+- `AdditionalCost::SacrificeCreature` in `engine.rs` requires at least one creature on battlefield to generate cast actions, presents each creature as a sacrifice option, and sacrifices the chosen creature when the spell is cast (before resolution). This correctly implements "As an additional cost to cast this spell, sacrifice a creature."
+
+### Tests
+- `tier8_cards::infernal_plunge_sacrifices_and_adds_rrr` — verifies creature goes to graveyard and 3 red mana is added. Passes.
+
+### Verdict
+**PASS** — No issues found. The card data, additional cost, mana production, and spell cleanup all match the oracle text.

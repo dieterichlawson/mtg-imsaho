@@ -337,3 +337,62 @@ No anti-patterns detected. Not in LLM card knowledge section.
 - Only exiles own graveyard: `mtg-engine/tests/tier8_cards.rs:653` (harvest_pyre_only_exiles_own_graveyard)
 - Fizzle (target leaves battlefield): NOT TESTED
 - Spell countered (cards should already be exiled as cost): NOT TESTED
+
+---
+
+## Audit — 2026-04-02
+
+### Oracle Text (Scryfall, cached 2026-04-01)
+
+> As an additional cost to cast this spell, exile X cards from your graveyard.
+> Harvest Pyre deals X damage to target creature.
+
+### Card Data
+
+- **Name**: Correct ("Harvest Pyre")
+- **Mana cost**: `{1}{R}` — Correct
+- **Type**: Instant — Correct
+- **Oracle text**: Matches Scryfall verbatim
+- **Additional cost**: `AdditionalCost::ExileXFromGraveyard` — Correct
+
+### Additional Cost Mechanism
+
+- At cast time, the engine expands legal actions to include one per X value (0..=graveyard size), stored in `exile_count` on the `CastSpell` action. Correct.
+- On submission, engine exiles X cards from the caster's graveyard and stores the count in `card_state["exile_count"]` on the spell object. Correct.
+- The spell itself is excluded from the graveyard count (`o.id != *object_id`). Correct.
+- Only the caster's graveyard is eligible (`o.owner == player`). Correct.
+- Cards are exiled before the spell moves to the stack (cost paid at cast time). Correct per rules.
+
+### Targeting
+
+- `target_requirement()` returns `TargetRequirement::Creature`. Correct — oracle says "target creature".
+
+### Damage / Resolution (`on_resolve`)
+
+- Reads `exile_count` from `card_state`. Correct.
+- Deals `count` damage to the target creature if `count > 0`. Correct (0 damage is a no-op per rule 119.8).
+- Checks `obj.zone == Zone::Battlefield` before dealing damage. Correct — if the target has left the battlefield, no damage is dealt.
+- Sets `obj.damage_marked += count`. Correct.
+- Pushes to `obj.damaged_by`. Correct.
+- Emits `NonCombatDamageDealt` event with correct source, target, and amount. Correct.
+- Calls `move_spell_after_resolve` which sends it to graveyard (or exile if flashback). Correct.
+
+### Potential Issues
+
+None found. The implementation is faithful to the oracle text.
+
+### Test Coverage
+
+- `harvest_pyre_deals_damage_equal_to_chosen_x` — X=4, verifies 4 exiled and 4 damage.
+- `harvest_pyre_player_chooses_partial_x` — X=2 of 4 available, verifies 2 exiled, 2 remaining + spell in graveyard, 2 damage.
+- `harvest_pyre_x_zero_deals_no_damage` — X=0, verifies 0 damage.
+- `harvest_pyre_legal_actions_include_different_x_values` — verifies action generation for multiple X values.
+- `harvest_pyre_only_exiles_own_graveyard` — verifies opponent's graveyard is untouched.
+- Fizzle (target leaves battlefield): NOT TESTED
+- Spell countered (cards already exiled as cost, not returned): NOT TESTED
+- `damaged_by` tracking: NOT EXPLICITLY ASSERTED in tests (set in code but no test checks it)
+- `NonCombatDamageDealt` event: NOT EXPLICITLY ASSERTED in tests
+
+### Verdict
+
+**PASS** — No mismatches found. Implementation correctly handles the variable exile cost, damage calculation, targeting, damage tracking, and event emission.
