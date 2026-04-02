@@ -690,7 +690,7 @@ fn back_from_the_brink_creates_token_copy() {
 // ── Delver of Secrets ──────────────────────────────────────────
 
 #[test]
-fn delver_transforms_when_top_card_is_instant() {
+fn delver_transforms_when_player_reveals_instant() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
@@ -703,15 +703,62 @@ fn delver_transforms_when_top_card_is_instant() {
     state.move_object(bolt, Zone::Library);
     state.players[0].library_order.insert(0, bolt);
 
-    // Trigger upkeep.
+    // Trigger upkeep — should present a YesNo choice.
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, delver, &reg);
 
-    // Should be transformed.
+    // Should NOT be transformed yet — awaiting player choice.
+    assert!(!state.get_object(delver).unwrap().is_transformed);
+    assert!(state.awaiting_action.is_some(), "Should be awaiting reveal choice");
+
+    // Player chooses to reveal.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Now should be transformed.
     assert!(state.get_object(delver).unwrap().is_transformed);
     assert_eq!(state.get_object(delver).unwrap().name, "Insectile Aberration");
     // Dynamic P/T should be 3/2.
     assert_eq!(behavior.dynamic_pt(&state, delver), Some((3, 2)));
+
+    // The card should still be on top of the library (per ruling).
+    assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
+}
+
+#[test]
+fn delver_does_not_transform_when_player_declines_reveal() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let delver = named_creature(&mut state, &reg, "Delver of Secrets", P0);
+
+    // Put a Lightning Bolt (instant) on top of library.
+    let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
+    state.move_object(bolt, Zone::Library);
+    state.players[0].library_order.insert(0, bolt);
+
+    // Trigger upkeep — should present a YesNo choice.
+    let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, delver, &reg);
+
+    assert!(state.awaiting_action.is_some(), "Should be awaiting reveal choice");
+
+    // Player declines to reveal.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &reg,
+    );
+
+    // Should NOT be transformed.
+    assert!(!state.get_object(delver).unwrap().is_transformed);
+    assert_eq!(state.get_object(delver).unwrap().name, "Delver of Secrets");
+
+    // The card should still be on top of the library.
+    assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
 }
 
 #[test]
@@ -729,9 +776,10 @@ fn delver_does_not_transform_when_top_card_is_creature() {
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, delver, &reg);
 
-    // Should NOT be transformed.
+    // Should NOT be transformed and no choice presented.
     assert!(!state.get_object(delver).unwrap().is_transformed);
     assert_eq!(state.get_object(delver).unwrap().name, "Delver of Secrets");
+    assert!(state.awaiting_action.is_none(), "No choice should be presented for non-instant/sorcery");
 }
 
 // ── Cloistered Youth ──────────────────────────────────────────

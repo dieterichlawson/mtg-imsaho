@@ -58,6 +58,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Vampire Interloper ({1}{B} 2/1 flying): Can't block.
 - Spectral Rider ({W}{W} 2/2 intimidate): Only blocked by artifact creatures or same-color creatures.
 - Invisible Stalker ({1}{U} 1/1 hexproof): Can't be targeted by opponents. Can't be blocked.
+- Delver of Secrets ({U} 1/1 Human Wizard): At your upkeep, looks at top card of library. If it's an instant or sorcery, you may reveal it to transform into Insectile Aberration (3/2 flying). ALWAYS choose yes when asked to reveal — a 3/2 flyer for {U} is incredible.
 - Somberwald Spider ({4}{G} 2/4 reach): Can block flyers.
 - Diregraf Ghoul ({B} 2/2): Enters tapped.
 - Grave Bramble ({1}{G}{G} 3/4 defender): Can't attack, but great blocker.

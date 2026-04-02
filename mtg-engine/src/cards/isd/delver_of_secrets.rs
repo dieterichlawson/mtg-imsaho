@@ -1,12 +1,33 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Delver of Secrets {U} 1/1 Human Wizard // Insectile Aberration 3/2 Human Insect with Flying.
 /// At the beginning of your upkeep, look at the top card of your library. You may reveal that
 /// card. If an instant or sorcery card is revealed this way, transform Delver of Secrets.
 pub struct DelverOfSecrets;
+
+impl DelverOfSecrets {
+    /// Check if the top card of the given player's library is an instant or sorcery.
+    fn top_card_is_instant_or_sorcery(state: &GameState, controller: crate::ids::PlayerId, registry: &CardRegistry) -> bool {
+        let top_card_id = state.get_player(controller).library_order.first().copied();
+        if let Some(top_id) = top_card_id {
+            let card_id = state.get_object(top_id).map(|o| o.card_id);
+            card_id
+                .and_then(|cid| registry.card_data(cid))
+                .map(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
+                .unwrap_or_else(|| {
+                    // Fallback to object card_types (for tokens or objects without registry entries).
+                    state.get_object(top_id)
+                        .map(|o| o.card_types.contains(&CardType::Instant) || o.card_types.contains(&CardType::Sorcery))
+                        .unwrap_or(false)
+                })
+        } else {
+            false
+        }
+    }
+}
 
 impl CardBehavior for DelverOfSecrets {
     fn card_data(&self) -> CardData {
@@ -28,7 +49,7 @@ impl CardBehavior for DelverOfSecrets {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
-                    description: "look at top card, may transform".into(),
+                    description: "look at top card, may reveal to transform".into(),
                 },
             ],
         }
@@ -69,28 +90,54 @@ impl CardBehavior for DelverOfSecrets {
         if is_transformed || state.active_player != controller {
             return;
         }
-        // Look at the top card of the library. If it's an instant or sorcery, transform.
-        let top_card_id = state.get_player(controller).library_order.first().copied();
-        if let Some(top_id) = top_card_id {
-            // Check card types via registry (more reliable) or object.
-            let card_id = state.get_object(top_id).map(|o| o.card_id);
-            let is_instant_or_sorcery = card_id
-                .and_then(|cid| registry.card_data(cid))
-                .map(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
-                .unwrap_or_else(|| {
-                    // Fallback to object card_types.
-                    state.get_object(top_id)
-                        .map(|o| o.card_types.contains(&CardType::Instant) || o.card_types.contains(&CardType::Sorcery))
-                        .unwrap_or(false)
-                });
-            if is_instant_or_sorcery {
-                if let Some(obj) = state.get_object_mut(self_id) {
-                    obj.is_transformed = true;
-                    obj.name = "Insectile Aberration".into();
-                }
-                state.log(crate::state::LogLevel::Event,
-                    "Delver of Secrets transforms into Insectile Aberration".into());
-            }
+        // Look at the top card of the library.
+        let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
+
+        // Log what was seen (the player "looks at" the top card).
+        let top_card_name = state.get_player(controller).library_order.first()
+            .and_then(|id| state.get_object(*id))
+            .map(|o| o.name.clone())
+            .unwrap_or_else(|| "nothing".into());
+        state.log(LogLevel::Debug,
+            format!("Delver of Secrets: top card is {}", top_card_name));
+
+        if top_is_instant_or_sorcery {
+            // The top card is an instant or sorcery — present the "you may reveal" choice.
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: self_id,
+                choice: ResolutionChoiceKind::YesNo {
+                    description: format!(
+                        "Delver of Secrets: reveal {} from the top of your library to transform?",
+                        top_card_name
+                    ),
+                    source_card: self_id,
+                },
+            });
+        }
+        // If not an instant or sorcery, nothing happens (per ruling, card stays on top).
+    }
+
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+        if !yes {
+            // Player chose not to reveal — card stays on top, no transform.
+            state.log(LogLevel::Event, "Delver of Secrets: chose not to reveal".into());
+            return;
+        }
+        // Player reveals the top card — transform Delver of Secrets.
+        let top_card_name = state.get_object(self_id)
+            .and_then(|o| {
+                let controller = o.controller;
+                state.get_player(controller).library_order.first()
+                    .and_then(|id| state.get_object(*id))
+                    .map(|o| o.name.clone())
+            })
+            .unwrap_or_else(|| "a card".into());
+        state.log(LogLevel::Event,
+            format!("Delver of Secrets: reveals {} — transforming!", top_card_name));
+        if let Some(obj) = state.get_object_mut(self_id) {
+            obj.is_transformed = true;
+            obj.name = "Insectile Aberration".into();
         }
     }
 
