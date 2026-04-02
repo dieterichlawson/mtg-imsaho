@@ -36,6 +36,3 @@ Add the ability to serialize a game state to a file and resume from it. This wou
 ### Fiend Hunter (1 issue)
 - LLM card knowledge (`mtg-player/src/llm.rs:102`) says "exiles an opponent's creature" but card targets any creature and exile is optional ("you may")
 
-### Grimoire of the Dead (2 issues)
-- Discard auto-selects first card from hand instead of letting player choose
-- Study counters stored as `card_state` hack instead of proper counter system (invisible to proliferate etc.)
