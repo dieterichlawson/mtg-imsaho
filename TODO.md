@@ -22,9 +22,6 @@ Add the ability to serialize a game state to a file and resume from it. This wou
 ### Instigator Gang (1 issue — engine-level)
 - Doesn't buff itself when attacking — `AnyCreatureAttacks` watcher in `triggers.rs:708` excludes the attacker from seeing its own attack event. Affects both Instigator Gang (+1/+0) and Wildblood Pack (+3/+0).
 
-### Delver of Secrets (1 issue)
-- "You may reveal" choice not presented to player — auto-transforms when top card is instant/sorcery
-
 ### Screeching Bat (1 issue)
 - "You may" upkeep transform auto-decided — always pays and transforms when mana available
 
