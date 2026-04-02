@@ -77,3 +77,61 @@ Whenever Grimgrin attacks, destroy target creature defending player controls, th
 - No target = no effect (ruling 3): NOT TESTED
 - Fizzle when target illegal (ruling 2): NOT TESTED
 - +1/+1 counter when target survives indestructible (ruling 1): NOT TESTED
+
+## Audit — 2026-04-01 21:58
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/214/grimgrin-corpse-born
+**Oracle text**: Grimgrin enters tapped and doesn't untap during your untap step.
+Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
+Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.
+**Type line**: Legendary Creature — Zombie Warrior
+**Mana cost**: {3}{U}{B}
+**P/T**: 5/5
+**Rulings**:
+- [2013-07-01] If Grimgrin's last ability resolves, but the targeted creature isn't destroyed (perhaps because it regenerated or has indestructible), you'll still put a +1/+1 on Grimgrin.
+- [2011-09-22] If the targeted creature is an illegal target by the time Grimgrin's last ability resolves, the entire ability doesn't resolve and none of its effects will occur. You won't put a +1/+1 counter on Grimgrin.
+- [2011-09-22] If the defending player controls no creatures when Grimgrin attacks, the last ability will be removed from the stack and have no effect.
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All issues from the previous audit (2026-04-01 15:30) have been resolved:
+- Sacrifice cost is now declared as `SacrificeCost::SacrificeAnotherCreature` (line 69), which the engine uses to correctly hide the ability when no other creatures are present.
+- Attack trigger now uses `present_target_choice` (line 114) which presents the player with a choice when multiple targets exist, and auto-applies only when there is exactly one mandatory target.
+- No-target case correctly returns early (line 108-109) with no +1/+1 counter added.
+- Defending player is now resolved from combat state (lines 93-96) with a fallback to `state.opponent()`.
+- The `DestroyThenCounter` effect handler (engine.rs:2145-2156) correctly uses `try_destroy` and unconditionally adds the +1/+1 counter afterward, matching the ruling that the counter is added even if destruction fails (indestructible/regenerate).
+
+### Notes
+
+1. **Engine-level limitation: sacrifice target auto-selection** — When activating Grimgrin's sacrifice ability with multiple other creatures, the engine auto-selects the first eligible creature (engine.rs:1544-1552, marked with `TODO: Present choice to player when there are multiple options`). This is an engine limitation affecting all `SacrificeAnotherCreature` costs, not specific to Grimgrin.
+
+2. **Missing from LLM card knowledge** — Grimgrin is not listed in the card knowledge section of `mtg-player/src/llm.rs`. AI players will not have strategic guidance for this card.
+
+3. **Ability can be activated when untapped** — Per community rulings, Grimgrin's sacrifice ability can be activated even when Grimgrin is already untapped (to grow via +1/+1 counters). The code correctly implements this with `requires_tap: false` (line 68).
+
+### Tricky interactions checked
+- Enters tapped: PASS (on_resolve sets `obj.tapped = true`, line 51)
+- Doesn't untap during untap step: PASS (`PreventUntap { scope: EffectScope::OnSelf }`, verified engine untap step skips locked permanents at engine.rs:2440-2460)
+- Sacrifice untaps and adds counter: PASS (on_activate_ability, lines 79-82)
+- Sacrifice requires "another" creature: PASS (`SacrificeCost::SacrificeAnotherCreature` excludes self at engine.rs:342-344)
+- Sacrifice ability available when untapped: PASS (`requires_tap: false`, line 68)
+- +1/+1 when target survives (indestructible): PASS (`DestroyThenCounter` handler adds counter unconditionally after `try_destroy`, engine.rs:2150-2153)
+- No valid target = no effect: PASS (returns early at line 108-109, no counter added)
+- Attack trigger targets only defending player's creatures: PASS (line 99 filters by defender)
+- Defending player resolved from combat state: PASS (lines 93-96)
+- Mandatory targeting (no "you may"): PASS (`optional: false` at line 125)
+- Fizzle when target becomes illegal: NOT DIRECTLY TESTABLE (engine resolves targeting at trigger time, not at resolution time — engine-level limitation)
+
+### Test coverage
+- Enters tapped: `tier15_cards.rs:1243` (grimgrin_enters_tapped)
+- Sacrifice untaps and adds counter: `tier15_cards.rs:1259` (grimgrin_sacrifice_untaps_and_counters)
+- Sacrifice not available without other creatures: `tier15_cards.rs:1288` (grimgrin_sacrifice_not_available_without_other_creatures)
+- Attack trigger destroys and adds counter: `tier15_cards.rs:1304` (grimgrin_attack_trigger_destroys_and_adds_counter)
+- Attack trigger presents choice with multiple targets: `tier15_cards.rs:1330` (grimgrin_attack_trigger_presents_choice_with_multiple_targets)
+- No target = no effect (ruling 3): `tier15_cards.rs:1373` (grimgrin_attack_no_targets_no_counter)
+- +1/+1 counter when target is indestructible (ruling 1): `tier15_cards.rs:1396` (grimgrin_attack_indestructible_target_still_gets_counter)
+- Attack trigger targets defending player's creatures only: `tier15_cards.rs:1427` (grimgrin_attack_uses_defending_player_from_combat)
+- Fizzle when target becomes illegal (ruling 2): NOT TESTED (engine-level limitation)
+- Sacrifice ability when already untapped: NOT TESTED (could add a test for +1/+1 counter growth without needing to untap)
