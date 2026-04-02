@@ -330,6 +330,7 @@ fn claustrophobia_taps_creature() {
     let cl = castable_spell(&mut state, &reg, "Claustrophobia", P0);
 
     state = cast_and_resolve(&state, &reg, cl, vec![Target::Object(creature)]);
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     assert!(state.get_object(creature).unwrap().tapped,
         "Claustrophobia should tap the enchanted creature on entry");

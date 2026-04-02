@@ -43,11 +43,16 @@ impl CardBehavior for Claustrophobia {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        if let Some(Target::Object(target_id)) = targets.first() {
-            if let Some(target) = state.get_object_mut(*target_id) {
+        crate::cards::helpers::resolve_aura(state, object_id, targets);
+    }
+
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+        if let Some(target_id) = state.get_object(object_id).and_then(|o| o.attached_to) {
+            if let Some(target) = state.get_object_mut(target_id) {
                 target.tapped = true;
             }
+            state.log(crate::state::LogLevel::Event,
+                format!("Claustrophobia taps enchanted creature"));
         }
-        crate::cards::helpers::resolve_aura(state, object_id, targets);
     }
 }
