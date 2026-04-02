@@ -436,22 +436,30 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
         &reg,
     );
 
-    // After activation: a 2/2 token was created, then a creature was sacrificed.
-    // The auto-sacrifice picks the first creature, which could be the token or
-    // an existing creature. Net result: one creature on battlefield.
+    // After activation: a 2/2 token was created, but now the controller must choose
+    // which creature to sacrifice. With 2 creatures (apprentice + token), a choice
+    // is presented.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting sacrifice choice");
+
+    // Find the token to sacrifice it.
+    let token_id = state.objects.values()
+        .find(|o| o.zone == Zone::Battlefield && o.is_token && o.power.is_some())
+        .map(|o| o.id)
+        .expect("Token should exist");
+
+    let state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(token_id))),
+        },
+        &reg,
+    );
+
+    // After choosing to sacrifice the token, only the apprentice remains.
     let creatures_after: Vec<_> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
         .collect();
-    // The apprentice was tapped and a creature was sacrificed. The token was created.
-    // Net: we should have exactly 1 creature (the one that wasn't sacrificed).
     assert_eq!(creatures_after.len(), 1, "Should have 1 creature on battlefield after create + sacrifice");
-
-    // One creature should be in the graveyard (the sacrificed one).
-    let graveyard: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Graveyard && o.owner == P0 && o.power.is_some())
-        .collect();
-    // Note: tokens cease to exist when they go to graveyard (SBA), but before SBA we still see it.
-    assert!(graveyard.len() >= 1, "A creature should have been sacrificed");
 }
 #[test]
 
