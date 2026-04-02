@@ -4,7 +4,7 @@ use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
-/// Dead Weight — {B} aura enchantment. Enchanted creature gets -2/-2.
+/// Dead Weight — {B} aura enchantment. Enchant creature. Enchanted creature gets -2/-2.
 pub struct DeadWeight;
 
 impl CardBehavior for DeadWeight {

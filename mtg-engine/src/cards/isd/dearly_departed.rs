@@ -4,8 +4,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Dearly Departed — {4}{W}{W} 5/5 Spirit with Flying.
-/// As long as Dearly Departed is in your graveyard, Human creatures you control
-/// enter the battlefield with an additional +1/+1 counter on them.
+/// As long as this creature is in your graveyard, each Human creature you control
+/// enters with an additional +1/+1 counter on it.
 pub struct DearlyDeparted;
 
 impl CardBehavior for DearlyDeparted {
@@ -22,7 +22,7 @@ impl CardBehavior for DearlyDeparted {
             subtypes: vec!["Spirit".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "Flying\nAs long as Dearly Departed is in your graveyard, Human creatures you control enter the battlefield with an additional +1/+1 counter on them.".into(),
+            oracle_text: "Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],
