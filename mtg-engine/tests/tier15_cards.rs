@@ -797,13 +797,12 @@ fn unbreathing_horde_enters_with_counters_for_zombies() {
     let gy_zombie = named_creature(&mut state, &reg, "Diregraf Ghoul", P0);
     state.move_object(gy_zombie, Zone::Graveyard);
 
-    // Now place Unbreathing Horde on the battlefield.
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
-    let behavior = reg.get(state.get_object(horde).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, horde, &reg);
+    // Cast Unbreathing Horde — on_resolve counts graveyard BEFORE moving to battlefield.
+    let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
+    let new_state = cast_and_resolve(&state, &reg, horde, vec![]);
 
-    // Should have 3 counters (2 battlefield + 1 graveyard).
-    let counters = state.get_object(horde).unwrap()
+    // Should have 3 counters (2 battlefield Zombies + 1 graveyard Zombie).
+    let counters = new_state.get_object(horde).unwrap()
         .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
     assert_eq!(counters, 3, "Unbreathing Horde should enter with 3 +1/+1 counters");
 }

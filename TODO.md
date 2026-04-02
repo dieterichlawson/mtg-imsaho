@@ -18,8 +18,6 @@
 
 ### ~~Festerhide Boar~~ — FIXED (moved to on_resolve, counters added as part of entering)
 
-### Splinterfright
-- `*/*` P/T uses `Some(0)` base instead of `None`. Card has `*/*` P/T defined by a characteristic-defining ability. Base should be `None` to indicate the CDA defines P/T entirely, not `Some(0)`.
+### ~~Splinterfright~~ — NOT A BUG (Some(0) is engine convention for */* creatures; needed for power.is_some() creature detection)
 
-### Unbreathing Horde
-- Doesn't count itself when entering from graveyard. Per ruling: "If Unbreathing Horde enters from a graveyard, it will count itself when determining how many +1/+1 counters it enters with." The ETB handler counts graveyard Zombies after the card has already moved to battlefield, so it misses itself.
+### ~~Unbreathing Horde~~ — FIXED (counts graveyard before moving to battlefield in on_resolve)

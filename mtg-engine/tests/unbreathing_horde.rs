@@ -82,10 +82,9 @@ fn enters_with_correct_counter_count() {
     let z3 = named_creature(&mut state, &reg, "Walking Corpse", P0);
     state.move_object(z3, Zone::Graveyard);
 
-    // Place Unbreathing Horde on battlefield and trigger ETB manually.
-    let horde = named_creature(&mut state, &reg, "Unbreathing Horde", P0);
-    let behavior = reg.get(state.get_object(horde).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, horde, &reg);
+    // Cast Unbreathing Horde — on_resolve counts graveyard before moving to battlefield.
+    let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
+    state = cast_and_resolve(&state, &reg, horde, vec![]);
 
     let counters = state.get_object(horde).unwrap().counters
         .get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
