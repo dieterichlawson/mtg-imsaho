@@ -2612,6 +2612,19 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let mut rng = rand::thread_rng();
             state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
         }
+        (Target::Object(target_id), PendingEffect::GrantFlashback { source_name }) => {
+            // Grant flashback to the chosen card until end of turn.
+            if let Some(obj) = state.get_object(*target_id) {
+                let card_id = obj.card_id;
+                let cost = registry.card_data(card_id)
+                    .and_then(|d| d.cost.clone())
+                    .unwrap_or(ManaCost::free());
+                let name = obj.name.clone();
+                state.until_end_of_turn_flashback.push((*target_id, cost));
+                state.log(LogLevel::Event,
+                    format!("{} grants flashback to {}", source_name, name));
+            }
+        }
         _ => {}
     }
 }

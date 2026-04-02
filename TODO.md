@@ -10,8 +10,7 @@
 
 ### ~~Mirror-Mad Phantasm~~ — FIXED (now shuffles library after inserting card)
 
-### Snapcaster Mage
-- Auto-selects highest-MV instant/sorcery in graveyard instead of presenting a target choice to the player. Oracle says "target instant or sorcery card in your graveyard" which requires player selection.
+### ~~Snapcaster Mage~~ — FIXED (player choice via ChooseTarget + GrantFlashback effect)
 
 ### Into the Maw of Hell
 - Missing `damaged_by` tracking when dealing 13 damage to the target creature. Other non-combat damage sources (e.g., Heretic's Punishment) correctly push to `damaged_by`. This means death triggers that check `damaged_by` will not correctly identify Into the Maw of Hell as the damage source.

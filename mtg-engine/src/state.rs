@@ -1495,6 +1495,8 @@ pub enum PendingEffect {
     AttachCurseToPlayer { curse_id: ObjectId, searcher: PlayerId },
     /// Two-step Curse selection: player chose a Curse from library, now need to choose a player.
     ChooseCurseThenAttach { searcher: PlayerId, source: ObjectId },
+    /// Grant flashback to a chosen card until end of turn (Snapcaster Mage).
+    GrantFlashback { source_name: String },
 }
 
 /// Game result.
