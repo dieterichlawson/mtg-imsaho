@@ -59,3 +59,14 @@ As long as this creature is in your graveyard, each Human creature you control e
 - Triggered ability used instead of replacement effect — low severity for typical play, incorrect for precise rules interactions.
 - Oracle text string has minor cosmetic wording differences.
 - Test coverage limited to positive case only.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.
+**Type line**: Creature — Spirit
+**Status**: ISSUE
+
+### Code issues
+1. Oracle text mismatch: code uses older template `"As long as Dearly Departed is in your graveyard, Human creatures you control enter the battlefield with an additional +1/+1 counter on them."` but current oracle uses `"As long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it."` The wording changed but is semantically equivalent.
+2. Behavior is correct: on_any_creature_enters checks that Dearly Departed is in the graveyard (Zone::Graveyard), that the entering creature is controlled by the owner of Dearly Departed, and that the creature is a Human (via subtypes). Adds one +1/+1 counter. Flying keyword is present. Cost {4}{W}{W}, P/T 5/5, subtype Spirit all match.

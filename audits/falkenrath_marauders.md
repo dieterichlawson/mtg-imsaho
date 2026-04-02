@@ -71,3 +71,15 @@ Whenever this creature deals combat damage to a player, put two +1/+1 counters o
 ### Verdict
 
 **PASS.** Implementation is functionally correct. One cosmetic oracle text difference (old-style card name vs. modern "this creature" template) with no behavioral impact.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+Haste (This creature can attack and {T} as soon as it comes under your control.)
+Whenever this creature deals combat damage to a player, put two +1/+1 counters on it.
+**Type line**: Creature — Vampire Warrior
+**Status**: PASS
+
+### Code issues
+No issues found.

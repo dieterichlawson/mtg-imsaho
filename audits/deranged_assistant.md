@@ -100,3 +100,13 @@ Both in `mtg-engine/tests/innistrad_simple_cards.rs`, both PASS:
 
 1. **TEST GAP:** No test asserts the mill actually occurs (library shrinks / graveyard grows after activation). The existing test only checks mana production.
 2. **Keywords field empty:** `keywords: vec![]` vs Scryfall `Mill`. Low functional impact.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)
+**Type line**: Creature — Human Wizard
+**Status**: PASS
+
+### Code issues
+No issues found.

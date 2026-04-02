@@ -117,3 +117,15 @@ Both previously identified issues have been fixed:
 ### Test coverage
 - `claustrophobia_taps_creature` -- verifies tap on entry and aura attachment.
 - `claustrophobia_prevents_untap` -- verifies creature stays tapped through untap step.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant creature
+When this Aura enters, tap enchanted creature.
+Enchanted creature doesn't untap during its controller's untap step.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+No issues found.

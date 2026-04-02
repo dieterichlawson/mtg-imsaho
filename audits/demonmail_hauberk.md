@@ -60,3 +60,13 @@ None.
 
 ### Verdict
 **PASS** — Implementation matches oracle text. No issues found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Equipped creature gets +4/+2. / Equip—Sacrifice a creature.
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found.

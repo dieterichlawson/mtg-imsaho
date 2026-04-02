@@ -73,3 +73,13 @@ One test in `mtg-engine/tests/tier8_cards.rs` (`disciple_of_griselbrand_gains_li
 | 2 | Low | Event lookup for `CreatureDied` is fragile (no validation it belongs to this activation) |
 | 3 | Medium | Engine auto-sacrifices first creature found instead of presenting player choice (engine-level, has TODO) |
 | 4 | Low | Test is weak -- only checks `gained > 0`, not exact toughness value |
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.
+**Type line**: Creature — Human Cleric
+**Status**: PASS
+
+### Code issues
+No issues found.

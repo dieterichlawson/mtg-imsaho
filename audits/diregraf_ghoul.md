@@ -52,3 +52,13 @@ The `on_resolve` method (line 29-34) moves the object to the battlefield and imm
 
 ### Issues
 1. **COSMETIC -- Oracle text outdated:** The `oracle_text` field uses pre-Bloomburrow wording. Should be updated to `"This creature enters tapped."` to match current Scryfall oracle text.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: This creature enters tapped.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+### Code issues
+No issues found. Minor note: code oracle_text string uses older wording "Diregraf Ghoul enters the battlefield tapped." vs current oracle "This creature enters tapped." — no behavioral impact.

@@ -74,3 +74,13 @@ The previously identified issue has been fixed:
 ### Test coverage
 - Tests exist for basic counter placement and Human bonus.
 - No test for Human token receiving 2 counters (would validate the fix).
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead.
+**Type line**: Creature — Human Soldier
+**Status**: PASS
+
+### Code issues
+No issues found.

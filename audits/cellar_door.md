@@ -42,3 +42,13 @@ Since this is the only card in the library, top == bottom, so it does not verify
 
 ## Verdict
 **PASS** -- The gameplay logic is correct. The only issues are a cosmetic oracle text mismatch and a test that could be more thorough.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.
+**Type line**: Artifact
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text mismatch**: Oracle says "Target player puts the bottom card of their library into their graveyard" but code oracle_text says "Target player mills the bottom card of their library." The oracle uses the older "puts into graveyard" template, not the "mills" keyword. Code oracle_text should be updated. No gameplay impact — behavior correctly moves the bottom card to graveyard.

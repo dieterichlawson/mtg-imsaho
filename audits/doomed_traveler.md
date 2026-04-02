@@ -65,3 +65,13 @@ None found.
 
 ### Issues Found
 None. Implementation matches oracle text exactly.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this creature dies, create a 1/1 white Spirit creature token with flying.
+**Type line**: Creature — Human Soldier
+**Status**: PASS
+
+### Code issues
+No issues found.

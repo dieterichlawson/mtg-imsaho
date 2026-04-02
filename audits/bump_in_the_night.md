@@ -97,3 +97,13 @@ Coverage is adequate for the card's functionality.
 ## Verdict
 
 **PASS** -- No mismatches found. The implementation faithfully represents the oracle text. Card data, targeting, life loss effect, LifeChanged event, and flashback handling are all correct and consistent with engine conventions.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Target opponent loses 3 life.\nFlashback {5}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. Life loss (not damage) correctly implemented. Flashback cost {5}{R} is correct. Target validation correctly restricts to opponents only (pid != caster).

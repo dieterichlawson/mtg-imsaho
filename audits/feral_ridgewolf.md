@@ -62,3 +62,14 @@ All 3 tests in `mtg-engine/tests/activated_abilities.rs` pass.
 
 ### Conclusion
 Implementation is functionally correct. One cosmetic mismatch in the `oracle_text` field: Scryfall uses "This creature" while the implementation uses "Feral Ridgewolf".
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Trample
+{1}{R}: This creature gets +2/+0 until end of turn.
+**Type line**: Creature — Wolf
+**Status**: PASS
+
+### Code issues
+No issues found.

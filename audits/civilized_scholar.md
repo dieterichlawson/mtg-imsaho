@@ -357,3 +357,14 @@ Card data matches oracle text for both faces. Front face: {2}{U}, Creature - Hum
 - Ruling: no priority between untap and transform: NOT TESTED (implemented correctly)
 - Ruling: Scholar attacks then transforms, Brute ability doesn't trigger: NOT TESTED
 - LLM card knowledge: NOT PRESENT
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {T}: Draw a card, then discard a card. If a creature card is discarded this way, untap this creature, then transform it.
+// Homicidal Brute: At the beginning of your end step, if this creature didn't attack this turn, tap this creature, then transform it.
+**Type line**: Creature — Human Advisor // Creature — Human Mutant
+**Status**: PASS
+
+### Code issues
+No issues found.

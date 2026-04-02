@@ -335,3 +335,16 @@ Note: `crate::combat::fight` internally calls `deal_damage_to_creature` which em
 - Front face deals damage to creature with flying: NOT TESTED
 - Transform back when 2+ spells cast: NOT TESTED (covered generically by reckless_waif tests)
 - LLM card knowledge entry: NOT PRESENT in `mtg-player/src/llm.rs`
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {T}: This creature deals 2 damage to target creature with flying.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Back face oracle text**: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line**: Creature — Human Archer Ranger Werewolf // Creature — Werewolf
+**Status**: ISSUE
+
+### Code issues
+1. Minor oracle text mismatch: code front face uses `"Daybreak Ranger deals 2 damage"` and `"transform Daybreak Ranger"` instead of current oracle template `"This creature deals 2 damage"` / `"transform this creature"`. Same issue on back face: `"Nightfall Predator fights"` vs `"This creature fights"`. Behavior is correct regardless.
+2. The front face TargetRequirement is `Creature` (any creature), but `is_valid_target` further restricts to flying creatures. This works correctly but is an unusual pattern — ideally a `CreatureWithFlying` target requirement would be used if available. No behavioral issue.
+3. Transform logic is correct: front transforms if no spells cast last turn (and not first turn), back transforms if any player cast 2+ spells. P/T 2/2 front, 4/4 back via dynamic_pt. Subtypes match oracle for both faces.

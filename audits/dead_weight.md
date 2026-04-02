@@ -60,3 +60,13 @@ Enchanted creature gets -2/-2.
 
 ### Issues
 None. Implementation is fully correct and matches oracle text.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant creature\nEnchanted creature gets -2/-2.
+**Type line**: Enchantment — Aura
+**Status**: ISSUE
+
+### Code issues
+Oracle text in code is `"Enchanted creature gets -2/-2."` but should be `"Enchant creature\nEnchanted creature gets -2/-2."` — missing the "Enchant creature" keyword line. Behavior is fully correct: target requirement is Creature, resolves via resolve_aura, continuous effect ModifyPT -2/-2 with scope Attached. Cost {B} and type/subtypes all match.

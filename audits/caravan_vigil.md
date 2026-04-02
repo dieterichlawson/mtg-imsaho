@@ -88,3 +88,13 @@ The major issue from the prior audit (forced morbid) has been fixed:
 - `caravan_vigil_finds_basic_land` -- non-morbid path.
 - `caravan_vigil_morbid_puts_land_on_battlefield` -- morbid path.
 - No test for morbid-active-but-player-chooses-hand path (would be good to add).
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nMorbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.
+**Type line**: Sorcery
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text mismatch**: Oracle says "then shuffle" but code oracle_text says "then shuffle your library." The oracle has been updated to modern template wording. No gameplay impact — behavior is correct.

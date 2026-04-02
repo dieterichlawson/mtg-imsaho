@@ -69,3 +69,14 @@ None found.
 
 ### Verdict
 **PASS** -- No mismatches found. All card data, keywords, and protection abilities match the oracle text. All three tests pass.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: First strike, vigilance
+Protection from Vampires, from Werewolves, and from Zombies
+**Type line**: Creature — Human Soldier
+**Status**: PASS
+
+### Code issues
+No issues found.

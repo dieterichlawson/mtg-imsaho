@@ -70,3 +70,13 @@ None
 
 ### Verdict
 **PASS** -- No issues found. Implementation correctly matches oracle text.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant player\nWhenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches: name, cost {1}{R}, subtypes Aura Curse, oracle text. Trigger AnyCombatDamageToPlayer correctly checks that the damaged player is the cursed player (attached_to_player). Adds a +1/+1 counter to the source creature if still on the battlefield. Any creature (not just controller's) triggers this per the ruling, and the implementation correctly does not filter by creature controller.

@@ -74,3 +74,13 @@ Flashback {X}{R}{R}{R} (You may cast this card from your graveyard for its flash
 
 ## Issues
 None found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Devil's Play deals X damage to any target. / Flashback {X}{R}{R}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found.

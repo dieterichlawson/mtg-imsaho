@@ -62,3 +62,14 @@ None found.
 
 ### Verdict
 **PASS** — No issues found. Implementation matches oracle text exactly.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Tap up to two target creatures.
+Flashback {1}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.

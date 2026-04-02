@@ -80,3 +80,13 @@ None found.
 ## Verdict
 
 **PASS** -- The implementation correctly matches the oracle text. Card data, trigger kind, Zombie counting logic, integer division rounding, and token creation are all faithful to the rules. No mismatches found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+No issues found.

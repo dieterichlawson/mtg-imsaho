@@ -219,3 +219,13 @@ No issues found. All prior issues from the 2026-04-01 15:12 audit (missing "you 
 - LLM knowledge entry present in `mtg-player/src/llm.rs:61`: PASS
 - LLM description accurate (mentions upkeep, instant/sorcery, reveal, transform, 3/2 flying): PASS
 - YesNo choice description clear and informative: PASS
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
+**Type line**: Creature — Human Wizard
+**Status**: PASS
+
+### Code issues
+No issues found.

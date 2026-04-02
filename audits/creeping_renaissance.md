@@ -84,3 +84,14 @@ Findings:
 
 Minor note (not a rules bug):
 - In `mtg-player/src/llm.rs:491`, `ChosenIndex(i)` is displayed as `"Option {i}"` rather than the actual type name (e.g., "Creature"). The LLM player sees opaque labels like "Option 0" instead of meaningful type names. This is a UX concern for the AI player, not a game-rules issue.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand.
+Flashback {5}{G}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found.

@@ -32,3 +32,14 @@ The current official oracle text uses "This land enters tapped" (post-Bloomburro
 
 ### Verdict
 No functional bugs. One cosmetic oracle text mismatch with modern templating.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: This land enters tapped unless you control a Mountain or a Plains.
+{T}: Add {R} or {W}.
+**Type line**: Land
+**Status**: ISSUE
+
+### Code issues
+Oracle text mismatch: code stores `"Clifftop Retreat enters the battlefield tapped unless you control a Mountain or a Plains."` but current oracle text is `"This land enters tapped unless you control a Mountain or a Plains."`. Behavior is correct; only the stored oracle_text string needs updating to match the modern Scryfall wording.

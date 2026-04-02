@@ -50,3 +50,14 @@
 
 ## Verdict
 **PASS** — No mismatches found. The implementation correctly models all aspects of Creepy Doll: card data, indestructible keyword, combat-damage-to-creature trigger, coin flip mechanic, and proper use of `try_destroy` for the destroy effect. Test coverage is thorough.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Indestructible
+Whenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.
+**Type line**: Artifact Creature — Construct
+**Status**: PASS
+
+### Code issues
+No issues found.

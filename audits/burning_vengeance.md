@@ -218,3 +218,13 @@ Sources:
 - [Magic Rules Tips: What will and will not trigger Burning Vengeance](https://blogs.magicjudges.org/rulestips/2012/01/what-will-and-what-will-not-trigger-burning-vengeances-ability/)
 - [MTG Assist: Burning Vengeance rulings](https://www.mtgassist.com/cards/Innistrad/Burning-Vengeance/rulings/)
 - [MTG Salvation: Burning Vengeance + Increasing Vengeance](https://www.mtgsalvation.com/forums/magic-fundamentals/magic-rulings/magic-rulings-archives/307845-burning-vengeance-increasing-vengenace)
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.
+**Type line**: Enchantment
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text mismatch**: Oracle says "this enchantment deals 2 damage to any target" but code oracle_text says "Burning Vengeance deals 2 damage to any target." The oracle has been updated to use "this enchantment" self-referential language. The code oracle_text should be updated to match. Behavior is functionally equivalent — no gameplay impact.

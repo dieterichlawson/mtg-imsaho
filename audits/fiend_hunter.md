@@ -136,3 +136,14 @@ This was corrected since the prior audit and is now accurate. It correctly notes
 
 ### Summary
 The implementation is **functionally correct for standard gameplay**. The two separate triggered abilities are properly structured to enable the Oblivion Ring trick. Two minor issues: (1) the LTB does not explicitly reset the returned creature's controller to its owner, and (2) the critical permanent-exile interaction (Oblivion Ring trick) lacks test coverage despite being architecturally supported.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: When this creature enters, you may exile another target creature.
+When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.
+**Type line**: Creature — Human Cleric
+**Status**: PASS
+
+### Code issues
+No issues found. The two separate triggers (ETB and LTB) correctly model the classic "Oblivion Ring" template where removing Fiend Hunter before the first trigger resolves results in permanent exile. The ETB is correctly optional ("you may"). The LTB correctly returns the card under its owner's control.

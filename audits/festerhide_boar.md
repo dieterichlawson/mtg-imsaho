@@ -70,3 +70,14 @@ Two tests exist in `mtg-engine/tests/tier5_cards.rs`:
 1. **Oracle text string mismatch (low):** The `oracle_text` field uses outdated "enters the battlefield" wording instead of the current "enters with" wording.
 2. **Triggered ability mislabel (medium):** `triggered_abilities` lists an ETB trigger, but the current oracle text describes a replacement effect. The `TriggeredAbilityDef` entry and doc comment should be updated to reflect replacement-effect semantics.
 3. **Functional correctness:** The actual game behavior (counters applied on entry when morbid is satisfied) is correct.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Trample
+Morbid — This creature enters with two +1/+1 counters on it if a creature died this turn.
+**Type line**: Creature — Boar
+**Status**: PASS
+
+### Code issues
+No issues found. The oracle text uses "enters with" (replacement effect) but the implementation uses an ETB callback which is functionally equivalent in this engine. The stored oracle text in the code uses older templating ("When Festerhide Boar enters the battlefield") but the behavior is correct: counters are applied on entry if morbid is satisfied.

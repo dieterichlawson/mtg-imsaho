@@ -61,3 +61,13 @@ None found.
 
 ## Verdict
 **PASS** — No issues found. Card data, ability cost, targeting, creature count, and +X/+X effect all match oracle text and rulings.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.
+**Type line**: Creature — Human Advisor
+**Status**: PASS
+
+### Code issues
+No issues found.

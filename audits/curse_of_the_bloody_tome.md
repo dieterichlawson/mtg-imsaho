@@ -64,3 +64,13 @@
 ## Verdict
 
 **PASS** -- Implementation is correct and complete.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant player\nAt the beginning of enchanted player's upkeep, that player mills two cards.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches: name, cost {2}{U}, subtypes Aura Curse, oracle text. Upkeep trigger correctly checks active_player == cursed_player. Calls mill_cards(state, cursed_player, 2) which correctly implements milling two cards.

@@ -132,3 +132,13 @@ Missing test: runtime subtype change after equip.
 ## Verdict: PASS (with minor bugs)
 
 The core functionality is correct: the card data matches oracle text, equip works at sorcery speed for {3}, +3/+0 is applied to equipped creatures, and Humans get lifelink. The two bugs (registry-only subtype check and one-time effect calculation) are minor edge cases that affect uncommon interactions. The registry-only check should be fixed to also check `obj.subtypes` for consistency with other subtype-checking cards like Wooden Stake.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Equipped creature gets +3/+0.\nAs long as equipped creature is a Human, it has lifelink.\nEquip {3}
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found. +3/+0 buff, conditional lifelink for Humans, and equip {3} all correctly implemented. The update_effects helper correctly recalculates effects when equipment is attached.

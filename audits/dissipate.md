@@ -50,3 +50,13 @@ Counter target spell. If that spell is countered this way, exile it instead of p
 
 ### Verdict
 PASS — no issues found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Counter target spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.

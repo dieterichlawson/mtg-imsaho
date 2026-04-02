@@ -93,3 +93,14 @@ All previously identified issues have been fixed:
 ### Test coverage
 - `corpse_lunge_picks_highest_power_creature` -- validates damage equals exiled creature's power.
 - No test for zero-power exiled creature edge case.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: As an additional cost to cast this spell, exile a creature card from your graveyard.
+Corpse Lunge deals damage equal to the exiled card's power to target creature.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.

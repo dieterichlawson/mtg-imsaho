@@ -55,3 +55,13 @@ Creatures enchanted player controls attack each combat if able.
 
 ### Verdict
 No issues found. The implementation correctly matches the oracle text, handles all ruling edge cases (tapped, summoning-sick, Defender), and has adequate test coverage.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant player\nCreatures enchanted player controls attack each combat if able.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches: name, cost {2}{R}, subtypes Aura Curse, oracle text. Continuous effect ForceAttack with scope Global(CreatureFilter::AttachedPlayer) correctly forces creatures the cursed player controls to attack. Target requirement is PlayerOnly. Resolves via resolve_curse helper.

@@ -42,3 +42,13 @@ None
 
 ## Verdict
 **PASS** — No issues found. The implementation correctly matches the oracle text. The continuous -1/-1 effect properly targets only creatures controlled by the enchanted player via the `AttachedPlayer` filter, the curse attachment mechanics are correct, and test coverage validates the behavior.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant player\nCreatures enchanted player controls get -1/-1.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches: name, cost {3}{B}{B}, type Enchantment, subtypes Aura Curse, oracle text. Continuous effect ModifyPT -1/-1 with scope Global(CreatureFilter::AttachedPlayer) correctly targets creatures the enchanted player controls. Resolves via resolve_curse helper. Target requirement is PlayerOnly as expected.

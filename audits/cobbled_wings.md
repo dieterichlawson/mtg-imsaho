@@ -76,3 +76,14 @@ None. The implementation faithfully matches the oracle text.
 
 ## Verdict
 PASS — No discrepancies found.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Equipped creature has flying.
+Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found.

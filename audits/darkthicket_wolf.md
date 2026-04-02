@@ -58,3 +58,13 @@ None
 
 ### Verdict
 **PASS** -- Implementation is fully correct. One cosmetic note: the `oracle_text` field uses the card's name instead of "This creature" per the current Scryfall template, but this has no mechanical impact.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: {2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.
+**Type line**: Creature — Wolf
+**Status**: ISSUE
+
+### Code issues
+Minor oracle text mismatch: code uses `"{2}{G}: Darkthicket Wolf gets +2/+2 until end of turn. Activate only once each turn."` but current oracle uses `"This creature"` template instead of the card name. Behavior is fully correct: activated ability costs {2}{G}, grants +2/+2 via UntilEndOfTurnEffect, once_per_turn is true, does not require tap. P/T 2/2 and cost {1}{G} match. Subtypes ["Wolf"] match.

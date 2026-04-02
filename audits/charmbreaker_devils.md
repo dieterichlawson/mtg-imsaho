@@ -67,3 +67,14 @@ The prior audit flagged `on_spell_cast` for not checking whether the cast spell 
 ## Verdict
 
 **PASS** -- Implementation is correct. One missing test for the upkeep ability.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: At the beginning of your upkeep, return an instant or sorcery card at random from your graveyard to your hand.
+Whenever you cast an instant or sorcery spell, this creature gets +4/+0 until end of turn.
+**Type line**: Creature — Devil
+**Status**: PASS
+
+### Code issues
+No issues found.

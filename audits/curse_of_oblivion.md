@@ -62,3 +62,13 @@ No special-case handling in `mtg-player/src/llm.rs`. The generic `ResolutionChoi
 
 ### Verdict
 **PASS** -- Implementation correctly matches oracle text and ruling. Two minor issues noted but no functional correctness bugs.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Enchant player\nAt the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+No issues found. Card data matches: name, cost {3}{B}, subtypes Aura Curse, oracle text. Upkeep trigger correctly checks active_player == cursed_player. Handles edge cases: empty graveyard (returns early), 1-2 cards (exiles all without choice), 3+ cards (presents player choice). Per ruling, if only one card in graveyard, it is exiled — the <= 2 branch handles this correctly.

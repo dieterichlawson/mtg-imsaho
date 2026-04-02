@@ -198,3 +198,14 @@ Five tests in `mtg-engine/tests/tier15_cards.rs`:
 5. `unholy_fiend_back_face_has_end_step_trigger_only` (line 869) -- verifies exactly 1 EndStep trigger on back
 
 **Minor gap**: No LLM knowledge entry in `mtg-player/src/llm.rs` (other DFCs like Delver of Secrets and Screeching Bat have entries). Not a correctness issue.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: At the beginning of your upkeep, you may transform this creature.
+// Unholy Fiend: At the beginning of your end step, you lose 1 life.
+**Type line**: Creature — Human // Creature — Horror
+**Status**: PASS
+
+### Code issues
+No issues found.

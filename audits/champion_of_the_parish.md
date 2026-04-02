@@ -52,3 +52,13 @@ Same outdated wording as the oracle_text field. Cosmetic only.
 
 ## Verdict
 **No functional bugs.** The implementation correctly handles all aspects of the card: self-exclusion via trigger infrastructure, controller check, Human subtype check (both registry and instance), and +1/+1 counter placement. Two cosmetic issues with outdated oracle text wording in the `oracle_text` field and doc comment.
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Whenever another Human you control enters, put a +1/+1 counter on this creature.
+**Type line**: Creature — Human Soldier
+**Status**: ISSUE
+
+### Code issues
+1. **Oracle text mismatch**: Oracle says "Whenever another Human you control enters, put a +1/+1 counter on this creature." but code oracle_text says "Whenever another Human creature enters the battlefield under your control, put a +1/+1 counter on Champion of the Parish." The oracle has been updated to modern template (dropping "creature", "the battlefield", and using self-referential "this creature"). No gameplay impact — behavior is correct.

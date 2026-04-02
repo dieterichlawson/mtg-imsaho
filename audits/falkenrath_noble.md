@@ -66,3 +66,14 @@ Whenever this creature or another creature dies, target player loses 1 life and 
 - `falkenrath_noble_triggers_on_self_death` (bug_fixes.rs): PASS
 
 ### Verdict: PASS -- No issues found
+
+## Audit — 2026-04-02 (final)
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying
+Whenever this creature or another creature dies, target player loses 1 life and you gain 1 life.
+**Type line**: Creature — Vampire Noble
+**Status**: PASS
+
+### Code issues
+No issues found.
