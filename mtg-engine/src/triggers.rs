@@ -703,9 +703,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                         }
                     }
 
-                    // Attack-watchers: notify other permanents (like AnyCreatureDies watchers).
+                    // Attack-watchers: notify permanents that care about any creature attacking.
+                    // Note: the attacker is NOT excluded — cards like Instigator Gang
+                    // ("attacking creatures you control get +1/+0") must see their own attack.
                     let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
-                        .filter(|o| o.zone == Zone::Battlefield && o.id != *attacker_id)
+                        .filter(|o| o.zone == Zone::Battlefield)
                         .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
                         .collect();
                     for (w_id, w_card_id, w_controller, w_transformed) in watchers {
