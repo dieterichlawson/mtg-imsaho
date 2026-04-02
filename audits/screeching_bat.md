@@ -182,3 +182,38 @@ All issues from prior audits have been resolved:
 - Mana is NOT consumed when declining: `tier15_cards.rs:885` — TESTED
 - Not-your-upkeep (opponent's turn): NOT TESTED (minor gap)
 - Creature removed from battlefield before trigger resolves: NOT TESTED (minor gap, standard trigger handling)
+
+## Audit - 2026-04-02
+
+### Oracle Text (Scryfall)
+- **Name (front):** Screeching Bat
+- **Mana Cost:** {2}{B}
+- **Type (front):** Creature — Bat
+- **P/T (front):** 2/2
+- **Oracle (front):** Flying / At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+- **Name (back):** Stalking Vampire
+- **Type (back):** Creature — Vampire
+- **P/T (back):** 5/5
+- **Oracle (back):** At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+
+### Card Data Audit
+- **Name:** Correct ("Screeching Bat")
+- **Cost:** Correct ({2}{B})
+- **Types:** Correct (Creature — Bat)
+- **P/T (front):** Correct (2/2)
+- **Oracle Text String:** Correct
+- **Keywords:** Flying. Correct.
+- **Back Face Name:** Correct ("Stalking Vampire")
+- **Back Face Types:** Correct (Creature — Vampire)
+- **Back Face P/T:** Correct (5/5 via `dynamic_pt` which replaces base when transformed)
+
+### Behavior Audit
+- **Flying:** Granted via keywords vec. Correct.
+- **Upkeep transform trigger (front):** `on_upkeep` checks active player == controller, checks if can pay {2}{B}{B}, presents YesNo choice. Correct.
+- **Upkeep transform trigger (back):** Back face data has the same TriggeredAbilityDef for upkeep. `on_upkeep` works regardless of face. Correct.
+- **Transform cost:** {2}{B}{B}. Correct.
+- **Transform behavior:** On "yes", pays cost, calls `helpers::apply_transform`. Correct.
+- **dynamic_pt:** Returns Some((5, 5)) when transformed. Since this is the creature's own dynamic_pt, it replaces the base P/T. Correct.
+
+### Result
+**PASS**
