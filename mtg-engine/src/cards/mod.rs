@@ -72,6 +72,8 @@ pub enum SacrificeCost {
     SacrificeThis,
     /// Sacrifice any creature you control.
     SacrificeCreature,
+    /// Sacrifice another creature you control (not the source permanent).
+    SacrificeAnotherCreature,
 }
 
 /// An additional cost required to cast a spell (beyond mana).

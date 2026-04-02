@@ -337,6 +337,13 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         .any(|o| o.power.is_some());
                     if !has_creature { continue; }
                 }
+                SacrificeCost::SacrificeAnotherCreature => {
+                    // Must control at least one other creature to sacrifice.
+                    let has_other_creature = state.objects_in_zone(Zone::Battlefield, player)
+                        .iter()
+                        .any(|o| o.power.is_some() && o.id != obj_id);
+                    if !has_other_creature { continue; }
+                }
             }
 
             // Generate actions based on targeting.
@@ -1532,6 +1539,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             crate::destruction::sacrifice(&mut new_state, cid, registry);
                         }
                     }
+                    SacrificeCost::SacrificeAnotherCreature => {
+                        // Sacrifice another creature (not the source permanent).
+                        // For now, auto-sacrifice the first eligible creature.
+                        // TODO: Present choice to player when there are multiple options.
+                        let creature = new_state.objects_in_zone(Zone::Battlefield, player)
+                            .iter()
+                            .find(|o| o.power.is_some() && o.id != *object_id)
+                            .map(|o| o.id);
+                        if let Some(cid) = creature {
+                            crate::destruction::sacrifice(&mut new_state, cid, registry);
+                        }
+                    }
                 }
 
                 // Track once-per-turn.
@@ -2122,6 +2141,18 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     },
                 });
             }
+        }
+        (Target::Object(id), PendingEffect::DestroyThenCounter { source_id, source_name }) => {
+            // Destroy the target creature, then add a +1/+1 counter to the source.
+            // The counter is added regardless of whether destruction succeeds
+            // (e.g. indestructible/regenerate), per MTG rules.
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            crate::destruction::try_destroy(state, *id, registry);
+            state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
+            // Add +1/+1 counter to the source permanent.
+            state.add_counters(*source_id, crate::types::CounterType::PlusOnePlusOne, 1);
+            state.log(LogLevel::Event,
+                format!("{}: +1/+1 counter from attack trigger", source_name));
         }
         _ => {}
     }
