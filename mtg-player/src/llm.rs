@@ -133,7 +133,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Geist-Honored Monk ({3}{W}{W} creature */* vigilance): Power/toughness = number of creatures you control. Creates two 1/1 Spirit tokens with flying on entry.
 - Murder of Crows ({3}{U}{U} creature 4/4 flying): Whenever another creature dies, you may draw a card then discard a card. Card filtering engine.
 - Sturmgeist ({3}{U}{U} creature */* flying): Power/toughness = cards in your hand. Draw a card when it deals combat damage.
-- Curiosity ({U} aura): Whenever enchanted creature deals damage to an opponent, draw a card. Put on evasive creatures!
+- Curiosity ({U} aura): Whenever enchanted creature deals damage to an opponent, you may draw a card. Put on evasive creatures!
 - Abattoir Ghoul ({3}{B} creature 3/2 first strike): When a creature it damaged this turn dies, you gain life equal to its toughness.
 - Crossway Vampire ({1}{R}{R} creature 3/2): When it enters, target creature can't block this turn. Clears the way for attackers.
 - Rakish Heir ({2}{R} creature 2/2): Whenever a Vampire you control deals combat damage to a player, that Vampire gets a +1/+1 counter.
