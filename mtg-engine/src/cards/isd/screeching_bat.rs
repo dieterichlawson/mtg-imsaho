@@ -1,11 +1,21 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::*;
 
 /// Screeching Bat {2}{B} 2/2 Bat with Flying // Stalking Vampire 5/5 Vampire.
 /// Both faces: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform."
 pub struct ScreechingBat;
+
+impl ScreechingBat {
+    fn transform_cost() -> ManaCost {
+        ManaCost::new(vec![
+            ManaSymbol::Generic(2),
+            ManaSymbol::Colored(Color::Black),
+            ManaSymbol::Colored(Color::Black),
+        ])
+    }
+}
 
 impl CardBehavior for ScreechingBat {
     fn card_data(&self) -> CardData {
@@ -74,25 +84,60 @@ impl CardBehavior for ScreechingBat {
             return;
         }
         // "You may pay {2}{B}{B}. If you do, transform."
-        // Auto-pay if the controller has enough mana (simplified "you may").
+        // Only present the choice if the player can afford the cost.
+        let cost = Self::transform_cost();
         let pool = &state.get_player(controller).mana_pool;
-        let cost = ManaCost::new(vec![
-            ManaSymbol::Generic(2),
-            ManaSymbol::Colored(Color::Black),
-            ManaSymbol::Colored(Color::Black),
-        ]);
-        if crate::mana::can_pay(pool, &cost) {
-            crate::mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &cost).ok();
-            let is_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = !is_transformed;
-                let name = if obj.is_transformed { "Stalking Vampire" } else { "Screeching Bat" };
-                obj.name = name.into();
-            }
-            let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(crate::state::LogLevel::Event,
-                format!("Transforms into {}", new_name));
+        if !crate::mana::can_pay(pool, &cost) {
+            return;
         }
+
+        let current_name = state.get_object(self_id)
+            .map(|o| o.name.clone())
+            .unwrap_or_else(|| "this creature".into());
+
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description: format!("{}: pay {{2}}{{B}}{{B}} to transform?", current_name),
+                source_card: self_id,
+            },
+        });
+    }
+
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+        if !yes {
+            let current_name = state.get_object(self_id)
+                .map(|o| o.name.clone())
+                .unwrap_or_else(|| "this creature".into());
+            state.log(LogLevel::Event,
+                format!("{}: chose not to pay", current_name));
+            return;
+        }
+
+        let controller = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            _ => return,
+        };
+
+        // Pay the cost.
+        let cost = Self::transform_cost();
+        if crate::mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &cost).is_err() {
+            // Can't pay — shouldn't happen since we checked in on_upkeep, but handle gracefully.
+            state.log(LogLevel::Event, "Could not pay {2}{B}{B} to transform".into());
+            return;
+        }
+
+        // Transform.
+        let is_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
+        if let Some(obj) = state.get_object_mut(self_id) {
+            obj.is_transformed = !is_transformed;
+            let name = if obj.is_transformed { "Stalking Vampire" } else { "Screeching Bat" };
+            obj.name = name.into();
+        }
+        let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
+        state.log(LogLevel::Event,
+            format!("Transforms into {}", new_name));
     }
 
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {

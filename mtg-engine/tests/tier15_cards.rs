@@ -819,7 +819,7 @@ fn unholy_fiend_drains_life_at_end_step() {
 // ── Screeching Bat ──────────────────────────────────────────
 
 #[test]
-fn screeching_bat_transforms_at_upkeep_with_mana() {
+fn screeching_bat_transforms_at_upkeep_when_player_pays() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
 
@@ -833,9 +833,106 @@ fn screeching_bat_transforms_at_upkeep_with_mana() {
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, bat, &reg);
 
+    // Should NOT be transformed yet — awaiting player choice.
+    assert!(!state.get_object(bat).unwrap().is_transformed);
+    assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
+
+    // Player chooses to pay.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Now should be transformed.
     assert!(state.get_object(bat).unwrap().is_transformed);
     assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
     assert_eq!(behavior.dynamic_pt(&state, bat), Some((5, 5)));
+
+    // Mana should have been spent.
+    assert_eq!(state.get_player(P0).mana_pool.total(), 0);
+}
+
+#[test]
+fn screeching_bat_does_not_transform_when_player_declines() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+    assert!(!state.get_object(bat).unwrap().is_transformed);
+
+    // Add mana for the upkeep transform cost: {2}{B}{B}.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &reg);
+
+    assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
+
+    // Player declines to pay.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &reg,
+    );
+
+    // Should NOT be transformed.
+    assert!(!state.get_object(bat).unwrap().is_transformed);
+    assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
+
+    // Mana should NOT have been spent.
+    assert_eq!(state.get_player(P0).mana_pool.total(), 4);
+}
+
+#[test]
+fn screeching_bat_no_choice_without_mana() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+
+    // No mana in pool — choice should not be presented.
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &reg);
+
+    assert!(!state.get_object(bat).unwrap().is_transformed);
+    assert!(state.awaiting_action.is_none(), "No choice should be presented without mana");
+}
+
+#[test]
+fn stalking_vampire_transforms_back_when_player_pays() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
+
+    // Transform to Stalking Vampire first.
+    if let Some(obj) = state.get_object_mut(bat) {
+        obj.is_transformed = true;
+        obj.name = "Stalking Vampire".into();
+    }
+
+    // Add mana for the upkeep transform cost: {2}{B}{B}.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, bat, &reg);
+
+    // Should be awaiting choice.
+    assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
+
+    // Player chooses to pay.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Should transform back to Screeching Bat.
+    assert!(!state.get_object(bat).unwrap().is_transformed);
+    assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
 }
 
 // ── Ludevic's Test Subject ──────────────────────────────────────────
