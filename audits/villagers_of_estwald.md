@@ -33,3 +33,14 @@
 
 ## Verdict
 **PASS** — Standard Innistrad werewolf, correctly implemented.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Front oracle text**: At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Back oracle text**: At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Mana cost**: {2}{G}
+**Type line**: Creature — Human Werewolf // Creature — Werewolf
+**P/T**: 2/3 // 4/6
+**Status**: PASS
+### Code issues
+None. Card data matches oracle for both faces. Front: name "Villagers of Estwald", cost {2}{G}, 2/3, Human Werewolf, transform trigger on upkeep. Back: name "Howlpack of Estwald", 4/6, Werewolf, transform back trigger. Transform logic correctly checks spells_cast_last_turn == 0 for front face and any player with >= 2 spells for back face. dynamic_pt returns (4,6) when transformed. No keywords (vanilla werewolf). All correct.

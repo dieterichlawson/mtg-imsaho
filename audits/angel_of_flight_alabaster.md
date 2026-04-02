@@ -17,3 +17,11 @@
 - **Target filtering:** Checks both registry subtypes and object subtypes for "Spirit" -- CORRECT
 
 ## Verdict: PASS -- No issues found
+
+## Audit — 2026-04-02 (final)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flying\nAt the beginning of your upkeep, return target Spirit card from your graveyard to your hand.
+**Type line**: Creature — Angel
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name "Angel of Flight Alabaster", cost {4}{W}, 4/4, type Creature — Angel, keywords [Flying]. Triggered ability on Upkeep correctly filters Spirit cards in owner's graveyard and presents choice via present_target_choice with ReturnToHand effect. Only triggers for active_player == controller. All correct.

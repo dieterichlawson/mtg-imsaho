@@ -19,3 +19,18 @@
 
 ## Verdict
 **PASS** — Correctly implemented.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Whenever another creature you control dies, put a +1/+1 counter on this creature.
+**Type line**: Creature — Human
+**Status**: PASS
+
+### Card Data
+- **Name:** Unruly Mob -- CORRECT
+- **Mana Cost:** {1}{W} -- CORRECT
+- **Type:** Creature — Human -- CORRECT
+- **P/T:** 1/1 -- CORRECT
+
+### Code issues
+None. Trigger uses AnyCreatureDies, filters by dead_controller == controller (ensuring "you control"), and adds a PlusOnePlusOne counter. The "another" condition is implicitly satisfied because a dead creature is no longer on the battlefield when this triggers. All data and behavior match oracle.

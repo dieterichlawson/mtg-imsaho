@@ -17,3 +17,19 @@
 
 ## Verdict
 **PASS** — Simple deathtouch creature, correctly implemented.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Deathtouch
+**Type line**: Creature — Rat
+**Status**: PASS
+
+### Card Data
+- **Name:** Typhoid Rats -- CORRECT
+- **Mana Cost:** {B} -- CORRECT
+- **Type:** Creature — Rat -- CORRECT
+- **P/T:** 1/1 -- CORRECT
+- **Keywords:** Deathtouch -- CORRECT
+
+### Code issues
+None. Vanilla creature with Deathtouch keyword. All card data matches oracle.

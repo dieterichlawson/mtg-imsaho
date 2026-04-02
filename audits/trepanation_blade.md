@@ -64,3 +64,21 @@ No issues found.
 - Empty library (no lands): NOT TESTED
 - Land card counted in bonus (ruling 1): PASS (tested implicitly in first test — 3 cards including land = +3/+0)
 - Equipped creature removed mid-trigger: NOT TESTED
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Whenever equipped creature attacks, defending player reveals cards from the top of their library until they reveal a land card. The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard. / Equip {2}
+**Type line**: Artifact — Equipment
+**Status**: ISSUE
+
+### Card Data
+- **Name:** Trepanation Blade -- CORRECT
+- **Mana Cost:** {3} -- CORRECT
+- **Type:** Artifact — Equipment -- CORRECT
+- **P/T:** N/A -- CORRECT
+
+### Code issues
+1. **Oracle text wording mismatch**: The code oracle_text reorders the sentences and changes wording.
+   - Oracle: "The creature gets +1/+0 until end of turn for each card revealed this way. That player puts the revealed cards into their graveyard."
+   - Code: "That player puts all cards revealed this way into their graveyard. Equipped creature gets +1/+0 until end of turn for each card put into a graveyard this way."
+2. **Behavior is functionally correct**: The land card IS counted in the +1/+0 bonus (matching the ruling), cards are milled to graveyard, equip cost is {2} at sorcery speed. No gameplay bug.

@@ -1,22 +1,24 @@
 # Audit: Avacyn's Pilgrim
 
-## Oracle (Scryfall)
+## Oracle Text (Scryfall)
 - **Name:** Avacyn's Pilgrim
-- **Cost:** {G}
+- **Mana Cost:** {G}
 - **Type:** Creature — Human Monk
-- **Oracle:** {T}: Add {W}.
 - **P/T:** 1/1
+- **Oracle Text:** {T}: Add {W}.
 
-## Implementation: `mtg-engine/src/cards/avacyns_pilgrim.rs`
-- **Name:** Avacyn's Pilgrim ✅
-- **Cost:** {G} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Human, Monk ✅
-- **P/T:** 1/1 ✅
-- **Oracle text:** matches ✅
-- **Mana ability:** {T}: Add {W} ✅
-- **Produced mana:** White ✅
-- **requires_tap:** true ✅
-- **Summoning sickness check:** present in mana_abilities ✅
+## Implementation File
+`mtg-engine/src/cards/isd/avacyns_pilgrim.rs`
 
-## Verdict: PASS — no issues found
+## Card Data Checks
+- **Name:** Correct ("Avacyn's Pilgrim")
+- **Mana Cost:** Correct ({G})
+- **Card Types:** Correct (Creature)
+- **Subtypes:** Correct (Human, Monk)
+- **P/T:** Correct (1/1)
+- **Oracle Text:** Correct
+
+## Behavior Checks
+- **Mana ability:** Produces {W} via tap, correct. Checks battlefield zone, untapped, and not summoning sick -- all correct.
+
+## Verdict: PASS

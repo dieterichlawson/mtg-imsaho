@@ -189,3 +189,21 @@ Card data is correct: {1}{G} Instant, no keywords beyond Transform (not stored a
 - Card data: `innistrad_simple_cards.rs:530` moonmist_card_data
 - Werewolf creature still deals combat damage: NOT TESTED (only Wolf tested)
 - Ruling: creature entering after Moonmist still prevented: NOT TESTED
+
+## Audit — 2026-04-02
+
+**Oracle source**: Scryfall  
+**Card**: Moonmist  
+**Type**: Instant | **Cost**: {1}{G}  
+**Oracle text**: "Transform all Humans. Prevent all combat damage that would be dealt this turn by creatures other than Werewolves and Wolves. (Only double-faced cards can be transformed.)"
+
+### Checks
+- Name: "Moonmist" -- PASS
+- Cost: {1}{G} -- PASS
+- Type: Instant -- PASS
+- Oracle text: Code omits reminder text "(Only double-faced cards can be transformed.)" which is correct (reminder text is not rules text) -- PASS
+- Behavior (transform): Finds all Humans on the battlefield that are DFCs and transforms them, correctly updating name/P/T/keywords/subtypes for both directions -- PASS
+- Behavior (damage prevention): Sets `prevent_non_wolf_werewolf_combat_damage = true` on the game state -- PASS
+- Spell cleanup: Calls `move_spell_after_resolve` -- PASS
+
+**Verdict: PASS**

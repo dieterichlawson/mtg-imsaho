@@ -19,3 +19,21 @@
 - **Instant speed:** sorcery_speed_only: false ✅
 
 ## Verdict: PASS -- no issues found
+
+## Audit — 2026-04-02
+
+**Oracle Text:**
+> {1}{W}, Sacrifice this creature: Exile target enchantment.
+
+**Card Data:**
+- Name: Silverchase Fox — correct
+- Cost: {1}{W} — correct
+- Type: Creature — Fox — correct
+- P/T: 2/2 — correct
+
+**Behavior:**
+- Activated ability costs {1}{W} with SacrificeCost::SacrificeThis — correct
+- Targets a permanent with CardType::Enchantment — correct
+- On activation, exiles the target from battlefield — correct
+
+**Result: PASS**

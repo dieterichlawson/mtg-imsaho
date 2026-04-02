@@ -1,20 +1,24 @@
 # Audit: Battleground Geist
 
-## Oracle (Scryfall)
+## Oracle Text (Scryfall)
 - **Name:** Battleground Geist
-- **Cost:** {4}{U}
+- **Mana Cost:** {4}{U}
 - **Type:** Creature — Spirit
-- **Oracle:** Flying. Other Spirit creatures you control get +1/+0.
 - **P/T:** 3/3
+- **Oracle Text:** Flying / Other Spirit creatures you control get +1/+0.
 
-## Implementation: `mtg-engine/src/cards/battleground_geist.rs`
-- **Name:** Battleground Geist ✅
-- **Cost:** {4}{U} ✅
-- **Type:** Creature ✅
-- **Subtypes:** Spirit ✅
-- **P/T:** 3/3 ✅
-- **Keywords:** Flying ✅
-- **Continuous effect:** ModifyPT +1/+0 with scope GlobalOther(And(You, HasSubtype("Spirit"))) ✅
-- **"Other" restriction:** Uses GlobalOther (excludes self) ✅
+## Implementation File
+`mtg-engine/src/cards/isd/battleground_geist.rs`
 
-## Verdict: PASS — no issues found
+## Card Data Checks
+- **Name:** Correct
+- **Mana Cost:** Correct ({4}{U})
+- **Card Types:** Correct (Creature)
+- **Subtypes:** Correct (Spirit)
+- **P/T:** Correct (3/3)
+- **Keywords:** Correct (Flying)
+
+## Behavior Checks
+- **Continuous effect:** `ModifyPT { power: 1, toughness: 0 }` with scope `GlobalOther(And(You, HasSubtype("Spirit")))` -- correctly gives other Spirit creatures you control +1/+0.
+
+## Verdict: PASS

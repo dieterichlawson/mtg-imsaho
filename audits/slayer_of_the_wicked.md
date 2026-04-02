@@ -20,3 +20,22 @@
 - **Target scope:** any controller (not just opponent) -- matches oracle (no "an opponent controls" restriction) ✅
 
 ## Verdict: PASS -- no issues found
+
+## Audit — 2026-04-02
+
+**Oracle Text:**
+> When this creature enters, you may destroy target Vampire, Werewolf, or Zombie.
+
+**Card Data:**
+- Name: Slayer of the Wicked — correct
+- Cost: {3}{W} — correct
+- Type: Creature — Human Soldier — correct
+- P/T: 3/2 — correct
+
+**Behavior:**
+- ETB triggered ability — correct
+- Filters targets by subtypes "Vampire", "Werewolf", or "Zombie" — correct
+- Uses present_optional_target_choice ("you may") — correct
+- Destroy effect via PendingEffect::Destroy — correct
+
+**Result: PASS**

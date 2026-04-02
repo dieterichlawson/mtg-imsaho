@@ -18,3 +18,18 @@
 
 ## Verdict
 **PASS** — Correctly implements reanimation with flashback.
+
+## Audit — 2026-04-02
+**Oracle text source**: Scryfall API
+**Oracle text**: Return target creature card from your graveyard to the battlefield. / Flashback {3}{W}
+**Type line**: Sorcery
+**Status**: PASS
+
+### Card Data
+- **Name:** Unburial Rites -- CORRECT
+- **Mana Cost:** {4}{B} -- CORRECT
+- **Type:** Sorcery -- CORRECT
+- **Flashback Cost:** {3}{W} -- CORRECT
+
+### Code issues
+None. Oracle_text field omits the flashback reminder text, but flashback_cost is correctly set to {3}{W}. The on_resolve correctly finds creature cards in controller's graveyard (filtered by power.is_some() and owner == controller), moves the chosen one to the battlefield, and handles single/multiple target cases with player choice. Spell cleanup is correct.

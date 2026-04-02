@@ -15,3 +15,11 @@
 - **Keywords:** Flash, Deathtouch -- CORRECT
 
 ## Verdict: PASS -- No issues found
+
+## Audit — 2026-04-02 (final)
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: Flash\nDeathtouch
+**Type line**: Creature — Snake
+**Status**: PASS
+### Code issues
+None. Card data matches oracle: name "Ambush Viper", cost {1}{G}, 2/1, type Creature — Snake, keywords [Flash, Deathtouch]. Vanilla creature with keywords only, no behavior needed beyond card_data.
