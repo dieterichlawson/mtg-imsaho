@@ -217,3 +217,147 @@ All issues from prior audits have been resolved:
 
 ### Result
 **PASS**
+
+## Audit — 2026-04-02 20:07
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py, cached 2026-04-01)
+**Oracle text**:
+Front face (Screeching Bat):
+```
+Flying
+At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+```
+Back face (Stalking Vampire):
+```
+At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+```
+**Type line**: Front: Creature — Bat / Back: Creature — Vampire
+**Mana cost**: {2}{B}
+**P/T**: Front: 2/2 / Back: 5/5
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Stalking Vampire does NOT have Flying (back face `keywords: vec![]`, `apply_transform` swaps keywords): PASS
+- Screeching Bat regains Flying when transforming back (`apply_transform` restores front face keywords): PASS
+- Upkeep trigger only fires on controller's upkeep (line 84: `state.active_player != controller`): PASS
+- "You may pay" correctly presented as YesNo choice, not auto-decided (lines 99-106): PASS
+- Mana cost correctly spent via `auto_pay` on "yes" (line 126): PASS
+- No choice offered when player cannot afford {2}{B}{B} (lines 90-92: `can_pay` check): PASS
+- Subtypes swap correctly between Bat and Vampire via `apply_transform`: PASS
+- `dynamic_pt` returns `Some((5,5))` when transformed, `None` when not (replaces base P/T): PASS
+- `should_transform` returns false (not a werewolf, no day/night auto-transform): PASS
+
+### Test coverage
+- Transform with mana (player accepts): `tier15_cards.rs:1128` — TESTED
+- Decline to transform when mana available: `tier15_cards.rs:1163` — TESTED
+- No choice without mana: `tier15_cards.rs:1195` — TESTED
+- Transform back (Stalking Vampire -> Screeching Bat): `tier15_cards.rs:1210` — TESTED
+- Stalking Vampire does NOT have Flying: `tier15_cards.rs:1245` — TESTED
+- Screeching Bat regains Flying on transform back: `tier15_cards.rs:1282` — TESTED
+- Subtypes update on transform (Bat -> Vampire): `tier15_cards.rs:1324` — TESTED
+- Mana consumed after paying: `tier15_cards.rs:1159` — TESTED
+- Mana NOT consumed when declining: `tier15_cards.rs:1191` — TESTED
+- Not-your-upkeep (opponent's turn): NOT TESTED (minor gap)
+- Creature removed before trigger resolves: NOT TESTED (minor gap, standard trigger handling)
+
+## Audit — 2026-04-02 20:13
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py, cached 2026-04-01)
+**Oracle text**:
+Front face (Screeching Bat):
+```
+Flying
+At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+```
+Back face (Stalking Vampire):
+```
+At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+```
+**Type line**: Front: Creature — Bat / Back: Creature — Vampire
+**Mana cost**: {2}{B}
+**P/T**: Front: 2/2 / Back: 5/5
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Stalking Vampire loses Flying on transform (back face `keywords: vec![]`, `apply_transform` swaps keywords): PASS
+- Screeching Bat regains Flying when transforming back (`apply_transform` restores front face keywords): PASS
+- Upkeep trigger only fires on controller's upkeep (line 84: `state.active_player != controller`): PASS
+- "You may pay" correctly presented as YesNo choice, not auto-decided (lines 99-106): PASS
+- Mana cost {2}{B}{B} correctly spent via `auto_pay` on "yes" (line 126): PASS
+- No choice offered when player cannot afford {2}{B}{B} (lines 90-92: `can_pay` check returns early): PASS
+- Subtypes swap correctly between Bat and Vampire via `apply_transform`: PASS
+- `dynamic_pt` returns `Some((5,5))` when transformed, `None` when not: PASS
+- `should_transform` returns false (no day/night auto-transform): PASS
+- Both faces declare `TriggeredAbilityDef` with `TriggerKind::Upkeep` so trigger fires from either face: PASS
+
+### Test coverage
+- Transform with mana (player accepts): `tier15_cards.rs:1128` — TESTED
+- Decline to transform when mana available: `tier15_cards.rs:1163` — TESTED
+- No choice without mana: `tier15_cards.rs:1195` — TESTED
+- Transform back (Stalking Vampire -> Screeching Bat): `tier15_cards.rs:1210` — TESTED
+- Stalking Vampire does NOT have Flying: `tier15_cards.rs:1245` — TESTED
+- Screeching Bat regains Flying on transform back: `tier15_cards.rs:1282` — TESTED
+- Subtypes update on transform (Bat -> Vampire): `tier15_cards.rs:1324` — TESTED
+- Mana consumed after paying: `tier15_cards.rs:1159` — TESTED
+- Mana NOT consumed when declining: `tier15_cards.rs:1191` — TESTED
+- Not-your-upkeep (opponent's turn): NOT TESTED (minor gap)
+- Creature removed before trigger resolves: NOT TESTED (minor gap, standard trigger handling)
+
+## Audit — 2026-04-02 20:20
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py, cached 2026-04-01)
+**Oracle text**:
+Front face (Screeching Bat):
+```
+Flying
+At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+```
+Back face (Stalking Vampire):
+```
+At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+```
+**Type line**: Front: Creature — Bat / Back: Creature — Vampire
+**Mana cost**: {2}{B}
+**P/T**: Front: 2/2 / Back: 5/5
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All card data and behavior verified against fetched oracle text:
+- Front face: name, cost ({2}{B}), types (Creature — Bat), P/T (2/2), keywords (Flying), oracle text, triggered ability (TriggerKind::Upkeep) all match.
+- Back face: name ("Stalking Vampire"), cost (None), types (Creature — Vampire), P/T (5/5 via dynamic_pt), keywords (empty vec — no Flying), oracle text, triggered ability (TriggerKind::Upkeep) all match.
+- Transform uses `helpers::apply_transform` which correctly swaps name, keywords, and subtypes between faces.
+- "You may pay" is properly implemented as a `ResolutionChoiceKind::YesNo` player choice (lines 99-106).
+- Mana payment {2}{B}{B} is correct (lines 12-18, 125-129).
+
+### Tricky interactions checked
+- Stalking Vampire loses Flying on transform (back face `keywords: vec![]`, `apply_transform` replaces obj.keywords): PASS
+- Screeching Bat regains Flying when transforming back (`apply_transform` restores front face keywords vec): PASS
+- Upkeep trigger only fires on controller's upkeep (line 84: `state.active_player != controller` guard): PASS
+- "You may pay" correctly presented as YesNo choice, not auto-decided (lines 99-106): PASS
+- No choice offered when player cannot afford {2}{B}{B} (lines 90-92: `can_pay` returns early): PASS
+- Subtypes swap correctly between Bat and Vampire via `apply_transform`: PASS
+- `dynamic_pt` returns `Some((5,5))` when transformed, `None` otherwise: PASS
+- `should_transform` returns false (not a werewolf, no day/night auto-transform): PASS
+- Both faces declare `TriggeredAbilityDef` with `TriggerKind::Upkeep` so trigger fires from either face: PASS
+- Back face cost is `None` (back faces of DFCs have no mana cost): PASS
+
+### Test coverage
+- Transform with mana (player accepts): `tier15_cards.rs:1128` — TESTED
+- Decline to transform when mana available: `tier15_cards.rs:1163` — TESTED
+- No choice without mana: `tier15_cards.rs:1195` — TESTED
+- Transform back (Stalking Vampire -> Screeching Bat): `tier15_cards.rs:1210` — TESTED
+- Stalking Vampire does NOT have Flying: `tier15_cards.rs:1245` — TESTED
+- Screeching Bat regains Flying on transform back: `tier15_cards.rs:1282` — TESTED
+- Subtypes update on transform (Bat -> Vampire): `tier15_cards.rs:1324` — TESTED
+- Mana consumed after paying: `tier15_cards.rs:1159` — TESTED
+- Mana NOT consumed when declining: `tier15_cards.rs:1191` — TESTED
+- Not-your-upkeep (opponent's turn): NOT TESTED (minor gap)
+- Creature removed before trigger resolves: NOT TESTED (minor gap, standard trigger handling)

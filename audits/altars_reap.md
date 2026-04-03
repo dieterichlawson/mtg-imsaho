@@ -105,3 +105,65 @@ No issues found.
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-01 18:00
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01, URL: https://scryfall.com/card/isd/86/altars-reap
+**Oracle text**: As an additional cost to cast this spell, sacrifice a creature.
+Draw two cards.
+**Type line**: Instant
+**Mana cost**: {1}{B}
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Checklist
+- Mana cost: Oracle says `{1}{B}`. Code has `Generic(1), Colored(Color::Black)`. MATCH.
+- Card types: Oracle says "Instant". Code has `vec![CardType::Instant]`. MATCH.
+- Supertypes: None in type line. Code has `vec![]`. MATCH.
+- Subtypes: None in type line. Code has `vec![]`. MATCH.
+- Power/toughness: N/A (Instant). Code has `None, None`. MATCH.
+- Keywords: None. Code has `vec![]`. MATCH.
+- Oracle text field: Code matches Scryfall verbatim. MATCH.
+- Additional cost: Oracle says "sacrifice a creature". Code has `Some(AdditionalCost::SacrificeCreature)`. MATCH.
+- Triggered abilities: None needed. Code has `vec![]`. MATCH.
+- `on_resolve`: Calls `draw_cards(state, controller, 2)` to draw two cards. Sacrifice is handled at cast time by the engine's additional cost system. CORRECT.
+- Spell cleanup: Uses `move_spell_after_resolve(object_id)` (line 42). CORRECT (no anti-pattern).
+- No targeting (spell has no targets): CORRECT.
+- No `CombatDamageDealt` misuse: CORRECT (card deals no damage).
+
+### Tricky interactions checked
+- Sacrifice happens at cast time (additional cost), not on resolution: PASS (engine handles via `AdditionalCost::SacrificeCreature` path in engine.rs lines ~530-537, ~1541-1546)
+- Cannot cast without a creature to sacrifice: PASS (engine checks for eligible creatures at lines ~530-536 and skips generating cast action if none available)
+- Spell has no targets so cannot fizzle due to invalid targets: PASS
+- Sacrifice bypasses indestructible: PASS (engine uses `destruction::sacrifice`, not `try_destroy`)
+
+### Test coverage
+- Main effect (sacrifice creature + draw 2): `mtg-engine/tests/tier8_cards.rs:169` (`altars_reap_sacrifices_and_draws_two`)
+- Cannot cast without creatures: NOT TESTED (engine prevents it at action generation level)
+- Ruling: must sacrifice exactly one creature: Implicitly tested (engine's `AdditionalCost::SacrificeCreature` enforces exactly one)
+- Ruling: sacrifice at cast time cannot be responded to: Implicitly correct (engine pays costs before spell goes on stack)
+
+## Audit — 2026-04-02 20:28
+
+**Oracle text source**: Scryfall API via `scripts/oracle_lookup.py` (cached 2026-04-01), URL: https://scryfall.com/card/isd/86/altars-reap
+**Oracle text**: As an additional cost to cast this spell, sacrifice a creature.
+Draw two cards.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Sacrifice at cast time (not resolution): PASS -- Engine's `AdditionalCost::SacrificeCreature` path in engine.rs (lines ~1541-1546) performs sacrifice before spell goes on stack. The `on_resolve` correctly only draws cards.
+- Cannot cast without a creature to sacrifice: PASS -- Engine checks for eligible creatures at lines ~530-536 and skips generating cast actions if none available (`if creatures.is_empty() { continue; }`).
+- Spell has no targets, cannot fizzle due to invalid targets: PASS -- No `Target` usage in code; `_targets` parameter is unused.
+- Sacrifice bypasses indestructible/regeneration: PASS -- Engine uses `destruction::sacrifice()` (not `try_destroy`), which correctly cannot be prevented.
+- Spell cleanup uses correct pattern: PASS -- Uses `move_spell_after_resolve(object_id)` (line 42), which handles flashback exile correctly.
+
+### Test coverage
+- Main effect (sacrifice creature + draw 2): `mtg-engine/tests/tier8_cards.rs:169` (`altars_reap_sacrifices_and_draws_two`)
+- Cannot cast without creatures on battlefield: NOT TESTED
+- Ruling: must sacrifice exactly one creature: NOT TESTED (enforced by engine's `AdditionalCost::SacrificeCreature` allowing exactly one selection)

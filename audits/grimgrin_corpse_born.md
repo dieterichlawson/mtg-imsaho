@@ -277,3 +277,150 @@ No behavioral issues found. One minor cosmetic note:
 
 ### Code issues
 No issues found. Card data matches oracle: name "Grimgrin, Corpse-Born", mana cost {3}{U}{B}, Legendary Creature — Zombie Warrior, 5/5. Enters tapped (set in on_resolve). PreventUntap continuous effect on self. Activated ability: sacrifice another creature (SacrificeCost::SacrificeAnotherCreature), no mana cost, untaps and adds +1/+1 counter. Attack trigger: finds defending player from combat state, collects their creatures, presents target choice via DestroyThenCounter pending effect. Correctly returns early if no creatures (per ruling). is_legendary set on resolve. No anti-patterns.
+
+## Audit — 2026-04-02 20:07
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/214/grimgrin-corpse-born
+**Oracle text**: Grimgrin enters tapped and doesn't untap during your untap step.
+Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
+Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.
+**Type line**: Legendary Creature — Zombie Warrior
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+**Card data verification (oracle vs code):**
+- Name: `"Grimgrin, Corpse-Born"` (line 18). Correct.
+- Mana cost: Oracle `{3}{U}{B}` matches `ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Blue), ManaSymbol::Colored(Color::Black)])` (lines 19-23). PASS.
+- Types: Oracle "Legendary Creature — Zombie Warrior" matches `card_types: vec![CardType::Creature]`, `supertypes: vec![Supertype::Legendary]`, `subtypes: vec!["Zombie".into(), "Warrior".into()]` (lines 24-26). PASS.
+- P/T: Oracle 5/5 matches `power: Some(5), toughness: Some(5)` (lines 27-28). PASS.
+- Keywords: None in oracle, `keywords: vec![]` (line 30). PASS.
+- Minor cosmetic note: code oracle_text field says `"Grimgrin, Corpse-Born enters tapped..."` but Scryfall uses the short name `"Grimgrin enters tapped..."`. Display-only, no functional impact.
+
+**Behavior verification:**
+- Enters tapped: `on_resolve` sets `obj.tapped = true` (line 51). PASS.
+- Doesn't untap during untap step: `ContinuousEffect::PreventUntap { scope: EffectScope::OnSelf }` (lines 32-35). Engine untap step (engine.rs:2912-2924) skips permanents with this effect. PASS.
+- Sacrifice another creature: `sacrifice_cost: SacrificeCost::SacrificeAnotherCreature` (line 69). Engine enforces "another" exclusion at engine.rs:375-380 (checks `o.id != obj_id`). `on_activate_ability` untaps (`obj.tapped = false`, line 80) and adds counter (`add_counters ... PlusOnePlusOne, 1`, line 82). PASS.
+- Sacrifice ability usable when untapped: `requires_tap: false` (line 71). Correct — no tap symbol in oracle cost. PASS.
+- Attack trigger declaration: `TriggerKind::Attacks` in `triggered_abilities` (line 40). Engine creates `PendingTrigger::AttacksTrigger` on `AttackersDeclared` event (triggers.rs:677-697), resolves via `behavior.on_attacks()` (triggers.rs:980-985). PASS.
+- Attack trigger targeting: `on_attacks` resolves defending player from combat state (lines 94-96), collects defender's creatures (lines 99-103), uses `present_target_choice` with `PendingEffect::DestroyThenCounter` and `optional: false` (lines 114-125). PASS.
+- Destroy + counter: `DestroyThenCounter` handler (engine.rs:2427-2438) calls `try_destroy` then unconditionally adds +1/+1 counter. Matches ruling: counter added even if target survives (indestructible/regenerate). PASS.
+- No valid targets: Returns early at lines 108-109 when `targets.is_empty()`. No counter added. Matches ruling: "the last ability will be removed from the stack and have no effect." PASS.
+- Mandatory targeting: `optional: false` (line 125). Oracle does not say "you may". PASS.
+
+### Tricky interactions checked
+- Enters tapped + PreventUntap (only untaps via sacrifice ability): PASS
+- Sacrifice "another" creature self-exclusion (can't sacrifice Grimgrin to its own ability): PASS
+- +1/+1 counter added even when target is indestructible (ruling 1): PASS
+- No defending creatures = no effect and no counter (ruling 3): PASS
+- Fizzle when target becomes illegal (ruling 2): NOT DIRECTLY TESTABLE (engine resolves targeting at trigger resolution time — engine-level limitation, not card bug)
+- Mandatory targeting vs "you may" (oracle has no "you may"): PASS
+
+### Test coverage
+8 tests in `mtg-engine/tests/tier15_cards.rs`:
+- Enters tapped: `tier15_cards.rs:1494` (grimgrin_enters_tapped)
+- Sacrifice untaps and adds counter: `tier15_cards.rs:1510` (grimgrin_sacrifice_untaps_and_counters)
+- Sacrifice not available without other creatures: `tier15_cards.rs:1539` (grimgrin_sacrifice_not_available_without_other_creatures)
+- Attack trigger destroys and adds counter (single target auto-apply): `tier15_cards.rs:1555` (grimgrin_attack_trigger_destroys_and_adds_counter)
+- Attack trigger presents choice with multiple targets: `tier15_cards.rs:1581` (grimgrin_attack_trigger_presents_choice_with_multiple_targets)
+- No targets = no effect, no counter (ruling 3): `tier15_cards.rs:1624` (grimgrin_attack_no_targets_no_counter)
+- Indestructible target still gets counter (ruling 1): `tier15_cards.rs:1647` (grimgrin_attack_indestructible_target_still_gets_counter)
+- Attack trigger targets defending player's creatures only: `tier15_cards.rs:1678` (grimgrin_attack_uses_defending_player_from_combat)
+- Fizzle when target becomes illegal (ruling 2): NOT TESTED (engine limitation)
+- Sacrifice ability when already untapped: NOT TESTED
+
+## Audit — 2026-04-02 20:13
+
+**Oracle text source**: Oracle cache (Scryfall API) — https://scryfall.com/card/isd/214/grimgrin-corpse-born
+**Oracle text**: Grimgrin enters tapped and doesn't untap during your untap step.
+Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
+Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.
+**Type line**: Legendary Creature — Zombie Warrior
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+**Card data verification (oracle vs code):**
+- Name: `"Grimgrin, Corpse-Born"` (line 18). Correct.
+- Mana cost: Oracle `{3}{U}{B}` matches code `Generic(3), Colored(Color::Blue), Colored(Color::Black)` (lines 19-23). PASS.
+- Types: Oracle "Legendary Creature — Zombie Warrior" matches code `CardType::Creature`, `Supertype::Legendary`, subtypes `["Zombie", "Warrior"]` (lines 24-26). PASS.
+- P/T: Oracle 5/5 matches code `power: Some(5), toughness: Some(5)` (lines 27-28). PASS.
+- Keywords: None in oracle, `keywords: vec![]` in code (line 30). PASS.
+- Minor cosmetic note: code oracle_text string says `"Grimgrin, Corpse-Born enters tapped..."` but Scryfall oracle text uses short name `"Grimgrin enters tapped..."`. Display-only, no functional impact.
+
+**Behavior verification:**
+- Enters tapped: `on_resolve` moves to battlefield then sets `obj.tapped = true` (lines 48-53). PASS.
+- Doesn't untap during untap step: `ContinuousEffect::PreventUntap { scope: EffectScope::OnSelf }` declared in `continuous_effects` (lines 32-35). Engine untap step at engine.rs:2908-2924 queries `has_continuous_effect` for `PreventUntap` and skips matching permanents. PASS.
+- Sacrifice another creature to untap + counter: `sacrifice_cost: SacrificeCost::SacrificeAnotherCreature` (line 69). Engine at lines 375-380 checks `o.id != obj_id` to enforce "another". `on_activate_ability` sets `obj.tapped = false` (line 80) and calls `state.add_counters(object_id, CounterType::PlusOnePlusOne, 1)` (line 82). PASS.
+- Sacrifice ability usable when untapped: `requires_tap: false` (line 71). Correct -- oracle cost has no tap symbol. PASS.
+- Sacrifice ability not available without other creatures: Engine at lines 375-380 checks `any(|o| o.power.is_some() && o.id != obj_id)` and skips generating the action if false. PASS.
+- Attack trigger: `TriggerKind::Attacks` in `triggered_abilities` (line 40). `on_attacks` resolves the defending player from `state.combat` (lines 94-96), collects defender's creatures filtered by `o.power.is_some()` (lines 99-103), calls `present_target_choice` with `PendingEffect::DestroyThenCounter` and `optional: false` (lines 114-125). PASS.
+- Destroy then counter: `DestroyThenCounter` handler at engine.rs:2427-2438 calls `crate::destruction::try_destroy` then unconditionally calls `state.add_counters(*source_id, PlusOnePlusOne, 1)`. Matches ruling: "+1/+1 counter added even if target survives via indestructible/regenerate." PASS.
+- No valid targets = no effect: Returns early at lines 108-109 when `targets.is_empty()`. No counter added. Matches ruling: "If the defending player controls no creatures when Grimgrin attacks, the last ability will be removed from the stack and have no effect." PASS.
+- Mandatory targeting: `optional: false` at line 125. Oracle does not say "you may". PASS.
+
+### Tricky interactions checked
+- Enters tapped + PreventUntap (only untaps via sacrifice or external effects): PASS
+- Sacrifice "another" creature self-exclusion (can't sacrifice Grimgrin to itself): PASS
+- +1/+1 counter added even when target is indestructible (ruling 1): PASS
+- No defending creatures = no effect and no counter (ruling 3): PASS
+- Fizzle when target becomes illegal (ruling 2): NOT DIRECTLY TESTABLE (engine resolves targeting at trigger resolution time -- engine-level limitation, not a card bug)
+- Mandatory targeting vs "you may" (oracle has no "you may"): PASS
+
+### Test coverage
+8 tests in `mtg-engine/tests/tier15_cards.rs`:
+- Enters tapped: `tier15_cards.rs:1494` (grimgrin_enters_tapped)
+- Sacrifice untaps and adds counter: `tier15_cards.rs:1510` (grimgrin_sacrifice_untaps_and_counters)
+- Sacrifice not available without other creatures: `tier15_cards.rs:1539` (grimgrin_sacrifice_not_available_without_other_creatures)
+- Attack trigger destroys and adds counter (single target): `tier15_cards.rs:1555` (grimgrin_attack_trigger_destroys_and_adds_counter)
+- Attack trigger presents choice with multiple targets: `tier15_cards.rs:1581` (grimgrin_attack_trigger_presents_choice_with_multiple_targets)
+- No targets = no effect, no counter (ruling 3): `tier15_cards.rs:1624` (grimgrin_attack_no_targets_no_counter)
+- Indestructible target still gets counter (ruling 1): `tier15_cards.rs:1647` (grimgrin_attack_indestructible_target_still_gets_counter)
+- Attack trigger targets defending player's creatures only: `tier15_cards.rs:1678` (grimgrin_attack_uses_defending_player_from_combat)
+- Fizzle when target becomes illegal (ruling 2): NOT TESTED (engine limitation)
+- Sacrifice ability when already untapped: NOT TESTED
+
+## Audit — 2026-04-02 20:20
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01, https://scryfall.com/card/isd/214/grimgrin-corpse-born
+**Oracle text**: Grimgrin enters tapped and doesn't untap during your untap step.
+Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
+Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.
+**Type line**: Legendary Creature — Zombie Warrior
+**Mana cost**: {3}{U}{B}
+**P/T**: 5/5
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Enters tapped: code sets `obj.tapped = true` in `on_resolve` — pass
+- Doesn't untap during untap step: `PreventUntap { scope: EffectScope::OnSelf }` continuous effect applied, engine skips untap for permanents with this effect — pass
+- Sacrifice cost is "another creature": uses `SacrificeCost::SacrificeAnotherCreature` which excludes the source permanent (engine checks `o.id != obj_id`) — pass
+- Activated ability has no mana cost: `ManaCost::free()` — pass
+- Activated ability usable at instant speed: `sorcery_speed_only: false` — pass (sacrifice ability has no timing restriction in oracle text)
+- Attack trigger uses `try_destroy` (not sacrifice): correct for "destroy" oracle text — pass
+- Attack trigger targets defending player's creatures only: uses combat state to identify defender — pass
+- Indestructible target: `DestroyThenCounter` effect adds +1/+1 counter regardless of whether destruction succeeds — pass (matches ruling 1)
+- No defending creatures: empty target list causes early return, no counter added — pass (matches ruling 3)
+- Mandatory target selection: `present_target_choice` called with `optional: false` — pass (attack trigger is not "you may")
+- Legendary rule: `is_legendary = true` set in `on_resolve`, `Supertype::Legendary` in card data — pass
+- `triggered_abilities` declaration matches `on_attacks` hook: `TriggerKind::Attacks` declared — pass
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Ruling 1 (indestructible/regenerate target still gets +1/+1): `tier15_cards.rs:1647` (grimgrin_attack_indestructible_target_still_gets_counter)
+- Ruling 2 (illegal target = entire ability fizzles, no counter): NOT TESTED (engine-level fizzle handling)
+- Ruling 3 (no defending creatures = ability removed, no effect): `tier15_cards.rs:1624` (grimgrin_attack_no_targets_no_counter)
+- Enters tapped: `tier15_cards.rs:1494` (grimgrin_enters_tapped)
+- Sacrifice untaps and adds counter: `tier15_cards.rs:1510` (grimgrin_sacrifice_untaps_and_counters)
+- Sacrifice not available without other creatures: `tier15_cards.rs:1539` (grimgrin_sacrifice_not_available_without_other_creatures)
+- Attack trigger destroys and adds counter (single target): `tier15_cards.rs:1555` (grimgrin_attack_trigger_destroys_and_adds_counter)
+- Attack trigger presents choice with multiple targets: `tier15_cards.rs:1581` (grimgrin_attack_trigger_presents_choice_with_multiple_targets)
+- Attack trigger targets defending player's creatures only: `tier15_cards.rs:1678` (grimgrin_attack_uses_defending_player_from_combat)
+- Fizzle when target becomes illegal (ruling 2): NOT TESTED (engine limitation)
+- Sacrifice ability when already untapped: NOT TESTED
+- LLM card knowledge: NOT PRESENT in `mtg-player/src/llm.rs`
