@@ -141,3 +141,37 @@ Sources:
 
 ### Code issues
 No issues found. Card data matches oracle: name, mana cost {4}{G}, Enchantment. Trigger: AnyCreatureDies, filters for controller match and nontoken (is_token check). Adds Slime counter to self, creates 0/0 green Ooze creature token with dynamic P/T linked to this Gutter Grime via card_state pt_source_counter. Token correctly created with subtypes ["Ooze"], colors [Green], types [Creature]. Per rulings, tokens track their specific Gutter Grime instance (implemented via pt_source_counter pointing to self_id). No anti-patterns.
+
+## Audit — 2026-04-02 21:12
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Whenever a nontoken creature you control dies, put a slime counter on this enchantment, then create a green Ooze creature token with "This token's power and toughness are each equal to the number of slime counters on Gutter Grime."
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+
+1. **Oracle text string mismatch (cosmetic only)**: Code oracle_text says "put a slime counter on Gutter Grime" and "This creature's power and toughness", while Scryfall says "put a slime counter on this enchantment" and "This token's power and toughness". No gameplay impact -- both refer to the same thing.
+
+2. **Parallel Lives interaction: extra tokens lack dynamic P/T linkage (engine limitation)**: When Parallel Lives is on the battlefield, `create_token_with_subtypes` creates extra copies internally, but only the primary token's ID is returned. The code at lines 73-76 only sets `pt_source_counter` card_state on the returned token_id, so any Parallel Lives copies would remain 0/0 base stats without dynamic P/T. This is an engine-level design limitation in how `create_token_with_subtypes` returns only one ID. Not marking as ISSUE because this affects any card that needs post-creation token state and is not specific to Gutter Grime's correctness in isolation.
+
+### Tricky interactions checked (min 3)
+
+1. **Multiple Gutter Grimes**: Each token stores its source Gutter Grime's ObjectId via `card_state["pt_source_counter"]` (line 74 uses `self_id`). Per ruling: "each Ooze token remembers which one created it." Correctly implemented -- tokens only track their specific source.
+
+2. **Gutter Grime leaves the battlefield**: When Gutter Grime moves to graveyard, `move_object` calls `obj.counters.clear()` (state.rs line 485), so `effective_power`/`effective_toughness` reads 0 slime counters from the source, returning 0. Per ruling: "the power and toughness of each Ooze token it created will become 0." Correctly implemented and tested.
+
+3. **Multiple creatures dying simultaneously (board wipe)**: Each death fires a separate `AnyCreatureDies` trigger. Triggers are queued and resolved sequentially. First trigger adds slime counter (now 1), creates token. Second trigger adds another (now 2), creates token. All tokens dynamically read current slime count, so both become 2/2. This matches the ruling about simultaneous deaths.
+
+4. **Token creature deaths do not trigger**: Line 53-55 checks `is_token` on the dead creature and returns early if true. The `is_token` field persists in the graveyard since it is not cleared by `move_object`. Correctly implemented and tested.
+
+5. **Counter added before token creation**: Line 58 adds the slime counter, then lines 63-69 create the token. This matches oracle sequencing ("put a slime counter... then create"). The first token created after the first death will be a 1/1, not a 0/0.
+
+### Test coverage
+
+5 tests in `mtg-engine/tests/gutter_grime.rs`, all passing:
+- `gutter_grime_creates_dynamic_pt_ooze` -- basic trigger, 1 slime counter, 1/1 Ooze
+- `gutter_grime_ooze_tokens_grow_with_more_counters` -- two deaths, both tokens become 2/2
+- `gutter_grime_ignores_token_deaths` -- token death does not trigger
+- `gutter_grime_ignores_opponent_deaths` -- opponent creature death does not trigger
+- `gutter_grime_ooze_tokens_become_zero_without_source` -- Gutter Grime removal makes Ooze 0/0

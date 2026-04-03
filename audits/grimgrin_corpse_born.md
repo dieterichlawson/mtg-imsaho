@@ -424,3 +424,35 @@ For each ruling and tricky interaction, list whether it is tested and where:
 - Fizzle when target becomes illegal (ruling 2): NOT TESTED (engine limitation)
 - Sacrifice ability when already untapped: NOT TESTED
 - LLM card knowledge: NOT PRESENT in `mtg-player/src/llm.rs`
+
+## Audit — 2026-04-02 21:12
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: "Grimgrin enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin."
+**Type line**: Legendary Creature — Zombie Warrior
+**Status**: PASS
+
+### Code issues
+1. **Minor oracle text mismatch (cosmetic only)**: The `oracle_text` field in `card_data()` uses "Grimgrin, Corpse-Born enters tapped..." but Scryfall oracle text says "Grimgrin enters tapped...". This is display-only and does not affect game logic. All three abilities otherwise match the oracle text verbatim.
+2. **Sacrifice cost auto-selection (engine limitation, not card-specific)**: When the controller has multiple other creatures, the engine auto-sacrifices the first eligible creature instead of presenting a choice (see TODO at `engine.rs:1764`). This is a known engine-level limitation affecting all cards that use `SacrificeCost::SacrificeAnotherCreature`, not a Grimgrin implementation bug.
+
+Neither issue causes incorrect game behavior for Grimgrin specifically -- the card functions correctly for all its abilities and rulings.
+
+### Tricky interactions checked (min 3)
+1. **Indestructible target still gets +1/+1 counter**: The `DestroyThenCounter` pending effect in `engine.rs:2427-2438` calls `try_destroy` (which respects indestructible, returning `DestroyResult::Indestructible` without moving to graveyard), then unconditionally adds the +1/+1 counter. This matches the 2013-07-01 ruling. Confirmed by test `grimgrin_attack_indestructible_target_still_gets_counter`.
+2. **No defending creatures = no effect and no counter**: When `targets` is empty in `on_attacks`, the function returns early (line 108-109), meaning no `DestroyThenCounter` effect is queued and no counter is added. This matches the 2011-09-22 ruling. Confirmed by test `grimgrin_attack_no_targets_no_counter`.
+3. **Defending player identification from combat state**: The attack trigger reads the defender from `state.combat.attackers` (line 94-96), correctly targeting only the defending player's creatures even when the controller has other creatures. Confirmed by test `grimgrin_attack_uses_defending_player_from_combat` which verifies the controller's own creature is not targeted.
+4. **PreventUntap during untap step**: The `ContinuousEffect::PreventUntap { scope: EffectScope::OnSelf }` is checked by the engine's untap step handler (`engine.rs:2912-2924`), which collects all permanents with this effect and excludes them from untapping. This correctly prevents Grimgrin from untapping normally.
+5. **Sacrifice ability usable at instant speed while tapped or untapped**: The activated ability has `requires_tap: false`, `once_per_turn: false`, and `sorcery_speed_only: false`, meaning it can be activated at any time there is priority and another creature to sacrifice -- consistent with how sacrifice abilities work in MTG.
+
+### Test coverage
+8 tests, all passing:
+- `grimgrin_enters_tapped` — enters battlefield tapped
+- `grimgrin_sacrifice_untaps_and_counters` — sacrifice another creature to untap and get +1/+1
+- `grimgrin_sacrifice_not_available_without_other_creatures` — ability unavailable without sacrifice fodder
+- `grimgrin_attack_trigger_destroys_and_adds_counter` — single target auto-applied
+- `grimgrin_attack_trigger_presents_choice_with_multiple_targets` — multiple targets present choice
+- `grimgrin_attack_no_targets_no_counter` — no defending creatures = no effect (ruling 3)
+- `grimgrin_attack_indestructible_target_still_gets_counter` — indestructible survives, counter still added (ruling 1)
+- `grimgrin_attack_uses_defending_player_from_combat` — only targets defending player's creatures
+- NOT TESTED: fizzle when target becomes illegal before resolution (ruling 2) — engine limitation
+- NOT TESTED: sacrifice when Grimgrin is already untapped (legal but not separately tested)

@@ -406,3 +406,60 @@ None found. The implementation is faithful to the oracle text.
 
 ### Code issues
 No issues found. Card data matches oracle: name, mana cost {1}{R}, Instant. Additional cost ExileXFromGraveyard correctly set. Target requirement is Creature. On resolve, reads exile_count from card_state (set at cast time by engine), deals that much damage to target creature with damage_marked and NonCombatDamageDealt event. Checks zone == Battlefield before dealing damage. move_spell_after_resolve called. No anti-patterns.
+
+## Audit — 2026-04-02 21:12
+
+**Oracle text source**: Scryfall API (via `scripts/oracle_lookup.py`, cached 2026-04-01)
+**Oracle text**: As an additional cost to cast this spell, exile X cards from your graveyard.
+Harvest Pyre deals X damage to target creature.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+
+None found. All previously reported issues have been fixed.
+
+Card data verification (`mtg-engine/src/cards/isd/harvest_pyre.rs`):
+- Name: "Harvest Pyre" -- matches oracle
+- Mana cost: `Generic(1), Colored(Red)` = {1}{R} -- matches oracle
+- Card types: `[Instant]` -- matches oracle type line
+- Supertypes: `[]` -- correct (none on oracle)
+- Subtypes: `[]` -- correct (none on oracle)
+- Power/toughness: `None/None` -- correct (not a creature)
+- Keywords: `[]` -- correct (no keywords)
+- Oracle text field: `"As an additional cost to cast this spell, exile X cards from your graveyard.\nHarvest Pyre deals X damage to target creature."` -- matches Scryfall verbatim
+- Target requirement: `TargetRequirement::Creature` -- correct per oracle "target creature"
+- Additional cost: `Some(AdditionalCost::ExileXFromGraveyard)` -- correct
+
+Behavior verification (`on_resolve`, lines 38-64):
+- Reads exile count from `card_state["exile_count"]` (stored by engine at cast time) -- correct
+- Guards on `count > 0` before dealing damage -- correct (X=0 is a legal cast that deals 0 damage)
+- Checks `obj.zone == Zone::Battlefield` before dealing damage -- correct fizzle protection
+- Applies damage via `obj.damage_marked += count` -- consistent with all other damage-dealing cards in the codebase
+- Tracks damage source via `obj.damaged_by.push(object_id)` -- correct for death trigger interactions
+- Emits `NonCombatDamageDealt` event with source, target, amount -- correct (spell damage, not combat)
+- Calls `state.move_spell_after_resolve(object_id)` -- correct (not the raw `move_object` anti-pattern)
+
+Engine-side additional cost handling (`mtg-engine/src/engine.rs`):
+- Legal action generation (lines 592-610): generates one `CastSpell` action per X value (0 to graveyard size), each with `exile_count: Some(x)` -- correct player choice of X
+- Cast-time exile (lines 1604-1629): exiles X cards from caster's graveyard, stores count on spell object's `card_state["exile_count"]` -- correct additional cost timing (cards exiled before spell goes on stack, survives counterspell)
+- Filters `o.owner == player` -- correct (only own graveyard)
+- Filters `o.id != *object_id` -- correct (spell itself excluded from exile candidates)
+
+### Tricky interactions checked (min 3)
+
+1. **Additional cost paid at cast time (survives counterspell)**: PASS. The `ExileXFromGraveyard` cost is handled in engine.rs `submit_action` before the spell moves to the stack. If the spell is countered, the exiled cards remain exiled.
+2. **Player chooses X (partial exile)**: PASS. Engine generates one legal action per X value (0..=graveyard_size). Test `harvest_pyre_player_chooses_partial_x` confirms X=2 out of 4 available works correctly, with 2 cards remaining in graveyard.
+3. **Only exiles caster's own graveyard**: PASS. Engine filters by `o.owner == player`. Test `harvest_pyre_only_exiles_own_graveyard` confirms opponent's graveyard is untouched.
+4. **NonCombatDamageDealt (not CombatDamageDealt)**: PASS. Spell damage correctly uses NonCombatDamageDealt event.
+5. **damaged_by tracking for death triggers (e.g., Falkenrath Noble)**: PASS. `obj.damaged_by.push(object_id)` present at line 50.
+6. **Target only creatures (not players)**: PASS. `TargetRequirement::Creature` matches oracle "target creature".
+
+### Test coverage
+
+5 tests in `mtg-engine/tests/tier8_cards.rs`, all passing:
+- `harvest_pyre_deals_damage_equal_to_chosen_x` -- X=4, verifies 4 cards exiled and 4 damage dealt
+- `harvest_pyre_player_chooses_partial_x` -- X=2 of 4 available, verifies partial exile and damage
+- `harvest_pyre_x_zero_deals_no_damage` -- X=0, verifies no damage dealt
+- `harvest_pyre_legal_actions_include_different_x_values` -- verifies action generation for X=0,1,2,3
+- `harvest_pyre_only_exiles_own_graveyard` -- verifies opponent's graveyard untouched

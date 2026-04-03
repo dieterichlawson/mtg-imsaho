@@ -136,3 +136,38 @@ Five tests in `mtg-engine/tests/tier15_cards.rs`:
 
 ### Code issues
 No issues found. Card data matches oracle: name, mana cost {4}, Legendary Artifact. Ability 0: {1} + tap + discard (hand choice via AwaitingAction or auto-discard) adds Study counter. Ability 1: tap + sacrifice (SacrificeCost::SacrificeThis), requires 3 study counters. Collects all creature cards from all graveyards (checks power or CardType::Creature per ruling), moves to battlefield under controller, adds Zombie subtype and Black color. is_legendary set on resolve. on_discard_choice callback adds study counter after player chooses. No anti-patterns.
+
+## Audit — 2026-04-02 21:12
+
+**Oracle text source**: Scryfall API — https://scryfall.com/card/isd/226/grimoire-of-the-dead
+**Oracle text**: {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.
+{T}, Remove three study counters from Grimoire of the Dead and sacrifice it: Put all creature cards from all graveyards onto the battlefield under your control. They're black Zombies in addition to their other colors and types.
+**Type line**: Legendary Artifact
+**Status**: PASS
+
+### Code issues
+No issues found. Implementation matches oracle text exactly.
+
+- **Card data**: Name "Grimoire of the Dead", mana cost `{4}` (`ManaSymbol::Generic(4)`), type `Legendary Artifact` (`CardType::Artifact` + `Supertype::Legendary`), oracle text verbatim match. `is_legendary` set in `on_resolve`.
+- **Ability 0**: Costs `{1}` + tap + discard a card. Code uses `ManaCost::new(vec![ManaSymbol::Generic(1)])`, `requires_tap: true`. Discard handled in `on_activate_ability`: single card auto-discards; multiple cards present `ChooseCardFromHand` choice to player. Both paths emit `GameEvent::Discarded` and add a study counter via `state.add_counters(object_id, CounterType::Study, 1)`. The multi-card path adds the counter in the `on_discard_choice` callback (called by engine after player chooses). Gated on `has_cards_in_hand` so ability is unavailable with empty hand.
+- **Ability 1**: Costs tap + remove 3 study counters + sacrifice. Code uses `requires_tap: true`, `SacrificeCost::SacrificeThis`, gated on `study_counters >= 3`. Counter removal is implicit (sacrifice sends Grimoire to graveyard, losing all counters). Reanimation logic iterates all objects in `Zone::Graveyard`, excludes Grimoire itself (`o.id != object_id`), filters for creature cards (`o.power.is_some() || o.card_types.contains(&CardType::Creature)`). Moves each to battlefield, sets `controller`, adds `"Zombie"` subtype and `Color::Black` without removing existing types/colors.
+
+### Tricky interactions checked (min 3)
+1. **All graveyards, not just controller's**: PASS — Code iterates `state.objects.values()` filtered by `zone == Zone::Graveyard` regardless of owner. Test `grimoire_reanimates_all_graveyard_creatures` verifies creatures from both P0 and P1 graveyards are reanimated.
+2. **"In addition to their other colors and types"**: PASS — Code uses `if !obj.subtypes.contains(...)` / `if !obj.colors.contains(...)` to add Zombie and Black without clearing existing values.
+3. **Creature card includes artifact creatures (ruling 2011-09-22)**: PASS — Code checks `o.card_types.contains(&CardType::Creature)` in addition to `o.power.is_some()`, so artifact creatures and other multi-type creatures are correctly included.
+4. **Creatures enter under controller's control**: PASS — `obj.controller = controller` set for each reanimated creature.
+5. **Grimoire not reanimating itself**: PASS — Explicit `o.id != object_id` exclusion. Also Grimoire is not a creature, so it would not match the creature filter anyway.
+6. **Study counter removal as cost**: PASS — Grimoire is sacrificed as part of the same cost, so the counters are implicitly removed. Availability is correctly gated on `>= 3` counters.
+7. **Discard event emission in both paths**: PASS — Auto-discard path emits `GameEvent::Discarded` directly; multi-card path handled by engine's `ChooseCardFromHand` resolution which also emits the event.
+8. **LLM card knowledge**: PASS — Present at `mtg-player/src/llm.rs` line 140 with accurate description.
+
+### Test coverage
+Five tests in `mtg-engine/tests/tier15_cards.rs`, all passing:
+1. `grimoire_discard_presents_choice_and_adds_study_counter` — Multiple cards in hand, verifies choice prompt and study counter added after selection.
+2. `grimoire_single_card_in_hand_auto_discards` — Single card auto-discarded, study counter added.
+3. `grimoire_accumulates_three_study_counters` — Three activations across turns, verifies 3 study counters accumulated.
+4. `grimoire_reanimates_all_graveyard_creatures` — Creatures from both players' graveyards reanimated under controller, Zombie subtype and Black color added, Grimoire sacrificed.
+5. `grimoire_ability_1_not_available_without_3_counters` — Ability 1 not offered with only 2 study counters.
+
+**Not tested**: artifact creature in graveyard (ruling edge case), empty graveyards (no creatures to reanimate), summoning sickness of reanimated creatures.
