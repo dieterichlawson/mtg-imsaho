@@ -31,12 +31,12 @@ Each card MUST be audited by its own dedicated subagent with fresh context. Neve
 
 ### Agent prompt (for each card)
 
-Launch each agent with the prompt below. Replace `{CARD_NAME}`, `{CARD_FILE}`, `{AUDIT_FILE}`, and `{TODAY}` (use today's date in YYYY-MM-DD format) with the appropriate values. Include the prompt EXACTLY as written — do NOT summarize or abbreviate it.
+Launch each agent with the prompt below. Replace `{CARD_NAME}`, `{CARD_FILE}`, `{AUDIT_FILE}`, and `{NOW}` (use the current date and time in YYYY-MM-DD HH:MM format, e.g. "2026-04-02 14:30") with the appropriate values. Include the prompt EXACTLY as written — do NOT summarize or abbreviate it.
 
 ```
 You are auditing the MTG card: {CARD_NAME}
 
-Today's date is {TODAY}.
+The current date and time is {NOW}.
 
 The card implementation is at `mtg-engine/src/cards/{CARD_FILE}`.
 
