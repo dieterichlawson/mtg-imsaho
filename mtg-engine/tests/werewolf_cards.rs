@@ -306,6 +306,70 @@ fn howlpack_alpha_does_not_create_token_on_front_face() {
     assert_eq!(wolves.len(), 0, "Front face Mayor should not create Wolf tokens");
 }
 
+#[test]
+fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
+    let reg = registry();
+    // Active player is P1 (opponent), but Mayor belongs to P0
+    let mut state = game_at_step(Step::EndStep, P1);
+    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+    // Transform to Howlpack Alpha
+    state.get_object_mut(mayor).unwrap().is_transformed = true;
+    state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
+
+    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
+    triggers::process_triggers(&mut state, &reg);
+
+    // Should NOT create a Wolf token on opponent's end step
+    let wolves: Vec<_> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Wolf")
+        .collect();
+    assert_eq!(wolves.len(), 0,
+        "Howlpack Alpha should not create Wolf tokens on opponent's end step");
+}
+
+#[test]
+fn mayor_of_avabruck_does_not_transform_on_first_turn() {
+    let reg = registry();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.is_first_turn = true;
+    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+
+    trigger_upkeep(&mut state, &reg);
+
+    let obj = state.get_object(mayor).unwrap();
+    assert!(!obj.is_transformed,
+        "Mayor of Avabruck should not transform on first turn");
+}
+
+#[test]
+fn howlpack_alpha_werewolf_wolf_creature_gets_only_plus_one() {
+    // Ruling [2025-01-24]: A creature that is both a Werewolf and a Wolf will
+    // only get +1/+1 from Howlpack Alpha's first ability.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
+    // Transform to Howlpack Alpha
+    state.get_object_mut(mayor).unwrap().is_transformed = true;
+    state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
+
+    // Create a token that is both a Werewolf and a Wolf (2/2 base)
+    let dual_id = state.create_token_with_subtypes(
+        "Test Werewolf Wolf",
+        P0,
+        2, 2,
+        vec![Color::Green],
+        vec![CardType::Creature],
+        vec![],
+        vec!["Werewolf".into(), "Wolf".into()],
+    );
+
+    // The creature should get exactly +1/+1 (not +2/+2) from Howlpack Alpha
+    assert_eq!(state.effective_power(dual_id, &reg).unwrap(), 3,
+        "Werewolf+Wolf creature should get only +1/+1 from Howlpack Alpha (not +2/+2)");
+    assert_eq!(state.effective_toughness(dual_id, &reg).unwrap(), 3,
+        "Werewolf+Wolf creature should get only +1/+1 from Howlpack Alpha (not +2/+2)");
+}
+
 // ── Daybreak Ranger ───────────────────────────────────────────────
 
 #[test]
