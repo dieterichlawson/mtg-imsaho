@@ -136,3 +136,47 @@ Previously identified issues (still present, accepted as engine-level limitation
 - Non-Human does NOT get P/T bonus: `bug_fixes.rs:556`
 - Bonds on a Human token: NOT TESTED
 - Bonds on a transformed DFC: NOT TESTED
+
+## Audit — 2026-04-02 21:23
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Type line**: Enchantment — Aura
+**Status**: ISSUE
+
+### Code issues
+
+1. **ISSUE: Snapshot vs continuous evaluation (engine limitation causing wrong behavior)**
+   The oracle text says "as long as it's a Human", which is a continuous condition. The implementation evaluates this once in `on_enter_battlefield` (line 39) and stores the result in `instance_continuous_effects`. If the enchanted creature's type changes after Bonds of Faith enters (e.g., a Human Werewolf transforms into a non-Human Werewolf via Moonmist, or a non-Human gains the Human type), the effect will NOT update. A formerly-Human creature would continue getting +2/+2 instead of being locked down, and vice versa. The engine has no mechanism for re-evaluating conditional instance effects.
+
+2. **ISSUE: Human subtype check ignores token subtypes and transformed back faces**
+   Implementation at lines 43-46:
+   ```rust
+   let is_human = state.get_object(target_id)
+       .and_then(|o| registry.card_data(o.card_id))
+       .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+       .unwrap_or(false);
+   ```
+   This calls `registry.card_data()` which always returns front-face static data. It does not check `obj.subtypes` (populated for tokens) or `back_face_data()` (for transformed DFCs). Compare with `GameState::matches_filter` for `CreatureFilter::HasSubtype` (state.rs line ~654) which correctly checks `is_transformed` and back face subtypes. A Human token enchanted by Bonds of Faith would be incorrectly locked down instead of receiving +2/+2.
+
+3. **MINOR: oracle_text field missing "Enchant creature\n" prefix**
+   The implementation's oracle_text is `"Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."` but other auras in the codebase (Dead Weight, Claustrophobia, Curiosity, Wreath of Geists, Sensory Deprivation) all include the "Enchant creature\n" prefix. Inconsistent but not functionally broken since "Enchant creature" is handled via `TargetRequirement::Creature`.
+
+### Tricky interactions checked (min 3)
+
+1. **Creature loses Human type mid-combat (official ruling 2011-09-22)**: "Once the enchanted creature has been declared as an attacking or blocking creature, causing it to stop being a Human won't remove it from combat." The engine does not re-evaluate instance effects mid-combat, so a Human declared as attacker that loses its type would stay in combat -- consistent with the ruling. However, it would also keep the +2/+2 bonus, which the ruling says it should lose ("It will lose the +2/+2 bonus, however"). The snapshot approach means the +2/+2 persists incorrectly.
+
+2. **Bonds on a Human token**: Due to issue #2, a Human token (e.g., the 1/1 Spirit Human token from Doomed Traveler) would have `obj.subtypes = ["Human", ...]` but `registry.card_data()` would not find "Human" in the token's subtypes since tokens don't have registry card data with subtypes. The token would be incorrectly locked down.
+
+3. **Aura falls off when creature leaves battlefield**: SBA rule 704.5m handles unattached auras. When the enchanted creature leaves, the aura goes to graveyard. Verified that `sba.rs` handles this. PASS.
+
+4. **Bonds on a creature with multiple types (e.g., Human Soldier)**: The `subtypes.iter().any(|s| s == "Human")` correctly checks if Human is among the subtypes, regardless of other types. PASS for non-token, non-transformed creatures.
+
+### Test coverage
+- Human gets +2/+2: `bug_fixes.rs:522`, `card_mechanics.rs:197`
+- Non-Human can't attack or block: `bug_fixes.rs:546`, `card_mechanics.rs:217`, `innistrad_cards.rs:306`
+- Human with Bonds can still attack: `bug_fixes.rs:540`
+- Non-Human does NOT get P/T bonus: `bug_fixes.rs:556`
+- Bonds on a Human token: NOT TESTED (would expose issue #2)
+- Bonds on a transformed DFC: NOT TESTED
+- Type change after Bonds enters: NOT TESTED (would expose issue #1)

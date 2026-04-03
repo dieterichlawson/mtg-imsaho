@@ -199,3 +199,39 @@ Card data verification (all compared against Scryfall oracle text fetched via `s
 - "This turn" boundary reset: NOT TESTED (handled by engine infrastructure at engine.rs:3017)
 - Non-combat damage sources triggering life gain: NOT TESTED
 - Simultaneous death (ghoul and victim die at same time): NOT TESTED
+
+## Audit — 2026-04-02 21:23
+
+**Oracle text source**: Scryfall API (cached 2026-04-01), verified via `python3 scripts/oracle_lookup.py lookup "Abattoir Ghoul"`
+**Oracle text**: First strike
+Whenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+### Code issues
+No issues found. All card data fields match oracle text exactly:
+- Mana cost: Oracle `{3}{B}` vs code `Generic(3), Colored(Color::Black)` -- correct
+- Card types: Oracle `Creature` vs code `vec![CardType::Creature]` -- correct
+- Supertypes: Oracle none vs code `vec![]` -- correct
+- Subtypes: Oracle `Zombie` vs code `vec!["Zombie".into()]` -- correct
+- Power/toughness: Oracle `3/2` vs code `power: Some(3), toughness: Some(2)` -- correct
+- Keywords: Oracle `First strike` vs code `vec![Keyword::FirstStrike]` -- correct
+- Oracle text field in code matches verbatim
+- Triggered ability: `TriggerKind::AnyCreatureDies` declared, `on_any_creature_dies` implemented -- correct
+- Life gain: uses `dead_toughness` (last-known info), emits `LifeChanged` event -- correct
+- No targeting (oracle says "a creature", not "target creature") -- correct
+- Life gain is mandatory (no "you may" in oracle, no optional check in code) -- correct
+- Toughness clamped to 0 minimum via `.max(0)` at line 49 -- defensive, correct
+
+### Tricky interactions checked (min 3)
+1. **Ghoul removed before trigger resolves**: pass -- trigger infrastructure verifies watcher on battlefield at triggers.rs:908 before calling handler; card also checks zone at abattoir_ghoul.rs:39-41. Matches community ruling that Ghoul must be on the battlefield for the trigger to resolve.
+2. **Last-known toughness includes counters/modifiers**: pass -- SBA captures `effective_toughness` (includes +1/+1 counters, continuous effects, until-end-of-turn effects) at sba.rs:90-93 before zone change. Matches Scryfall ruling (2011-09-22): "You'll gain life equal to the creature's last known toughness before it died."
+3. **Non-combat damage also tracked**: pass -- `damaged_by.push()` called in combat path (combat.rs:464) and non-combat damage path (engine.rs:2182). Oracle says "dealt damage by" without combat restriction.
+4. **"This turn" damage tracking reset at cleanup**: pass -- `damaged_by.clear()` at engine.rs:3017 during cleanup step, so previous-turn damage does not carry over.
+5. **Trigger fires for any creature (not just opponent's)**: pass -- no controller restriction on dead creature in code, matching oracle "a creature" without ownership restriction.
+
+### Test coverage
+- `abattoir_ghoul_gains_life_from_damaged_creature_death` (tier6_cards.rs:20): basic life gain from damaged creature dying -- PASS
+- `abattoir_ghoul_no_life_if_not_damaged_by_ghoul` (tier6_cards.rs:43): no life gain without damage tracking -- PASS
+- `abattoir_ghoul_uses_last_known_toughness_with_counters` (tier6_cards.rs:61): last-known toughness with +1/+1 counters -- PASS
+- All 3 tests pass (`cargo test -p mtg-engine --test tier6_cards abattoir`)

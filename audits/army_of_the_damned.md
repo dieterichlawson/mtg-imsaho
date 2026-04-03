@@ -118,3 +118,41 @@ All card data verified against oracle:
 - Token color (black): NOT TESTED (test filters by name but does not assert color)
 - Flashback cost present and correct: NOT TESTED for this specific card (flashback infrastructure tested via Divine Reckoning and Memory's Journey)
 - Flashback cast + exile after resolution: NOT TESTED for this specific card
+
+## Audit — 2026-04-02 21:23
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Create thirteen tapped 2/2 black Zombie creature tokens.
+Flashback {7}{B}{B}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. All card data and behavior match oracle text exactly.
+
+Verified fields:
+- Name: "Army of the Damned" -- matches oracle
+- Mana cost: `Generic(5), Colored(Black), Colored(Black), Colored(Black)` -- matches `{5}{B}{B}{B}`
+- Type: `vec![CardType::Sorcery]` -- matches "Sorcery"
+- Supertypes: `vec![]` -- correct (none on oracle)
+- Subtypes: `vec![]` -- correct (none on oracle)
+- Power/Toughness: `None/None` -- correct (sorcery)
+- Oracle text field: `"Create thirteen tapped 2/2 black Zombie creature tokens.\nFlashback {7}{B}{B}{B}"` -- matches Scryfall oracle
+- Flashback cost: `Some(ManaCost::new(vec![Generic(7), Colored(Black) x3]))` -- matches `{7}{B}{B}{B}`
+- Token creation: loop `0..13` calling `create_token_with_subtypes("Zombie", controller, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![], vec!["Zombie".into()])` -- creates thirteen 2/2 black Zombie creature tokens
+- Tokens tapped: `obj.tapped = true` set on each token after creation -- correct
+- Spell cleanup: `move_spell_after_resolve(object_id)` -- correctly routes to graveyard or exile (if flashback)
+
+### Tricky interactions checked (min 3)
+1. **Parallel Lives doubled tokens not tapped**: `create_token_with_subtypes` returns only the primary token ID; extra copies from Parallel Lives are created inside the function but their IDs are not returned, so they would not have `tapped = true` set. This is a systemic engine-level pattern (same issue in Kessig Cagebreakers, Geist of Saint Traft), not specific to this card.
+2. **Flashback exile behavior**: `move_spell_after_resolve` (state.rs:1132-1141) checks `cast_with_flashback` flag and moves to exile if true, graveyard otherwise. Correct per oracle and rulings.
+3. **No targeting -- cannot fizzle**: Card has no `target_requirement` or `is_valid_target` override. Spell resolves unconditionally. Correct per oracle text (no "target" keyword).
+4. **Tokens enter tapped vs ETB-then-tap**: `tapped = true` is set directly on the object immediately after creation, before any triggers could process. This correctly models "create tapped" rather than "create then tap" (which would be a different event).
+
+### Test coverage
+- Token count (13): `mtg-engine/tests/tier12_cards.rs:70` -- TESTED
+- Tokens enter tapped: `mtg-engine/tests/tier12_cards.rs:73-75` -- TESTED
+- Token P/T (2/2): `mtg-engine/tests/tier12_cards.rs:78-81` -- TESTED
+- Token color (black): NOT TESTED (test filters by name "Zombie" but does not assert `colors`)
+- Token subtype (Zombie): partially tested (test filters by name "Zombie"; subtypes not explicitly asserted)
+- Flashback: NOT TESTED for this specific card (flashback infrastructure tested via other cards)

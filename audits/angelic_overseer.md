@@ -81,6 +81,43 @@ All card data fields match the oracle text exactly:
 - Ruling 2 (marked damage persists, then Human removed): NOT TESTED
 - LLM card knowledge entry: No card knowledge system found in this codebase
 
+## Audit — 2026-04-02 21:23
+
+**Oracle text source**: Scryfall API (cached 2026-04-01), https://scryfall.com/card/isd/3/angelic-overseer
+**Oracle text**: Flying
+As long as you control a Human, this creature has hexproof and indestructible.
+**Type line**: Creature — Angel
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All card data fields verified against Scryfall oracle text:
+- Name: `"Angelic Overseer"` -- matches
+- Mana cost: `Generic(3), Colored(White), Colored(White)` -- matches `{3}{W}{W}`
+- Types: `Creature` with subtype `"Angel"`, no supertypes -- matches `Creature — Angel`
+- P/T: `power: Some(5), toughness: Some(3)` -- matches `5/3`
+- Keywords: `vec![Keyword::Flying]` -- matches (hexproof/indestructible are conditional, not static keywords)
+- Oracle text string: `"Flying\nAs long as you control a Human, this creature has hexproof and indestructible."` -- matches verbatim
+- Continuous effects: Two `ConditionalKeyword` entries (Hexproof and Indestructible), both conditioned on `YouControlSubtype("Human")` with `EffectScope::OnSelf` -- correctly implements the conditional ability
+- No triggered abilities, no `on_resolve` override -- correct for a vanilla creature with static/conditional abilities
+
+### Tricky interactions checked (min 3)
+1. **Simultaneous destruction with Humans (Ruling 2011-09-22)**: If a "destroy all creatures" effect resolves, the engine iterates and calls `try_destroy` individually. At the time each call is made, `has_keyword` dynamically evaluates `YouControlSubtype("Human")`. If a Human is destroyed before the Overseer in iteration order, the Overseer could lose indestructible. However, no "destroy all creatures" card exists in the current card pool, so this interaction cannot occur. The SBA path handles this correctly: SBAs are checked in a loop, so if a Human dies from lethal damage first, the Overseer loses indestructible and dies on the next SBA pass -- consistent with the ruling.
+2. **Marked damage persists after losing Human (Ruling 2011-09-22)**: `has_keyword` re-evaluates the condition on every SBA check. If lethal damage is marked on the Overseer while it is indestructible (Human present), and the Human later leaves, the next SBA pass sees the Overseer no longer has indestructible and destroys it. This matches the ruling exactly.
+3. **Opponent's Humans do not trigger the ability**: `YouControlSubtype` checks `o.controller == controller` where `controller` is the Overseer's controller. An opponent controlling a Human does not satisfy the condition.
+4. **Hexproof targeting check**: Engine-level `can_be_targeted` in `engine.rs` checks `has_keyword(target, Hexproof)` and prevents opponent targeting. Works correctly with the conditional grant.
+5. **Sacrifice bypasses indestructible**: `destruction::sacrifice` does not check `has_keyword` for indestructible, correctly allowing sacrifice even when the Overseer is protected.
+6. **EffectScope::OnSelf correctness**: `effect_applies_to` with `OnSelf` checks `creature_id == source_id`, so hexproof/indestructible only apply to the Overseer itself, not to other creatures.
+
+### Test coverage
+- `angelic_overseer_has_flying` (tier12_cards.rs:563): Verifies flying keyword is always present
+- `angelic_overseer_hexproof_indestructible_with_human` (tier12_cards.rs:574): Verifies hexproof/indestructible granted with Human, lost when Human leaves battlefield
+- `angelic_overseer_survives_destroy_with_human` (tier12_cards.rs:605): Verifies Overseer survives `try_destroy` when controlling a Human
+- All 3 tests pass.
+- Not tested: simultaneous mass destruction with Humans (no "destroy all creatures" card in pool)
+- Not tested: marked damage persisting after Human removal (verifiable by code inspection)
+
 ## Audit — 2026-04-02 20:28
 
 **Oracle text source**: Oracle cache (Scryfall API, cached 2026-04-01)

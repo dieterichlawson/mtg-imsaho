@@ -115,3 +115,43 @@ All card data matches oracle exactly:
 - No Spirits in graveyard (ruling): NOT TESTED
 - Multiple Spirits (player choice): NOT TESTED
 - Non-Spirit card not returned: NOT TESTED
+
+## Audit — 2026-04-02 21:23
+
+**Oracle text source**: Scryfall API (cached 2026-04-01), via `scripts/oracle_lookup.py`
+**Oracle text**: Flying
+At the beginning of your upkeep, return target Spirit card from your graveyard to your hand.
+**Type line**: Creature — Angel
+**Status**: PASS
+
+### Code issues
+No issues found. All card data fields match oracle text exactly:
+- Name: `"Angel of Flight Alabaster"` — matches
+- Mana cost: `Generic(4), Colored(White)` = {4}{W} — matches
+- Type: `CardType::Creature`, subtypes `["Angel"]` — matches "Creature — Angel"
+- P/T: `4/4` — matches
+- Keywords: `[Keyword::Flying]` — matches
+- Oracle text field: verbatim match
+- Triggered ability: `TriggerKind::Upkeep` declared in `triggered_abilities`, `on_upkeep` handler implemented — correct
+- Mandatory targeting (`optional: false`) — correct, oracle says "return target Spirit card" with no "you may"
+- Controller's upkeep only: `state.active_player != controller` guard at line 43 — correct
+- Spirit filtering at lines 49-53: checks both `registry.card_data().subtypes` and `o.subtypes` for "Spirit" — handles both registered cards and tokens/modified objects
+- Empty graveyard: `present_target_choice` returns early when `targets.is_empty()` — consistent with ruling [2011-09-22]
+- Effect: `PendingEffect::ReturnToHand` moves target to `Zone::Hand` — correct
+- Registration: properly declared in `isd/mod.rs` and registered in `CardRegistry::with_all_cards()`
+- Compiles without card-specific warnings
+
+### Tricky interactions checked (min 3)
+1. **Mandatory targeting (no "you may")**: PASS — `optional: false` passed to `present_target_choice` at line 62
+2. **No Spirits in graveyard (ruling [2011-09-22])**: PASS — `present_target_choice` returns early on empty targets vec, ability has no effect
+3. **Only triggers on controller's upkeep, not opponent's**: PASS — `state.active_player != controller` check at line 43 ensures this
+4. **Multiple Spirits in graveyard**: PASS — when targets.len() > 1, `present_target_choice` presents an `AwaitingAction::ResolutionChoice` to the controller to choose
+5. **Angel must be on battlefield to trigger**: PASS — line 40 checks `o.zone == Zone::Battlefield`, returns early otherwise
+6. **Spirit subtype detection covers tokens/modified objects**: PASS — dual check on both `card_data` subtypes and runtime `o.subtypes`
+
+### Test coverage
+- Return Spirit on upkeep (single target, auto-applied): `mtg-engine/tests/tier7_cards.rs:225` (`angel_of_flight_alabaster_returns_spirit`) — TESTED
+- No Spirits in graveyard (ruling): NOT TESTED
+- Multiple Spirits (player choice): NOT TESTED
+- Non-Spirit card not returned: NOT TESTED
+- Fizzle (target removed before resolution): NOT TESTED
