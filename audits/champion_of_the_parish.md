@@ -70,3 +70,30 @@ Same outdated wording as the oracle_text field. Cosmetic only.
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-02 20:41
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Whenever another Human you control enters, put a +1/+1 counter on this creature.
+**Type line**: Creature — Human Soldier
+**Status**: PASS
+
+### Code issues
+None. All card data fields (name, cost, types, subtypes, P/T, oracle text) match Scryfall exactly. Behavior implementation is correct:
+- "Another" self-exclusion handled by trigger infrastructure (`triggers.rs` line 369: `o.id != *object`)
+- "You control" enforced by controller check (line 42)
+- "Human" check covers both registry data and runtime instance subtypes (lines 47-53)
+- +1/+1 counter placed via `add_counters` (line 55)
+- Zone check ensures Champion must be on battlefield (line 38)
+
+### Tricky interactions checked (min 3)
+1. **Self-trigger prevention**: Engine filter `o.id != *object` in trigger dispatch prevents Champion from triggering on its own ETB. No card-level guard needed.
+2. **Opponent's Human ignored**: Controller comparison on line 42 ensures only Humans entering under Champion's controller's control trigger the ability. Covered by test.
+3. **Non-Human creatures ignored**: Subtype check on lines 47-53 filters out creatures without the Human subtype. Covered by test.
+4. **Runtime subtype changes**: Code checks both card registry subtypes AND object instance subtypes, correctly handling creatures that gain/lose Human subtype at runtime (e.g., via Moonmist transform).
+5. **Off-battlefield Champion**: Zone check on line 38 returns early if Champion is not on the battlefield.
+
+### Test coverage
+- `champion_of_the_parish_counter_on_human_etb` — triggers on friendly Human ETB, gets +1/+1 counter. PASS
+- `champion_of_the_parish_no_counter_on_non_human` — does not trigger on non-Human creature. PASS
+- `champion_of_the_parish_no_counter_on_opponent_human` — does not trigger on opponent's Human. PASS
+- Also used as a Human fixture in tests for: Butcher's Cleaver, Silver-Inlaid Dagger, Sharpened Pitchfork, Hamlet Captain, Night Revelers, Angelic Overseer, Dearly Departed.

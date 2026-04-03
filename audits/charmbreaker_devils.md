@@ -78,3 +78,24 @@ Whenever you cast an instant or sorcery spell, this creature gets +4/+0 until en
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:41
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: At the beginning of your upkeep, return an instant or sorcery card at random from your graveyard to your hand.
+Whenever you cast an instant or sorcery spell, this creature gets +4/+0 until end of turn.
+**Type line**: Creature — Devil
+**Status**: PASS
+
+### Code issues
+1. **Minor oracle_text field mismatch (cosmetic only):** The `oracle_text` field in `card_data()` says `"Charmbreaker Devils gets +4/+0 until end of turn"` but the current Scryfall oracle text says `"this creature gets +4/+0 until end of turn"`. This does not affect gameplay behavior since the logic is implemented in `on_spell_cast`, not derived from the text string. The old wording with the card name was used on earlier printings; Scryfall's current oracle text uses "this creature".
+
+### Tricky interactions checked (min 3)
+1. **Random selection happens at resolution, not on trigger:** The `on_upkeep` method selects the card when it executes (i.e., at resolution time). Per ruling #1, cards added to the graveyard in response can be eligible -- this is correctly handled because `on_upkeep` reads the graveyard at resolution time.
+2. **No targeting:** The ability does not target (no target selection step). Per ruling #2, this is correct -- the implementation simply filters and randomly selects, with no targeting involved.
+3. **Spell type filtering at dispatch layer:** The `on_spell_cast` handler does not check if the spell is an instant/sorcery. This is correct because `triggers.rs` (lines 645-650) already gates `SpellCast` events to only fire for instant/sorcery spells before invoking `on_spell_cast`.
+4. **Multiple triggers in one turn:** If multiple instants/sorceries are cast, each pushes a separate `UntilEndOfTurnEffect`, so the bonuses stack correctly (+4/+0 per spell).
+5. **Empty graveyard:** If no instants/sorceries exist in the graveyard, the upkeep ability does nothing (guarded by `if !candidates.is_empty()`).
+
+### Test coverage
+- `charmbreaker_devils_plus4_on_spell_cast` in `tier7_cards.rs` -- tests the +4/+0 trigger, verifying power goes from 4 to 8.
+- **Missing:** No test for the upkeep ability (return random instant/sorcery from graveyard to hand).

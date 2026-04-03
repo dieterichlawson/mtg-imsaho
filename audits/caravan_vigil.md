@@ -106,3 +106,38 @@ The major issue from the prior audit (forced morbid) has been fixed:
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-02 20:41
+**Oracle text source**: Scryfall API (via oracle_lookup.py, cached 2026-04-01)
+**Oracle text**: Search your library for a basic land card, reveal it, put it into your hand, then shuffle.
+Morbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No functional issues found.
+
+1. **Card data correct.** Name "Caravan Vigil", cost `{G}` (line 18), type Sorcery (line 21), no subtypes, no P/T. All match oracle.
+
+2. **Oracle text field matches.** Code oracle_text (line 25) matches Scryfall verbatim: "Search your library for a basic land card, reveal it, put it into your hand, then shuffle.\nMorbid — You may put that card onto the battlefield instead of putting it into your hand if a creature died this turn."
+
+3. **Non-morbid path correct.** When `creature_died_this_turn` is false (line 58), the land is moved to Hand (line 78) and library is shuffled (lines 84-86). Matches oracle "put it into your hand, then shuffle."
+
+4. **Morbid choice correct.** When `creature_died_this_turn` is true, a YesNo choice is presented (lines 64-74) via `AwaitingAction::ResolutionChoice`. The `on_yes_no_choice` handler (lines 99-126) puts the land on the battlefield if yes (line 111), or into hand if no (line 115), then shuffles (lines 121-123). Matches oracle "You may put that card onto the battlefield instead" and ruling: "You can choose to put the basic land card into your hand even if a creature died the turn you cast Caravan Vigil."
+
+5. **Spell cleanup correct.** `move_spell_after_resolve` is called at end of all paths: non-morbid (line 96), no-land-found (line 96), and after YesNo choice (line 125). In the morbid path, `on_resolve` returns early (line 76) so the spell stays on the stack until the choice resolves.
+
+6. **No-land-found path correct.** If no basic land is found in the library (line 87), the library is still shuffled (lines 91-93) per rules (you searched).
+
+7. **Engine limitations (not bugs).** Library search uses `.find()` (line 39) picking the first basic land in library order rather than letting the player choose. No reveal mechanism. Both are codebase-wide limitations.
+
+### Tricky interactions checked (min 3)
+1. **Morbid active but player declines:** Tested in `on_yes_no_choice` with `yes=false` -- land goes to hand, library shuffles. Matches the official ruling.
+2. **Empty library / no basic land found:** Handled at line 87; logs "no basic land found" and still shuffles. No crash or undefined behavior.
+3. **Spell object lifetime during deferred choice:** In the morbid path, `move_spell_after_resolve` is NOT called in `on_resolve` (early return at line 76), so the spell object and its `card_state` remain accessible when `on_yes_no_choice` runs. The land_id is stored on the spell via `card_state.insert("morbid_land", land_id)` (line 62) and retrieved in `on_yes_no_choice` (line 100). If retrieval fails, the handler gracefully cleans up the spell (line 103).
+4. **Land removed from library_order before choice:** The land is removed from `library_order` at line 56 before the YesNo choice is presented. This means the shuffle in `on_yes_no_choice` (line 123) won't accidentally shuffle the found land back in. Correct behavior.
+
+### Test coverage
+- `caravan_vigil_finds_basic_land` -- non-morbid path: land goes to hand. PASS.
+- `caravan_vigil_morbid_choose_battlefield` -- morbid path with yes choice: land goes to battlefield. PASS.
+- Missing: test for morbid-active-but-player-chooses-no (land goes to hand). Would be good to add for completeness.

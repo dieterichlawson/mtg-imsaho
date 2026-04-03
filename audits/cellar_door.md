@@ -60,3 +60,36 @@ Since this is the only card in the library, top == bottom, so it does not verify
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-02 20:41
+
+**Oracle text source**: Scryfall API (via oracle_lookup.py, cached 2026-04-01)
+**Oracle text**: {3}, {T}: Target player puts the bottom card of their library into their graveyard. If it's a creature card, you create a 2/2 black Zombie creature token.
+**Type line**: Artifact
+**Status**: PASS
+
+### Code issues
+No functional issues found. All card data matches oracle text exactly:
+- Name: "Cellar Door" -- correct
+- Mana cost: {2} (Generic(2)) -- correct
+- Type: Artifact, no supertypes/subtypes -- correct
+- Oracle text field: matches Scryfall verbatim
+- Activated ability cost: {3}, tap -- correct
+- Target: PlayerOnly -- correct ("Target player")
+- Mills bottom card: uses `library_order[last_idx]` where index 0 is top -- correct
+- Creature check: uses registry `card_data` to check `CardType::Creature` on the milled card -- correct
+- Token: 2/2 black Zombie creature token with subtype "Zombie", created under controller (not target player) -- correct per "you create"
+- Empty library: early return, no crash -- correct
+- `once_per_turn: false`, `sorcery_speed_only: false` -- correct (no such restrictions in oracle)
+
+### Tricky interactions checked (min 3)
+1. **Controller vs target player**: Oracle says "Target player puts the bottom card..." but "you create a 2/2 black Zombie creature token." Implementation correctly uses `*player_id` for the mill and `controller` for the token creation. These can differ when targeting an opponent.
+2. **Bottom of library (not top)**: The card specifically mills the bottom card, unlike most mill effects. Implementation uses `library_order[last_idx]` which is the bottom (index 0 = top, confirmed by `draw_top_card()` using `library_order.remove(0)`).
+3. **Creature card check after zone change**: The card checks if the milled card is a creature card after it has moved to the graveyard. Implementation checks via `registry.card_data(o.card_id)` which returns the card's inherent types regardless of zone, so this works correctly even after the zone transition.
+4. **Empty library**: If the target player's library is empty, the ability resolves and does nothing (no crash, no token). Implementation handles this with an early return on line 64.
+
+### Test coverage
+- `cellar_door_creates_zombie_when_milling_creature` (tier15_cards.rs:607): Tests the happy path -- mills a creature, verifies Zombie token is created. Test passes.
+- **Gap**: No test for milling a non-creature card (should not create a token).
+- **Gap**: No test for empty library (should do nothing).
+- **Gap**: Test only has one card in the library so it does not distinctly verify bottom-of-library behavior vs top-of-library. A stronger test would place multiple cards and verify only the bottom one is milled.

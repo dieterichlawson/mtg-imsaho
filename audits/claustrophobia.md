@@ -129,3 +129,33 @@ Enchanted creature doesn't untap during its controller's untap step.
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:41
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Enchant creature
+When this Aura enters, tap enchanted creature.
+Enchanted creature doesn't untap during its controller's untap step.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+No issues found. All card data matches oracle text:
+- Name: "Claustrophobia" -- correct
+- Cost: {1}{U}{U} (Generic(1), Blue, Blue) -- correct
+- Types: Enchantment -- correct
+- Subtypes: Aura -- correct
+- Oracle text field matches Scryfall oracle text verbatim (including "Enchant creature" line and modern "When this Aura enters" templating)
+- Target requirement: `TargetRequirement::Creature` -- correctly implements "Enchant creature"
+- Continuous effect: `PreventUntap { scope: Attached }` -- correctly implements "doesn't untap during its controller's untap step"
+- Triggered ability: `TriggerKind::EntersBattlefield` with `on_enter_battlefield` handler that taps the attached creature -- correctly implements "When this Aura enters, tap enchanted creature" as a triggered ability that uses the stack
+- Resolution: `on_resolve` calls only `resolve_aura` (no premature tap)
+
+### Tricky interactions checked (min 3)
+1. **Targeting an already-tapped creature**: `on_enter_battlefield` sets `tapped = true` unconditionally, which is a no-op on an already-tapped creature. This is correct per ruling: "Claustrophobia can target and enchant a tapped or untapped creature."
+2. **Other untap effects still work**: `PreventUntap` only blocks untapping during the untap step (checked in `engine.rs` line 2912-2924 where `locked_ids` are excluded from untap). Other effects (e.g., Feeling of Dread, Village Bell-Ringer) that untap creatures are not affected. Matches ruling: "The enchanted creature can still be untapped in other ways. Claustrophobia will remain attached."
+3. **Claustrophobia removed mid-game**: If Claustrophobia is destroyed (e.g., by Naturalize), the `PreventUntap` continuous effect ceases because `has_continuous_effect` only checks objects on the battlefield (`source.zone != Zone::Battlefield` is skipped). The creature will untap normally on the next untap step. This is correct behavior.
+4. **ETB trigger uses the stack**: The tap is implemented via `TriggeredAbilityDef` with `TriggerKind::EntersBattlefield`, processed through `triggers::process_triggers` which puts it on the stack. This allows opponents to respond before the tap occurs.
+
+### Test coverage
+- `innistrad_cards.rs::claustrophobia_taps_creature` -- casts Claustrophobia targeting a creature, verifies the creature is tapped after trigger processing, verifies aura is on battlefield attached to creature. PASS.
+- `card_mechanics.rs::claustrophobia_prevents_untap` -- sets up a creature with Claustrophobia attached (tapped), runs through an untap step, verifies the enchanted creature stays tapped while a normal creature untaps. PASS.
