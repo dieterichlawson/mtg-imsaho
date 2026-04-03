@@ -32,7 +32,7 @@ impl CardBehavior for MayorOfAvabruck {
             subtypes: vec!["Human".into(), "Advisor".into(), "Werewolf".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Other Human creatures you control get +1/+1.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Mayor of Avabruck.".into(),
+            oracle_text: "Other Human creatures you control get +1/+1.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
@@ -64,7 +64,7 @@ impl CardBehavior for MayorOfAvabruck {
             subtypes: vec!["Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "Other Werewolf and Wolf creatures you control get +1/+1.\nAt the beginning of your end step, create a 2/2 green Wolf creature token.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform Howlpack Alpha.".into(),
+            oracle_text: "Each other creature you control that's a Werewolf or a Wolf gets +1/+1.\nAt the beginning of your end step, create a 2/2 green Wolf creature token.\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
