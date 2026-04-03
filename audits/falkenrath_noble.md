@@ -102,3 +102,10 @@ Whenever this creature or another creature dies, target player loses 1 life and 
 - `falkenrath_noble_triggers_on_self_death` (bug_fixes.rs): Noble itself dies -- PASS
 - **Not tested:** simultaneous death with multiple creatures (systemic limitation noted above)
 - **Not tested:** multiple Nobles on battlefield (would work correctly per engine architecture)
+
+## Re-evaluation — 2026-04-02 21:10
+
+**Status**: ISSUE (reclassified from PASS)
+
+### Code issues
+- Simultaneous death triggers only fire once instead of N times: when Falkenrath Noble dies at the same time as other creatures, the engine processes deaths one-by-one and the DeathWatch system does not find Noble on the battlefield when processing other creatures' deaths, so Noble only triggers once (via SelfDies) instead of once for each creature that died

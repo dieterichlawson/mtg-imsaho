@@ -107,3 +107,10 @@ Engine-level note: `abilities_activated_this_turn` is never cleared at end of tu
 - `darkthicket_wolf_gets_plus_2_plus_2` -- verifies activation produces 4/4 effective stats
 - `darkthicket_wolf_once_per_turn` -- verifies second activation is blocked within the same turn
 - All 3 tests PASS
+
+## Re-evaluation — 2026-04-02 21:10
+
+**Status**: ISSUE (reclassified from PASS)
+
+### Code issues
+- `abilities_activated_this_turn` is never cleared between turns in `engine.rs`, so the once-per-turn restriction on the {2}{G} pump ability permanently locks after first use -- the ability can only ever be activated once per game instead of once per turn

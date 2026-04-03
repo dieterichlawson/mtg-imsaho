@@ -2,11 +2,11 @@
 
 ## Status
 - **Card list**: `/tmp/isd_cards.txt` (249 cards, alphabetical)
-- **Batches completed**: 1-8 (cards 1-80), batch 9 in progress (cards 81-90)
-- **Next batch after 9**: batch 10 (cards 91-100)
+- **Batches completed**: 1-10 (cards 1-100)
+- **Next batch**: 11 (cards 101-110)
 
-## Running totals through batch 8
-- **71 PASS, 9 ISSUE out of 80 cards**
+## Running totals through batch 10
+- **87 PASS, 12 ISSUE out of 100 cards** (plus 2 false PASSes from early batches)
 
 ## Issues found
 
@@ -21,6 +21,9 @@
 | Delver of Secrets | Manual transform doesn't use apply_transform(), subtypes not updated (Human Wizard instead of Human Insect) |
 | Elder Cathar | LLM card knowledge omits Human bonus (minor) |
 | Forbidden Alchemy | Revealed cards display as raw ObjectIds in CLI/LLM views; misleading LLM description |
+| Geistflame | Oracle text field + LLM knowledge both missing flashback info |
+| Ghost Quarter | Missing library shuffle after search |
+| Grave Bramble | LLM knowledge omits protection from Zombies; engine doesn't check protection for targeting |
 
 ## False PASSes (engine issues marked PASS before prompt was updated)
 - **Darkthicket Wolf** — `abilities_activated_this_turn` never cleared between turns (once-per-turn permanently locked)
