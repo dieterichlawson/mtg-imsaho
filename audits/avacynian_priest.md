@@ -37,3 +37,28 @@ None. Card data matches oracle: name "Avacynian Priest", cost {1}{W}, 1/2, type 
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:33
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: {1}, {T}: Tap target non-Human creature.
+**Type line**: Creature — Human Cleric
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Human subtype exclusion (dynamic subtypes via `o.subtypes` and registry `card_data` both checked): pass
+- Can target own creatures (no controller restriction in `is_valid_target`, `_caster` unused for filtering): pass
+- Cannot activate when already tapped (`requires_tap: true` enforced by engine): pass
+- Instant-speed activation (`sorcery_speed_only: false`): pass
+- No once-per-turn restriction (`once_per_turn: false`): pass
+
+### Test coverage
+- Correct stats (P/T, subtypes): `activated_abilities.rs:273`
+- Taps non-Human creature: `activated_abilities.rs:284`
+- Cannot target Human creatures: `activated_abilities.rs:312`
+- Cannot activate when tapped: `activated_abilities.rs:333`
+- Targeting own creatures: NOT TESTED
+- Interaction with creatures gaining Human type dynamically: NOT TESTED

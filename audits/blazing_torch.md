@@ -407,3 +407,36 @@ No issues found. Damage source correctly attributed to Blazing Torch (not the eq
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:33
+
+**Oracle text source**: Scryfall API (cached 2026-04-01), https://scryfall.com/card/isd/216/blazing-torch?utm_source=api
+**Oracle text**: Equipped creature can't be blocked by Vampires or Zombies. Equipped creature has "{T}, Sacrifice Blazing Torch: Blazing Torch deals 2 damage to any target." Equip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All card data matches oracle text. Mana cost {1} implemented as `Generic(1)`. Type `Artifact` with subtype `Equipment`. Block restriction uses `CreatureFilter::Not(Or([HasSubtype("Vampire"), HasSubtype("Zombie")]))` with `EffectScope::Attached`, correctly preventing Vampires and Zombies from blocking the equipped creature. Equip {1} uses `sorcery_speed_only: true` and `CreatureWithFilter(TargetFilter::YouControl)`. Damage ability requires tap, targets any target, sacrifices the torch, and deals 2 damage with the torch as the damage source (not the creature), matching the Scryfall ruling. All 7 tests pass.
+
+### Tricky interactions checked
+- Damage source is torch, not equipped creature (ruling): PASS (lines 107-119 find torch ID before sacrifice, use as `damage_source` for `damaged_by.push()` at line 130 and `NonCombatDamageDealt` events at lines 132, 143)
+- Block restriction for Vampires/Zombies: PASS (`CreatureFilter::Not(Or(...))` with `EffectScope::Attached`; verified `effect_applies_to` in state.rs correctly resolves `Attached` scope via equipment's `attached_to` field)
+- Equip targets only creature you control: PASS (`CreatureWithFilter(TargetFilter::YouControl)` at line 77; confirmed by `blazing_torch_equip_only_own_creatures` test)
+- Equip sorcery speed only: PASS (`sorcery_speed_only: true`)
+- Torch sacrifice on use: PASS (calls `crate::destruction::sacrifice` at line 121)
+- NonCombatDamageDealt event emitted for both creature and player targets: PASS (lines 132, 143)
+- LifeChanged event for player damage: PASS (lines 146-149)
+
+### Test coverage
+- Card data (mana cost, types, subtypes): `tier9_cards.rs:384` (blazing_torch_card_data)
+- Grants damage ability to equipped creature: `tier9_cards.rs:394` (blazing_torch_grants_damage_ability)
+- Deals 2 damage to player: `tier9_cards.rs:412` (blazing_torch_deals_damage_to_player)
+- Deals 2 damage to creature: `tier9_cards.rs:444` (blazing_torch_deals_damage_to_creature)
+- Damage source is torch not creature (ruling): `tier9_cards.rs:470` (blazing_torch_damage_source_is_torch_not_creature)
+- Equip ability: `tier9_cards.rs:501` (blazing_torch_equip_ability)
+- Equip only targets own creatures: `tier9_cards.rs:528` (blazing_torch_equip_only_own_creatures)
+- Torch sacrificed after use: `tier9_cards.rs:438` (verified in blazing_torch_deals_damage_to_player)
+- Block restriction (Vampires/Zombies can't block equipped creature): NOT TESTED
+- Cross-controller equip interaction (ruling): NOT TESTED
