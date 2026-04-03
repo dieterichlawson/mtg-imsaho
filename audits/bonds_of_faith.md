@@ -100,3 +100,39 @@ The card is functionally correct for the common case (enchanting a non-token, no
 
 ### Code issues
 No issues found. Target requirement correctly set to Creature for the Aura. Human check grants +2/+2, non-Human prevents attack and block. The "Enchant creature" keyword ability is handled via target_requirement rather than oracle_text, which is acceptable.
+
+## Audit — 2026-04-02 20:37
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data matches oracle in all respects:
+- Name: "Bonds of Faith" -- correct
+- Cost: {1}{W} (Generic(1), White) -- correct
+- Type line: Enchantment with subtype Aura -- correct
+- "Enchant creature" handled via `TargetRequirement::Creature` and `resolve_aura` helper -- correct
+- Human path: `ModifyPT { power: 2, toughness: 2, scope: Attached }` -- correct
+- Non-Human path: `PreventAttack { scope: Attached }` + `PreventBlock { scope: Attached }` -- correct
+
+Previously identified issues (still present, accepted as engine-level limitations):
+- Human subtype check at ETB uses `registry.card_data()` only (misses token subtypes / transformed back faces)
+- Effect is snapshot at ETB rather than continuously re-evaluated per "as long as it's a Human"
+
+### Tricky interactions checked
+- Aura falls off when creature leaves battlefield: pass (SBA rule 704.5m in `sba.rs` handles unattached auras)
+- Creature declared as attacker then loses Human type mid-combat: not removed from combat per official ruling (2011-09-22) -- engine does not re-evaluate instance effects mid-combat, so behavior is consistent
+- Bonds on a Human grants +2/+2 and does NOT prevent attack/block: pass (tested in `bug_fixes.rs:522` and `card_mechanics.rs:197`)
+- Bonds on a non-Human prevents attack AND block without P/T bonus: pass (tested in `bug_fixes.rs:546` and `card_mechanics.rs:217`)
+
+### Test coverage
+- Human gets +2/+2: `bug_fixes.rs:522`, `card_mechanics.rs:197`
+- Non-Human can't attack or block: `bug_fixes.rs:546`, `card_mechanics.rs:217`, `innistrad_cards.rs:306`
+- Human with Bonds can still attack: `bug_fixes.rs:540`
+- Non-Human does NOT get P/T bonus: `bug_fixes.rs:556`
+- Bonds on a Human token: NOT TESTED
+- Bonds on a transformed DFC: NOT TESTED

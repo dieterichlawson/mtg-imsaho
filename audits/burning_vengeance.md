@@ -333,3 +333,36 @@ No issues found. Oracle text field matches current Scryfall template.
 - Trigger on non-flashback graveyard cast (can_cast_from_graveyard): NOT TESTED
 - Trigger on creature spell from graveyard (exercises triggers.rs filter): NOT TESTED
 - Targeting a creature instead of a player: NOT TESTED
+
+## Audit — 2026-04-02 20:37
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.
+**Type line**: Enchantment
+**Status**: ISSUE
+
+### Code issues
+- Trigger condition checks only `cast_with_flashback`, missing spells cast from graveyard via other mechanisms (burning_vengeance.rs:48-50)
+  - Oracle text says: `Whenever you cast a spell from your graveyard`
+  - Code does: `let cast_from_gy = state.get_object(spell_id).map(|o| o.cast_with_flashback).unwrap_or(false);` -- the engine sets `cast_with_flashback = true` only for flashback casts (engine.rs:1636-1637). Spells cast via `can_cast_from_graveyard()` (e.g., Skaab Ruinator) explicitly do not set this flag (engine.rs:1491-1492: `let is_cast_from_graveyard = in_graveyard && behavior.can_cast_from_graveyard(); let is_flashback = in_graveyard && !is_cast_from_graveyard;`). Burning Vengeance should trigger on any graveyard cast, not just flashback.
+- Engine-level `SpellCast` trigger processing filters to instant/sorcery only (triggers.rs:644-650)
+  - Oracle text says: `Whenever you cast a spell from your graveyard` (no type restriction)
+  - Code does: `let is_instant_sorcery = ... if is_instant_sorcery {` -- `SpellCastWatch` triggers are only created for instant/sorcery spells. Creature spells cast from graveyard (e.g., Skaab Ruinator) never reach `on_spell_cast` at all.
+- Premature/inaccurate log message (burning_vengeance.rs:67-68)
+  - Oracle text says: `this enchantment deals 2 damage to any target`
+  - Code does: `state.log(... "Burning Vengeance deals 2 damage to opponent (flashback spell cast)")` -- logs before target is chosen, hardcodes "opponent" when target could be any creature/player/planeswalker, and says "flashback" instead of "graveyard".
+
+### Tricky interactions checked
+- Spell copies not cast (e.g., Increasing Vengeance copy): PASS -- copies are placed on the stack without being cast, so no SpellCast event fires
+- Activated abilities from graveyard (e.g., unearth, Reassembling Skeleton): PASS -- activating an ability is not casting a spell; matches Scryfall ruling (2025-01-24)
+- Multiple Burning Vengeances on battlefield: PASS -- each is a separate object with independent `on_spell_cast` callbacks
+- Trigger resolves before the graveyard spell: PASS -- SpellCastWatch triggers go on the stack above the triggering spell; matches Scryfall ruling (2025-01-24)
+- Mandatory targeting with `optional: false`: PASS -- oracle text has no "you may" clause
+- Non-combat damage via `PendingEffect::DealDamage` / `NonCombatDamageDealt` event: PASS
+
+### Test coverage
+- Triggers on flashback cast: `mtg-engine/tests/tier12_cards.rs:282` (burning_vengeance_triggers_on_flashback)
+- Does not trigger on normal (hand) cast: `mtg-engine/tests/tier12_cards.rs:329` (burning_vengeance_ignores_non_flashback)
+- Trigger on non-flashback graveyard cast (can_cast_from_graveyard): NOT TESTED
+- Trigger on creature spell from graveyard: NOT TESTED
+- Targeting a creature instead of a player: NOT TESTED

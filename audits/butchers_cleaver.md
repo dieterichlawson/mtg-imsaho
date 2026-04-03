@@ -142,3 +142,37 @@ The core functionality is correct: the card data matches oracle text, equip work
 
 ### Code issues
 No issues found. +3/+0 buff, conditional lifelink for Humans, and equip {3} all correctly implemented. The update_effects helper correctly recalculates effects when equipment is attached.
+
+## Audit — 2026-04-02 20:37
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Equipped creature gets +3/+0. As long as equipped creature is a Human, it has lifelink. Equip {3}
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+- Card name "Butcher's Cleaver" matches oracle.
+- Mana cost Generic(3) matches `{3}`.
+- Card types `[Artifact]` with subtypes `["Equipment"]` match "Artifact — Equipment".
+- Oracle text string in card_data matches oracle verbatim.
+- `continuous_effects` includes `ModifyPT { power: 3, toughness: 0, scope: Attached }` -- correctly implements "+3/+0".
+- `update_effects` conditionally adds `GrantKeyword { keyword: Lifelink, scope: Attached }` when equipped creature is a Human -- correctly implements "As long as equipped creature is a Human, it has lifelink."
+- Equip activated ability costs Generic(3), `sorcery_speed_only: true`, targets `CreatureWithFilter(YouControl)` -- correctly implements "Equip {3}" with standard equip restrictions.
+- `on_resolve` moves to battlefield and sets `is_equipment = true` -- correct.
+
+### Tricky interactions checked
+- Equipment detachment on creature death: PASS -- SBA code (sba.rs:183-187) clears `attached_to`, and `effect_applies_to` for `EffectScope::Attached` checks `source.attached_to == creature_id`, so effects stop applying when detached.
+- Lifelink during combat damage: PASS -- `combat.rs` calls `state.has_keyword(source, Keyword::Lifelink, registry)` at damage time, which walks `instance_continuous_effects` on all battlefield objects and checks `GrantKeyword` with `Attached` scope.
+- Re-equipping to a different creature: PASS -- `on_activate_ability` updates `attached_to` and calls `update_effects` to recalculate instance effects for the new creature. The `Attached` scope ensures effects only apply to the currently attached creature.
+- Non-Human gets +3/+0 but not lifelink: PASS -- `update_effects` only includes `GrantKeyword::Lifelink` in the effects list when `is_human` is true; otherwise only `ModifyPT` is included.
+- Equip only your own creatures: PASS -- `TargetFilter::YouControl` in the activated ability and `is_valid_target` checks `o.controller == caster`.
+
+### Test coverage
+- Card data correctness: `tier9_equipment.rs:253` (butchers_cleaver_has_correct_data)
+- Non-Human gets +3/+0 without lifelink: `tier9_equipment.rs:264` (butchers_cleaver_non_human_gets_power_no_lifelink)
+- Human gets +3/+0 with lifelink: `tier9_equipment.rs:281` (butchers_cleaver_human_gets_power_and_lifelink)
+- Equipment detaches when creature dies: `tier9_equipment.rs:398` (equipment_detaches_when_creature_dies) -- general equipment test
+- Re-equip to different creature: `tier9_equipment.rs:421` (equipment_can_be_moved_to_different_creature) -- general equipment test
+- Runtime subtype change after equip: NOT TESTED (engine-level limitation, not Butcher's Cleaver specific)

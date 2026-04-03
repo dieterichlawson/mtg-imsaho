@@ -107,3 +107,25 @@ Coverage is adequate for the card's functionality.
 
 ### Code issues
 No issues found. Life loss (not damage) correctly implemented. Flashback cost {5}{R} is correct. Target validation correctly restricts to opponents only (pid != caster).
+
+## Audit — 2026-04-02 20:37
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Target opponent loses 3 life.\nFlashback {5}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Life loss vs. damage distinction: PASS — implementation directly subtracts life and emits `LifeChanged` without emitting `NonCombatDamageDealt`, correctly modeling life loss (not damage). This means damage prevention effects will not prevent this life loss.
+- Flashback exile after resolution: PASS — `move_spell_after_resolve` checks `cast_with_flashback` flag and exiles accordingly; normal casts go to graveyard.
+- Target restriction to opponents only: PASS — `is_valid_target` rejects `Target::Player(pid)` when `pid == caster`, correctly implementing "Target opponent" (cannot target yourself).
+- Hexproof player interaction: PASS — Witchbane Orb test confirms that a hexproof opponent cannot be targeted by this spell.
+
+### Test coverage
+- Basic life loss (opponent loses 3): `tier2_spells.rs:21` (`bump_in_the_night_drains_3`)
+- Flashback cast exiles card: `flashback.rs:471` (`bump_in_the_night_flashback_exiles`)
+- Hexproof blocks targeting: `witchbane_orb.rs:34` (`opponent_cannot_target_hexproof_player`)
+- Cannot target self: tested implicitly via `is_valid_target` rejecting `pid == caster` / NOT TESTED as a dedicated test
