@@ -1,12 +1,14 @@
 # ISD Audit Progress
 
 ## Status
-- **Card list**: `/tmp/isd_cards.txt` (249 cards, alphabetical)
-- **Batches completed**: 1-10 (cards 1-100)
-- **Next batch**: 11 (cards 101-110)
+- **Card list**: alphabetical list of all .rs files in `mtg-engine/src/cards/isd/` (249 cards)
+- **Batches completed**: 1-11 (cards 1-110)
+- **Next batch**: 12 (cards 111-120, starting with `heretics_punishment`)
+- **To get card list**: `ls mtg-engine/src/cards/isd/*.rs | grep -v mod.rs | xargs -I{} basename {} .rs | sort`
+- **Cards 111-120**: heretics_punishment, hinterland_harbor, hollowhenge_scavenger, hysterical_blindness, infernal_plunge, inquisitors_flail, instigator_gang, intangible_virtue, into_the_maw_of_hell, invisible_stalker
 
-## Running totals through batch 10
-- **87 PASS, 12 ISSUE out of 100 cards** (plus 2 false PASSes from early batches)
+## Running totals through batch 11
+- **95 PASS, 14 ISSUE out of 110 cards (44% complete)**
 
 ## Issues found
 
