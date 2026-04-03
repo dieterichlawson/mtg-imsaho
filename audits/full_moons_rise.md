@@ -91,3 +91,25 @@ The continuous effects have correct scope (your creatures with Werewolf subtype)
 
 ### Code issues
 No issues found. The comment and activated ability description string mention "Wolf and Werewolf" but the actual filter logic in both continuous_effects and on_activate_ability correctly filters for "Werewolf" only, matching the oracle text. The description strings are cosmetic and do not affect behavior.
+
+## Audit — 2026-04-02 21:03
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Werewolf creatures you control get +1/+0 and have trample.\nSacrifice this enchantment: Regenerate all Werewolf creatures you control.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+1. **Doc comment says "Werewolf and Wolf" but Oracle says only "Werewolf" (cosmetic).** Lines 8-9 of the file read `Werewolf and Wolf creatures you control get +1/+0 and have trample` and `Regenerate all Werewolf and Wolf creatures you control`. The actual oracle text says only "Werewolf creatures." The code logic correctly filters for `HasSubtype("Werewolf")` only, so no gameplay impact.
+2. **Activated ability description string mentions "Wolf" (UI cosmetic).** Line 58: `"Sacrifice: Regenerate all Wolf and Werewolf creatures you control"` -- this is displayed to the player, but oracle text says only "Werewolf creatures."
+3. **on_activate_ability uses inline subtype check instead of `state.matches_filter()` (latent fragility).** The regeneration effect (lines 74-88) manually checks `registry.card_data()` and `o.subtypes` for "Werewolf", but does NOT check `back_face_data()` for transformed DFCs. The engine's `matches_filter(HasSubtype(...))` correctly handles transformed creatures. Currently all Innistrad Werewolves have "Werewolf" on both faces, so this is not a gameplay bug with the current card pool, but it diverges from how the continuous effects resolve the same filter.
+4. **All gameplay-affecting logic is correct.** The +1/+0 buff, trample grant, sacrifice cost, regeneration shield application, zone restriction (battlefield only), no mana/tap cost, and "affects all not targeted" semantics are all correctly implemented per oracle text and rulings.
+
+### Tricky interactions checked (min 3)
+1. **Sacrifice timing in combat (official ruling).** The ruling says you must sacrifice before combat damage to regenerate, losing the +1/+0 and trample. The implementation correctly uses `SacrificeCost::SacrificeThis` which removes the enchantment (and its continuous effects) before the regeneration shields are applied. Shields persist through the turn, so the regeneration works correctly when damage is later assigned.
+2. **Transformed Werewolves.** The continuous effects use `HasSubtype("Werewolf")` which goes through `state.matches_filter()`, correctly checking back face subtypes for transformed DFCs. All current Innistrad Werewolves have "Werewolf" on their front face as well, so the inline check in `on_activate_ability` also works.
+3. **Regeneration shield mechanics.** Verified in `destruction.rs`: regeneration shields are checked during `try_destroy()`, consuming one shield to tap the creature, remove damage, and remove it from combat -- matching MTG rules for regeneration.
+4. **Non-Werewolf creatures excluded.** The filter only matches creatures with the "Werewolf" subtype. Creatures that are Wolves but not Werewolves are correctly excluded per oracle text.
+
+### Test coverage
+- `full_moons_rise_card_data` in `mtg-engine/tests/innistrad_simple_cards.rs` -- checks type and CMC only.
+- **Missing tests:** No test for +1/+0 buff, trample grant, sacrifice/regeneration ability, or non-Werewolf exclusion.

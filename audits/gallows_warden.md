@@ -64,3 +64,23 @@ Other Spirit creatures you control get +0/+1.
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 21:03
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Flying\nOther Spirit creatures you control get +0/+1.
+**Type line**: Creature — Spirit
+**Status**: PASS
+
+### Code issues
+None. All card data fields match oracle exactly. Continuous effect correctly implements +0/+1 with `GlobalOther(And(You, HasSubtype("Spirit")))`.
+
+### Tricky interactions checked (min 3)
+1. **Self-exclusion**: `GlobalOther` uses `creature_id != source_id` in `state.rs:720`, so Gallows Warden does not buff itself. Confirmed by test (warden stays 3/3).
+2. **Opponent's Spirits not buffed**: `CreatureFilter::You` checks `creature.controller == source_controller`. Confirmed by `spirit_lord_doesnt_buff_opponent` test.
+3. **Stacking with Battleground Geist**: Both lords use `GlobalOther` with the same filter pattern. Engine aggregates via `continuous_pt_mods`, so a Spirit with both lords gets +1/+1 total. No conflict.
+4. **Transformed DFC Spirits**: `HasSubtype` filter in `matches_filter` checks back face subtypes for transformed creatures, so transformed Spirits correctly receive the buff.
+
+### Test coverage
+- `gallows_warden_buffs_other_spirits` (tier5_cards.rs): Verifies warden own toughness=3 (no self-buff), Chapel Geist toughness 3->4 and power stays 2.
+- `spirit_lord_doesnt_buff_opponent` (tier5_cards.rs): Verifies opponent Chapel Geist power stays 2 (no cross-player buff).

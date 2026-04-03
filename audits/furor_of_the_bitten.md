@@ -71,3 +71,24 @@ The Scryfall ruling says the player is not forced to pay costs to attack. The en
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 21:03
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+- `oracle_text` field is `"Enchanted creature gets +2/+2 and attacks each combat if able."` but should be `"Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able."` per Scryfall. Other auras in the codebase (Dead Weight, Curiosity, Wreath of Geists, Sensory Deprivation, Claustrophobia) include the "Enchant creature\n" prefix. This is a cosmetic/display issue only -- targeting is correctly handled via `TargetRequirement::Creature` and `resolve_aura`. No functional impact.
+
+### Tricky interactions checked (min 3)
+1. **Tapped creature cannot be forced to attack**: Engine (engine.rs ~line 1827) skips tapped creatures when collecting forced attackers. Correctly implements the ruling.
+2. **Summoning sick creature cannot be forced to attack**: Engine (engine.rs ~line 1827) skips summoning sick creatures. Correctly implements the ruling.
+3. **Creature with Defender cannot be forced to attack**: Engine (engine.rs ~line 1834) checks for Defender keyword and skips. Correct.
+4. **Aura fizzles when target leaves battlefield**: `resolve_aura` helper checks target is still on battlefield before attaching; otherwise aura goes to graveyard. Correct.
+5. **Vigilance interaction**: Forced attackers with Vigilance are not tapped when forced to attack (engine.rs ~line 1864). Correct.
+
+### Test coverage
+- `innistrad_cards::furor_of_the_bitten_gives_plus_two` -- +2/+2 stat boost via cast-and-resolve on a 1/1 creature (verifies 3/3). PASS.
+- `bug_fixes::furor_of_the_bitten_gives_plus_two_and_forces_attack` -- verifies both +2/+2 and presence of ForceAttack continuous effect. PASS.
+- `card_mechanics::furor_forces_attack` -- verifies creature is auto-added as attacker even when player declares zero attackers. PASS.

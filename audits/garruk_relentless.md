@@ -547,3 +547,65 @@ The transform condition ("When Garruk Relentless has two or fewer loyalty counte
 **Code documentation:** Added an ENGINE LIMITATION comment in `sba.rs` at the Garruk transform check explaining this simplification.
 
 All other aspects of the card (both faces, all abilities, token creation, sacrifice/tutor, overrun) are correctly implemented per previous audits.
+
+## Audit — 2026-04-02 21:03
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/181/garruk-relentless-garruk-the-veil-cursed)
+
+**Oracle text (front face — Garruk Relentless)**:
+```
+When Garruk has two or fewer loyalty counters on him, transform him.
+0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.
+0: Create a 2/2 green Wolf creature token.
+```
+
+**Oracle text (back face — Garruk, the Veil-Cursed)**:
+```
++1: Create a 1/1 black Wolf creature token with deathtouch.
+−1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle.
+−3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard.
+```
+
+**Type line (front)**: Legendary Planeswalker — Garruk
+**Type line (back)**: Legendary Planeswalker — Garruk
+
+**Status**: PASS
+
+### Card data verification
+- **Name**: "Garruk Relentless" — matches Scryfall.
+- **Mana cost**: {3}{G} — matches Scryfall.
+- **Type line**: Legendary Planeswalker — Garruk — matches (supertypes: [Legendary], card_types: [Planeswalker], subtypes: ["Garruk"]).
+- **Starting loyalty**: 3 — matches Scryfall.
+- **Oracle text in code**: Minor cosmetic difference — code says "Garruk Relentless" where Scryfall says "Garruk" in self-references (e.g., "When Garruk Relentless has two or fewer..." vs "When Garruk has two or fewer..."). This is a display-only difference in the stored oracle_text string and does NOT affect behavior.
+
+### Code issues
+- **None affecting behavior.** The oracle_text field uses "Garruk Relentless" where Scryfall uses just "Garruk" in self-references. This is cosmetic only — the actual game logic is correct regardless of the oracle_text string content.
+
+### Front face behavior verification
+1. **0: Fight ability (ability_index 0)** — Correctly deals 3 damage to target creature, then the creature deals its power back as damage (removing loyalty counters). Uses `TargetRequirement::Creature` for targeting. NOT implemented as a fight keyword (correct — it's two separate damage events). Uses `saturating_sub` for loyalty removal (correct — prevents underflow).
+2. **0: Wolf token (ability_index 1)** — Creates a 2/2 green Wolf creature token with subtype "Wolf". Correct.
+3. **Transform trigger** — Implemented as a state-triggered ability in `sba.rs`. Checks `<= 2` loyalty, `!is_transformed`, `!state_trigger_on_stack`, and `zone == Battlefield`. Goes on the stack via `PendingTrigger::StateTriggered`. The 0-loyalty SBA check runs first, so Garruk at 0 loyalty correctly dies before the transform trigger fires. At resolution, `on_state_trigger` transforms without re-checking loyalty (correct per rules — trigger only needs condition true when it fires).
+
+### Back face behavior verification
+4. **+1: Deathtouch wolf (ability_index 10)** — Creates 1/1 black Wolf with deathtouch. Correct.
+5. **-1: Sacrifice and tutor (ability_index 11)** — No target requirement (correct per ruling: "doesn't target a creature"). If one creature, auto-sacrifices and tutors. If multiple creatures, presents sacrifice choice via `ResolutionChoiceKind::ChooseTarget`. After sacrifice, searches library for creature cards and presents choice if multiple found. Shuffles library after. "If you do" clause: if no creatures, logs and does nothing (no search). Correct.
+6. **-3: Overrun (ability_index 12)** — Counts creature cards in graveyard at resolution time (correct per ruling). Applies +X/+X and trample to creatures currently controlled (correct per ruling — only affects creatures at resolution, not later ones). Uses `UntilEndOfTurnEffect` and `UntilEndOfTurnKeyword`. Correct.
+
+### Tricky interactions checked
+1. **Garruk at 0 loyalty**: SBA check for 0-loyalty planeswalker death (sba.rs line 240-244) runs BEFORE the state-triggered transform check (line 251+). Garruk correctly dies and does not transform. Verified in code.
+2. **Loyalty ability per turn restriction across transform**: Per ruling, activating a loyalty ability on the front face prevents activating one on the back face the same turn. This is enforced by the engine's planeswalker loyalty-ability-per-turn rule which tracks per object, not per face. Correct.
+3. **Fight ability is NOT a fight**: The 0-ability says "Garruk deals 3 damage... That creature deals damage equal to its power to him." This is two separate damage events, not the fight keyword. The implementation correctly handles them as separate damage applications (lines 169-189), not a mutual fight. This matters for cards that care about "fights" specifically.
+4. **Transform preserves loyalty**: Per ruling: "You don't add or remove loyalty counters from Garruk Relentless when he transforms." The `on_state_trigger` method only sets `is_transformed = true` and updates the name — it does not modify loyalty counters. Correct.
+
+### Test coverage
+8 tests found in `mtg-engine/tests/tier15_cards.rs`:
+- `garruk_creates_wolf_token` — front face wolf creation
+- `garruk_transforms_at_two_or_fewer_loyalty` — state-triggered transform
+- `garruk_back_face_creates_deathtouch_wolf` — back face +1
+- `garruk_back_face_sacrifice_to_tutor` — back face -1 with single creature
+- `garruk_back_face_tutor_presents_sacrifice_choice` — back face -1 with multiple creatures
+- `garruk_back_face_tutor_shuffles_library` — library shuffle after tutor
+- `garruk_back_face_overrun` — back face -3
+- `garruk_back_face_loyalty_abilities_shown_when_transformed` — correct abilities shown per face
+
+**Missing test**: No test for front face fight ability (ability_index 0) — the 3-damage-to-creature and power-damage-back-to-Garruk interaction is untested. This is a gap but the implementation is correct upon code review.

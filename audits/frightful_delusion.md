@@ -57,3 +57,33 @@ Counter target spell unless its controller pays {1}. That player discards a card
 
 ### Code issues
 No issues found. Verified that the PayOrNot resolution handler in engine.rs forces the discard regardless of whether the opponent pays {1}, matching the ruling that "The player discards a card even if they pay {1}."
+
+## Audit — 2026-04-02 21:03
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/57/frightful-delusion), cached 2026-04-01
+**Oracle text**: Counter target spell unless its controller pays {1}. That player discards a card.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+- Card data (name, mana cost {2}{U}, type Instant, oracle text) all match Scryfall exactly.
+- `TargetRequirement::Spell` and `is_valid_target` correctly restrict to objects on the stack, satisfying the ruling that you must target a spell to cast this.
+- `on_resolve` checks `mana_pool.total() >= 1`; if payable, presents `PayOrNot` choice; if not, auto-counters.
+- The `PayOrNot` handler in `engine.rs` (lines ~1957-1994) executes the discard in both branches (pay and don't-pay), correctly implementing the ruling: "The player discards a card even if they pay {1}."
+- "That player" is correctly resolved to the targeted spell's `.controller` field.
+- Empty hand: no discard triggered (correct). Single card: auto-discards without choice prompt (acceptable optimization). Multiple cards: presents `ChooseCardFromHand` choice.
+- Fizzle: if the target spell leaves the stack before resolution, the engine's `resolve_top_of_stack` fizzles Frightful Delusion entirely (no discard occurs). This is correct because "That player" refers back to the target, so if the target is illegal, no effects apply.
+
+### Tricky interactions checked (min 3)
+1. **Discard on pay**: Opponent pays {1} but must still discard. Verified in both code (engine.rs PayOrNot handler always proceeds to discard) and test (`frightful_delusion_discard_on_pay`).
+2. **Fizzle when target leaves stack**: If the target spell resolves or is otherwise removed before Frightful Delusion resolves, the spell fizzles and no discard happens. Verified via `resolve_top_of_stack` in `stack.rs` which checks target legality before calling `on_resolve`.
+3. **Auto-counter when opponent has no mana**: When `mana_pool.total() == 0`, skips the `PayOrNot` choice entirely and auto-counters, then forces the discard. Verified in test `frightful_delusion_auto_counters_without_mana`.
+4. **Cannot cast without a spell target**: `TargetRequirement::Spell` enforced at cast time; `is_valid_target` rejects `Target::Player`. Matches ruling: "You can't cast it without a legal target just to make a player discard a card."
+
+### Test coverage
+- `frightful_delusion_counters_and_discards` (tier2_spells.rs): Basic counter + discard, no mana, 1 card in hand.
+- `frightful_delusion_choice_when_opponent_has_mana` (card_mechanics.rs): Pay/don't-pay choice presented; opponent declines, spell countered.
+- `frightful_delusion_auto_counters_without_mana` (card_mechanics.rs): Auto-counter, no choice when 0 mana.
+- `frightful_delusion_discard_on_pay` (card_fixes.rs): Discard occurs even after paying {1}.
