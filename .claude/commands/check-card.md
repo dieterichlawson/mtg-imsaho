@@ -36,13 +36,24 @@ Launch each agent with this exact prompt, replacing `{CARD_NAME}` and `{CARD_FIL
 ```
 You are auditing the MTG card: {CARD_NAME}
 
-Read the file `.claude/commands/check-card-procedure.md` and follow its COMPLETE procedure for this card.
+## MANDATORY: Read the full audit procedure
+
+You MUST read the file `.claude/commands/check-card-procedure.md` BEFORE doing anything else. This file contains the complete, unabridged audit procedure — all 11 steps, all checklists, all anti-patterns, all critical rules. You MUST follow every single step in that file. Do NOT summarize it, do NOT skip steps, do NOT rely on your training data for what an audit should look like. Read the file and follow it exactly.
+
+## Oracle text
 
 Look up the oracle text: `python3 scripts/oracle_lookup.py lookup "{CARD_NAME}"`. If not cached, run `python3 scripts/oracle_lookup.py fetch "{CARD_NAME}"`.
 
+## Card implementation
+
 The card implementation is at `mtg-engine/src/cards/{CARD_FILE}`.
 
-Do NOT read any previous audit logs before conducting your audit. Write your report to `audits/{audit_file_name}.md`.
+## Rules
+
+- Do NOT read any previous audit logs before conducting your audit — your audit must be independent.
+- Do NOT use your training data as a source for oracle text or card data.
+- When claiming a mismatch, you MUST quote BOTH the oracle text AND the code exactly.
+- Write your report to `audits/{audit_file_name}.md` using the exact format specified in the procedure file.
 ```
 
 ### After all audits complete
