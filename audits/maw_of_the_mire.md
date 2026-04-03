@@ -34,3 +34,19 @@ Life gain (lines 63-73) is outside the target-validity if-block (line 55). If th
 ## Re-audit — 2026-04-02
 **Status**: PASS
 Previously fixed bug re-verified: on_resolve correctly checks target validity, destroys land, then gains 4 life only if target was valid. Oracle text matches Scryfall verbatim. Behavior unchanged.
+
+## Audit — 2026-04-03 07:14
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/108/maw-of-the-mire)
+**Oracle text**: Destroy target land. You gain 4 life.
+**Type line**: Sorcery
+**Status**: PASS
+### Code issues
+None. All card data matches oracle text. Mana cost {4}{B} (Generic(4) + Black) is correct (CMC 5). Target requirement `PermanentWithFilter(HasCardType(Land))` correctly restricts to lands on the battlefield. `is_valid_target` validates zone and card type. `on_resolve` checks target is still on the battlefield (lines 56-59, early return if not), calls `try_destroy` for the land, then gains 4 life -- all inside the target validity guard. Life gain correctly uses `LifeChanged` event. Spell cleanup uses `move_spell_after_resolve`. The engine also fizzles the spell before calling `on_resolve` if all targets are illegal (stack.rs CR 608.2b check), providing double coverage.
+### Tricky interactions checked (min 3)
+1. **Indestructible land**: `try_destroy` returns `Indestructible` without destroying it. The code ignores the return value and proceeds to gain 4 life. This is correct -- the spell still resolves and the life gain is not contingent on the destruction succeeding.
+2. **Target land leaves battlefield before resolution**: The engine's fizzle check (stack.rs lines 74-87) prevents `on_resolve` from being called. Additionally, the card's own zone check (line 56) provides a defensive second layer. No life is gained. Matches the Scryfall ruling.
+3. **Target land is bounced and a different land enters with same name**: The target tracks by ObjectId, not name. The original ObjectId is no longer on the battlefield, so the spell fizzles correctly.
+### Test coverage
+- `maw_of_the_mire_card_data`: Verifies card type (Sorcery) and mana value (5). PASS.
+- `maw_of_the_mire_destroys_land_and_gains_life`: Casts against opponent's Forest, verifies land goes to graveyard and caster gains 4 life (20 -> 24). PASS.
+- Missing: no test for fizzle case (target removed before resolution), no test for indestructible land interaction. These are low priority since the engine fizzle logic and `try_destroy` are tested elsewhere.

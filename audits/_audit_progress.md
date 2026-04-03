@@ -2,12 +2,12 @@
 
 ## Status
 - **Card list**: alphabetical list of all .rs files in `mtg-engine/src/cards/isd/` (249 cards)
-- **Batches completed**: 1-12 (cards 1-120)
-- **Next batch**: 13 (cards 121-130)
+- **Batches completed**: 1-13 (cards 1-130)
+- **Next batch**: 14 (cards 131-140)
 - **To get card list**: `ls mtg-engine/src/cards/isd/*.rs | grep -v mod.rs | xargs -I{} basename {} .rs | sort`
 
-## Running totals through batch 12
-- **100 PASS, 20 ISSUE out of 120 cards (48% complete)**
+## Running totals through batch 13
+- **108 PASS, 22 ISSUE out of 130 cards (52% complete)**
 
 ## Issues found
 
@@ -31,6 +31,7 @@
 | Hinterland Harbor | Cosmetic oracle text mismatch (old templating) |
 | Hollowhenge Scavenger | ETB trigger skipped when source leaves battlefield before resolution (engine bug) |
 | Intangible Virtue | LLM knowledge said "your creatures" instead of "creature tokens", omitted vigilance |
+| Isolated Chapel | Cosmetic oracle text mismatch (old templating) |
 
 ## False PASSes (engine issues marked PASS before prompt was updated)
 - **Darkthicket Wolf** — `abilities_activated_this_turn` never cleared between turns (once-per-turn permanently locked)

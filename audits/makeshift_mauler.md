@@ -56,3 +56,40 @@ None.
 ## Re-audit — 2026-04-02
 **Status**: PASS
 Previously fixed bug re-verified: AdditionalCost::ExileCreaturesFromGraveyard(1) correctly requires exiling a creature card from graveyard. Oracle text already matches Scryfall. Doc comment updated to use "this spell". Behavior unchanged.
+
+## Audit — 2026-04-03 07:14
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: As an additional cost to cast this spell, exile a creature card from your graveyard.
+**Type line**: Creature — Zombie Horror
+**Status**: PASS
+
+### Code issues
+None found. All previously identified issues (double-exile bug, redundant battlefield move, oracle text mismatch) were fixed in prior audits.
+
+Verified fields:
+- **Name**: "Makeshift Mauler" -- matches oracle
+- **Mana cost**: Generic(3) + Colored(Blue) = {3}{U} -- matches oracle
+- **Type**: Creature with subtypes Zombie, Horror -- matches oracle "Creature — Zombie Horror"
+- **P/T**: 4/5 -- matches oracle
+- **Keywords**: none -- correct (oracle has no keywords)
+- **Oracle text**: `"As an additional cost to cast this spell, exile a creature card from your graveyard."` -- exact match
+- **Additional cost**: `ExileCreaturesFromGraveyard(1)` -- correct for "exile a creature card"
+- **on_resolve**: only calls `state.move_object(object_id, Zone::Battlefield)` -- no redundant exile, correct
+
+Engine handling verified:
+- `engine.rs` line ~543: legal_actions checks graveyard has enough creature cards before allowing cast
+- `engine.rs` line ~713: same check for flashback casts
+- `engine.rs` line ~1571: at cast time, exiles creature card(s) from graveyard (auto-selects highest power)
+- Engine excludes the spell itself from exile candidates (`o.id != obj.id`)
+
+### Tricky interactions checked (min 3)
+1. **Empty graveyard prevents casting**: Engine checks `creature_count < n` and skips generating cast actions if not enough creatures. Verified in code at line ~553. No dedicated test for Makeshift Mauler specifically, but the mechanism is shared with all ExileCreaturesFromGraveyard cards and tested via Skaab Goliath.
+2. **Spell countered after additional cost paid**: The exile happens at cast time (submit_action, line ~1571), not on resolution. If the spell is countered, the creature card remains exiled. This is correct per MTG rules (additional costs are paid when casting).
+3. **Non-creature cards in graveyard don't count**: The engine filters for creature cards using `o.power.is_some() || registry.card_data(o.card_id).card_types.contains(Creature)`. Non-creature cards (instants, sorceries, etc.) are correctly excluded from exile candidates.
+4. **Auto-selection of exile target**: The engine automatically selects the highest-power creature to exile rather than letting the player choose. This is a known engine-wide simplification for all ExileCreaturesFromGraveyard cards. Not a card-specific bug.
+
+### Test coverage
+- `makeshift_mauler_exiles_creature_from_graveyard` -- casts with creature in graveyard, verifies mauler on battlefield and creature exiled (PASS)
+- `makeshift_mauler_is_4_5_zombie` -- verifies power/toughness after resolution (PASS)
+- Missing: test for "cannot cast without creature in graveyard" (covered by engine mechanism but no card-specific test)
+- Missing: card knowledge / AI scenario files

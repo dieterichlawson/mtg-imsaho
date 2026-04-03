@@ -303,3 +303,69 @@ File: `mtg-engine/tests/tier15_cards.rs`
 
 ### Code issues
 No issues found. Card data correct: cost {1}{U}, P/T 0/3 front / 13/13 back, subtypes Lizard Egg / Lizard Horror. Defender keyword on front. Trample keyword on back. Activated ability costs {1}{U}, correctly tracks hatchling counters in card_state, transforms at 5+ counters after removing all. Ability is only available on front face (not transformed). `dynamic_pt` correctly overrides to 13/13 when transformed. `should_transform` returns false since transformation is handled by the activated ability, not upkeep triggers.
+
+## Audit — 2026-04-03 07:14
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**:
+Front (Ludevic's Test Subject): Defender
+{1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters on it, remove all of them and transform it.
+Back (Ludevic's Abomination): Trample
+**Type line**: Creature — Lizard Egg // Creature — Lizard Horror
+**Mana cost**: {1}{U}
+**P/T**: 0/3 // 13/13
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+All card data matches oracle text exactly:
+
+| Field | Oracle | Code | Match |
+|-------|--------|------|-------|
+| Front name | Ludevic's Test Subject | `"Ludevic's Test Subject"` (line 19) | PASS |
+| Front cost | {1}{U} | `Generic(1), Colored(Blue)` (lines 20-23) | PASS |
+| Front types | Creature | `[CardType::Creature]` (line 24) | PASS |
+| Front subtypes | Lizard Egg | `["Lizard", "Egg"]` (line 26) | PASS |
+| Front P/T | 0/3 | `power: Some(0), toughness: Some(3)` (lines 27-28) | PASS |
+| Front keywords | Defender | `[Keyword::Defender]` (line 30) | PASS |
+| Front oracle text | "Defender\n{1}{U}: Put a hatchling counter..." | Stored verbatim (line 29) | PASS |
+| Back name | Ludevic's Abomination | `"Ludevic's Abomination"` (line 40) | PASS |
+| Back types | Creature | `[CardType::Creature]` (line 42) | PASS |
+| Back subtypes | Lizard Horror | `["Lizard", "Horror"]` (line 44) | PASS |
+| Back P/T | 13/13 | `power: Some(13), toughness: Some(13)` (lines 45-46), `dynamic_pt` returns `(13, 13)` when transformed (line 58) | PASS |
+| Back keywords | Trample | `[Keyword::Trample]` (line 48) | PASS |
+
+Activated ability:
+- Cost {1}{U}: correct (`Generic(1), Colored(Blue)`, lines 73-75)
+- No tap cost: correct (`requires_tap: false`, line 77) -- oracle has no {T} in cost
+- No sacrifice cost: correct (`SacrificeCost::None`, line 78)
+- No target: correct (`target_requirement: None`, line 79)
+- Not once-per-turn: correct (`once_per_turn: false`, line 80)
+- Instant speed: correct (`sorcery_speed_only: false`, line 81)
+- Only available on front face on battlefield: correct (line 66 checks `!o.is_transformed` and `o.zone == Zone::Battlefield`)
+
+Transform logic:
+- Hatchling counter tracked via `card_state` HashMap (workaround for missing `CounterType::Hatchling`): functionally correct
+- Counter incremented by 1 each activation (line 95): correct per oracle "Put a hatchling counter"
+- Threshold check `new_count >= 5` (line 97): correct per oracle "five or more"
+- Counters removed before transform (line 100): correct per oracle "remove all of them"
+- Uses `helpers::apply_transform` (line 102): correct -- atomically updates `is_transformed`, `name`, `keywords`, `subtypes`
+- Guard against stacked activations (lines 87-89): prevents re-transform if creature already transformed
+- `should_transform` returns false (line 115): correct -- transformation is ability-driven, not automatic
+
+### Tricky interactions checked (min 3)
+1. **Defender lost on transform**: PASS. `apply_transform` replaces `obj.keywords` with back face keywords `[Trample]`. The engine's `has_keyword` also checks back face data when transformed. Defender is correctly absent after transform, confirmed in test assertion at tier15_cards.rs:1385.
+2. **Trample gained on transform**: PASS. Back face `keywords: [Keyword::Trample]` is applied by `apply_transform`. Test asserts `obj.keywords.contains(&Keyword::Trample)` at tier15_cards.rs:1384.
+3. **Stacked activations safety**: PASS. If a player puts 10 activations on the stack, the 5th resolution transforms the creature and subsequent resolutions hit the `is_transformed` guard at line 87 and return early, preventing double-transform or counter accumulation on back face.
+4. **Subtypes change on transform**: PASS. `apply_transform` copies back face subtypes `["Lizard", "Horror"]` over front face subtypes `["Lizard", "Egg"]`. Test asserts `obj.subtypes.contains(&"Horror".to_string())` at tier15_cards.rs:1387.
+5. **Defender prevents attacking on front face**: PASS. Combat system at `combat.rs:579` checks `!state.has_keyword(o.id, Keyword::Defender, registry)` before allowing a creature to be declared as attacker.
+
+### Test coverage
+File: `mtg-engine/tests/tier15_cards.rs`, test `ludevics_test_subject_transforms_at_five_counters` (line 1362).
+- 4 activations do not transform: covered (line 1375)
+- 5th activation transforms: covered (line 1380)
+- Back face name "Ludevic's Abomination": covered (line 1381)
+- Back face P/T 13/13 via dynamic_pt: covered (line 1382)
+- Back face gains Trample: covered (line 1384)
+- Back face loses Defender: covered (line 1385)
+- Back face subtypes include Lizard and Horror: covered (lines 1386-1387)
