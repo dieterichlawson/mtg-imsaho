@@ -104,3 +104,35 @@ Corpse Lunge deals damage equal to the exiled card's power to target creature.
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:45
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/93/corpse-lunge)
+**Oracle text**: As an additional cost to cast this spell, exile a creature card from your graveyard.
+Corpse Lunge deals damage equal to the exiled card's power to target creature.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+
+1. **Oracle text field cosmetic mismatch (non-behavioral):** The `oracle_text` field in `card_data()` says `"As an additional cost to cast Corpse Lunge"` but the official Scryfall oracle text says `"As an additional cost to cast this spell"`. This does not affect game behavior.
+
+2. **`if damage > 0` guard (line 47):** The code skips the entire damage-dealing block when power is 0. In MTG, "deals 0 damage" is technically distinct from "no damage event" (relevant for triggers like "whenever a source deals damage"). Practically inconsequential in the current engine.
+
+3. **Engine-level auto-selection of exile target:** Unchanged from prior audits. The engine auto-picks the highest-power creature in graveyard rather than allowing player choice. This is an engine-wide limitation for `ExileCreaturesFromGraveyard`, not card-specific.
+
+No behavioral bugs found. All card data (name, mana cost `{2}{B}`, type Instant, `ExileCreaturesFromGraveyard(1)`, `TargetRequirement::Creature`) is correct. Damage delivery reads stored `exiled_power` from card_state, marks damage, tracks `damaged_by`, emits `NonCombatDamageDealt`, and calls `move_spell_after_resolve`.
+
+### Tricky interactions checked (min 3)
+
+1. **Zero-power exiled creature:** `power.max(0) as u32` on line 47 prevents negative damage. With zero power, the `if damage > 0` guard prevents any damage event from being emitted.
+2. **Target creature leaves battlefield before resolution:** Checked via `obj.zone == Zone::Battlefield` on line 51. If the target is no longer on the battlefield, no damage is dealt.
+3. **Exiled card's power used, not current power:** The power is stored at cast time in `card_state["exiled_power"]` (engine.rs lines 1589-1592) and read at resolution (lines 40-43). This correctly uses the power the creature had when it was exiled as an additional cost, matching the "last known information" principle from the rulings.
+4. **Flashback interaction:** `move_spell_after_resolve` correctly handles flashback (exiles instead of going to graveyard).
+
+### Test coverage
+
+- `corpse_lunge_deals_damage_equal_to_exiled_power` -- 4/4 in graveyard, deals 4 damage to target creature. Verifies exiled creature moves to exile zone.
+- `corpse_lunge_no_graveyard_creature_deals_no_damage` -- No graveyard creature available, verifies 0 damage dealt.
+- `corpse_lunge_picks_highest_power_creature` -- Two creatures (2/2 and 5/5) in graveyard, verifies highest-power (5/5) is exiled and 5 damage dealt.
+- All 3 tests pass.

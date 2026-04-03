@@ -80,3 +80,32 @@ None
 
 ### Code issues
 No issues found. Card data matches: name, cost {1}{R}, subtypes Aura Curse, oracle text. Trigger AnyCombatDamageToPlayer correctly checks that the damaged player is the cursed player (attached_to_player). Adds a +1/+1 counter to the source creature if still on the battlefield. Any creature (not just controller's) triggers this per the ruling, and the implementation correctly does not filter by creature controller.
+
+## Audit — 2026-04-02 20:45
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Enchant player
+Whenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+None found.
+
+- Name "Curse of Stalked Prey", cost {1}{R}, types Enchantment with subtypes ["Aura", "Curse"] all match oracle.
+- `TargetRequirement::PlayerOnly` correctly implements "Enchant player".
+- `on_resolve` delegates to `helpers::resolve_curse` which attaches the aura to the target player on the battlefield.
+- Trigger uses `TriggerKind::AnyCombatDamageToPlayer`, dispatched via `PendingTrigger::CombatDamageWatch` in the engine. This fires for any creature dealing combat damage to any player, which is correct -- the card does not restrict by creature controller.
+- `on_any_combat_damage_to_player` checks `attached_to_player == Some(damaged_player)` to filter only for the enchanted player. Correct.
+- Verifies source creature is still on the battlefield before adding counter. Correct edge-case handling.
+- Adds exactly 1 `PlusOnePlusOne` counter. Matches oracle.
+- `_amount` is unused, correct since the effect does not scale with damage.
+
+### Tricky interactions checked (min 3)
+1. **Creature dies during combat before trigger resolves**: Code checks `source_id` is on the battlefield (`zone == Battlefield`) before adding counter -- correctly does nothing if creature died.
+2. **Multiple creatures dealing combat damage simultaneously**: Each creature generates a separate `CombatDamageWatch` trigger, each calling `on_any_combat_damage_to_player` with a different `source_id` -- each gets its own +1/+1 counter independently. Correct.
+3. **Damage to a non-enchanted player**: The `cursed_player != Some(damaged_player)` guard returns early, so no counter is placed. Correct.
+4. **Opponent's creature dealing combat damage to enchanted player**: No controller filter exists in the implementation, matching the 2011-09-22 ruling that any creature (including another opponent's or the enchanted player's own) triggers the ability.
+
+### Test coverage
+- `mtg-engine/tests/tier15_cards.rs::curse_of_stalked_prey_gives_counter_on_combat_damage` -- Attaches curse to P1, simulates a creature dealing 2 combat damage to P1, asserts attacker receives exactly 1 +1/+1 counter. Test passes.

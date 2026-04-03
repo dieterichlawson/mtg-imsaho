@@ -61,3 +61,31 @@ Whenever this creature deals combat damage to a creature, flip a coin. If you wi
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:45
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Indestructible
+Whenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.
+**Type line**: Artifact Creature — Construct
+**Status**: ISSUE (minor)
+
+### Code issues
+1. **Oracle text string mismatch (cosmetic)**: The `oracle_text` field in `card_data()` uses the card's name instead of "this creature".
+   - Implementation (line 24): `"Whenever Creepy Doll deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature."`
+   - Scryfall oracle text: `"Whenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature."`
+   - This does not affect gameplay behavior, only the displayed oracle text string.
+
+### Tricky interactions checked (min 3)
+1. **Indestructible target**: If Creepy Doll wins the flip against an indestructible creature, `try_destroy` correctly returns `DestroyResult::Indestructible` and does not move the creature to the graveyard. Correct per rules.
+2. **Regeneration interaction (ruling #1)**: The ability uses a triggered ability that goes on the stack (`DealsCombatDamageToCreature` trigger in `triggers.rs`), giving opponents a window to respond (e.g., regenerate). At resolution, `try_destroy` checks regeneration shields. Both aspects are correct.
+3. **Lethal damage + coin flip (ruling #2)**: The trigger fires on combat damage dealt regardless of lethality. If the creature has already left the battlefield by resolution (e.g., died to SBAs), `try_destroy` fails gracefully. If it regenerated and is still on the battlefield, the destroy from the coin flip can attempt to destroy it again. Correct.
+4. **Self leaves battlefield**: Both the trigger resolution in `triggers.rs` (line 927) and the handler itself (line 39) check that Creepy Doll is still on the battlefield before resolving. Correct.
+5. **Damage to players**: Trigger kind is `DealsCombatDamageToCreature`, not `CombatDamageToPlayer`. Test `trigger_does_not_fire_on_combat_damage_to_player` confirms this. Correct.
+
+### Test coverage
+- `has_correct_trigger_kind` -- verifies DealsCombatDamageToCreature, absence of Blocks/BecomesBlocked
+- `has_indestructible` -- verifies Indestructible keyword
+- `trigger_fires_on_combat_damage_to_creature` -- verifies trigger goes on stack
+- `trigger_does_not_fire_on_combat_damage_to_player` -- verifies no trigger for player damage
+- `on_deals_combat_damage_to_creature_calls_destroy` -- verifies destroy can happen (50 iterations for randomness)
+- `creepy_doll_is_indestructible` (in `tier15_cards.rs`) -- verifies `has_keyword` returns true for Indestructible

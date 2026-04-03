@@ -65,3 +65,29 @@ No issues found. The implementation correctly matches the oracle text, handles a
 
 ### Code issues
 No issues found. Card data matches: name, cost {2}{R}, subtypes Aura Curse, oracle text. Continuous effect ForceAttack with scope Global(CreatureFilter::AttachedPlayer) correctly forces creatures the cursed player controls to attack. Target requirement is PlayerOnly. Resolves via resolve_curse helper.
+
+## Audit — 2026-04-02 20:45
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/137/curse-of-the-nightly-hunt)
+**Oracle text**: Enchant player\nCreatures enchanted player controls attack each combat if able.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+None found. All card data fields match oracle:
+- Name: "Curse of the Nightly Hunt" -- correct
+- Cost: Generic(2), Colored(Red) = {2}{R} -- correct
+- Types: Enchantment with subtypes ["Aura", "Curse"] -- correct
+- Oracle text stored verbatim -- correct
+- TargetRequirement::PlayerOnly for "Enchant player" -- correct
+- Resolves via helpers::resolve_curse which sets attached_to_player -- correct
+- ForceAttack { scope: Global(AttachedPlayer) } implements "attack each combat if able" -- correct
+- keywords: vec![] is appropriate; "Enchant" from Scryfall is not a keyword ability in engine terms, it is handled via TargetRequirement
+
+### Tricky interactions checked (min 3)
+1. **Tapped/summoning-sick creatures are not forced to attack** (engine.rs:1826-1828): The forced-attacker enforcement loop skips creatures that are tapped or summoning-sick, correctly implementing ruling #2 ("if a creature they control is tapped... or hasn't been under that player's control continuously since the turn began... then it doesn't attack").
+2. **Defender creatures cannot be forced** (engine.rs:1833-1835): Creatures with Defender are explicitly skipped in the forced-attacker loop, since Defender prevents attacking regardless of "must attack" effects.
+3. **AttachedPlayer scope resolution** (state.rs:706-715): The effect_applies_to function has a special case for CreatureFilter::AttachedPlayer that looks up the source's attached_to_player and checks if the creature's controller matches that player. This ensures only the cursed player's creatures are affected, not the curse controller's creatures.
+4. **Player choice of attack target preserved** (ruling #1): The implementation forces creatures into combat via combat.attackers.insert(*id, defending), defaulting to the opponent. The enchanted player still gets to choose attackers through the ChooseAttackers prompt, and forced creatures that are already declared as attackers (line 1830-1831) are not re-added.
+
+### Test coverage
+- `curse_of_nightly_hunt_forces_attack` (tier7_cards.rs:323-353): Tests that the curse's ForceAttack continuous effect applies to the enchanted player's creatures (P1) but not to the curse controller's creatures (P0). Covers both positive and negative cases via has_continuous_effect checks.

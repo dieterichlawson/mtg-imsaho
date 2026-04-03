@@ -74,3 +74,30 @@
 
 ### Code issues
 No issues found. Card data matches: name, cost {2}{U}, subtypes Aura Curse, oracle text. Upkeep trigger correctly checks active_player == cursed_player. Calls mill_cards(state, cursed_player, 2) which correctly implements milling two cards.
+
+## Audit — 2026-04-02 20:45
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Enchant player\nAt the beginning of enchanted player's upkeep, that player mills two cards.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+None. All card data fields match oracle exactly:
+- Name: "Curse of the Bloody Tome" -- matches
+- Cost: Generic(2), Colored(Blue) -- matches {2}{U}
+- Types: Enchantment with subtypes Aura, Curse -- matches
+- Oracle text string: verbatim match
+- target_requirement returns PlayerOnly -- correct for "Enchant player"
+- on_resolve delegates to resolve_curse helper (moves to battlefield, sets attached_to_player) -- correct
+- on_upkeep: zone check, attached_to_player lookup, active_player gate, mill_cards(state, cursed_player, 2) -- all correct
+- Minor cosmetic: keywords vec is empty (Enchant/Mill are implemented via behavior, consistent with codebase convention)
+- Minor cosmetic: duplicate log messages from on_upkeep and mill_cards -- no gameplay impact
+
+### Tricky interactions checked (min 3)
+1. **Fewer than 2 cards in library**: mill_cards breaks loop when library is empty, correctly milling only what is available (matches ruling: "If the enchanted player has only one card in their library, they put that card into their graveyard.")
+2. **Active player gate**: on_upkeep checks `state.active_player != cursed_player` and returns early, ensuring trigger only fires on the enchanted player's own upkeep, not every player's upkeep
+3. **Curse removed mid-trigger**: trigger processing in triggers.rs re-checks zone == Battlefield before calling on_upkeep, so if the curse is destroyed before its trigger resolves, it will not fire
+4. **Target is any player (not just opponent)**: attached_to_player is set from the target chosen during resolution, so the curse can correctly target any player including the caster
+
+### Test coverage
+- `mtg-engine/tests/tier7_cards.rs::curse_of_bloody_tome_mills_on_upkeep` -- sets up curse attached to P1 on P1's upkeep, asserts exactly 2 cards milled to graveyard. Test passes.

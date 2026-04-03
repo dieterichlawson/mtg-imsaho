@@ -72,3 +72,22 @@ No special-case handling in `mtg-player/src/llm.rs`. The generic `ResolutionChoi
 
 ### Code issues
 No issues found. Card data matches: name, cost {3}{B}, subtypes Aura Curse, oracle text. Upkeep trigger correctly checks active_player == cursed_player. Handles edge cases: empty graveyard (returns early), 1-2 cards (exiles all without choice), 3+ cards (presents player choice). Per ruling, if only one card in graveyard, it is exiled — the <= 2 branch handles this correctly.
+
+## Audit — 2026-04-02 20:45
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Enchant player
+At the beginning of enchanted player's upkeep, that player exiles two cards from their graveyard.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+None. All card data fields match oracle text exactly. Mana cost {3}{B}, card type Enchantment, subtypes Aura and Curse, oracle text verbatim match. `TargetRequirement::PlayerOnly` correct for "Enchant player". `TriggerKind::Upkeep` declared. `resolve_curse` helper correctly attaches to target player. No anti-patterns found (no `move_object(Zone::Graveyard)` misuse, no incorrect damage types).
+
+### Tricky interactions checked (min 3)
+1. **Empty graveyard**: `on_upkeep` returns early if no cards in graveyard — correct, no crash or spurious choice prompt.
+2. **Exactly one card in graveyard**: Falls into the `<= 2` branch, exiles that single card automatically — matches ruling [2011-09-22] which states "they exile that card."
+3. **Curse on non-active player's upkeep**: Guard `state.active_player != cursed_player` prevents the trigger from firing on the wrong player's upkeep — correct.
+4. **Second exile choice with graveyard emptied**: In the `ExileCurseOfOblivion` handler in engine.rs, after exiling the first chosen card, if `remaining > 0` but graveyard is now empty, the `if !gy_cards.is_empty()` check prevents presenting an impossible choice — correct.
+
+### Test coverage
+One test in `mtg-engine/tests/tier7_cards.rs`: `curse_of_oblivion_exiles_from_graveyard` covers the auto-exile path (exactly 2 cards in graveyard). No test for the >2 cards player-choice path. No test for empty graveyard or single-card edge case.

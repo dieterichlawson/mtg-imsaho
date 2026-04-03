@@ -52,3 +52,21 @@ None
 
 ### Code issues
 No issues found. Card data matches: name, cost {3}{B}{B}, type Enchantment, subtypes Aura Curse, oracle text. Continuous effect ModifyPT -1/-1 with scope Global(CreatureFilter::AttachedPlayer) correctly targets creatures the enchanted player controls. Resolves via resolve_curse helper. Target requirement is PlayerOnly as expected.
+
+## Audit — 2026-04-02 20:45
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/94/curse-of-deaths-hold)
+**Oracle text**: "Enchant player\nCreatures enchanted player controls get -1/-1."
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+None.
+
+### Tricky interactions checked (min 3)
+1. **1/1 creatures dying to SBA under the curse**: `sba.rs` uses `effective_toughness` (which includes continuous -1/-1 from the curse) and puts creatures with toughness <= 0 into the graveyard per Rule 704.5f. Correct.
+2. **Multiple Curse of Death's Hold stacking**: `continuous_pt_mods` in `state.rs` iterates all battlefield objects and sums applicable ModifyPT effects. Two curses on the same player would give -2/-2. Correct.
+3. **Curse can target self (caster)**: No `is_valid_target` override restricts targeting to opponents. The default `PlayerOnly` allows targeting any player, which is correct per oracle text ("Enchant player", not "Enchant opponent").
+4. **Controller vs. enchanted player distinction**: `AttachedPlayer` filter checks `creature.controller == attached_player`, not `creature.controller != source.controller`. If the curse changes controllers (e.g., via Donate), it still debuffs the originally enchanted player's creatures, not the new controller's. Correct.
+
+### Test coverage
+- `curse_of_deaths_hold_debuffs_opponent_creatures` in `mtg-engine/tests/tier7_cards.rs`: Creates curse attached to P1, verifies P1's 3/3 becomes 2/2, P0's 3/3 stays 3/3. Passes.

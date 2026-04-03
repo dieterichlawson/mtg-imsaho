@@ -120,3 +120,52 @@ The major issue from the prior audit (forced draw) has been fixed:
 
 ### Code issues
 No issues found. Card data (name, cost {U}, types, subtypes, oracle text) all match. Trigger on AnyDamageToPlayer correctly checks that the source is the enchanted creature and that the damaged player is an opponent (not the controller). The "may" is properly implemented as a YesNo choice. Draw is handled correctly.
+
+## Audit — 2026-04-02 20:45
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/49/curiosity, cached 2026-04-01)
+**Oracle text**: Enchant creature
+Whenever enchanted creature deals damage to an opponent, you may draw a card.
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+
+No issues found. All prior issues have been resolved:
+
+1. **Card data matches oracle exactly.** Name "Curiosity", cost `{U}` (line 17: `ManaSymbol::Colored(Color::Blue)`), types `Enchantment` with subtype `Aura` (lines 19-21), oracle text on line 24 matches Scryfall verbatim.
+
+2. **"You may" draw is correctly optional.** Lines 66-73 present a `YesNo` choice via `AwaitingAction::ResolutionChoice`. The `on_yes_no_choice` handler (lines 76-84) only draws when `yes == true`. This correctly implements the optional "you may" clause.
+
+3. **Trigger type is correct.** Uses `TriggerKind::AnyDamageToPlayer`, which the engine dispatches for both `CombatDamageDealt` and `NonCombatDamageDealt` events (verified in `triggers.rs` lines 542-559 and 566-591). Matches oracle "deals damage" (not "deals combat damage") and ruling: "Any damage dealt by the enchanted creature to an opponent will cause Curiosity to trigger, not just combat damage."
+
+4. **Enchanted creature guard correct.** Line 57: `if source_id != attached_to { return; }` ensures only the enchanted creature's damage triggers the ability.
+
+5. **Opponent guard correct.** Line 61-62: `let controller = aura.controller; if damaged_player == controller { return; }` correctly uses the aura's controller (not the creature's controller) per ruling: "'You' refers to the controller of Curiosity, which may be different from the controller of the enchanted creature."
+
+6. **Aura resolution correct.** Uses `resolve_aura` helper (line 43) with `TargetRequirement::Creature` (line 39).
+
+7. **LLM hint correct.** `mtg-player/src/llm.rs` line 136 now includes "you may draw a card", matching oracle text.
+
+### Tricky interactions checked (min 3)
+
+1. **Curiosity enchanting an opponent's creature**: The controller check at line 61 uses `aura.controller`, not the creature's controller. Per ruling, if you control Curiosity on an opponent's creature, it triggers when that creature damages one of YOUR opponents (not you). The `damaged_player == controller` check correctly prevents triggering when the creature damages the aura's controller.
+
+2. **Non-combat damage triggers Curiosity**: The engine's trigger system (verified in `triggers.rs`) dispatches `AnyDamageToPlayer` for `NonCombatDamageDealt` events as well as `CombatDamageDealt`, so a ping ability on the enchanted creature would correctly trigger Curiosity. Matches ruling: "Any damage dealt by the enchanted creature to an opponent will cause Curiosity to trigger, not just combat damage."
+
+3. **Draw count per trigger**: The implementation draws exactly 1 card (line 82: `draw_cards(state, controller, 1)`), regardless of damage amount. Matches ruling: "You draw one card each time the enchanted creature deals damage to an opponent, no matter how much damage it deals."
+
+4. **Self-decking / declining draw**: Since the draw is optional (YesNo choice), a player can decline to avoid decking themselves when their library is nearly empty. Verified by the `curiosity_decline_draw` test.
+
+5. **Planeswalker/battle damage**: The trigger system only fires `AnyDamageToPlayer` for `DamageTarget::Player`, never for planeswalker or battle damage. Matches ruling: "Curiosity doesn't trigger if the enchanted creature deals damage to a planeswalker or to a battle."
+
+### Test coverage
+
+Two tests in `mtg-engine/tests/tier6_cards.rs`:
+- `curiosity_draw_on_enchanted_creature_combat_damage` -- combat damage to opponent, player accepts draw. Passes.
+- `curiosity_decline_draw` -- combat damage to opponent, player declines draw. Passes.
+
+**Missing test coverage (minor):**
+- Non-combat damage trigger scenario
+- No-trigger when enchanted creature damages its own controller
+- No-trigger when a different creature deals damage

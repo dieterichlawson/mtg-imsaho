@@ -95,3 +95,39 @@ Flashback {5}{G}{G} (You may cast this card from your graveyard for its flashbac
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:45
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/174/creeping-renaissance)
+**Oracle text**: Choose a permanent type. Return all cards of the chosen type from your graveyard to your hand.
+Flashback {5}{G}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data is fully correct:
+- Name: "Creeping Renaissance" -- matches oracle
+- Mana cost: {3}{G}{G} -- matches oracle
+- Type: Sorcery -- matches oracle
+- Oracle text: matches verbatim
+- Flashback cost: {5}{G}{G} via `flashback_cost` field -- matches oracle. Keywords left empty, consistent with all other flashback cards in the codebase.
+
+Behavior (engine.rs lines 2051-2084):
+- On resolve, presents choice of all 5 permanent types (Creature, Artifact, Enchantment, Land, Planeswalker) -- correct per ruling [2011-09-22].
+- Filters controller's graveyard by chosen type using `card_types.contains(&card_type)` -- correctly handles multi-type cards (e.g., artifact creature returned when choosing either Artifact or Creature).
+- Moves all matching cards to hand -- no targeting, matches "Return all cards of the chosen type".
+- Calls `move_spell_after_resolve` which exiles if `cast_with_flashback` is true, otherwise sends to graveyard -- correct.
+
+### Tricky interactions checked (min 3)
+1. **Artifact creatures**: If you choose "Creature", an artifact creature card is returned because `card_types.contains(&CardType::Creature)` is true for `[CardType::Artifact, CardType::Creature]`. Likewise choosing "Artifact" returns it. Correct per MTG ruling.
+2. **Flashback exile**: When cast via flashback, the spell is exiled after resolution (not returned to graveyard). Verified via `move_spell_after_resolve` which checks `cast_with_flashback` flag. Test `creeping_renaissance_flashback_exiles` confirms this.
+3. **Empty graveyard / no matching cards**: If no cards of the chosen type exist in graveyard, `to_return` is empty, zero cards are moved, and the spell resolves normally. No crash or error -- the count is logged as 0. Graceful handling.
+4. **Cannot return itself**: Creeping Renaissance is a Sorcery, not a permanent type. Even if it somehow ended up in the graveyard mid-resolution, it would not match any permanent type choice. Correct.
+
+### Test coverage
+3 tests in `mtg-engine/tests/tier15_cards.rs`, all passing:
+- `creeping_renaissance_returns_creatures_from_graveyard`: 3 creatures in graveyard, choose Creature, all 3 returned to hand.
+- `creeping_renaissance_only_returns_chosen_type`: Creatures and enchantments in graveyard, choose Enchantment, only enchantments returned; creatures remain.
+- `creeping_renaissance_flashback_exiles`: Cast from graveyard via flashback, creature returned to hand, spell exiled afterward.
