@@ -31,7 +31,9 @@ Each card MUST be audited by its own dedicated subagent with fresh context. Neve
 
 ### Agent prompt (for each card)
 
-Launch each agent with the prompt below. Replace `{CARD_NAME}`, `{CARD_FILE}`, `{AUDIT_FILE}`, and `{NOW}` (use the current date and time in YYYY-MM-DD HH:MM format, e.g. "2026-04-02 14:30") with the appropriate values. Include the prompt EXACTLY as written — do NOT summarize or abbreviate it.
+Launch each agent with the prompt below. Replace `{CARD_NAME}`, `{CARD_FILE}`, `{AUDIT_FILE}`, and `{NOW}` (use the current date and time in YYYY-MM-DD HH:MM format, e.g. "2026-04-02 14:30") with the appropriate values.
+
+**IMPORTANT**: Include the prompt EXACTLY as written — do NOT summarize, abbreviate, or add card-specific hints about what the card does. The agent must discover the card's behavior from the oracle text, not from your description. Adding hints like "Key: tap to create tokens" risks being wrong and biasing the audit.
 
 ```
 You are auditing the MTG card **{CARD_NAME}** and the engine mechanics it relies on. Your job is to verify that the card behaves correctly — if it doesn't, for ANY reason (card bug or engine bug), that is an ISSUE.
