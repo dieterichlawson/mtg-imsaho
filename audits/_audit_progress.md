@@ -8,7 +8,8 @@
 - **Cards 111-120**: heretics_punishment, hinterland_harbor, hollowhenge_scavenger, hysterical_blindness, infernal_plunge, inquisitors_flail, instigator_gang, intangible_virtue, into_the_maw_of_hell, invisible_stalker
 
 ## Running totals through batch 11
-- **95 PASS, 14 ISSUE out of 110 cards (44% complete)**
+- **94 PASS, 15 ISSUE out of 110 cards (44% complete)**
+- Re-audited 10 complex cards from batches 1-3: 9 confirmed PASS, 1 new ISSUE (Bonds of Faith)
 
 ## Issues found
 
@@ -26,6 +27,7 @@
 | Geistflame | Oracle text field + LLM knowledge both missing flashback info |
 | Ghost Quarter | Missing library shuffle after search |
 | Grave Bramble | LLM knowledge omits protection from Zombies; engine doesn't check protection for targeting |
+| Bonds of Faith | Snapshot evaluation instead of continuous "as long as" — Human check doesn't update on type changes |
 
 ## False PASSes (engine issues marked PASS before prompt was updated)
 - **Darkthicket Wolf** — `abilities_activated_this_turn` never cleared between turns (once-per-turn permanently locked)
