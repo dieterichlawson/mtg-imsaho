@@ -99,3 +99,34 @@ The previously identified issue has been fixed:
 
 ### Code issues
 No issues found. The ETB trigger correctly searches for any card with the Zombie subtype in the graveyard (not restricted to creature cards, matching oracle text which says "Zombie card"). Random selection is properly implemented using rand::thread_rng() and shuffle.
+
+## Audit — 2026-04-02 21:09
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: When this creature enters, return a Zombie card at random from your graveyard to your hand.
+**Type line**: Creature — Zombie
+**Status**: PASS
+
+### Code issues
+
+No issues found. Full verification:
+
+- **Card data**: Name "Ghoulraiser", cost {1}{B}{B} (Generic(1), Black, Black), type Creature, subtype Zombie, P/T 2/2 -- all match oracle exactly.
+- **Oracle text field** (line 27): `"When this creature enters, return a Zombie card at random from your graveyard to your hand."` -- verbatim match with Scryfall.
+- **ETB trigger**: `TriggerKind::EntersBattlefield` declared in `triggered_abilities` (line 33). `on_enter_battlefield` handler (line 41) invoked by engine trigger resolution after verifying object is still on battlefield.
+- **Zombie filter** (lines 48-56): Filters `objects_in_zone(Zone::Graveyard, controller)` by subtype containing "Zombie". No creature-type restriction, correctly implementing "a Zombie card" per current oracle errata.
+- **Random selection** (lines 59-61): `rand::thread_rng()` + `shuffle()` + pick index 0. Uniform random. Correct for "at random".
+- **Zone move** (line 63): `move_object(chosen, Zone::Hand)`. Correct for "return ... to your hand".
+- **Log message** (lines 64-65): Reports the returned card name. Adequate UI feedback.
+
+### Tricky interactions checked (min 3)
+
+1. **Empty graveyard / no Zombies**: Guard at line 58 (`if !zombies.is_empty()`) correctly makes this a no-op. The ability still triggers but does nothing, which matches MTG rules (the ability is not a "may" -- it returns a Zombie if possible, does nothing if not).
+2. **Ghoulraiser cannot return itself**: When the ETB trigger resolves, Ghoulraiser is on the battlefield (verified by trigger resolution check at triggers.rs:894-895). The graveyard scan (line 48) only finds objects in Zone::Graveyard, so Ghoulraiser is excluded. Correct.
+3. **Non-creature Zombie cards**: The filter checks only for "Zombie" in subtypes, not for CardType::Creature. This correctly handles hypothetical non-creature cards with Zombie subtype (e.g., Tribal -- Zombie spells). Matches oracle which says "a Zombie card" not "a Zombie creature card".
+4. **Graveyard ownership**: `objects_in_zone(Zone::Graveyard, controller)` filters by owner for graveyard zone (state.rs:603). "Your graveyard" in oracle means the controller's graveyard. Under normal circumstances controller == owner, so this is correct.
+
+### Test coverage
+
+- `ghoulraiser_returns_zombie_from_graveyard` (tier11_cards.rs:146): Puts Walking Corpse in graveyard, casts Ghoulraiser, verifies Zombie returns to hand and Ghoulraiser is on battlefield. Covers the core happy path.
+- **Missing**: No test for empty graveyard (no-op), no test for multiple Zombies (randomness), no test for non-Zombie exclusion.
