@@ -195,3 +195,46 @@ No other issues. Card data correct: name, mana cost {4}{R}, Enchantment. Activat
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-03 07:04
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: {3}{R}: Choose any target, then mill three cards. This enchantment deals damage to that permanent or player equal to the greatest mana value among the milled cards.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+
+None found. Full verification:
+
+- **Name**: "Heretic's Punishment" -- correct.
+- **Mana cost**: {4}{R} -- matches oracle.
+- **Type line**: Enchantment, no subtypes -- correct.
+- **Oracle text field** (line 25): verbatim match with Scryfall oracle text.
+- **Activation cost**: {3}{R}, no tap, not once-per-turn, not sorcery-speed-only -- correct.
+- **Target**: `AnyTarget` -- matches "Choose any target".
+- **Target legality check** (lines 60-77): checks target is legal before any milling; entire ability fizzles if illegal (no mill, no damage) -- matches ruling #1.
+- **Mill** (lines 79-101): mills `min(3, library.len())` cards from top of library to graveyard -- matches oracle and ruling #2.
+- **Mana value computation** (lines 84-94): computes greatest MV among milled cards via `registry.card_data()` which returns front-face data (correct per ruling #3 for DFCs).
+- **Zero damage case** (line 104): gates damage behind `if max_mv > 0` -- matches ruling #4.
+- **Creature damage** (lines 107-118): marks damage, tracks `damaged_by`, emits `NonCombatDamageDealt` event -- correct.
+- **Player damage** (lines 120-133): reduces life, emits `NonCombatDamageDealt` and `LifeChanged` events -- correct.
+- **Order of operations**: target legality check -> mill -> compute max MV -> deal damage -- correct.
+- **Keywords**: `vec![]` -- `Mill` is not a variant in the engine's `Keyword` enum, so this is correct given engine limitations (not a card-specific issue).
+
+### Tricky interactions checked (min 3)
+
+1. **Illegal target fizzle (ruling #1)**: If the target is illegal on resolution, the entire ability fizzles -- no mill, no damage. Code correctly checks target legality before milling (lines 60-77). Test `heretics_punishment_fizzles_when_target_illegal` confirms.
+2. **Fewer than 3 cards in library (ruling #2)**: Code uses `min(3, library.len())` at line 81. If 0-2 cards remain, those are milled and damage is based on the greatest MV among them. Correctly handles empty library (0 cards milled, 0 damage).
+3. **All milled cards have MV 0 (ruling #4)**: Line 104 only deals damage when `max_mv > 0`. If all milled cards have MV 0 (e.g., lands), no damage event is emitted and no life/damage_marked changes occur -- correct.
+4. **DFC mana value (ruling #3)**: `registry.card_data(card_id)` returns front-face card data, so `cost.mana_value()` returns the front face's mana value -- correct per ruling #3.
+
+### Test coverage
+
+Three tests in `mtg-engine/tests/tier15_cards.rs`:
+
+| Test | Coverage | Status |
+|------|----------|--------|
+| `heretics_punishment_mills_then_deals_damage` | Mills 3 cards, deals damage equal to greatest MV to player, cards end up in graveyard | PASS |
+| `heretics_punishment_tracks_damaged_by_on_creature` | Deals damage to creature, marks damage, tracks `damaged_by` source | PASS |
+| `heretics_punishment_fizzles_when_target_illegal` | Target moved off battlefield; ability fizzles, no mill occurs | PASS |

@@ -165,3 +165,46 @@ Instigator Gang / Wildblood Pack is NOT in the LLM card knowledge section (`mtg-
 - **Back face triggered_abilities:** Missing Upkeep TriggerKind in back_face_data's triggered_abilities vec. The on_upkeep handler still runs because it dispatches from the front face implementation, so this is a metadata omission rather than a functional bug.
 
 ### Result: PASS
+
+## Audit — 2026-04-03 07:04
+**Oracle text source**: Scryfall API (via `python3 scripts/oracle_lookup.py lookup "Instigator Gang"`)
+**Oracle text**:
+Front (Instigator Gang): Attacking creatures you control get +1/+0.
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+Back (Wildblood Pack): Trample
+Attacking creatures you control get +3/+0.
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line**:
+Front: Creature — Human Werewolf
+Back: Creature — Werewolf
+**Status**: PASS
+
+### Code issues
+None found. All card data and behavior match oracle text.
+
+- Name: "Instigator Gang" / "Wildblood Pack" — matches oracle.
+- Cost: Generic(3) + Red = {3}{R} — matches oracle.
+- Types/Subtypes: Front ["Human", "Werewolf"], Back ["Werewolf"] — match oracle.
+- P/T: Front 2/3, Back 5/5 (via dynamic_pt) — match oracle.
+- Keywords: Front none, Back [Trample] — correct (Trample is back-face only).
+- Buff: +1/+0 (front) / +3/+0 (back) applied to attacking creatures you control including self — matches oracle (no "other" qualifier).
+- Controller check: attacker_controller != controller early return prevents buffing opponent's creatures — correct.
+- Transform front->back: no spells cast last turn AND not first turn — correct per werewolf rules.
+- Transform back->front: any player cast 2+ spells last turn — correct.
+- Cosmetic note: when transformed, the trigger stack description says "+1/+0" instead of "+3/+0" because trigger_description finds the front face's AnyCreatureAttacks entry first. The actual buff applied is correct (+3/+0). Not a functional issue.
+
+### Tricky interactions checked (min 3)
+1. Self-buff on attack: Instigator Gang buffs itself when it attacks (+1/+0 front, +3/+0 back). The AnyCreatureAttacks watcher loop does NOT exclude the attacker (confirmed by comment at triggers.rs:724-725 and test instigator_gang_buffs_itself_when_attacking). PASS.
+2. Buff restricted to controller's creatures: Code checks attacker_controller != controller and returns early. Test instigator_gang_does_not_buff_opponent_attackers confirms this. PASS.
+3. Trample only on back face: Front face has keywords: vec![], back face has keywords: vec![Keyword::Trample]. Test instigator_gang_transforms_and_gains_trample confirms trample appears only after transform. PASS.
+4. Back face missing Upkeep TriggerKind in triggered_abilities: The back_face_data only declares AnyCreatureAttacks, not Upkeep. However, trigger_description checks front face triggers first, finds the Upkeep entry, and returns it — so the upkeep trigger fires when transformed. on_upkeep then correctly handles transform-back logic. PASS.
+5. Static ability implemented as triggered AnyCreatureAttacks + UntilEndOfTurnEffect: This is the standard engine pattern for "attacking creatures get +N/+0" effects. No cards in the Innistrad pool create creatures already attacking, so the approximation is functionally equivalent. PASS (engine limitation, not card bug).
+
+### Test coverage
+- instigator_gang_transforms_and_gains_trample (line 389): transform + trample keyword check
+- instigator_gang_buffs_itself_when_attacking (line 405): self-buff +1/+0
+- instigator_gang_buffs_other_attackers_you_control (line 425): ally gets +1/+0
+- instigator_gang_does_not_buff_opponent_attackers (line 446): opponent's creature not buffed
+- wildblood_pack_buffs_itself_plus_3 (line 464): back face self-buff +3/+0
+- NOT TESTED: Wildblood Pack buffs other attackers +3/+0 (only self-buff tested for back face)
+- NOT TESTED: Transform back when 2+ spells (covered by generic werewolf tests using same logic)

@@ -99,3 +99,39 @@ Findings:
 
 ### Code issues
 No issues found. Card data matches oracle: name, mana cost {R}, Sorcery. Additional cost SacrificeCreature correctly set (creature sacrifice happens at cast time). On resolve, adds 3 Red mana to controller's mana pool via mana_pool.add(ManaType::Red, 3). move_spell_after_resolve called. No anti-patterns.
+
+## Audit — 2026-04-03 07:04
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/148/infernal-plunge)
+**Oracle text**: As an additional cost to cast this spell, sacrifice a creature.\nAdd {R}{R}{R}.
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+None found.
+
+- Name "Infernal Plunge": matches oracle.
+- Mana cost {R}: matches oracle.
+- Type Sorcery: matches oracle.
+- Oracle text in code: `"As an additional cost to cast this spell, sacrifice a creature.\nAdd {R}{R}{R}."` -- matches oracle exactly.
+- `additional_cost: Some(AdditionalCost::SacrificeCreature)`: correctly models the sacrifice-a-creature additional cost.
+- `on_resolve` adds 3 red mana via `mana_pool.add(ManaType::Red, 3)`: correct.
+- `move_spell_after_resolve(object_id)`: correct (no anti-pattern of raw `move_object` to graveyard).
+- No supertypes, subtypes, keywords, power, toughness: correct for a sorcery.
+- Engine correctly enforces sacrifice at cast time (before spell goes on stack), not at resolution. Verified in engine.rs lines 1541-1566.
+- Engine correctly generates one CastSpell action per eligible creature sacrifice target.
+- Engine correctly prevents casting when no creatures are controlled.
+
+### Tricky interactions checked (min 3)
+1. **Sacrifice timing with counterspell**: If Infernal Plunge is countered, the creature is already sacrificed (at cast time) and the {R}{R}{R} is never produced. The implementation is correct: sacrifice is in the cast action, mana addition is in `on_resolve`.
+2. **No creatures = can't cast**: Engine's `legal_actions` checks for at least one creature on the battlefield before generating CastSpell actions. Test `cannot_cast_without_creature` confirms.
+3. **Multiple sacrifice candidates**: Each eligible creature generates a distinct CastSpell action with `sacrifice: Some(creature_id)`, giving the player a real choice. Test `one_action_per_sacrifice_target` confirms with 2 creatures.
+4. **Flashback interaction**: `move_spell_after_resolve` checks `cast_with_flashback` and exiles instead of sending to graveyard when appropriate. Correct.
+
+### Test coverage
+5 tests in `mtg-engine/tests/infernal_plunge.rs`, all passing:
+- `cannot_cast_without_creature` -- gating on creature presence
+- `can_cast_with_creature` -- cast allowed with creature
+- `sacrifice_at_cast_time` -- sacrifice happens during cast, not resolution
+- `adds_three_red_mana` -- verifies {R}{R}{R} added on resolution
+- `one_action_per_sacrifice_target` -- each creature is a separate sacrifice option

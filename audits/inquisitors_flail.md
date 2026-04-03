@@ -459,3 +459,28 @@ Lines 5–6 of `tests/inquisitors_flail.rs` repeat the same "another source" wor
 
 ### Code issues
 No issues found. Card data matches oracle: name, mana cost {2}, Artifact with Equipment subtype. Continuous effect DoubleCombatDamage with scope Attached. Combat.rs (line 449-454) applies combat_damage_multiplier to both source and target of combat damage, correctly implementing both offensive and defensive doubling. Multiple Flails stack multiplicatively (2^count) per ruling. Equip {2} is sorcery-speed-only, targets creature you control (CreatureWithFilter(YouControl)). is_equipment set on resolve. on_activate_ability attaches to target via attached_to. No anti-patterns.
+
+## Audit — 2026-04-03 07:04
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/227/inquisitors-flail)
+**Oracle text**: If equipped creature would deal combat damage, it deals double that damage instead.\nIf another creature would deal combat damage to equipped creature, it deals double that damage to equipped creature instead.\nEquip {2}
+**Type line**: Artifact — Equipment
+**Status**: PASS
+
+### Code issues
+- Minor: Doc comment (line 9) says "another source" instead of "another creature". Does not affect behavior since `oracle_text` field is correct.
+- No functional issues found.
+
+### Tricky interactions checked (min 3)
+1. **Multiple Flails stacking**: `combat_damage_multiplier` uses `1u32 << count` (2^count), so two Flails = 4x, three = 8x. Matches ruling: "multiplied by four... eight, and so on." Test `two_flails_quadruple_damage` verifies this.
+2. **Trample + Flail**: Damage assignment in `deal_combat_damage` uses natural power for lethal calculation (line 245-246), then doubling occurs inside `deal_damage_to_creature`/`deal_damage_to_player` after assignment. Matches ruling: "you'll divide the original amount and then double the results."
+3. **Damage received doubling**: In `deal_damage_to_creature` (line 453-454), both `combat_damage_multiplier(state, source, ...)` and `combat_damage_multiplier(state, target, ...)` are applied. When the equipped creature is the target, the target multiplier correctly doubles incoming damage.
+4. **Replacement effect, not trigger**: Implementation uses `ContinuousEffect::DoubleCombatDamage` which is a static replacement effect applied during damage resolution, not a triggered ability. Matches ruling: "not triggers and do not use the stack."
+5. **Player damage**: `deal_damage_to_player` (line 506-507) only applies `combat_damage_multiplier(state, source, ...)` — no target multiplier for players, which is correct since players can't be equipped.
+
+### Test coverage
+5 tests, all passing:
+- `doubles_damage_to_player` — 4-power creature with Flail deals 8 to player
+- `doubles_damage_to_creature` — 2-power creature with Flail deals 4 to blocker
+- `doubles_damage_taken_from_blocker` — equipped creature takes 4 from 2-power blocker
+- `no_doubling_without_flail` — unattached Flail has no effect
+- `two_flails_quadruple_damage` — two Flails on 3-power creature deals 12 to player
