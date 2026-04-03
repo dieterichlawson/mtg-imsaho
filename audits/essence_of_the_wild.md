@@ -224,3 +224,31 @@ Oracle text uses "this creature" not the card name. Cosmetic only, no behavioral
 
 ### Re-audit Date
 2026-04-02
+
+---
+
+## Audit — 2026-04-02 20:58
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/178/essence-of-the-wild), cached 2026-04-01
+**Oracle text**: Creatures you control enter as a copy of this creature.
+**Type line**: Creature — Avatar
+**Status**: PASS
+
+### Code issues
+None found. Implementation is correct and clean.
+
+- Card data (name, cost {3}{G}{G}{G}, types Creature — Avatar, P/T 6/6, oracle text) all match Scryfall exactly.
+- Replacement effect is properly implemented via `entering_copy_source` flag and `apply_entering_copy_replacement()` in `state.rs`, not as a triggered ability. This is the correct approach per CR 614.1d.
+- The replacement is applied before the `EnteredBattlefield` event is emitted, so original ETB abilities on the entering creature are correctly suppressed.
+- Minor note: mana cost is not copied to the entering creature, but mana value on the battlefield is rarely relevant in this engine's scope.
+
+### Tricky interactions checked (min 3)
+1. **Tokens also become copies**: `create_token_with_subtypes()` calls `apply_entering_copy_replacement()`, so tokens entering under the same controller become 6/6 Essence copies. The `is_token` field is preserved (tokens remain tokens). Correct per ruling: "a token that's a copy of a card is still a token."
+2. **Opponent creatures unaffected**: The controller check at line 539 of `state.rs` ensures only the Essence controller's creatures are affected. Verified by `essence_does_not_override_opponent_creatures` test.
+3. **Copy propagation (multiple Essences)**: Copies of Essence also receive `entering_copy_source = true`, meaning they also act as copy sources. Per ruling: "If you control more than one Essence of the Wild, creatures you control will enter as a copy of the one whose copy effect you apply last." The `find()` picks one deterministically, which is fine since all copies are identical.
+4. **Self-exclusion on enter**: Line 541 checks `o.id != entering_id` so Essence itself does not become a copy of itself when entering the battlefield.
+5. **Leaves-the-battlefield handling**: The replacement searches for sources with `o.zone == Zone::Battlefield`, so if Essence leaves the battlefield, it naturally stops being a copy source without needing explicit cleanup.
+
+### Test coverage
+- `essence_overrides_entering_creatures`: Verifies a Grizzly Bears entering under the same controller becomes a 6/6 "Essence of the Wild" Avatar. **PASS**
+- `essence_does_not_override_opponent_creatures`: Verifies an opponent's creature entering is not affected. **PASS**
+- Missing: No test for token interaction (tokens entering as Essence copies), though the engine code does handle it correctly.

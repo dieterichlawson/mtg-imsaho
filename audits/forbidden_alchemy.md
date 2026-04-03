@@ -76,3 +76,33 @@ Keywords: Flashback
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:58
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/55/forbidden-alchemy)
+**Oracle text**: Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.
+Flashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: ISSUE
+
+### Code issues
+
+1. **UI: Revealed cards invisible in views (CLI + LLM player)** — When `on_resolve` runs, `library_order.drain(..count)` removes the top 4 cards from the library order, but their `.zone` field stays as `Zone::Library`. The `GameView` builds `your_library_cards` from `library_order`, so these cards disappear from all views. Both `cli.rs::perm_name` and `llm.rs::obj_name` search battlefield, hand, stack, and graveyards but not a "revealed" zone, so they fall through to displaying raw `ObjectId(N)` strings. The `library_search_ui` (triggered because there are >3 ChosenCard actions) likewise shows empty card info (no name, type, cost, oracle text). **Impact**: Players (human and AI) see meaningless IDs instead of card names when making the Forbidden Alchemy choice.
+
+2. **Misleading LLM prompt description** — `mtg-player/src/llm.rs` line 115 describes Forbidden Alchemy as `"Draw 1 card, mill 3"`. The actual behavior is look-at-4-choose-1, which is strictly better than draw+mill because the player gets to select the best card. This misdescription may cause the AI to undervalue the card's selection power.
+
+3. **Stale code comment** — `forbidden_alchemy.rs` line 9 says `"Simplified: draw 1 card, mill 3"` but the implementation correctly presents a full ChooseFromRevealed choice. The comment contradicts the actual behavior and should be removed.
+
+### Tricky interactions checked (min 3)
+
+1. **Fewer than 4 cards in library**: Handled correctly via `min(4, library_order.len())`. If 0 cards, does nothing. If 1 card, auto-puts it in hand. Matches the 2011-09-22 ruling.
+2. **Flashback + exile**: `move_spell_after_resolve` checks `cast_with_flashback` flag. When cast via flashback, the spell is exiled instead of going to graveyard. Confirmed correct in engine.rs handler.
+3. **Choice resolution with ChooseFromRevealed**: Engine handler (engine.rs ~line 2025) moves chosen card to Hand and all other revealed cards to Graveyard, then calls `move_spell_after_resolve`. The spell itself is cleaned up only after the choice, not before. Correct sequencing.
+4. **Cards removed from library order during reveal**: The drain ensures drawn/revealed cards cannot be drawn again by other effects while the choice is pending. However, this creates the UI visibility bug noted above.
+
+### Test coverage
+
+1. `flashback::forbidden_alchemy_draws_and_mills` — 5-card library, reveals 4, player chooses 1 for hand, 3 go to graveyard, 1 remains in library. PASSES.
+2. `card_mechanics::forbidden_alchemy_choice_from_top_4` — 4 named cards (Lightning Bolt, Grizzly Bears, Forest, Giant Growth), choice presented, Lightning Bolt chosen goes to hand, other 3 go to graveyard. PASSES.
+- **Missing**: No test for the fewer-than-4-cards edge case (e.g., 2 cards in library).
+- **Missing**: No test for Forbidden Alchemy cast via flashback (flashback is tested generically, but not specifically for this card's reveal+choose flow when cast from graveyard).

@@ -73,3 +73,26 @@ Flashback {1}{U} (You may cast this card from your graveyard for its flashback c
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:58
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/14/feeling-of-dread)
+**Oracle text**: Tap up to two target creatures.
+Flashback {1}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Instant
+**Status**: PASS (minor LLM card knowledge issue noted below)
+
+### Code issues
+- LLM card knowledge in `mtg-player/src/llm.rs` line 112 says "Tap target creature." (singular) but oracle text is "Tap up to two target creatures." This does not affect gameplay (the engine uses `UpToTargets(2, Creature)` correctly), only the AI player's description of the card.
+
+### Tricky interactions checked (min 3)
+1. **Partial target illegality (rule 608.2b)**: If one of two targets becomes illegal before resolution, the surviving target is still tapped. Confirmed by independent loop in `on_resolve` and by test `multi_target_spell_with_one_target_dying`.
+2. **Full fizzle**: If both targets become illegal, the spell is countered by game rules. Confirmed by `is_target_legal` check in `stack.rs` and test `multi_target_spell_with_all_targets_dying`.
+3. **Flashback exile**: When cast via flashback, `move_spell_after_resolve` checks `cast_with_flashback` flag and exiles instead of sending to graveyard. Confirmed by test `flashback_spell_is_exiled_after_resolve`.
+4. **Already-tapped creatures**: Setting `tapped = true` on an already-tapped creature is legal and harmless, matching MTG rules (tapping doesn't require untapped state for the spell's effect).
+
+### Test coverage
+1. `feeling_of_dread_taps_creature` (flashback.rs:433) — taps a single target creature
+2. `feeling_of_dread_taps_two` (card_mechanics.rs:553) — taps two target creatures
+3. `multi_target_spell_with_one_target_dying` (spell_fizzle.rs:233) — partial target illegality, surviving target still tapped
+4. `multi_target_spell_with_all_targets_dying` (spell_fizzle.rs:265) — all targets illegal, spell fizzles

@@ -73,3 +73,27 @@ Implementation is functionally correct. One cosmetic mismatch in the `oracle_tex
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:58
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Trample
+{1}{R}: This creature gets +2/+0 until end of turn.
+**Type line**: Creature — Wolf
+**Status**: PASS
+
+### Code issues
+- Cosmetic only: `oracle_text` field uses "Feral Ridgewolf" instead of "This creature" (modern Scryfall templating). Functionally equivalent; no gameplay impact.
+
+### Tricky interactions checked (min 3)
+1. **Multiple activations stack**: Two activations produce power_mod 2+2=4, so 1+4=5 total power. Confirmed by `feral_ridgewolf_can_activate_multiple_times` test.
+2. **Trample is always present**: Keyword::Trample is in the static keywords vec, always active on battlefield. No conditional granting needed.
+3. **Pump expires at end of turn**: `until_end_of_turn_effects` is cleared in the cleanup step (engine.rs line 3021), so +2/+0 correctly wears off.
+4. **Ability only available on battlefield**: Zone check at line 33 ensures the activated ability is not offered when the card is in hand/graveyard/etc.
+5. **Instant-speed activation**: `sorcery_speed_only: false` allows activation during combat (e.g., after blocks declared), which is correct for this card.
+
+### Test coverage
+- `feral_ridgewolf_has_correct_stats` — verifies P/T (1/2), Trample keyword, Wolf subtype
+- `feral_ridgewolf_gets_plus_2_plus_0` — verifies single activation yields 3/2
+- `feral_ridgewolf_can_activate_multiple_times` — verifies two activations yield 5/2
+
+All 3 tests PASS.

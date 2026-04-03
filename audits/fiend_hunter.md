@@ -258,3 +258,53 @@ No issues found.
 - Declining to exile ("you may" choosing no target): NOT TESTED
 - Oblivion Ring trick (LTB before ETB resolves): NOT TESTED
 - Token exiled doesn't return: NOT TESTED
+
+## Audit — 2026-04-02 20:58
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: When this creature enters, you may exile another target creature. When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.
+**Type line**: Creature — Human Cleric
+**Status**: PASS
+
+### Code issues
+
+No issues found. All card data and behavior match the oracle text.
+
+Card data verification:
+- Name "Fiend Hunter": correct (line 16)
+- Mana cost {1}{W}{W}: correct -- `ManaCost::new(vec![Generic(1), Colored(White), Colored(White)])` (lines 17-21)
+- Type Creature, subtypes Human/Cleric: correct (lines 22-24)
+- P/T 1/3: correct -- `power: Some(1), toughness: Some(3)` (lines 25-26)
+- Two triggered abilities declared: `EntersBattlefield` and `LeavesBattlefield` (lines 30-39)
+- ETB uses `present_optional_target_choice` for "you may" (line 49), with `creature_targets_except(state, object_id)` for "another target creature" (line 47)
+- LTB reads `card_state["exiled_creature"]`, verifies target is still in Exile zone, moves to Battlefield, and sets `obj.controller = obj.owner` for "under its owner's control" (lines 57-69)
+
+Cosmetic note: `oracle_text` display string (line 27) uses older templating ("When Fiend Hunter enters the battlefield") vs current Scryfall text ("When this creature enters"). No gameplay impact.
+
+LLM card knowledge (llm.rs:104): "When it enters, you may exile another target creature (any creature, not just opponent's). When it leaves, the exiled card returns." -- accurate.
+
+### Tricky interactions checked (min 3)
+
+1. **Oblivion Ring trick (LTB before ETB resolves)**: PASS -- If Fiend Hunter leaves the battlefield before its ETB ability resolves, `on_leave_battlefield` reads `card_state.get("exiled_creature")` which returns `None` (ETB hasn't stored anything yet), so LTB does nothing. The ETB then resolves via `ExileAndStore` (engine.rs:2255-2262), exiles the target, and stores the ID on the Fiend Hunter object (now in graveyard). Since the LTB already fired and resolved, no future LTB will return the creature -- it stays exiled permanently. This matches the Scryfall ruling: "If Fiend Hunter leaves the battlefield before its first ability has resolved, its second ability will trigger and do nothing. Then its first ability will resolve and exile the target creature indefinitely."
+
+2. **"You may" is optional even with exactly 1 target**: PASS -- `present_optional_target_choice` (helpers.rs:148) delegates to `present_target_choice` with `optional: true`. The auto-apply path at helpers.rs:129 requires `targets.len() == 1 && !optional`, which is false when optional is true. So the player always gets to choose, matching "you may."
+
+3. **"Another" self-exclusion**: PASS -- `creature_targets_except(state, object_id)` at helpers.rs:174 filters with `o.id != exclude`, preventing Fiend Hunter from targeting itself.
+
+4. **Can target own creatures**: PASS -- `creature_targets_except` includes all battlefield creatures regardless of controller, matching oracle text which says "another target creature" without restricting to opponents.
+
+5. **Return under owner's control (not controller's)**: PASS -- `on_leave_battlefield` sets `obj.controller = obj.owner` at line 65, correctly handling cases where a stolen creature (controller != owner) was exiled.
+
+6. **Token exile handling**: PASS -- If a token is exiled by Fiend Hunter, SBA rule 704.5d (sba.rs:307-312) removes tokens not on the battlefield. When `on_leave_battlefield` later runs, the zone check `o.zone == Zone::Exile` at line 60 fails (token object removed), so no return occurs. Matches ruling: "If a token is exiled this way, it won't return to the battlefield."
+
+7. **Exiled card moved by another effect before LTB**: PASS -- LTB checks `o.zone == Zone::Exile` (line 60) before returning. If another effect moved the exiled card out of exile, the check fails and nothing happens.
+
+### Test coverage
+
+- ETB exiles opponent creature: `tier3_cards.rs:211` (fiend_hunter_exiles_on_etb)
+- LTB returns exiled creature on death: `card_mechanics.rs:127` (fiend_hunter_returns_exiled_on_death)
+- Can target own creatures: `card_fixes.rs:30` (fiend_hunter_can_target_own_creature)
+- Presents choice with multiple targets: `card_fixes.rs:60` (fiend_hunter_presents_choice_with_multiple_targets)
+- Declining to exile ("you may" choosing no target): NOT TESTED
+- Oblivion Ring trick (LTB before ETB resolves): NOT TESTED
+- Token exiled doesn't return: NOT TESTED

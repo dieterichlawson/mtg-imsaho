@@ -83,3 +83,23 @@ Whenever this creature deals combat damage to a player, put two +1/+1 counters o
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:58
+**Oracle text source**: Scryfall API (via scripts/oracle_lookup.py, cached 2026-04-01)
+**Oracle text**: Flying
+Haste (This creature can attack and {T} as soon as it comes under your control.)
+Whenever this creature deals combat damage to a player, put two +1/+1 counters on it.
+**Type line**: Creature — Vampire Warrior
+**Status**: PASS
+
+### Code issues
+None. Implementation is functionally correct. The `oracle_text` field uses the card's name ("Whenever Falkenrath Marauders deals combat damage...") rather than Scryfall's modern template ("Whenever this creature deals combat damage..."), but this is a cosmetic text difference with no behavioral impact, and the codebase is inconsistent on this convention.
+
+### Tricky interactions checked (min 3)
+1. **Combat damage to player only (not creature)**: The trigger uses `TriggerKind::CombatDamageToPlayer` and `on_combat_damage_to_player`, so it correctly does NOT trigger when dealing combat damage to a blocking creature. Verified in trigger dispatch (`triggers.rs`).
+2. **Zone check before adding counters**: The handler checks `o.zone == Zone::Battlefield` before adding counters (line 39), correctly handling the edge case where the creature is removed from the battlefield before the trigger resolves.
+3. **Double strike interaction**: With double strike (supported by the engine), each combat damage step would generate a separate `CombatDamageDealt` event, causing the trigger to fire twice and add 4 total +1/+1 counters. The implementation handles this correctly since each event is processed independently.
+4. **Counter count**: Adds exactly 2 `PlusOnePlusOne` counters per trigger, matching the oracle text "put two +1/+1 counters on it."
+
+### Test coverage
+- `falkenrath_marauders_two_counters_on_combat_damage` (tier6_cards.rs): Creates the creature, pushes a `CombatDamageDealt` event targeting a player, processes triggers, and asserts exactly 2 +1/+1 counters. Test passes.

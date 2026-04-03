@@ -234,3 +234,74 @@ One test: `evil_twin_copies_creature_on_etb` (tier15_cards.rs:1580). Passes. Ver
 ### Status: PASS
 
 All six originally reported issues (1-6) and two issues from the second audit (7-8) are now fixed. The implementation correctly handles optional clone choice, copies all relevant characteristics (name, P/T, card_types, subtypes, keywords, colors), propagates the is_evil_twin marker as a copiable value, and uses SameNameAsSource targeting for the destroy ability.
+
+---
+
+## Audit -- 2026-04-02 20:58
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/212/evil-twin), cached 2026-04-01
+**Oracle text**: "You may have this creature enter as a copy of any creature on the battlefield, except it has "{U}{B}, {T}: Destroy target creature with the same name as this creature.""
+**Type line**: Creature -- Shapeshifter
+**Mana cost**: {2}{U}{B}
+**P/T**: 0/0
+
+### Card data verification
+
+| Field | Oracle (Scryfall) | Code (evil_twin.rs) | Match |
+|-------|-------------------|---------------------|-------|
+| Name | Evil Twin | `"Evil Twin"` (line 16) | PASS |
+| Mana cost | {2}{U}{B} | `Generic(2), Colored(Blue), Colored(Black)` (lines 18-20) | PASS |
+| Card types | Creature | `vec![CardType::Creature]` (line 22) | PASS |
+| Supertypes | (none) | `vec![]` (line 23) | PASS |
+| Subtypes | Shapeshifter | `vec!["Shapeshifter".into()]` (line 24) | PASS |
+| P/T | 0/0 | `power: Some(0), toughness: Some(0)` (lines 25-26) | PASS |
+| Oracle text | (see above) | line 27 | PASS -- verbatim match |
+
+### Behavior verification
+
+| Behavior | Oracle / Ruling | Implementation | Status |
+|----------|----------------|----------------|--------|
+| Clone is optional ("you may") | "You can choose not to copy anything" | `present_optional_target_choice` (line 57) | PASS |
+| Player chooses which creature | "a copy of any creature on the battlefield" | `creature_targets_except` builds target list; player picks (lines 45, 57-64) | PASS |
+| Copy includes name, P/T | "copies exactly what was printed on the original creature" | `CopyCreature` handler (engine.rs:2455-2457) sets name, power, toughness | PASS |
+| Copy includes card_types | same ruling | engine.rs:2460 `obj.card_types = card_types` | PASS |
+| Copy includes subtypes | same ruling | engine.rs:2461 `obj.subtypes = subtypes` -- clean replacement | PASS |
+| Copy includes keywords | same ruling | engine.rs:2459 `obj.keywords = keywords` -- from registry card_data | PASS |
+| Copy includes colors | same ruling | engine.rs:2462 `obj.colors = colors` | PASS |
+| Copy sets card_id | required for registry-based behavior | engine.rs:2458 `obj.card_id = card_id` | PASS |
+| Destroy ability: cost {U}{B}, {T} | "{U}{B}, {T}:" | `ManaCost: Blue, Black`, `requires_tap: true` (lines 81-85) | PASS |
+| Destroy ability: targets same name | "target creature with the same name as this creature" | `TargetFilter::SameNameAsSource` (line 87); engine filter checks `source.name == obj.name` (engine.rs:1269-1274) | PASS |
+| Destroy ability: destroy (not exile/sacrifice) | "Destroy target creature" | `try_destroy` (line 110) | PASS |
+| Destroy ability: no speed restriction | No sorcery-speed text | `sorcery_speed_only: false` (line 89) | PASS |
+| Destroy ability: no once-per-turn | No such restriction in oracle | `once_per_turn: false` (line 88) | PASS |
+| is_evil_twin marker is copiable | "The activated ability... is a copiable value that other effects may copy" | CopyCreature handler reads `is_evil_twin` from target card_state and propagates it (engine.rs:2447, 2466-2468) | PASS |
+
+### Code issues
+
+None found. All eight previously reported issues (1-8) remain fixed. The implementation correctly matches the oracle text and rulings.
+
+### Tricky interactions checked (min 3)
+
+1. **Copiable value propagation**: If another clone copies Evil Twin (which has already copied something), the `is_evil_twin` marker in `card_state` is explicitly checked on the copy target (engine.rs:2447) and propagated to the new copy (engine.rs:2466-2468). This means the second clone also gets the `{U}{B}, {T}: Destroy` ability, matching the ruling "The activated ability that Evil Twin gains as part of its copy effect is a copiable value that other effects may copy."
+
+2. **SameNameAsSource targeting**: The `SameNameAsSource` filter (engine.rs:1269-1274) compares `source.name == obj.name`. Since Evil Twin's name changes when it copies a creature, the destroy ability correctly targets creatures sharing that copied name. The filter does not exclude the Evil Twin itself from targeting -- this is correct per the rules (you can target yourself if you share the name, though it would be suicidal).
+
+3. **Optional copy declining**: When no creatures exist on the battlefield, the `targets` vector from `creature_targets_except` is empty and the `if !targets.is_empty()` check (line 49) skips presenting a choice. Evil Twin stays as 0/0 and will die to state-based actions, matching the ruling: "You can choose not to copy anything. In that case, Evil Twin enters the battlefield as a 0/0 creature, and is probably put into the graveyard immediately." When creatures do exist, `present_optional_target_choice` allows the player to decline.
+
+4. **Copy of a copy**: If the chosen creature is itself copying something else, the implementation copies the object's current runtime characteristics (name, P/T, types, etc.), which are already the characteristics of whatever that creature is copying. This matches the ruling: "If the chosen creature is copying something else... then your Evil Twin enters the battlefield as whatever the chosen creature copied."
+
+### Test coverage
+
+One test: `evil_twin_copies_creature_on_etb` (tier15_cards.rs:1756). Passes. Verifies:
+- ETB presents an optional choice (`awaiting_action.is_some()`)
+- After applying `CopyCreature` effect, name/power/toughness match the copied creature
+- `is_evil_twin` marker persists after copy
+
+Missing test coverage (non-blocking):
+- Destroy activated ability (targeting + resolution)
+- Declining the optional copy
+- Copying a creature that is itself a copy
+- Another clone copying Evil Twin (copiable value chain)
+
+### Status: PASS
+
+The implementation is correct. All card data matches the Scryfall oracle text verbatim. Clone mechanics (optional choice, full characteristic copy, copiable destroy ability) are properly implemented. The destroy ability correctly uses SameNameAsSource targeting with {U}{B} + tap cost and calls `try_destroy`. No issues found.
