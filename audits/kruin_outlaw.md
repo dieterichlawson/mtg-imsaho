@@ -525,3 +525,43 @@ Not directly tested: transform back from Terror of Kruin Pass to Kruin Outlaw (c
 
 ### Code issues
 No issues found. Card data (name, cost {1}{R}{R}, types, subtypes, P/T 2/2 front / 3/3 back) matches oracle. First strike on front, double strike on back correctly assigned as keywords. Menace granted to all Werewolves via `ContinuousEffect::GrantKeyword` with correct scope (You + HasSubtype Werewolf). Werewolf transform logic correctly checks no spells cast last turn (front->back) and any player cast 2+ spells (back->front). `dynamic_pt` correctly overrides to 3/3 when transformed.
+
+## Audit — 2026-04-03 07:08
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**:
+- Front: "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature."
+- Back: "Double strike\nWerewolves you control have menace. (A creature with menace can't be blocked except by two or more creatures.)\nAt the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature."
+**Type line**: Creature — Human Rogue Werewolf // Creature — Werewolf
+**Status**: PASS
+
+### Code issues
+No issues found. Verified all card data fields against oracle:
+- Front face: name "Kruin Outlaw", cost {1}{R}{R}, subtypes Human/Rogue/Werewolf, P/T 2/2, keyword FirstStrike -- all match.
+- Back face: name "Terror of Kruin Pass", subtypes Werewolf (no Human/Rogue), P/T 3/3, keyword DoubleStrike -- all match.
+- Menace granted via `ContinuousEffect::GrantKeyword` with `EffectScope::Global(And(You, HasSubtype("Werewolf")))` -- correctly scopes to "Werewolves you control" including itself.
+- Transform front->back: `total_spells_last_turn == 0 && !is_first_turn` -- correct.
+- Transform back->front: `any player cast 2+ spells last turn` -- correct.
+- `dynamic_pt` returns (3,3) when transformed -- correct.
+- Combat engine enforces menace via `has_keyword(att_id, Keyword::Menace)` check requiring min 2 blockers.
+
+### Tricky interactions checked (min 3)
+1. **Menace grants to other Werewolves**: Terror of Kruin Pass uses `EffectScope::Global` (not `GlobalOther`), so it correctly grants menace to itself AND other Werewolves you control. Test `terror_of_kruin_pass_grants_restriction_to_other_werewolves` confirms blocking is enforced on other werewolves.
+2. **Menace does not affect opponent's Werewolves**: The scope filter includes `CreatureFilter::You`, so only your Werewolves get menace. Test `terror_of_kruin_pass_does_not_affect_opponent_werewolves` confirms opponent's werewolves can be blocked by 1 creature.
+3. **Non-Werewolves excluded from menace**: The `HasSubtype("Werewolf")` filter correctly excludes non-Werewolf creatures you control. Test `terror_of_kruin_pass_does_not_affect_non_werewolves` confirms.
+4. **Mid-combat transform ruling**: Per ruling (2011-09-22), if Kruin Outlaw transforms mid-combat, existing single-creature blocks remain. The engine handles this because blocking legality is only checked at declare-blockers time, not re-evaluated after.
+5. **First strike vs double strike on faces**: Front face has FirstStrike only (no DoubleStrike), back face has DoubleStrike only (no FirstStrike). The `has_keyword` function correctly reads keywords from the appropriate face based on `is_transformed`.
+
+### Test coverage
+7 tests total, all passing:
+
+`mtg-engine/tests/kruin_outlaw.rs` (6 tests):
+- `terror_of_kruin_pass_self_requires_two_blockers` -- single blocker rejected
+- `terror_of_kruin_pass_allows_two_blockers` -- two blockers accepted
+- `terror_of_kruin_pass_grants_restriction_to_other_werewolves` -- other werewolves require 2+ blockers
+- `terror_of_kruin_pass_does_not_affect_non_werewolves` -- non-werewolves blockable by 1
+- `terror_of_kruin_pass_does_not_affect_opponent_werewolves` -- opponent's werewolves blockable by 1
+- `terror_of_kruin_pass_grants_menace_keyword` -- keyword granted to self and other werewolves
+
+`mtg-engine/tests/werewolf_cards.rs` (1 test):
+- `kruin_outlaw_transforms_gains_double_strike_and_menace` -- verifies front has first strike, back has double strike after transform

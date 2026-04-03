@@ -2,14 +2,12 @@
 
 ## Status
 - **Card list**: alphabetical list of all .rs files in `mtg-engine/src/cards/isd/` (249 cards)
-- **Batches completed**: 1-11 (cards 1-110)
-- **Next batch**: 12 (cards 111-120, starting with `heretics_punishment`)
+- **Batches completed**: 1-12 (cards 1-120)
+- **Next batch**: 13 (cards 121-130)
 - **To get card list**: `ls mtg-engine/src/cards/isd/*.rs | grep -v mod.rs | xargs -I{} basename {} .rs | sort`
-- **Cards 111-120**: heretics_punishment, hinterland_harbor, hollowhenge_scavenger, hysterical_blindness, infernal_plunge, inquisitors_flail, instigator_gang, intangible_virtue, into_the_maw_of_hell, invisible_stalker
 
-## Running totals through batch 11
-- **93 PASS, 17 ISSUE out of 110 cards (44% complete)**
-- 17 ISSUE = 14 original + 2 reclassified (Darkthicket Wolf, Falkenrath Noble) + 1 new (Bonds of Faith)
+## Running totals through batch 12
+- **100 PASS, 20 ISSUE out of 120 cards (48% complete)**
 
 ## Issues found
 
@@ -30,6 +28,9 @@
 | Bonds of Faith | Snapshot evaluation instead of continuous "as long as" — Human check doesn't update on type changes |
 | Darkthicket Wolf | abilities_activated_this_turn never cleared between turns (engine bug, reclassified from PASS) |
 | Falkenrath Noble | Simultaneous death triggers only fire once instead of N (engine bug, reclassified from PASS) |
+| Hinterland Harbor | Cosmetic oracle text mismatch (old templating) |
+| Hollowhenge Scavenger | ETB trigger skipped when source leaves battlefield before resolution (engine bug) |
+| Intangible Virtue | LLM knowledge said "your creatures" instead of "creature tokens", omitted vigilance |
 
 ## False PASSes (engine issues marked PASS before prompt was updated)
 - **Darkthicket Wolf** — `abilities_activated_this_turn` never cleared between turns (once-per-turn permanently locked)

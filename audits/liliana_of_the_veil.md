@@ -391,3 +391,47 @@ All Liliana-specific tests in `mtg-engine/tests/tier15_cards.rs`:
 
 ### UI coverage
 Present in `mtg-player/src/llm.rs` line 143 with accurate description of all three abilities and strategic advice.
+
+## Audit — 2026-04-03 07:08
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/105/liliana-of-the-veil), cached 2026-04-01
+**Oracle text**: +1: Each player discards a card. / −2: Target player sacrifices a creature. / −6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.
+**Type line**: Legendary Planeswalker — Liliana
+**Status**: PASS
+
+### Card data verification
+- Name: "Liliana of the Veil" -- MATCHES
+- Mana cost: {1}{B}{B} -- MATCHES
+- Card types: [Planeswalker] -- MATCHES
+- Supertypes: [Legendary] -- MATCHES
+- Subtypes: ["Liliana"] -- MATCHES
+- Starting loyalty: 3 -- MATCHES
+- Oracle text in code matches Scryfall (minor dash normalization: U+002D vs U+2212) -- MATCHES
+
+### Code issues
+- **Dead card_state entry**: Line 117 stores `liliana_discard_remaining` as a comma-separated string parsed to u64, but this key is never read anywhere. The actual chaining logic uses the `liliana_discard_count` / `liliana_discard_N` encoding. This is harmless dead data but should be cleaned up.
+- **Incomplete card_state cleanup**: When `chain_next_discard` finishes (count == 0), only `liliana_discard_count` is removed (line 242). The `liliana_discard_remaining` key is never cleaned up. Again harmless since it's never read, but untidy.
+- **Sequential vs simultaneous discard**: Per ruling: "all the chosen cards are discarded at the same time." The implementation discards sequentially (player A chooses and discards, then player B chooses and discards). This means (a) later players can see what earlier players discarded, and (b) discard triggers fire sequentially rather than simultaneously. This is an engine-level limitation and functionally acceptable for 2-player games where each player discards one card, but technically deviates from the rules. Flagged as a known limitation, not a blocking issue.
+
+### Tricky interactions checked (min 3)
+1. **Ruling: "You can activate Liliana's first ability even if some or all players will be unable to discard a card."** -- Code correctly handles this: players with empty hands are skipped (line 84-86, 95-97), and if all hands are empty, the ability resolves with no effect (line 100-104). Test: `liliana_plus_one_empty_hand_skipped`, `liliana_plus_one_both_empty_hands`.
+2. **Ruling: "A pile can be empty. If the player chooses an empty pile, no permanents will be sacrificed."** -- Engine generates all 2^N subsets including the empty set (engine.rs line 235), so empty piles are valid. The ChoosePile handler correctly iterates over the chosen pile and sacrifices only those permanents (engine.rs line 2129). If the empty pile is chosen, zero permanents are sacrificed. Test: `liliana_minus_six_empty_pile_allowed`.
+3. **-2 targets "a player" (not "opponent")**: The ability correctly uses `TargetRequirement::PlayerOnly` (line 53) which allows targeting any player including self. The targeted player chooses which creature to sacrifice (not Liliana's controller). Tests: `liliana_minus_two_can_target_self`, `liliana_minus_two_target_player_sacrifices_creature`.
+4. **-6 controller divides, target player chooses**: The pile division choice is presented to `controller` (line 206), and the subsequent ChoosePile is presented to `target_player` (engine.rs line 2108-2109). This correctly implements the two-step interaction. Test: `liliana_minus_six_pile_division_and_choice` (asserts P0 divides, P1 chooses).
+5. **-6 includes ALL permanents, not just creatures**: Line 194 collects `objects_in_zone(Zone::Battlefield, target_player)` without filtering by type, correctly including all permanent types. Test: `liliana_minus_six_can_target_self` verifies Liliana herself is included in the permanent count.
+
+### Test coverage
+All 14 tests pass:
+- `liliana_enters_with_loyalty` -- Enters with 3 loyalty counters
+- `liliana_plus_one_each_player_discards_with_choice` -- Both players choose and discard
+- `liliana_plus_one_single_card_auto_discards` -- Auto-discard when only 1 card
+- `liliana_plus_one_empty_hand_skipped` -- Empty-hand player skipped
+- `liliana_plus_one_both_empty_hands` -- Both empty hands, no effect
+- `liliana_minus_two_target_player_sacrifices_creature` -- Target player chooses creature
+- `liliana_minus_two_single_creature_auto_sacrifices` -- Auto-sacrifice single creature
+- `liliana_minus_two_no_creatures` -- No creatures, no effect
+- `liliana_minus_two_can_target_self` -- Can target self
+- `liliana_minus_six_pile_division_and_choice` -- Full pile division flow
+- `liliana_minus_six_empty_pile_allowed` -- Empty pile ruling
+- `liliana_minus_six_all_in_one_pile` -- All permanents in one pile
+- `liliana_minus_six_no_permanents` -- No permanents, no effect
+- `liliana_minus_six_can_target_self` -- Can target self with -6

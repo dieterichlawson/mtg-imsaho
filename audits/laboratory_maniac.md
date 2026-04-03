@@ -94,3 +94,34 @@ The replacement effect is correctly implemented as a replacement (not a triggere
 
 ### Code issues
 No issues found. Card data (name, cost {2}{U}, types, subtypes Human/Wizard, P/T 2/2, oracle text) all match. This is a replacement effect that must be handled by the engine's draw logic rather than card-level behavior, which is the correct pattern for this type of static ability. The card file correctly provides data only with no behavioral overrides.
+
+## Audit — 2026-04-03 07:08
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/61/laboratory-maniac)
+**Oracle text**: If you would draw a card while your library has no cards in it, you win the game instead.
+**Type line**: Creature — Human Wizard
+**Status**: PASS
+
+### Code issues
+
+No correctness issues found.
+
+Previously noted minor issues (unchanged from prior audit):
+1. `LossReason::LifeReachedZero` used when opponent loses to Lab Maniac win -- semantically wrong but no `OpponentWon` variant exists. Cosmetic only.
+2. Hardcoded card name check (`o.name == "Laboratory Maniac"`) in `engine.rs` draw_cards -- not modular, but correct.
+3. No test for partial-draw scenario (e.g., "draw 3" with 1 card in library). The `break` on line 2741 correctly stops drawing after the win, but no dedicated test exercises this path.
+
+### Tricky interactions checked (min 3)
+
+1. **Milling is not drawing**: `mill_cards()` (engine.rs:2754) does NOT reference Laboratory Maniac and does NOT set `has_drawn_from_empty`. Milling from an empty library simply stops. Correct per rulings.
+2. **Controller-only**: The engine checks `o.controller == player` (engine.rs:2723), so an opponent's Lab Maniac does not help you. Verified by `laboratory_maniac_only_helps_controller` test. Correct.
+3. **Replacement effect, not triggered ability**: The card struct has `triggered_abilities: vec![]`. The logic is in `draw_cards()` directly replacing the draw event before SBA runs. The `has_drawn_from_empty` flag is cleared (engine.rs:2729) so SBA will not also kill the player. This correctly models a replacement effect.
+4. **Angel's Grace / "can't win" interaction**: No "can't win" mechanic in the engine. Not testable, but the replacement still clears `has_drawn_from_empty`, which is the correct half of the interaction (the draw IS replaced even if the win is prevented).
+5. **Multiple draws**: If drawing N cards and library empties mid-way, the `break` at engine.rs:2741 correctly stops the loop after the win is registered. The game result is set immediately.
+
+### Test coverage
+
+3 tests in `mtg-engine/tests/tier14_cards.rs`, all passing:
+1. `laboratory_maniac_wins_on_empty_library_draw` -- win on empty draw with Lab Maniac on battlefield
+2. `no_lab_maniac_loses_on_empty_draw` -- loss on empty draw without Lab Maniac (SBA check)
+3. `laboratory_maniac_only_helps_controller` -- opponent's Lab Maniac does not save you
