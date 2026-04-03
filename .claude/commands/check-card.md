@@ -34,7 +34,7 @@ Each card MUST be audited by its own dedicated subagent with fresh context. Neve
 Launch each agent with the prompt below. Replace `{CARD_NAME}`, `{CARD_FILE}`, `{AUDIT_FILE}`, and `{NOW}` (use the current date and time in YYYY-MM-DD HH:MM format, e.g. "2026-04-02 14:30") with the appropriate values. Include the prompt EXACTLY as written — do NOT summarize or abbreviate it.
 
 ```
-You are auditing the MTG card: {CARD_NAME}
+You are auditing the MTG card **{CARD_NAME}** and the engine mechanics it relies on. Your job is to verify that the card behaves correctly — if it doesn't, for ANY reason (card bug or engine bug), that is an ISSUE.
 
 The current date and time is {NOW}.
 
