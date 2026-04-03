@@ -84,3 +84,32 @@ None found.
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:50
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/140/devils-play), cached 2026-04-01
+**Oracle text**: Devil's Play deals X damage to any target.\nFlashback {X}{R}{R}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+No issues found. All card data fields match oracle text exactly:
+- Name: "Devil's Play" -- matches oracle
+- Mana cost: {X}{R} -- matches oracle
+- Type: Sorcery -- matches oracle
+- Oracle text in implementation: `"Devil's Play deals X damage to any target.\nFlashback {X}{R}{R}{R}"` -- matches (reminder text correctly omitted)
+- Flashback cost: {X}{R}{R}{R} via `flashback_cost: Some(...)` -- matches oracle
+- Target: `TargetRequirement::AnyTarget` -- matches "any target"
+- X=0 handling: skips damage entirely, which is correct per CR 120.8 (0 damage is not dealt)
+- Post-resolve zone: `move_spell_after_resolve` correctly exiles on flashback, graveyards otherwise
+
+### Tricky interactions checked (min 3)
+1. **X with flashback cost**: Engine computes X as (total mana - non-X colored requirements). For flashback {X}{R}{R}{R}, this means X = total_mana - 3. Verified in `engine.rs:1513-1522` -- the `non_x_cost` is built by filtering out ManaSymbol::X, so for flashback the non-X cost is {R}{R}{R} (mana_value = 3). Correct.
+2. **Mana value of spell on stack**: Per rulings, mana value is determined by the mana cost ({X}{R}), not the flashback cost. The engine stores `x_value` on the object but uses the original `cost` field for mana value calculations. This is correct -- even when cast with flashback for X=4 (paying 7 total), the mana value would be 5 (X+R where X=4).
+3. **Fizzle with illegal targets**: `stack.rs:79-87` checks target legality at resolution. If the target (creature or player) becomes illegal, the spell fizzles and `move_spell_after_resolve` is called, which correctly exiles if cast with flashback. No damage is dealt on fizzle.
+4. **X=0 does not trigger damage events**: When X=0, `on_resolve` skips `resolve_damage` and goes directly to `move_spell_after_resolve`. This is correct per CR 120.8: "If a source would deal 0 damage, it does not deal damage at all." No spurious `NonCombatDamageDealt` event is emitted.
+
+### Test coverage
+- `devils_play_deals_x_damage` (tier14_cards.rs:298): X=3 damage to player, verifies life total. PASS.
+- `devils_play_x_zero` (tier14_cards.rs:318): X=0, verifies no damage dealt. PASS.
+- Gap: No test for flashback casting (X computation with {R}{R}{R} base). Flashback mechanics are tested generically by the engine via other cards.
+- Gap: No test for targeting a creature (only player targets tested).

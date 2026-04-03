@@ -110,3 +110,39 @@ Both in `mtg-engine/tests/innistrad_simple_cards.rs`, both PASS:
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:50
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: {T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)
+**Type line**: Creature — Human Wizard
+**Status**: PASS
+
+### Code issues
+
+No functional issues found. All card data matches oracle text exactly:
+- Name: "Deranged Assistant" -- matches
+- Mana cost: Generic(1) + Colored(Blue) = {1}{U} -- matches
+- Card types: [Creature] -- matches
+- Subtypes: ["Human", "Wizard"] -- matches
+- P/T: 1/1 -- matches
+- Oracle text field: "{T}, Mill a card: Add {C}." -- matches
+
+The `keywords` field is `vec![]` while Scryfall lists `Mill`. Mill is a keyword action (not a keyword ability), so the empty keywords list is acceptable.
+
+Mill is executed in `on_activate_mana_ability` which fires after mana production in the engine. Technically mill is a cost (left of the colon) and should be paid before the effect, but since mana abilities resolve atomically without using the stack, the ordering within the callback has no functional impact.
+
+### Tricky interactions checked (min 3)
+
+1. **Empty library**: `mana_abilities()` checks `!library_order.is_empty()` and returns no abilities when library is empty, correctly preventing activation when the mill cost cannot be paid.
+2. **Summoning sickness**: Guard `!obj.summoning_sick` prevents tapping on the turn the creature enters. Correct for a creature with a tap ability.
+3. **Mana ability during spell casting (ruling)**: Per the Scryfall ruling, if you activate this while casting a spell and can't pay the full cost, the spell is reversed but the mill and mana production are not. The engine's implementation handles this correctly because `submit_action` for `ActivateManaAbility` immediately and irreversibly modifies state (taps, adds mana, mills).
+4. **Zone check**: Guard `obj.zone == Zone::Battlefield` ensures the ability is only available on the battlefield, not in hand or graveyard.
+
+### Test coverage
+
+Two tests in `mtg-engine/tests/innistrad_simple_cards.rs`:
+- `deranged_assistant_card_data` -- verifies P/T, mana value = 2, subtypes Human and Wizard
+- `deranged_assistant_taps_for_colorless` -- sets up a creature with library card, activates mana ability, asserts 1 colorless mana produced
+
+Gap: No test verifies that the mill side effect actually occurs (i.e., that the library card moves to the graveyard after activation). The existing test only checks mana production.

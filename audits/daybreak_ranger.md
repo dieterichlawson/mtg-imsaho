@@ -356,3 +356,48 @@ Note: `crate::combat::fight` internally calls `deal_damage_to_creature` which em
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-02 20:50
+
+**Oracle text source**: Scryfall API via `scripts/oracle_lookup.py`, https://scryfall.com/card/isd/176/daybreak-ranger-nightfall-predator?utm_source=api
+**Oracle text (front)**: {T}: This creature deals 2 damage to target creature with flying.
+At the beginning of each upkeep, if no spells were cast last turn, transform this creature.
+**Oracle text (back)**: {R}, {T}: This creature fights target creature. (Each deals damage equal to its power to the other.)
+At the beginning of each upkeep, if a player cast two or more spells last turn, transform this creature.
+**Type line (front)**: Creature — Human Archer Ranger Werewolf
+**Type line (back)**: Creature — Werewolf
+**Front P/T**: 2/2
+**Back P/T**: 4/4
+**Keywords (Scryfall)**: Transform, Fight
+**Ruling**: [2016-07-13] See Shadows over Innistrad mechanics article for DFC rules.
+**Status**: PASS
+
+### Code issues
+
+No functional issues found.
+
+Minor notes (not bugs):
+1. **Unused import**: `TargetFilter` is imported at line 3 but unused (compiler warning).
+2. **Misleading comment**: Line 120 says "Nightfall Predator targets any creature you don't control" but the code correctly allows any creature (line 129 returns `true`). The comment is inaccurate but the code is correct.
+
+### Tricky interactions checked (min 3)
+
+1. **Front face targets only creatures with flying**: PASS. `is_valid_target` (line 132) checks `state.has_keyword(*id, Keyword::Flying, registry)` when not transformed. The `TargetRequirement::Creature` combined with `is_valid_target` filtering correctly limits targeting to flying creatures.
+2. **Front face deals 2 non-combat damage (not fight)**: PASS. Lines 148-158 manually apply `damage_marked += 2`, track `damaged_by`, and emit `NonCombatDamageDealt`. This is correct -- the front face ability is not fight, it is direct damage.
+3. **Back face fight allows any creature target (including own)**: PASS. Line 129 returns `true` for all creatures when transformed, matching oracle text "target creature" with no restriction. Test `nightfall_predator_can_fight_own_creature` verifies this.
+4. **Back face costs {R} + tap**: PASS. `ManaCost::new(vec![ManaSymbol::Colored(Color::Red)])` with `requires_tap: true` (lines 91-92).
+5. **Back face uses engine fight function**: PASS. Line 144 calls `crate::combat::fight(state, object_id, *target_id, registry)` which correctly deals mutual damage.
+6. **Werewolf transform conditions**: PASS. Front: `total_spells_last_turn == 0 && !state.is_first_turn` (line 17). Back: `state.spells_cast_last_turn.values().any(|&count| count >= 2)` (line 19). Both match oracle text.
+7. **Transform fires on each upkeep (not just controller's)**: PASS. `on_upkeep` has no active_player check, matching "at the beginning of each upkeep".
+8. **First turn no-transform guard**: PASS. Line 17 checks `!state.is_first_turn`.
+9. **dynamic_pt returns (4,4) when transformed**: PASS. Line 74.
+10. **Upkeep trigger fires for both faces**: PASS. Front face declares `TriggerKind::Upkeep` (line 43). Engine's `trigger_description` checks front face first regardless of transform state, so the trigger fires for both faces. Back face's empty `triggered_abilities` is not a problem.
+
+### Test coverage
+
+- `daybreak_ranger_transforms_to_nightfall_predator` (werewolf_cards.rs:312): Verifies transform, P/T change to 4/4, name change.
+- `daybreak_ranger_has_activated_ability_on_front_face` (werewolf_cards.rs:328): Verifies front face ability description contains "flying".
+- `nightfall_predator_has_fight_ability` (werewolf_cards.rs:340): Verifies back face ability description contains "Fight".
+- `nightfall_predator_can_fight_own_creature` (werewolf_cards.rs:353): Verifies fight targeting allows own creatures, mutual damage dealt correctly.
+- **NOT TESTED**: Front face dealing 2 damage to a flying creature (end-to-end).
+- **NOT TESTED**: Transform back to Daybreak Ranger when 2+ spells cast (covered generically by other werewolf tests).

@@ -78,3 +78,30 @@ Oracle text in code is `"Enchanted creature gets -2/-2."` but should be `"Enchan
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-02 20:50
+
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/96/dead-weight)
+**Oracle text**: "Enchant creature\nEnchanted creature gets -2/-2."
+**Type line**: Enchantment — Aura
+**Status**: PASS
+
+### Code issues
+None. All card data fields match oracle text exactly:
+- Name: `"Dead Weight"` -- matches
+- Mana cost: `{B}` via `ManaCost::new(vec![ManaSymbol::Colored(Color::Black)])` -- matches
+- Card types: `vec![CardType::Enchantment]` -- matches
+- Subtypes: `vec!["Aura".into()]` -- matches
+- Oracle text: `"Enchant creature\nEnchanted creature gets -2/-2."` -- matches
+- P/T: None/None -- correct (not a creature)
+- Target requirement: `TargetRequirement::Creature` -- correct for "Enchant creature"
+- on_resolve: `resolve_aura(state, object_id, targets)` -- correct aura attachment
+- Continuous effect: `ModifyPT { power: -2, toughness: -2, scope: EffectScope::Attached }` -- correct
+
+### Tricky interactions checked (min 3)
+1. **Zero-toughness SBA (704.5f)**: A 2/2 enchanted with Dead Weight becomes 0/0 and is put into graveyard. This is NOT destruction, so indestructible does not prevent it. Correctly implemented in `sba.rs` (separate code path from lethal damage).
+2. **Aura falls off when creature leaves (704.5m)**: If the enchanted creature leaves the battlefield, Dead Weight goes to graveyard as an unattached aura. Implemented in `sba.rs` lines 149-193.
+3. **Aura fizzles on resolution**: `resolve_aura` checks if the target creature is still on the battlefield before attaching. If the target was removed in response, the aura goes to graveyard via normal spell resolution cleanup.
+
+### Test coverage
+- `dead_weight_kills_small_creature` (`mtg-engine/tests/innistrad_cards.rs`): Casts Dead Weight on a 2/2, asserts effective P/T is 0/0, runs SBA, asserts creature is in graveyard. PASSES.

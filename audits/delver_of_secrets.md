@@ -229,3 +229,58 @@ No issues found. All prior issues from the 2026-04-01 15:12 audit (missing "you 
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:50
+
+**Oracle text source**: Scryfall API (cached 2026-04-01), https://scryfall.com/card/isd/51/delver-of-secrets-insectile-aberration
+**Oracle text (front)**: At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
+**Oracle text (back)**: Flying
+**Type line (front)**: Creature — Human Wizard
+**Type line (back)**: Creature — Human Insect
+**Mana cost**: {U}
+**Front P/T**: 1/1
+**Back P/T**: 3/2
+**Ruling [2011-09-22]**: You may reveal the card even if it's not an instant or sorcery. Whether or not you reveal it, the card stays on top of your library.
+**Status**: ISSUE
+
+### Code issues
+
+1. **Manual transform does not update subtypes or keywords on the object** (`delver_of_secrets.rs:138-141`)
+   - `on_yes_no_choice` manually sets `obj.is_transformed = true` and `obj.name = "Insectile Aberration"` but does NOT update `obj.keywords` (to add `Keyword::Flying`) or `obj.subtypes` (to change from `["Human", "Wizard"]` to `["Human", "Insect"]`).
+   - The `apply_transform` helper in `helpers.rs:231-265` exists specifically for this purpose and correctly updates `is_transformed`, `name`, `keywords`, and `subtypes` from the `back_face_data()`.
+   - **Flying impact**: mitigated. `state.has_keyword()` (`state.rs:1004-1014`) falls back to checking `back_face_data().keywords` when `is_transformed` is true, so Flying is still correctly detected for combat and other engine checks.
+   - **Subtypes impact**: real bug. The engine checks subtypes directly via `obj.subtypes.contains(...)` (e.g., `engine.rs:1267`). After transform, the object still has subtypes `["Human", "Wizard"]` instead of `["Human", "Insect"]`. This means:
+     - The transformed Insectile Aberration is incorrectly considered a **Wizard** (it should not be).
+     - The transformed Insectile Aberration is NOT considered an **Insect** (it should be).
+     - Cards like Bonds of Faith, Silver-Inlaid Dagger, Champion of the Parish, and any subtype-matters effects would see incorrect subtypes.
+   - **Fix**: Replace the manual transform in `on_yes_no_choice` with `helpers::apply_transform(state, self_id, _registry)`.
+
+2. **No zone check in `on_yes_no_choice`** (`delver_of_secrets.rs:138`)
+   - The handler calls `state.get_object_mut(self_id)` and transforms without verifying `obj.zone == Zone::Battlefield`. If Delver is removed from the battlefield between the upkeep trigger and the YesNo choice resolution, the transform would be applied to a non-battlefield object.
+   - Minor issue; unlikely in practice but incorrect per rules (a creature that leaves the battlefield before its triggered ability resolves should not be transformed).
+
+**Minor notes (not issues):**
+- **Oracle text field wording**: Code `oracle_text` says `"transform Delver of Secrets"` while current Scryfall oracle says `"transform this creature."` Display-only, no behavioral impact.
+- **Reveal choice only offered for instant/sorcery**: Per the ruling, a player may reveal any card, but revealing a non-instant/sorcery has no mechanical effect. The shortcut produces correct game outcomes.
+
+### Tricky interactions checked (min 3)
+1. **Only triggers on controller's upkeep**: PASS — checks `state.active_player != controller` (line 90)
+2. **Only triggers on front face**: PASS — checks `is_transformed` and returns early (line 90)
+3. **Empty library**: PASS — `library_order.first()` returns None, gracefully returns false
+4. **Card stays on top of library after reveal**: PASS — code never moves the top card
+5. **Flying on back face**: PASS — `has_keyword` compensates via `back_face_data()` lookup
+6. **Multiple Delvers**: Both would trigger, both look at the same top card, both could independently reveal. The implementation handles this correctly since each trigger is independent and the card is never removed from the library.
+7. **Subtypes after transform**: FAIL — `obj.subtypes` not updated (see issue #1 above)
+
+### Test coverage
+- Transform when instant on top and player reveals: `tier15_cards.rs:delver_transforms_when_player_reveals_instant` — TESTED
+- Player declining to reveal: `tier15_cards.rs:delver_does_not_transform_when_player_declines_reveal` — TESTED
+- Top card is creature (no transform, no choice): `tier15_cards.rs:delver_does_not_transform_when_top_card_is_creature` — TESTED
+- Card stays on top after reveal: TESTED (asserted in transform test, line 973)
+- Card stays on top after decline: TESTED (asserted in decline test, line 1006)
+- Dynamic P/T 3/2 after transform: TESTED (line 970)
+- **Subtypes after transform**: NOT TESTED (would expose issue #1)
+- **Keywords (Flying) after transform**: NOT TESTED (would pass due to `has_keyword` fallback)
+- Transform when top card is sorcery: NOT TESTED
+- Empty library: NOT TESTED
+- Zone check on resolution: NOT TESTED (would expose issue #2)

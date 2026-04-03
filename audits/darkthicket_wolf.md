@@ -76,3 +76,34 @@ Minor oracle text mismatch: code uses `"{2}{G}: Darkthicket Wolf gets +2/+2 unti
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-02 20:50
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: {2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.
+**Type line**: Creature — Wolf
+**Status**: PASS
+
+### Code issues
+None. All card data fields match oracle exactly:
+- Name: "Darkthicket Wolf" -- correct
+- Mana cost: {1}{G} (Generic(1), Green) -- correct
+- Type: Creature with subtypes ["Wolf"] -- correct
+- P/T: 2/2 -- correct
+- Oracle text string: matches Scryfall verbatim (uses "This creature" template)
+- Activated ability: cost {2}{G} (Generic(2), Green), effect +2/+2 via UntilEndOfTurnEffect, once_per_turn: true, requires_tap: false, zone check: Battlefield only -- all correct
+- No keywords, no flashback, no triggered abilities -- correct
+
+Engine-level note: `abilities_activated_this_turn` is never cleared at end of turn or untap step in `engine.rs`. This would cause the once-per-turn restriction to persist across turns, affecting all cards with `once_per_turn: true`. This is an engine bug, not a Darkthicket Wolf implementation bug.
+
+### Tricky interactions checked (min 3)
+1. **Once-per-turn enforcement**: Engine checks `activated_this_turn.contains(&ab.ability_index)` at line 358 of engine.rs before allowing activation. The ability_index (0) is inserted into the set at line 1778 after activation. Correctly prevents second activation in the same turn. Test `darkthicket_wolf_once_per_turn` confirms.
+2. **Effect stacking with multiple creatures**: The UntilEndOfTurnEffect targets a specific ObjectId, so pumping one Darkthicket Wolf does not affect another. The effect is additive in the `effective_power`/`effective_toughness` calculations.
+3. **End-of-turn cleanup**: UntilEndOfTurnEffect is cleared at cleanup step (engine.rs line 3021: `state.until_end_of_turn_effects.clear()`), so the +2/+2 correctly expires at end of turn.
+4. **Instant-speed activation**: `sorcery_speed_only: false` allows activation during combat or on opponent's turn, which is correct for this ability (no sorcery-speed restriction in oracle text).
+
+### Test coverage
+- `darkthicket_wolf_has_correct_stats` -- verifies P/T 2/2 and Wolf subtype
+- `darkthicket_wolf_gets_plus_2_plus_2` -- verifies activation produces 4/4 effective stats
+- `darkthicket_wolf_once_per_turn` -- verifies second activation is blocked within the same turn
+- All 3 tests PASS

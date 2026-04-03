@@ -78,3 +78,27 @@ As long as this creature is in your graveyard, each Human creature you control e
 
 ### Code issues
 No issues found. Oracle text field matches current Scryfall template.
+
+## Audit — 2026-04-02 20:50
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.
+**Type line**: Creature — Spirit
+**Status**: ISSUE
+
+### Code issues
+1. **CRITICAL: Trigger system never fires for graveyard-based watcher.** The trigger system in `triggers.rs` line 369 only collects watchers with `o.zone == Zone::Battlefield`. Dearly Departed's ability works from the graveyard, so it is never discovered as a watcher when a creature enters. Additionally, the resolution gate at line 915 (`o.zone == Zone::Battlefield`) would reject it even if it were found. The unit test masks this by calling `on_any_creature_enters` directly, bypassing the trigger system entirely. In actual integrated gameplay, the ability would never fire.
+2. **Replacement effect modeled as triggered ability.** The oracle text "enters with an additional +1/+1 counter" describes a replacement effect (modifying how a creature enters), not a triggered ability (firing after it enters). The implementation uses `TriggerKind::AnyCreatureEnters` / `on_any_creature_enters`. This matters for Doubling Season interactions and state-based action timing, but may be an engine limitation.
+3. **Card data is correct.** Name, mana cost ({4}{W}{W}), type (Creature), subtype (Spirit), P/T (5/5), keywords (Flying), and oracle text all match Scryfall exactly.
+
+### Tricky interactions checked (min 3)
+1. **Cumulative stacking (multiple Dearly Departed in graveyard):** Each copy independently triggers `on_any_creature_enters`. Since the trigger system scans all objects, multiple copies would each add a counter -- correct per ruling "The effect is cumulative." However, due to Issue #1, none of them fire in practice.
+2. **Opponent's Human creatures should not get counters:** The implementation checks `entered_controller != owner` and returns early -- correct. Opponent's Humans are excluded.
+3. **Dearly Departed on the battlefield (not in graveyard) should not trigger:** The implementation checks `o.zone == Zone::Graveyard` and returns early if not in graveyard -- correct.
+4. **Loyal Cathar interaction (creature dying and returning as Human):** Per MTG Salvation ruling, Loyal Cathar returning from graveyard as a Human should get the counter. The `on_any_creature_enters` handler would correctly apply, provided the trigger system fires (which it does not due to Issue #1).
+
+### Test coverage
+- `dearly_departed_gives_counter_to_entering_humans` -- positive case, calls `on_any_creature_enters` directly. PASS.
+- **Missing:** Negative test for non-Human creature entering (should not get counter).
+- **Missing:** Negative test for opponent's Human entering (should not get counter).
+- **Missing:** Negative test for Dearly Departed on battlefield (not in graveyard).
+- **Missing:** Integration test through the trigger system (would reveal Issue #1).
