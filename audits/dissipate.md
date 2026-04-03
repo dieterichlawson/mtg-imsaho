@@ -60,3 +60,22 @@ PASS — no issues found.
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:54
+**Oracle text source**: Scryfall API (https://scryfall.com/card/isd/53/dissipate)
+**Oracle text**: Counter target spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.
+**Type line**: Instant
+**Status**: PASS
+
+### Code issues
+None. Implementation correctly exiles the countered spell via `move_object(*target_id, Zone::Exile)` and sends Dissipate itself to graveyard via `move_spell_after_resolve(object_id)`. Oracle text in `card_data()` matches Scryfall verbatim. Card data (name, cost {1}{U}{U}, type Instant) all correct.
+
+### Tricky interactions checked (min 3)
+1. **Fizzle (target leaves stack before resolution)**: Handled by the framework fizzle check in `stack.rs` (lines 74-86), which verifies target legality before calling `on_resolve`. If the target spell is no longer on the stack, Dissipate fizzles and never enters `on_resolve`. Correct.
+2. **Flashback spell countered by Dissipate**: The countered spell goes to exile via `move_object(*target_id, Zone::Exile)`, which is correct regardless of whether the target had flashback. (Flashback spells would go to exile anyway via `move_spell_after_resolve`, but Dissipate bypasses that and directly exiles.)
+3. **"Can't be countered" spells**: The engine does not yet implement this mechanic, so no current bug exists. However, per ruling (2004-10-04), if the target can't be countered, it should not be exiled. The current implementation unconditionally exiles after checking `Zone::Stack`, which would need updating when "can't be countered" is added. This is a general engine limitation, not a Dissipate-specific defect.
+4. **Dissipate itself cast with flashback**: Dissipate calls `move_spell_after_resolve(object_id)` for itself, which correctly checks `cast_with_flashback` and would exile Dissipate if it were cast via flashback. (Dissipate has no flashback cost, so this is defensive but correct.)
+
+### Test coverage
+- `dissipate_counters_and_exiles` in `mtg-engine/tests/tier2_spells.rs`: Casts a creature spell, counters it with Dissipate, asserts the creature is in `Zone::Exile` and Dissipate is in `Zone::Graveyard`. Covers the core mechanic.
+- No test for fizzle case (target removed before resolution), but this is covered by the framework-level fizzle tests.

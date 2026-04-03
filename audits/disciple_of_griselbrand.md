@@ -83,3 +83,34 @@ One test in `mtg-engine/tests/tier8_cards.rs` (`disciple_of_griselbrand_gains_li
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:54
+
+**Oracle text source**: Scryfall API (cached 2026-04-01) via `scripts/oracle_lookup.py`
+**Oracle text**: `{1}, Sacrifice a creature: You gain life equal to the sacrificed creature's toughness.`
+**Type line**: `Creature — Human Cleric`
+**Status**: PASS
+
+### Code issues
+
+1. **Oracle text wording (cosmetic, no functional impact):** The stored `oracle_text` field on line 25 reads `"You gain life equal to that creature's toughness."` while Scryfall says `"You gain life equal to the sacrificed creature's toughness."` The word "that" vs "the sacrificed" and a missing trailing period. No behavioral difference.
+
+2. **No player choice for sacrifice target (engine-level, pre-existing TODO):** The engine (`engine.rs` ~line 1750) auto-picks the first creature for `SacrificeCost::SacrificeCreature` via `.find()`. The player should choose which creature to sacrifice. This is an engine limitation with an existing TODO, not specific to this card.
+
+3. **Event lookup for `CreatureDied` is correct but fragile:** `on_activate_ability` uses `state.events.iter().rev().find_map()` to locate the most recent `CreatureDied` event. This works because `submit_action` clears events at the start (line 1450) and the sacrifice cost is paid before `on_activate_ability` is called (line 1758 before line 1802). No validation ties the event to this specific activation. Currently correct by engine contract.
+
+### Tricky interactions checked (min 3)
+
+1. **Toughness uses last-known battlefield value (ruling 2011-09-22):** The `destroy()` function in `destruction.rs` (line 95-98) computes `last_known_toughness` via `state.effective_toughness(id, registry)` before moving the creature to the graveyard. This accounts for +1/+1 counters, -1/-1 counters, aura/equipment bonuses, and until-end-of-turn effects. Correctly implements the ruling: "The amount of life you gain is equal to the toughness of the creature as it last existed on the battlefield, not its toughness in the graveyard."
+
+2. **Sacrificing Disciple itself is permitted:** `SacrificeCost::SacrificeCreature` does not exclude the source permanent (unlike `SacrificeCost::SacrificeAnotherCreature`). The Disciple can be sacrificed to its own ability, which is correct -- the oracle text says "Sacrifice a creature", not "Sacrifice another creature."
+
+3. **Negative toughness handling:** Line 55 uses `.max(0)` to clamp toughness, and line 57 checks `if toughness > 0` before granting life. A creature with 0 or negative toughness (e.g., from -1/-1 counters) correctly gains 0 life. Per MTG rules, you cannot gain a negative amount of life.
+
+4. **Ability is not tap-dependent:** `requires_tap: false` is correct -- the ability costs {1} and a creature sacrifice, not a tap. The Disciple can use its ability even if it has summoning sickness or is already tapped.
+
+5. **Can be activated at instant speed:** `sorcery_speed_only: false` and `once_per_turn: false` are both correct. The ability has no timing restrictions beyond normal activated ability rules.
+
+### Test coverage
+
+One test: `disciple_of_griselbrand_gains_life` in `mtg-engine/tests/tier8_cards.rs` (line 138). Creates a Disciple and a 2/5 creature, activates the ability with {1} mana, and asserts `gained > 0`. The test passes but is weak -- it does not assert the exact life gained (could be 1 or 5 depending on which creature the engine auto-sacrifices). No test for sacrificing the Disciple itself, no test for creatures with modified toughness.

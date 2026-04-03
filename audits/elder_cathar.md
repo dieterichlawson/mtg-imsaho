@@ -84,3 +84,50 @@ The previously identified issue has been fixed:
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:54
+
+**Oracle text source**: Scryfall API (via `scripts/oracle_lookup.py`)
+**Oracle text**: When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead.
+**Type line**: Creature — Human Soldier
+**Status**: ISSUE
+
+### Code issues
+
+1. **Oracle text minor mismatch (cosmetic).** Scryfall returns `"When this creature dies, ..."` but the implementation's `oracle_text` field (line 25) uses `"When Elder Cathar dies, ..."`. Functionally identical -- Scryfall uses the modern templated form while the implementation uses the original printed card name. No behavioral impact.
+
+2. **LLM card knowledge omits the Human bonus.** In `mtg-player/src/llm.rs` line 108:
+   - Current: `"Elder Cathar ({2}{W} creature 2/2): When it dies, puts a +1/+1 counter on one of your creatures."`
+   - Missing: the Human bonus of two +1/+1 counters instead of one. AI players will not know to prioritize Human targets when Elder Cathar dies, potentially leading to suboptimal play. Should read something like: `"Elder Cathar ({2}{W} creature 2/2): When it dies, puts a +1/+1 counter on one of your creatures (two +1/+1 counters if that creature is a Human)."`
+
+3. **Implementation logic is correct.** The `on_dies` handler correctly:
+   - Filters targets to battlefield creatures controlled by the same player (line 40-43)
+   - Excludes itself via `o.id != object_id` (line 41)
+   - Checks Human status from both `obj.subtypes` and `registry.card_data().subtypes` (lines 50-57)
+   - Applies 2 counters for Humans, 1 for non-Humans (line 59)
+   - Auto-selects when only one target exists (lines 47-63)
+   - Presents a choice when multiple targets exist (lines 64-75)
+   - Uses `PendingEffect::AddCounters { count: 1, human_bonus: true }` for the multi-target path (line 72), and the engine handler (engine.rs:2216-2236) correctly applies the same dual-check Human logic
+
+4. **Card data correct.** Name "Elder Cathar", cost {2}{W}, Creature type, subtypes Human/Soldier, P/T 2/2, TriggerKind::SelfDies.
+
+### Tricky interactions checked (min 3)
+
+1. **Elder Cathar dying with no other creatures on your side**: The `targets.is_empty()` check (line 45) correctly handles this by doing nothing. No crash or incorrect behavior.
+
+2. **Elder Cathar cannot target itself**: Even though `object_id` still exists (now in graveyard), the filter `o.zone == Zone::Battlefield` (line 41) and `o.id != object_id` (line 41) both prevent self-targeting. The self-exclusion is redundant with the zone check but adds safety.
+
+3. **Human token receiving counters**: The Human subtype check at lines 50-57 checks both `o.subtypes` (for tokens, which store subtypes on the object) and `registry.card_data().subtypes` (for normal cards). A Human Spirit token created by Doomed Traveler's death trigger would correctly receive 2 counters if it were on the battlefield when Elder Cathar's trigger resolves. However, per MTG rules and the Doomed Traveler interaction research, if both die simultaneously the Spirit token won't exist yet when Elder Cathar's target must be chosen.
+
+4. **Simultaneous death with Doomed Traveler**: If both Elder Cathar and Doomed Traveler die at the same time (e.g., a board wipe), Elder Cathar's trigger targets must be chosen when put on the stack. The Spirit token from Doomed Traveler hasn't been created yet, so it cannot be chosen as a target. The implementation handles this correctly because targets are computed at trigger resolution time from what's currently on the battlefield.
+
+5. **Multi-target path human_bonus flag**: The `PendingEffect::AddCounters { count: 1, human_bonus: true }` correctly defers the Human check to resolution time in the engine (engine.rs:2218-2230), ensuring the counter count is determined based on the target's actual type at resolution.
+
+### Test coverage
+
+- `elder_cathar_grants_counter_on_death` (tier3_cards.rs:404): Basic death trigger, single non-Human target gets 1 counter, P/T updated
+- `elder_cathar_gives_two_counters_to_human` (card_mechanics.rs:412): Human target (Doomed Traveler) gets 2 counters
+- `elder_cathar_gives_one_counter_to_non_human` (card_mechanics.rs:432): Non-Human target gets 1 counter
+- **Missing**: No test for the multi-target choice path (when 2+ creatures exist)
+- **Missing**: No test for the zero-target path (no other creatures when Elder Cathar dies)
+- **Missing**: No test for Human token receiving 2 counters

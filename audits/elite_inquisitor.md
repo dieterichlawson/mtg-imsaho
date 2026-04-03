@@ -80,3 +80,27 @@ Protection from Vampires, from Werewolves, and from Zombies
 
 ### Code issues
 No issues found.
+
+---
+
+## Audit — 2026-04-02 20:54
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: First strike, vigilance
+Protection from Vampires, from Werewolves, and from Zombies
+**Type line**: Creature — Human Soldier
+**Status**: PASS
+
+### Code issues
+None. All card data fields (name, cost {W}{W}, types, subtypes Human/Soldier, P/T 2/2, oracle text) match the Scryfall oracle exactly. Keywords (FirstStrike, Vigilance) are correctly declared. Protection is implemented via three `ContinuousEffect::ProtectionFromSubtype` entries for "Vampire", "Werewolf", and "Zombie" with `EffectScope::OnSelf`, which is correct. No anti-patterns (no hardcoded IDs, no unsafe, no unwrap).
+
+### Tricky interactions checked (min 3)
+1. **Protection from Werewolves vs. transformed werewolves**: The subtype "Werewolf" is used, which matches both faces of DFC werewolves when transformed. Confirmed `has_protection_from_creature` checks `get_subtypes` which includes both object-level and card-data subtypes.
+2. **First strike + protection interaction**: Elite Inquisitor deals first strike damage before normal combat damage. Even if a Vampire/Zombie/Werewolf survives first strike, its normal combat damage is independently prevented by protection. Both are handled by separate engine subsystems (keyword-based damage ordering + `has_protection_from_creature` in damage application).
+3. **Vigilance + protection for blocking**: Elite Inquisitor doesn't tap to attack, so it can block on the opponent's turn. Combined with protection, opposing Vampires/Werewolves/Zombies cannot be assigned as blockers against it, verified in `can_block_attacker`.
+
+### Test coverage
+- `elite_inquisitor_keywords` — verifies FirstStrike and Vigilance keywords. **PASS**
+- `elite_inquisitor_protection_prevents_damage` — Vampire deals combat damage to Elite Inquisitor; damage is 0. **PASS**
+- `elite_inquisitor_cant_be_blocked_by_zombies` — Zombie fails `can_block_attacker` check. **PASS**
+- Also used as a supporting creature in `hamlet_captain_buffs_humans_on_block` test. **PASS**

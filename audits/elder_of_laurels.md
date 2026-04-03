@@ -71,3 +71,23 @@ None found.
 
 ### Code issues
 No issues found.
+
+## Audit — 2026-04-02 20:54
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: {3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.
+**Type line**: Creature — Human Advisor
+**Status**: PASS
+
+### Code issues
+None. All card data fields (name, cost, type, subtypes, P/T, oracle text) match oracle exactly. Activated ability definition (cost {3}{G}, no tap, no sacrifice, TargetRequirement::Creature, not once-per-turn, instant-speed, battlefield-only) is correct. The effect counts creatures at resolution via `objects_in_zone` + `power.is_some()` filter and stores the result as a fixed UntilEndOfTurnEffect, matching both rulings.
+
+### Tricky interactions checked (min 3)
+1. **Creature count at resolution, not activation**: The count is computed inside `on_activate_ability` (resolution time), not during ability generation. Matches ruling: "The number of creatures you control is counted as the ability resolves."
+2. **Bonus locked in after resolution**: The X value is stored as fixed `power_mod`/`toughness_mod` i32 values in `UntilEndOfTurnEffect`. If creatures enter or leave after resolution, the bonus does not change. Matches ruling: "Once the ability has resolved, the bonus won't change if the number of creatures you control changes later in the turn."
+3. **Can target any creature (including itself and opponents' creatures)**: `TargetRequirement::Creature` does not filter by controller, so the ability can target any creature on the battlefield, including Elder of Laurels itself or an opponent's creature. This matches the oracle text which says "Target creature" without restriction.
+4. **Multiple activations stack**: Each activation creates a separate `UntilEndOfTurnEffect` entry, so activating the ability twice correctly applies two independent bonuses.
+
+### Test coverage
+- `elder_of_laurels_card_data`: Verifies P/T (2/3), mana value (3), subtypes (Human, Advisor).
+- `elder_of_laurels_pumps_by_creature_count`: Sets up 3 creatures, activates ability on a 2/2, asserts it becomes 5/5 (both power and toughness).

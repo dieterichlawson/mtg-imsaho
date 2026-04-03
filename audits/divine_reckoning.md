@@ -164,3 +164,39 @@ Flashback {5}{W}{W} (You may cast this card from your graveyard for its flashbac
 - `divine_reckoning_keeps_one_per_player` — P0 (3 creatures) and P1 (2 creatures) each submit a choice; verifies exactly 1 creature per player survives and it is the chosen one.
 - `divine_reckoning_with_one_creature_keeps_it` — P0 has 1 creature, P1 has 0; no choice prompt; single creature survives.
 - `divine_reckoning_has_flashback` — Flashback cost present, mana value 7.
+
+## Audit — 2026-04-02 20:54
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: Each player chooses a creature they control. Destroy the rest.
+Flashback {5}{W}{W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)
+**Type line**: Sorcery
+**Status**: PASS
+
+### Code issues
+None found. All prior issues (oracle text mismatch, doc comment "sacrifices", auto-selection instead of player choice, turn order) have been fixed in the current implementation.
+
+Verified correct:
+- Name: `"Divine Reckoning"` (line 15) matches oracle
+- Mana cost: `{2}{W}{W}` (lines 16-19) matches oracle `{2}{W}{W}`
+- Type: `Sorcery` (line 21) matches oracle
+- Oracle text field: `"Each player chooses a creature they control. Destroy the rest.\nFlashback {5}{W}{W}"` (line 26) matches Scryfall verbatim
+- Flashback cost: `{5}{W}{W}` (lines 28-31) matches oracle
+- Doc comment (lines 7-9) now correctly says "Destroy the rest" not "sacrifices"
+- Player choice presented via `ChooseTarget` with `optional: false` -- correct, choice is mandatory
+- Turn order: active player first via `rotate_left` (lines 41-45) -- matches ruling "Starting with the player whose turn it is, each player chooses a creature in turn order"
+- Destruction uses `try_destroy` -- respects indestructible and regeneration, correct for "Destroy"
+- Spell cleanup via `move_spell_after_resolve` (line 71) -- correctly exiles if cast with flashback
+
+### Tricky interactions checked (min 3)
+1. **Indestructible creatures**: `try_destroy` (in `destruction.rs`) checks `has_keyword(id, Keyword::Indestructible)` and returns `Indestructible` without destroying. An indestructible creature not chosen to be kept will survive because destroy has no effect on it. Correct per MTG rules.
+2. **Regeneration**: `try_destroy` checks regeneration shields before destroying. A creature with a regeneration shield that is not chosen will be regenerated (tapped, damage removed, shield consumed) instead of destroyed. Correct.
+3. **Player with zero creatures**: Skipped entirely (lines 58-60), no choice presented. Correct -- oracle says "each player chooses a creature they control"; if they control none, they cannot choose.
+4. **Player with exactly one creature**: Auto-kept without presenting a choice (lines 58-64). Correct -- there is only one legal choice so no meaningful decision exists.
+5. **Turn order visibility**: Chaining via `PendingEffect::KeepOneDestroyRest` means each player's choice is submitted sequentially, so later players see earlier choices (via game log). Matches the 2011-09-22 ruling.
+6. **Non-targeting**: The spell does not use targets -- it uses `ChooseTarget` for the resolution choice mechanism, but the spell itself takes no targets on cast (`_targets` is unused, line 39). Correct -- "each" does not target, so hexproof/shroud/protection from white do not prevent creatures from being destroyed.
+
+### Test coverage
+- `divine_reckoning_keeps_one_per_player` -- Both players have 2+ creatures, both prompted to choose in APNAP order, verifies exactly 1 creature per player survives and it is the chosen one. All 3 passed.
+- `divine_reckoning_with_one_creature_keeps_it` -- P0 has 1 creature, P1 has 0. No choice prompt. Single creature survives. Passed.
+- `divine_reckoning_has_flashback` -- Flashback cost present and equals mana value 7 ({5}{W}{W}). Passed.
+- No test for indestructible interaction or regeneration interaction specifically with Divine Reckoning (covered by `try_destroy` tests elsewhere).

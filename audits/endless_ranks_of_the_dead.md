@@ -90,3 +90,28 @@ None found.
 
 ### Code issues
 No issues found.
+
+---
+
+## Audit — 2026-04-02 20:54
+
+**Oracle text source**: Scryfall API (cached 2026-04-01)
+**Oracle text**: At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.
+**Type line**: Enchantment
+**Status**: PASS
+
+### Code issues
+None. Implementation matches oracle text exactly. Card data (name, cost {2}{B}{B}, type Enchantment, no subtypes/supertypes) is correct. Upkeep trigger correctly checks zone == Battlefield and active_player == controller. Zombie counting uses both registry subtypes and object subtypes to catch card-based Zombies and tokens. Integer division `zombie_count / 2` correctly rounds down. Tokens are 2/2 black Zombie creature tokens with no keywords, matching oracle text.
+
+Minor: unused `CardId` import on line 2 (cosmetic only, no behavioral impact).
+
+### Tricky interactions checked (min 3)
+1. **0 or 1 Zombies controlled**: `0 / 2 = 0` and `1 / 2 = 0` -- no tokens created. Matches ruling: "If you control fewer than two Zombies, you won't get any tokens."
+2. **Multiple copies of Endless Ranks**: Each triggers independently via the trigger system. Zombies created by the first resolution exist on the battlefield and are counted when subsequent triggers resolve. Correct per ruling: "the tokens you get when the first ability resolves will count for the subsequent abilities."
+3. **Parallel Lives interaction**: Token creation goes through `create_token_with_subtypes`, which internally checks for Parallel Lives and doubles tokens accordingly. Each call to `create_token_with_subtypes` in the loop is independently doubled, so with Parallel Lives, each of the X tokens becomes 2 tokens.
+4. **Opponent's upkeep**: The `on_upkeep` method checks `state.active_player != controller` and returns early if it is not the controller's upkeep. Correct -- the card says "your upkeep."
+5. **Token Zombies count as Zombies**: The counting logic checks `o.subtypes.iter().any(|s| s == "Zombie")` on each object, which catches tokens that have the Zombie subtype set directly on the object (not just in registry data).
+
+### Test coverage
+- `mtg-engine/tests/tier7_cards.rs::endless_ranks_creates_zombie_tokens` -- 5 Zombies -> 2 tokens (5/2=2 rounded down), final count 7. PASSES.
+- Missing: edge case tests for 0 or 1 Zombies, opponent's upkeep non-trigger.
