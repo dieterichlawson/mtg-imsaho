@@ -48,7 +48,11 @@ Auditors have "remembered" old oracle text from training data (e.g., pre-2018 pl
 
 Auditors have also claimed "Scryfall says X but code says Y" without actually quoting both sides, and X turned out to be hallucinated. When forced to produce exact quotes, these phantom issues evaporated. To prevent this, **when claiming any mismatch you must quote both sides exactly** — the oracle text and the code. If you cannot produce both exact quotes, the mismatch is not verified and must not be flagged.
 
-Auditors have excused incorrect card behavior by calling it an "engine-level limitation" and marking the card as PASS. **Engine limitations that cause a card to behave incorrectly are real issues.** If a card's behavior doesn't match the oracle text because the engine can't handle it, that is an ISSUE — not a PASS with a note. The engine serves the cards, not the other way around. For example: if a card's ability should work from the graveyard but the trigger system only scans the battlefield, the card's behavior is wrong and should be marked ISSUE with a description of the engine fix needed.
+Auditors have excused incorrect card behavior by calling it an "engine-level limitation" or "not a card-specific bug" and marking the card as PASS. **If a card's behavior doesn't match the oracle text for ANY reason — whether the bug is in the card code, the engine, or both — that is an ISSUE.** Do not distinguish between "card bugs" and "engine bugs." The question is simple: does the card behave correctly? If no, mark ISSUE. Examples of engine bugs that must be marked ISSUE:
+- Trigger system doesn't scan graveyard → card's graveyard ability never fires → ISSUE
+- ETB trigger skipped when source leaves battlefield → wrong per MTG rules → ISSUE
+- `abilities_activated_this_turn` never clears → once-per-turn permanently locked → ISSUE
+- Simultaneous death triggers only fire once → wrong trigger count → ISSUE
 
 Finally, auditors have read old audit logs and been biased by prior findings instead of auditing independently. To prevent this, **do not read any previous audit logs before conducting your audit.** Your audit must be independent. You will write your results to the log after completing your audit.
 
