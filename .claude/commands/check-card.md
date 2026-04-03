@@ -7,23 +7,7 @@ Thoroughly audit Magic: The Gathering card implementations for correctness, test
   - Card names, comma-separated: `"Lightning Bolt, Fiend Hunter, Doom Blade"`
   - A set code: `"isd"` or `"innistrad"` (audits all cards in the set)
   - `"all"` (audits every implemented card)
-  - A query prefix: `"status isd"` or `"status Fiend Hunter"` (shows audit history instead of auditing — see "Status mode" below)
-
-## Status mode
-
-If the arguments start with `status`, do NOT audit. Instead, show audit history.
-
-- `"status isd"` — Show the most recent audit status for every ISD card (PASS/ISSUE/SKIPPED/UNAUDITED), plus a summary count.
-- `"status Fiend Hunter"` — Show the full audit history for that card: every audit entry with date, git commit (from `git log --oneline audits/{file}.md`), and status. Show a timeline like:
-  ```
-  Fiend Hunter — 3 audits
-    2026-04-01 12:00  ISSUE  (abc1234) — auto-selects exile target
-    2026-04-01 15:30  ISSUE  (def5678) — LLM knowledge inaccurate
-    2026-04-01 18:00  PASS   (789abcd)
-  ```
-- `"status all"` — Summary counts across all cards: N PASS, N ISSUE, N UNAUDITED.
-
-To get status, read the audit files in `audits/` and parse the `**Status**:` lines. For cards with no audit file, mark as UNAUDITED.
+Use `/audit-status` to view audit history and status tables instead.
 
 ## Audit mode
 
