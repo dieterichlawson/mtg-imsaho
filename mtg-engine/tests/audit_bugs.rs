@@ -248,3 +248,97 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
         "Noble should trigger 3 times (self + 2 others). P0 life: {} (expected {})",
         p0_life, p0_life_before + 3);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// MISSING SHUFFLE
+// Cards that search libraries must shuffle afterward.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Ghost Quarter doesn't shuffle the library after the land search.
+/// Oracle: "put it onto the battlefield, then shuffle."
+/// The code finds and places the land but never calls library_order.shuffle().
+#[test]
+fn bug_ghost_quarter_missing_shuffle() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Ghost Quarter for P0
+    let gq = named_creature(&mut state, &registry, "Ghost Quarter", P0);
+
+    // Place a target land for P1
+    let target_land = {
+        let card_id = registry.get_id_by_name("Forest").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        id
+    };
+
+    // Put specific basic lands in P1's library in a known order
+    let plains_ids: Vec<_> = (0..5).map(|_| {
+        let card_id = registry.get_id_by_name("Plains").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_player_mut(P1).library_order.push(id);
+        id
+    }).collect();
+
+    // Record the library order
+    let lib_order_before: Vec<_> = state.get_player(P1).library_order.clone();
+
+    // Activate Ghost Quarter targeting the land
+    // (This is complex to set up through the engine, so let's call the behavior directly)
+    let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
+    // Sacrifice Ghost Quarter
+    state.move_object(gq, Zone::Graveyard);
+    // Destroy the target land and do the search
+    behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
+
+    // Check if library was shuffled (order should be different)
+    let lib_order_after: Vec<_> = state.get_player(P1).library_order.clone();
+
+    // With 5 cards, the probability of the same order after shuffle is 1/120.
+    // If order is identical, shuffle didn't happen.
+    // BUG: Library is not shuffled after search
+    assert_ne!(lib_order_before, lib_order_after,
+        "Library should be shuffled after Ghost Quarter search (order unchanged)");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: FORCE-ATTACK MISSING "IF ABLE" CHECKS
+// Creatures forced to attack should respect Pacifism/can't-attack effects.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Bloodcrazed Neonate with Pacifism is still forced to attack.
+/// Oracle: "This creature attacks each combat if able."
+/// "If able" means the creature must actually be able to attack.
+/// Pacifism prevents attacking, so the force-attack should be skipped.
+#[test]
+fn bug_force_attack_ignores_cant_attack() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    // Place Bloodcrazed Neonate (has ForceAttack)
+    let neonate = named_creature(&mut state, &registry, "Bloodcrazed Neonate", P0);
+
+    // Give it Pacifism (PreventAttack)
+    if let Some(obj) = state.get_object_mut(neonate) {
+        obj.instance_continuous_effects = Some(vec![
+            ContinuousEffect::PreventAttack { scope: EffectScope::OnSelf },
+        ]);
+    }
+
+    // Get legal actions — neonate should NOT be forced to attack
+    let legal = engine::legal_actions(&state, &registry);
+
+    // Check if the combat prompt forces the neonate to attack
+    if let Some(ref prompt) = legal.combat_prompt {
+        match prompt {
+            mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, .. } => {
+                // BUG: Engine forces attack even with PreventAttack
+                assert!(!must_attack.contains(&neonate),
+                    "Neonate with Pacifism should NOT be forced to attack");
+            }
+            _ => {}
+        }
+    }
+}
