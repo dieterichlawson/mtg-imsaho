@@ -1669,3 +1669,72 @@ fn bug_skirsdag_high_priest_auto_selects_tap_targets() {
         "Should have 3+ tap combinations for 3 creatures, got {}",
         priest_abilities.len());
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: STURMGEIST — DRAW SKIPPED WHEN LEAVES
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Sturmgeist's combat damage trigger ("draw a card") is skipped
+/// if Sturmgeist leaves the battlefield before resolution (same as BUG3).
+#[test]
+fn bug_sturmgeist_draw_skipped_when_leaves() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let sturmgeist = named_creature(&mut state, &registry, "Sturmgeist", P0);
+    let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
+
+    // Simulate combat damage to player trigger, then move Sturmgeist to GY
+    state.move_object(sturmgeist, Zone::Graveyard);
+
+    // Call the trigger handler directly
+    let behavior = registry.get(state.get_object(sturmgeist).unwrap().card_id).unwrap();
+    behavior.on_combat_damage_to_player(&mut state, sturmgeist, P1, 3, &registry);
+
+    let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
+
+    // Per MTG rules, the trigger should still draw a card even if Sturmgeist
+    // is no longer on the battlefield (the trigger already went on the stack)
+    // BUG: Draw is skipped because handler checks zone == Battlefield
+    assert_eq!(hand_after, hand_before + 1,
+        "Should draw 1 card even after Sturmgeist left. Hand: {} -> {}", hand_before, hand_after);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: DEMONMAIL HAUBERK — SACRIFICE AVAILABILITY
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Demonmail Hauberk's equip cost is "Sacrifice a creature."
+/// The engine only checks that ANY creature exists (including the
+/// creature being equipped), not that a DIFFERENT creature can be sacrificed.
+#[test]
+fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Demonmail Hauberk (equipment)
+    let hauberk = named_creature(&mut state, &registry, "Demonmail Hauberk", P0);
+    if let Some(obj) = state.get_object_mut(hauberk) {
+        obj.is_equipment = true;
+    }
+
+    // Place exactly ONE creature — the one we'd want to equip
+    let creature = ready_creature(&mut state, P0, 3, 3);
+
+    // With only 1 creature, equipping Demonmail Hauberk means sacrificing
+    // that creature to equip... nothing. This should not be available.
+    // (Per the ruling, you CAN sacrifice the equipped creature to equip
+    // another, but with only 1 creature there's no valid target to equip TO.)
+    let legal = engine::legal_actions(&state, &registry);
+    let can_equip = legal.actions.iter().any(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == hauberk)
+    });
+
+    // Actually, per the ruling: "You can sacrifice the creature Demonmail Hauberk
+    // is equipping in order to equip it to another creature." So with 1 creature,
+    // the equip ability should NOT be available (no target to equip to after sacrifice).
+    // The engine checks if ANY creature exists, which is true, so it shows the ability.
+    // BUG: Equip available with only 1 creature
+    assert!(!can_equip,
+        "Demonmail Hauberk equip should not be available with only 1 creature (no equip target after sacrifice)");
+}
