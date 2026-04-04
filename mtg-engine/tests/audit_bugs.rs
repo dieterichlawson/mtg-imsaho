@@ -528,3 +528,71 @@ fn bug_planeswalker_damage_uses_damage_marked_not_loyalty() {
     assert_eq!(loyalty_after, 1,
         "Planeswalker should lose loyalty from damage. Loyalty: {} (expected 1)", loyalty_after);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: CONTROL CHANGE NOT REVERTED AT END OF TURN
+// ══════════════════════════════════════════════════════════════���
+
+/// Bug: Traitorous Blood gives control "until end of turn" but the engine
+/// never reverts the control change during cleanup.
+/// Oracle: "Gain control of target creature until end of turn."
+#[test]
+fn bug_control_change_not_reverted_at_eot() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a creature for P1
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    assert_eq!(state.get_object(creature).unwrap().controller, P1);
+
+    // Cast Traitorous Blood on it
+    let spell = castable_spell(&mut state, &registry, "Traitorous Blood", P0);
+    state = cast_and_resolve(&state, &registry, spell, vec![Target::Object(creature)]);
+
+    // Creature should now be controlled by P0
+    assert_eq!(state.get_object(creature).unwrap().controller, P0,
+        "Traitorous Blood should give control to P0");
+
+    // Simulate the cleanup step inline (same as engine.rs:3020-3026)
+    state.until_end_of_turn_effects.clear();
+    state.until_end_of_turn_keywords.clear();
+    state.until_end_of_turn_cant_block.clear();
+    state.until_end_of_turn_protection.clear();
+    state.until_end_of_turn_removed_keywords.clear();
+
+    // After cleanup, control should revert to P1.
+    // BUG: There's no until_end_of_turn_control_changes mechanism —
+    // the controller field was changed directly and cleanup doesn't know to revert it.
+    assert_eq!(state.get_object(creature).unwrap().controller, P1,
+        "Control should revert to P1 at end of turn");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: SPELL CAST COUNTING FOR WEREWOLF TRANSFORM
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: spells_cast_this_turn is never incremented when spells are cast.
+/// This breaks werewolf transform conditions which check spells_cast_last_turn.
+/// If no spells are ever counted, the "no spells cast last turn" condition
+/// is always true and werewolves would transform every upkeep.
+#[test]
+fn bug_spells_cast_this_turn_never_incremented() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Record spells cast before
+    let cast_before: u32 = state.spells_cast_this_turn.values().sum();
+
+    // Cast a spell
+    let bolt = castable_spell(&mut state, &registry, "Lightning Bolt", P0);
+    let target = ready_creature(&mut state, P1, 3, 3);
+    state = cast_and_resolve(&state, &registry, bolt, vec![Target::Object(target)]);
+
+    // spells_cast_this_turn should have been incremented
+    let cast_after: u32 = state.spells_cast_this_turn.values().sum();
+
+    // BUG: Count is still 0 because submit_action never updates spells_cast_this_turn
+    assert!(cast_after > cast_before,
+        "spells_cast_this_turn should increment when a spell is cast. Before: {}, After: {}",
+        cast_before, cast_after);
+}
