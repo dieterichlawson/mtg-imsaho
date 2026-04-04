@@ -352,8 +352,15 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             } else {
                 if !mana::can_pay(mana_pool, &ab.cost) { continue; }
             }
-            // Check tap cost.
-            if ab.requires_tap && obj_tapped { continue; }
+            // Check tap cost and summoning sickness.
+            // Per MTG rules, creatures with summoning sickness cannot use
+            // abilities with {T} in the cost (unless they have haste).
+            if ab.requires_tap {
+                if obj_tapped { continue; }
+                if obj.summoning_sick && !state.has_keyword(obj.id, Keyword::Haste, registry) {
+                    continue;
+                }
+            }
             // Check once-per-turn.
             if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }
             // Check sorcery speed.
