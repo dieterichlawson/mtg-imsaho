@@ -1593,3 +1593,79 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
     assert_eq!(milled, 2,
         "Should mill 2 (replacement applies once, not per Alchemist). Milled: {}", milled);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: BONEYARD WURM — VIEW SHOWS BASE P/T
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Boneyard Wurm's power/toughness is dynamic (= creature cards in
+/// your graveyard), but the GameView shows base P/T (0/0) from obj.power.
+/// The view should use effective_power/effective_toughness.
+#[test]
+fn bug_boneyard_wurm_view_shows_base_pt() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put 3 creature cards in P0's graveyard
+    for _ in 0..3 {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+    }
+
+    // Place Boneyard Wurm
+    let wurm = named_creature(&mut state, &registry, "Boneyard Wurm", P0);
+
+    // Effective P/T should be 3/3 (dynamic)
+    let eff_p = state.effective_power(wurm, &registry).unwrap_or(0);
+    assert_eq!(eff_p, 3, "Boneyard Wurm should be 3/3 with 3 creatures in GY");
+
+    // Build GameView and check what it reports
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &registry);
+
+    // Find the Wurm in the view
+    let wurm_view = view.battlefield.iter()
+        .find(|c| c.name == "Boneyard Wurm");
+
+    if let Some(wv) = wurm_view {
+        // BUG: View shows base P/T (0/0 or None) instead of effective (3/3)
+        assert_eq!(wv.effective_power, Some(3),
+            "GameView should show effective power 3, got {:?}", wv.effective_power);
+    } else {
+        panic!("Boneyard Wurm not found in view");
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: SKIRSDAG HIGH PRIEST — AUTO TAP SELECTION
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Skirsdag High Priest's ability costs "tap two untapped creatures
+/// you control" but the engine auto-selects which creatures to tap.
+#[test]
+fn bug_skirsdag_high_priest_auto_selects_tap_targets() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Skirsdag High Priest and 3 other creatures
+    let priest = named_creature(&mut state, &registry, "Skirsdag High Priest", P0);
+    let c1 = ready_creature(&mut state, P0, 1, 1);
+    let c2 = ready_creature(&mut state, P0, 2, 2);
+    let c3 = ready_creature(&mut state, P0, 3, 3);
+
+    // Morbid must be active
+    state.creature_died_this_turn = true;
+
+    // Get legal actions
+    let legal = engine::legal_actions(&state, &registry);
+    let priest_abilities: Vec<_> = legal.actions.iter().filter(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == priest)
+    }).collect();
+
+    // With 3 untapped creatures (besides the priest who taps itself),
+    // there should be C(3,2) = 3 different tap combinations.
+    // If there's only 1, the engine auto-selected.
+    // BUG: Only 1 action (auto-selected tap targets)
+    assert!(priest_abilities.len() >= 3,
+        "Should have 3+ tap combinations for 3 creatures, got {}",
+        priest_abilities.len());
+}
