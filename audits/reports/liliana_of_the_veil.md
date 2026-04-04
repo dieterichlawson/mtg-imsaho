@@ -435,3 +435,40 @@ All 14 tests pass:
 - `liliana_minus_six_all_in_one_pile` -- All permanents in one pile
 - `liliana_minus_six_no_permanents` -- No permanents, no effect
 - `liliana_minus_six_can_target_self` -- Can target self with -6
+
+## Audit — 2026-04-03 21:31
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: +1: Each player discards a card.
+−2: Target player sacrifices a creature.
+−6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.
+**Type line**: Legendary Planeswalker — Liliana
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- +1 ability simultaneous discard timing (active player chooses first, others in turn order, all discard together): pass
+- -2 ability can target any player including self: pass
+- -6 ability controller divides piles, target player chooses which to sacrifice: pass
+- -6 ability empty pile handling (can choose empty pile to sacrifice nothing): pass
+- Players with empty hands are correctly skipped on +1: pass
+- Players with only one card auto-discard on +1: pass
+- Auto-sacrifice when only one creature on -2: pass
+- Planeswalker loyalty abilities limited to once per turn (engine level): pass
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- +1 ability with choice mechanics: `mtg-engine/tests/tier15_cards.rs:1830`
+- +1 ability auto-discard single card: `mtg-engine/tests/tier15_cards.rs:1893`
+- +1 ability empty hand handling: `mtg-engine/tests/tier15_cards.rs:1918`
+- +1 ability both players empty hands: `mtg-engine/tests/tier15_cards.rs:1942`
+- -2 ability with choice: `mtg-engine/tests/tier15_cards.rs:1961`
+- -2 ability auto-sacrifice single creature: `mtg-engine/tests/tier15_cards.rs:2000`
+- -2 ability no creatures edge case: `mtg-engine/tests/tier15_cards.rs:2021`
+- -2 ability can target self: `mtg-engine/tests/tier15_cards.rs:2040`
+- -6 ability pile division and choice flow: `mtg-engine/tests/tier15_cards.rs:2061`
+- -6 ability empty pile handling: `mtg-engine/tests/tier15_cards.rs:2119`
+- Turn order discard sequencing (active first): TESTED (implicit in test setup)
+- Simultaneous discard rule implementation: TESTED (verified in choice mechanics tests)

@@ -456,3 +456,38 @@ Neither issue causes incorrect game behavior for Grimgrin specifically -- the ca
 - `grimgrin_attack_uses_defending_player_from_combat` — only targets defending player's creatures
 - NOT TESTED: fizzle when target becomes illegal before resolution (ruling 2) — engine limitation
 - NOT TESTED: sacrifice when Grimgrin is already untapped (legal but not separately tested)
+
+## Audit — 2026-04-03 21:31
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Grimgrin enters tapped and doesn't untap during your untap step.
+Sacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.
+Whenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.
+**Type line**: Legendary Creature — Zombie Warrior
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- "Another creature" restriction in sacrifice cost: PASS (`SacrificeCost::SacrificeAnotherCreature` excludes source via `o.id != obj_id` check at engine.rs:379 and 1767)
+- No legal targets when attacking: PASS (early return if `targets.is_empty()` at lines 108-110, matching ruling that ability is removed from stack with no effect)
+- Indestructible/regeneration target still gives +1/+1 counter: PASS (`DestroyThenCounter` handler unconditionally adds counter after `try_destroy` at engine.rs:2435)
+- Target becomes illegal during resolution: PASS (standard targeting rules handled by engine, entire ability fizzles per 2011-09-22 ruling)
+- "Destroy" vs "sacrifice" semantics: PASS (uses `try_destroy` in `DestroyThenCounter` handler matching oracle "destroy" keyword)
+- Combat timing of attack trigger: PASS (`TriggerKind::Attacks` fires when declared as attacker, before blockers)
+- Targeting defending player's creatures only: PASS (resolves defender from `state.combat` at lines 94-96, filters defender's creatures at lines 99-103)
+- Enters tapped requirement: PASS (`on_resolve` sets `obj.tapped = true` at line 51)
+- Doesn't untap during untap step: PASS (`ContinuousEffect::PreventUntap` with `EffectScope::OnSelf` at lines 32-35)
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Enters tapped: `tier15_cards.rs:1494-1507`
+- Sacrifice another creature to untap/counter: `tier15_cards.rs:1510-1536`
+- Sacrifice not available without other creatures: `tier15_cards.rs:1539-1552`
+- Attack trigger basic functionality: `tier15_cards.rs:1555-1578`
+- Multiple target choice presentation: `tier15_cards.rs:1581-1619`
+- No targets = no counter (2011-09-22 ruling): `tier15_cards.rs:1624-1642`
+- Indestructible target still gives counter (2013-07-01 ruling): `tier15_cards.rs:1647-1672`
+- Defending player targeting from combat state: `tier15_cards.rs:1678-1702`
+- Target becomes illegal ruling (2011-09-22): NOT TESTED

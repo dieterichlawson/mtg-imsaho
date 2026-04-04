@@ -112,3 +112,44 @@ Minor style note (not a functional issue): The transform in `on_activate_ability
 - Transform into Lord of Lineage: NOT TESTED
 - Lord of Lineage +2/+2 buff to other Vampires: NOT TESTED
 - Lord of Lineage token creation: NOT TESTED
+
+
+---
+
+## Audit — 2026-04-03 21:31
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: 
+Front face: Flying
+{T}: Create a 2/2 black Vampire creature token with flying.
+{B}: Transform this creature. Activate only if you control five or more Vampires.
+
+Back face: Flying
+Other Vampire creatures you control get +2/+2.
+{T}: Create a 2/2 black Vampire creature token with flying.
+
+**Type line**: Creature — Vampire // Creature — Vampire
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Transform ability only available when controlling 5+ vampires: PASS
+- Bloodline Keeper counts itself for vampire requirement: PASS  
+- Transform ability disappears once transformed: PASS
+- Lord of Lineage +2/+2 buff applies to other vampires you control: PASS
+- Both faces can create 2/2 vampire tokens with flying: PASS
+- Transform preserves tapped/untapped status: PASS
+- Multiple transform activations handled correctly: PASS
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Token creation ability: `mtg-engine/tests/tier15_cards.rs:1428`
+- Transform ability when controlling 5+ vampires: NOT TESTED
+- Transform restriction when controlling <5 vampires: NOT TESTED  
+- Lord of Lineage +2/+2 continuous effect: NOT TESTED
+- Vampire counting logic (including tokens): NOT TESTED
+- Transform ability disappearing after transformation: NOT TESTED
+- Multiple activation behavior: NOT TESTED
+

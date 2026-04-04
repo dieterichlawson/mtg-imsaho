@@ -180,3 +180,148 @@ Previously identified issues (still present, accepted as engine-level limitation
 - Bonds on a Human token: NOT TESTED (would expose issue #2)
 - Bonds on a transformed DFC: NOT TESTED
 - Type change after Bonds enters: NOT TESTED (would expose issue #1)
+
+## Audit — 2026-04-03 22:06
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Enchant creature
+Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Type line**: Enchantment — Aura
+**Status**: ISSUE
+
+### Code issues
+- Dynamic type checking not implemented (lines 39-69): The aura sets continuous effects once when entering the battlefield, but doesn't re-evaluate when the enchanted creature's type changes.
+  - Oracle text says: `Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.`
+  - Code does: Sets either `ModifyPT` OR `PreventAttack/PreventBlock` effects in `instance_continuous_effects` once at ETB, based on creature type at that moment, and never re-evaluates
+
+### Tricky interactions checked
+- Combat timing (once declared, type change doesn't remove from combat): PASS - combat system only checks `can_attack/can_block` during declare steps
+- Type change after aura attachment: FAIL - effects don't switch when creature gains/loses Human type 
+- Multi-type creatures (Human Soldier, etc.): PASS - code correctly uses `any()` to check for Human subtype
+- Aura removal: PASS - uses standard `resolve_aura` helper
+- Instance oracle text display: PASS - correctly shows simplified text based on current mode
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Human gets +2/+2: `mtg-engine/tests/bug_fixes.rs:522` and `mtg-engine/tests/card_mechanics.rs:197`
+- Non-Human prevented from attack/block: `mtg-engine/tests/bug_fixes.rs:546` and `mtg-engine/tests/card_mechanics.rs:217`
+- Combat timing ruling (type change after declare): NOT TESTED
+- Dynamic type switching: NOT TESTED
+- Multi-subtype Human creatures: NOT TESTED
+
+## Audit — 2026-04-03 22:06
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Enchant creature
+Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Type line**: Enchantment — Aura
+**Status**: ISSUE
+
+### Code issues
+
+- **Effect is evaluated once at ETB instead of continuously** (`mtg-engine/src/cards/isd/bonds_of_faith.rs`, lines 39-69). The oracle text uses the phrase "as long as it's a Human", which is a continuous condition that should dynamically switch between +2/+2 and can't-attack-or-block as the creature's type changes. The ruling from 2011-09-22 confirms this: "causing it to stop being a Human won't remove it from combat. It will lose the +2/+2 bonus, however." The implementation sets `instance_continuous_effects` once in `on_enter_battlefield` and never recalculates.
+  - Oracle text says: `Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.`
+  - Code does: `on_enter_battlefield` evaluates `is_human` once at line 43, then sets either `ModifyPT { power: 2, toughness: 2 }` or `PreventAttack + PreventBlock` into `instance_continuous_effects` at lines 48-58, with no mechanism to re-evaluate. A Human Werewolf that transforms to its non-Human back face while enchanted by Bonds of Faith would keep the +2/+2 buff instead of switching to can't-attack-or-block.
+
+- **Human subtype check reads from card registry instead of object's current subtypes** (`mtg-engine/src/cards/isd/bonds_of_faith.rs`, lines 43-46). The check uses `registry.card_data(o.card_id)` which always returns front-face data. Tokens have subtypes stored on `obj.subtypes` (per `state.rs` line 1205: "Subtypes on this object (for tokens — regular cards use CardData.subtypes via registry)"), but this code never checks `obj.subtypes`. A Human token (e.g., from Doomed Traveler) enchanted by Bonds of Faith would be treated as non-Human and locked down. Compare with `check_condition` in `state.rs` line 1084-1091 which correctly checks both `o.subtypes` AND `registry.card_data()`.
+  - Oracle text says: `Enchanted creature gets +2/+2 as long as it's a Human.`
+  - Code does: `let is_human = state.get_object(target_id).and_then(|o| registry.card_data(o.card_id)).map(|d| d.subtypes.iter().any(|s| s == "Human")).unwrap_or(false);` — only checks registry, not `obj.subtypes`
+
+- **Oracle text field omits "Enchant creature" prefix** (`mtg-engine/src/cards/isd/bonds_of_faith.rs`, line 25). Other auras in the codebase include this prefix (e.g., Claustrophobia at `claustrophobia.rs` line 25: `"Enchant creature\nWhen this Aura enters, tap enchanted creature.\n..."`) but Bonds of Faith omits it.
+  - Oracle text says: `Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.`
+  - Code does: `oracle_text: "Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.".into()` — missing "Enchant creature\n" prefix
+
+### Tricky interactions checked
+- Werewolf transform after Bonds of Faith attachment: FAIL — a Human Werewolf enchanted with Bonds of Faith would keep +2/+2 after transforming to non-Human back face, because the effect is locked at ETB and never recalculated
+- Human token enchanted by Bonds of Faith: FAIL — token subtypes stored on `obj.subtypes` are not checked; `registry.card_data()` returns no subtypes for tokens, so they are treated as non-Human
+- Creature declared as attacker then loses Human type (ruling 2011-09-22): partial PASS — creature stays in combat (consistent with ruling), but also incorrectly keeps +2/+2 (ruling says "It will lose the +2/+2 bonus, however")
+- Aura falls off when creature leaves battlefield: PASS — SBA handles unattached auras
+- Multi-subtype creature (e.g., Human Soldier): PASS — `subtypes.iter().any(|s| s == "Human")` correctly finds Human among multiple subtypes for non-token, non-transformed creatures
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Human gets +2/+2: `card_mechanics.rs:197`, `bug_fixes.rs:522`
+- Non-Human can't attack or block: `card_mechanics.rs:217`, `bug_fixes.rs:546`, `innistrad_cards.rs:306`
+- Human with Bonds can still attack: `bug_fixes.rs:540`
+- Non-Human does NOT get P/T bonus: `bug_fixes.rs:556`
+- Type change after Bonds enters (ruling 2011-09-22): NOT TESTED
+- Human token enchanted: NOT TESTED
+- Transformed DFC enchanted: NOT TESTED
+
+## Audit — 2026-04-03 22:16
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Enchant creature
+Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Type line**: Enchantment — Aura
+**Status**: ISSUE
+
+### Code issues
+
+- Missing "Enchant creature" prefix in oracle_text field (bonds_of_faith.rs:25)
+  - Oracle text says: `Enchant creature\nEnchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.`
+  - Code has: `"Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."`
+
+- Static evaluation instead of continuous "as long as" condition (bonds_of_faith.rs:43-46)
+  - Oracle text says: `gets +2/+2 as long as it's a Human`
+  - Code does: Evaluates Human status once at ETB in `on_enter_battlefield` and sets permanent effects, never re-evaluating when creature type changes
+
+- Incomplete subtype checking missing tokens and transformed creatures (bonds_of_faith.rs:43-46)
+  - Oracle text says: `as long as it's a Human` (should check all ways a creature can be Human)
+  - Code does: `registry.card_data(o.card_id).map(|d| d.subtypes.iter().any(|s| s == "Human"))` - only checks static registry data, misses `obj.subtypes` (tokens) and `back_face_data()` (transformed creatures)
+
+### Tricky interactions checked
+
+- Combat timing (creature already attacking when stops being Human): FAIL - effect not continuously evaluated
+- Human token enchanted by Bonds of Faith: FAIL - token subtypes stored on `obj.subtypes` are not checked
+- Transformed double-faced creature that becomes/stops being Human: FAIL - only front face data checked
+- Multi-subtype creature (Human Soldier): PASS - `any()` correctly finds Human among multiple subtypes for non-transformed non-token creatures
+- Creature gains/loses Human type after enchantment: FAIL - static evaluation doesn't detect type changes
+
+### Test coverage
+
+For each ruling and tricky interaction, list whether it is tested and where:
+- Basic Human gets +2/+2: `bug_fixes.rs:522` / `card_mechanics.rs:197`
+- Basic non-Human gets locked down: `bug_fixes.rs:546` / `card_mechanics.rs:217`
+- Combat timing when creature stops being Human: NOT TESTED
+- Human token enchanted: NOT TESTED  
+- Transformed creature's back face being Human: NOT TESTED
+- Multi-subtype Human creature: `bug_fixes.rs:522` (Elder Cathar is Human Soldier)
+- Dynamic type changes after enchantment: NOT TESTED
+
+## Audit — 2026-04-03 22:50
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Enchant creature. Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.
+**Type line**: Enchantment — Aura
+**Status**: ISSUE
+
+### Code issues
+- Oracle text field missing "Enchant creature" prefix (`mtg-engine/src/cards/isd/bonds_of_faith.rs:25`)
+  - Oracle text says: `Enchant creature. Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block.`
+  - Code has: `"Enchanted creature gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."`
+
+- "As long as" condition not continuously re-evaluated (`mtg-engine/src/cards/isd/bonds_of_faith.rs:43-69`)
+  - Oracle text says: `as long as it's a Human`
+  - Code does: Sets `instance_continuous_effects` once at ETB based on creature type at that moment, never rechecks if type changes later. Should use `dynamic_pt` method like Wreath of Geists to continuously re-evaluate the Human condition.
+
+- Incomplete subtype checking (`mtg-engine/src/cards/isd/bonds_of_faith.rs:43-46`)
+  - Oracle text says: `as long as it's a Human`
+  - Code does: Only checks `registry.card_data(o.card_id)` for Human subtype, ignoring runtime `o.subtypes`. This misses tokens or creatures with modified subtypes. Should check both sources like `check_condition` in state.rs (lines 1087-1091).
+
+### Tricky interactions checked
+- "As long as it's a Human" continuous condition: FAIL - effect set once at ETB, not re-evaluated
+- Subtype checking for tokens and modified creatures: FAIL - only checks registry, not runtime subtypes  
+- Combat declaration ruling (creature stays in combat if type changes): FAIL - not implemented correctly due to above issues
+- Effect switching when creature type changes: FAIL - effect never changes after initial determination
+- "Otherwise" clause exclusivity: PASS - correctly gives either +2/+2 OR prevents attack/block, not both
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Basic Human gets +2/+2: `mtg-engine/tests/bug_fixes.rs:522` and `mtg-engine/tests/card_mechanics.rs:197`
+- Basic non-Human gets locked down: `mtg-engine/tests/bug_fixes.rs:546` and `mtg-engine/tests/card_mechanics.rs:217` 
+- Prevent attack functionality: `mtg-engine/tests/innistrad_cards.rs:306`
+- Dynamic type change while enchanted: NOT TESTED
+- Combat declaration ruling: NOT TESTED
+- Token Human subtype recognition: NOT TESTED
+- Runtime subtype modification: NOT TESTED

@@ -308,3 +308,32 @@ LLM card knowledge (llm.rs:104): "When it enters, you may exile another target c
 - Declining to exile ("you may" choosing no target): NOT TESTED
 - Oblivion Ring trick (LTB before ETB resolves): NOT TESTED
 - Token exiled doesn't return: NOT TESTED
+
+## Audit — 2026-04-03 21:31
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: When this creature enters, you may exile another target creature.
+When this creature leaves the battlefield, return the exiled card to the battlefield under its owner's control.
+**Type line**: Creature — Human Cleric
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Permanent exile when Fiend Hunter leaves before ETB resolves: pass (LTB returns nothing if no creature stored, then ETB permanently exiles)
+- Can target own creatures for strategic temporary exile: pass (uses `creature_targets_except` which includes all controllers)
+- Returns creature under owner's control not original controller: pass (sets `obj.controller = obj.owner`)
+- Token exile interaction (tokens don't return): pass (checks if target still in exile zone)
+- Optional targeting with "you may": pass (uses `present_optional_target_choice`)
+- Targets "another target creature" (excluding self): pass (uses `creature_targets_except(state, object_id)`)
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Basic ETB exile functionality: `tier3_cards.rs:211` (fiend_hunter_exiles_on_etb)
+- Can target own creatures: `card_fixes.rs:30` (fiend_hunter_can_target_own_creature)
+- Presents choice with multiple targets: `card_fixes.rs:60` (fiend_hunter_presents_choice_with_multiple_targets)
+- LTB returns exiled creature: `card_mechanics.rs:127` (fiend_hunter_returns_exiled_on_death)
+- Permanent exile when leaves before ETB resolves: NOT TESTED
+- Token exile (doesn't return): NOT TESTED
+- Returns under owner's control (not original controller): NOT TESTED

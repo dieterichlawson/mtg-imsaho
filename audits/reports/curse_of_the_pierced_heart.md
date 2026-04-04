@@ -40,3 +40,35 @@ At the beginning of enchanted player's upkeep, this Aura deals 1 damage to that 
 - `curse_of_pierced_heart_deals_damage_on_upkeep` (tier7_cards.rs:176): Tests basic damage to enchanted player on upkeep. PASS.
 - Curse is also used as a fixture in 3 Bitterheart Witch tests (tier15_cards.rs) testing search-and-attach behavior. These test the resolve/attach path indirectly.
 - **Missing**: No test for the planeswalker targeting branch.
+
+## Audit — 2026-04-03 22:06
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Enchant player
+At the beginning of enchanted player's upkeep, this Aura deals 1 damage to that player or a planeswalker that player controls.
+**Type line**: Enchantment — Aura Curse
+**Status**: ISSUE
+
+### Code issues
+- Planeswalker damage dealt via `PendingEffect::DealDamage` adds to `damage_marked` instead of removing loyalty counters (engine bug in `engine.rs:2179-2181`). When the cursed player controls a planeswalker and the curse controller chooses to redirect damage to it, the code uses `PendingEffect::DealDamage` with `Target::Object` (line 93). The engine handler at `engine.rs:2181` does `obj.damage_marked += amount` — creature-style tracking. Per MTG rules, damage to a planeswalker removes that many loyalty counters. The SBA at `sba.rs:215-220` checks `*o.counters.get(&CounterType::Loyalty).unwrap_or(&0) == 0`, so planeswalker damage via this path never reduces loyalty and never kills the planeswalker. Other cards (e.g., Stensia Bloodhall at `stensia_bloodhall.rs:90-94`, Garruk Relentless at `garruk_relentless.rs:182-183`) handle this correctly by manually calling `loyalty.saturating_sub(amount)`.
+  - Oracle text says: `this Aura deals 1 damage to that player or a planeswalker that player controls`
+  - Code does: `obj.damage_marked += amount` (engine.rs:2181) — marks creature damage instead of removing loyalty counters from the planeswalker
+
+### Tricky interactions checked
+- Trigger only fires on enchanted player's upkeep: PASS — line 58 checks `state.active_player != cursed_player` and returns early
+- Controller of curse chooses damage target (not enchanted player): PASS — line 87 uses `player: controller` for the choice
+- No-planeswalker shortcut auto-deals to player: PASS — lines 69-81 skip choice UI when no planeswalkers present
+- Multiple curses on same player trigger independently: PASS — each object has its own `on_upkeep`
+- Curse removed before trigger resolves: PASS — line 50 checks `o.zone == Zone::Battlefield`
+- Planeswalker damage removes loyalty counters: FAIL — engine `apply_pending_effect` uses `damage_marked` not loyalty removal
+- Mana cost matches oracle ({1}{R}): PASS — `Generic(1), Colored(Red)`
+- Type/subtypes match oracle: PASS — `Enchantment` with `Aura`, `Curse` subtypes
+- Oracle text field matches: PASS — exact match at line 26
+
+### Test coverage
+- Basic upkeep damage to enchanted player: `tier7_cards.rs:176` (`curse_of_pierced_heart_deals_damage_on_upkeep`)
+- Curse as fixture for Bitterheart Witch resolve/attach: `tier15_cards.rs:183`, `tier15_cards.rs:224`, `tier15_cards.rs:259`
+- Planeswalker targeting branch (choice presented, damage applied): NOT TESTED
+- Planeswalker loyalty removal on damage: NOT TESTED
+- Trigger does not fire on non-enchanted player's upkeep: NOT TESTED
+- Multiple curses on same player: NOT TESTED

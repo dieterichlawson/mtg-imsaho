@@ -609,3 +609,47 @@ When Garruk has two or fewer loyalty counters on him, transform him.
 - `garruk_back_face_loyalty_abilities_shown_when_transformed` — correct abilities shown per face
 
 **Missing test**: No test for front face fight ability (ability_index 0) — the 3-damage-to-creature and power-damage-back-to-Garruk interaction is untested. This is a gap but the implementation is correct upon code review.
+
+## Audit — 2026-04-03 21:31
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: 
+Front face: "When Garruk has two or fewer loyalty counters on him, transform him. 0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him. 0: Create a 2/2 green Wolf creature token."
+Back face: "+1: Create a 1/1 black Wolf creature token with deathtouch. −1: Sacrifice a creature. If you do, search your library for a creature card, reveal it, put it into your hand, then shuffle. −3: Creatures you control gain trample and get +X/+X until end of turn, where X is the number of creature cards in your graveyard."
+**Type line**: Legendary Planeswalker — Garruk
+**Status**: ISSUE
+
+### Code issues
+- Missing Transform keyword - `mtg-engine/src/cards/isd/garruk_relentless.rs:98`
+  - Oracle text says: `Keywords: Transform`
+  - Code does: `keywords: vec![]`
+
+- Missing triggered_abilities declaration - `mtg-engine/src/cards/isd/garruk_relentless.rs:102`
+  - Oracle text says: `When Garruk has two or fewer loyalty counters on him, transform him.` (state-triggered ability)
+  - Code does: `triggered_abilities: vec![]` but should declare the state trigger
+
+- Oracle text formatting issues - `mtg-engine/src/cards/isd/garruk_relentless.rs:97`
+  - Oracle text says: `When Garruk has two or fewer loyalty counters on him, transform him.`
+  - Code does: `When Garruk Relentless has two or fewer loyalty counters on him, transform Garruk Relentless.` (redundant name references)
+
+### Tricky interactions checked
+- State trigger timing (CR 603.8 - only fires once, not while on stack): PASS
+- Transform preserves loyalty counters: PASS  
+- State trigger vs zero loyalty SBA race condition: PASS
+- Back face sacrifice ability non-targeting requirement: PASS
+- Library search shuffling behavior: PASS
+- +X/+X bonus calculation timing: PASS
+- Damage exchange mechanics (creature fights back): PASS
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- Wolf token creation (front face): `tier15_cards.rs:2231-2253`
+- Transform at 2 loyalty: `tier15_cards.rs:2256-2278`
+- Back face deathtouch wolf creation: `tier15_cards.rs:2281-2308`
+- Sacrifice and tutor (single creature): `tier15_cards.rs:2311-2347`
+- Sacrifice and tutor (multiple choice): `tier15_cards.rs:2349-2390`
+- Sacrifice and tutor (no library creatures): `tier15_cards.rs:2393-2439`
+- Creatures get +X/+X and trample: `tier15_cards.rs:2442-2491`
+- State trigger doesn't re-trigger while on stack: NOT TESTED
+- Transform at exactly 0 loyalty (dies before transform): NOT TESTED
+- Damage exchange with indestructible creatures: NOT TESTED

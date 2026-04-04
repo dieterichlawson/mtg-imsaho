@@ -114,3 +114,32 @@ Engine-level note: `abilities_activated_this_turn` is never cleared at end of tu
 
 ### Code issues
 - `abilities_activated_this_turn` is never cleared between turns in `engine.rs`, so the once-per-turn restriction on the {2}{G} pump ability permanently locks after first use -- the ability can only ever be activated once per game instead of once per turn
+
+## Audit — 2026-04-03 22:06
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: {2}{G}: This creature gets +2/+2 until end of turn. Activate only once each turn.
+**Type line**: Creature — Wolf
+**Status**: ISSUE
+
+### Code issues
+- Engine bug: `abilities_activated_this_turn` (HashSet on each object, `state.rs:1276`) is never cleared during cleanup (`engine.rs:3006-3061`), during turn transitions (`engine.rs:2881-2895`), or during the untap step (`engine.rs:2911-2954`). Once the ability is activated and ability_index `0` is inserted at `engine.rs:1778`, it remains permanently, so the `once_per_turn` check at `engine.rs:358` (`if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }`) blocks the ability on all subsequent turns forever.
+  - Oracle text says: `Activate only once each turn.`
+  - Code does: Ability is locked permanently after first activation because `abilities_activated_this_turn` is never cleared between turns. The restriction is "once per game" rather than "once each turn."
+
+### Tricky interactions checked
+- **Once-per-turn enforcement within a turn**: pass — `engine.rs:358` correctly prevents second activation in the same turn by checking `activated_this_turn.contains(&ab.ability_index)`, and `engine.rs:1778` correctly inserts the index after activation.
+- **Once-per-turn reset across turns**: FAIL — `abilities_activated_this_turn` is never cleared at cleanup, untap, or turn transition. The once-per-turn restriction becomes permanent.
+- **+2/+2 end-of-turn expiry**: pass — `UntilEndOfTurnEffect` is cleared at cleanup (`engine.rs:3021`: `state.until_end_of_turn_effects.clear()`), so the +2/+2 correctly expires.
+- **Instant-speed activation**: pass — `sorcery_speed_only: false` correctly allows activation at any time (no sorcery restriction in oracle text).
+- **Zone restriction**: pass — ability is only offered when the object is on the battlefield (`darkthicket_wolf.rs:34`), which is correct for creature activated abilities.
+- **Mana cost accuracy**: pass — activation cost `Generic(2), Green` matches oracle `{2}{G}`.
+- **No tap requirement**: pass — `requires_tap: false` is correct; oracle has no tap symbol in the activation cost.
+
+### Test coverage
+- Base P/T 2/2 and Wolf subtype: `activated_abilities.rs:180` (darkthicket_wolf_has_correct_stats)
+- +2/+2 activation produces 4/4: `activated_abilities.rs:190` (darkthicket_wolf_gets_plus_2_plus_2)
+- Once-per-turn blocks second activation same turn: `activated_abilities.rs:210` (darkthicket_wolf_once_per_turn)
+- Once-per-turn resets on next turn: NOT TESTED
+- +2/+2 wears off at end of turn: NOT TESTED
+- Activation at instant speed (e.g., during combat): NOT TESTED

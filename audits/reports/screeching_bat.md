@@ -361,3 +361,41 @@ All card data and behavior verified against fetched oracle text:
 - Mana NOT consumed when declining: `tier15_cards.rs:1191` — TESTED
 - Not-your-upkeep (opponent's turn): NOT TESTED (minor gap)
 - Creature removed before trigger resolves: NOT TESTED (minor gap, standard trigger handling)
+
+
+## Audit — 2026-04-03 21:31
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: 
+Front face (Screeching Bat): Flying / At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+Back face (Stalking Vampire): At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform this creature.
+**Type line**: Front: Creature — Bat / Back: Creature — Vampire
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+### Tricky interactions checked
+- Stalking Vampire loses Flying on transform: PASS (back face has empty keywords vec, apply_transform swaps correctly)
+- Screeching Bat regains Flying when transforming back: PASS (apply_transform restores front face keywords)
+- Upkeep trigger only fires on controller's upkeep: PASS (line 84 checks active_player != controller)
+- "You may pay" presents actual player choice: PASS (lines 99-106 use ResolutionChoiceKind::YesNo)
+- No choice when insufficient mana: PASS (lines 90-92 check can_pay and return early)
+- Transform works in both directions: PASS (both faces have upkeep triggered abilities)
+- Mana cost {2}{B}{B} paid correctly: PASS (transform_cost helper and auto_pay on lines 124-129)
+- Subtypes change on transform: PASS (apply_transform updates between Bat/Vampire)
+- Dynamic P/T switches between 2/2 and 5/5: PASS (dynamic_pt returns Some((5,5)) when transformed)
+
+### Test coverage
+For each ruling and tricky interaction, test status:
+- Transform with mana (player accepts): `tier15_cards.rs:1128` 
+- Decline to transform when mana available: `tier15_cards.rs:1163`
+- No choice without mana: `tier15_cards.rs:1195`
+- Transform back (Stalking Vampire -> Screeching Bat): `tier15_cards.rs:1210`
+- Stalking Vampire does NOT have Flying: `tier15_cards.rs:1245`
+- Screeching Bat regains Flying on transform back: `tier15_cards.rs:1282`
+- Subtypes update on transform (Bat -> Vampire): `tier15_cards.rs:1324`
+- Mana consumed after paying: `tier15_cards.rs:1159`
+- Mana NOT consumed when declining: `tier15_cards.rs:1191`
+- Controller's upkeep only: NOT TESTED
+- Creature removed before trigger resolves: NOT TESTED

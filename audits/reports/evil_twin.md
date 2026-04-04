@@ -305,3 +305,39 @@ Missing test coverage (non-blocking):
 ### Status: PASS
 
 The implementation is correct. All card data matches the Scryfall oracle text verbatim. Clone mechanics (optional choice, full characteristic copy, copiable destroy ability) are properly implemented. The destroy ability correctly uses SameNameAsSource targeting with {U}{B} + tap cost and calls `try_destroy`. No issues found.
+
+---
+
+## Audit — 2026-04-03 21:31
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: You may have this creature enter as a copy of any creature on the battlefield, except it has "{U}{B}, {T}: Destroy target creature with the same name as this creature."
+**Type line**: Creature — Shapeshifter
+**Status**: ISSUE
+
+### Code issues
+- **Replacement effect vs triggered ability** (`mtg-engine/src/cards/isd/evil_twin.rs:32-38`)
+  - Oracle text says: `You may have this creature enter as a copy of any creature on the battlefield`
+  - Code does: Uses `TriggerKind::EntersBattlefield` and `on_enter_battlefield()` method, making Evil Twin enter as 0/0 first, then copy via triggered ability
+  
+The oracle text uses replacement effect language ("enter as a copy") meaning the copying should happen as part of entering the battlefield, not as a triggered ability afterwards. The current implementation causes Evil Twin to enter as a 0/0 creature, then the triggered ability goes on the stack to potentially make it copy something. This is incorrect timing per MTG rules.
+
+### Tricky interactions checked
+- **Copy timing vs ETB triggers**: FAIL - Should enter as copy directly, triggering copied creature's ETB abilities
+- **Destroy ability targeting same-named creatures**: PASS - TargetFilter::SameNameAsSource correctly implemented  
+- **"You may" optionality for copying**: PASS - Uses present_optional_target_choice correctly
+- **Preserve destroy ability through copy**: PASS - "is_evil_twin" marker set before copy and preserved by engine
+- **Cannot copy itself**: PASS - Uses creature_targets_except to exclude self
+- **Dies if no copy chosen**: PASS - Stays as 0/0 without copying, dies to state-based actions
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- **Basic copying functionality**: `mtg-engine/tests/tier15_cards.rs:1756` / TESTED
+- **Destroy ability with same-name targeting**: NOT TESTED
+- **"You may" decline to copy**: NOT TESTED 
+- **Copy timing vs replacement effect**: NOT TESTED
+- **ETB abilities of copied creature**: NOT TESTED
+- **Copying tokens with different names**: NOT TESTED
+- **"is_evil_twin" marker preservation**: `mtg-engine/tests/tier15_cards.rs:1780` / TESTED
+- **Dies if no creatures to copy**: NOT TESTED
+- **Cannot target non-creatures with destroy ability**: NOT TESTED

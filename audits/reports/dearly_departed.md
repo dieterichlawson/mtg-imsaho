@@ -102,3 +102,78 @@ No issues found. Oracle text field matches current Scryfall template.
 - **Missing:** Negative test for opponent's Human entering (should not get counter).
 - **Missing:** Negative test for Dearly Departed on battlefield (not in graveyard).
 - **Missing:** Integration test through the trigger system (would reveal Issue #1).
+
+## Audit — 2026-04-03 22:06
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Flying\nAs long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.
+**Type line**: Creature — Spirit
+**Status**: ISSUE
+
+### Code issues
+- **CRITICAL: Engine trigger dispatch only scans Battlefield, so Dearly Departed's graveyard ability never fires in integrated gameplay.** The trigger dispatch in `mtg-engine/src/triggers.rs` line 369 filters watchers with `o.zone == Zone::Battlefield`. Dearly Departed's oracle text says its ability works "As long as this creature is in your graveyard," meaning it must be in the graveyard to function. The engine never discovers it as a watcher.
+  - Oracle text says: `As long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.`
+  - Code does: `state.objects.values().filter(|o| o.zone == Zone::Battlefield && o.id != *object)` (triggers.rs:369) — only Battlefield objects are scanned as watchers, graveyard objects are excluded.
+- **CRITICAL: Engine trigger resolution also gates on Battlefield.** Even if the trigger were somehow queued, `mtg-engine/src/triggers.rs` line 915 checks `state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false)` before calling `on_any_creature_enters`. This is a second barrier preventing graveyard-based abilities from resolving.
+  - Oracle text says: `As long as this creature is in your graveyard`
+  - Code does: `if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false)` (triggers.rs:915) — rejects any watcher not on the Battlefield.
+- **Replacement effect modeled as triggered ability.** The oracle text "enters with an additional +1/+1 counter on it" is a replacement effect (the counter is placed simultaneously with the creature entering). The implementation uses `TriggerKind::AnyCreatureEnters` / `on_any_creature_enters`, which fires after the creature has entered. This means other ETB triggers (e.g., Mentor of the Meek) would see the creature without the counter, which is incorrect per MTG rules.
+  - Oracle text says: `each Human creature you control enters with an additional +1/+1 counter on it`
+  - Code does: `triggered_abilities: vec![TriggeredAbilityDef { kind: TriggerKind::AnyCreatureEnters, ... }]` (dearly_departed.rs:30-35) — modeled as a triggered ability, not a replacement effect.
+- **Test bypasses the trigger system.** The test at `mtg-engine/tests/tier15_cards.rs:62` calls `behavior.on_any_creature_enters()` directly, masking the fact that the engine would never dispatch this trigger for a graveyard-based card.
+  - Code does: `behavior.on_any_creature_enters(&mut state, dd, human, P0, &reg);` (tier15_cards.rs:62) — direct call, not via the trigger system.
+
+### Tricky interactions checked
+- Cumulative stacking (multiple Dearly Departed in graveyard): fail — the card handler logic is correct (each copy would independently add a counter), but the trigger dispatch never reaches graveyard objects, so zero copies fire.
+- Opponent's Human creatures excluded: pass — handler correctly checks `entered_controller != owner` at line 47-48.
+- Dearly Departed on battlefield (not in graveyard) does not trigger: pass — handler checks `o.zone == Zone::Graveyard` at line 42-43.
+- Replacement effect timing (counter present as creature enters): fail — modeled as post-entry triggered ability rather than replacement effect. Other ETB triggers would see incorrect P/T.
+- Non-Human creature entering does not get counter: pass — handler checks subtypes for "Human" at lines 52-58.
+- Token Humans entering: pass — handler checks object subtypes as well as card_data subtypes at lines 52-58, covering tokens.
+
+### Test coverage
+- Positive case (Human entering with Dearly Departed in graveyard): `tier15_cards.rs:49` — but bypasses trigger system
+- Negative case (non-Human entering): NOT TESTED
+- Negative case (opponent's Human entering): NOT TESTED
+- Negative case (Dearly Departed on battlefield, not in graveyard): NOT TESTED
+- Integration test through trigger system: NOT TESTED (would reveal the critical dispatch bug)
+- Cumulative stacking with multiple copies: NOT TESTED
+- Replacement effect timing (counter visible to simultaneous ETB triggers): NOT TESTED
+
+## Audit — 2026-04-03 22:06
+
+**Oracle text source**: Scryfall API (pre-fetched)
+**Oracle text**: Flying
+As long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.
+**Type line**: Creature — Spirit
+**Status**: ISSUE
+
+### Code issues
+
+- **Engine bug prevents card from working**: `mtg-engine/src/triggers.rs:915`
+  - Oracle text says: `As long as this creature is in your graveyard, each Human creature you control enters with an additional +1/+1 counter on it.`
+  - Code does: Trigger dispatch system checks `if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false)` which prevents graveyard-based triggers from ever firing.
+
+- **Wrong implementation approach**: `mtg-engine/src/cards/isd/dearly_departed.rs:30-35`
+  - Oracle text says: `enters with an additional +1/+1 counter` (replacement effect - counters present as creature enters)
+  - Code does: Uses `TriggerKind::AnyCreatureEnters` triggered ability that would add counters after entering, but this never fires due to engine bug above.
+
+- **Test bypasses engine trigger system**: `mtg-engine/tests/tier15_cards.rs:62`
+  - Oracle text says: Card should work through normal game flow when Human creatures are cast
+  - Code does: Test manually calls `behavior.on_any_creature_enters()` directly, bypassing trigger dispatch that would fail in real gameplay.
+
+### Tricky interactions checked
+- **Multiple Dearly Departed in graveyard (cumulative effect)**: FAIL - No mechanism exists for graveyard-based replacement effects
+- **Timing vs triggered abilities**: FAIL - Should be replacement effect (counters on entry) not triggered (counters after entry)
+- **Human creature type recognition**: PASS - Code correctly checks both card subtypes and object subtypes
+- **Controller matching**: PASS - Code correctly verifies creature controller matches Dearly Departed owner
+- **Zone verification**: PASS - Card code correctly checks if Dearly Departed is in graveyard (though this check is never reached)
+
+### Test coverage
+For each ruling and tricky interaction, list whether it is tested and where:
+- **Basic functionality (Human gets counter from graveyard Dearly Departed)**: `tier15_cards.rs:49` / INVALID TEST (bypasses engine)
+- **Cumulative effect with multiple Dearly Departed**: NOT TESTED
+- **Replacement effect timing (enters with vs added after)**: NOT TESTED
+- **Only affects Human creatures**: NOT TESTED
+- **Only affects creatures you control**: NOT TESTED
+- **Integration with actual creature casting**: NOT TESTED
