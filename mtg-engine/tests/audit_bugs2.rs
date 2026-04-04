@@ -373,3 +373,199 @@ fn bug_woodland_sleuth_intervening_if_not_at_collection() {
     assert_eq!(gy_creature_zone, Zone::Graveyard,
         "Grizzly Bears should stay in graveyard — morbid was false when trigger would collect");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// EVIL TWIN — ABILITY INACCESSIBLE AFTER COPYING
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: After Evil Twin copies a creature, the destroy ability
+/// ("{U}{B}, {T}: Destroy target creature with the same name")
+/// may not be accessible because the engine looks up abilities
+/// from the registry using card_id, which changed to the copied
+/// creature's card_id.
+#[test]
+fn bug_evil_twin_ability_inaccessible_after_copy() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a creature to copy
+    let target = named_creature(&mut state, &registry, "Grizzly Bears", P1);
+
+    // Place Evil Twin and trigger its ETB
+    let twin = named_creature(&mut state, &registry, "Evil Twin", P0);
+
+    // Manually trigger the ETB and resolve the copy
+    let behavior = registry.get(state.get_object(twin).unwrap().card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, twin, &registry);
+
+    // Resolve the copy choice (choose Grizzly Bears)
+    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { .. }) = &state.awaiting_action {
+        let action = Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Object(target))),
+        };
+        state = engine::submit_action(&state, &action, &registry);
+    }
+
+    // Twin should now be a copy of Grizzly Bears with the destroy ability
+    // Add mana for {U}{B}
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 1);
+
+    // Check if the destroy ability is available
+    let legal = engine::legal_actions(&state, &registry);
+    let has_destroy = legal.actions.iter().any(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == twin)
+    });
+
+    // BUG: Destroy ability not available because card_id points to copied creature
+    assert!(has_destroy,
+        "Evil Twin should have the destroy ability after copying");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANGELIC OVERSEER — SBA ORDERING
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: When a board wipe destroys both a Human and Angelic Overseer
+/// simultaneously, the SBA processes them sequentially. The Human
+/// might die first, causing Overseer to lose indestructible before
+/// its own destruction is checked.
+#[test]
+fn bug_angelic_overseer_sba_ordering() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Angelic Overseer (indestructible while you control a Human)
+    let overseer = named_creature(&mut state, &registry, "Angelic Overseer", P0);
+
+    // Place a Human
+    let human = named_creature(&mut state, &registry, "Champion of the Parish", P0);
+
+    // Deal lethal damage to both simultaneously (board wipe)
+    if let Some(obj) = state.get_object_mut(overseer) {
+        obj.damage_marked = 99;
+    }
+    if let Some(obj) = state.get_object_mut(human) {
+        obj.damage_marked = 99;
+    }
+
+    // Run SBAs — Overseer should survive because it had indestructible
+    // at the moment SBAs were checked (the Human was alive when the check happened)
+    mtg_engine::sba::check_state_based_actions(&mut state);
+
+    let overseer_zone = state.get_object(overseer).unwrap().zone;
+
+    // BUG: Overseer dies because SBA processes Human death first,
+    // removing indestructible, then processes Overseer's lethal damage
+    assert_eq!(overseer_zone, Zone::Battlefield,
+        "Angelic Overseer should survive — it was indestructible when damage was dealt");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LILIANA OF THE VEIL — SEQUENTIAL DISCARD
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Liliana's +1 "Each player discards a card" should have all
+/// players choose simultaneously, then discard at the same time.
+/// The implementation discards sequentially — P0 discards, then P1.
+/// This reveals information (P1 sees what P0 discarded before choosing).
+#[test]
+fn bug_liliana_sequential_discard() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Give both players 2 cards each
+    spell_in_hand(&mut state, &registry, "Grizzly Bears", P0);
+    spell_in_hand(&mut state, &registry, "Lightning Bolt", P0);
+    spell_in_hand(&mut state, &registry, "Giant Growth", P1);
+    spell_in_hand(&mut state, &registry, "Doom Blade", P1);
+
+    // Place Liliana and activate +1
+    let liliana = named_creature(&mut state, &registry, "Liliana of the Veil", P0);
+    state.add_counters(liliana, CounterType::Loyalty, 3);
+
+    let behavior = registry.get(state.get_object(liliana).unwrap().card_id).unwrap();
+    behavior.on_loyalty_ability(&mut state, liliana, 0, &[], &registry);
+
+    // After the +1, both players should be choosing simultaneously.
+    // If P0's choice is already resolved (card already discarded) before
+    // P1 gets to choose, it's sequential, not simultaneous.
+    let p0_hand = state.objects_in_zone(Zone::Hand, P0).len();
+    let p1_hand = state.objects_in_zone(Zone::Hand, P1).len();
+    let has_choice = state.awaiting_action.is_some();
+
+    // If it's truly simultaneous, both should still have 2 cards and there
+    // should be a pending choice for BOTH players.
+    // BUG: P0 already discarded (hand=1) before P1 gets to choose
+    assert!(p0_hand == 2 || has_choice,
+        "Liliana +1 should be simultaneous. P0 hand: {}, P1 hand: {}, choice pending: {}",
+        p0_hand, p1_hand, has_choice);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// NIGHT TERRORS — WRONG PENDING EFFECT
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Night Terrors uses ExileAndStore as its PendingEffect, but
+/// it should just exile (not store). ExileAndStore is for Fiend Hunter-
+/// style effects that need to track what was exiled for later return.
+#[test]
+fn bug_night_terrors_wrong_pending_effect() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Give P1 multiple nonland cards
+    let card1 = spell_in_hand(&mut state, &registry, "Grizzly Bears", P1);
+    let card2 = spell_in_hand(&mut state, &registry, "Lightning Bolt", P1);
+
+    // Cast Night Terrors targeting P1
+    let nt = castable_spell(&mut state, &registry, "Night Terrors", P0);
+    state = cast_and_resolve(&state, &registry, nt, vec![Target::Player(P1)]);
+
+    // Check what PendingEffect is used in the choice
+    let uses_exile_and_store = state.awaiting_action.as_ref().map(|aa| {
+        format!("{:?}", aa).contains("ExileAndStore")
+    }).unwrap_or(false);
+
+    // BUG: Uses ExileAndStore instead of plain Exile
+    assert!(!uses_exile_and_store,
+        "Night Terrors should use a plain Exile effect, not ExileAndStore");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PROTECTION — BLOCKING INCORRECTLY PREVENTED
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Grave Bramble has protection from Zombies, which means
+/// Zombies can't block IT (and it can't be targeted/damaged by them).
+/// But protection does NOT prevent the protected creature from blocking
+/// Zombies — Grave Bramble SHOULD be able to block Zombie attackers.
+#[test]
+fn bug_protection_incorrectly_prevents_blocking_zombies() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareBlockers, P1);
+    state.active_player = P0;
+
+    // Place Grave Bramble for P1 (has Defender + Protection from Zombies)
+    let bramble = named_creature(&mut state, &registry, "Grave Bramble", P1);
+
+    // Place a Zombie attacker for P0
+    let zombie = ready_creature(&mut state, P0, 2, 2);
+    if let Some(obj) = state.get_object_mut(zombie) {
+        obj.subtypes = vec!["Zombie".into()];
+    }
+
+    // Set up combat — zombie is attacking
+    state.combat = Some(mtg_engine::state::CombatState::new());
+    if let Some(ref mut combat) = state.combat {
+        combat.attackers.insert(zombie, P1);
+    }
+
+    // Grave Bramble should be able to block the Zombie
+    // (protection prevents the Zombie from blocking Bramble, NOT the other way around)
+    let can_block = mtg_engine::combat::can_block_attacker(&state, bramble, zombie, &registry);
+
+    // BUG: Protection incorrectly prevents Grave Bramble from blocking Zombies
+    assert!(can_block,
+        "Grave Bramble should be able to block Zombies — protection prevents Zombies from blocking IT, not the reverse");
+}
