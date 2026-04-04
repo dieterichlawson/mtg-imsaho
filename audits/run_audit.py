@@ -136,11 +136,23 @@ Read the card's implementation file. Verify all card data and behavior against t
 
 Key things to verify: mana cost, card types, supertypes, subtypes, P/T, keywords, oracle text field, flashback cost, continuous effects, triggered_abilities TriggerKinds, targeting, "you may" optionality, "target" player choice, "each" vs "target", damage types (NonCombatDamageDealt not CombatDamageDealt), spell cleanup (move_spell_after_resolve), dynamic_pt, token subtypes.
 
-### Step 5. Think about tricky interactions
+### Step 5. Trace execution paths through the engine
+
+Don't just read the card file — trace the full execution path into the engine to verify the card actually works end-to-end:
+
+- **For triggered abilities**: Find where the trigger is dispatched in `mtg-engine/src/triggers.rs`. Read the actual dispatch code — don't assume it works. Verify:
+  - Does the dispatch filter exclude cases the oracle text covers? (e.g., a SpellCast dispatch that only fires for instant/sorcery when the oracle says "a spell" with no type restriction)
+  - Does the dispatch reach the card's hook at all for every case the oracle covers?
+  - Are there guard conditions in the dispatch that would prevent the trigger from firing?
+- **For activated abilities**: Trace through `engine.rs` to verify the ability is generated, costs are checked, and the effect is applied correctly.
+- **For continuous effects**: Verify the effect scope and filter in `state.rs` match the oracle text.
+- **For log messages**: Check that log messages accurately describe what's happening. A log that says "deals damage to opponent" when the target hasn't been chosen yet, or says "flashback" when the oracle says "from your graveyard", is an issue.
+
+### Step 6. Think about tricky interactions
 
 Consider stack interactions, semantic precision ("destroy" vs "sacrifice", "target" vs "choose", "you may" vs mandatory, "another" vs "a", "each" vs "target", "combat damage" vs "damage"), and interactions with other cards (indestructible, tokens, lifelink).
 
-### Step 6-8. Check tests, UI, shortcuts
+### Step 7-9. Check tests, UI, shortcuts
 
 Search for tests in `mtg-engine/tests/`. Check UI presentation (choices presented? LLM card knowledge?). Check for known anti-patterns: `move_object(Zone::Graveyard)` instead of `move_spell_after_resolve`, `CombatDamageDealt` for non-combat damage, missing triggered_abilities declarations, auto-selecting choices, `try_destroy` when oracle says "sacrifice".
 
