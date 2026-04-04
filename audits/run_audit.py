@@ -154,7 +154,20 @@ Don't just read the card file — trace the full execution path into the engine 
 
 ### Step 6. Think about tricky interactions
 
-Consider stack interactions, semantic precision ("destroy" vs "sacrifice", "target" vs "choose", "you may" vs mandatory, "another" vs "a", "each" vs "target", "combat damage" vs "damage"), and interactions with other cards (indestructible, tokens, lifelink).
+Go through each word in the oracle text that has rules significance. For each one, verify the code handles it correctly:
+
+- **"may"** — Is the choice actually presented to the player? If the code auto-selects or skips the choice, that's an ISSUE. "May search" means the player can decline to search. "You may" means the player can decline the entire effect. Check every instance.
+- **"target"** — Is the player choosing the target, or is it auto-selected? "Target player" means ANY player (including self), not just the opponent.
+- **"each"** — Is the effect applied to ALL matching objects, with no targeting?
+- **"another"** — Is self correctly excluded?
+- **"whenever"** — If multiple instances of the trigger condition happen simultaneously (e.g., 3 creatures die at once from a board wipe), does the ability trigger once for each? Trace the trigger collection code in `triggers.rs` — check whether the watcher-scan loop filters by zone (e.g., `zone == Battlefield`) in a way that would miss the source if it's also involved in the event batch. For example, if a creature has "whenever a creature dies" and dies in the same board wipe, does its ability still see the other deaths? The watcher must be found BEFORE zone changes happen, or the trigger count will be wrong.
+- **"as long as"** — Is this continuously evaluated or snapshot at one point in time?
+- **"until end of turn"** — Is the effect actually cleaned up at end of turn? Check the cleanup step in `engine.rs`.
+- **Intervening-if clauses** (e.g., "When X enters, if Y, do Z") — The condition must be true BOTH when the trigger event occurs AND when the trigger resolves. Check if both checks exist.
+
+Also consider: what happens if the source permanent leaves the battlefield between trigger and resolution? Some abilities still resolve (life gain, draw), others don't (abilities that affect the source itself). Check if the code handles this correctly per MTG rules.
+
+**IMPORTANT: "UNCERTAIN" or "untested" is not an acceptable verdict for tricky interactions.** If you're unsure whether something works, READ THE ENGINE CODE to find out. Trace the execution path. Check the actual filter conditions in `triggers.rs`, `engine.rs`, `state.rs`. Do not guess — verify by reading the code.
 
 ### Step 7-9. Check tests, UI, shortcuts
 
