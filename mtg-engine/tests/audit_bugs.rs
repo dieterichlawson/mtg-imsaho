@@ -1156,3 +1156,179 @@ fn bug_unbreathing_horde_no_counters_via_reanimation() {
         "Unbreathing Horde should enter with 3 +1/+1 counters (Zombies in GY). Got: {}",
         counters);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: INTO THE MAW OF HELL — TARGET VALIDATION
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Into the Maw of Hell's is_valid_target accepts creatures for
+/// the land target slot. Oracle says "Destroy target land" — the first
+/// target must be a land, not a creature.
+#[test]
+fn bug_into_the_maw_accepts_creatures_as_land_target() {
+    let registry = CardRegistry::with_all_cards();
+    let state = game_at_step(Step::PrecombatMain, P0);
+
+    let behavior = registry.get(
+        registry.get_id_by_name("Into the Maw of Hell").unwrap()
+    ).unwrap();
+
+    // A creature should NOT be a valid target for the land slot
+    let creature = Target::Object(ready_creature(&mut state.clone(), P1, 3, 3));
+    let is_valid = behavior.is_valid_target(&state, P0, &creature, &registry);
+
+    // BUG: Creatures are accepted as valid targets
+    assert!(!is_valid,
+        "Into the Maw of Hell should only target lands, not creatures");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: PAST IN FLAMES — NO-COST CARDS GET FREE FLASHBACK
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Past in Flames gives flashback equal to a card's mana cost,
+/// but cards with no mana cost get ManaCost::free(), making them
+/// castable for free from the graveyard.
+#[test]
+fn bug_past_in_flames_free_flashback_for_no_cost_cards() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Cast Past in Flames
+    let pif = castable_spell(&mut state, &registry, "Past in Flames", P0);
+    state = cast_and_resolve(&state, &registry, pif, vec![]);
+
+    // Check the until_end_of_turn_flashback entries
+    // Any card with cost=None should NOT get flashback (or should get cost=None flashback
+    // which is uncastable), not ManaCost::free()
+    let free_flashbacks: Vec<_> = state.until_end_of_turn_flashback.iter()
+        .filter(|(_, cost)| cost.symbols.is_empty())
+        .collect();
+
+    // BUG: Cards with no mana cost get ManaCost::free() flashback
+    assert!(free_flashbacks.is_empty(),
+        "Cards with no mana cost should not get free flashback. Found {} free flashback entries",
+        free_flashbacks.len());
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: SMITE THE MONSTROUS — POWER NOT RECHECKED
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Smite the Monstrous targets creatures with power 4+, but if the
+/// creature's power decreases before resolution (e.g., Giant Growth wore off),
+/// the spell should fizzle. The engine doesn't re-check power at resolution.
+#[test]
+fn bug_smite_power_not_rechecked_at_resolution() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a 4/4 creature for P1
+    let creature = ready_creature(&mut state, P1, 4, 4);
+
+    // Cast Smite the Monstrous targeting it
+    let smite = castable_spell(&mut state, &registry, "Smite the Monstrous", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: smite,
+            targets: vec![Target::Object(creature)],
+            sacrifice: None, exile_count: None, alternative_cost: None,
+        },
+        &registry,
+    );
+
+    // Before resolution, reduce creature's power below 4
+    if let Some(obj) = state.get_object_mut(creature) {
+        obj.power = Some(2); // Now 2/4 — below threshold
+    }
+
+    // Resolve — should fizzle because target no longer has power 4+
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    // BUG: Creature is destroyed even though power is now 2
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Smite should fizzle when target's power drops below 4 before resolution");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: WOODLAND SLEUTH — SELF-RETURN
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Woodland Sleuth's morbid ETB can return itself if it dies in
+/// response to its own trigger. Per ruling: "if this happens, the ability
+/// could return Woodland Sleuth to your hand from your graveyard."
+/// Actually, the ruling says this IS correct — it CAN return itself.
+/// The bug might be that it can't. Let me verify.
+#[test]
+fn bug_woodland_sleuth_can_return_itself_from_graveyard() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Set morbid (a creature died this turn)
+    state.creature_died_this_turn = true;
+
+    // Place Woodland Sleuth, then move to graveyard (died in response to own ETB)
+    let sleuth = named_creature(&mut state, &registry, "Woodland Sleuth", P0);
+    state.move_object(sleuth, Zone::Graveyard);
+
+    // Fire the ETB trigger manually (it was triggered before death)
+    let behavior = registry.get(state.get_object(sleuth).unwrap().card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, sleuth, &registry);
+
+    // With morbid active, the trigger should return a random creature card
+    // from the graveyard. Woodland Sleuth itself is now in the graveyard,
+    // so it's a valid target to return. Per the ruling, this is correct.
+    let sleuth_zone = state.get_object(sleuth).unwrap().zone;
+
+    // The test verifies the trigger actually fires even from the graveyard
+    // (which connects to BUG3 — ETB trigger suppressed when source leaves)
+    // If it returns itself, it's in Hand. If it returns nothing (bug), it stays in GY.
+    assert_eq!(sleuth_zone, Zone::Hand,
+        "Woodland Sleuth should be able to return itself from graveyard per ruling");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ARCHITECTURAL: PROTECTION FROM ZOMBIES — TARGETING
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Grave Bramble has protection from Zombies, but Grimgrin's attack
+/// trigger ("destroy target creature defending player controls") can still
+/// target it. Protection should prevent targeting by Zombie sources.
+/// The engine's can_be_targeted doesn't consider the source's subtypes.
+#[test]
+fn bug_protection_doesnt_prevent_zombie_source_targeting() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Grave Bramble for P1 (has protection from Zombies)
+    let bramble = named_creature(&mut state, &registry, "Grave Bramble", P1);
+
+    // Place Grimgrin for P0 (is a Zombie)
+    let grimgrin = named_creature(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+
+    // Grimgrin is a Zombie. Its attack trigger targets a creature defending player controls.
+    // Grave Bramble has protection from Zombies, so Grimgrin's ability should not be
+    // able to target it. But the engine only checks hexproof for targeting, not protection.
+
+    // We can test this by checking if Grimgrin's on_attacks would present Grave Bramble
+    // as a valid target. Set up combat state.
+    state.step = Step::DeclareAttackers;
+    state.combat = Some(mtg_engine::state::CombatState::new());
+    if let Some(ref mut combat) = state.combat {
+        combat.attackers.insert(grimgrin, P1);
+    }
+
+    // Fire the attack trigger
+    let behavior = registry.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
+    behavior.on_attacks(&mut state, grimgrin, &registry);
+
+    // Check if an AwaitingAction was set with Grave Bramble as a target option
+    let bramble_is_target_option = state.awaiting_action.as_ref().map(|aa| {
+        format!("{:?}", aa).contains(&format!("{:?}", bramble))
+    }).unwrap_or(false);
+
+    // BUG: Grave Bramble appears as a valid target despite protection from Zombies
+    assert!(!bramble_is_target_option,
+        "Grave Bramble with protection from Zombies should not be targetable by Grimgrin (a Zombie)");
+}

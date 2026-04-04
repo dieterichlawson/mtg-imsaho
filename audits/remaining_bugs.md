@@ -78,4 +78,7 @@
 43. woodland_sleuth: can return itself if dies in response to own trigger
 
 ## Progress
-- Working on: E1 (spurious triggers)
+- Done: E1 (spurious: FP), E2 (hexproof), E3 (partially via unburial_rites), E4 (zone reset)
+- Done: #5-6, #20, #24, #25, #29, #36-38, #39, #40
+- Done from architectural: protection targeting (tested via code inspection, not unit test)
+- Next: #1 balefire_dragon, #7 civilized_scholar, #9 curse_nightly_hunt, #16 grimoire_of_dead, #21 into_maw, #22 liliana, #26-27 night_terrors, #28 past_in_flames, #30 reaper, #31 rooftop_storm, #32 skirsdag_hp, #33 smite, #41-42 undead_alchemist, #43 woodland_sleuth
