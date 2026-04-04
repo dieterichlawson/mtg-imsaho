@@ -1477,3 +1477,119 @@ fn bug_reaper_intervening_if_not_checked_at_trigger() {
     assert!(target_alive && state.stack.is_empty(),
         "Reaper trigger should not fire when morbid is false");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: EVIL TWIN — MARKER SET BEFORE CHOICE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Evil Twin sets is_evil_twin in card_state before the player
+/// makes the optional copy choice. If the player declines, the marker
+/// persists and the destroy ability might be available incorrectly.
+#[test]
+fn bug_evil_twin_marker_set_before_choice() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Cast Evil Twin with a target creature
+    let target = ready_creature(&mut state, P1, 3, 3);
+    let twin = castable_spell(&mut state, &registry, "Evil Twin", P0);
+    state = cast_and_resolve(&state, &registry, twin, vec![Target::Object(target)]);
+
+    // Check if is_evil_twin is already set before the copy choice is made
+    let has_marker = state.get_object(twin).map(|o|
+        o.card_state.contains_key("is_evil_twin")
+    ).unwrap_or(false);
+
+    // If there's an awaiting_action for the copy choice, the marker shouldn't
+    // be set yet — it should be set only after the player confirms the copy.
+    let has_choice = state.awaiting_action.is_some();
+
+    // BUG: Marker is set before the choice is presented
+    assert!(!(has_marker && has_choice),
+        "is_evil_twin should not be set while copy choice is pending");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: GRIMOIRE OF THE DEAD — LEGEND RULE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Grimoire of the Dead returns ALL creature cards from all
+/// graveyards, but doesn't apply the legend rule to legendary creatures
+/// that are already on the battlefield.
+#[test]
+fn bug_grimoire_legend_rule_not_applied() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a legendary creature on P0's battlefield
+    let existing = named_creature(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
+
+    // Put another copy of the same legendary in P1's graveyard
+    let graveyard_copy = {
+        let card_id = registry.get_id_by_name("Grimgrin, Corpse-Born").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Graveyard, Some(5), Some(5));
+        state.get_object_mut(id).unwrap().name = "Grimgrin, Corpse-Born".into();
+        id
+    };
+
+    // Simulate Grimoire's ability 1 (return all creatures as Zombies)
+    let grimoire = named_creature(&mut state, &registry, "Grimoire of the Dead", P0);
+    let behavior = registry.get(state.get_object(grimoire).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, grimoire, 1, &[], &registry);
+
+    // After returning, we should have two legendary Grimgrins controlled by P0.
+    // SBA should destroy one (legend rule).
+    mtg_engine::sba::check_state_based_actions(&mut state);
+
+    // Count Grimgrins on battlefield
+    let grimgrin_count = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Grimgrin"))
+        .count();
+
+    // BUG: Both Grimgrins stay on the battlefield (legend rule not enforced)
+    assert_eq!(grimgrin_count, 1,
+        "Legend rule should leave only 1 Grimgrin. Found: {}", grimgrin_count);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: UNDEAD ALCHEMIST — MULTIPLE COPIES
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: With multiple Undead Alchemists, damage replacement causes
+/// double-milling and incorrect life restoration.
+#[test]
+fn bug_undead_alchemist_multiple_copies_double_mill() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place two Undead Alchemists for P0
+    let _alch1 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+    let _alch2 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+
+    // Put some cards in P1's library
+    for _ in 0..10 {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P1).library_order.push(id);
+    }
+
+    let lib_before = state.get_player(P1).library_order.len();
+
+    // Simulate a Zombie dealing 2 combat damage to P1
+    // With one Alchemist, it should mill 2 (not deal damage).
+    // With two Alchemists, per MTG rules, the replacement only applies
+    // once — you still mill 2, not 4.
+    let zombie = ready_creature(&mut state, P0, 2, 2);
+
+    // Simulate combat damage event processing
+    let behavior1 = registry.get(
+        registry.get_id_by_name("Undead Alchemist").unwrap()
+    ).unwrap();
+    behavior1.on_any_combat_damage_to_player(&mut state, _alch1, zombie, P1, 2, &registry);
+
+    let milled = lib_before - state.get_player(P1).library_order.len();
+
+    // BUG: With 2 Alchemists, mills 4 instead of 2 (double replacement)
+    assert_eq!(milled, 2,
+        "Should mill 2 (replacement applies once, not per Alchemist). Milled: {}", milled);
+}
