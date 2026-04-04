@@ -252,7 +252,7 @@ def main():
     parser.add_argument("--limit", type=int, help="Max cards to audit")
     parser.add_argument("--filter", choices=["pass", "issue", "skipped", "unaudited"],
                         help="Only audit cards with this status")
-    parser.add_argument("--model", default="claude-sonnet-4-6-20250514",
+    parser.add_argument("--model", default="claude-sonnet-4-6",
                         help="Model to use")
     parser.add_argument("--max-turns", type=int, default=100,
                         help="Max turns per agent")
