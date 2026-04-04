@@ -134,7 +134,11 @@ Skip for vanilla creatures and basic spells. For anything with triggered/activat
 
 Read the card's implementation file. Verify all card data and behavior against the oracle text.
 
-Key things to verify: mana cost, card types, supertypes, subtypes, P/T, keywords, oracle text field, flashback cost, continuous effects, triggered_abilities TriggerKinds, targeting, "you may" optionality, "target" player choice, "each" vs "target", damage types (NonCombatDamageDealt not CombatDamageDealt), spell cleanup (move_spell_after_resolve), dynamic_pt, token subtypes.
+Key things to verify: mana cost, card types, supertypes, subtypes, P/T, keywords, oracle text field (including "Enchant creature" prefix for auras), flashback cost, continuous effects, triggered_abilities TriggerKinds, targeting, "you may" optionality, "target" player choice, "each" vs "target", damage types (NonCombatDamageDealt not CombatDamageDealt), spell cleanup (move_spell_after_resolve), dynamic_pt, token subtypes.
+
+**Subtype/type checking**: When the card checks a creature's subtype (e.g., "is it a Human?"), verify the check covers BOTH registry data (`registry.card_data()`) AND runtime object subtypes (`obj.subtypes`). Tokens store subtypes on the object, not in the registry. A check that only reads `registry.card_data()` will miss tokens. Compare with `check_condition` in `state.rs` which correctly checks both.
+
+**"As long as" vs snapshot**: If the oracle text says "as long as" (e.g., "gets +2/+2 as long as it's a Human"), the effect must continuously re-evaluate. If the code sets the effect once at ETB and never rechecks, that's an ISSUE — the condition could change (e.g., creature transforms, gains/loses a type) and the effect wouldn't update.
 
 ### Step 5. Trace execution paths through the engine
 
