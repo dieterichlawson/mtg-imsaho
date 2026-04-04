@@ -440,3 +440,91 @@ fn bug_ghost_quarter_may_search_is_mandatory() {
         "Ghost Quarter should present 'may search' choice, not auto-search. Plains placed: {}",
         bf_count_after - bf_count_before);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// "AS LONG AS" SNAPSHOT VS CONTINUOUS
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Bonds of Faith snapshots the Human check at ETB.
+/// Oracle: "gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."
+/// If the creature later stops being a Human (e.g., transforms), the effect
+/// should switch, but it doesn't because instance_continuous_effects is set once.
+#[test]
+fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a Human creature (Champion of the Parish — Human Soldier 1/1)
+    let human = named_creature(&mut state, &registry, "Champion of the Parish", P0);
+
+    // Cast Bonds of Faith on it
+    let bonds = castable_spell(&mut state, &registry, "Bonds of Faith", P0);
+    state = cast_and_resolve(&state, &registry, bonds, vec![Target::Object(human)]);
+
+    // Fire ETB triggers so Bonds sets instance_continuous_effects
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // Verify the Human gets +2/+2 (base 1/1 -> 3/3)
+    let p = state.effective_power(human, &registry).unwrap_or(0);
+    assert_eq!(p, 3, "Human with Bonds should have power 3 (1 base + 2 buff)");
+
+    // Now remove the Human subtype (simulate transform or type change)
+    if let Some(obj) = state.get_object_mut(human) {
+        obj.subtypes = vec!["Beast".into()]; // No longer Human
+    }
+
+    // The "as long as" condition is no longer true.
+    // The effect should switch from +2/+2 to can't-attack-or-block.
+    // With no +2/+2, effective power should be 1 (base).
+    let p_after = state.effective_power(human, &registry).unwrap_or(0);
+
+    // BUG: Power is still 3 because instance_continuous_effects was set once at ETB
+    assert_eq!(p_after, 1,
+        "Non-Human should lose +2/+2 from Bonds. Power: {} (expected 1)", p_after);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: PLANESWALKER DAMAGE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: PendingEffect::DealDamage marks damage_marked on planeswalkers
+/// instead of removing loyalty counters.
+/// Planeswalkers take damage as loyalty counter removal, not as damage_marked.
+#[test]
+fn bug_planeswalker_damage_uses_damage_marked_not_loyalty() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Garruk Relentless (starting loyalty 3) for P1
+    let garruk = {
+        let card_id = registry.get_id_by_name("Garruk Relentless").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Battlefield, None, None);
+        let obj = state.get_object_mut(id).unwrap();
+        obj.name = "Garruk Relentless".into();
+        obj.summoning_sick = false;
+        // Set loyalty counters
+        state.add_counters(id, CounterType::Loyalty, 3);
+        id
+    };
+
+    // Verify starting loyalty
+    let loyalty_before = state.get_counter_count(garruk, CounterType::Loyalty);
+    assert_eq!(loyalty_before, 3, "Garruk should start with 3 loyalty");
+
+    // Deal 2 damage to the planeswalker via DealDamage pending effect
+    // (simulating Curse of the Pierced Heart or similar)
+    engine::apply_pending_effect(
+        &mut state,
+        &Target::Object(garruk),
+        &mtg_engine::state::PendingEffect::DealDamage { source_id: garruk, amount: 2, source_name: "Test".into() },
+        &registry,
+    );
+
+    // Loyalty should decrease by 2 (3 -> 1)
+    let loyalty_after = state.get_counter_count(garruk, CounterType::Loyalty);
+
+    // BUG: Loyalty is still 3 because DealDamage adds to damage_marked
+    // instead of removing loyalty counters
+    assert_eq!(loyalty_after, 1,
+        "Planeswalker should lose loyalty from damage. Loyalty: {} (expected 1)", loyalty_after);
+}
