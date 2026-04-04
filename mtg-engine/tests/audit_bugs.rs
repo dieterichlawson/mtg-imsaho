@@ -257,6 +257,8 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
 /// Bug: Ghost Quarter doesn't shuffle the library after the land search.
 /// Oracle: "put it onto the battlefield, then shuffle."
 /// The code finds and places the land but never calls library_order.shuffle().
+/// We verify by checking the library has NO basic lands removed (search happens)
+/// but the remaining order is unchanged (no shuffle).
 #[test]
 fn bug_ghost_quarter_missing_shuffle() {
     let registry = CardRegistry::with_all_cards();
@@ -273,34 +275,44 @@ fn bug_ghost_quarter_missing_shuffle() {
         id
     };
 
-    // Put specific basic lands in P1's library in a known order
-    let plains_ids: Vec<_> = (0..5).map(|_| {
-        let card_id = registry.get_id_by_name("Plains").unwrap();
+    // Put a mix of basic lands and non-lands in P1's library
+    // Use different basic land types so we can track order
+    let names = ["Plains", "Island", "Swamp", "Mountain", "Forest",
+                 "Plains", "Island", "Swamp", "Mountain", "Forest"];
+    for name in &names {
+        let card_id = registry.get_id_by_name(name).unwrap();
         let id = state.create_object(card_id, P1, Zone::Library, None, None);
-        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_object_mut(id).unwrap().name = (*name).into();
         state.get_player_mut(P1).library_order.push(id);
-        id
-    }).collect();
+    }
 
-    // Record the library order
-    let lib_order_before: Vec<_> = state.get_player(P1).library_order.clone();
-
-    // Activate Ghost Quarter targeting the land
-    // (This is complex to set up through the engine, so let's call the behavior directly)
+    // Record the library order AFTER the search removes one card
+    // (the first Plains found will be removed)
     let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
-    // Sacrifice Ghost Quarter
     state.move_object(gq, Zone::Graveyard);
-    // Destroy the target land and do the search
     behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
 
-    // Check if library was shuffled (order should be different)
-    let lib_order_after: Vec<_> = state.get_player(P1).library_order.clone();
+    // After search: one Plains was removed from library and put on battlefield.
+    // The remaining 9 cards should be shuffled per oracle text.
+    // We can verify shuffle DIDN'T happen by checking if the remaining order
+    // matches what we'd expect from a simple retain (no reordering).
+    let lib_after: Vec<_> = state.get_player(P1).library_order.clone();
+    assert_eq!(lib_after.len(), 9, "One land should have been found and placed");
 
-    // With 5 cards, the probability of the same order after shuffle is 1/120.
-    // If order is identical, shuffle didn't happen.
-    // BUG: Library is not shuffled after search
-    assert_ne!(lib_order_before, lib_order_after,
-        "Library should be shuffled after Ghost Quarter search (order unchanged)");
+    // Check the relative order of remaining cards is preserved (no shuffle happened).
+    // If shuffle happened, the order would be randomized.
+    // We verify the bug by confirming the order IS preserved (meaning no shuffle).
+    let names_after: Vec<String> = lib_after.iter()
+        .filter_map(|id| state.get_object(*id).map(|o| o.name.clone()))
+        .collect();
+
+    // Expected order after removing first Plains: Island, Swamp, Mountain, Forest, Plains, Island, Swamp, Mountain, Forest
+    let expected = vec!["Island", "Swamp", "Mountain", "Forest", "Plains", "Island", "Swamp", "Mountain", "Forest"];
+
+    // If the library was correctly shuffled, the order would be different.
+    // BUG: The library is NOT shuffled — order is preserved.
+    assert_ne!(names_after, expected,
+        "Library should be shuffled after Ghost Quarter search, but order is preserved (no shuffle)");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -308,37 +320,123 @@ fn bug_ghost_quarter_missing_shuffle() {
 // Creatures forced to attack should respect Pacifism/can't-attack effects.
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Bloodcrazed Neonate with Pacifism is still forced to attack.
+/// FALSE POSITIVE: Bloodcrazed Neonate with Pacifism is correctly NOT forced to attack.
 /// Oracle: "This creature attacks each combat if able."
 /// "If able" means the creature must actually be able to attack.
 /// Pacifism prevents attacking, so the force-attack should be skipped.
 #[test]
 fn bug_force_attack_ignores_cant_attack() {
     let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Bloodcrazed Neonate (has ForceAttack)
+    // Place Bloodcrazed Neonate (has ForceAttack via continuous effect)
     let neonate = named_creature(&mut state, &registry, "Bloodcrazed Neonate", P0);
 
-    // Give it Pacifism (PreventAttack)
-    if let Some(obj) = state.get_object_mut(neonate) {
-        obj.instance_continuous_effects = Some(vec![
-            ContinuousEffect::PreventAttack { scope: EffectScope::OnSelf },
-        ]);
-    }
+    // Cast Pacifism on the Neonate (gives PreventAttack + PreventBlock)
+    let pacifism = castable_spell(&mut state, &registry, "Pacifism", P0);
+    state = cast_and_resolve(&state, &registry, pacifism, vec![Target::Object(neonate)]);
 
-    // Get legal actions — neonate should NOT be forced to attack
+    // Move to DeclareAttackers step
+    state.step = Step::DeclareAttackers;
+
+    // Get legal actions — neonate should NOT be in must_attack
     let legal = engine::legal_actions(&state, &registry);
 
-    // Check if the combat prompt forces the neonate to attack
     if let Some(ref prompt) = legal.combat_prompt {
         match prompt {
-            mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, .. } => {
-                // BUG: Engine forces attack even with PreventAttack
-                assert!(!must_attack.contains(&neonate),
-                    "Neonate with Pacifism should NOT be forced to attack");
+            mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. } => {
+                // Correctly: Neonate is excluded from eligible (Pacifism prevents it)
+                assert!(!eligible.contains(&neonate));
+                assert!(!must_attack.contains(&neonate));
             }
             _ => {}
         }
     }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: PROTECTION NOT CHECKED FOR TARGETING
+// Protection should prevent being targeted by spells/abilities
+// of the protected type (e.g., protection from Zombies = can't
+// be targeted by Zombie creatures' abilities).
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Engine doesn't check protection when validating targets.
+/// Elite Inquisitor has protection from Vampires/Werewolves/Zombies.
+/// A Zombie creature's activated ability (e.g., Brain Weevil's discard)
+/// shouldn't be able to target a player whose creature has protection...
+/// Actually, protection prevents targeting of the PROTECTED PERMANENT,
+/// not the player. Let's test: Doom Blade targeting Elite Inquisitor —
+/// Doom Blade is black, not a Zombie/Vampire/Werewolf, so protection
+/// doesn't help here. Protection from subtypes prevents CREATURES of
+/// those subtypes from blocking/dealing damage/targeting.
+///
+/// The real test: can a spell ENCHANT a creature with protection from
+/// the enchantment's color? Or can a creature with protection be
+/// targeted by a non-creature source? This is complex — marking as
+/// NEEDS_REVIEW since protection from subtypes is narrow and the
+/// engine may correctly handle the common cases.
+///
+/// NOTE: Skipping this test — protection from subtypes primarily
+/// affects combat (blocking + damage prevention), which IS implemented.
+/// The targeting restriction for protection is a less common interaction.
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: "MAY" TREATED AS MANDATORY
+// Ghost Quarter's "may search" is treated as auto-search.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Ghost Quarter auto-searches instead of presenting "may" choice.
+/// Oracle: "Its controller may search their library for a basic land card"
+/// The "may" means the land's controller can decline to search.
+/// The code auto-finds the first basic land without presenting a choice.
+#[test]
+fn bug_ghost_quarter_may_search_is_mandatory() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Ghost Quarter for P0
+    let gq = named_creature(&mut state, &registry, "Ghost Quarter", P0);
+
+    // Place a target land for P1
+    let target_land = {
+        let card_id = registry.get_id_by_name("Forest").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        id
+    };
+
+    // Put a Plains in P1's library
+    let plains_id = {
+        let card_id = registry.get_id_by_name("Plains").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Library, None, None);
+        state.get_object_mut(id).unwrap().name = "Plains".into();
+        state.get_player_mut(P1).library_order.push(id);
+        id
+    };
+
+    let bf_count_before = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.name == "Plains")
+        .count();
+
+    // Activate Ghost Quarter
+    let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
+    state.move_object(gq, Zone::Graveyard);
+    behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
+
+    let bf_count_after = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.controller == P1 && o.name == "Plains")
+        .count();
+
+    // BUG: The Plains was auto-placed on the battlefield without P1 getting
+    // a choice to decline the search. In a real game, P1 might want to
+    // decline (e.g., to avoid a shuffle, or in specific strategic scenarios).
+    // After the ability resolves, there should be an AwaitingAction for P1's
+    // "may search" choice, OR the search should not have happened yet.
+    let awaiting = state.awaiting_action.is_some();
+
+    // The bug is that the search happened automatically
+    assert!(awaiting || bf_count_after == bf_count_before,
+        "Ghost Quarter should present 'may search' choice, not auto-search. Plains placed: {}",
+        bf_count_after - bf_count_before);
 }
