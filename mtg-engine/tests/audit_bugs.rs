@@ -4,7 +4,7 @@
 mod common;
 use common::*;
 
-use mtg_engine::actions::Action;
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
@@ -54,4 +54,52 @@ fn bug_summoning_sickness_not_enforced_for_tap_abilities() {
     // but currently fails because engine doesn't check summoning sickness for tap abilities
     assert!(!has_priest_ability,
         "Priest with summoning sickness should NOT be able to activate {{T}} ability");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SUBTYPE CHECK MISSES TOKENS
+// Cards that check subtypes via registry.card_data() miss tokens,
+// which store subtypes on obj.subtypes instead.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Victim of Night can target Vampire tokens.
+/// Oracle: "Destroy target non-Vampire, non-Werewolf, non-Zombie creature."
+/// The is_valid_target check uses registry.card_data() which returns None for
+/// tokens, so the subtype exclusion fails and tokens are targetable.
+#[test]
+fn bug_victim_of_night_can_target_vampire_token() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create a Vampire token (like Bloodline Keeper creates)
+    let vampire_token = state.create_token_with_subtypes(
+        "Vampire", P1, 2, 2,
+        vec![Color::Black],
+        vec![CardType::Creature],
+        vec![],
+        vec!["Vampire".into()],
+    );
+    if let Some(obj) = state.get_object_mut(vampire_token) {
+        obj.summoning_sick = false;
+    }
+
+    // Verify token has Vampire subtype
+    assert!(state.get_object(vampire_token).unwrap().subtypes.contains(&"Vampire".into()),
+        "Token should have Vampire subtype");
+
+    // Cast Victim of Night targeting the Vampire token
+    let victim = castable_spell(&mut state, &registry, "Victim of Night", P0);
+
+    // Check if the Vampire token is a valid target
+    let behavior = registry.get(
+        registry.get_id_by_name("Victim of Night").unwrap()
+    ).unwrap();
+    let is_valid = behavior.is_valid_target(
+        &state, P0, &Target::Object(vampire_token), &registry
+    );
+
+    // BUG: Token should NOT be a valid target (it's a Vampire),
+    // but is_valid_target only checks registry which has no data for tokens
+    assert!(!is_valid,
+        "Vampire token should NOT be a valid target for Victim of Night");
 }
