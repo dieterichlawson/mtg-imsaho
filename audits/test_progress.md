@@ -29,15 +29,20 @@ Writing failing tests to verify each audit issue.
 2. **subtype check misses tokens** — `bug_victim_of_night_can_target_vampire_token` (covers 18 issues across 18 cards)
 3. **ETB trigger zone check** — `bug_etb_trigger_suppressed_when_source_leaves` (covers 11 issues across 11 cards)
 
-### TODO (next)
-4. auto-selects instead of player choice (15 issues) — test Falkenrath Noble auto-targeting
-5. "as long as" snapshot (4 issues) — need to fix Bonds of Faith test setup
-6. engine: simultaneous events (9 issues) — Falkenrath Noble simultaneous death
-7. engine: force-attack missing checks (3 issues) — Bloodcrazed Neonate + Pacifism
-8. engine: planeswalker damage (3 issues)
-9. engine: protection targeting (2 issues)
-10. "may" not optional (1 issue)
-11. missing shuffle (1 issue)
+### TESTED (failing test written and confirmed)
+4. **auto-selects** — `bug_falkenrath_noble_auto_targets_opponent` (covers 15 issues)
+5. **simultaneous death** — `bug_simultaneous_death_triggers_only_fire_once` (covers 9 issues)
+
+### UNVERIFIED (test passes — needs rework)
+- **missing shuffle** — Ghost Quarter test passes, need to test through engine path
+- **force-attack** — Pacifism test passes, need actual aura attachment
+- **"as long as" snapshot** — Bonds of Faith test setup issue
+
+### TODO
+- engine: planeswalker damage (3 issues)
+- engine: protection targeting (2 issues)
+- "may" not optional (1 issue)
+- NEEDS_REVIEW category (175 issues) — many are duplicates of above categories
 
 ### SKIPPED (cosmetic, not testable as failing test)
 - oracle text mismatch (5 issues)
