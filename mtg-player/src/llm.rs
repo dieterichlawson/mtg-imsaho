@@ -102,7 +102,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Falkenrath Noble ({3}{B} creature 2/2 flying): Whenever ANY creature dies, opponent loses 1 life and you gain 1.
 - Rage Thrower ({5}{R} creature 4/2): Whenever another creature dies, deals 2 damage to opponent.
 - Fiend Hunter ({1}{W}{W} creature 1/3): When it enters, you may exile another target creature (any creature, not just opponent's). When it leaves, the exiled card returns.
-- Intangible Virtue ({1}{W} enchantment): Your creatures get +1/+1.
+- Intangible Virtue ({1}{W} enchantment): Creature tokens you control get +1/+1 and have vigilance.
 - Unruly Mob ({1}{W} creature 1/1): Gets a +1/+1 counter whenever another of your creatures dies.
 - Lumberknot ({2}{G}{G} creature 1/1 hexproof): Gets a +1/+1 counter whenever any creature dies. Can't be targeted!
 - Elder Cathar ({2}{W} creature 2/2): When it dies, puts a +1/+1 counter on one of your creatures.
