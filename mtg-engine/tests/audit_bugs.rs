@@ -1543,32 +1543,37 @@ fn bug_reaper_intervening_if_not_checked_at_trigger() {
 // CARD-SPECIFIC: EVIL TWIN — MARKER SET BEFORE CHOICE
 // ═══════════════════════════════════════════════════════════════
 
-/// FALSE POSITIVE: Evil Twin deliberately sets is_evil_twin before the copy
-/// choice. The code comment says "set before choice so card_state persists."
-/// This is correct — Evil Twin always has the destroy ability regardless
-/// of whether the player copies a creature.
+/// Bug: Evil Twin sets is_evil_twin before the copy choice. The destroy ability
+/// comes from the "except it has..." clause, which only applies when a copy is made.
+/// Per ruling: "You can choose not to copy anything. In that case, Evil Twin enters
+/// as a 0/0 creature." A 0/0 that didn't copy anything should NOT have the destroy
+/// ability. The code comment claiming this is intentional is wrong per oracle text.
 #[test]
 fn bug_evil_twin_marker_set_before_choice() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Cast Evil Twin with a target creature
-    let target = ready_creature(&mut state, P1, 3, 3);
+    // Place a target creature and Evil Twin
+    let _target = ready_creature(&mut state, P1, 3, 3);
     let twin = castable_spell(&mut state, &registry, "Evil Twin", P0);
-    state = cast_and_resolve(&state, &registry, twin, vec![Target::Object(target)]);
+    state = cast_and_resolve(&state, &registry, twin, vec![]);
 
-    // Check if is_evil_twin is already set before the copy choice is made
+    // Fire ETB triggers (this is where on_enter_battlefield runs)
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // Check if is_evil_twin is set before the copy choice is made
     let has_marker = state.get_object(twin).map(|o|
         o.card_state.contains_key("is_evil_twin")
     ).unwrap_or(false);
 
-    // If there's an awaiting_action for the copy choice, the marker shouldn't
-    // be set yet — it should be set only after the player confirms the copy.
     let has_choice = state.awaiting_action.is_some();
 
-    // BUG: Marker is set before the choice is presented
+    // The marker should only be set AFTER the player chooses to copy.
+    // If the player declines, the 0/0 Twin dies without the destroy ability.
+    // BUG: Marker is set before the choice is presented.
     assert!(!(has_marker && has_choice),
-        "is_evil_twin should not be set while copy choice is pending");
+        "is_evil_twin should not be set while copy choice is pending. Marker: {}, Choice: {}",
+        has_marker, has_choice);
 }
 
 // ═══════════════════════════════════════════════════════════════
