@@ -961,3 +961,198 @@ fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
     assert!(!drew_empty,
         "Revealing cards is not drawing — has_drawn_from_empty should be false");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: HINTERLAND HARBOR — CHECKLAND SUBTYPE DETECTION
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Hinterland Harbor's checkland logic only checks obj.subtypes (runtime),
+/// which is empty for regular non-token lands. Forest/Island subtypes are stored
+/// in CardData via the registry, not on the object.
+#[test]
+fn bug_hinterland_harbor_misses_real_basic_lands() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a real Forest for P0 (not a token — subtypes in registry, not obj)
+    let forest = {
+        let card_id = registry.get_id_by_name("Forest").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Battlefield, None, None);
+        state.get_object_mut(id).unwrap().name = "Forest".into();
+        state.get_object_mut(id).unwrap().summoning_sick = false;
+        id
+    };
+
+    // Verify Forest has "Forest" subtype in registry
+    let forest_card_id = state.get_object(forest).unwrap().card_id;
+    let forest_data = registry.card_data(forest_card_id).unwrap();
+    assert!(forest_data.subtypes.iter().any(|s| s == "Forest"),
+        "Forest should have Forest subtype in registry");
+
+    // Verify Forest does NOT have subtypes on the object (that's the issue)
+    assert!(state.get_object(forest).unwrap().subtypes.is_empty(),
+        "Regular cards have empty obj.subtypes — subtypes are in registry");
+
+    // Now cast Hinterland Harbor — it should enter untapped because we control a Forest
+    let harbor = castable_spell(&mut state, &registry, "Hinterland Harbor", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: harbor, targets: vec![], sacrifice: None,
+            exile_count: None, alternative_cost: None,
+        },
+        &registry,
+    );
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    // BUG: Harbor enters tapped because the checkland logic only checks
+    // obj.subtypes (empty for real lands), not registry subtypes
+    assert!(!state.get_object(harbor).unwrap().tapped,
+        "Hinterland Harbor should enter untapped — we control a Forest");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: UNBURIAL RITES — NO TARGET REQUIREMENT
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Unburial Rites has no target_requirement override, so the engine
+/// treats it as an untargeted spell. It can be cast with no creatures
+/// in any graveyard, and targets are selected at resolution not cast.
+#[test]
+fn bug_unburial_rites_castable_with_no_targets() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Empty graveyards — no valid targets
+    let rites = castable_spell(&mut state, &registry, "Unburial Rites", P0);
+
+    // Check if Unburial Rites can be cast
+    let legal = engine::legal_actions(&state, &registry);
+    let can_cast = legal.actions.iter().any(|a| {
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == rites)
+    });
+
+    // BUG: Can cast with no legal targets because target_requirement is None
+    assert!(!can_cast,
+        "Unburial Rites should not be castable with no creature cards in any graveyard");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: THRABEN SENTRY — VIGILANCE RETAINED ON BACK FACE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: After Thraben Sentry transforms to Thraben Militia (back face),
+/// it retains Vigilance from the front face because obj.keywords isn't
+/// updated during transform.
+#[test]
+fn bug_thraben_sentry_vigilance_retained_after_transform() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
+
+    // Set keywords on object to match front face (Vigilance)
+    if let Some(obj) = state.get_object_mut(sentry) {
+        obj.keywords = vec![Keyword::Vigilance];
+    }
+
+    // Transform to back face
+    if let Some(obj) = state.get_object_mut(sentry) {
+        obj.is_transformed = true;
+        obj.name = "Thraben Militia".into();
+        // BUG: keywords not updated — Vigilance persists
+    }
+
+    // Back face (Thraben Militia) should NOT have Vigilance
+    let has_vigilance = state.has_keyword(sentry, Keyword::Vigilance, &registry);
+
+    // BUG: has_keyword returns true because obj.keywords still contains Vigilance
+    assert!(!has_vigilance,
+        "Thraben Militia (back face) should NOT have Vigilance");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: HARVEST PYRE — NO EXILE CHOICE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: When casting Harvest Pyre, the engine auto-selects which cards
+/// to exile from the graveyard instead of letting the player choose.
+#[test]
+fn bug_harvest_pyre_auto_selects_exile() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put several different cards in P0's graveyard
+    for name in ["Grizzly Bears", "Lightning Bolt", "Giant Growth"] {
+        let card_id = registry.get_id_by_name(name).unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, None, None);
+        state.get_object_mut(id).unwrap().name = name.into();
+    }
+
+    // Place a target
+    let target = ready_creature(&mut state, P1, 5, 5);
+
+    // Add mana for Harvest Pyre
+    add_mana_for(&mut state, &registry, "Harvest Pyre", P0);
+    let pyre = spell_in_hand(&mut state, &registry, "Harvest Pyre", P0);
+
+    // Get legal actions — there should be multiple options for different X values
+    // but the player should also choose WHICH cards to exile
+    let legal = engine::legal_actions(&state, &registry);
+    let pyre_actions: Vec<_> = legal.actions.iter().filter(|a| {
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == pyre)
+    }).collect();
+
+    // The engine generates actions with exile_count for different X values,
+    // but auto-selects which specific cards to exile. This is the bug —
+    // the player should choose which cards to exile.
+    // We can verify by checking if there are more actions for the same X
+    // with different exile selections.
+    let x2_actions: Vec<_> = pyre_actions.iter().filter(|a| {
+        match a {
+            Action::CastSpell { exile_count: Some(2), .. } => true,
+            _ => false,
+        }
+    }).collect();
+
+    // For X=2 with 3 graveyard cards, there should be C(3,2) = 3 different
+    // exile selections. If there's only 1, the engine auto-picked.
+    // BUG: Only 1 action for X=2 (auto-selected)
+    assert!(x2_actions.len() > 1,
+        "Should have multiple exile selections for X=2 with 3 graveyard cards, got {}",
+        x2_actions.len());
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: UNBREATHING HORDE — REANIMATION COUNTERS
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Unbreathing Horde's "enters with" counter placement doesn't
+/// fire when it enters via reanimation (Unburial Rites), only via cast.
+#[test]
+fn bug_unbreathing_horde_no_counters_via_reanimation() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put some Zombies in P0's graveyard
+    for _ in 0..3 {
+        let card_id = registry.get_id_by_name("Walking Corpse").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Walking Corpse".into();
+    }
+
+    // Place Unbreathing Horde on battlefield directly (simulating reanimation)
+    let horde = named_creature(&mut state, &registry, "Unbreathing Horde", P0);
+
+    // Fire ETB trigger
+    let behavior = registry.get(state.get_object(horde).unwrap().card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, horde, &registry);
+
+    // Should have +1/+1 counters equal to Zombies in graveyard (3)
+    let counters = state.get_counter_count(horde, CounterType::PlusOnePlusOne);
+
+    // BUG: Counters may not be placed when entering via non-cast path
+    assert!(counters >= 3,
+        "Unbreathing Horde should enter with 3 +1/+1 counters (Zombies in GY). Got: {}",
+        counters);
+}
