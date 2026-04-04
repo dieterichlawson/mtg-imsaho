@@ -686,9 +686,8 @@ fn bug_once_per_turn_never_clears() {
 // Triggers should not fire for the wrong player's upkeep/end step.
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Charmbreaker Devils' upkeep trigger goes on the stack during
-/// the opponent's upkeep. The handler returns early, but the trigger
-/// still appears on the stack, allowing opponent to respond to nothing.
+/// FALSE POSITIVE: Trigger system correctly pre-filters upkeep triggers
+/// by controller. No spurious triggers go on the stack during opponent's upkeep.
 #[test]
 fn bug_spurious_upkeep_trigger_for_opponent() {
     let registry = CardRegistry::with_all_cards();
@@ -957,7 +956,10 @@ fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
     // has_drawn_from_empty should NOT be set — revealing is not drawing
     let drew_empty = state.get_player(P0).has_drawn_from_empty;
 
-    // BUG: has_drawn_from_empty is true because the reveal loop uses draw_top_card
+    // NOTE: This test passes because the Phantasm shuffles itself into the library,
+    // so the reveal loop finds it. The bug only manifests with token copies of
+    // Mirror-Mad Phantasm (tokens cease to exist in library). UNTESTABLE without
+    // token-in-library simulation.
     assert!(!drew_empty,
         "Revealing cards is not drawing — has_drawn_from_empty should be false");
 }
@@ -1417,28 +1419,33 @@ fn bug_mentor_of_the_meek_auto_pays() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Mentor of the Meek
-    let _mentor = named_creature(&mut state, &registry, "Mentor of the Meek", P0);
+    let mentor = named_creature(&mut state, &registry, "Mentor of the Meek", P0);
 
     // Add {1} mana so the pay choice is available
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
+    // Give P0 some library cards to draw from
+    for _ in 0..3 {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(id);
+    }
+
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
-    // Place a small creature (triggers Mentor)
-    let _small = named_creature(&mut state, &registry, "Typhoid Rats", P0);
-
-    // Process triggers
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
+    // Place a small creature and directly call the trigger handler
+    let small = ready_creature(&mut state, P0, 1, 1);
+    let behavior = registry.get(state.get_object(mentor).unwrap().card_id).unwrap();
+    behavior.on_any_creature_enters(&mut state, mentor, small, P0, &registry);
 
     let hand_after = state.objects_in_zone(Zone::Hand, P0).len();
     let has_choice = state.awaiting_action.is_some();
 
-    // If "you may" is properly optional, there should be an awaiting_action
-    // for the pay choice, and no card drawn yet.
+    // "you may pay {1}" should present a choice, not auto-draw
     // BUG: Auto-draws without presenting the pay choice
     assert!(has_choice || hand_after == hand_before,
         "Mentor should present 'you may pay' choice. Drew {} cards without asking.",
-        hand_after - hand_before);
+        hand_after as i32 - hand_before as i32);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1737,4 +1744,226 @@ fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
     // BUG: Equip available with only 1 creature
     assert!(!can_equip,
         "Demonmail Hauberk equip should not be available with only 1 creature (no equip target after sacrifice)");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: CIVILIZED SCHOLAR — STALE attacked_this_turn
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Civilized Scholar transforms to Homicidal Brute. Brute's end step
+/// trigger says "if it didn't attack, tap and transform back." The
+/// attacked_this_turn flag persists through transformation, so if
+/// Scholar attacked then transformed, Brute's end step check sees it
+/// as having attacked and doesn't transform back.
+/// Per MTG rules, Homicidal Brute is a new entity after transform —
+/// it hasn't attacked this turn.
+#[test]
+fn bug_civilized_scholar_stale_attacked_flag() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::EndStep, P0);
+    state.active_player = P0;
+
+    // Place Civilized Scholar, already transformed to Homicidal Brute
+    let brute = named_creature(&mut state, &registry, "Civilized Scholar", P0);
+    if let Some(obj) = state.get_object_mut(brute) {
+        obj.is_transformed = true;
+        obj.name = "Homicidal Brute".into();
+        // Set attacked_this_turn — stale from before transform
+        obj.card_state.insert("attacked_this_turn".into(), mtg_engine::ids::ObjectId(1));
+    }
+
+    // Fire end step trigger — Brute should tap and transform back because
+    // IT (Homicidal Brute) didn't attack this turn. The attacked_this_turn
+    // flag is from before the transform (when it was Scholar).
+    let behavior = registry.get(state.get_object(brute).unwrap().card_id).unwrap();
+    behavior.on_end_step(&mut state, brute, &registry);
+
+    // BUG: Brute stays transformed because attacked_this_turn is stale
+    let is_still_transformed = state.get_object(brute).unwrap().is_transformed;
+    assert!(!is_still_transformed,
+        "Homicidal Brute should transform back at end step if it didn't attack");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: ESSENCE OF THE WILD — NON-RESOLVE PATH
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Essence of the Wild's replacement effect (creatures you control
+/// enter as copies) only works through on_resolve. Creatures entering
+/// via other means (reanimation, token creation) skip the replacement.
+#[test]
+fn bug_essence_of_wild_replacement_not_applied_for_tokens() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Essence of the Wild (6/6 Avatar)
+    let eotw = named_creature(&mut state, &registry, "Essence of the Wild", P0);
+
+    // Create a token — it should enter as a copy of Essence of the Wild
+    let token = state.create_token_with_subtypes(
+        "Spirit", P0, 1, 1,
+        vec![Color::White],
+        vec![CardType::Creature],
+        vec![Keyword::Flying],
+        vec!["Spirit".into()],
+    );
+
+    // The token should be a 6/6 copy of Essence of the Wild
+    let token_power = state.get_object(token).map(|o| o.power).flatten().unwrap_or(0);
+
+    // BUG: Token enters as 1/1 Spirit, not as 6/6 Essence copy
+    assert_eq!(token_power, 6,
+        "Token should enter as 6/6 Essence of the Wild copy, got power {}", token_power);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: GALVANIC JUGGERNAUT — FORCE ATTACK
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Galvanic Juggernaut has "attacks each combat if able" but the
+/// force-attack logic may not check all "if able" conditions.
+/// (This may be a false positive like Bloodcrazed Neonate.)
+#[test]
+fn bug_galvanic_juggernaut_force_attack_when_unable() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    // Place Galvanic Juggernaut (has ForceAttack + it enters tapped + PreventUntap)
+    let jug = named_creature(&mut state, &registry, "Galvanic Juggernaut", P0);
+
+    // Tap it (it enters tapped and doesn't untap)
+    if let Some(obj) = state.get_object_mut(jug) {
+        obj.tapped = true;
+    }
+
+    // A tapped creature cannot attack, so force-attack should NOT apply
+    let legal = engine::legal_actions(&state, &registry);
+    if let Some(ref prompt) = legal.combat_prompt {
+        match prompt {
+            mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. } => {
+                assert!(!eligible.contains(&jug),
+                    "Tapped Juggernaut should not be eligible to attack");
+                assert!(!must_attack.contains(&jug),
+                    "Tapped Juggernaut should not be forced to attack");
+            }
+            _ => {}
+        }
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: STITCHER'S APPRENTICE — TRIGGER DESYNC
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: When Stitcher's Apprentice creates a token and the controller
+/// must sacrifice a creature, the trigger_event_index gets desynced,
+/// causing ETB watchers (like Champion of the Parish) to miss the
+/// token's CreatureDied event from the sacrifice.
+/// This is a complex engine timing issue — testing by checking if
+/// Champion gets a +1/+1 counter from a Human token entering AND
+/// triggers properly when the sacrificed creature dies.
+#[test]
+fn bug_stitchers_apprentice_trigger_desync() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Stitcher's Apprentice
+    let apprentice = named_creature(&mut state, &registry, "Stitcher's Apprentice", P0);
+
+    // Place Falkenrath Noble (triggers on any creature death)
+    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+
+    // Place a creature to sacrifice
+    let victim = ready_creature(&mut state, P0, 1, 1);
+
+    let p1_life_before = state.get_player(P1).life;
+
+    // Activate Stitcher's Apprentice ability (creates Homunculus token, then sacrifice)
+    state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    let behavior = registry.get(state.get_object(apprentice).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, apprentice, 0, &[], &registry);
+
+    // Process triggers from the sacrifice
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // Falkenrath Noble should have triggered from the sacrifice death
+    let p1_life_after = state.get_player(P1).life;
+
+    // BUG: trigger_event_index desync may cause Noble to miss the death
+    assert!(p1_life_after < p1_life_before,
+        "Falkenrath Noble should trigger from sacrifice. P1 life: {} -> {}",
+        p1_life_before, p1_life_after);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: CREEPY DOLL — COIN FLIP + REGENERATION
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: When Creepy Doll deals lethal combat damage to a creature
+/// AND wins the coin flip, the creature should be destroyed by the
+/// triggered ability even if it could regenerate from the lethal damage.
+/// The ruling says these are separate events.
+/// Note: This is hard to test deterministically due to the coin flip.
+/// We test the simpler case: Creepy Doll's trigger fires even when
+/// the creature already has lethal damage.
+#[test]
+fn bug_creepy_doll_trigger_with_lethal_damage() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let doll = named_creature(&mut state, &registry, "Creepy Doll", P0);
+    let target = ready_creature(&mut state, P1, 2, 1); // 1 toughness, will take lethal from 1 dmg
+
+    // Simulate combat damage: Doll deals 1 to target (lethal for 1 toughness)
+    if let Some(obj) = state.get_object_mut(target) {
+        obj.damage_marked = 1;
+        obj.damaged_by.push(doll);
+    }
+
+    // Give target a regeneration shield (to survive lethal damage)
+    if let Some(obj) = state.get_object_mut(target) {
+        obj.regeneration_shields = 1;
+    }
+
+    // The trigger should still fire (it's a separate "destroy" effect)
+    let behavior = registry.get(state.get_object(doll).unwrap().card_id).unwrap();
+    behavior.on_deals_combat_damage_to_creature(&mut state, doll, target, 1, &registry);
+
+    // After the trigger (which calls try_destroy on a coin flip win),
+    // the creature may survive (regeneration absorbs the destroy) or die.
+    // The key question is whether the trigger FIRES at all — it should.
+    // We can't control the coin flip, but we can verify the trigger ran
+    // by checking if try_destroy was called (regeneration shield consumed).
+    let shields_after = state.get_object(target).unwrap().regeneration_shields;
+
+    // If the coin flip was won AND try_destroy was called, the shield is consumed.
+    // If the coin flip was lost, shields remain at 1.
+    // Either way, the trigger should have fired. We verify by running SBAs
+    // and checking the creature survived via regeneration.
+    // Run the trigger multiple times to get at least one coin flip win.
+    // If try_destroy is called on a win, the regeneration shield is consumed.
+    // We reset and retry until we get a win (statistically guaranteed in ~10 tries).
+    let mut won_at_least_once = false;
+    for _ in 0..20 {
+        // Reset target state
+        if let Some(obj) = state.get_object_mut(target) {
+            obj.regeneration_shields = 1;
+            obj.damage_marked = 1;
+            obj.zone = Zone::Battlefield;
+        }
+
+        behavior.on_deals_combat_damage_to_creature(&mut state, doll, target, 1, &registry);
+
+        let shields = state.get_object(target).unwrap().regeneration_shields;
+        if shields == 0 {
+            // Coin flip was won, try_destroy was called, regeneration was consumed
+            won_at_least_once = true;
+            break;
+        }
+    }
+
+    assert!(won_at_least_once,
+        "After 20 attempts, Creepy Doll should have won at least one coin flip and called try_destroy");
 }
