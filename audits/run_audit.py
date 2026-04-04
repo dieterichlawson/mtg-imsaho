@@ -118,6 +118,14 @@ Auditors have also claimed "Scryfall says X but code says Y" without actually qu
 
 Do not read any previous audit logs before conducting your audit. Your audit must be independent.
 
+## What is NOT an issue
+
+The following are NOT issues and must NOT be flagged:
+
+- **Ability words listed as "keywords" in Scryfall**: Scryfall's "Keywords" field includes ability words (Morbid, Transform, Flashback) and keyword actions (Mill). These are NOT keywords in the engine's `Keyword` enum, which only contains keyword abilities that affect game rules (Flying, First Strike, Hexproof, etc.). Do not flag the absence of ability words from the `keywords` vec.
+- **Missing test coverage alone**: Low test coverage is worth noting in the Test Coverage section but is NOT a code issue. Only flag it under Code Issues if a test actively enshrines wrong behavior.
+- **Style inconsistencies**: Different cards using different helper functions or patterns for the same thing is not a bug if both produce correct behavior.
+
 ## Procedure — follow ALL steps
 
 ### Step 1. Record oracle text
@@ -244,9 +252,9 @@ def main():
     parser.add_argument("--limit", type=int, help="Max cards to audit")
     parser.add_argument("--filter", choices=["pass", "issue", "skipped", "unaudited"],
                         help="Only audit cards with this status")
-    parser.add_argument("--model", default="claude-sonnet-4-20250514",
+    parser.add_argument("--model", default="claude-sonnet-4-6-20250514",
                         help="Model to use")
-    parser.add_argument("--max-turns", type=int, default=50,
+    parser.add_argument("--max-turns", type=int, default=100,
                         help="Max turns per agent")
     parser.add_argument("--dry-run", action="store_true",
                         help="Show what would be audited without running")
