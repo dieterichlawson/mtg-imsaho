@@ -569,3 +569,292 @@ fn bug_protection_incorrectly_prevents_blocking_zombies() {
     assert!(can_block,
         "Grave Bramble should be able to block Zombies — protection prevents Zombies from blocking IT, not the reverse");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// CACKLING COUNTERPART — COLORS NOT COPIED
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Cackling Counterpart creates a token copy but doesn't copy
+/// the original creature's colors. Token is created with empty colors.
+#[test]
+fn bug_cackling_counterpart_colors_not_copied() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a green creature
+    let creature = named_creature(&mut state, &registry, "Grizzly Bears", P0);
+
+    // Cast Cackling Counterpart targeting it
+    let cc = castable_spell(&mut state, &registry, "Cackling Counterpart", P0);
+    state = cast_and_resolve(&state, &registry, cc, vec![Target::Object(creature)]);
+
+    // Find the token copy
+    let tokens: Vec<_> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Grizzly Bears")
+        .collect();
+
+    assert!(!tokens.is_empty(), "Token copy should exist");
+
+    let token_colors = &tokens[0].colors;
+
+    // BUG: Token has no colors (empty vec) instead of copying the original's green
+    assert!(!token_colors.is_empty(),
+        "Token copy should have colors copied from original. Got: {:?}", token_colors);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// BITTERHEART WITCH — HEXPROOF NOT FILTERED IN CHOICE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: When Bitterheart Witch dies and the player searches for a Curse,
+/// the target player choice list doesn't filter out players with hexproof
+/// (from Witchbane Orb). You shouldn't be able to attach a Curse to a
+/// hexproof player.
+#[test]
+fn bug_bitterheart_witch_hexproof_not_filtered() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Witchbane Orb for P1 (grants hexproof to P1)
+    let _orb = named_creature(&mut state, &registry, "Witchbane Orb", P1);
+
+    // Place a Curse in P0's library
+    let curse_id = registry.get_id_by_name("Curse of the Pierced Heart").unwrap();
+    let curse = state.create_object(curse_id, P0, Zone::Library, None, None);
+    state.get_object_mut(curse).unwrap().name = "Curse of the Pierced Heart".into();
+    state.get_player_mut(P0).library_order.push(curse);
+
+    // Place and kill Bitterheart Witch
+    let witch = named_creature(&mut state, &registry, "Bitterheart Witch", P0);
+    mtg_engine::destruction::sacrifice(&mut state, witch, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state);
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // If there's a yes/no choice, accept it
+    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::YesNo { .. }, ..
+    }) = &state.awaiting_action {
+        let action = Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+        };
+        state = engine::submit_action(&state, &action, &registry);
+    }
+
+    // Check if the player choice includes P1 (who has hexproof)
+    let p1_targetable = state.awaiting_action.as_ref().map(|aa| {
+        format!("{:?}", aa).contains(&format!("Player(PlayerId(1))"))
+    }).unwrap_or(false);
+
+    // BUG: P1 with hexproof (from Witchbane Orb) is still a valid target
+    assert!(!p1_targetable,
+        "Player with hexproof should not be targetable for Curse attachment");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MEMORY'S JOURNEY — MISSING PLAYER TARGET
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Memory's Journey targets up to 3 cards in a graveyard AND
+/// has a mandatory player target (to determine whose graveyard).
+/// The card may be missing the player targeting requirement.
+#[test]
+fn bug_memorys_journey_missing_player_target() {
+    let registry = CardRegistry::with_all_cards();
+    let state = game_at_step(Step::PrecombatMain, P0);
+
+    // Check the target requirement
+    let behavior = registry.get(
+        registry.get_id_by_name("Memory's Journey").unwrap()
+    ).unwrap();
+    let req = behavior.target_requirement();
+
+    // Oracle: "Target player shuffles up to three target cards from their graveyard into their library."
+    // This needs BOTH a player target AND card targets.
+    // BUG: May be missing the player target requirement
+    let req_str = format!("{:?}", req);
+    let has_player_target = req_str.contains("Player");
+
+    assert!(has_player_target,
+        "Memory's Journey should target a player. Target requirement: {:?}", req);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// MASK OF AVACYN — DUPLICATE EQUIP ACTION
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Mask of Avacyn generates a duplicate equip action via the
+/// attached-aura loop, enabling broken re-equip behavior.
+#[test]
+fn bug_mask_of_avacyn_duplicate_equip_action() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Mask of Avacyn and two creatures
+    let mask = named_creature(&mut state, &registry, "Mask of Avacyn", P0);
+    if let Some(obj) = state.get_object_mut(mask) {
+        obj.is_equipment = true;
+    }
+    let c1 = ready_creature(&mut state, P0, 2, 2);
+    let c2 = ready_creature(&mut state, P0, 3, 3);
+
+    // Equip to c1
+    if let Some(obj) = state.get_object_mut(mask) {
+        obj.attached_to = Some(c1);
+    }
+
+    // Add mana for equip cost
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
+
+    // Get legal actions
+    let legal = engine::legal_actions(&state, &registry);
+    let equip_actions: Vec<_> = legal.actions.iter().filter(|a| {
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == mask)
+    }).collect();
+
+    // Should have exactly 1 equip action (to move to c2)
+    // BUG: May have duplicate equip actions from attached-aura loop
+    assert!(equip_actions.len() <= 1,
+        "Should have at most 1 equip action, got {}", equip_actions.len());
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SPARE FROM EVIL — PROTECTION NON-COMBAT DAMAGE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Spare from Evil gives "protection from non-Human creatures."
+/// Protection prevents damage from those sources (all damage, not just
+/// combat). Non-combat damage from a non-Human creature source should
+/// be prevented but may not be.
+#[test]
+fn bug_spare_from_evil_protection_non_combat_damage() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a Human creature for P0
+    let human = ready_creature(&mut state, P0, 2, 2);
+    if let Some(obj) = state.get_object_mut(human) {
+        obj.subtypes = vec!["Human".into()];
+    }
+
+    // Give it protection from non-Human creatures (Spare from Evil effect)
+    // The protection is stored as until_end_of_turn_protection
+    state.until_end_of_turn_protection.push(mtg_engine::state::UntilEndOfTurnProtection {
+        target: human,
+        filter: mtg_engine::types::CreatureFilter::Not(Box::new(
+            mtg_engine::types::CreatureFilter::HasSubtype("Human".into())
+        )),
+    });
+
+    // A non-Human creature deals non-combat damage to the protected creature
+    let zombie = ready_creature(&mut state, P1, 3, 3);
+    if let Some(obj) = state.get_object_mut(zombie) {
+        obj.subtypes = vec!["Zombie".into()];
+    }
+
+    // Simulate non-combat damage (e.g., from a triggered ability)
+    if let Some(obj) = state.get_object_mut(human) {
+        obj.damage_marked += 3;
+        obj.damaged_by.push(zombie);
+    }
+
+    // Check if protection prevents this damage
+    // The engine should check protection before applying non-combat damage
+    // BUG: Protection may not prevent non-combat damage
+    // (This test checks if damage was applied — if protection worked, damage_marked should be 0)
+    let damage = state.get_object(human).unwrap().damage_marked;
+    assert_eq!(damage, 0,
+        "Protection from non-Human creatures should prevent non-combat damage. Got: {}", damage);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UNDEAD ALCHEMIST — TRIGGER SOURCE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Undead Alchemist's second ability ("Whenever a Zombie you control
+/// deals combat damage to a player, that player mills that many cards")
+/// only fires from its own replacement mill, not from actual Zombie
+/// combat damage. The trigger should fire for ALL Zombie combat damage.
+#[test]
+fn bug_undead_alchemist_trigger_only_from_own_mill() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Undead Alchemist
+    let alchemist = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+
+    // Place a regular Zombie (not the Alchemist)
+    let zombie = ready_creature(&mut state, P0, 2, 2);
+    if let Some(obj) = state.get_object_mut(zombie) {
+        obj.subtypes = vec!["Zombie".into()];
+        obj.name = "Zombie Token".into();
+    }
+
+    // Give P1 some library cards
+    for _ in 0..10 {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P1).library_order.push(id);
+    }
+
+    let lib_before = state.get_player(P1).library_order.len();
+
+    // Simulate the Zombie dealing 2 combat damage to P1
+    // This should trigger Undead Alchemist's replacement: mill 2 instead of damage
+    let behavior = registry.get(state.get_object(alchemist).unwrap().card_id).unwrap();
+    behavior.on_any_combat_damage_to_player(&mut state, alchemist, zombie, P1, 2, &registry);
+
+    let milled = lib_before - state.get_player(P1).library_order.len();
+
+    // Should mill 2 cards (replacement effect)
+    assert!(milled >= 2,
+        "Undead Alchemist should cause 2 cards to be milled when Zombie deals combat damage. Milled: {}", milled);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GHOULCALLER'S CHANT — MODAL TARGETING
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Ghoulcaller's Chant is modal with two modes. The engine's
+/// build_cast_target_spec may not handle modal spells containing
+/// TwoTargets correctly, causing incorrect action generation.
+#[test]
+fn bug_ghoulcallers_chant_modal_targeting() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put a creature and two Zombies in P0's graveyard
+    let bear = {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+        id
+    };
+    let zombie1 = {
+        let card_id = registry.get_id_by_name("Walking Corpse").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Walking Corpse".into();
+        id
+    };
+    let zombie2 = {
+        let card_id = registry.get_id_by_name("Diregraf Ghoul").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Diregraf Ghoul".into();
+        id
+    };
+
+    // Cast Ghoulcaller's Chant
+    let chant = castable_spell(&mut state, &registry, "Ghoulcaller's Chant", P0);
+
+    // Get legal actions — should have actions for BOTH modes
+    let legal = engine::legal_actions(&state, &registry);
+    let chant_actions: Vec<_> = legal.actions.iter().filter(|a| {
+        matches!(a, Action::CastSpell { object_id, .. } if *object_id == chant)
+    }).collect();
+
+    // Should have at least mode 1 (return any creature: bear, zombie1, zombie2 = 3 actions)
+    // plus mode 2 (return two Zombies: zombie1+zombie2 = 1 action)
+    // BUG: Modal targeting spec may not generate actions for both modes
+    assert!(chant_actions.len() >= 4,
+        "Should have actions for both modes (3 creature + 1 two-zombie). Got: {}",
+        chant_actions.len());
+}
