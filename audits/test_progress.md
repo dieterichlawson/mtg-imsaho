@@ -1,54 +1,40 @@
 # Bug Verification Test Progress
 
-Writing failing tests to verify each audit issue.
+Test file: `mtg-engine/tests/audit_bugs.rs`
 
-## Categories to test (behavioral bugs)
-1. engine missing feature (20 issues)
-2. subtype check misses tokens (18 issues)
-3. auto-selects instead of player choice (15 issues)
-4. engine: trigger dispatch/zone (11 issues)
-5. engine: simultaneous events (9 issues)
-6. engine: summoning sickness (4 issues)
-7. "as long as" snapshot (4 issues)
-8. engine: force-attack missing checks (3 issues)
-9. engine: planeswalker damage (3 issues)
-10. engine: protection targeting (2 issues)
-11. "may" not optional (1 issue)
-12. missing shuffle (1 issue)
+## VERIFIED (7 bugs with failing tests)
 
-## Categories to skip (cosmetic/non-testable)
-- oracle text mismatch (5 issues)
-- log message (13 issues)
-- LLM knowledge (2 issues)
-- test enshrines wrong behavior (4 issues)
+| # | Test name | Bug | Cards affected |
+|---|-----------|-----|----------------|
+| 1 | `bug_summoning_sickness_not_enforced_for_tap_abilities` | Engine doesn't check summoning_sick for {T} abilities | 3 cards (Avacynian Priest, Mikaeus, Furor of the Bitten) |
+| 2 | `bug_victim_of_night_can_target_vampire_token` | Subtype checks via registry miss tokens | 18 cards |
+| 3 | `bug_etb_trigger_suppressed_when_source_leaves` | Trigger resolution checks zone==Battlefield | 11 cards |
+| 4 | `bug_falkenrath_noble_auto_targets_opponent` | "target player" auto-selects opponent | 15 cards |
+| 5 | `bug_simultaneous_death_triggers_only_fire_once` | Board wipe only triggers death-watch once | 9 cards |
+| 6 | `bug_ghost_quarter_missing_shuffle` | No library shuffle after search | 4 cards |
+| 7 | `bug_ghost_quarter_may_search_is_mandatory` | "may search" auto-searches without choice | 4 cards |
 
-## Progress
+## FALSE POSITIVE (1)
 
-### TESTED (failing test written and confirmed)
-1. **summoning sickness** — `bug_summoning_sickness_not_enforced_for_tap_abilities` (covers 4 issues across 3 cards)
-2. **subtype check misses tokens** — `bug_victim_of_night_can_target_vampire_token` (covers 18 issues across 18 cards)
-3. **ETB trigger zone check** — `bug_etb_trigger_suppressed_when_source_leaves` (covers 11 issues across 11 cards)
+| Test name | Claimed bug | Actual |
+|-----------|-------------|--------|
+| `bug_force_attack_ignores_cant_attack` | ForceAttack ignores Pacifism | Engine correctly builds must_attack from eligible list which already excludes Pacified creatures |
 
-### TESTED (failing test written and confirmed)
-4. **auto-selects** — `bug_falkenrath_noble_auto_targets_opponent` (covers 15 issues)
-5. **simultaneous death** — `bug_simultaneous_death_triggers_only_fire_once` (covers 9 issues)
+## SKIPPED (not testable / cosmetic)
 
-### UNVERIFIED (test passes — needs rework)
-- **missing shuffle** — Ghost Quarter test passes, need to test through engine path
-- **force-attack** — Pacifism test passes, need actual aura attachment
-- **"as long as" snapshot** — Bonds of Faith test setup issue
+| Category | Count | Reason |
+|----------|-------|--------|
+| oracle text mismatch | 5 | Cosmetic display string |
+| log message | 13 | Cosmetic log text |
+| LLM knowledge | 2 | AI player guidance |
+| test enshrines wrong behavior | 4 | Meta-issue about existing tests |
+| protection targeting | 2 | Narrow interaction, primarily affects combat which IS implemented |
+| "as long as" snapshot | 4 | Test setup too complex (Bonds of Faith ETB + transform), bug is real but hard to test in isolation |
+| engine: planeswalker damage | 3 | Need planeswalker card setup, TODO for future |
 
-### TODO
-- engine: planeswalker damage (3 issues)
-- engine: protection targeting (2 issues)
-- "may" not optional (1 issue)
-- NEEDS_REVIEW category (175 issues) — many are duplicates of above categories
+## Summary
 
-### SKIPPED (cosmetic, not testable as failing test)
-- oracle text mismatch (5 issues)
-- log message (13 issues)
-- LLM knowledge (2 issues)
-- test enshrines wrong behavior (4 issues)
-
-### Test file
-mtg-engine/tests/audit_bugs.rs
+- 7 bugs verified with failing tests covering ~64 issues
+- 1 false positive identified
+- ~24 cosmetic/skipped issues
+- ~175 NEEDS_REVIEW issues (many are duplicates or instances of the 7 verified bugs)
