@@ -158,3 +158,93 @@ fn bug_etb_trigger_suppressed_when_source_leaves() {
     assert_eq!(lib_before - lib_after, 4,
         "ETB trigger should still mill 4 even after Skaab left the battlefield");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// AUTO-SELECTS INSTEAD OF PLAYER CHOICE
+// "Target player" means the player chooses; auto-selecting opponent is wrong.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Falkenrath Noble auto-targets the opponent for life drain.
+/// Oracle: "target player loses 1 life and you gain 1 life"
+/// "Target player" means the controller chooses which player to target,
+/// including potentially themselves. The code does state.opponent(controller)
+/// without presenting a choice.
+#[test]
+fn bug_falkenrath_noble_auto_targets_opponent() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Falkenrath Noble for P0
+    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+
+    // Place a creature for P1 and kill it to trigger Noble
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state);
+
+    // Process the death trigger
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // The Noble's trigger should present a choice of which player to target.
+    // If it auto-targeted the opponent, P1's life will already be 19 and
+    // there won't be an AwaitingAction for player choice.
+    //
+    // BUG: Noble auto-selects opponent — no choice is presented
+    let p1_life = state.get_player(P1).life;
+    let awaiting = state.awaiting_action.is_some();
+
+    // Either there should be an awaiting action (choice pending)
+    // OR if it already resolved, it should have targeted correctly.
+    // The bug is that it resolves WITHOUT presenting a choice.
+    assert!(awaiting || p1_life == 20,
+        "Noble should either present target choice (awaiting_action) or not have auto-drained yet. P1 life: {}, awaiting: {}",
+        p1_life, awaiting);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: SIMULTANEOUS DEATH
+// When multiple creatures die at once, death triggers should fire for each.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Falkenrath Noble only triggers once when dying simultaneously with others.
+/// Oracle + ruling: "If Falkenrath Noble and another creature die at the same time,
+/// Falkenrath Noble's triggered ability will trigger for each of them."
+/// The engine processes deaths sequentially; by the time other creatures' deaths are
+/// processed, Noble is already in the graveyard and the zone check fails.
+#[test]
+fn bug_simultaneous_death_triggers_only_fire_once() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let p0_life_before = state.get_player(P0).life;
+
+    // Place Falkenrath Noble and two other creatures for P0
+    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let creature1 = ready_creature(&mut state, P0, 1, 1);
+    let creature2 = ready_creature(&mut state, P0, 1, 1);
+
+    // Kill all three simultaneously (board wipe — mark lethal damage)
+    for id in [noble, creature1, creature2] {
+        if let Some(obj) = state.get_object_mut(id) {
+            obj.damage_marked = 99;
+        }
+    }
+
+    // Run SBAs — all three die at once
+    mtg_engine::sba::check_state_based_actions(&mut state);
+
+    // Process death triggers
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // Noble should have triggered 3 times (once for itself via SelfDies,
+    // once for each of the two other creatures via AnyCreatureDies).
+    // Each trigger drains 1 life from opponent and gains 1 for controller.
+    // Expected: P0 gains 3 life (20 -> 23), P1 loses 3 life (20 -> 17)
+    let p0_life = state.get_player(P0).life;
+    let p1_life = state.get_player(P1).life;
+
+    // BUG: Only triggers once (for SelfDies), so P0 gains 1 and P1 loses 1
+    assert_eq!(p0_life, p0_life_before + 3,
+        "Noble should trigger 3 times (self + 2 others). P0 life: {} (expected {})",
+        p0_life, p0_life_before + 3);
+}
