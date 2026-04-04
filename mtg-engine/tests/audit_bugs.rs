@@ -680,3 +680,284 @@ fn bug_once_per_turn_never_clears() {
     assert!(has_ability2,
         "Once-per-turn ability should be available again on a new turn");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: SPURIOUS TRIGGER FIRING
+// Triggers should not fire for the wrong player's upkeep/end step.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Charmbreaker Devils' upkeep trigger goes on the stack during
+/// the opponent's upkeep. The handler returns early, but the trigger
+/// still appears on the stack, allowing opponent to respond to nothing.
+#[test]
+fn bug_spurious_upkeep_trigger_for_opponent() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::Upkeep, P1); // P1's upkeep
+    state.active_player = P1;
+
+    // Place Charmbreaker Devils for P0 (NOT the active player)
+    let _devils = named_creature(&mut state, &registry, "Charmbreaker Devils", P0);
+
+    // Process triggers during P1's upkeep
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // No trigger should fire or go on the stack during opponent's upkeep
+    // BUG: A spurious UpkeepTrigger is created and put on the stack
+    assert!(state.stack.is_empty(),
+        "No trigger should be on the stack during opponent's upkeep, but stack has {} entries",
+        state.stack.len());
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: HEXPROOF NOT RE-CHECKED AT RESOLUTION
+// If a creature gains hexproof between cast and resolution, the
+// spell should fizzle. Currently the engine doesn't re-check.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: A spell targeting a creature that gains hexproof in response
+/// should fizzle, but the engine doesn't re-check hexproof at resolution.
+/// (Already documented in spell_fizzle.rs but confirming here.)
+#[test]
+fn bug_hexproof_not_rechecked_at_resolution() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place a creature for P1
+    let creature = ready_creature(&mut state, P1, 3, 3);
+
+    // Cast Doom Blade targeting it
+    let doom = castable_spell(&mut state, &registry, "Doom Blade", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell {
+            object_id: doom,
+            targets: vec![Target::Object(creature)],
+            sacrifice: None, exile_count: None, alternative_cost: None,
+        },
+        &registry,
+    );
+
+    // Before resolution, give the creature hexproof
+    if let Some(obj) = state.get_object_mut(creature) {
+        obj.keywords.push(Keyword::Hexproof);
+    }
+
+    // Resolve — should fizzle because target now has hexproof
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    // BUG: Creature is destroyed despite having hexproof
+    assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
+        "Creature with hexproof should not be destroyed — spell should fizzle");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: ZONE CHANGE DOESN'T RESET STATE
+// When a permanent leaves and re-enters, card_state and
+// is_transformed should be reset.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: card_state (like hatchling counters) persists through zone changes.
+/// When Ludevic's Test Subject dies and is reanimated, it should start fresh
+/// but keeps its old counter state.
+#[test]
+fn bug_card_state_not_reset_on_zone_change() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Ludevic's Test Subject
+    let subject = named_creature(&mut state, &registry, "Ludevic's Test Subject", P0);
+
+    // Add some hatchling counters via card_state
+    if let Some(obj) = state.get_object_mut(subject) {
+        obj.card_state.insert("hatchling_counters".into(),
+            mtg_engine::ids::ObjectId(3));
+    }
+
+    // Move to graveyard (dies)
+    state.move_object(subject, Zone::Graveyard);
+
+    // Move back to battlefield (reanimated)
+    state.move_object(subject, Zone::Battlefield);
+
+    // card_state should be empty — new battlefield instance
+    let has_counters = state.get_object(subject).unwrap()
+        .card_state.contains_key("hatchling_counters");
+
+    // BUG: card_state persists through zone changes
+    assert!(!has_counters,
+        "card_state should be reset when permanent re-enters the battlefield");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: PREY UPON — WRONG DAMAGE TYPE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Prey Upon uses CombatDamageDealt instead of NonCombatDamageDealt.
+/// Fight damage is NOT combat damage per MTG rules.
+#[test]
+fn bug_prey_upon_uses_combat_damage_for_fight() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let my_creature = ready_creature(&mut state, P0, 3, 3);
+    let their_creature = ready_creature(&mut state, P1, 2, 2);
+
+    // Cast Prey Upon
+    let prey = castable_spell(&mut state, &registry, "Prey Upon", P0);
+    state = cast_and_resolve(&state, &registry, prey,
+        vec![Target::Object(my_creature), Target::Object(their_creature)]);
+
+    // Check events — fight damage should be NonCombatDamageDealt
+    let has_combat_damage = state.events.iter().any(|e| {
+        matches!(e, mtg_engine::events::GameEvent::CombatDamageDealt { .. })
+    });
+    let has_non_combat_damage = state.events.iter().any(|e| {
+        matches!(e, mtg_engine::events::GameEvent::NonCombatDamageDealt { .. })
+    });
+
+    // BUG: Fight emits CombatDamageDealt instead of NonCombatDamageDealt
+    assert!(!has_combat_damage,
+        "Fight damage should NOT emit CombatDamageDealt");
+    assert!(has_non_combat_damage,
+        "Fight damage should emit NonCombatDamageDealt");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: THRABEN SENTRY — AUTO-TRANSFORMS WITHOUT CHOICE
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Thraben Sentry auto-transforms when a creature you control dies,
+/// without presenting the "you may" choice from the oracle text.
+#[test]
+fn bug_thraben_sentry_auto_transforms_without_choice() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Thraben Sentry
+    let sentry = named_creature(&mut state, &registry, "Thraben Sentry", P0);
+    assert!(!state.get_object(sentry).unwrap().is_transformed);
+
+    // Place and kill another creature
+    let victim = ready_creature(&mut state, P0, 1, 1);
+    mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
+    mtg_engine::sba::check_state_based_actions(&mut state);
+
+    // Process triggers
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    // The "you may transform" should present a choice, not auto-transform
+    let is_transformed = state.get_object(sentry).unwrap().is_transformed;
+    let has_choice = state.awaiting_action.is_some();
+
+    // BUG: Auto-transforms without presenting "you may" choice
+    assert!(!is_transformed || has_choice,
+        "Sentry should either present 'you may' choice or not auto-transform. Transformed: {}, Choice pending: {}",
+        is_transformed, has_choice);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: NEVERMORE — BAN NOT ENFORCED FOR FLASHBACK
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Nevermore bans a card by name, but the ban isn't checked
+/// when casting that card via flashback from the graveyard.
+#[test]
+fn bug_nevermore_not_enforced_for_flashback() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Nevermore naming "Think Twice"
+    let nevermore = named_creature(&mut state, &registry, "Nevermore", P0);
+    if let Some(obj) = state.get_object_mut(nevermore) {
+        obj.card_state.insert("named_card".into(),
+            mtg_engine::ids::ObjectId(
+                registry.get_id_by_name("Think Twice").unwrap().0 as u64
+            ));
+    }
+
+    // Put Think Twice in P1's graveyard with flashback
+    let think_twice = {
+        let card_id = registry.get_id_by_name("Think Twice").unwrap();
+        let id = state.create_object(card_id, P1, Zone::Graveyard, None, None);
+        state.get_object_mut(id).unwrap().name = "Think Twice".into();
+        id
+    };
+
+    // Add mana for flashback cost
+    state.get_player_mut(P1).mana_pool.add(ManaType::Blue, 1);
+    state.get_player_mut(P1).mana_pool.add(ManaType::Colorless, 2);
+    state.priority_player = Some(P1);
+
+    // Check legal actions for P1 — flashback Think Twice should NOT be available
+    let legal = engine::legal_actions(&state, &registry);
+    let can_flashback = legal.actions.iter().any(|a| {
+        match a {
+            Action::CastSpell { object_id, .. } => *object_id == think_twice,
+            _ => false,
+        }
+    });
+
+    // BUG: Nevermore ban doesn't apply to flashback casts
+    assert!(!can_flashback,
+        "Think Twice should not be castable via flashback while Nevermore names it");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: TRIBUTE TO HUNGER — MISSING TARGET RESTRICTION
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Tribute to Hunger says "target opponent" but has no is_valid_target
+/// override, so it can target any player including self.
+#[test]
+fn bug_tribute_to_hunger_can_target_self() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Check if Tribute to Hunger's is_valid_target allows targeting self
+    let behavior = registry.get(
+        registry.get_id_by_name("Tribute to Hunger").unwrap()
+    ).unwrap();
+
+    let can_target_self = behavior.is_valid_target(
+        &state, P0, &Target::Player(P0), &registry
+    );
+
+    // BUG: "target opponent" should not allow targeting self
+    assert!(!can_target_self,
+        "Tribute to Hunger says 'target opponent' but allows targeting self");
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CARD-SPECIFIC: MIRROR-MAD PHANTASM — INCORRECT DRAW FLAG
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Mirror-Mad Phantasm's ability uses draw_top_card for the reveal loop,
+/// which sets has_drawn_from_empty=true if library runs out. This causes the
+/// player to lose via SBA even though they didn't actually draw from empty.
+#[test]
+fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Mirror-Mad Phantasm
+    let phantasm = named_creature(&mut state, &registry, "Mirror-Mad Phantasm", P0);
+
+    // Give P0 a small library with no Mirror-Mad Phantasm in it
+    // (so the reveal loop exhausts the library)
+    for _ in 0..3 {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(id);
+    }
+
+    // Activate the ability (shuffle into library, reveal until found)
+    let behavior = registry.get(state.get_object(phantasm).unwrap().card_id).unwrap();
+    behavior.on_activate_ability(&mut state, phantasm, 0, &[], &registry);
+
+    // has_drawn_from_empty should NOT be set — revealing is not drawing
+    let drew_empty = state.get_player(P0).has_drawn_from_empty;
+
+    // BUG: has_drawn_from_empty is true because the reveal loop uses draw_top_card
+    assert!(!drew_empty,
+        "Revealing cards is not drawing — has_drawn_from_empty should be false");
+}
