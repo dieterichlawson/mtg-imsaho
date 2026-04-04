@@ -215,7 +215,7 @@ For each ruling and tricky interaction, list whether it is tested and where:
 
 
 def build_per_agent_prompt(card_name: str, card_file: str, audit_file: str,
-                           oracle_text: str) -> str:
+                           oracle_text: str, report_dir: str) -> str:
     """Build the per-agent prompt (NOT cached — small and unique)."""
     return f"""## Card to audit: {card_name}
 
@@ -227,7 +227,7 @@ def build_per_agent_prompt(card_name: str, card_file: str, audit_file: str,
 {oracle_text}
 
 ### Audit report file
-Write your report to: `audits/reports/{audit_file}`
+Write your report to: `{report_dir}/{audit_file}`
 """
 
 
@@ -252,6 +252,8 @@ def main():
                         help="Show what would be audited without running")
     parser.add_argument("--no-sandbox", action="store_true",
                         help="Disable OS-level sandboxing")
+    parser.add_argument("--report-dir", type=str, default=None,
+                        help="Directory for audit reports (default: audits/reports)")
     args = parser.parse_args()
 
     if not args.set and not args.cards:
@@ -293,10 +295,12 @@ def main():
 
     set_code = args.set or "isd"
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
+    report_dir = Path(args.report_dir) if args.report_dir else REPORTS_DIR
 
     print(f"Cards to audit: {len(cards)}")
     print(f"Concurrency: {args.batch_size}")
     print(f"Model: {args.model}")
+    print(f"Report dir: {report_dir}")
 
     # Dry run
     if args.dry_run:
@@ -306,7 +310,7 @@ def main():
         return
 
     # Ensure reports directory exists
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    report_dir.mkdir(parents=True, exist_ok=True)
 
     # Pre-fetch oracle text
     print(f"\nFetching oracle text for {len(cards)} cards...")
@@ -335,7 +339,7 @@ def main():
             card_file = f"{set_code}/{fn}.rs"
             audit_file = f"{fn}.md"
             prompt = build_per_agent_prompt(name, card_file, audit_file,
-                                           oracle_texts[fn])
+                                           oracle_texts[fn], str(report_dir))
             agent = {
                 "id": fn,
                 "prompt": prompt,
@@ -385,7 +389,11 @@ def main():
             try:
                 data = json.loads(result_file.read_text())
                 card_id = data.get("id", result_file.stem)
-                status = get_latest_audit_status(card_id)
+                report_file = report_dir / f"{card_id}.md"
+                status = None
+                if report_file.exists():
+                    statuses = re.findall(r"\*\*Status\*\*:\s*(PASS|ISSUE|SKIPPED)", report_file.read_text())
+                    status = statuses[-1] if statuses else None
                 if status == "PASS":
                     pass_count += 1
                 elif status == "ISSUE":
