@@ -596,3 +596,87 @@ fn bug_spells_cast_this_turn_never_incremented() {
         "spells_cast_this_turn should increment when a spell is cast. Before: {}, After: {}",
         cast_before, cast_after);
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: PROTECTION DOESN'T PREVENT TARGETING
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: Delver of Secrets suppresses the "you may reveal" choice when the top
+/// card is NOT an instant or sorcery. Per ruling: "You may reveal the card even
+/// if it's not an instant or sorcery." The player should always get the choice.
+#[test]
+fn bug_delver_reveal_suppressed_for_non_instant_sorcery() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::Upkeep, P0);
+    state.active_player = P0;
+
+    // Place Delver of Secrets (front face)
+    let delver = named_creature(&mut state, &registry, "Delver of Secrets", P0);
+
+    // Put a creature (not instant/sorcery) on top of library
+    let creature_card = {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+        state.get_player_mut(P0).library_order.insert(0, id);
+        id
+    };
+
+    // Fire upkeep trigger
+    let behavior = registry.get(state.get_object(delver).unwrap().card_id).unwrap();
+    behavior.on_upkeep(&mut state, delver, &registry);
+
+    // Per the ruling, the player should STILL get a "you may reveal" choice
+    // even though the top card is a creature (revealing it won't transform Delver,
+    // but the player might want to reveal for information or other game reasons).
+    // BUG: No choice is presented because the code only offers the choice when
+    // the top card is an instant or sorcery.
+    assert!(state.awaiting_action.is_some(),
+        "Delver should present 'you may reveal' choice even for non-instant/sorcery top card");
+}
+
+/// Bug: abilities_activated_this_turn is never cleared between turns.
+/// This causes once-per-turn abilities (Darkthicket Wolf's {2}{G}: +2/+2)
+/// to be permanently locked after first use.
+#[test]
+fn bug_once_per_turn_never_clears() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Place Darkthicket Wolf
+    let wolf = named_creature(&mut state, &registry, "Darkthicket Wolf", P0);
+
+    // Add mana and activate the once-per-turn pump ability
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Check ability is available
+    let legal = engine::legal_actions(&state, &registry);
+    let has_ability = legal.actions.iter().any(|a|
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf));
+    assert!(has_ability, "Wolf should have pump ability available");
+
+    // Activate it
+    let activate_action = legal.actions.iter().find(|a|
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf)).unwrap().clone();
+    state = engine::submit_action(&state, &activate_action, &registry);
+
+    // Simulate turn change — clear turn-based state
+    // (This is what the engine SHOULD do but doesn't for abilities_activated_this_turn)
+    state.until_end_of_turn_effects.clear();
+    state.until_end_of_turn_keywords.clear();
+    // Note: abilities_activated_this_turn is NOT cleared here — that's the bug
+
+    // Add mana for next turn's activation
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+
+    // Check if ability is available on the "next turn"
+    let legal2 = engine::legal_actions(&state, &registry);
+    let has_ability2 = legal2.actions.iter().any(|a|
+        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == wolf));
+
+    // BUG: Ability is NOT available because abilities_activated_this_turn persists
+    assert!(has_ability2,
+        "Once-per-turn ability should be available again on a new turn");
+}
