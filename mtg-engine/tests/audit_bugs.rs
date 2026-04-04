@@ -103,3 +103,58 @@ fn bug_victim_of_night_can_target_vampire_token() {
     assert!(!is_valid,
         "Vampire token should NOT be a valid target for Victim of Night");
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ENGINE: TRIGGER ZONE CHECK
+// ETB triggers should still resolve if the source leaves before resolution.
+// Per MTG rules, an ETB trigger goes on the stack and resolves independently.
+// ═══════════════════════════════════════════════════════════════
+
+/// Bug: ETB triggers are suppressed when source leaves battlefield before resolution.
+/// The trigger resolution in triggers.rs:893-899 checks zone == Battlefield.
+/// Per MTG rules, ETB triggers resolve independently — removing the source
+/// doesn't prevent the trigger from resolving.
+///
+/// This test goes through the trigger dispatch system (not calling handler directly)
+/// to demonstrate the bug is in the trigger resolution path.
+#[test]
+fn bug_etb_trigger_suppressed_when_source_leaves() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Give P0 some library cards to mill
+    for _ in 0..10 {
+        let card = state.create_object(
+            registry.get_id_by_name("Grizzly Bears").unwrap(),
+            P0, Zone::Library, Some(2), Some(2),
+        );
+        state.get_player_mut(P0).library_order.push(card);
+    }
+    let lib_before = state.get_player(P0).library_order.len();
+
+    // Cast Armored Skaab — this will put it on the stack
+    let skaab = castable_spell(&mut state, &registry, "Armored Skaab", P0);
+    state = engine::submit_action(
+        &state,
+        &Action::CastSpell { object_id: skaab, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &registry,
+    );
+    // Resolve — moves to battlefield, queues ETB trigger
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+
+    // Skaab is now on battlefield with ETB trigger pending
+    assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Battlefield);
+
+    // Kill Skaab before the ETB trigger resolves (move to graveyard)
+    state.move_object(skaab, Zone::Graveyard);
+    assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Graveyard);
+
+    // Process pending triggers — the ETB mill should still happen
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
+
+    let lib_after = state.get_player(P0).library_order.len();
+
+    // BUG: Mill doesn't happen because trigger resolution checks zone == Battlefield
+    assert_eq!(lib_before - lib_after, 4,
+        "ETB trigger should still mill 4 even after Skaab left the battlefield");
+}
