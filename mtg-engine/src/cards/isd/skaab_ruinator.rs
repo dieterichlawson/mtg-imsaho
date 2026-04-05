@@ -23,7 +23,7 @@ impl CardBehavior for SkaabRuinator {
             subtypes: vec!["Zombie".into(), "Horror".into()],
             power: Some(5),
             toughness: Some(6),
-            oracle_text: "Flying\nAs an additional cost to cast Skaab Ruinator, exile three creature cards from your graveyard.\nYou may cast Skaab Ruinator from your graveyard.".into(),
+            oracle_text: "As an additional cost to cast this spell, exile three creature cards from your graveyard.\nFlying\nYou may cast this card from your graveyard.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],

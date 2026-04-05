@@ -19,7 +19,7 @@ impl CardBehavior for RangersGuile {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Target creature you control gets +1/+1 and gains hexproof until end of turn.".into(),
+            oracle_text: "Target creature you control gets +1/+1 and gains hexproof until end of turn. (It can't be the target of spells or abilities your opponents control.)".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

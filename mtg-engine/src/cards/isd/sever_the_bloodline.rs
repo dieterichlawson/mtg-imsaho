@@ -22,7 +22,7 @@ impl CardBehavior for SeverTheBloodline {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Exile target creature and all other creatures with the same name as that creature.\nFlashback {5}{B}{B}".into(),
+            oracle_text: "Exile target creature and all other creatures with the same name as that creature.\nFlashback {5}{B}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),

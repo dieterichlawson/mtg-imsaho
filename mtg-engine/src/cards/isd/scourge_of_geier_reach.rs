@@ -21,7 +21,7 @@ impl CardBehavior for ScourgeOfGeierReach {
             subtypes: vec!["Elemental".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "Scourge of Geier Reach gets +1/+1 for each creature your opponents control.".into(),
+            oracle_text: "This creature gets +1/+1 for each creature your opponents control.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

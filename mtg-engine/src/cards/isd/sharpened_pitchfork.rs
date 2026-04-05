@@ -44,7 +44,7 @@ impl CardBehavior for SharpenedPitchfork {
             subtypes: vec!["Equipment".into()],
             power: None,
             toughness: None,
-            oracle_text: "Equipped creature has first strike. As long as equipped creature is a Human, it gets +1/+1.\nEquip {1}".into(),
+            oracle_text: "Equipped creature has first strike.\nAs long as equipped creature is a Human, it gets +1/+1.\nEquip {1}".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

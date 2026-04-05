@@ -20,7 +20,7 @@ impl CardBehavior for SpectralFlight {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchanted creature gets +2/+2 and has flying.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature gets +2/+2 and has flying.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

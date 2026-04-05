@@ -21,7 +21,7 @@ impl CardBehavior for PurifyTheGrave {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Exile target card from a graveyard.\nFlashback {W}".into(),
+            oracle_text: "Exile target card from a graveyard.\nFlashback {W} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::White)])),
             continuous_effects: vec![],

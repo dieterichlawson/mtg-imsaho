@@ -20,7 +20,7 @@ impl CardBehavior for SelflessCathar {
             subtypes: vec!["Human".into(), "Cleric".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "{1}{W}, Sacrifice Selfless Cathar: Creatures you control get +1/+1 until end of turn.".into(),
+            oracle_text: "{1}{W}, Sacrifice this creature: Creatures you control get +1/+1 until end of turn.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

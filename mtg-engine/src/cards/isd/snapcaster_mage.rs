@@ -24,7 +24,7 @@ impl CardBehavior for SnapcasterMage {
             subtypes: vec!["Human".into(), "Wizard".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: "Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.".into(),
+            oracle_text: "Flash\nWhen this creature enters, target instant or sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost. (You may cast that card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![Keyword::Flash],
             flashback_cost: None,
             continuous_effects: vec![],

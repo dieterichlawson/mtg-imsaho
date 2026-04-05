@@ -20,7 +20,7 @@ impl CardBehavior for RakishHeir {
             subtypes: vec!["Vampire".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on that Vampire.".into(),
+            oracle_text: "Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on it.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

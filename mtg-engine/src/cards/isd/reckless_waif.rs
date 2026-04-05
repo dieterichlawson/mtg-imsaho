@@ -30,7 +30,7 @@ impl CardBehavior for RecklessWaif {
             subtypes: vec!["Human".into(), "Rogue".into(), "Werewolf".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform Reckless Waif.".into(),
+            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],
