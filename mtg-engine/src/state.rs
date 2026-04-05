@@ -422,12 +422,20 @@ impl GameState {
             None => return ObjectId(0),
         };
         let (colors, keywords, card_types, subtypes) = registry.card_data(card_id)
-            .map(|d| (
-                Vec::new(), // colors TODO
-                d.keywords.clone(),
-                d.card_types.clone(),
-                d.subtypes.clone(),
-            ))
+            .map(|d| {
+                // Derive colors from mana cost.
+                let mut cols = Vec::new();
+                if let Some(ref cost) = d.cost {
+                    for sym in &cost.symbols {
+                        if let crate::types::ManaSymbol::Colored(c) = sym {
+                            if !cols.contains(c) {
+                                cols.push(*c);
+                            }
+                        }
+                    }
+                }
+                (cols, d.keywords.clone(), d.card_types.clone(), d.subtypes.clone())
+            })
             .unwrap_or_default();
 
         let id = self.create_token_with_subtypes(
