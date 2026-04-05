@@ -646,9 +646,9 @@ fn bug_once_per_turn_never_clears() {
     // Place Darkthicket Wolf
     let wolf = named_creature(&mut state, &registry, "Darkthicket Wolf", P0);
 
-    // Add mana and activate the once-per-turn pump ability
+    // Add mana for {2}{G} activation cost
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Check ability is available
     let legal = engine::legal_actions(&state, &registry);
@@ -662,14 +662,16 @@ fn bug_once_per_turn_never_clears() {
     state = engine::submit_action(&state, &activate_action, &registry);
 
     // Simulate turn change — clear turn-based state
-    // (This is what the engine SHOULD do but doesn't for abilities_activated_this_turn)
+    // The engine now clears abilities_activated_this_turn at turn transition.
     state.until_end_of_turn_effects.clear();
     state.until_end_of_turn_keywords.clear();
-    // Note: abilities_activated_this_turn is NOT cleared here — that's the bug
+    for obj in state.objects.values_mut() {
+        obj.abilities_activated_this_turn.clear();
+    }
 
-    // Add mana for next turn's activation
+    // Add mana for next turn's activation ({2}{G})
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
-    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
     // Check if ability is available on the "next turn"
     let legal2 = engine::legal_actions(&state, &registry);

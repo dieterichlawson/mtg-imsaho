@@ -1666,6 +1666,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 object: *object_id,
             });
 
+            // Track spells cast this turn (for werewolf transform conditions etc.)
+            *new_state.spells_cast_this_turn.entry(player).or_insert(0) += 1;
+
             let name = card_name(&new_state, registry, *object_id);
             let suffix = if is_flashback { " (flashback)" } else { "" };
             new_state.log(LogLevel::Event, format!("p{} cast {}{}", player.0, name, suffix));
@@ -2893,6 +2896,13 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
             state.step = Step::Untap;
             state.is_first_turn = false;
             state.creature_died_this_turn = false;
+            // Copy this turn's spell counts to last_turn, then clear for next turn.
+            state.spells_cast_last_turn = state.spells_cast_this_turn.clone();
+            state.spells_cast_this_turn.clear();
+            // Clear once-per-turn ability tracking for all permanents.
+            for obj in state.objects.values_mut() {
+                obj.abilities_activated_this_turn.clear();
+            }
 
             state.events.push(GameEvent::TurnStarted {
                 player: next_player,
