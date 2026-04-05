@@ -342,8 +342,10 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
     for (i, event) in events.iter().enumerate().skip(start) {
         match event {
             GameEvent::EnteredBattlefield { object, .. } => {
+                // Per MTG rules, ETB triggers fire even if the source has since
+                // left the battlefield. The trigger was created by the entering event.
                 let (card_id, controller) = match state.get_object(*object) {
-                    Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
+                    Some(o) => (o.card_id, o.controller),
                     _ => continue,
                 };
                 // Only collect if the card has an on_enter_battlefield handler.
@@ -891,11 +893,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
 
     match trigger {
         PendingTrigger::EnteredBattlefield { object_id, card_id, .. } => {
-            // Verify the object is still on the battlefield.
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_enter_battlefield(state, object_id, registry);
-                }
+            // Per MTG rules, ETB triggers resolve even if the source has left
+            // the battlefield. The trigger was already on the stack when the
+            // creature entered. Individual handlers can check zone if needed.
+            if let Some(behavior) = registry.get(card_id) {
+                behavior.on_enter_battlefield(state, object_id, registry);
             }
         }
         PendingTrigger::SelfDies { dead_id, dead_card_id, .. } => {

@@ -6,9 +6,9 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 ## Priority order (by impact / number of affected cards)
 
 ### Engine bugs (fix once, fixes many cards)
-1. [ ] Summoning sickness for {T} abilities (engine.rs:356) — 3 cards
-2. [ ] Spell cast counter never incremented — all werewolves
-3. [ ] Once-per-turn never clears between turns — 3 cards
+1. [x] Summoning sickness for {T} abilities (engine.rs:356) — 3 cards
+2. [x] Spell cast counter never incremented — all werewolves
+3. [x] Once-per-turn never clears between turns — 3 cards
 4. [ ] ETB trigger suppressed when source leaves (triggers.rs:893) — 11 cards
 5. [ ] Simultaneous death triggers only fire once — 9 cards
 6. [ ] Token subtype check misses registry (registry-only check) — 18 cards
