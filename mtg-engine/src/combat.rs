@@ -160,10 +160,54 @@ pub fn fight(state: &mut GameState, a: ObjectId, b: ObjectId, registry: &CardReg
     let power_b = state.effective_power(b, registry).unwrap_or(0).max(0) as u32;
 
     if power_a > 0 {
-        deal_damage_to_creature(state, a, b, power_a, registry);
+        deal_fight_damage(state, a, b, power_a, registry);
     }
     if power_b > 0 {
-        deal_damage_to_creature(state, b, a, power_b, registry);
+        deal_fight_damage(state, b, a, power_b, registry);
+    }
+}
+
+/// Deal fight damage (non-combat). Respects protection, deathtouch, lifelink,
+/// but NOT combat-only modifiers (Inquisitor's Flail, Moonmist, Ghostly Possession).
+fn deal_fight_damage(
+    state: &mut GameState,
+    source: ObjectId,
+    target: ObjectId,
+    amount: u32,
+    registry: &CardRegistry,
+) {
+    // Protection: if target has protection from the source, prevent damage.
+    if has_protection_from_creature(state, target, source, registry) {
+        return;
+    }
+
+    let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
+    if let Some(obj) = state.get_object_mut(target) {
+        obj.damage_marked += amount;
+        if has_deathtouch {
+            obj.dealt_deathtouch_damage = true;
+        }
+        if !obj.damaged_by.contains(&source) {
+            obj.damaged_by.push(source);
+        }
+    }
+    state.events.push(GameEvent::NonCombatDamageDealt {
+        source,
+        target: DamageTarget::Object(target),
+        amount,
+    });
+
+    // Lifelink: source's controller gains life.
+    if state.has_keyword(source, Keyword::Lifelink, registry) {
+        let controller = state.get_object(source).expect("damage source must exist").controller;
+        let old_life = state.get_player(controller).life;
+        let new_life = old_life + amount as i32;
+        state.get_player_mut(controller).life = new_life;
+        state.events.push(GameEvent::LifeChanged {
+            player: controller,
+            old: old_life,
+            new_life,
+        });
     }
 }
 
