@@ -315,6 +315,7 @@ impl CardBehavior for GarrukRelentless {
         state.add_counters(object_id, CounterType::Loyalty, 3);
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.card_types = vec![CardType::Planeswalker];
+            obj.is_legendary = true;
         }
         state.log(crate::state::LogLevel::Event,
             "Garruk Relentless enters with 3 loyalty".into());

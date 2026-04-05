@@ -434,6 +434,12 @@ pub trait CardBehavior: Send + Sync {
         let card_data = self.card_data();
         if card_data.card_types.iter().any(|t| t.is_permanent()) {
             state.move_object(object_id, Zone::Battlefield);
+            // Set is_legendary from card data for legend rule enforcement.
+            if card_data.supertypes.contains(&crate::types::Supertype::Legendary) {
+                if let Some(obj) = state.get_object_mut(object_id) {
+                    obj.is_legendary = true;
+                }
+            }
             // If this is a planeswalker, set starting loyalty counters.
             if let Some(loyalty) = self.starting_loyalty() {
                 // For X-cost planeswalkers, the x_value is already set on the object.
