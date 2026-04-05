@@ -811,16 +811,20 @@ fn bug_spare_from_evil_protection_non_combat_damage() {
         obj.subtypes = vec!["Zombie".into()];
     }
 
-    // Simulate non-combat damage (e.g., from a triggered ability)
-    if let Some(obj) = state.get_object_mut(human) {
-        obj.damage_marked += 3;
-        obj.damaged_by.push(zombie);
-    }
+    // Deal non-combat damage through the engine pipeline (apply_pending_effect).
+    // Protection should prevent this damage.
+    mtg_engine::engine::apply_pending_effect(
+        &mut state,
+        &Target::Object(human),
+        &mtg_engine::state::PendingEffect::DealDamage {
+            amount: 3,
+            source_id: zombie,
+            source_name: "Zombie".into(),
+        },
+        &registry,
+    );
 
-    // Check if protection prevents this damage
-    // The engine should check protection before applying non-combat damage
-    // BUG: Protection may not prevent non-combat damage
-    // (This test checks if damage was applied — if protection worked, damage_marked should be 0)
+    // Protection from non-Human creatures should have prevented the damage.
     let damage = state.get_object(human).unwrap().damage_marked;
     assert_eq!(damage, 0,
         "Protection from non-Human creatures should prevent non-combat damage. Got: {}", damage);

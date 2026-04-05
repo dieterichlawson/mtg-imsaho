@@ -1046,6 +1046,57 @@ impl GameState {
         false
     }
 
+    /// Check if a creature has protection from a given source.
+    /// Returns true if the target has protection from the source's subtypes or matches
+    /// a ProtectionFrom filter. Used for targeting, blocking, and damage prevention.
+    pub fn has_protection_from(&self, target_id: ObjectId, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        use crate::types::{ContinuousEffect, EffectScope};
+
+        // Get the source's subtypes.
+        let source_subtypes: Vec<String> = self.get_object(source_id)
+            .map(|o| {
+                let mut subs = o.subtypes.clone();
+                // Also get subtypes from registry.
+                if let Some(data) = registry.card_data(o.card_id) {
+                    for s in &data.subtypes {
+                        if !subs.contains(s) {
+                            subs.push(s.clone());
+                        }
+                    }
+                }
+                subs
+            })
+            .unwrap_or_default();
+
+        // Check ProtectionFromSubtype effects on the target.
+        let has_subtype_protection = self.has_continuous_effect(target_id, &|e| {
+            match e {
+                ContinuousEffect::ProtectionFromSubtype { subtype, scope } => {
+                    if source_subtypes.iter().any(|s| s == subtype) {
+                        Some(scope)
+                    } else {
+                        None
+                    }
+                }
+                _ => None,
+            }
+        }, registry);
+        if has_subtype_protection {
+            return true;
+        }
+
+        // Check until-end-of-turn protection grants (e.g., Spare from Evil).
+        for prot in &self.until_end_of_turn_protection {
+            if prot.target == target_id {
+                if self.matches_filter(source_id, &prot.filter, crate::ids::PlayerId(0), registry) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
     /// Check if a creature has a conditional keyword that is currently active.
     fn has_conditional_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
         use crate::types::{ContinuousEffect, EffectCondition};

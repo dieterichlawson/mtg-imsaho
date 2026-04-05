@@ -763,12 +763,24 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 /// Check if a permanent can be targeted by a spell from the given caster.
 /// Returns false if the target has hexproof and the caster is an opponent.
 fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, registry: &CardRegistry) -> bool {
+    can_be_targeted_by(state, target_id, caster, None, registry)
+}
+
+/// Check targeting legality, including protection from the source.
+/// `source_id` is the spell or permanent whose ability is targeting.
+pub fn can_be_targeted_by(state: &GameState, target_id: ObjectId, caster: PlayerId, source_id: Option<ObjectId>, registry: &CardRegistry) -> bool {
     if state.has_keyword(target_id, Keyword::Hexproof, registry) {
         let controller = state.get_object(target_id)
             .map(|o| o.controller)
             .unwrap_or(PlayerId(255));
         if controller != caster {
             return false; // hexproof: can't be targeted by opponents
+        }
+    }
+    // Check protection from the source.
+    if let Some(sid) = source_id {
+        if state.has_protection_from(target_id, sid, registry) {
+            return false;
         }
     }
     true
@@ -1057,7 +1069,7 @@ fn valid_targets_for_req(
         TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| o.power.is_some())
-                .filter(|o| can_be_targeted(state, o.id, caster, registry))
+                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
@@ -1073,7 +1085,7 @@ fn valid_targets_for_req(
         }
         TargetRequirement::PermanentWithFilter(_) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| can_be_targeted(state, o.id, caster, registry))
+                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
@@ -1081,7 +1093,7 @@ fn valid_targets_for_req(
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| o.power.is_some())
-                .filter(|o| can_be_targeted(state, o.id, caster, registry))
+                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
@@ -2186,6 +2198,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         format!("{}: damage prevented, removed a +1/+1 counter", name));
                 }
                 // Damage prevented — skip normal damage application.
+            } else if state.has_protection_from(*id, *source_id, registry) {
+                // Protection prevents damage from the source.
+                let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+                state.log(LogLevel::Event,
+                    format!("{}: damage from {} prevented by protection", name, source_name));
             } else if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
                     // Check if target is a planeswalker — damage removes loyalty counters.

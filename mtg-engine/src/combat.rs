@@ -692,11 +692,10 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
         return false;
     }
 
-    // Protection: a creature with protection from another creature can't be blocked by / can't block it.
+    // Protection: a creature with protection from X can't be BLOCKED BY X.
+    // Only check if the ATTACKER has protection from the blocker — that prevents the block.
+    // A BLOCKER having protection from the attacker does NOT prevent it from blocking.
     if has_protection_from_creature(state, attacker_id, blocker_id, registry) {
-        return false;
-    }
-    if has_protection_from_creature(state, blocker_id, attacker_id, registry) {
         return false;
     }
 

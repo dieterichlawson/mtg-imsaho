@@ -96,9 +96,11 @@ impl CardBehavior for GrimgrinCorpseBorn {
             .unwrap_or_else(|| state.opponent(controller));
 
         // Collect creatures the defending player controls as potential targets.
+        // Filter out creatures with protection from Grimgrin's subtypes.
         let targets: Vec<Target> = state.objects_in_zone(Zone::Battlefield, defender)
             .iter()
             .filter(|o| o.power.is_some())
+            .filter(|o| !state.has_protection_from(o.id, self_id, _registry))
             .map(|o| Target::Object(o.id))
             .collect();
 
