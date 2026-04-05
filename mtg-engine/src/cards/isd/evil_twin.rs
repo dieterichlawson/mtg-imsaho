@@ -47,13 +47,6 @@ impl CardBehavior for EvilTwin {
         // "You may" — present an optional choice. If no creatures exist or the
         // player declines, Evil Twin stays as a 0/0 and dies to SBA.
         if !targets.is_empty() {
-            // Mark as Evil Twin so the destroy ability is available after copying.
-            // This is set before the copy choice resolves so that card_state persists
-            // regardless of which creature is copied.
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
-            }
-
             crate::cards::helpers::present_optional_target_choice(
                 state,
                 object_id,

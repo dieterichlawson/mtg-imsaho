@@ -43,9 +43,12 @@ impl CardBehavior for Sturmgeist {
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
+        // The trigger resolves on the stack independently of where Sturmgeist is now.
+        // Per MTG rules, a triggered ability that has already triggered continues to
+        // resolve even if the source has since left the battlefield.
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         crate::engine::draw_cards(state, controller, 1);
     }

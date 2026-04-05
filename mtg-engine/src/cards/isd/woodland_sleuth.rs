@@ -42,9 +42,12 @@ impl CardBehavior for WoodlandSleuth {
             return;
         }
 
+        // The Sleuth may have left the battlefield by the time the trigger resolves
+        // (e.g., it died in response). We still know who controlled it when it
+        // entered, so accept the controller from any zone the object is in.
         let controller = match state.get_object(object_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
 
         // Find creature cards in graveyard.

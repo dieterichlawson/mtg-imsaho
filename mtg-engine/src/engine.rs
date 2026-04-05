@@ -328,6 +328,23 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 abilities.push((obj_card_id, ab));
             }
         }
+        // If this is an Evil Twin that has copied another creature, its card_id now
+        // points to the copied creature. We must also invoke Evil Twin's own behavior
+        // to surface the "{U}{B}, {T}: Destroy" ability stored there.
+        let is_evil_twin_copy = state.get_object(obj_id)
+            .map(|o| o.card_state.contains_key("is_evil_twin"))
+            .unwrap_or(false);
+        if is_evil_twin_copy {
+            if let Some(evil_twin_card_id) = registry.get_id_by_name("Evil Twin") {
+                if evil_twin_card_id != obj_card_id {
+                    if let Some(behavior) = registry.get(evil_twin_card_id) {
+                        for ab in behavior.activated_abilities(state, obj_id, registry) {
+                            abilities.push((evil_twin_card_id, ab));
+                        }
+                    }
+                }
+            }
+        }
         for attached in state.objects.values() {
             if attached.zone == Zone::Battlefield && attached.attached_to == Some(obj_id) {
                 if let Some(behavior) = registry.get(attached.card_id) {
@@ -1765,10 +1782,28 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
             let card_id = obj.card_id;
 
-            // Find the ability — check the permanent's own card, then attached auras.
+            // Find the ability — check the permanent's own card, Evil Twin override, then attached auras.
+            let is_evil_twin_copy = new_state.get_object(*object_id)
+                .map(|o| o.card_state.contains_key("is_evil_twin"))
+                .unwrap_or(false);
             let ability = registry.get(card_id)
                 .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
                     .into_iter().find(|a| a.ability_index == *ability_index))
+                .or_else(|| {
+                    // Evil Twin copies another creature: its card_id changes to the copied
+                    // creature's card_id, so we must also check Evil Twin's own behavior.
+                    if is_evil_twin_copy {
+                        registry.get_id_by_name("Evil Twin")
+                            .filter(|&et_id| et_id != card_id)
+                            .and_then(|et_id| {
+                                registry.get(et_id)
+                                    .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
+                                        .into_iter().find(|a| a.ability_index == *ability_index))
+                            })
+                    } else {
+                        None
+                    }
+                })
                 .or_else(|| {
                     // Check attached auras.
                     new_state.objects.values()
@@ -1845,12 +1880,17 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                 }
 
-                // Find which behavior to call (card itself or attached aura).
+                // Find which behavior to call (card itself, Evil Twin override, or attached aura).
                 let behavior_card_id = if registry.get(card_id)
                     .map(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
                     .unwrap_or(false)
                 {
                     card_id
+                } else if is_evil_twin_copy {
+                    // Evil Twin has copied another creature: dispatch to Evil Twin's behavior.
+                    registry.get_id_by_name("Evil Twin")
+                        .filter(|&et_id| et_id != card_id)
+                        .unwrap_or(card_id)
                 } else {
                     // Must be from an attached aura.
                     new_state.objects.values()
@@ -2564,12 +2604,13 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 obj.card_types = card_types;
                 obj.subtypes = subtypes;
                 obj.colors = colors;
-                // The "is_evil_twin" marker grants the destroy ability and is a
-                // copiable characteristic — if another creature copies an Evil Twin,
-                // it should also gain the activated ability.
-                if is_evil_twin {
-                    obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
-                }
+                // Always set the "is_evil_twin" marker on the source: CopyCreature is
+                // only ever created by Evil Twin's ETB trigger, so the source is always
+                // an Evil Twin that needs the destroy ability regardless of which
+                // creature it copies. This also handles the case where another creature
+                // copies an Evil Twin (the target carries the marker).
+                let _ = is_evil_twin; // retained from target for documentation; source always gets it
+                obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
             }
             state.log(LogLevel::Event,
                 format!("Evil Twin enters as a copy of {}", name));

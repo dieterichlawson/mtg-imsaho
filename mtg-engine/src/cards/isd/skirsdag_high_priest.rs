@@ -42,39 +42,78 @@ impl CardBehavior for SkirsdagHighPriest {
             return vec![];
         }
         let controller = obj.controller;
-        let other_untapped_creatures = state.objects_in_zone(Zone::Battlefield, controller)
+        // Collect the other untapped creatures the player controls, sorted by
+        // ID for a stable, deterministic ordering.
+        let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
-            .count();
-        if other_untapped_creatures < 2 {
-            return vec![];
-        }
-        vec![ActivatedAbilityDef {
-            ability_index: 0,
-            description: "Morbid — {T}, Tap two creatures: Create a 5/5 Demon with flying".into(),
-            cost: ManaCost::new(vec![]),
-            requires_tap: true,
-            sacrifice_cost: SacrificeCost::None,
-            target_requirement: None,
-            once_per_turn: false,
-            sorcery_speed_only: false,
-        }]
-    }
-
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-
-        // Tap two other untapped creatures we control.
-        let to_tap: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
-            .iter()
-            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
-            .take(2)
             .map(|o| o.id)
             .collect();
-        for cid in &to_tap {
-            if let Some(obj) = state.get_object_mut(*cid) {
-                obj.tapped = true;
+        candidates.sort_by_key(|id| id.0);
+        let n = candidates.len();
+        if n < 2 {
+            return vec![];
+        }
+        // Return one ActivatedAbilityDef per C(n, 2) combination, each with a
+        // unique ability_index encoding the combination index (0-based).
+        let mut abilities = Vec::new();
+        let mut combo_index = 0usize;
+        for i in 0..n {
+            for j in (i + 1)..n {
+                abilities.push(ActivatedAbilityDef {
+                    ability_index: combo_index,
+                    description: format!(
+                        "Morbid — {{T}}, Tap two creatures: Create a 5/5 Demon with flying (tap {:?} & {:?})",
+                        candidates[i], candidates[j]
+                    ),
+                    cost: ManaCost::new(vec![]),
+                    requires_tap: true,
+                    sacrifice_cost: SacrificeCost::None,
+                    target_requirement: None,
+                    once_per_turn: false,
+                    sorcery_speed_only: false,
+                });
+                combo_index += 1;
             }
+        }
+        abilities
+    }
+
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+        let controller = match state.get_object(object_id) {
+            Some(o) => o.controller,
+            None => return,
+        };
+
+        // Reconstruct the same sorted candidate list used in activated_abilities.
+        // Note: by the time this is called the High Priest itself is already tapped
+        // (the engine pays the {T} cost before calling on_activate_ability), so we
+        // still filter on !o.tapped to find only un-tapped creatures.
+        let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
+            .iter()
+            .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
+            .map(|o| o.id)
+            .collect();
+        candidates.sort_by_key(|id| id.0);
+        let n = candidates.len();
+
+        // Decode ability_index back to the (i, j) combination.
+        let mut combo_index = 0usize;
+        let mut to_tap: Option<(ObjectId, ObjectId)> = None;
+        'outer: for i in 0..n {
+            for j in (i + 1)..n {
+                if combo_index == ability_index {
+                    to_tap = Some((candidates[i], candidates[j]));
+                    break 'outer;
+                }
+                combo_index += 1;
+            }
+        }
+
+        // Tap the chosen pair.
+        if let Some((c1, c2)) = to_tap {
+            if let Some(obj) = state.get_object_mut(c1) { obj.tapped = true; }
+            if let Some(obj) = state.get_object_mut(c2) { obj.tapped = true; }
         }
 
         // Create a 5/5 black Demon creature token with flying.
