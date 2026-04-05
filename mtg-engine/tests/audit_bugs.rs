@@ -1004,23 +1004,21 @@ fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
         state.get_player_mut(P0).library_order.push(id);
     }
 
-    // Simulate the reveal loop (same as mirror_mad_phantasm.rs:83-96)
+    // Simulate the reveal loop using reveal_top_card (not draw_top_card).
+    // Mirror-Mad Phantasm should use reveal_top_card to avoid setting the
+    // has_drawn_from_empty flag when the library is exhausted.
     loop {
-        let top = state.get_player_mut(P0).draw_top_card();
+        let top = state.get_player_mut(P0).reveal_top_card();
         match top {
             Some(_) => continue, // Not the Phantasm, keep revealing
             None => break,       // Library empty
         }
     }
 
-    // draw_top_card set has_drawn_from_empty when the library ran out
+    // reveal_top_card should NOT set has_drawn_from_empty.
     let drew_empty = state.get_player(P0).has_drawn_from_empty;
-
-    // BUG: has_drawn_from_empty is true because draw_top_card was used for
-    // revealing. Revealing cards is not the same as drawing — the player
-    // should not lose the game from a failed reveal search.
     assert!(!drew_empty,
-        "Revealing cards via draw_top_card should NOT set has_drawn_from_empty");
+        "Revealing cards via reveal_top_card should NOT set has_drawn_from_empty");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1054,17 +1052,16 @@ fn bug_hinterland_harbor_misses_real_basic_lands() {
     assert!(state.get_object(forest).unwrap().subtypes.is_empty(),
         "Regular cards have empty obj.subtypes — subtypes are in registry");
 
-    // Now cast Hinterland Harbor — it should enter untapped because we control a Forest
-    let harbor = castable_spell(&mut state, &registry, "Hinterland Harbor", P0);
+    // Now play Hinterland Harbor — it should enter untapped because we control a Forest
+    state.get_player_mut(P0).land_plays_remaining = 1;
+    let harbor = spell_in_hand(&mut state, &registry, "Hinterland Harbor", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell {
-            object_id: harbor, targets: vec![], sacrifice: None,
-            exile_count: None, alternative_cost: None,
-        },
+        &Action::PlayLand { object_id: harbor },
         &registry,
     );
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &registry);
 
     // BUG: Harbor enters tapped because the checkland logic only checks
     // obj.subtypes (empty for real lands), not registry subtypes

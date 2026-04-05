@@ -81,7 +81,7 @@ impl CardBehavior for MirrorMadPhantasm {
         let mut milled = Vec::new();
         let mut found = None;
         loop {
-            let top = state.get_player_mut(owner).draw_top_card();
+            let top = state.get_player_mut(owner).reveal_top_card();
             match top {
                 Some(card_id) => {
                     let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();

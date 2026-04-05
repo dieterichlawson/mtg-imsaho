@@ -1000,12 +1000,10 @@ impl GameState {
             return false;
         }
 
-        // 0. Keywords stored directly on the object (tokens, or populated at creation).
-        if obj.keywords.contains(&keyword) {
-            return true;
-        }
-
         // 1. Static keywords from card definition (or back face if transformed).
+        // For cards with a registry entry the registry is authoritative — this
+        // avoids returning stale front-face keywords after a transform that did
+        // not go through helpers::apply_transform.
         if let Some(behavior) = registry.get(obj.card_id) {
             if obj.is_transformed {
                 if let Some(back) = behavior.back_face_data() {
@@ -1014,6 +1012,12 @@ impl GameState {
                     }
                 }
             } else if behavior.card_data().keywords.contains(&keyword) {
+                return true;
+            }
+        } else {
+            // 0. No registry entry (tokens, anonymous objects): fall back to
+            //    keywords stored directly on the object.
+            if obj.keywords.contains(&keyword) {
                 return true;
             }
         }
@@ -1368,6 +1372,16 @@ impl PlayerState {
     pub fn draw_top_card(&mut self) -> Option<ObjectId> {
         if self.library_order.is_empty() {
             self.has_drawn_from_empty = true;
+            None
+        } else {
+            Some(self.library_order.remove(0))
+        }
+    }
+
+    /// Remove the top card from the library without setting has_drawn_from_empty.
+    /// Used for reveal/search loops that are NOT drawing (e.g., Mirror-Mad Phantasm).
+    pub fn reveal_top_card(&mut self) -> Option<ObjectId> {
+        if self.library_order.is_empty() {
             None
         } else {
             Some(self.library_order.remove(0))
