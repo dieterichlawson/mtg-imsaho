@@ -416,9 +416,19 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
 
-                // 2. Death-watch: collect triggers from all permanents on battlefield.
+                // 2. Death-watch: collect triggers from permanents on the battlefield,
+                // plus creatures that died in the same event batch (they were on the
+                // battlefield when the simultaneous deaths occurred).
+                let simultaneously_dead: Vec<ObjectId> = events.iter().filter_map(|e| {
+                    if let GameEvent::CreatureDied { object, .. } = e {
+                        Some(*object)
+                    } else {
+                        None
+                    }
+                }).collect();
                 let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Battlefield && o.id != dead_id)
+                    .filter(|o| o.id != dead_id &&
+                        (o.zone == Zone::Battlefield || simultaneously_dead.contains(&o.id)))
                     .map(|o| (o.id, o.card_id, o.controller))
                     .collect();
                 for (watcher_id, watcher_card_id, watcher_controller) in watchers {
@@ -906,11 +916,11 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, dead_toughness, .. } => {
-            // Verify the watcher is still on the battlefield.
-            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, registry);
-                }
+            // Per MTG rules, death triggers fire even if the watcher died
+            // simultaneously (e.g., Falkenrath Noble + board wipe). The trigger
+            // was created when the watcher was last known to be on the battlefield.
+            if let Some(behavior) = registry.get(watcher_card_id) {
+                behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, registry);
             }
         }
         PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {

@@ -46,8 +46,12 @@ impl CardBehavior for FalkenrathNoble {
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
         // "Another creature dies" — triggers on ANY creature death (any controller).
+        // The trigger system only dispatches this for permanents that were on the
+        // battlefield (or died simultaneously), so we trust the dispatch and don't
+        // re-check the zone. The Noble may be in the graveyard if it died in the
+        // same batch (board wipe).
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            Some(o) => o.controller,
             _ => return,
         };
         drain(state, controller);
