@@ -35,17 +35,19 @@ impl CardBehavior for PreyUpon {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if targets.len() == 2 {
             if let (Target::Object(a), Target::Object(b)) = (&targets[0], &targets[1]) {
-                let caster = state.get_object(object_id).map(|o| o.controller);
-                let a_mine = caster.and_then(|c| state.get_object(*a).map(|o| o.controller == c)).unwrap_or(false);
-
-                // Handle both target orderings: (mine, theirs) or (theirs, mine).
-                let (my_creature, their_creature) = if a_mine {
-                    (*a, *b)
-                } else {
-                    (*b, *a)
-                };
-
-                crate::combat::fight(state, my_creature, their_creature, registry);
+                // Fight requires both creatures on the battlefield.
+                let a_on_bf = state.get_object(*a).map(|o| o.zone == Zone::Battlefield).unwrap_or(false);
+                let b_on_bf = state.get_object(*b).map(|o| o.zone == Zone::Battlefield).unwrap_or(false);
+                if a_on_bf && b_on_bf {
+                    let caster = state.get_object(object_id).map(|o| o.controller);
+                    let a_mine = caster.and_then(|c| state.get_object(*a).map(|o| o.controller == c)).unwrap_or(false);
+                    let (my_creature, their_creature) = if a_mine {
+                        (*a, *b)
+                    } else {
+                        (*b, *a)
+                    };
+                    crate::combat::fight(state, my_creature, their_creature, registry);
+                }
             }
         }
         state.move_spell_after_resolve(object_id);

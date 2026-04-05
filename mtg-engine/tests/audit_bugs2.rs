@@ -209,17 +209,14 @@ fn bug_prey_upon_doesnt_fizzle_with_one_illegal_target() {
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
     let my_damage_after = state.get_object(my_creature).unwrap().damage_marked;
 
-    // BUG: Fight still happens with only one legal target
-    // (my_creature takes no damage since their_creature is gone, but
-    // the spell shouldn't have resolved at all)
+    // Per MTG rules: with two target instances, if one target is illegal,
+    // the spell still resolves but the fight doesn't happen (fight requires
+    // both creatures). The spell should NOT fizzle — it resolves and does nothing.
     let prey_zone = state.get_object(prey).unwrap().zone;
-    assert_eq!(prey_zone, Zone::Graveyard, "Prey Upon should be in graveyard");
-    // The real check: did the spell "resolve" (call on_resolve) or fizzle?
-    // If it fizzled, on_resolve was never called. We can check by seeing
-    // if there's a "fizzled" log entry.
-    let fizzled = state.game_log.iter().any(|l| format!("{:?}", l).to_lowercase().contains("fizzle"));
-    assert!(fizzled,
-        "Prey Upon should fizzle when one target is illegal, per ruling");
+    assert_eq!(prey_zone, Zone::Graveyard, "Prey Upon should be in graveyard after resolution");
+    // My creature should take no damage (fight didn't happen).
+    assert_eq!(my_damage_after, my_damage_before,
+        "No fight should occur when one target is illegal — my creature should be undamaged");
 }
 
 // ═══════════════════════════════════════════════════════════════
