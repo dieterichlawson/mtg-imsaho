@@ -63,7 +63,7 @@ impl CardBehavior for NightTerrors {
                 // Multiple nonland cards — controller chooses which to exile.
                 crate::cards::helpers::present_target_choice(
                     state, object_id, controller, nonland_cards.iter().map(|&id| Target::Object(id)).collect(),
-                    crate::state::PendingEffect::ExileAndStore { source_id: object_id, source_name: "Night Terrors".into() },
+                    crate::state::PendingEffect::ExileCardAndCleanup { spell_id: object_id, source_name: "Night Terrors".into() },
                     "Night Terrors: choose a nonland card to exile",
                     false,
                 );

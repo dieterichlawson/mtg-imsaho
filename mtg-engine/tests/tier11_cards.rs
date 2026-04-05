@@ -350,7 +350,9 @@ fn memorys_journey_shuffles_cards_into_library() {
     state.move_object(gy2, Zone::Graveyard);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
+    // Must target a player (to determine whose graveyard) plus the cards.
     let new_state = cast_and_resolve(&state, &reg, journey, vec![
+        Target::Player(P1),
         Target::Object(gy1),
         Target::Object(gy2),
     ]);

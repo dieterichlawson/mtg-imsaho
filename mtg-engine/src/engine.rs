@@ -1355,10 +1355,15 @@ fn generate_ability_targets(
                 .collect()
         }
         TargetRequirement::CreatureWithFilter(filter) => {
+            // For equipment equip abilities, exclude the creature already attached to this equipment.
+            let already_attached: Option<ObjectId> = state.get_object(source_id)
+                .filter(|o| o.is_equipment)
+                .and_then(|o| o.attached_to);
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| o.power.is_some())
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .filter(|o| matches_ability_target_filter(state, o, filter, controller, source_id, registry))
+                .filter(|o| already_attached.map(|a| a != o.id).unwrap_or(true))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
@@ -2677,8 +2682,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(curse_id), PendingEffect::ChooseCurseThenAttach { searcher, source }) => {
             // Player chose which Curse from library — now present the "target player" choice.
+            // Filter out players with hexproof (e.g. Witchbane Orb); they can't be targeted.
             let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
-                .map(|i| crate::actions::Target::Player(PlayerId(i as u8)))
+                .map(|i| PlayerId(i as u8))
+                .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == *searcher)
+                .map(|pid| crate::actions::Target::Player(pid))
                 .collect();
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: *searcher,

@@ -1578,6 +1578,8 @@ pub enum PendingEffect {
     DrainLife { controller: PlayerId, source_name: String },
     /// Put the chosen basic land from library onto the battlefield, then shuffle (Ghost Quarter).
     GhostQuarterSearch { searcher: PlayerId },
+    /// Exile the chosen card (from hand) and move the source spell to the graveyard (Night Terrors).
+    ExileCardAndCleanup { spell_id: ObjectId, source_name: String },
 }
 
 /// Game result.

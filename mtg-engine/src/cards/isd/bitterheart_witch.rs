@@ -10,9 +10,11 @@ pub struct BitterheartWitch;
 
 impl BitterheartWitch {
     /// Present the "target player" choice after a Curse has been selected.
-    fn present_player_choice(&self, state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId) {
+    fn present_player_choice(&self, state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId, registry: &CardRegistry) {
         let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
-            .map(|i| crate::actions::Target::Player(PlayerId(i as u8)))
+            .map(|i| PlayerId(i as u8))
+            .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == controller)
+            .map(|pid| crate::actions::Target::Player(pid))
             .collect();
 
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -103,7 +105,7 @@ impl CardBehavior for BitterheartWitch {
         if curse_ids.len() == 1 {
             // Only one Curse — auto-select it, then choose target player.
             let chosen_curse = curse_ids[0];
-            self.present_player_choice(state, self_id, controller, chosen_curse);
+            self.present_player_choice(state, self_id, controller, chosen_curse, registry);
         } else {
             // Multiple Curses — player chooses which one via ChooseTarget.
             let curse_targets: Vec<crate::actions::Target> = curse_ids.iter()

@@ -32,27 +32,26 @@ impl CardBehavior for MemorysJourney {
     }
 
     fn target_requirement(&self) -> TargetRequirement {
-        // Oracle: "Target player shuffles up to three target cards from their graveyard."
-        // Cards must all come from one player's graveyard.
-        // Mode 1: up to 3 cards from caster's graveyard (targeting self).
-        // Mode 2: up to 3 cards from opponent's graveyard (targeting opponent).
-        TargetRequirement::ModalChoice(vec![
-            TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCardOwnedByCaster)),
-            TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCardOwnedByOpponent)),
-        ])
+        // Oracle: "Target player shuffles up to three target cards from their graveyard into their library."
+        // Requires a mandatory player target plus up to 3 graveyard card targets.
+        TargetRequirement::TwoTargets(
+            Box::new(TargetRequirement::PlayerOnly),
+            Box::new(TargetRequirement::UpToTargets(3, Box::new(TargetRequirement::GraveyardCard))),
+        )
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         // Determine which player's graveyard the cards come from.
+        // With the TwoTargets requirement, the first target is Target::Player.
         let target_player = targets.iter().find_map(|t| {
-            if let Target::Object(id) = t {
-                state.get_object(*id).map(|o| o.owner)
+            if let Target::Player(pid) = t {
+                Some(*pid)
             } else {
                 None
             }
-        }).unwrap_or(controller); // If no card targets, default to self
+        }).unwrap_or(controller); // If no player target, default to controller
 
         for target in targets {
             if let Target::Object(card_id) = target {
