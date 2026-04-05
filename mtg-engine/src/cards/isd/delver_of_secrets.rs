@@ -101,43 +101,55 @@ impl CardBehavior for DelverOfSecrets {
         state.log(LogLevel::Debug,
             format!("Delver of Secrets: top card is {}", top_card_name));
 
-        if top_is_instant_or_sorcery {
-            // The top card is an instant or sorcery — present the "you may reveal" choice.
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: self_id,
-                choice: ResolutionChoiceKind::YesNo {
-                    description: format!(
-                        "Delver of Secrets: reveal {} from the top of your library to transform?",
-                        top_card_name
-                    ),
-                    source_card: self_id,
-                },
-            });
-        }
-        // If not an instant or sorcery, nothing happens (per ruling, card stays on top).
+        // Always present the "you may reveal" choice. Per the ruling, the player may reveal
+        // any top card. Only if the revealed card is an instant or sorcery does Delver transform.
+        let description = if top_is_instant_or_sorcery {
+            format!(
+                "Delver of Secrets: reveal {} from the top of your library to transform?",
+                top_card_name
+            )
+        } else {
+            format!(
+                "Delver of Secrets: reveal {} from the top of your library? (not an instant or sorcery — no transform)",
+                top_card_name
+            )
+        };
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: controller,
+            source: self_id,
+            choice: ResolutionChoiceKind::YesNo {
+                description,
+                source_card: self_id,
+            },
+        });
     }
 
-    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
             // Player chose not to reveal — card stays on top, no transform.
             state.log(LogLevel::Event, "Delver of Secrets: chose not to reveal".into());
             return;
         }
-        // Player reveals the top card — transform Delver of Secrets.
-        let top_card_name = state.get_object(self_id)
-            .and_then(|o| {
-                let controller = o.controller;
-                state.get_player(controller).library_order.first()
-                    .and_then(|id| state.get_object(*id))
-                    .map(|o| o.name.clone())
-            })
+        // Player reveals the top card. Only transform if it's an instant or sorcery.
+        let controller = match state.get_object(self_id) {
+            Some(o) => o.controller,
+            None => return,
+        };
+        let top_card_name = state.get_player(controller).library_order.first()
+            .and_then(|id| state.get_object(*id))
+            .map(|o| o.name.clone())
             .unwrap_or_else(|| "a card".into());
-        state.log(LogLevel::Event,
-            format!("Delver of Secrets: reveals {} — transforming!", top_card_name));
-        if let Some(obj) = state.get_object_mut(self_id) {
-            obj.is_transformed = true;
-            obj.name = "Insectile Aberration".into();
+        let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
+        if top_is_instant_or_sorcery {
+            state.log(LogLevel::Event,
+                format!("Delver of Secrets: reveals {} — transforming!", top_card_name));
+            if let Some(obj) = state.get_object_mut(self_id) {
+                obj.is_transformed = true;
+                obj.name = "Insectile Aberration".into();
+            }
+        } else {
+            state.log(LogLevel::Event,
+                format!("Delver of Secrets: reveals {} — not an instant or sorcery, no transform.", top_card_name));
         }
     }
 

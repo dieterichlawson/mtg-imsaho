@@ -149,10 +149,18 @@ impl CardBehavior for GrimoireOfTheDead {
 
                 let count = creatures.len();
                 for cid in creatures {
-                    let name = state.get_object(cid).map(|o| o.name.clone()).unwrap_or_default();
+                    let (name, is_legendary) = state.get_object(cid)
+                        .map(|o| {
+                            let legendary = _registry.card_data(o.card_id)
+                                .map(|d| d.supertypes.contains(&Supertype::Legendary))
+                                .unwrap_or(false);
+                            (o.name.clone(), legendary)
+                        })
+                        .unwrap_or_else(|| (String::new(), false));
                     state.move_object(cid, Zone::Battlefield);
                     if let Some(obj) = state.get_object_mut(cid) {
                         obj.controller = controller;
+                        obj.is_legendary = is_legendary;
                         // They're black Zombies in addition to their other colors and types.
                         if !obj.subtypes.contains(&"Zombie".into()) {
                             obj.subtypes.push("Zombie".into());

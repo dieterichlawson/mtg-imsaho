@@ -108,10 +108,12 @@ pub fn named_creature(
         .unwrap_or_else(|| panic!("Unknown card: {}", name));
     let data = registry.card_data(card_id)
         .unwrap_or_else(|| panic!("No card data for: {}", name));
+    let is_legendary = data.supertypes.contains(&Supertype::Legendary);
     let id = state.create_object(card_id, owner, Zone::Battlefield, data.power, data.toughness);
     let obj = state.get_object_mut(id).unwrap();
     obj.name = name.into();
     obj.summoning_sick = false;
+    obj.is_legendary = is_legendary;
     id
 }
 
