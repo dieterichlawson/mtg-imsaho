@@ -9,7 +9,7 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 1. [x] Summoning sickness for {T} abilities (engine.rs:356) — 3 cards
 2. [x] Spell cast counter never incremented — all werewolves
 3. [x] Once-per-turn never clears between turns — 3 cards
-4. [ ] ETB trigger suppressed when source leaves (triggers.rs:893) — 11 cards
+4. [x] ETB trigger suppressed when source leaves (triggers.rs:893) — 11 cards
 5. [ ] Simultaneous death triggers only fire once — 9 cards
 6. [ ] Token subtype check misses registry (registry-only check) — 18 cards
 7. [ ] Hexproof not re-checked at resolution (stack.rs) — 3 cards
@@ -55,4 +55,5 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 45. [ ] Memory's Journey: missing player target
 46. [ ] Spare from Evil: protection non-combat damage
 
-## Current: Starting with #1 (summoning sickness)
+## Current: Working on #5 (simultaneous death triggers)
+## Completed: #1, #2, #3, #4
