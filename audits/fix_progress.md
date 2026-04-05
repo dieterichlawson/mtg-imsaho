@@ -18,10 +18,10 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 10. [x] card_state not reset on zone change — 2 cards
 11. [x] Control change not reverted at EOT — 1 card
 12. [x] SpellCast trigger filter excludes non-instant/sorcery — 1 card (Burning Vengeance)
-13. [ ] SBA ordering (simultaneous destruction) — 1 card (Angelic Overseer)
-14. [ ] Protection not checked for targeting — 2 cards
-15. [ ] Protection incorrectly prevents blocking — 1 card
-16. [ ] Protection non-combat damage not prevented — 1 card
+13. [x] SBA ordering (simultaneous destruction) — 1 card (Angelic Overseer)
+14. [x] Protection not checked for targeting — 2 cards
+15. [x] Protection incorrectly prevents blocking — 1 card
+16. [x] Protection non-combat damage not prevented — 1 card
 
 ### Card-specific bugs
 17. [ ] Ghost Quarter: missing shuffle + "may" is mandatory
@@ -55,11 +55,11 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 45. [ ] Memory's Journey: missing player target
 46. [ ] Spare from Evil: protection non-combat damage
 
-## Current: Starting #8 ("target player" auto-selects opponent)
-## Completed: #1-#7, #9-#12
-## Remaining engine: #8, #13-#16
+## Current: Starting card-specific bugs (#17+)
+## Completed: #1-#16 (all engine bugs done)
+## Remaining engine: none
 ## Remaining card-specific: #17-#46
-## Test status: 26 passing, 41 failing across audit_bugs.rs + audit_bugs2.rs
+## Test status: ~30 passing, ~37 failing across audit_bugs.rs + audit_bugs2.rs
 
 ## How to continue
 1. Read this file for what's left
