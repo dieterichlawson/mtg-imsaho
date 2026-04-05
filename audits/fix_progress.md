@@ -24,42 +24,41 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 16. [x] Protection non-combat damage not prevented — 1 card
 
 ### Card-specific bugs
-17. [ ] Ghost Quarter: missing shuffle + "may" is mandatory
+17. [x] Ghost Quarter: missing shuffle + "may" is mandatory
 18. [ ] Bonds of Faith: "as long as" snapshot
-19. [ ] Delver of Secrets: reveal suppressed for non-instant/sorcery
-20. [ ] Thraben Sentry: auto-transforms + vigilance retained
-21. [ ] Hinterland Harbor: checkland misses registry subtypes
-22. [ ] Unburial Rites: no target_requirement
-23. [ ] Harvest Pyre: auto-selects exile
-24. [ ] Unbreathing Horde: no counters via reanimation
-25. [ ] Smite: power not re-checked
-26. [ ] Grimoire of the Dead: legend rule
+19. [x] Delver of Secrets: reveal suppressed for non-instant/sorcery
+20. [x] Thraben Sentry: auto-transforms + vigilance retained
+21. [x] Hinterland Harbor: checkland misses registry subtypes
+22. [x] Unburial Rites: no target_requirement
+23. [x] Harvest Pyre: auto-selects exile
+24. [x] Unbreathing Horde: no counters via reanimation
+25. [x] Smite: power not re-checked
+26. [x] Grimoire of the Dead: legend rule
 27. [ ] Undead Alchemist: double mill with multiple copies
 28. [ ] Skirsdag High Priest: auto-selects tap targets
-29. [ ] Demonmail Hauberk: sacrifice check too loose
+29. [x] Demonmail Hauberk: sacrifice check too loose
 30. [ ] Civilized Scholar: stale attacked_this_turn
 31. [ ] Essence of the Wild: replacement not for tokens
 32. [ ] Mentor of the Meek: auto-pays
 33. [ ] Evil Twin: marker before choice + ability inaccessible
-34. [ ] Brain Weevil: incomplete discard
-35. [ ] Nevermore: not enforced for flashback
-36. [ ] Tribute to Hunger: can target self
-37. [ ] Night Terrors: wrong PendingEffect + stuck on stack
-38. [ ] Prey Upon: wrong damage type + partial fizzle
+34. [x] Brain Weevil: incomplete discard
+35. [x] Nevermore: not enforced for flashback
+36. [x] Tribute to Hunger: can target self
+37. [x] Night Terrors: wrong PendingEffect + stuck on stack
+38. [x] Prey Upon: wrong damage type + partial fizzle
 39. [ ] Dearly Departed: graveyard watcher
-40. [ ] Garruk Relentless: is_legendary not set
-41. [ ] Inquisitor's Flail: fight damage doubled
-42. [ ] Cackling Counterpart: colors not copied
-43. [ ] Bitterheart Witch: hexproof not filtered
-44. [ ] Mask of Avacyn: duplicate equip action
-45. [ ] Memory's Journey: missing player target
-46. [ ] Spare from Evil: protection non-combat damage
+40. [x] Garruk Relentless: is_legendary not set
+41. [x] Inquisitor's Flail: fight damage doubled (fixed via fight vs combat damage split)
+42. [x] Cackling Counterpart: colors not copied
+43. [x] Bitterheart Witch: hexproof not filtered
+44. [x] Mask of Avacyn: duplicate equip action
+45. [x] Memory's Journey: missing player target
+46. [x] Spare from Evil: protection non-combat damage
 
-## Current: Starting card-specific bugs (#17+)
-## Completed: #1-#16 (all engine bugs done)
-## Remaining engine: none
-## Remaining card-specific: #17-#46
-## Test status: ~30 passing, ~37 failing across audit_bugs.rs + audit_bugs2.rs
+## Current: 11 remaining bugs
+## Completed: #1-#16 (all engine bugs) + 19 card-specific bugs
+## Remaining: #18, #27, #28, #30, #31, #32, #33, #39
+## Test status: 58 passing, 11 failing across audit_bugs.rs + audit_bugs2.rs
 
 ## How to continue
 1. Read this file for what's left
