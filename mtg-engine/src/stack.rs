@@ -95,7 +95,18 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         .map(|b| b.target_requirement())
         .unwrap_or(crate::cards::TargetRequirement::None);
     if !targets.is_empty() {
-        let any_legal = targets.iter().any(|t| is_target_legal(state, t, &target_req, caster, registry));
+        let behavior = registry.get(card_id);
+        let any_legal = targets.iter().any(|t| {
+            if !is_target_legal(state, t, &target_req, caster, registry) {
+                return false;
+            }
+            // Also re-check card-specific validity (e.g., "power 4 or greater").
+            if let Some(b) = behavior {
+                b.is_valid_target(state, caster, t, registry)
+            } else {
+                true
+            }
+        });
         if !any_legal {
             state.log(LogLevel::Event, format!("{} fizzled (all targets illegal)", name));
             // Move to graveyard (or exile for flashback) without resolving.
