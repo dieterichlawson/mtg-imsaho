@@ -17,7 +17,7 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 9. [x] Planeswalker damage uses damage_marked not loyalty — 3 cards
 10. [x] card_state not reset on zone change — 2 cards
 11. [x] Control change not reverted at EOT — 1 card
-12. [ ] SpellCast trigger filter excludes non-instant/sorcery — 1 card (Burning Vengeance)
+12. [x] SpellCast trigger filter excludes non-instant/sorcery — 1 card (Burning Vengeance)
 13. [ ] SBA ordering (simultaneous destruction) — 1 card (Angelic Overseer)
 14. [ ] Protection not checked for targeting — 2 cards
 15. [ ] Protection incorrectly prevents blocking — 1 card
@@ -55,5 +55,15 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 45. [ ] Memory's Journey: missing player target
 46. [ ] Spare from Evil: protection non-combat damage
 
-## Current: Working on #12 (SpellCast filter)
-## Completed: #1-#11 (skipped #8 — card-by-card fix)
+## Current: Starting #8 ("target player" auto-selects opponent)
+## Completed: #1-#7, #9-#12
+## Remaining engine: #8, #13-#16
+## Remaining card-specific: #17-#46
+## Test status: 26 passing, 41 failing across audit_bugs.rs + audit_bugs2.rs
+
+## How to continue
+1. Read this file for what's left
+2. Test file: mtg-engine/tests/audit_bugs.rs and audit_bugs2.rs
+3. Run `cargo test -p mtg-engine --test audit_bugs` and `--test audit_bugs2` to check status
+4. Each fix should make one or more tests pass
+5. Commit after each fix, push to remote
