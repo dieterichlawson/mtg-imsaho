@@ -1513,8 +1513,9 @@ fn combinations(items: &[ObjectId], k: usize) -> Vec<Vec<ObjectId>> {
 
 fn card_name(state: &GameState, registry: &CardRegistry, obj_id: ObjectId) -> String {
     state.get_object(obj_id)
-        .and_then(|o| registry.card_data(o.card_id))
-        .map(|d| d.name)
+        .map(|o| registry.card_data(o.card_id)
+            .map(|d| d.name)
+            .unwrap_or_else(|| o.name.clone()))
         .unwrap_or_else(|| "?".into())
 }
 
