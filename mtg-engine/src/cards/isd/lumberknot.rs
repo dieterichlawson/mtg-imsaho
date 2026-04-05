@@ -21,7 +21,7 @@ impl CardBehavior for Lumberknot {
             subtypes: vec!["Treefolk".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Hexproof\nWhenever a creature dies, put a +1/+1 counter on Lumberknot.".into(),
+            oracle_text: "Hexproof (This creature can't be the target of spells or abilities your opponents control.)\nWhenever a creature dies, put a +1/+1 counter on this creature.".into(),
             keywords: vec![Keyword::Hexproof],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

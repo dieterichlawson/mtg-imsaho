@@ -20,7 +20,7 @@ impl CardBehavior for ManorSkeleton {
             subtypes: vec!["Skeleton".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Haste\n{1}{B}: Regenerate Manor Skeleton.".into(),
+            oracle_text: "Haste\n{1}{B}: Regenerate this creature.".into(),
             keywords: vec![Keyword::Haste],
             flashback_cost: None,
             continuous_effects: vec![],

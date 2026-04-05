@@ -24,7 +24,7 @@ impl CardBehavior for MikaeusTheLunarch {
             subtypes: vec!["Human".into(), "Cleric".into()],
             power: Some(0),
             toughness: Some(0),
-            oracle_text: "Mikaeus, the Lunarch enters the battlefield with X +1/+1 counters on it.\n{T}: Put a +1/+1 counter on Mikaeus.\n{T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1 counter on each other creature you control.".into(),
+            oracle_text: "Mikaeus enters with X +1/+1 counters on it.\n{T}: Put a +1/+1 counter on Mikaeus.\n{T}, Remove a +1/+1 counter from Mikaeus: Put a +1/+1 counter on each other creature you control.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

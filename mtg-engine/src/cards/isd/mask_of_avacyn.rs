@@ -18,7 +18,7 @@ impl CardBehavior for MaskOfAvacyn {
             subtypes: vec!["Equipment".into()],
             power: None,
             toughness: None,
-            oracle_text: "Equipped creature gets +1/+2 and has hexproof.\nEquip {3}".into(),
+            oracle_text: "Equipped creature gets +1/+2 and has hexproof. (It can't be the target of spells or abilities your opponents control.)\nEquip {3}".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

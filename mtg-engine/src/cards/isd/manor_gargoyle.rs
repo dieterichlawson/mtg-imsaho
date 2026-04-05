@@ -22,7 +22,7 @@ impl CardBehavior for ManorGargoyle {
             subtypes: vec!["Gargoyle".into()],
             power: Some(4),
             toughness: Some(4),
-            oracle_text: "Defender\nManor Gargoyle has indestructible as long as it has defender.\n{1}: Until end of turn, Manor Gargoyle loses defender and gains flying.".into(),
+            oracle_text: "Defender\nThis creature has indestructible as long as it has defender.\n{1}: Until end of turn, this creature loses defender and gains flying.".into(),
             keywords: vec![Keyword::Defender],
             flashback_cost: None,
             continuous_effects: vec![

@@ -25,7 +25,7 @@ impl CardBehavior for MoldgrafMonstrosity {
             subtypes: vec!["Insect".into()],
             power: Some(8),
             toughness: Some(8),
-            oracle_text: "Trample\nWhen Moldgraf Monstrosity dies, exile it, then return two creature cards at random from your graveyard to the battlefield.".into(),
+            oracle_text: "Trample\nWhen this creature dies, exile it, then return two creature cards at random from your graveyard to the battlefield.".into(),
             keywords: vec![Keyword::Trample],
             flashback_cost: None,
             continuous_effects: vec![],

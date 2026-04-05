@@ -18,7 +18,7 @@ impl CardBehavior for OrchardSpirit {
             subtypes: vec!["Spirit".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Orchard Spirit can't be blocked except by creatures with flying or reach.".into(),
+            oracle_text: "This creature can't be blocked except by creatures with flying or reach.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

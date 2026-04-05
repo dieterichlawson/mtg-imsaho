@@ -22,7 +22,7 @@ impl CardBehavior for Mindshrieker {
             subtypes: vec!["Spirit".into(), "Bird".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Flying\n{2}: Target player mills a card. Mindshrieker gets +X/+X until end of turn, where X is the milled card's mana value.".into(),
+            oracle_text: "Flying\n{2}: Target player mills a card. This creature gets +X/+X until end of turn, where X is the milled card's mana value.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

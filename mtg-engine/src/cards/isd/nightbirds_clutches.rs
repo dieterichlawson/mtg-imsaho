@@ -20,7 +20,7 @@ impl CardBehavior for NightbirdsClutches {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Up to two target creatures can't block this turn.".into(),
+            oracle_text: "Up to two target creatures can't block this turn.\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)])),
             continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],

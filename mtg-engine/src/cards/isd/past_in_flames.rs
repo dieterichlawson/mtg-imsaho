@@ -23,7 +23,7 @@ impl CardBehavior for PastInFlames {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R}".into(),
+            oracle_text: "Each instant and sorcery card in your graveyard gains flashback until end of turn. The flashback cost is equal to its mana cost.\nFlashback {4}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(4),

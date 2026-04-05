@@ -21,7 +21,7 @@ impl CardBehavior for MentorOfTheMeek {
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Whenever another creature with power 2 or less enters the battlefield under your control, you may pay {1}. If you do, draw a card.".into(),
+            oracle_text: "Whenever another creature you control with power 2 or less enters, you may pay {1}. If you do, draw a card.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

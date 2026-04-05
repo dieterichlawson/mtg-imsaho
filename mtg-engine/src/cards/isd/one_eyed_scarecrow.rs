@@ -17,7 +17,7 @@ impl CardBehavior for OneEyedScarecrow {
             subtypes: vec!["Scarecrow".into()],
             power: Some(2),
             toughness: Some(3),
-            oracle_text: "Defender. Creatures with flying your opponents control get -1/-0.".into(),
+            oracle_text: "Defender\nCreatures with flying your opponents control get -1/-0.".into(),
             keywords: vec![Keyword::Defender],
             flashback_cost: None,
             continuous_effects: vec![

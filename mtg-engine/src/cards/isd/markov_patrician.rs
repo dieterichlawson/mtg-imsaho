@@ -17,7 +17,7 @@ impl CardBehavior for MarkovPatrician {
             subtypes: vec!["Vampire".into()],
             power: Some(3),
             toughness: Some(1),
-            oracle_text: "Lifelink".into(),
+            oracle_text: "Lifelink (Damage dealt by this creature also causes you to gain that much life.)".into(),
             keywords: vec![Keyword::Lifelink],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

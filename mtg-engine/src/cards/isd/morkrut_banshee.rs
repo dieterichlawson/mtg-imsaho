@@ -23,7 +23,7 @@ impl CardBehavior for MorkrutBanshee {
             subtypes: vec!["Spirit".into()],
             power: Some(4),
             toughness: Some(4),
-            oracle_text: "Morbid — When Morkrut Banshee enters the battlefield, if a creature died this turn, target creature gets -4/-4 until end of turn.".into(),
+            oracle_text: "Morbid — When this creature enters, if a creature died this turn, target creature gets -4/-4 until end of turn.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![
