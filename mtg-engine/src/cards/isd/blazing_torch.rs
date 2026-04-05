@@ -47,7 +47,7 @@ impl CardBehavior for BlazingTorch {
         }
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => state.get_object(*id)
                 .map(|o| o.zone == Zone::Battlefield)

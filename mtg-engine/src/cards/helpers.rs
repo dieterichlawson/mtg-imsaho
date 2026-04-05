@@ -9,7 +9,7 @@ use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::events::{DamageTarget, GameEvent};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
+use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::types::Zone;
 
 /// Resolve an aura spell: attach it to the target creature on the battlefield.

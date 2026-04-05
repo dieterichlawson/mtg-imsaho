@@ -1,7 +1,6 @@
-use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
+use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Morkrut Banshee — 4/4 for {3}{B}{B}. Spirit.

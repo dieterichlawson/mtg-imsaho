@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
-                   TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+                   TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -113,7 +113,7 @@ impl CardBehavior for DaybreakRanger {
     fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
-                let obj = match state.get_object(*id) {
+                let _obj = match state.get_object(*id) {
                     Some(o) if o.zone == Zone::Battlefield && o.power.is_some() => o,
                     _ => return false,
                 };

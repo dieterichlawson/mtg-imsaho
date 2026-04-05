@@ -339,7 +339,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
     let mut ap_triggers: Vec<PendingTrigger> = Vec::new();
     let mut nap_triggers: Vec<PendingTrigger> = Vec::new();
 
-    for (i, event) in events.iter().enumerate().skip(start) {
+    for event in events.iter().skip(start) {
         match event {
             GameEvent::EnteredBattlefield { object, .. } => {
                 // Per MTG rules, ETB triggers fire even if the source has since

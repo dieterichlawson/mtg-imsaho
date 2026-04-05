@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::{CardId, ObjectId};
+use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 

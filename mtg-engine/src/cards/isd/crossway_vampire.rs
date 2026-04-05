@@ -1,7 +1,6 @@
-use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
+use crate::state::GameState;
 use crate::types::*;
 
 /// Crossway Vampire — 3/2 for {1}{R}{R}. Vampire.

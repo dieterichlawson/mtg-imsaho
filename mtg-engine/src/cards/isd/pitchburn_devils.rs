@@ -1,8 +1,6 @@
-use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::events::GameEvent;
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
+use crate::state::{GameState, PendingEffect};
 use crate::types::*;
 
 /// Pitchburn Devils — {4}{R} 3/3 Devil. When it dies, deal 3 damage to any target.

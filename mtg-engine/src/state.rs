@@ -1062,7 +1062,7 @@ impl GameState {
     /// Returns true if the target has protection from the source's subtypes or matches
     /// a ProtectionFrom filter. Used for targeting, blocking, and damage prevention.
     pub fn has_protection_from(&self, target_id: ObjectId, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
-        use crate::types::{ContinuousEffect, EffectScope};
+        use crate::types::ContinuousEffect;
 
         // Get the source's subtypes.
         let source_subtypes: Vec<String> = self.get_object(source_id)
@@ -1150,7 +1150,7 @@ impl GameState {
 
     /// Check if a creature has a conditional keyword that is currently active.
     fn has_conditional_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
-        use crate::types::{ContinuousEffect, EffectCondition};
+        use crate::types::ContinuousEffect;
         for source in self.objects.values() {
             if source.zone != Zone::Battlefield {
                 continue;

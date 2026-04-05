@@ -112,7 +112,6 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
 
         for id in destroyed_ids {
             if let Some(reg) = registry {
-                use crate::destruction::DestroyResult;
                 // Check indestructible from the snapshot (before any deaths in this batch).
                 if indestructible_snapshot.contains(&id) {
                     continue;
