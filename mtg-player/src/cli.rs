@@ -386,15 +386,15 @@ impl CliPlayer {
                 &format!("  Mana: {}", mana_str.join(" ")), Some(Color::Yellow), false);
         }
 
-        // Message
-        if let Some(msg) = message {
-            Self::mid_print(&mut out, mid_col, &mut row, mid_w, &format!(" {}", msg), Some(Color::Yellow), true);
-        }
-
-        // Actions separator (always drawn)
-        let mid_sep: String = "─".repeat(mid_w);
+        // Actions separator with optional label (always drawn)
+        let action_label = if let Some(msg) = message {
+            format!("─── {} ", msg)
+        } else {
+            String::new()
+        };
+        let action_line = format!("{}{}", action_label, "─".repeat(mid_w.saturating_sub(action_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&mid_sep), SetAttribute(Attribute::Reset));
+            SetAttribute(Attribute::Dim), Print(&action_line), SetAttribute(Attribute::Reset));
         let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
             SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
         row += 1;
@@ -1407,7 +1407,7 @@ impl CliPlayer {
             return Action::DeclareAttackers { attackers: vec![] };
         }
 
-        Self::render(view, None, None, &view.display_log, "", None);
+        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
 
         // Get mid_col for positioning — action area starts where cursor was left
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -1417,10 +1417,6 @@ impl CliPlayer {
 
         let mut out = stdout();
         let mut r = cur_row;
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
-            Print(" DECLARE ATTACKERS"), SetAttribute(Attribute::Reset), ResetColor);
-        r += 1;
         let _ = execute!(out, cursor::MoveTo(col, r),
             SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
             Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
@@ -1484,7 +1480,7 @@ impl CliPlayer {
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        Self::render(view, None, None, &view.display_log, "", None);
+        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
 
         // Get mid_col for positioning — action area starts where cursor was left
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
@@ -1494,10 +1490,6 @@ impl CliPlayer {
 
         let mut out = stdout();
         let mut r = cur_row;
-        let _ = execute!(out, cursor::MoveTo(col, r),
-            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
-            Print(" DECLARE BLOCKERS"), SetAttribute(Attribute::Reset), ResetColor);
-        r += 1;
         let _ = execute!(out, cursor::MoveTo(col, r),
             SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
             Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
