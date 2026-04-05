@@ -5,12 +5,12 @@ use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
 /// Check if a target is still legal at resolution time.
-fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement) -> bool {
+fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement, caster: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
     use crate::cards::TargetRequirement;
 
     // ModalChoice: legal if legal under any mode.
     if let TargetRequirement::ModalChoice(ref modes) = target_req {
-        return modes.iter().any(|mode_req| is_target_legal(state, target, mode_req));
+        return modes.iter().any(|mode_req| is_target_legal(state, target, mode_req, caster, registry));
     }
 
     // Unwrap nested requirements (UpToTargets, TwoTargets).
@@ -23,7 +23,8 @@ fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards
         Target::Object(id) => {
             match state.get_object(*id) {
                 Some(obj) => {
-                    match inner_req {
+                    // Check zone legality.
+                    let zone_ok = match inner_req {
                         TargetRequirement::GraveyardCard
                         | TargetRequirement::GraveyardCreature
                         | TargetRequirement::GraveyardCreatureOfSubtype(_)
@@ -31,12 +32,28 @@ fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards
                         | TargetRequirement::GraveyardCardOwnedByOpponent => obj.zone == Zone::Graveyard,
                         TargetRequirement::ExileCard => obj.zone == Zone::Exile,
                         _ => obj.zone == Zone::Battlefield || obj.zone == Zone::Stack,
+                    };
+                    if !zone_ok { return false; }
+
+                    // Check hexproof: opponent's creature with hexproof can't be targeted.
+                    if obj.zone == Zone::Battlefield && obj.controller != caster {
+                        if state.has_keyword(*id, crate::types::Keyword::Hexproof, registry) {
+                            return false;
+                        }
                     }
+
+                    true
                 }
                 None => false,
             }
         }
-        Target::Player(_) => true,
+        Target::Player(pid) => {
+            // Check player hexproof (Witchbane Orb).
+            if *pid != caster && state.player_has_hexproof(*pid, registry) {
+                return false;
+            }
+            true
+        }
     }
 }
 
@@ -64,8 +81,8 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
 
 /// Resolve a spell from the stack.
 fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crate::ids::ObjectId) {
-    let (card_id, targets) = match state.get_object(object_id) {
-        Some(obj) => (obj.card_id, obj.targets.clone()),
+    let (card_id, targets, caster) = match state.get_object(object_id) {
+        Some(obj) => (obj.card_id, obj.targets.clone(), obj.controller),
         None => return,
     };
 
@@ -73,11 +90,12 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
 
     // CR 608.2b: Check target legality. If the spell has targets and ALL
     // are illegal, it's countered by game rules (fizzled).
+    // This now checks hexproof at resolution time (not just at cast time).
     let target_req = registry.get(card_id)
         .map(|b| b.target_requirement())
         .unwrap_or(crate::cards::TargetRequirement::None);
     if !targets.is_empty() {
-        let any_legal = targets.iter().any(|t| is_target_legal(state, t, &target_req));
+        let any_legal = targets.iter().any(|t| is_target_legal(state, t, &target_req, caster, registry));
         if !any_legal {
             state.log(LogLevel::Event, format!("{} fizzled (all targets illegal)", name));
             // Move to graveyard (or exile for flashback) without resolving.
