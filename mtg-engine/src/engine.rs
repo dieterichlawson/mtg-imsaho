@@ -3056,6 +3056,15 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             state.until_end_of_turn_removed_keywords.clear();
             state.prevent_non_wolf_werewolf_combat_damage = false;
 
+            // Revert "until end of turn" control changes (e.g., Traitorous Blood).
+            for (creature_id, original_controller) in state.until_end_of_turn_control_changes.drain(..).collect::<Vec<_>>() {
+                if let Some(obj) = state.get_object_mut(creature_id) {
+                    if obj.zone == Zone::Battlefield {
+                        obj.controller = original_controller;
+                    }
+                }
+            }
+
             // Clear unused regeneration shields.
             for obj in state.objects.values_mut() {
                 if obj.zone == Zone::Battlefield {

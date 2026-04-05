@@ -553,16 +553,22 @@ fn bug_control_change_not_reverted_at_eot() {
     assert_eq!(state.get_object(creature).unwrap().controller, P0,
         "Traitorous Blood should give control to P0");
 
-    // Simulate the cleanup step inline (same as engine.rs:3020-3026)
+    // Simulate the cleanup step inline (matching engine.rs cleanup)
     state.until_end_of_turn_effects.clear();
     state.until_end_of_turn_keywords.clear();
     state.until_end_of_turn_cant_block.clear();
     state.until_end_of_turn_protection.clear();
     state.until_end_of_turn_removed_keywords.clear();
+    // Revert control changes
+    for (cid, original) in state.until_end_of_turn_control_changes.drain(..).collect::<Vec<_>>() {
+        if let Some(obj) = state.get_object_mut(cid) {
+            if obj.zone == Zone::Battlefield {
+                obj.controller = original;
+            }
+        }
+    }
 
     // After cleanup, control should revert to P1.
-    // BUG: There's no until_end_of_turn_control_changes mechanism —
-    // the controller field was changed directly and cleanup doesn't know to revert it.
     assert_eq!(state.get_object(creature).unwrap().controller, P1,
         "Control should revert to P1 at end of turn");
 }
