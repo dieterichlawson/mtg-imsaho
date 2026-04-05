@@ -31,7 +31,7 @@ impl CardBehavior for TormentedPariah {
             subtypes: vec!["Human".into(), "Warrior".into(), "Werewolf".into()],
             power: Some(3),
             toughness: Some(2),
-            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform Tormented Pariah.".into(),
+            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

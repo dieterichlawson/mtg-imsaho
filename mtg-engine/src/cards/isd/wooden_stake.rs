@@ -20,7 +20,7 @@ impl CardBehavior for WoodenStake {
             subtypes: vec!["Equipment".into()],
             power: None,
             toughness: None,
-            oracle_text: "Equipped creature gets +1/+0.\nWhenever equipped creature blocks or becomes blocked by a Vampire, destroy that Vampire.\nEquip {1}".into(),
+            oracle_text: "Equipped creature gets +1/+0.\nWhenever equipped creature blocks or becomes blocked by a Vampire, destroy that creature. It can't be regenerated.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

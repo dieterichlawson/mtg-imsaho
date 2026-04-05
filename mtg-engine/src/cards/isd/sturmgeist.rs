@@ -22,7 +22,7 @@ impl CardBehavior for Sturmgeist {
             subtypes: vec!["Spirit".into()],
             power: Some(0),
             toughness: Some(0),
-            oracle_text: "Flying\nSturmgeist's power and toughness are each equal to the number of cards in your hand.\nWhenever Sturmgeist deals combat damage to a player, draw a card.".into(),
+            oracle_text: "Flying\nSturmgeist's power and toughness are each equal to the number of cards in your hand.\nWhenever this creature deals combat damage to a player, draw a card.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],

@@ -17,7 +17,7 @@ impl CardBehavior for VampireInterloper {
             subtypes: vec!["Vampire".into(), "Scout".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: "Flying. Vampire Interloper can't block.".into(),
+            oracle_text: "Flying\nThis creature can't block.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![

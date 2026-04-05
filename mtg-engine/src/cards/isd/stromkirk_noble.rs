@@ -20,7 +20,7 @@ impl CardBehavior for StromkirkNoble {
             subtypes: vec!["Vampire".into(), "Noble".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Stromkirk Noble can't be blocked by Humans.\nWhenever Stromkirk Noble deals combat damage to a player, put a +1/+1 counter on Stromkirk Noble.".into(),
+            oracle_text: "This creature can't be blocked by Humans.\nWhenever this creature deals combat damage to a player, put a +1/+1 counter on it.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

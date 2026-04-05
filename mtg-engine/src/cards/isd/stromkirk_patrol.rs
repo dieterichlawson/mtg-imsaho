@@ -20,7 +20,7 @@ impl CardBehavior for StromkirkPatrol {
             subtypes: vec!["Vampire".into(), "Soldier".into()],
             power: Some(4),
             toughness: Some(3),
-            oracle_text: "Whenever Stromkirk Patrol deals combat damage to a player, put a +1/+1 counter on Stromkirk Patrol.".into(),
+            oracle_text: "Whenever this creature deals combat damage to a player, put a +1/+1 counter on it.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

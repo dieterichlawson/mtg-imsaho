@@ -31,7 +31,7 @@ impl CardBehavior for VillageIronsmith {
             subtypes: vec!["Human".into(), "Werewolf".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform Village Ironsmith.".into(),
+            oracle_text: "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![Keyword::FirstStrike],
             flashback_cost: None,
             continuous_effects: vec![],

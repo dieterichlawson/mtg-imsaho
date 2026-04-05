@@ -20,7 +20,7 @@ impl CardBehavior for UnrulyMob {
             subtypes: vec!["Human".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Whenever another creature you control dies, put a +1/+1 counter on Unruly Mob.".into(),
+            oracle_text: "Whenever another creature you control dies, put a +1/+1 counter on this creature.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

@@ -21,7 +21,7 @@ impl CardBehavior for SpiderSpawning {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Create a 1/2 green Spider creature token with reach for each creature card in your graveyard.\nFlashback {6}{B}".into(),
+            oracle_text: "Create a 1/2 green Spider creature token with reach for each creature card in your graveyard.\nFlashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(6),

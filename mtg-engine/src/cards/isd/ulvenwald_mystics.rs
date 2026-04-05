@@ -35,7 +35,7 @@ impl CardBehavior for UlvenwaldMystics {
             subtypes: vec!["Human".into(), "Shaman".into(), "Werewolf".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform Ulvenwald Mystics.".into(),
+            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

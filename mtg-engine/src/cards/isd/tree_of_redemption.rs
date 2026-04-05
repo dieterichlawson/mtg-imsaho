@@ -21,7 +21,7 @@ impl CardBehavior for TreeOfRedemption {
             subtypes: vec!["Plant".into()],
             power: Some(0),
             toughness: Some(13),
-            oracle_text: "Defender\n{T}: Exchange your life total with Tree of Redemption's toughness.".into(),
+            oracle_text: "Defender\n{T}: Exchange your life total with this creature's toughness.".into(),
             keywords: vec![Keyword::Defender],
             flashback_cost: None,
             continuous_effects: vec![],

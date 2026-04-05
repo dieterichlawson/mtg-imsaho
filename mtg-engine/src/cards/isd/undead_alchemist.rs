@@ -28,7 +28,7 @@ impl CardBehavior for UndeadAlchemist {
             subtypes: vec!["Zombie".into()],
             power: Some(4),
             toughness: Some(2),
-            oracle_text: "If a Zombie you control would deal combat damage to a player, instead that player mills that many cards. Whenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token.".into(),
+            oracle_text: "If a Zombie you control would deal combat damage to a player, instead that player mills that many cards.\nWhenever a creature card is put into an opponent's graveyard from their library, exile that card and create a 2/2 black Zombie creature token.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

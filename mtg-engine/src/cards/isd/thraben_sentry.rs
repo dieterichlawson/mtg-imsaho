@@ -21,7 +21,7 @@ impl CardBehavior for ThrabenSentry {
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Vigilance\nWhenever another creature you control dies, you may transform Thraben Sentry.".into(),
+            oracle_text: "Vigilance\nWhenever another creature you control dies, you may transform this creature.".into(),
             keywords: vec![Keyword::Vigilance],
             flashback_cost: None,
             continuous_effects: vec![],

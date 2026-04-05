@@ -16,7 +16,7 @@ impl CardBehavior for TyphoidRats {
             subtypes: vec!["Rat".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Deathtouch".into(),
+            oracle_text: "Deathtouch (Any amount of damage this deals to a creature is enough to destroy it.)".into(),
             keywords: vec![Keyword::Deathtouch],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

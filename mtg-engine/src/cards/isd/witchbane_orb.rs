@@ -20,7 +20,7 @@ impl CardBehavior for WitchbaneOrb {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "When Witchbane Orb enters the battlefield, destroy all Curses attached to you.\nYou have hexproof.".into(),
+            oracle_text: "When this artifact enters, destroy all Curses attached to you.\nYou have hexproof. (You can't be the target of spells or abilities your opponents control, including Aura spells.)".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

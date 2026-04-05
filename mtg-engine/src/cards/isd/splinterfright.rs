@@ -24,7 +24,7 @@ impl CardBehavior for Splinterfright {
             // the engine recognizes this as a creature (power.is_some() is used as proxy).
             power: Some(0),
             toughness: Some(0),
-            oracle_text: "Trample\nSplinterfright's power and toughness are each equal to the number of creature cards in your graveyard.\nAt the beginning of your upkeep, mill two cards.".into(),
+            oracle_text: "Trample\nSplinterfright's power and toughness are each equal to the number of creature cards in your graveyard.\nAt the beginning of your upkeep, mill two cards. (Put the top two cards of your library into your graveyard.)".into(),
             keywords: vec![Keyword::Trample],
             flashback_cost: None,
             continuous_effects: vec![],
