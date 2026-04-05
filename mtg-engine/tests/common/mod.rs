@@ -115,6 +115,46 @@ pub fn named_creature(
     id
 }
 
+/// Process triggers, auto-resolving any "choose target player" choices by picking the opponent.
+/// Repeats until all triggers and their choices are fully resolved.
+pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &CardRegistry) {
+    for _ in 0..50 {
+        mtg_engine::triggers::process_triggers(state, registry);
+        if state.awaiting_action.is_none() {
+            break;
+        }
+        // Auto-resolve: choose the opponent as target.
+        let resolved = match &state.awaiting_action {
+            Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player, choice, .. }) => {
+                let controller = *player;
+                match choice {
+                    mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. } => {
+                        let opponent = state.opponent(controller);
+                        options.iter()
+                            .find(|t| matches!(t, Target::Player(p) if *p == opponent))
+                            .or_else(|| options.first())
+                            .cloned()
+                    }
+                    _ => None,
+                }
+            }
+            _ => None,
+        };
+        if let Some(target) = resolved {
+            let new_state = mtg_engine::engine::submit_action(
+                state,
+                &Action::ResolveChoice {
+                    choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(target)),
+                },
+                registry,
+            );
+            *state = new_state;
+        } else {
+            break;
+        }
+    }
+}
+
 /// Place a named equipment card on the battlefield (unattached). Returns the object ID.
 pub fn named_equipment(
     state: &mut GameState,

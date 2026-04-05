@@ -1501,6 +1501,8 @@ pub enum PendingEffect {
     ChooseCurseThenAttach { searcher: PlayerId, source: ObjectId },
     /// Grant flashback to a chosen card until end of turn (Snapcaster Mage).
     GrantFlashback { source_name: String },
+    /// Target player loses 1 life, controller gains 1 life (Falkenrath Noble, etc.).
+    DrainLife { controller: PlayerId, source_name: String },
 }
 
 /// Game result.

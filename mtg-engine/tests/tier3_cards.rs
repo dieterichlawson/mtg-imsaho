@@ -297,7 +297,7 @@ fn falkenrath_noble_drains_on_any_death() {
 
     assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard);
 
-    triggers::process_triggers(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, 19,
         "P1 should lose 1 life from Falkenrath Noble's trigger");

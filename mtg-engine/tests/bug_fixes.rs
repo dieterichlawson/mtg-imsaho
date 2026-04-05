@@ -412,7 +412,7 @@ fn falkenrath_noble_triggers_on_opponent_creature_death() {
     let p1_life_before = state.get_player(P1).life;
 
     check_state_based_actions_with_registry(&mut state, Some(&reg));
-    triggers::process_triggers(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
 
     // Noble SHOULD trigger — "another creature dies" includes opponent's creatures.
     assert_eq!(state.get_player(P0).life, p0_life_before + 1,
@@ -435,7 +435,7 @@ fn falkenrath_noble_triggers_on_own_creature_death() {
     let p1_life_before = state.get_player(P1).life;
 
     check_state_based_actions_with_registry(&mut state, Some(&reg));
-    triggers::process_triggers(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
 
     assert_eq!(state.get_player(P0).life, p0_life_before + 1,
         "Falkenrath Noble should gain 1 life when your creature dies");
@@ -457,7 +457,7 @@ fn falkenrath_noble_triggers_on_self_death() {
     let p1_life_before = state.get_player(P1).life;
 
     check_state_based_actions_with_registry(&mut state, Some(&reg));
-    triggers::process_triggers(&mut state, &reg);
+    process_triggers_auto_target_opponent(&mut state, &reg);
 
     // Noble SHOULD trigger on its own death ("this creature ... dies").
     assert_eq!(state.get_player(P0).life, p0_life_before + 1,

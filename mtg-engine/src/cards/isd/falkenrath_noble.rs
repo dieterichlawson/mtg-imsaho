@@ -41,33 +41,33 @@ impl CardBehavior for FalkenrathNoble {
         // "This creature dies" — trigger fires even when Noble itself dies.
         // Use controller (last known information from when it was on the battlefield).
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
-        drain(state, controller);
+        drain(state, controller, object_id);
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
         // "Another creature dies" — triggers on ANY creature death (any controller).
-        // The trigger system only dispatches this for permanents that were on the
-        // battlefield (or died simultaneously), so we trust the dispatch and don't
-        // re-check the zone. The Noble may be in the graveyard if it died in the
-        // same batch (board wipe).
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             _ => return,
         };
-        drain(state, controller);
+        drain(state, controller, self_id);
     }
 }
 
-/// Apply Falkenrath Noble's drain effect: opponent loses 1, you gain 1.
-/// In 2-player, auto-targets the opponent (per project convention).
-fn drain(state: &mut GameState, controller: PlayerId) {
-    let opponent = state.opponent(controller);
-    // Target player (opponent in 2-player) loses 1 life.
-    let old = state.get_player(opponent).life;
-    state.get_player_mut(opponent).life = old - 1;
-    state.events.push(crate::events::GameEvent::LifeChanged { player: opponent, old, new_life: old - 1 });
-    // You gain 1 life.
-    let old_self = state.get_player(controller).life;
-    state.get_player_mut(controller).life = old_self + 1;
-    state.events.push(crate::events::GameEvent::LifeChanged { player: controller, old: old_self, new_life: old_self + 1 });
+/// Present a "target player" choice for Falkenrath Noble's drain effect.
+fn drain(state: &mut GameState, controller: PlayerId, source_id: ObjectId) {
+    use crate::actions::Target;
+    use crate::state::PendingEffect;
+
+    let targets: Vec<Target> = state.players.iter().map(|p| Target::Player(p.id)).collect();
+    let effect = PendingEffect::DrainLife {
+        controller,
+        source_name: "Falkenrath Noble".into(),
+    };
+
+    crate::cards::helpers::present_target_choice(
+        state, source_id, controller, targets, effect,
+        "Falkenrath Noble: choose target player to lose 1 life",
+        false, // mandatory
+    );
 }

@@ -2293,6 +2293,19 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
             state.log(LogLevel::Event, format!("{}: p{} drew a card and lost 1 life", source_name, pid.0));
         }
+        (Target::Player(pid), PendingEffect::DrainLife { controller, source_name }) => {
+            // Target player loses 1 life.
+            let old = state.get_player(*pid).life;
+            let new_life = old - 1;
+            state.get_player_mut(*pid).life = new_life;
+            state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
+            // Controller gains 1 life.
+            let old_self = state.get_player(*controller).life;
+            let new_self = old_self + 1;
+            state.get_player_mut(*controller).life = new_self;
+            state.events.push(GameEvent::LifeChanged { player: *controller, old: old_self, new_life: new_self });
+            state.log(LogLevel::Event, format!("{}: p{} lost 1 life, p{} gained 1 life", source_name, pid.0, controller.0));
+        }
         (Target::Object(id), PendingEffect::DestroyCreature { source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
             crate::destruction::try_destroy(state, *id, registry);

@@ -233,17 +233,35 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
     // Run SBAs — all three die at once
     mtg_engine::sba::check_state_based_actions(&mut state);
 
-    // Process death triggers
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
+    // Process death triggers — each trigger presents a "target player" choice,
+    // so we must resolve them one at a time.
+    let mut drain_count = 0;
+    for _ in 0..10 {
+        mtg_engine::triggers::process_triggers(&mut state, &registry);
+        if state.awaiting_action.is_none() {
+            break;
+        }
+        // Resolve: choose P1 as the drain target
+        state = mtg_engine::engine::submit_action(
+            &state,
+            &Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
+                    Some(Target::Player(P1))
+                ),
+            },
+            &registry,
+        );
+        drain_count += 1;
+    }
 
     // Noble should have triggered 3 times (once for itself via SelfDies,
     // once for each of the two other creatures via AnyCreatureDies).
     // Each trigger drains 1 life from opponent and gains 1 for controller.
     // Expected: P0 gains 3 life (20 -> 23), P1 loses 3 life (20 -> 17)
     let p0_life = state.get_player(P0).life;
-    let p1_life = state.get_player(P1).life;
 
-    // BUG: Only triggers once (for SelfDies), so P0 gains 1 and P1 loses 1
+    assert_eq!(drain_count, 3,
+        "Noble should trigger 3 times (self + 2 others), got {} triggers", drain_count);
     assert_eq!(p0_life, p0_life_before + 3,
         "Noble should trigger 3 times (self + 2 others). P0 life: {} (expected {})",
         p0_life, p0_life_before + 3);
@@ -1953,8 +1971,8 @@ fn bug_stitchers_apprentice_trigger_desync() {
     let behavior = registry.get(state.get_object(apprentice).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, apprentice, 0, &[], &registry);
 
-    // Process triggers from the sacrifice
-    mtg_engine::triggers::process_triggers(&mut state, &registry);
+    // Process triggers from the sacrifice (Noble presents target choice)
+    process_triggers_auto_target_opponent(&mut state, &registry);
 
     // Falkenrath Noble should have triggered from the sacrifice death
     let p1_life_after = state.get_player(P1).life;
