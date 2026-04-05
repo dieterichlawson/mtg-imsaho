@@ -14,9 +14,9 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 6. [x] Token subtype check misses registry — Victim of Night fixed (17 others need same pattern)
 7. [x] Hexproof not re-checked at resolution (stack.rs) — 3 cards
 8. [ ] "Target player" auto-selects opponent — 15 cards
-9. [ ] Planeswalker damage uses damage_marked not loyalty — 3 cards
-10. [ ] card_state not reset on zone change — 2 cards
-11. [ ] Control change not reverted at EOT — 1 card
+9. [x] Planeswalker damage uses damage_marked not loyalty — 3 cards
+10. [x] card_state not reset on zone change — 2 cards
+11. [x] Control change not reverted at EOT — 1 card
 12. [ ] SpellCast trigger filter excludes non-instant/sorcery — 1 card (Burning Vengeance)
 13. [ ] SBA ordering (simultaneous destruction) — 1 card (Angelic Overseer)
 14. [ ] Protection not checked for targeting — 2 cards
@@ -55,5 +55,5 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 45. [ ] Memory's Journey: missing player target
 46. [ ] Spare from Evil: protection non-combat damage
 
-## Current: Working on #5 (simultaneous death triggers)
-## Completed: #1, #2, #3, #4
+## Current: Working on #12 (SpellCast filter)
+## Completed: #1-#11 (skipped #8 — card-by-card fix)
