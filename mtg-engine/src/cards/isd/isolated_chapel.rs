@@ -34,7 +34,7 @@ impl CardBehavior for IsolatedChapel {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Isolated Chapel enters the battlefield tapped unless you control a Plains or a Swamp.\n{T}: Add {W} or {B}.".into(),
+            oracle_text: "This land enters tapped unless you control a Plains or a Swamp.\n{T}: Add {W} or {B}.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

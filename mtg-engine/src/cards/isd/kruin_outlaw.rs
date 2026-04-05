@@ -33,7 +33,7 @@ impl CardBehavior for KruinOutlaw {
             subtypes: vec!["Human".into(), "Rogue".into(), "Werewolf".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform Kruin Outlaw.".into(),
+            oracle_text: "First strike\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![Keyword::FirstStrike],
             flashback_cost: None,
             continuous_effects: vec![],

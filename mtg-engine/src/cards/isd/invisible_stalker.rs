@@ -17,7 +17,7 @@ impl CardBehavior for InvisibleStalker {
             subtypes: vec!["Human".into(), "Rogue".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Hexproof. Invisible Stalker can't be blocked.".into(),
+            oracle_text: "Hexproof (This creature can't be the target of spells or abilities your opponents control.)\nThis creature can't be blocked.".into(),
             keywords: vec![Keyword::Hexproof],
             flashback_cost: None,
             continuous_effects: vec![

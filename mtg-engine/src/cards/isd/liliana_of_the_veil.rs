@@ -25,7 +25,7 @@ impl CardBehavior for LilianaOfTheVeil {
             subtypes: vec!["Liliana".into()],
             power: None,
             toughness: None,
-            oracle_text: "+1: Each player discards a card.\n-2: Target player sacrifices a creature.\n-6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.".into(),
+            oracle_text: "+1: Each player discards a card.\n−2: Target player sacrifices a creature.\n−6: Separate all permanents target player controls into two piles. That player sacrifices all permanents in the pile of their choice.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

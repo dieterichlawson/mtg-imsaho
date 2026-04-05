@@ -19,7 +19,7 @@ impl CardBehavior for Geistflame {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Geistflame deals 1 damage to any target.".into(),
+            oracle_text: "Geistflame deals 1 damage to any target.\nFlashback {3}{R} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(3), ManaSymbol::Colored(Color::Red)])),
             continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],

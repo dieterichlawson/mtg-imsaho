@@ -22,7 +22,7 @@ impl CardBehavior for GraspOfPhantoms {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Put target creature on top of its owner's library.\nFlashback {7}{U}".into(),
+            oracle_text: "Put target creature on top of its owner's library.\nFlashback {7}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(7), ManaSymbol::Colored(Color::Blue)])),
             continuous_effects: vec![],

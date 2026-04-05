@@ -21,7 +21,7 @@ impl CardBehavior for KessigCagebreakers {
             subtypes: vec!["Human".into(), "Rogue".into()],
             power: Some(3),
             toughness: Some(4),
-            oracle_text: "Whenever Kessig Cagebreakers attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard.".into(),
+            oracle_text: "Whenever this creature attacks, create a 2/2 green Wolf creature token that's tapped and attacking for each creature card in your graveyard.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

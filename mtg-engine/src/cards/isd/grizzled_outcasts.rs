@@ -31,7 +31,7 @@ impl CardBehavior for GrizzledOutcasts {
             subtypes: vec!["Human".into(), "Werewolf".into()],
             power: Some(4),
             toughness: Some(4),
-            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform Grizzled Outcasts.".into(),
+            oracle_text: "At the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

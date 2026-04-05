@@ -19,7 +19,7 @@ impl CardBehavior for GruesomeDeformity {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchanted creature has intimidate.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature has intimidate. (It can't be blocked except by artifact creatures and/or creatures that share a color with it.)".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

@@ -23,7 +23,7 @@ impl CardBehavior for HollowhengeScavenger {
             subtypes: vec!["Elemental".into()],
             power: Some(4),
             toughness: Some(5),
-            oracle_text: "Morbid — When Hollowhenge Scavenger enters the battlefield, if a creature died this turn, you gain 5 life.".into(),
+            oracle_text: "Morbid — When this creature enters, if a creature died this turn, you gain 5 life.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

@@ -26,7 +26,7 @@ impl CardBehavior for GutterGrime {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Whenever a nontoken creature you control dies, put a slime counter on Gutter Grime, then create a green Ooze creature token with \"This creature's power and toughness are each equal to the number of slime counters on Gutter Grime.\"".into(),
+            oracle_text: "Whenever a nontoken creature you control dies, put a slime counter on this enchantment, then create a green Ooze creature token with \"This token's power and toughness are each equal to the number of slime counters on Gutter Grime.\"".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

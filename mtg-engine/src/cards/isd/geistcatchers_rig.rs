@@ -21,7 +21,7 @@ impl CardBehavior for GeistcatchersRig {
             subtypes: vec!["Construct".into()],
             power: Some(4),
             toughness: Some(5),
-            oracle_text: "When Geistcatcher's Rig enters the battlefield, you may have it deal 4 damage to target creature with flying.".into(),
+            oracle_text: "When this creature enters, you may have it deal 4 damage to target creature with flying.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

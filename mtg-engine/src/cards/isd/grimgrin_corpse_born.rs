@@ -26,7 +26,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             subtypes: vec!["Zombie".into(), "Warrior".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "Grimgrin, Corpse-Born enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.".into(),
+            oracle_text: "Grimgrin enters tapped and doesn't untap during your untap step.\nSacrifice another creature: Untap Grimgrin and put a +1/+1 counter on it.\nWhenever Grimgrin attacks, destroy target creature defending player controls, then put a +1/+1 counter on Grimgrin.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

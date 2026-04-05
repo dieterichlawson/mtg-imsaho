@@ -40,7 +40,7 @@ impl CardBehavior for HinterlandHarbor {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Hinterland Harbor enters the battlefield tapped unless you control a Forest or an Island.\n{T}: Add {G} or {U}.".into(),
+            oracle_text: "This land enters tapped unless you control a Forest or an Island.\n{T}: Add {G} or {U}.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

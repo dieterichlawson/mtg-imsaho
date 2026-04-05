@@ -32,7 +32,7 @@ impl CardBehavior for InstigatorGang {
             subtypes: vec!["Human".into(), "Werewolf".into()],
             power: Some(2),
             toughness: Some(3),
-            oracle_text: "Attacking creatures you control get +1/+0.\nAt the beginning of each upkeep, if no spells were cast last turn, transform Instigator Gang.".into(),
+            oracle_text: "Attacking creatures you control get +1/+0.\nAt the beginning of each upkeep, if no spells were cast last turn, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

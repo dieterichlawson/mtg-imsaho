@@ -20,7 +20,7 @@ impl CardBehavior for KessigWolf {
             subtypes: vec!["Wolf".into()],
             power: Some(3),
             toughness: Some(1),
-            oracle_text: "{1}{R}: Kessig Wolf gains first strike until end of turn.".into(),
+            oracle_text: "{1}{R}: This creature gains first strike until end of turn.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

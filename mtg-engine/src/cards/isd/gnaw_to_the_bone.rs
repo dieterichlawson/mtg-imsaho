@@ -21,7 +21,7 @@ impl CardBehavior for GnawToTheBone {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "You gain 2 life for each creature card in your graveyard.\nFlashback {2}{G}".into(),
+            oracle_text: "You gain 2 life for each creature card in your graveyard.\nFlashback {2}{G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Green)])),
             continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],

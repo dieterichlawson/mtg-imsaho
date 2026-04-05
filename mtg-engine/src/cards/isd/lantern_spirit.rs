@@ -20,7 +20,7 @@ impl CardBehavior for LanternSpirit {
             subtypes: vec!["Spirit".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: "Flying\n{U}: Return Lantern Spirit to its owner's hand.".into(),
+            oracle_text: "Flying\n{U}: Return this creature to its owner's hand.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],
