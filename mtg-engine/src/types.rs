@@ -371,6 +371,12 @@ pub enum ContinuousEffect {
     ProtectionFrom { filter: CreatureFilter, scope: EffectScope },
     /// Conditional keyword: granted only when a condition is met.
     ConditionalKeyword { keyword: Keyword, condition: EffectCondition, scope: EffectScope },
+    /// Conditional P/T modification: granted only when a condition is met.
+    ConditionalModifyPT { power: i32, toughness: i32, condition: EffectCondition, scope: EffectScope },
+    /// Conditional prevent-attack: only when condition is met.
+    ConditionalPreventAttack { condition: EffectCondition, scope: EffectScope },
+    /// Conditional prevent-block: only when condition is met.
+    ConditionalPreventBlock { condition: EffectCondition, scope: EffectScope },
     /// Reduce cost of spells matching a filter.
     ReduceCost { reduction: u32, filter: SpellFilter },
     /// Creature can't be blocked except by N or more creatures.
@@ -394,6 +400,10 @@ pub enum EffectCondition {
     /// This permanent has the specified keyword (for conditional abilities like
     /// "has indestructible as long as it has defender").
     SelfHasKeyword(Keyword),
+    /// The creature this aura is attached to has the specified subtype.
+    AttachedHasSubtype(String),
+    /// The creature this aura is attached to does NOT have the specified subtype.
+    AttachedLacksSubtype(String),
 }
 
 /// Filter for which spells a cost reduction applies to.

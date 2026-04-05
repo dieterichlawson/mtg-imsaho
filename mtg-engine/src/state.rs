@@ -761,11 +761,21 @@ impl GameState {
                     behavior.card_data().continuous_effects
                 };
                 for effect in &effects {
-                    if let ContinuousEffect::ModifyPT { power: p, toughness: t, scope } = effect {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            power += p;
-                            toughness += t;
+                    match effect {
+                        ContinuousEffect::ModifyPT { power: p, toughness: t, scope } => {
+                            if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                                power += p;
+                                toughness += t;
+                            }
                         }
+                        ContinuousEffect::ConditionalModifyPT { power: p, toughness: t, condition, scope } => {
+                            if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry)
+                                && self.check_condition(condition, source.id, source.controller, registry) {
+                                power += p;
+                                toughness += t;
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 // Dynamic P/T from auras (e.g., Wreath of Geists: +X/+X where X = creatures in graveyard).
@@ -957,15 +967,9 @@ impl GameState {
         }, registry) {
             return false;
         }
-        // Legacy fallback: instance_oracle_text for conditional cards (Bonds of Faith).
-        for obj in self.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
-                if let Some(ref text) = obj.instance_oracle_text {
-                    if text.contains("can't attack or block") {
-                        return false;
-                    }
-                }
-            }
+        // Check conditional prevent-attack (e.g., Bonds of Faith on non-Human).
+        if self.has_conditional_prevent(creature_id, true, registry) {
+            return false;
         }
         true
     }
@@ -981,15 +985,9 @@ impl GameState {
         }, registry) {
             return false;
         }
-        // Legacy fallback: instance_oracle_text for conditional cards (Bonds of Faith).
-        for obj in self.objects.values() {
-            if obj.zone == Zone::Battlefield && obj.attached_to == Some(creature_id) {
-                if let Some(ref text) = obj.instance_oracle_text {
-                    if text.contains("can't attack or block") {
-                        return false;
-                    }
-                }
-            }
+        // Check conditional prevent-block (e.g., Bonds of Faith on non-Human).
+        if self.has_conditional_prevent(creature_id, false, registry) {
+            return false;
         }
         true
     }
@@ -1109,6 +1107,45 @@ impl GameState {
         false
     }
 
+    /// Check if a creature is prevented from attacking or blocking by a conditional effect.
+    fn has_conditional_prevent(&self, creature_id: ObjectId, is_attack: bool, registry: &crate::cards::CardRegistry) -> bool {
+        use crate::types::ContinuousEffect;
+        for source in self.objects.values() {
+            if source.zone != Zone::Battlefield {
+                continue;
+            }
+            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
+                instance_effects.clone()
+            } else if let Some(behavior) = registry.get(source.card_id) {
+                if source.is_transformed {
+                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
+                } else {
+                    behavior.card_data().continuous_effects
+                }
+            } else {
+                continue
+            };
+            for effect in &effects {
+                let (condition, scope) = if is_attack {
+                    match effect {
+                        ContinuousEffect::ConditionalPreventAttack { condition, scope } => (condition, scope),
+                        _ => continue,
+                    }
+                } else {
+                    match effect {
+                        ContinuousEffect::ConditionalPreventBlock { condition, scope } => (condition, scope),
+                        _ => continue,
+                    }
+                };
+                if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry)
+                    && self.check_condition(condition, source.id, source.controller, registry) {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Check if a creature has a conditional keyword that is currently active.
     fn has_conditional_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
         use crate::types::{ContinuousEffect, EffectCondition};
@@ -1170,18 +1207,12 @@ impl GameState {
                 })
             }
             EffectCondition::SelfHasKeyword(kw) => {
-                // Check if the source permanent has the specified keyword.
-                // Careful: don't recurse if checking indestructible conditioned on defender —
-                // we check base keywords directly to avoid infinite recursion.
                 self.get_object(source_id)
                     .map(|o| {
-                        // Check object-level keywords.
                         if o.keywords.contains(kw) {
-                            // But also check if it was temporarily removed.
                             !self.until_end_of_turn_removed_keywords.iter()
                                 .any(|r| r.target == source_id && r.keyword == *kw)
                         } else {
-                            // Check card_data keywords.
                             registry.card_data(o.card_id)
                                 .map(|d| d.keywords.contains(kw))
                                 .unwrap_or(false)
@@ -1190,6 +1221,28 @@ impl GameState {
                         }
                     })
                     .unwrap_or(false)
+            }
+            EffectCondition::AttachedHasSubtype(subtype) => {
+                // Check if the creature this aura is attached to has the subtype.
+                // Use obj.subtypes as authoritative when non-empty (covers type changes),
+                // fall back to registry only when obj.subtypes is empty.
+                self.get_object(source_id)
+                    .and_then(|o| o.attached_to)
+                    .and_then(|target_id| {
+                        self.get_object(target_id).map(|target_obj| {
+                            if !target_obj.subtypes.is_empty() {
+                                target_obj.subtypes.iter().any(|s| s == subtype)
+                            } else {
+                                registry.card_data(target_obj.card_id)
+                                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                                    .unwrap_or(false)
+                            }
+                        })
+                    })
+                    .unwrap_or(false)
+            }
+            EffectCondition::AttachedLacksSubtype(subtype) => {
+                !self.check_condition(&EffectCondition::AttachedHasSubtype(subtype.clone()), source_id, controller, registry)
             }
         }
     }
