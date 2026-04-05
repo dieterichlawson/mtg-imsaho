@@ -2024,8 +2024,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 _ => new_state.active_player,
             };
             for &card_id in cards {
+                let name = card_name(&new_state, registry, card_id);
                 new_state.events.push(GameEvent::Discarded { player, object: card_id });
                 new_state.move_object(card_id, Zone::Graveyard);
+                new_state.log(LogLevel::Event, format!("p{} discarded {}", player.0, name));
             }
             new_state.awaiting_action = None;
         }
