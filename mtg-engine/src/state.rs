@@ -484,6 +484,10 @@ impl GameState {
                 obj.attached_to = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;
+                obj.card_state.clear();
+                obj.is_transformed = false;
+                obj.instance_continuous_effects = None;
+                obj.instance_oracle_text = None;
             }
 
             // Set summoning sickness when entering the battlefield.
