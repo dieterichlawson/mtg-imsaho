@@ -10,7 +10,7 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 2. [x] Spell cast counter never incremented — all werewolves
 3. [x] Once-per-turn never clears between turns — 3 cards
 4. [x] ETB trigger suppressed when source leaves (triggers.rs:893) — 11 cards
-5. [ ] Simultaneous death triggers only fire once — 9 cards
+5. [x] Simultaneous death triggers only fire once — 9 cards
 6. [ ] Token subtype check misses registry (registry-only check) — 18 cards
 7. [ ] Hexproof not re-checked at resolution (stack.rs) — 3 cards
 8. [ ] "Target player" auto-selects opponent — 15 cards
