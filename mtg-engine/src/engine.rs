@@ -1745,7 +1745,16 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             let name = card_name(&new_state, registry, *object_id);
             let suffix = if is_flashback { " (flashback)" } else { "" };
-            new_state.log(LogLevel::Event, format!("p{} cast {}{}", player.0, name, suffix));
+            let target_str = if targets.is_empty() {
+                String::new()
+            } else {
+                let names: Vec<String> = targets.iter().map(|t| match t {
+                    crate::actions::Target::Object(id) => card_name(&new_state, registry, *id),
+                    crate::actions::Target::Player(pid) => format!("p{}", pid.0),
+                }).collect();
+                format!(" targeting {}", names.join(", "))
+            };
+            new_state.log(LogLevel::Event, format!("p{} cast {}{}{}", player.0, name, suffix, target_str));
             new_state.consecutive_passes = 0;
         }
 
