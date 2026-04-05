@@ -654,12 +654,9 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                 }
             }
             GameEvent::SpellCast { player: caster, object: spell_id } => {
-                // Check if the spell is an instant or sorcery.
-                let is_instant_sorcery = state.get_object(*spell_id)
-                    .and_then(|o| registry.card_data(o.card_id))
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, crate::types::CardType::Instant | crate::types::CardType::Sorcery)))
-                    .unwrap_or(false);
-                if is_instant_sorcery {
+                // Dispatch SpellCast triggers for ALL spell types (not just instant/sorcery).
+                // Individual card handlers can filter by spell type if needed.
+                {
                     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
                         .filter(|o| o.zone == Zone::Battlefield)
                         .map(|o| (o.id, o.card_id, o.controller))

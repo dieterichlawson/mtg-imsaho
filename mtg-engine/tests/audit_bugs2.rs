@@ -85,15 +85,22 @@ fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
         &registry,
     );
 
-    // Check if any SpellCast triggers were created
-    let has_spell_trigger = state.stack.iter().any(|e| {
-        format!("{:?}", e).contains("SpellCast")
-    });
+    // Process triggers so SpellCast watchers fire
+    mtg_engine::triggers::process_triggers(&mut state, &registry);
 
+    // Check if any SpellCast triggers were created on the stack
+    let stack_str = format!("{:?}", state.stack);
+    let has_spell_trigger = stack_str.contains("SpellCast");
+
+    // Also check if Burning Vengeance's on_spell_cast was called by checking
+    // if an AwaitingAction was set (BV presents a target choice)
+    let has_bv_choice = state.awaiting_action.is_some();
+
+    // Either a trigger should be on the stack, or the handler should have run
     // BUG: No SpellCast trigger for creature spells
-    // (This would matter if the creature was cast from graveyard)
-    assert!(has_spell_trigger,
-        "SpellCast triggers should fire for all spell types, not just instant/sorcery");
+    assert!(has_spell_trigger || has_bv_choice,
+        "SpellCast triggers should fire for all spell types. Stack: {}, Choice: {}",
+        has_spell_trigger, has_bv_choice);
 }
 
 // ═══════════════════════════════════════════════════════════════
