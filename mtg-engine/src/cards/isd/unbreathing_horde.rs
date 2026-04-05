@@ -19,6 +19,47 @@ use crate::types::*;
 /// path (ETB trigger fires directly).
 pub struct UnbreathingHorde;
 
+impl UnbreathingHorde {
+    fn add_zombie_counters(state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let bf_count = Self::count_zombies_on_battlefield(state, controller, object_id, registry);
+        let gy_count = Self::count_zombies_in_graveyard(state, controller, registry);
+        let total = bf_count + gy_count;
+        if total > 0 {
+            state.add_counters(object_id, CounterType::PlusOnePlusOne, total);
+        }
+        state.log(crate::state::LogLevel::Event,
+            format!("Unbreathing Horde enters with {} +1/+1 counters ({} battlefield + {} graveyard Zombies)",
+                total, bf_count, gy_count));
+    }
+
+    fn count_zombies_on_battlefield(state: &GameState, controller: crate::ids::PlayerId, exclude: ObjectId, registry: &CardRegistry) -> u32 {
+        state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                && o.controller == controller
+                && o.id != exclude
+                && (registry.card_data(o.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
+                    .unwrap_or(false)
+                    || o.subtypes.iter().any(|s| s == "Zombie"))
+            })
+            .count() as u32
+    }
+
+    fn count_zombies_in_graveyard(state: &GameState, controller: crate::ids::PlayerId, registry: &CardRegistry) -> u32 {
+        state.objects_in_zone(Zone::Graveyard, controller)
+            .iter()
+            .filter(|o| {
+                registry.card_data(o.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
+                    .unwrap_or(false)
+                    || o.subtypes.iter().any(|s| s == "Zombie")
+            })
+            .count() as u32
+    }
+}
+
 impl CardBehavior for UnbreathingHorde {
     fn card_data(&self) -> CardData {
         CardData {
@@ -44,44 +85,32 @@ impl CardBehavior for UnbreathingHorde {
     }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+        // Skip if counters were already added via on_resolve (cast path).
+        let already_has_counters = state.get_object(object_id)
+            .map(|o| *o.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0) > 0)
+            .unwrap_or(false);
+        if already_has_counters {
+            return;
+        }
+        Self::add_zombie_counters(state, object_id, registry);
+    }
+
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+        // Count Zombies BEFORE entering (the Horde is still on the stack).
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let bf_count = Self::count_zombies_on_battlefield(state, controller, object_id, registry);
+        let gy_count = Self::count_zombies_in_graveyard(state, controller, registry);
 
-        // Count other Zombies on battlefield (self is already there, so exclude self).
-        let battlefield_zombies = state.objects.values()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                && o.controller == controller
-                && o.id != object_id
-                && (registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                    .unwrap_or(false)
-                    || o.subtypes.iter().any(|s| s == "Zombie"))
-            })
-            .count() as u32;
+        // Move to battlefield.
+        state.move_object(object_id, Zone::Battlefield);
 
-        // Count Zombie cards in graveyard (self is no longer there in either path).
-        let graveyard_zombies = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .filter(|o| {
-                registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                    .unwrap_or(false)
-                    || o.subtypes.iter().any(|s| s == "Zombie")
-            })
-            .count() as u32;
-
-        let total = battlefield_zombies + graveyard_zombies;
+        // Add counters after entering.
+        let total = bf_count + gy_count;
         if total > 0 {
             state.add_counters(object_id, CounterType::PlusOnePlusOne, total);
         }
         state.log(crate::state::LogLevel::Event,
             format!("Unbreathing Horde enters with {} +1/+1 counters ({} battlefield + {} graveyard Zombies)",
-                total, battlefield_zombies, graveyard_zombies));
-    }
-
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        // Move to battlefield. Counter placement is handled by on_enter_battlefield,
-        // which fires via the ETB trigger system for all entry paths (cast and reanimation).
-        state.move_object(object_id, Zone::Battlefield);
+                total, bf_count, gy_count));
     }
 }

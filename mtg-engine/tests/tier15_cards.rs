@@ -88,6 +88,16 @@ fn mentor_of_the_meek_draws_when_small_creature_enters() {
     let behavior = reg.get(state.get_object(mentor).unwrap().card_id).unwrap();
     behavior.on_any_creature_enters(&mut state, mentor, small_creature, P0, &reg);
 
+    // Oracle: "you may pay {1}" — should present a choice.
+    assert!(state.awaiting_action.is_some(), "Should present 'you may pay' choice");
+
+    // Player chooses yes (pay {1} and draw).
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
     // Should have drawn a card.
     let hand_count = state.objects.values()
         .filter(|o| o.zone == Zone::Hand && o.owner == P0)
@@ -1021,10 +1031,21 @@ fn delver_does_not_transform_when_top_card_is_creature() {
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
     behavior.on_upkeep(&mut state, delver, &reg);
 
-    // Should NOT be transformed and no choice presented.
+    // Per oracle ruling: "You may reveal the card even if it's not an instant or sorcery."
+    // A choice should be presented. If the player reveals, Delver does NOT transform
+    // (since it's a creature, not an instant or sorcery).
+    assert!(state.awaiting_action.is_some(), "Should present 'you may reveal' choice");
+
+    // Player chooses to reveal.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
+
+    // Should NOT transform (top card is a creature).
     assert!(!state.get_object(delver).unwrap().is_transformed);
     assert_eq!(state.get_object(delver).unwrap().name, "Delver of Secrets");
-    assert!(state.awaiting_action.is_none(), "No choice should be presented for non-instant/sorcery");
 }
 
 // ── Cloistered Youth ──────────────────────────────────────────
@@ -1399,9 +1420,19 @@ fn thraben_sentry_transforms_when_creature_dies() {
 
     assert!(!state.get_object(sentry).unwrap().is_transformed);
 
-    // Simulate another creature dying.
+    // Simulate another creature dying — presents "you may transform" choice.
     let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
     behavior.on_any_creature_dies(&mut state, sentry, other, P0, &[], 1, &reg);
+
+    // Oracle: "you may transform" — choice should be presented.
+    assert!(state.awaiting_action.is_some(), "Should present 'you may transform' choice");
+
+    // Player chooses yes.
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &reg,
+    );
 
     assert!(state.get_object(sentry).unwrap().is_transformed);
     assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia");

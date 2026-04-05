@@ -656,30 +656,16 @@ fn unburial_rites_choice_with_multiple_creatures() {
     let tusker = state.create_object(tusker_id, P0, Zone::Graveyard, Some(3), Some(3));
     state.get_object_mut(tusker).unwrap().name = "Kalonian Tusker".into();
 
-    // Cast Unburial Rites.
+    // Cast Unburial Rites targeting the Tusker (target chosen at cast time).
     let ur = castable_spell(&mut state, &reg, "Unburial Rites", P0);
 
-    state = cast_and_resolve(&state, &reg, ur, vec![]);
+    state = cast_and_resolve(&state, &reg, ur, vec![Target::Object(tusker)]);
 
-    // Should have a choice between the two creatures.
-    assert!(state.awaiting_action.is_some(),
-        "Unburial Rites should present a choice with 2 creatures");
-
-    // Choose to return the Tusker.
-    state = engine::submit_action(
-        &state,
-        &Action::ResolveChoice {
-            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(
-                Some(Target::Object(tusker))
-            ),
-        },
-        &reg,
-    );
-
+    // Tusker should be on the battlefield, Bears should stay in graveyard.
     assert_eq!(state.get_object(tusker).unwrap().zone, Zone::Battlefield,
-        "Chosen creature should return to battlefield");
+        "Targeted creature should return to battlefield");
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Graveyard,
-        "Unchosen creature should stay in graveyard");
+        "Non-targeted creature should stay in graveyard");
 }
 
 /// Pitchburn Devils choice with multiple targets.

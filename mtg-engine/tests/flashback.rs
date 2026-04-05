@@ -313,7 +313,7 @@ fn unburial_rites_returns_creature() {
     // Cast Unburial Rites. Cost: {4}{B}.
     let ur = castable_spell(&mut state, &reg, "Unburial Rites", P0);
 
-    state = cast_and_resolve(&state, &reg, ur, vec![]);
+    state = cast_and_resolve(&state, &reg, ur, vec![Target::Object(bears)]);
 
     assert_eq!(state.get_object(bears).unwrap().zone, Zone::Battlefield,
         "Unburial Rites should return the creature to the battlefield");

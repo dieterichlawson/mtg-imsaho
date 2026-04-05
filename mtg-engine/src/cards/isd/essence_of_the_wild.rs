@@ -13,6 +13,17 @@ use crate::types::*;
 /// before the `EnteredBattlefield` event is emitted.
 pub struct EssenceOfTheWild;
 
+impl EssenceOfTheWild {
+    fn setup_copy_source(&self, state: &mut GameState, object_id: ObjectId) {
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.entering_copy_source = true;
+            obj.instance_oracle_text = Some("Creatures you control enter as a copy of this creature.".into());
+            obj.subtypes = vec!["Avatar".into()];
+            obj.colors = vec![Color::Green];
+        }
+    }
+}
+
 impl CardBehavior for EssenceOfTheWild {
     fn card_data(&self) -> CardData {
         CardData {
@@ -37,13 +48,13 @@ impl CardBehavior for EssenceOfTheWild {
         }
     }
 
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield);
+        self.setup_copy_source(state, object_id);
+    }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        // Mark this permanent as an entering-battlefield copy source.
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.entering_copy_source = true;
-            obj.instance_oracle_text = Some("Creatures you control enter as a copy of this creature.".into());
-            obj.subtypes = vec!["Avatar".into()];
-            obj.colors = vec![Color::Green];
-        }
+        // Also set up when entering via non-cast paths (reanimation, etc.).
+        self.setup_copy_source(state, object_id);
     }
 }

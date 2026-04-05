@@ -484,6 +484,8 @@ impl GameState {
             obj.zone_change_count += 1;
 
             // Reset battlefield-specific state when leaving the battlefield.
+            // Note: card_state is NOT cleared here — LTB triggers need it
+            // (e.g., Fiend Hunter's "exiled_creature"). It's cleared on re-entry.
             if from == Zone::Battlefield && to != Zone::Battlefield {
                 obj.tapped = false;
                 obj.summoning_sick = false;
@@ -492,14 +494,14 @@ impl GameState {
                 obj.attached_to = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;
-                obj.card_state.clear();
                 obj.is_transformed = false;
                 obj.instance_continuous_effects = None;
                 obj.instance_oracle_text = None;
             }
 
-            // Set summoning sickness when entering the battlefield.
+            // Set summoning sickness and clear stale state when entering the battlefield.
             if to == Zone::Battlefield && from != Zone::Battlefield {
+                obj.card_state.clear();
                 obj.summoning_sick = true;
             }
         }

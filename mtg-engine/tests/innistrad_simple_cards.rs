@@ -217,7 +217,9 @@ fn moorland_haunt_creates_spirit_token() {
 
     let mh_card_id = reg.get_id_by_name("Moorland Haunt").unwrap();
     let mh = state.create_object(mh_card_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(mh).unwrap().name = "Moorland Haunt".into();
+    let mh_obj = state.get_object_mut(mh).unwrap();
+    mh_obj.name = "Moorland Haunt".into();
+    mh_obj.summoning_sick = false; // Lands don't have summoning sickness
 
     // Put a creature in graveyard.
     let creature = ready_creature(&mut state, P0, 2, 2);

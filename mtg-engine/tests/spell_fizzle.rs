@@ -216,12 +216,10 @@ fn bolt_target_gains_hexproof_before_resolution() {
     // NOT check target legality on resolution, so the bolt still deals damage.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
-    // Current behavior: bolt still deals damage despite hexproof.
-    // When fizzle is implemented, this should change to:
-    //   assert_eq!(state.get_object(creature).unwrap().damage_marked, 0);
+    // Hexproof is checked at resolution — bolt should fizzle (no damage).
     assert_eq!(
-        state.get_object(creature).unwrap().damage_marked, 3,
-        "Current engine behavior: bolt resolves despite hexproof gained after cast"
+        state.get_object(creature).unwrap().damage_marked, 0,
+        "Bolt should fizzle when target gains hexproof before resolution"
     );
 }
 

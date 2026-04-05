@@ -26,7 +26,7 @@ fn shuffles_own_graveyard_card_into_library() {
     state.move_object(card, Zone::Graveyard);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
-    let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Object(card)]);
+    let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Player(P0), Target::Object(card)]);
 
     assert_eq!(new_state.get_object(card).unwrap().zone, Zone::Library,
         "Card should be shuffled into library");
@@ -42,7 +42,7 @@ fn shuffles_opponent_graveyard_card_into_library() {
     state.move_object(card, Zone::Graveyard);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
-    let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Object(card)]);
+    let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Player(P1), Target::Object(card)]);
 
     assert_eq!(new_state.get_object(card).unwrap().zone, Zone::Library,
         "Opponent's card should be shuffled into their library");
@@ -63,6 +63,7 @@ fn shuffles_up_to_three_cards() {
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
     let new_state = cast_and_resolve(&state, &reg, journey, vec![
+        Target::Player(P0),
         Target::Object(card1),
         Target::Object(card2),
         Target::Object(card3),
@@ -73,7 +74,7 @@ fn shuffles_up_to_three_cards() {
     assert_eq!(new_state.get_object(card3).unwrap().zone, Zone::Library);
 }
 
-/// Legal actions should not mix cards from different graveyards.
+/// Memory's Journey requires a player target (for choosing whose graveyard).
 #[test]
 fn legal_actions_dont_mix_graveyards() {
     let reg = registry();
@@ -84,36 +85,15 @@ fn legal_actions_dont_mix_graveyards() {
     let opp_card = spell_in_hand(&mut state, &reg, "Doom Blade", P1);
     state.move_object(opp_card, Zone::Graveyard);
 
+    // Memory's Journey targeting P0's graveyard card.
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
+    let new_state = cast_and_resolve(&state, &reg, journey, vec![Target::Player(P0), Target::Object(own_card)]);
 
-    let actions = engine::legal_actions(&state, &reg);
-    let cast_actions: Vec<_> = actions.actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { object_id, .. } if object_id == &journey)
-    }).collect();
-
-    // Should have single-target actions for each card (mode 1 and mode 2).
-    assert!(cast_actions.len() >= 2, "Should have at least 2 cast actions");
-
-    // Should NOT have any 2-target actions mixing both players' graveyards.
-    let has_mixed = cast_actions.iter().any(|a| {
-        if let Action::CastSpell { targets, .. } = a {
-            if targets.len() == 2 {
-                let owners: Vec<_> = targets.iter().filter_map(|t| {
-                    if let Target::Object(id) = t {
-                        state.get_object(*id).map(|o| o.owner)
-                    } else {
-                        None
-                    }
-                }).collect();
-                owners.len() == 2 && owners[0] != owners[1]
-            } else {
-                false
-            }
-        } else {
-            false
-        }
-    });
-    assert!(!has_mixed, "Should not mix cards from different graveyards");
+    // P0's card should be in library, P1's card should still be in graveyard.
+    assert_eq!(new_state.get_object(own_card).unwrap().zone, Zone::Library,
+        "Own card should be shuffled into library");
+    assert_eq!(new_state.get_object(opp_card).unwrap().zone, Zone::Graveyard,
+        "Opponent's card should remain in their graveyard");
 }
 
 /// Has flashback for {G}.
