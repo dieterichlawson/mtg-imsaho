@@ -606,21 +606,38 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 }
             }
 
-            // For ExileXFromGraveyard, expand each cast action into one per X value.
+            // For ExileXFromGraveyard, expand each cast action into one per graveyard subset.
+            // The player chooses which specific cards to exile (not just how many).
             if matches!(&data.additional_cost, Some(AdditionalCost::ExileXFromGraveyard)) {
-                let gy_count = state.objects.values()
+                let gy_cards: Vec<ObjectId> = state.objects.values()
                     .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id)
-                    .count() as u32;
+                    .map(|o| o.id)
+                    .collect();
+                let gy_count = gy_cards.len();
                 let base_actions = std::mem::take(&mut cast_actions);
                 for action in base_actions {
                     if let Action::CastSpell { object_id, targets, sacrifice, .. } = action {
-                        for x in 0..=gy_count {
-                            cast_actions.push(Action::CastSpell {
-                                object_id,
-                                targets: targets.clone(),
-                                sacrifice,
-                                exile_count: Some(x), exile_ids: vec![], alternative_cost: None,
-                            });
+                        // X=0: cast exiling nothing
+                        cast_actions.push(Action::CastSpell {
+                            object_id,
+                            targets: targets.clone(),
+                            sacrifice,
+                            exile_count: Some(0),
+                            exile_ids: vec![],
+                            alternative_cost: None,
+                        });
+                        // For each X from 1 to gy_count, enumerate all C(gy_count, X) subsets
+                        for x in 1..=gy_count {
+                            for combo in combinations(&gy_cards, x) {
+                                cast_actions.push(Action::CastSpell {
+                                    object_id,
+                                    targets: targets.clone(),
+                                    sacrifice,
+                                    exile_count: Some(x as u32),
+                                    exile_ids: combo,
+                                    alternative_cost: None,
+                                });
+                            }
                         }
                     }
                 }
@@ -2323,6 +2340,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 source_obj.card_state.insert("exiled_creature".into(), *id);
             }
             state.log(LogLevel::Event, format!("{} exiled {}", source_name, name));
+        }
+        (Target::Object(id), PendingEffect::ExileCardAndCleanup { spell_id, source_name }) => {
+            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            state.move_object(*id, Zone::Exile);
+            state.log(LogLevel::Event, format!("{} exiled {} from hand", source_name, name));
+            state.move_spell_after_resolve(*spell_id);
         }
         (Target::Player(pid), PendingEffect::DrawAndLoseLife { source_name }) => {
             draw_cards(state, *pid, 1);
