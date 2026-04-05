@@ -1,0 +1,39 @@
+# UB Zombies / Self-Mill
+# Graveyard synergies, zombie tribal, token generation, chain triggers
+# Key combos: Undead Alchemist mill chains, Rooftop Storm + Grimgrin,
+# Endless Ranks exponential growth, Army of the Damned for 13+ tokens
+
+# Lands (24)
+10 Island
+10 Swamp
+4 Nephalia Drownyard
+
+# 1-drops (4)
+4 Diregraf Ghoul
+
+# 2-drops (8)
+4 Walking Corpse
+4 Ghoulcaller's Chant
+
+# 3-drops (10)
+3 Armored Skaab
+2 Ghoulraiser
+2 Dream Twist
+2 Forbidden Alchemy
+1 Stitched Drake
+
+# 4-drops (5)
+2 Makeshift Mauler
+2 Undead Alchemist
+1 Skaab Ruinator
+
+# 5-drops (5)
+2 Grimgrin, Corpse-Born
+1 Unbreathing Horde
+1 Moan of the Unhallowed
+1 Falkenrath Noble
+
+# 6+ drops (4)
+2 Think Twice
+1 Rooftop Storm
+1 Endless Ranks of the Dead

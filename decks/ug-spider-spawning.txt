@@ -1,0 +1,42 @@
+# UG Spider Spawning / Self-Mill
+# Graveyard-matters creatures, massive token generation, flashback loops
+# Key combos: Spider Spawning for 10+ tokens, Splinterfright self-mill engine,
+# Memory's Journey + Runic Repetition infinite loop, Laboratory Maniac alt-win
+
+# Lands (23)
+8 Forest
+7 Island
+2 Swamp
+4 Hinterland Harbor
+2 Shimmering Grotto
+
+# 1-drops (0)
+
+# 2-drops (13)
+4 Deranged Assistant
+3 Boneyard Wurm
+3 Dream Twist
+3 Mulch
+
+# 3-drops (11)
+3 Armored Skaab
+3 Splinterfright
+2 Ambush Viper
+2 Forbidden Alchemy
+1 Memory's Journey
+
+# 4-drops (5)
+2 Spider Spawning
+1 Mindshrieker
+1 Selhoff Occultist
+1 Runic Repetition
+
+# 5-drops (6)
+2 Kessig Cagebreakers
+2 Gnaw to the Bone
+1 Murder of Crows
+1 Somberwald Spider
+
+# 6-drops (2)
+1 Laboratory Maniac
+1 Think Twice

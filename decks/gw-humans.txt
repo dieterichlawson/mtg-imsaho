@@ -1,0 +1,38 @@
+# GW Humans / Tokens
+# Tribal humans, token generation, transform, anthem effects, equipment
+# Key combos: Champion of the Parish + human flood, Mayor of Avabruck transform,
+# Parallel Lives doubling tokens, Gavony Township pumping the team
+
+# Lands (23)
+10 Plains
+10 Forest
+3 Gavony Township
+
+# 1-drops (11)
+4 Champion of the Parish
+4 Doomed Traveler
+3 Avacyn's Pilgrim
+
+# 2-drops (9)
+3 Mayor of Avabruck
+2 Hamlet Captain
+2 Elder Cathar
+2 Travel Preparations
+
+# 3-drops (9)
+2 Fiend Hunter
+2 Mausoleum Guard
+2 Mentor of the Meek
+2 Midnight Haunting
+1 Intangible Virtue
+
+# 4-drops (5)
+1 Intangible Virtue
+1 Bonds of Faith
+1 Parallel Lives
+1 Butcher's Cleaver
+1 Moment of Heroism
+
+# 5-drops (3)
+2 Geist-Honored Monk
+1 Mikaeus, the Lunarch

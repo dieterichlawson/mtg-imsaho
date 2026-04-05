@@ -1,0 +1,35 @@
+# RB Vampires / Aggro
+# Tribal vampires, +1/+1 counter snowball, morbid triggers, curses
+# Key combos: Rakish Heir + Curse of Stalked Prey = 2 counters per hit,
+# Bloodline Keeper transform at 5 vampires, Olivia Voldaren stealing creatures
+
+# Lands (24)
+10 Mountain
+10 Swamp
+4 Stensia Bloodhall
+
+# 1-drops (4)
+4 Stromkirk Noble
+
+# 2-drops (12)
+4 Bloodcrazed Neonate
+3 Vampire Interloper
+2 Dead Weight
+2 Curse of Stalked Prey
+1 Skirsdag High Priest
+
+# 3-drops (10)
+3 Rakish Heir
+3 Brimstone Volley
+2 Crossway Vampire
+2 Victim of Night
+
+# 4-drops (6)
+2 Markov Patrician
+2 Falkenrath Noble
+2 Vampiric Fury
+
+# 5-drops (4)
+2 Bloodline Keeper
+1 Falkenrath Marauders
+1 Olivia Voldaren
