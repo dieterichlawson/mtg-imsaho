@@ -18,7 +18,7 @@ impl CardBehavior for DoomedTraveler {
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "When Doomed Traveler dies, create a 1/1 white Spirit creature token with flying.".into(),
+            oracle_text: "When this creature dies, create a 1/1 white Spirit creature token with flying.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

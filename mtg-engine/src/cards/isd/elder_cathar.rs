@@ -22,7 +22,7 @@ impl CardBehavior for ElderCathar {
             subtypes: vec!["Human".into(), "Soldier".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "When Elder Cathar dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead.".into(),
+            oracle_text: "When this creature dies, put a +1/+1 counter on target creature you control. If that creature is a Human, put two +1/+1 counters on it instead.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
             triggered_abilities: vec![

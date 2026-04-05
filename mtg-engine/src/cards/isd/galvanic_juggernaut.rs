@@ -21,7 +21,7 @@ impl CardBehavior for GalvanicJuggernaut {
             subtypes: vec!["Juggernaut".into()],
             power: Some(5),
             toughness: Some(5),
-            oracle_text: "Galvanic Juggernaut attacks each combat if able.\nGalvanic Juggernaut doesn't untap during your untap step.\nWhenever another creature dies, untap Galvanic Juggernaut.".into(),
+            oracle_text: "This creature attacks each combat if able.\nThis creature doesn't untap during your untap step.\nWhenever another creature dies, untap this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

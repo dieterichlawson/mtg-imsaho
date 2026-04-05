@@ -22,7 +22,7 @@ impl CardBehavior for ForbiddenAlchemy {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.".into(),
+            oracle_text: "Look at the top four cards of your library. Put one of them into your hand and the rest into your graveyard.\nFlashback {6}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(6), ManaSymbol::Colored(Color::Black)])),
             continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],

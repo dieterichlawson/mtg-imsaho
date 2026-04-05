@@ -24,7 +24,7 @@ impl CardBehavior for DerangedAssistant {
             subtypes: vec!["Human".into(), "Wizard".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "{T}, Mill a card: Add {C}.".into(),
+            oracle_text: "{T}, Mill a card: Add {C}. (To mill a card, put the top card of your library into your graveyard.)".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

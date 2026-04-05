@@ -22,7 +22,7 @@ impl CardBehavior for GeistOfSaintTraft {
             subtypes: vec!["Spirit".into(), "Cleric".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Hexproof\nWhenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.".into(),
+            oracle_text: "Hexproof (This creature can't be the target of spells or abilities your opponents control.)\nWhenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token with flying that's tapped and attacking. Exile that token at end of combat.".into(),
             keywords: vec![Keyword::Hexproof],
             flashback_cost: None,
             continuous_effects: vec![],

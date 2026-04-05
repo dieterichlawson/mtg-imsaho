@@ -19,7 +19,7 @@ impl CardBehavior for FurorOfTheBitten {
             subtypes: vec!["Aura".into()],
             power: None,
             toughness: None,
-            oracle_text: "Enchanted creature gets +2/+2 and attacks each combat if able.".into(),
+            oracle_text: "Enchant creature\nEnchanted creature gets +2/+2 and attacks each combat if able.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

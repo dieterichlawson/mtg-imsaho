@@ -94,7 +94,7 @@ impl CardBehavior for GarrukRelentless {
             subtypes: vec!["Garruk".into()],
             power: None,
             toughness: None,
-            oracle_text: "When Garruk Relentless has two or fewer loyalty counters on him, transform Garruk Relentless.\n0: Garruk Relentless deals 3 damage to target creature. That creature deals damage equal to its power to him.\n0: Create a 2/2 green Wolf creature token.".into(),
+            oracle_text: "When Garruk has two or fewer loyalty counters on him, transform him.\n0: Garruk deals 3 damage to target creature. That creature deals damage equal to its power to him.\n0: Create a 2/2 green Wolf creature token.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

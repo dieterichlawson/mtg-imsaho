@@ -20,7 +20,7 @@ impl CardBehavior for FeralRidgewolf {
             subtypes: vec!["Wolf".into()],
             power: Some(1),
             toughness: Some(2),
-            oracle_text: "Trample\n{1}{R}: Feral Ridgewolf gets +2/+0 until end of turn.".into(),
+            oracle_text: "Trample\n{1}{R}: This creature gets +2/+0 until end of turn.".into(),
             keywords: vec![Keyword::Trample],
             flashback_cost: None,
             continuous_effects: vec![],

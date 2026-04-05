@@ -22,7 +22,7 @@ impl CardBehavior for DesperateRavings {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Draw two cards, then discard a card at random.".into(),
+            oracle_text: "Draw two cards, then discard a card at random.\nFlashback {2}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Generic(2), ManaSymbol::Colored(Color::Blue)])),
             continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],

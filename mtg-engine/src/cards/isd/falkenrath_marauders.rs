@@ -21,7 +21,7 @@ impl CardBehavior for FalkenrathMarauders {
             subtypes: vec!["Vampire".into(), "Warrior".into()],
             power: Some(2),
             toughness: Some(2),
-            oracle_text: "Flying, haste\nWhenever Falkenrath Marauders deals combat damage to a player, put two +1/+1 counters on Falkenrath Marauders.".into(),
+            oracle_text: "Flying\nHaste (This creature can attack and {T} as soon as it comes under your control.)\nWhenever this creature deals combat damage to a player, put two +1/+1 counters on it.".into(),
             keywords: vec![Keyword::Flying, Keyword::Haste],
             flashback_cost: None,
             continuous_effects: vec![],
