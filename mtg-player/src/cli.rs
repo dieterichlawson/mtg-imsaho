@@ -567,14 +567,20 @@ impl CliPlayer {
         for s in &view.stack {
             add(&s.name, s.card_id);
         }
-        // Priority 3: opponent's battlefield (non-land)
+        // Priority 3: opponent's battlefield (skip basic lands)
         for p in view.battlefield.iter().filter(|p| p.controller != view.you) {
-            if p.card_types.iter().all(|t| matches!(t, CardType::Land)) { continue; }
+            let is_basic = registry.card_data(p.card_id)
+                .map(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic))
+                .unwrap_or(false);
+            if is_basic { continue; }
             add(&p.name, p.card_id);
         }
-        // Priority 4: your battlefield (non-land)
+        // Priority 4: your battlefield (skip basic lands)
         for p in view.battlefield.iter().filter(|p| p.controller == view.you) {
-            if p.card_types.iter().all(|t| matches!(t, CardType::Land)) { continue; }
+            let is_basic = registry.card_data(p.card_id)
+                .map(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic))
+                .unwrap_or(false);
+            if is_basic { continue; }
             add(&p.name, p.card_id);
         }
         // Priority 5: graveyard flashback cards (yours)
@@ -1442,14 +1448,25 @@ impl CliPlayer {
                 };
             }
 
-            let indices: Vec<usize> = input.split_whitespace()
+            let tokens: Vec<&str> = input.split(|c: char| c.is_whitespace() || c == ',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect();
+            let indices: Vec<usize> = tokens.iter()
                 .filter_map(|s| s.parse().ok()).collect();
-            if indices.iter().all(|&i| i < eligible.len()) {
-                return Action::DeclareAttackers {
-                    attackers: indices.iter().map(|&i| (eligible[i], defending)).collect(),
-                };
+            if indices.len() != tokens.len() {
+                println!("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.");
+            } else {
+                let bad: Vec<usize> = indices.iter().copied().filter(|&i| i >= eligible.len()).collect();
+                if bad.is_empty() {
+                    return Action::DeclareAttackers {
+                        attackers: indices.iter().map(|&i| (eligible[i], defending)).collect(),
+                    };
+                }
+                println!("  Invalid attacker(s): {}. Valid range is 0-{}.",
+                    bad.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", "),
+                    eligible.len() - 1);
             }
-            println!("  Invalid. Enter numbers like '0 2', 'all', 'a', or 'none'.");
         }
     }
 
@@ -1503,7 +1520,7 @@ impl CliPlayer {
 
             let mut assignments = Vec::new();
             let mut valid = true;
-            for pair in input.split_whitespace() {
+            for pair in input.split(|c: char| c.is_whitespace() || c == ',').filter(|s| !s.is_empty()) {
                 let parts: Vec<&str> = pair.split(':').collect();
                 if parts.len() != 2 { valid = false; break; }
                 match (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
@@ -1530,7 +1547,6 @@ impl CliPlayer {
 
         // Collect card info for each option.
         struct CardInfo {
-            id: ObjectId,
             name: String,
             type_line: String,
             oracle_text: String,
@@ -1565,7 +1581,7 @@ impl CliPlayer {
                         (type_str, c.oracle_text.clone(), cost_str, pt_str)
                     })
                     .unwrap_or_default();
-                cards.push(CardInfo { id: *id, name, type_line, oracle_text, cost, pt, action_index: i });
+                cards.push(CardInfo { name, type_line, oracle_text, cost, pt, action_index: i });
             }
         }
 
