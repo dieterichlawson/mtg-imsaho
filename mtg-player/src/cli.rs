@@ -66,12 +66,27 @@ impl CliPlayer {
     ) -> bool {
         match mode {
             PassMode::UntilNextTurn { activated_turn } => {
-                // Break at our Main Phase 1 on a later turn.
+                // Break at our precombat main on a later turn.
                 if view.active_player == view.you
                     && view.turn_number > *activated_turn
                     && view.step == Step::PrecombatMain
                 {
                     return true;
+                }
+
+                // Break on our turn if we have meaningful actions (cast spells,
+                // play lands, activate non-mana abilities) — even outside main phase.
+                if view.active_player == view.you
+                    && view.turn_number > *activated_turn
+                {
+                    let has_meaningful = legal.actions.iter().any(|a| matches!(a,
+                        Action::PlayLand { .. }
+                        | Action::CastSpell { .. }
+                        | Action::ActivateAbility { .. }
+                    ));
+                    if has_meaningful {
+                        return true;
+                    }
                 }
 
                 // Break if something is on the stack AND we have a meaningful
