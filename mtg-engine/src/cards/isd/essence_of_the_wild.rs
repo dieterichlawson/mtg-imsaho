@@ -37,16 +37,11 @@ impl CardBehavior for EssenceOfTheWild {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         // Mark this permanent as an entering-battlefield copy source.
-        // Any creature entering the battlefield under the same controller
-        // will enter as a copy of this permanent instead.
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.entering_copy_source = true;
             obj.instance_oracle_text = Some("Creatures you control enter as a copy of this creature.".into());
-            // Populate copiable values on the object so that the replacement
-            // effect in move_object can read them without the registry.
             obj.subtypes = vec!["Avatar".into()];
             obj.colors = vec![Color::Green];
         }

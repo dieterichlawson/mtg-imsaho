@@ -1677,6 +1677,9 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
     // With two Alchemists, per MTG rules, the replacement only applies
     // once — you still mill 2, not 4.
     let zombie = ready_creature(&mut state, P0, 2, 2);
+    if let Some(obj) = state.get_object_mut(zombie) {
+        obj.subtypes = vec!["Zombie".into()];
+    }
 
     // Simulate combat damage event processing
     let behavior1 = registry.get(
@@ -1896,8 +1899,11 @@ fn bug_essence_of_wild_replacement_not_applied_for_tokens() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place Essence of the Wild (6/6 Avatar)
+    // Place Essence of the Wild (6/6 Avatar) and fire its ETB to set up
+    // the entering_copy_source flag (which makes other creatures enter as copies).
     let eotw = named_creature(&mut state, &registry, "Essence of the Wild", P0);
+    let behavior = registry.get(state.get_object(eotw).unwrap().card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, eotw, &registry);
 
     // Create a token — it should enter as a copy of Essence of the Wild
     let token = state.create_token_with_subtypes(
