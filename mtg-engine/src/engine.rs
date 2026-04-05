@@ -2019,15 +2019,26 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::DiscardCards { cards } => {
+            let is_hand_size = matches!(&new_state.awaiting_action,
+                Some(AwaitingAction::DiscardToHandSize { .. }));
             let player = match &new_state.awaiting_action {
                 Some(AwaitingAction::DiscardToHandSize { player, .. }) => *player,
                 _ => new_state.active_player,
             };
+            let names: Vec<String> = cards.iter()
+                .map(|&id| card_name(&new_state, registry, id))
+                .collect();
             for &card_id in cards {
-                let name = card_name(&new_state, registry, card_id);
                 new_state.events.push(GameEvent::Discarded { player, object: card_id });
                 new_state.move_object(card_id, Zone::Graveyard);
-                new_state.log(LogLevel::Event, format!("p{} discarded {}", player.0, name));
+            }
+            if is_hand_size {
+                new_state.log(LogLevel::Event,
+                    format!("p{} discarded {} (cleanup)", player.0, names.join(", ")));
+            } else {
+                for name in &names {
+                    new_state.log(LogLevel::Event, format!("p{} discarded {}", player.0, name));
+                }
             }
             new_state.awaiting_action = None;
         }
