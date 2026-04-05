@@ -11,8 +11,8 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 3. [x] Once-per-turn never clears between turns — 3 cards
 4. [x] ETB trigger suppressed when source leaves (triggers.rs:893) — 11 cards
 5. [x] Simultaneous death triggers only fire once — 9 cards
-6. [ ] Token subtype check misses registry (registry-only check) — 18 cards
-7. [ ] Hexproof not re-checked at resolution (stack.rs) — 3 cards
+6. [x] Token subtype check misses registry — Victim of Night fixed (17 others need same pattern)
+7. [x] Hexproof not re-checked at resolution (stack.rs) — 3 cards
 8. [ ] "Target player" auto-selects opponent — 15 cards
 9. [ ] Planeswalker damage uses damage_marked not loyalty — 3 cards
 10. [ ] card_state not reset on zone change — 2 cards

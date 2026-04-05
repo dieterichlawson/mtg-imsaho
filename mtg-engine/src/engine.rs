@@ -2188,9 +2188,23 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 // Damage prevented — skip normal damage application.
             } else if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
-                    obj.damage_marked += amount;
-                    obj.damaged_by.push(*source_id);
+                    // Check if target is a planeswalker — damage removes loyalty counters.
+                    let is_planeswalker = registry.card_data(obj.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
+                        .unwrap_or(false);
                     let name = obj.name.clone();
+
+                    if is_planeswalker {
+                        // Remove loyalty counters equal to damage.
+                        let loyalty = obj.counters.entry(crate::types::CounterType::Loyalty).or_insert(0);
+                        *loyalty = loyalty.saturating_sub(*amount);
+                        if *loyalty == 0 {
+                            obj.counters.remove(&crate::types::CounterType::Loyalty);
+                        }
+                    } else {
+                        obj.damage_marked += amount;
+                    }
+                    obj.damaged_by.push(*source_id);
                     state.events.push(GameEvent::NonCombatDamageDealt {
                         source: *source_id,
                         target: crate::events::DamageTarget::Object(*id),
