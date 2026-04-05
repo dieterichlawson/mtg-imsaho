@@ -29,7 +29,7 @@ fn caster_retains_priority_after_casting() {
     let creature = castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
 
     let new_state = engine::submit_action(
-        &state, &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None }, &registry,
+        &state, &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }, &registry,
     );
 
     assert_eq!(new_state.stack.len(), 1);

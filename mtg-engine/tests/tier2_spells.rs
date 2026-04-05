@@ -69,7 +69,7 @@ fn dissipate_counters_and_exiles() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: tusker, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: tusker, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &reg,
     );
 
@@ -98,7 +98,7 @@ fn frightful_delusion_counters_and_discards() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &reg,
     );
 
@@ -372,7 +372,7 @@ fn lost_in_the_mist_counters_and_bounces() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &reg,
     );
 

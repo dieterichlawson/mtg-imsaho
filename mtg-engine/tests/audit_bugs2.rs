@@ -81,7 +81,7 @@ fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
     let creature = castable_spell(&mut state, &registry, "Grizzly Bears", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &registry,
     );
 
@@ -156,7 +156,7 @@ fn bug_dearly_departed_graveyard_watcher_ignored() {
     let human = castable_spell(&mut state, &registry, "Champion of the Parish", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: human, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: human, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &registry,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
@@ -196,7 +196,7 @@ fn bug_prey_upon_doesnt_fizzle_with_one_illegal_target() {
         &Action::CastSpell {
             object_id: prey,
             targets: vec![Target::Object(my_creature), Target::Object(their_creature)],
-            sacrifice: None, exile_count: None, alternative_cost: None,
+            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
         },
         &registry,
     );

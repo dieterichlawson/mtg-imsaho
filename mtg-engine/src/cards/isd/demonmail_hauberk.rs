@@ -57,6 +57,17 @@ impl CardBehavior for DemonmailHauberk {
         };
         // Equip ability is on the equipment itself (no power = not a creature).
         if obj.zone == Zone::Battlefield && obj.power.is_none() {
+            let controller = obj.controller;
+            // The equip cost is "Sacrifice a creature." After paying this cost, there
+            // must still be a creature to equip to. Require at least 2 creatures: one
+            // to sacrifice as the cost, and one remaining to be the equip target.
+            let creature_count = state.objects_in_zone(Zone::Battlefield, controller)
+                .iter()
+                .filter(|o| o.power.is_some())
+                .count();
+            if creature_count < 2 {
+                return vec![];
+            }
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "Equip—Sacrifice a creature".into(),

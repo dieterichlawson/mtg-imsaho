@@ -478,9 +478,19 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     let nevermore_banned: Vec<String> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.name == "Nevermore")
         .filter_map(|o| {
-            o.instance_oracle_text.as_ref()
+            // Primary: instance_oracle_text set by on_enter_battlefield.
+            if let Some(name) = o.instance_oracle_text.as_ref()
                 .and_then(|t| t.strip_prefix("nevermore:"))
                 .map(|s| s.to_string())
+            {
+                return Some(name);
+            }
+            // Secondary: card_state["named_card"] stores a CardId as ObjectId (used in tests).
+            if let Some(oid) = o.card_state.get("named_card") {
+                let card_id = crate::ids::CardId(oid.0 as u32);
+                return registry.card_data(card_id).map(|d| d.name);
+            }
+            None
         })
         .collect();
 
@@ -589,7 +599,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice: Some(sac_id),
-                                exile_count: None, alternative_cost: None,
+                                exile_count: None, exile_ids: vec![], alternative_cost: None,
                             });
                         }
                     }
@@ -609,7 +619,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice,
-                                exile_count: Some(x), alternative_cost: None,
+                                exile_count: Some(x), exile_ids: vec![], alternative_cost: None,
                             });
                         }
                     }
@@ -633,12 +643,13 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 if can_pay_normal {
                     // Player can pay normally — add alternative cost copies alongside normal ones.
                     let alt_actions: Vec<Action> = cast_actions.iter().filter_map(|a| {
-                        if let Action::CastSpell { object_id, targets, sacrifice, exile_count, .. } = a {
+                        if let Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, .. } = a {
                             Some(Action::CastSpell {
                                 object_id: *object_id,
                                 targets: targets.clone(),
                                 sacrifice: *sacrifice,
                                 exile_count: *exile_count,
+                                exile_ids: exile_ids.clone(),
                                 alternative_cost: Some(ManaCost::free()),
                             })
                         } else {
@@ -674,6 +685,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     for obj in state.objects_in_zone(Zone::Graveyard, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
+
+            // Check Nevermore: spells with the banned name can't be cast, even via flashback.
+            if nevermore_banned.iter().any(|n| *n == data.name) {
+                continue;
+            }
 
             // Check for flashback cost, dynamic flashback, or "cast from graveyard" ability.
             let dynamic_fb = state.until_end_of_turn_flashback.iter()
@@ -850,7 +866,7 @@ fn generate_cast_actions_with_targets(
 
     match target_req {
         TargetRequirement::None => {
-            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None }]
+            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }]
         }
         TargetRequirement::AnyTarget => {
             // Can target any creature on the battlefield or any player.
@@ -863,7 +879,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                         });
                     }
                 }
@@ -875,7 +891,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                         });
                     }
                 }
@@ -892,7 +908,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                         });
                     }
                 }
@@ -908,7 +924,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                         });
                     }
                 }
@@ -925,7 +941,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                         });
                     }
                 }
@@ -943,7 +959,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                         });
                     }
                 }
@@ -964,7 +980,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None, alternative_cost: None,
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                     });
                 }
             }
@@ -981,7 +997,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None, alternative_cost: None,
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                     });
                 }
             }
@@ -992,7 +1008,7 @@ fn generate_cast_actions_with_targets(
         | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, alternative_cost: None })
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
                 .collect()
         }
         TargetRequirement::ModalChoice(ref modes) => {
@@ -1014,7 +1030,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
-                            sacrifice: None, exile_count: None, alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                         });
                     }
                 }
@@ -1044,7 +1060,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: combo,
-                        sacrifice: None, exile_count: None, alternative_cost: None,
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
                     });
                 }
             }
@@ -1495,7 +1511,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets, sacrifice, exile_count, alternative_cost } => {
+        Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, alternative_cost } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback vs cast-from-graveyard.
@@ -1628,12 +1644,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::ExileXFromGraveyard)))
                     .unwrap_or(false);
                 if needs_exile_x {
-                    let x = exile_count.unwrap_or(0);
-                    let graveyard_cards: Vec<ObjectId> = new_state.objects.values()
-                        .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id)
-                        .map(|o| o.id)
-                        .take(x as usize)
-                        .collect();
+                    // If specific cards were chosen (via exile_ids), exile those exactly.
+                    // Otherwise fall back to auto-selecting the first exile_count cards (legacy behavior).
+                    let graveyard_cards: Vec<ObjectId> = if !exile_ids.is_empty() {
+                        exile_ids.clone()
+                    } else {
+                        let x = exile_count.unwrap_or(0) as usize;
+                        new_state.objects.values()
+                            .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id)
+                            .map(|o| o.id)
+                            .take(x)
+                            .collect()
+                    };
                     let count = graveyard_cards.len() as u32;
                     for gid in &graveyard_cards {
                         new_state.move_object(*gid, Zone::Exile);

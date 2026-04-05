@@ -507,14 +507,14 @@ impl LlmPlayer {
 
         match &spell.target_spec {
             CastTargetSpec::NoTargets => {
-                Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None }
+                Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }
             }
             CastTargetSpec::SingleTarget(options) => {
                 if options.len() == 1 {
-                    return Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, alternative_cost: None };
+                    return Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None };
                 }
                 let target = self.prompt_target_selection(view, &spell.name, options);
-                Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, alternative_cost: None }
+                Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
                 let t1 = self.prompt_target_selection(view, &format!("{} (first target)", spell.name), options1);
@@ -524,7 +524,7 @@ impl LlmPlayer {
                     return self.fallback_to_expanded(spell.object_id, legal_actions);
                 }
                 let t2 = self.prompt_target_selection(view, &format!("{} (second target)", spell.name), &remaining);
-                Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, alternative_cost: None }
+                Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }
             }
             CastTargetSpec::UpToTargets { max, options } => {
                 // For the LLM, present all options and ask to pick numbers.
@@ -562,9 +562,9 @@ impl LlmPlayer {
 
                 if chosen.is_empty() {
                     // Pick at least one — use the first option.
-                    Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, alternative_cost: None }
+                    Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }
                 } else {
-                    Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, alternative_cost: None }
+                    Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }
                 }
             }
         }

@@ -24,9 +24,12 @@ pub enum Action {
     /// For targeted spells, targets must be chosen at cast time.
     /// If the spell has an additional cost (e.g. sacrifice a creature), `sacrifice` holds the chosen creature.
     /// `exile_count` is used for "exile X cards from graveyard" costs (Harvest Pyre).
+    /// `exile_ids` holds the specific graveyard cards chosen to exile (populated by legal_actions for ExileXFromGraveyard).
+    ///   When non-empty, these exact cards are exiled; `exile_count` is derived from the length.
+    ///   When empty and `exile_count` is set, the engine falls back to auto-selecting the first N cards (legacy behavior).
     /// `alternative_cost` is an optional alternative mana cost (e.g. Rooftop Storm's {0}).
     /// When set, this cost is used instead of the normal mana cost.
-    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId>, exile_count: Option<u32>, alternative_cost: Option<crate::types::ManaCost> },
+    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId>, exile_count: Option<u32>, exile_ids: Vec<ObjectId>, alternative_cost: Option<crate::types::ManaCost> },
 
     /// Activate a mana ability (doesn't use the stack, player retains priority).
     ActivateManaAbility { object_id: ObjectId, ability_index: usize },

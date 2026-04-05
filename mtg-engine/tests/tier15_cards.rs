@@ -481,7 +481,7 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
     // Cast the spell and put it on the stack.
     state = mtg_engine::engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &reg,
     );
     // Resolve: this triggers a ChooseCardType choice.
@@ -524,7 +524,7 @@ fn creeping_renaissance_only_returns_chosen_type() {
     let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
     state = mtg_engine::engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: spell, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &reg,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
@@ -689,7 +689,7 @@ fn skaab_ruinator_cast_from_graveyard() {
     // Cast it.
     let new_state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: ruinator, targets: vec![], sacrifice: None, exile_count: None, alternative_cost: None },
+        &Action::CastSpell { object_id: ruinator, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
         &reg,
     );
 
