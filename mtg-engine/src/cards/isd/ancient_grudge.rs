@@ -20,7 +20,7 @@ impl CardBehavior for AncientGrudge {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Destroy target artifact.\nFlashback {G}".into(),
+            oracle_text: "Destroy target artifact.\nFlashback {G} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![ManaSymbol::Colored(Color::Green)])),
             continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],

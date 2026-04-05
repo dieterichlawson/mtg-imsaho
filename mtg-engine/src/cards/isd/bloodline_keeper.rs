@@ -42,7 +42,7 @@ impl CardBehavior for BloodlineKeeper {
             subtypes: vec!["Vampire".into()],
             power: Some(3),
             toughness: Some(3),
-            oracle_text: "Flying\n{T}: Create a 2/2 black Vampire creature token with flying.\n{B}: Transform Bloodline Keeper. Activate only if you control five or more Vampires.".into(),
+            oracle_text: "Flying\n{T}: Create a 2/2 black Vampire creature token with flying.\n{B}: Transform this creature. Activate only if you control five or more Vampires.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],

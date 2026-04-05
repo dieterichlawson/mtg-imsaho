@@ -21,7 +21,7 @@ impl CardBehavior for AbattoirGhoul {
             subtypes: vec!["Zombie".into()],
             power: Some(3),
             toughness: Some(2),
-            oracle_text: "First strike\nWhenever a creature dealt damage by Abattoir Ghoul this turn dies, you gain life equal to that creature's toughness.".into(),
+            oracle_text: "First strike\nWhenever a creature dealt damage by this creature this turn dies, you gain life equal to that creature's toughness.".into(),
             keywords: vec![Keyword::FirstStrike],
             flashback_cost: None,
             continuous_effects: vec![],

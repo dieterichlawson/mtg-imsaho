@@ -24,7 +24,7 @@ impl CardBehavior for ArmyOfTheDamned {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Create thirteen tapped 2/2 black Zombie creature tokens.\nFlashback {7}{B}{B}{B}".into(),
+            oracle_text: "Create thirteen tapped 2/2 black Zombie creature tokens.\nFlashback {7}{B}{B}{B} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(7),

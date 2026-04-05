@@ -18,7 +18,7 @@ impl CardBehavior for CobbledWings {
             subtypes: vec!["Equipment".into()],
             power: None,
             toughness: None,
-            oracle_text: "Equipped creature has flying.\nEquip {1}".into(),
+            oracle_text: "Equipped creature has flying.\nEquip {1} ({1}: Attach to target creature you control. Equip only as a sorcery.)".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

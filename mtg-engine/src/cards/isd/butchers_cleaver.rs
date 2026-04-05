@@ -44,7 +44,7 @@ impl CardBehavior for ButchersCleaver {
             subtypes: vec!["Equipment".into()],
             power: None,
             toughness: None,
-            oracle_text: "Equipped creature gets +3/+0. As long as equipped creature is a Human, it has lifelink.\nEquip {3}".into(),
+            oracle_text: "Equipped creature gets +3/+0.\nAs long as equipped creature is a Human, it has lifelink.\nEquip {3}".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

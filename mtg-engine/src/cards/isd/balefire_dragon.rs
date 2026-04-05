@@ -22,7 +22,7 @@ impl CardBehavior for BalefireDragon {
             subtypes: vec!["Dragon".into()],
             power: Some(6),
             toughness: Some(6),
-            oracle_text: "Flying\nWhenever Balefire Dragon deals combat damage to a player, it deals that much damage to each creature that player controls.".into(),
+            oracle_text: "Flying\nWhenever this creature deals combat damage to a player, it deals that much damage to each creature that player controls.".into(),
             keywords: vec![Keyword::Flying],
             flashback_cost: None,
             continuous_effects: vec![],

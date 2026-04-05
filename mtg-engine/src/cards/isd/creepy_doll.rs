@@ -21,7 +21,7 @@ impl CardBehavior for CreepyDoll {
             subtypes: vec!["Construct".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Indestructible\nWhenever Creepy Doll deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.".into(),
+            oracle_text: "Indestructible\nWhenever this creature deals combat damage to a creature, flip a coin. If you win the flip, destroy that creature.".into(),
             keywords: vec![Keyword::Indestructible],
             flashback_cost: None,
             continuous_effects: vec![],

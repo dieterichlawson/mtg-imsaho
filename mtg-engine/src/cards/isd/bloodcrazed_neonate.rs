@@ -21,7 +21,7 @@ impl CardBehavior for BloodcrazedNeonate {
             subtypes: vec!["Vampire".into()],
             power: Some(2),
             toughness: Some(1),
-            oracle_text: "Bloodcrazed Neonate attacks each combat if able.\nWhenever Bloodcrazed Neonate deals combat damage to a player, put a +1/+1 counter on Bloodcrazed Neonate.".into(),
+            oracle_text: "This creature attacks each combat if able.\nWhenever this creature deals combat damage to a player, put a +1/+1 counter on it.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![

@@ -21,7 +21,7 @@ impl CardBehavior for BrainWeevil {
             subtypes: vec!["Insect".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "Intimidate\nSacrifice Brain Weevil: Target player discards two cards. Activate only as a sorcery.".into(),
+            oracle_text: "Intimidate (This creature can't be blocked except by artifact creatures and/or creatures that share a color with it.)\nSacrifice this creature: Target player discards two cards. Activate only as a sorcery.".into(),
             keywords: vec![Keyword::Intimidate],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }

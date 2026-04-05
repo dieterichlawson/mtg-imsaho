@@ -22,7 +22,7 @@ impl CardBehavior for CloisteredYouth {
             subtypes: vec!["Human".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "At the beginning of your upkeep, you may transform Cloistered Youth.".into(),
+            oracle_text: "At the beginning of your upkeep, you may transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

@@ -41,7 +41,7 @@ impl CardBehavior for DelverOfSecrets {
             subtypes: vec!["Human".into(), "Wizard".into()],
             power: Some(1),
             toughness: Some(1),
-            oracle_text: "At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform Delver of Secrets.".into(),
+            oracle_text: "At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.".into(),
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![],

@@ -23,7 +23,7 @@ impl CardBehavior for CacklingCounterpart {
             subtypes: vec![],
             power: None,
             toughness: None,
-            oracle_text: "Create a token that's a copy of target creature you control.\nFlashback {5}{U}{U}".into(),
+            oracle_text: "Create a token that's a copy of target creature you control.\nFlashback {5}{U}{U} (You may cast this card from your graveyard for its flashback cost. Then exile it.)".into(),
             keywords: vec![],
             flashback_cost: Some(ManaCost::new(vec![
                 ManaSymbol::Generic(5),
