@@ -1554,6 +1554,8 @@ pub enum PendingEffect {
     GrantFlashback { source_name: String },
     /// Target player loses 1 life, controller gains 1 life (Falkenrath Noble, etc.).
     DrainLife { controller: PlayerId, source_name: String },
+    /// Put the chosen basic land from library onto the battlefield, then shuffle (Ghost Quarter).
+    GhostQuarterSearch { searcher: PlayerId },
 }
 
 /// Game result.

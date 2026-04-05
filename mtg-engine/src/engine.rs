@@ -2679,6 +2679,21 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     format!("{} grants flashback to {}", source_name, name));
             }
         }
+        (Target::Object(land_id), PendingEffect::GhostQuarterSearch { searcher }) => {
+            // Put the chosen basic land onto the battlefield, then shuffle.
+            let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.get_player_mut(*searcher).library_order.retain(|&id| id != *land_id);
+            state.move_object(*land_id, Zone::Battlefield);
+            if let Some(obj) = state.get_object_mut(*land_id) {
+                obj.summoning_sick = false;
+            }
+            state.log(LogLevel::Event,
+                format!("Ghost Quarter: p{} searched for {}", searcher.0, name));
+            // Shuffle the library.
+            use rand::seq::SliceRandom;
+            let mut rng = rand::thread_rng();
+            state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
+        }
         _ => {}
     }
 }

@@ -304,31 +304,38 @@ fn bug_ghost_quarter_missing_shuffle() {
         state.get_player_mut(P1).library_order.push(id);
     }
 
-    // Record the library order AFTER the search removes one card
-    // (the first Plains found will be removed)
+    // Activate Ghost Quarter's ability
     let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
     state.move_object(gq, Zone::Graveyard);
     behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
 
+    // Ghost Quarter now presents a "may search" choice. Resolve by choosing the first Plains.
+    assert!(state.awaiting_action.is_some(), "Should present 'may search' choice");
+    let first_plains = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. },
+            ..
+        }) => options.first().cloned(),
+        _ => None,
+    };
+    assert!(first_plains.is_some(), "Should have a Plains option");
+    state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(first_plains),
+        },
+        &registry,
+    );
+
     // After search: one Plains was removed from library and put on battlefield.
-    // The remaining 9 cards should be shuffled per oracle text.
-    // We can verify shuffle DIDN'T happen by checking if the remaining order
-    // matches what we'd expect from a simple retain (no reordering).
     let lib_after: Vec<_> = state.get_player(P1).library_order.clone();
     assert_eq!(lib_after.len(), 9, "One land should have been found and placed");
 
-    // Check the relative order of remaining cards is preserved (no shuffle happened).
-    // If shuffle happened, the order would be randomized.
-    // We verify the bug by confirming the order IS preserved (meaning no shuffle).
+    // Library should be shuffled per oracle text.
     let names_after: Vec<String> = lib_after.iter()
         .filter_map(|id| state.get_object(*id).map(|o| o.name.clone()))
         .collect();
-
-    // Expected order after removing first Plains: Island, Swamp, Mountain, Forest, Plains, Island, Swamp, Mountain, Forest
     let expected = vec!["Island", "Swamp", "Mountain", "Forest", "Plains", "Island", "Swamp", "Mountain", "Forest"];
-
-    // If the library was correctly shuffled, the order would be different.
-    // BUG: The library is NOT shuffled — order is preserved.
     assert_ne!(names_after, expected,
         "Library should be shuffled after Ghost Quarter search, but order is preserved (no shuffle)");
 }

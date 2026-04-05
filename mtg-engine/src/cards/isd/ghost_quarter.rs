@@ -78,27 +78,44 @@ impl CardBehavior for GhostQuarter {
             state.log(crate::state::LogLevel::Event,
                 format!("Ghost Quarter destroyed {}", target_name));
 
-            // Its controller may search for a basic land (auto-search).
-            let basic_land_id = state.get_player(target_controller).library_order.iter().find(|&&lib_id| {
-                state.get_object(lib_id)
-                    .and_then(|o| registry.card_data(o.card_id))
-                    .map(|d| {
-                        d.card_types.contains(&CardType::Land)
-                            && d.supertypes.contains(&Supertype::Basic)
-                    })
-                    .unwrap_or(false)
-            }).copied();
+            // "Its controller may search their library for a basic land card,
+            // put it onto the battlefield, then shuffle."
+            // Find all basic lands in the controller's library.
+            let basic_lands: Vec<ObjectId> = state.get_player(target_controller).library_order.iter()
+                .filter(|&&lib_id| {
+                    state.get_object(lib_id)
+                        .and_then(|o| registry.card_data(o.card_id))
+                        .map(|d| {
+                            d.card_types.contains(&CardType::Land)
+                                && d.supertypes.contains(&Supertype::Basic)
+                        })
+                        .unwrap_or(false)
+                })
+                .copied()
+                .collect();
 
-            if let Some(land_id) = basic_land_id {
-                state.get_player_mut(target_controller).library_order.retain(|&id| id != land_id);
-                let name = state.get_object(land_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.move_object(land_id, Zone::Battlefield);
-                if let Some(obj) = state.get_object_mut(land_id) {
-                    obj.summoning_sick = false;
-                }
-                state.log(crate::state::LogLevel::Event,
-                    format!("Ghost Quarter: p{} searched for {}", target_controller.0, name));
+            if basic_lands.is_empty() {
+                // No basic lands to find — shuffle anyway per oracle text.
+                use rand::seq::SliceRandom;
+                let mut rng = rand::thread_rng();
+                state.get_player_mut(target_controller).library_order.shuffle(&mut rng);
+                return;
             }
+
+            // Present "may search" choice via YesNo. Auto-select if only controller.
+            let targets: Vec<Target> = basic_lands.iter().map(|&id| Target::Object(id)).collect();
+            state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                player: target_controller,
+                source: _object_id,
+                choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                    description: "Ghost Quarter: you may search for a basic land card".into(),
+                    options: targets,
+                    optional: true, // "may" search
+                    effect: crate::state::PendingEffect::GhostQuarterSearch {
+                        searcher: target_controller,
+                    },
+                },
+            });
         }
     }
 }
