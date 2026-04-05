@@ -1989,15 +1989,21 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         Action::DeclareBlockers { assignments } => {
             // The defending player is the opponent of the active player.
             let defender = new_state.opponent(new_state.active_player);
-            if assignments.is_empty() {
+            combat::declare_blockers_with_registry(&mut new_state, assignments, registry);
+            // Log after validation so only legal blocks appear in the log.
+            let actual_blockers: Vec<(ObjectId, ObjectId)> = new_state.combat.as_ref()
+                .map(|c| c.blocker_assignments.iter()
+                    .flat_map(|(&att, blockers)| blockers.iter().map(move |&b| (b, att)))
+                    .collect())
+                .unwrap_or_default();
+            if actual_blockers.is_empty() {
                 new_state.log(LogLevel::Info, format!("p{} declared no blockers", defender.0));
             } else {
-                let descs: Vec<String> = assignments.iter()
+                let descs: Vec<String> = actual_blockers.iter()
                     .map(|(b, a)| format!("{} blocks {}", card_name(state, registry, *b), card_name(state, registry, *a)))
                     .collect();
                 new_state.log(LogLevel::Event, format!("p{} declared blockers: {}", defender.0, descs.join(", ")));
             }
-            combat::declare_blockers_with_registry(&mut new_state, assignments, registry);
             new_state.awaiting_action = None;
             new_state.consecutive_passes = 0;
         }
