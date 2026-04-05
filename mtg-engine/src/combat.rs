@@ -795,6 +795,45 @@ mod tests {
     }
 
     #[test]
+    fn non_flyer_cannot_block_flyer() {
+        let registry = CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let p0 = PlayerId(0);
+        let p1 = PlayerId(1);
+
+        // Vampire Interloper (2/1, flying) attacks — use registry card_id,
+        // do NOT set keywords on object (has_keyword reads from registry for registered cards).
+        let vi_id = registry.get_id_by_name("Vampire Interloper").unwrap();
+        let attacker = state.create_object(vi_id, p0, Zone::Battlefield, Some(2), Some(1));
+        state.get_object_mut(attacker).unwrap().summoning_sick = false;
+
+        // Verify the registry knows Vampire Interloper has flying
+        assert!(state.has_keyword(attacker, Keyword::Flying, &registry),
+            "Vampire Interloper should have flying via registry");
+
+        // Geist-Honored Monk (0/0, vigilance, no flying) tries to block
+        let ghm_id = registry.get_id_by_name("Geist-Honored Monk").unwrap();
+        let blocker = state.create_object(ghm_id, p1, Zone::Battlefield, Some(3), Some(3));
+
+        // Verify Geist-Honored Monk does NOT have flying
+        assert!(!state.has_keyword(blocker, Keyword::Flying, &registry),
+            "Geist-Honored Monk should not have flying");
+
+        // The block should be illegal
+        assert!(!can_block_attacker(&state, blocker, attacker, &registry),
+            "Non-flyer Geist-Honored Monk should not be able to block flying Vampire Interloper");
+
+        // Verify the block gets filtered out by declare_blockers_with_registry
+        declare_attackers(&mut state, &[(attacker, p1)], &registry);
+        declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &registry);
+
+        // Attacker should be unblocked — damage goes to player
+        deal_combat_damage(&mut state, &registry);
+        assert_eq!(state.get_player(p1).life, 40 - 2,
+            "Vampire Interloper should deal damage to player since block was illegal");
+    }
+
+    #[test]
     fn eligible_attackers_excludes_sick_and_tapped() {
         let mut state = GameState::new(2);
         let p0 = PlayerId(0);
