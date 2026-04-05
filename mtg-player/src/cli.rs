@@ -215,21 +215,29 @@ impl CliPlayer {
             let log_visible = h.saturating_sub(log_start + 2);
             let max_chars = left_w.saturating_sub(1);
             // Wrap log entries that are too long for the panel.
-            let mut wrapped: Vec<&str> = Vec::new();
+            let mut wrapped: Vec<String> = Vec::new();
+            let indent = "  ";
+            let cont_max = max_chars.saturating_sub(indent.len());
             for entry in log.iter() {
-                let entry = entry.as_str();
                 if entry.chars().count() <= max_chars {
-                    wrapped.push(entry);
+                    wrapped.push(entry.clone());
                 } else {
-                    // Simple char-boundary wrap (not word-aware, but avoids mid-char breaks).
-                    let mut remaining = entry;
+                    // First line uses full width, continuation lines are indented.
+                    let mut remaining = entry.as_str();
+                    let mut first = true;
                     while !remaining.is_empty() {
+                        let width = if first { max_chars } else { cont_max };
                         let end = remaining.char_indices()
-                            .nth(max_chars)
+                            .nth(width)
                             .map(|(i, _)| i)
                             .unwrap_or(remaining.len());
                         let (line, rest) = remaining.split_at(end);
-                        wrapped.push(line);
+                        if first {
+                            wrapped.push(line.to_string());
+                            first = false;
+                        } else {
+                            wrapped.push(format!("{}{}", indent, line));
+                        }
                         remaining = rest;
                     }
                 }
