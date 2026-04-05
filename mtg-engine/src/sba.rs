@@ -98,26 +98,35 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
         }
 
         // Rules 704.5g/h: lethal damage or deathtouch — use destruction pipeline.
+        // Per rule 704.3, SBAs happen simultaneously. We must snapshot indestructible
+        // status BEFORE processing any deaths, so that e.g. Angelic Overseer retains
+        // indestructible even if the Human granting it dies in the same SBA batch.
+        let indestructible_snapshot: std::collections::HashSet<ObjectId> = if let Some(reg) = registry {
+            destroyed_ids.iter()
+                .filter(|&&id| state.has_keyword(id, crate::types::Keyword::Indestructible, reg))
+                .copied()
+                .collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
         for id in destroyed_ids {
             if let Some(reg) = registry {
                 use crate::destruction::DestroyResult;
-                // Full pipeline: indestructible check + regeneration.
-                match crate::destruction::try_destroy(state, id, reg) {
-                    DestroyResult::Died => {
-                        took_action = true;
-                    }
-                    DestroyResult::Regenerated => {
-                        // State changed (damage cleared, tapped), so next
-                        // SBA pass won't re-identify this creature.
-                        took_action = true;
-                        continue;
-                    }
-                    DestroyResult::Indestructible => {
-                        // No state change — don't set took_action to avoid
-                        // infinite loop (creature still has lethal damage).
-                        continue;
-                    }
+                // Check indestructible from the snapshot (before any deaths in this batch).
+                if indestructible_snapshot.contains(&id) {
+                    continue;
                 }
+                // Skip indestructible check in try_destroy since we already checked.
+                // Still need regeneration check.
+                let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
+                if shields > 0 {
+                    crate::destruction::regenerate_sba(state, id);
+                    took_action = true;
+                    continue;
+                }
+                crate::destruction::destroy_sba(state, id, reg);
+                took_action = true;
             } else {
                 // No registry (legacy tests): skip indestructible check,
                 // but still handle regeneration shields inline.

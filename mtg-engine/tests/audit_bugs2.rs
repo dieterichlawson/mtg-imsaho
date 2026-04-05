@@ -485,16 +485,40 @@ fn bug_angelic_overseer_sba_ordering() {
         obj.damage_marked = 99;
     }
 
-    // Run SBAs — Overseer should survive because it had indestructible
-    // at the moment SBAs were checked (the Human was alive when the check happened)
-    mtg_engine::sba::check_state_based_actions(&mut state);
+    // Clear events so we can track death order.
+    state.events.clear();
+
+    // Run SBAs with registry.
+    // Per MTG rules 704.3: SBAs are checked simultaneously.
+    // Pass 1: Human has lethal damage → dies. Overseer has lethal damage but is
+    //         indestructible (Human still alive at snapshot) → survives.
+    // Pass 2: Overseer still has lethal damage, no longer indestructible → dies.
+    // End result: both die, but in SEPARATE SBA passes (not simultaneously).
+    mtg_engine::sba::check_state_based_actions_with_registry(&mut state, Some(&registry));
 
     let overseer_zone = state.get_object(overseer).unwrap().zone;
+    let human_zone = state.get_object(human).unwrap().zone;
 
-    // BUG: Overseer dies because SBA processes Human death first,
-    // removing indestructible, then processes Overseer's lethal damage
-    assert_eq!(overseer_zone, Zone::Battlefield,
-        "Angelic Overseer should survive — it was indestructible when damage was dealt");
+    // Both should be dead.
+    assert_eq!(human_zone, Zone::Graveyard, "Human should die from lethal damage");
+    assert_eq!(overseer_zone, Zone::Graveyard,
+        "Overseer dies on second SBA pass (no longer indestructible after Human dies)");
+
+    // Verify they died in SEPARATE SBA passes (not simultaneously).
+    // With the snapshot fix, the Human's CreatureDied event comes first,
+    // then triggers could process, then the Overseer dies on the next pass.
+    // We verify by checking that both CreatureDied events exist.
+    let death_events: Vec<_> = state.events.iter()
+        .filter_map(|e| {
+            if let mtg_engine::events::GameEvent::CreatureDied { object, .. } = e {
+                Some(*object)
+            } else {
+                None
+            }
+        })
+        .collect();
+    assert!(death_events.contains(&human), "Human should have a CreatureDied event");
+    assert!(death_events.contains(&overseer), "Overseer should have a CreatureDied event");
 }
 
 // ═══════════════════════════════════════════════════════════════

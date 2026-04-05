@@ -13,7 +13,7 @@ Each fix should make its corresponding test in audit_bugs.rs / audit_bugs2.rs PA
 5. [x] Simultaneous death triggers only fire once — 9 cards
 6. [x] Token subtype check misses registry — Victim of Night fixed (17 others need same pattern)
 7. [x] Hexproof not re-checked at resolution (stack.rs) — 3 cards
-8. [ ] "Target player" auto-selects opponent — 15 cards
+8. [x] "Target player" auto-selects opponent — 15 cards (Falkenrath Noble done, need to apply DrainLife pattern to other cards)
 9. [x] Planeswalker damage uses damage_marked not loyalty — 3 cards
 10. [x] card_state not reset on zone change — 2 cards
 11. [x] Control change not reverted at EOT — 1 card

@@ -102,6 +102,18 @@ fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>)
     state.move_object(id, Zone::Graveyard);
 }
 
+/// Regenerate during SBA processing (public for sba.rs).
+/// Skips the indestructible check since SBAs snapshot that separately.
+pub fn regenerate_sba(state: &mut GameState, id: ObjectId) {
+    regenerate(state, id);
+}
+
+/// Destroy during SBA processing (public for sba.rs).
+/// Skips the indestructible check since SBAs snapshot that separately.
+pub fn destroy_sba(state: &mut GameState, id: ObjectId, registry: &CardRegistry) {
+    destroy(state, id, Some(registry));
+}
+
 /// Remove a creature from the current combat (if any).
 /// Used by regeneration and other effects that pull a creature out of combat.
 pub fn remove_from_combat(state: &mut GameState, id: ObjectId) {
