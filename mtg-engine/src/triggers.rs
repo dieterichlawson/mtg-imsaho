@@ -365,10 +365,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     }
                 }
 
-                // ETB-watch: notify other permanents that a creature entered.
+                // ETB-watch: notify other permanents (and graveyard cards like Dearly Departed)
+                // that a creature entered.
                 if state.get_object(*object).map(|o| o.power.is_some()).unwrap_or(false) {
                     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
-                        .filter(|o| o.zone == Zone::Battlefield && o.id != *object)
+                        .filter(|o| (o.zone == Zone::Battlefield || o.zone == Zone::Graveyard) && o.id != *object)
                         .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
                     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
@@ -921,7 +922,9 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {
-            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            // Allow watchers on battlefield or graveyard (e.g., Dearly Departed).
+            let watcher_zone = state.get_object(watcher_id).map(|o| o.zone);
+            if matches!(watcher_zone, Some(Zone::Battlefield) | Some(Zone::Graveyard)) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_creature_enters(state, watcher_id, entered_id, entered_controller, registry);
                 }

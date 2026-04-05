@@ -1779,6 +1779,13 @@ fn bug_sturmgeist_draw_skipped_when_leaves() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let sturmgeist = named_creature(&mut state, &registry, "Sturmgeist", P0);
+
+    // Give P0 a library card to draw from (draw_cards pulls from the library)
+    {
+        let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let lib_card = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_player_mut(P0).library_order.push(lib_card);
+    }
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
     // Simulate combat damage to player trigger, then move Sturmgeist to GY
@@ -1868,10 +1875,13 @@ fn bug_civilized_scholar_stale_attacked_flag() {
     let behavior = registry.get(state.get_object(brute).unwrap().card_id).unwrap();
     behavior.on_end_step(&mut state, brute, &registry);
 
-    // BUG: Brute stays transformed because attacked_this_turn is stale
+    // Per MTG rules 711.5, transforming doesn't make a new object.
+    // If the permanent attacked this turn (even as Scholar), the Brute "knows"
+    // about it. The attacked_this_turn flag is valid, not stale.
+    // The Brute should stay transformed because the permanent attacked this turn.
     let is_still_transformed = state.get_object(brute).unwrap().is_transformed;
-    assert!(!is_still_transformed,
-        "Homicidal Brute should transform back at end step if it didn't attack");
+    assert!(is_still_transformed,
+        "Homicidal Brute should stay transformed — the permanent attacked this turn (as Scholar)");
 }
 
 // ═══════════════════════════════════════════════════════════════
