@@ -1407,9 +1407,9 @@ impl CliPlayer {
             return Action::DeclareAttackers { attackers: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE ATTACKERS"), &view.display_log, "", None);
+        Self::render(view, None, None, &view.display_log, "", None);
 
-        // Get mid_col for positioning
+        // Get mid_col for positioning — action area starts where cursor was left
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
         let col = (side + 1) as u16;
@@ -1417,6 +1417,10 @@ impl CliPlayer {
 
         let mut out = stdout();
         let mut r = cur_row;
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
+            Print(" DECLARE ATTACKERS"), SetAttribute(Attribute::Reset), ResetColor);
+        r += 1;
         let _ = execute!(out, cursor::MoveTo(col, r),
             SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
             Print(" Eligible attackers:"), SetAttribute(Attribute::Reset), ResetColor);
@@ -1480,8 +1484,9 @@ impl CliPlayer {
             return Action::DeclareBlockers { assignments: vec![] };
         }
 
-        Self::render(view, None, Some("DECLARE BLOCKERS"), &view.display_log, "", None);
+        Self::render(view, None, None, &view.display_log, "", None);
 
+        // Get mid_col for positioning — action area starts where cursor was left
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
         let col = (side + 1) as u16;
@@ -1489,6 +1494,10 @@ impl CliPlayer {
 
         let mut out = stdout();
         let mut r = cur_row;
+        let _ = execute!(out, cursor::MoveTo(col, r),
+            SetForegroundColor(Color::Yellow), SetAttribute(Attribute::Bold),
+            Print(" DECLARE BLOCKERS"), SetAttribute(Attribute::Reset), ResetColor);
+        r += 1;
         let _ = execute!(out, cursor::MoveTo(col, r),
             SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold),
             Print(" Attackers:"), SetAttribute(Attribute::Reset), ResetColor);
