@@ -4,7 +4,7 @@ use std::io::{self, Write, stdout};
 use crossterm::{
     cursor, execute,
     event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-    style::{Color, SetForegroundColor, SetAttribute, Attribute, ResetColor, Print},
+    style::{Color, SetForegroundColor, SetBackgroundColor, SetAttribute, Attribute, ResetColor, Print},
     terminal::{self, Clear, ClearType},
 };
 
@@ -160,19 +160,32 @@ impl CliPlayer {
 
     // ── Mana coloring ─────────────────────────────────────────────
 
-    /// Map a mana symbol character to its color.
-    fn mana_color(ch: char) -> Option<Color> {
+    /// Map a mana symbol character to its background color.
+    fn mana_bg_color(ch: char) -> Option<Color> {
         match ch {
-            'W' => Some(Color::Yellow),
-            'U' => Some(Color::Blue),
-            'B' => Some(Color::DarkMagenta),
-            'R' => Some(Color::Red),
-            'G' => Some(Color::Green),
-            _ => None, // generic/colorless/X — no special color
+            'W' => Some(Color::AnsiValue(255)), // white
+            'U' => Some(Color::AnsiValue(75)),  // blue
+            'B' => Some(Color::AnsiValue(244)), // grey
+            'R' => Some(Color::AnsiValue(203)), // salmon
+            'G' => Some(Color::AnsiValue(71)),  // forest green
+            _ => None,
+        }
+    }
+
+    /// Map a basic land name to its mana background color.
+    fn basic_land_bg(name: &str) -> Option<Color> {
+        match name {
+            "Plains" => Self::mana_bg_color('W'),
+            "Island" => Self::mana_bg_color('U'),
+            "Swamp" => Self::mana_bg_color('B'),
+            "Mountain" => Self::mana_bg_color('R'),
+            "Forest" => Self::mana_bg_color('G'),
+            _ => None,
         }
     }
 
     /// Print a string to `out`, coloring mana symbols like {R}, {W}, etc.
+    /// with colored backgrounds and black text.
     /// Non-mana text is printed with `default_color` (or reset if None).
     fn print_with_mana(out: &mut io::Stdout, text: &str, default_color: Option<Color>) {
         let mut chars = text.chars().peekable();
@@ -180,13 +193,12 @@ impl CliPlayer {
 
         while let Some(ch) = chars.next() {
             if ch == '{' {
-                // Check for mana symbol pattern: {X}
                 let sym = chars.peek().copied();
                 if let Some(s) = sym {
                     let mut lookahead = chars.clone();
-                    lookahead.next(); // skip the symbol char
+                    lookahead.next();
                     if lookahead.peek() == Some(&'}') {
-                        if let Some(color) = Self::mana_color(s) {
+                        if let Some(bg) = Self::mana_bg_color(s) {
                             // Flush buffered text first
                             if !buf.is_empty() {
                                 if let Some(c) = default_color {
@@ -196,7 +208,7 @@ impl CliPlayer {
                                 }
                                 buf.clear();
                             }
-                            let _ = execute!(out, SetForegroundColor(color),
+                            let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
                                 Print(format!("{{{}}}", s)), ResetColor);
                             chars.next(); // skip symbol
                             chars.next(); // skip '}'
@@ -481,8 +493,15 @@ impl CliPlayer {
                     (Some(p), Some(t)) => format!(" {}/{}", p, t),
                     _ => String::new(),
                 };
-                Self::mid_print(&mut out, mid_col, &mut row, mid_w,
-                    &format!("  {}{}{}", card.name, cost, pt), None, false);
+                if let Some(bg) = Self::basic_land_bg(&card.name) {
+                    let _ = execute!(out, cursor::MoveTo(mid_col, row), Print("  "),
+                        SetBackgroundColor(bg), SetForegroundColor(Color::Black),
+                        Print(&card.name), ResetColor);
+                    row += 1;
+                } else {
+                    Self::mid_print(&mut out, mid_col, &mut row, mid_w,
+                        &format!("  {}{}{}", card.name, cost, pt), None, false);
+                }
             }
         }
 
@@ -575,16 +594,27 @@ impl CliPlayer {
                         summary.push((land.name.clone(), u, t));
                     }
                 }
-                let parts: Vec<String> = summary.iter().map(|(name, untapped, tapped)| {
-                    let total = untapped + tapped;
-                    if *tapped == 0 { format!("{}x {}", total, name) }
-                    else if *untapped == 0 { format!("{}x {} (tapped)", total, name) }
-                    else { format!("{}x {} ({} tapped)", total, name, tapped) }
-                }).collect();
-                let text = format!("  Lands: {}", parts.join(", "));
-                let truncated: String = text.chars().take(max_w).collect();
                 let _ = execute!(out, cursor::MoveTo(col, *row),
-                    SetForegroundColor(color), Print(&truncated), ResetColor);
+                    SetForegroundColor(color), Print("  Lands: "), ResetColor);
+                for (i, (name, untapped, tapped)) in summary.iter().enumerate() {
+                    if i > 0 {
+                        let _ = execute!(out, SetForegroundColor(color), Print(", "), ResetColor);
+                    }
+                    let total = untapped + tapped;
+                    let _ = execute!(out, SetForegroundColor(color), Print(format!("{}x ", total)), ResetColor);
+                    if let Some(bg) = CliPlayer::basic_land_bg(name) {
+                        let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
+                            Print(name), ResetColor);
+                    } else {
+                        let _ = execute!(out, SetForegroundColor(color), Print(name), ResetColor);
+                    }
+                    if *tapped > 0 && *untapped > 0 {
+                        let _ = execute!(out, SetForegroundColor(color),
+                            Print(format!(" ({} tapped)", tapped)), ResetColor);
+                    } else if *tapped > 0 {
+                        let _ = execute!(out, SetForegroundColor(color), Print(" (tapped)"), ResetColor);
+                    }
+                }
                 *row += 1;
             }
         };
