@@ -1051,58 +1051,46 @@ impl CliPlayer {
 
     /// Prompt the user to pick one target from a list. Returns None on cancel.
     fn prompt_target(&self, view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
-        let mut out = stdout();
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-        let _ = execute!(out, SetAttribute(Attribute::Bold), Print(format!(" {}\n\n", label)), SetAttribute(Attribute::Reset));
-
-        for (i, target) in options.iter().enumerate() {
-            let desc = match target {
-                mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
-                mtg_engine::actions::Target::Player(pid) => {
-                    if *pid == view.you { "you".into() } else { "opponent".into() }
-                }
-            };
-            let _ = execute!(out, Print(format!("  {}: {}\n", i, desc)));
-        }
-        let _ = execute!(out, Print("\n  [enter/esc=cancel]\n"));
-        let _ = out.flush();
+        let mut labels: Vec<String> = options.iter().map(|t| match t {
+            mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+            mtg_engine::actions::Target::Player(pid) => {
+                if *pid == view.you { "You".into() } else { "Opponent".into() }
+            }
+        }).collect();
+        labels.push("Cancel".into());
 
         loop {
-            let input = Self::read_line("  > ");
+            Self::render(view, Some(&labels), Some(label), &view.display_log, "", None);
+            let input = Self::read_line("");
             if input.is_empty() { return None; }
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < options.len() {
                     return Some(options[idx].clone());
                 }
+                if idx == options.len() { return None; }
             }
         }
     }
 
     /// Prompt for an optional target (for "up to N" spells). Empty = done.
     fn prompt_target_optional(&self, view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
-        let mut out = stdout();
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-        let _ = execute!(out, SetAttribute(Attribute::Bold), Print(format!(" {}\n\n", label)), SetAttribute(Attribute::Reset));
-
-        for (i, target) in options.iter().enumerate() {
-            let desc = match target {
-                mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
-                mtg_engine::actions::Target::Player(pid) => {
-                    if *pid == view.you { "you".into() } else { "opponent".into() }
-                }
-            };
-            let _ = execute!(out, Print(format!("  {}: {}\n", i, desc)));
-        }
-        let _ = execute!(out, Print("\n  [enter=done]\n"));
-        let _ = out.flush();
+        let mut labels: Vec<String> = options.iter().map(|t| match t {
+            mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
+            mtg_engine::actions::Target::Player(pid) => {
+                if *pid == view.you { "You".into() } else { "Opponent".into() }
+            }
+        }).collect();
+        labels.push("Done".into());
 
         loop {
-            let input = Self::read_line("  > ");
-            if input.is_empty() { return None; } // done
+            Self::render(view, Some(&labels), Some(label), &view.display_log, "", None);
+            let input = Self::read_line("");
+            if input.is_empty() { return None; }
             if let Ok(idx) = input.parse::<usize>() {
                 if idx < options.len() {
                     return Some(options[idx].clone());
                 }
+                if idx == options.len() { return None; }
             }
         }
     }
@@ -2113,27 +2101,23 @@ impl Player for CliPlayer {
 
     fn choose_cards_to_bottom(
         &mut self,
-        _view: &GameView,
+        view: &GameView,
         hand: &[CardView],
         count: usize,
     ) -> Vec<ObjectId> {
-        let mut out = stdout();
-        let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
-        Self::print_colored(&mut out, Color::Yellow,
-            &format!(" Choose {} card(s) to put on bottom:", count));
-        for (i, card) in hand.iter().enumerate() {
-            let _ = execute!(out, Print(format!("  {}: {}\n", i, card.name)));
-        }
-        let _ = out.flush();
+        let labels: Vec<String> = hand.iter().map(|c| c.name.clone()).collect();
+        let title = format!("Choose {} card(s) to put on bottom", count);
 
         loop {
-            let input = Self::read_line(&format!("  Enter {} numbers> ", count));
-            let indices: Vec<usize> = input.split_whitespace()
-                .filter_map(|s| s.parse().ok()).collect();
-            if indices.len() == count && indices.iter().all(|&i| i < hand.len()) {
+            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
+            let input = Self::read_line("");
+            let tokens: Vec<&str> = input.split(|c: char| c.is_whitespace() || c == ',')
+                .map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
+            let indices: Vec<usize> = tokens.iter().filter_map(|s| s.parse().ok()).collect();
+            if indices.len() == count && indices.len() == tokens.len()
+                && indices.iter().all(|&i| i < hand.len()) {
                 return indices.iter().map(|&i| hand[i].object_id).collect();
             }
-            println!("  Invalid selection.");
         }
     }
 }
