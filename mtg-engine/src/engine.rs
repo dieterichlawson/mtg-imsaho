@@ -846,20 +846,26 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         };
         format!("RESPOND TO {} {}", who, top_name)
     } else {
-        // Normal priority — show the phase.
-        match state.step {
-            Step::PrecombatMain => "MAIN PHASE 1".into(),
-            Step::PostcombatMain => "MAIN PHASE 2".into(),
-            Step::BeginCombat => "BEGIN COMBAT".into(),
-            Step::EndCombat => "END COMBAT".into(),
-            Step::Upkeep => "UPKEEP".into(),
-            Step::EndStep => "END STEP".into(),
-            Step::Draw => "DRAW".into(),
-            Step::DeclareAttackers => "DECLARE ATTACKERS".into(),
-            Step::DeclareBlockers => "DECLARE BLOCKERS".into(),
-            Step::CombatDamage => "COMBAT DAMAGE".into(),
-            Step::Untap => "UNTAP".into(),
-            Step::Cleanup => "CLEANUP".into(),
+        // Normal priority — show the phase, with context for opponent's turn.
+        let is_your_turn = state.active_player == player;
+        let step_name = match state.step {
+            Step::PrecombatMain => "MAIN PHASE 1",
+            Step::PostcombatMain => "MAIN PHASE 2",
+            Step::BeginCombat => "BEGIN COMBAT",
+            Step::EndCombat => "END COMBAT",
+            Step::Upkeep => "UPKEEP",
+            Step::EndStep => "END STEP",
+            Step::Draw => "DRAW",
+            Step::DeclareAttackers => "AFTER ATTACKERS DECLARED",
+            Step::DeclareBlockers => "AFTER BLOCKERS DECLARED",
+            Step::CombatDamage => "COMBAT DAMAGE",
+            Step::Untap => "UNTAP",
+            Step::Cleanup => "CLEANUP",
+        };
+        if is_your_turn {
+            step_name.into()
+        } else {
+            format!("OPPONENT'S TURN: {}", step_name)
         }
     };
 
