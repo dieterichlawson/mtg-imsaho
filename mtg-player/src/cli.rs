@@ -119,6 +119,45 @@ impl CliPlayer {
         }
     }
 
+    // ── Text wrapping ──────────────────────────────────────────────
+
+    /// Word-wrap a string to fit within `width` characters.
+    /// Returns a Vec of lines. Breaks at spaces when possible,
+    /// falls back to hard break if a single word exceeds the width.
+    fn word_wrap(text: &str, width: usize) -> Vec<String> {
+        if width == 0 { return vec![text.to_string()]; }
+        let mut lines = Vec::new();
+        let mut remaining = text;
+        while !remaining.is_empty() {
+            let char_count = remaining.chars().count();
+            if char_count <= width {
+                lines.push(remaining.to_string());
+                break;
+            }
+            // Find the byte index at `width` chars.
+            let hard_end = remaining.char_indices()
+                .nth(width)
+                .map(|(i, _)| i)
+                .unwrap_or(remaining.len());
+            // Look for the last space within the width.
+            let break_at = remaining[..hard_end].rfind(' ')
+                .map(|i| i) // break before the space
+                .unwrap_or(hard_end); // no space — hard break
+            if break_at == 0 {
+                // Edge case: space at position 0 or single huge word.
+                let (line, rest) = remaining.split_at(hard_end);
+                lines.push(line.to_string());
+                remaining = rest;
+            } else {
+                let (line, rest) = remaining.split_at(break_at);
+                lines.push(line.to_string());
+                // Skip the space at the break point.
+                remaining = rest.strip_prefix(' ').unwrap_or(rest);
+            }
+        }
+        lines
+    }
+
     // ── Rendering ──────────────────────────────────────────────────
 
     fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
@@ -173,16 +212,10 @@ impl CliPlayer {
                 let text = format!("{} ({})", item.name, who);
                 // Wrap if too long for panel.
                 let max_w = left_w.saturating_sub(1);
-                let mut remaining = text.as_str();
-                while !remaining.is_empty() && (srow as usize) < stack_h {
-                    let end = remaining.char_indices()
-                        .nth(max_w)
-                        .map(|(i, _)| i)
-                        .unwrap_or(remaining.len());
-                    let (line, rest) = remaining.split_at(end);
-                    let _ = execute!(out, cursor::MoveTo(1, srow), Print(line));
+                for line in Self::word_wrap(&text, max_w) {
+                    if srow as usize >= stack_h { break; }
+                    let _ = execute!(out, cursor::MoveTo(1, srow), Print(&line));
                     srow += 1;
-                    remaining = rest;
                 }
                 for target in &item.targets {
                     if srow >= stack_h as u16 { break; }
@@ -215,6 +248,7 @@ impl CliPlayer {
             let log_visible = h.saturating_sub(log_start + 2);
             let max_chars = left_w.saturating_sub(1);
             // Wrap log entries that are too long for the panel.
+            // Continuation lines get a 2-space indent.
             let mut wrapped: Vec<String> = Vec::new();
             let indent = "  ";
             let cont_max = max_chars.saturating_sub(indent.len());
@@ -222,23 +256,17 @@ impl CliPlayer {
                 if entry.chars().count() <= max_chars {
                     wrapped.push(entry.clone());
                 } else {
-                    // First line uses full width, continuation lines are indented.
-                    let mut remaining = entry.as_str();
-                    let mut first = true;
-                    while !remaining.is_empty() {
-                        let width = if first { max_chars } else { cont_max };
-                        let end = remaining.char_indices()
-                            .nth(width)
-                            .map(|(i, _)| i)
-                            .unwrap_or(remaining.len());
-                        let (line, rest) = remaining.split_at(end);
-                        if first {
-                            wrapped.push(line.to_string());
-                            first = false;
+                    let lines = Self::word_wrap(entry, max_chars);
+                    for (i, line) in lines.into_iter().enumerate() {
+                        if i == 0 {
+                            wrapped.push(line);
                         } else {
-                            wrapped.push(format!("{}{}", indent, line));
+                            // Re-wrap the continuation line at the narrower indent width.
+                            let sub_lines = Self::word_wrap(&line, cont_max);
+                            for sub in sub_lines {
+                                wrapped.push(format!("{}{}", indent, sub));
+                            }
                         }
-                        remaining = rest;
                     }
                 }
             }
