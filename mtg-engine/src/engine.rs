@@ -34,6 +34,8 @@ pub struct LegalActions {
     /// Each entry is one castable spell (collapsed view). The `actions` list still
     /// contains the fully-expanded CastSpell entries for LLM/random players.
     pub castable_spells: Vec<crate::actions::CastableSpell>,
+    /// Human-readable description of why the player has priority or needs to act.
+    pub context: Option<String>,
 }
 
 /// Check if Rooftop Storm is on the battlefield and provides a {0} alternative cost
@@ -129,7 +131,7 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
 /// Compute all legal actions for the player who currently needs to act.
 pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions {
     if state.is_game_over() {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![] };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], context: None };
     }
 
     // If we're waiting for a specific action (attackers, blockers, discard).
@@ -159,6 +161,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         defending_player: defending,
                     }),
                     castable_spells: vec![],
+                    context: Some("DECLARE ATTACKERS".into()),
                 }
             }
             AwaitingAction::DeclareBlockers { defending_player } => {
@@ -173,6 +176,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         attackers: attacker_ids,
                     }),
                     castable_spells: vec![],
+                    context: Some("DECLARE BLOCKERS".into()),
                 }
             }
             AwaitingAction::DiscardToHandSize { player, discard_count } => {
@@ -180,11 +184,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     actions: legal_discard_actions(state, *player, *discard_count),
                     combat_prompt: None,
                     castable_spells: vec![],
+                    context: Some(format!("DISCARD {} CARD{}", discard_count,
+                        if *discard_count == 1 { "" } else { "S" })),
                 }
             }
-            AwaitingAction::ResolutionChoice { choice, .. } => {
+            AwaitingAction::ResolutionChoice { choice, source, .. } => {
                 use crate::state::ResolutionChoiceKind;
                 use crate::actions::ResolvedChoice;
+                let source_name = card_name(state, registry, *source);
                 let actions = match choice {
                     ResolutionChoiceKind::PayOrNot { .. } => {
                         vec![
@@ -250,14 +257,25 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         ]
                     }
                 };
-                LegalActions { actions, combat_prompt: None, castable_spells: vec![] }
+                let context = match choice {
+                    ResolutionChoiceKind::ChooseTarget { description, .. } => description.clone(),
+                    ResolutionChoiceKind::PayOrNot { description, .. } => description.clone(),
+                    ResolutionChoiceKind::YesNo { .. } => format!("{}: choose yes or no", source_name),
+                    ResolutionChoiceKind::ChooseCardFromHand { description, .. } => description.clone(),
+                    ResolutionChoiceKind::ChooseFromRevealed { .. } => format!("{}: choose a card", source_name),
+                    ResolutionChoiceKind::ChooseFromLibrary { .. } => format!("{}: search library", source_name),
+                    ResolutionChoiceKind::ChooseCardType { .. } => format!("{}: choose a card type", source_name),
+                    ResolutionChoiceKind::DividePermanentsIntoPiles { .. } => format!("{}: divide into piles", source_name),
+                    ResolutionChoiceKind::ChoosePile { .. } => format!("{}: choose a pile", source_name),
+                };
+                LegalActions { actions, combat_prompt: None, castable_spells: vec![], context: Some(context) }
             }
         };
     }
 
     let player = match state.priority_player {
         Some(p) => p,
-        None => return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![] },
+        None => return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], context: None },
     };
 
     let mut actions = Vec::new();
@@ -807,7 +825,45 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     // Concede is always last.
     actions.push(Action::Concede);
 
-    LegalActions { actions, combat_prompt: None, castable_spells }
+    // Build context string based on game state.
+    let context = if !state.stack.is_empty() {
+        // Responding to something on the stack.
+        let top_name = match state.stack.last() {
+            Some(crate::state::StackEntry::Spell(id)) => card_name(state, registry, *id),
+            Some(crate::state::StackEntry::Trigger(t)) => t.display_name(registry),
+            None => "?".into(),
+        };
+        let caster = match state.stack.last() {
+            Some(crate::state::StackEntry::Spell(id)) =>
+                state.get_object(*id).map(|o| o.controller),
+            Some(crate::state::StackEntry::Trigger(t)) => Some(t.controller()),
+            None => None,
+        };
+        let who = match caster {
+            Some(p) if p == player => "your".into(),
+            Some(p) => format!("p{}'s", p.0),
+            None => "?".into(),
+        };
+        format!("RESPOND TO {} {}", who, top_name)
+    } else {
+        // Normal priority — show the phase.
+        match state.step {
+            Step::PrecombatMain => "MAIN PHASE 1".into(),
+            Step::PostcombatMain => "MAIN PHASE 2".into(),
+            Step::BeginCombat => "BEGIN COMBAT".into(),
+            Step::EndCombat => "END COMBAT".into(),
+            Step::Upkeep => "UPKEEP".into(),
+            Step::EndStep => "END STEP".into(),
+            Step::Draw => "DRAW".into(),
+            Step::DeclareAttackers => "DECLARE ATTACKERS".into(),
+            Step::DeclareBlockers => "DECLARE BLOCKERS".into(),
+            Step::CombatDamage => "COMBAT DAMAGE".into(),
+            Step::Untap => "UNTAP".into(),
+            Step::Cleanup => "CLEANUP".into(),
+        }
+    };
+
+    LegalActions { actions, combat_prompt: None, castable_spells, context: Some(context) }
 }
 
 /// Check if a permanent can be targeted by a spell from the given caster.

@@ -1801,7 +1801,8 @@ impl Player for CliPlayer {
             let pass_label = self.pass_mode.as_ref().map(|m| match m {
                 PassMode::UntilNextTurn { .. } => "AUTO-PASS",
             });
-            Self::render(view, Some(&display_labels), None, &view.display_log, &self.card_filter, pass_label);
+            Self::render(view, Some(&display_labels), legal.context.as_deref(),
+                &view.display_log, &self.card_filter, pass_label);
 
             // Read input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
