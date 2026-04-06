@@ -1015,16 +1015,16 @@ impl CliPlayer {
                     // Only one valid target — skip the sub-prompt.
                     return Some(Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None });
                 }
-                let target = self.prompt_target(view, options, &format!("Choose target for {}", spell.name))?;
+                let target = self.prompt_target(view, options, &format!("{}: select a target", spell.name))?;
                 Some(Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
-                let t1 = self.prompt_target(view, options1, &format!("{}: choose first target", spell.name))?;
+                let t1 = self.prompt_target(view, options1, &format!("{}: select first of two targets", spell.name))?;
                 let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
                 if remaining.is_empty() {
                     return None; // no valid second target
                 }
-                let t2 = self.prompt_target(view, &remaining, &format!("{}: choose second target", spell.name))?;
+                let t2 = self.prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
                 Some(Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
             }
             CastTargetSpec::UpToTargets { max, options } => {
@@ -1032,7 +1032,8 @@ impl CliPlayer {
                 let mut remaining = options.clone();
                 for i in 0..*max {
                     if remaining.is_empty() { break; }
-                    let label = format!("{}: target {} of {} (enter=done)", spell.name, i + 1, max);
+                    let label = format!("{}: select target {} of up to {}",
+                        spell.name, i + 1, max);
                     match self.prompt_target_optional(view, &remaining, &label) {
                         Some(target) => {
                             remaining.retain(|t| *t != target);

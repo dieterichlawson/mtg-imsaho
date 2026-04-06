@@ -513,17 +513,17 @@ impl LlmPlayer {
                 if options.len() == 1 {
                     return Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None };
                 }
-                let target = self.prompt_target_selection(view, &spell.name, options);
+                let target = self.prompt_target_selection(view, &format!("{}: select a target", spell.name), options);
                 Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
-                let t1 = self.prompt_target_selection(view, &format!("{} (first target)", spell.name), options1);
+                let t1 = self.prompt_target_selection(view, &format!("{}: select first of two targets", spell.name), options1);
                 let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
                 if remaining.is_empty() {
                     // Fallback: find any matching expanded action
                     return self.fallback_to_expanded(spell.object_id, legal_actions);
                 }
-                let t2 = self.prompt_target_selection(view, &format!("{} (second target)", spell.name), &remaining);
+                let t2 = self.prompt_target_selection(view, &format!("{}: select second of two targets", spell.name), &remaining);
                 Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }
             }
             CastTargetSpec::UpToTargets { max, options } => {
@@ -539,8 +539,8 @@ impl LlmPlayer {
                     .collect::<Vec<_>>()
                     .join(" ");
                 let prompt = format!(
-                    "Choose up to {} targets for {}:\n{}\nRespond with space-separated numbers (e.g. '0 2')",
-                    max, spell.name, target_list
+                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with space-separated numbers (e.g. '0' for one target, '0 2' for two)",
+                    spell.name, max, target_list
                 );
                 self.log("TARGETS", &prompt);
                 let response = self.call_api(&prompt);
@@ -582,7 +582,7 @@ impl LlmPlayer {
             })
             .collect::<Vec<_>>()
             .join(" ");
-        let prompt = format!("Choose target for {}:\n{}", spell_name, target_list);
+        let prompt = format!("{}:\n{}", spell_name, target_list);
         self.log("TARGETS", &prompt);
         let idx = self.choose_with_retry(&prompt, options.len(), &[]);
         options[idx.min(options.len() - 1)].clone()
