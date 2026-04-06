@@ -863,10 +863,13 @@ impl Player for LlmPlayer {
         }
 
         let state_str = Self::format_state_compact(view);
+        let context_str = legal.context.as_ref()
+            .map(|c| format!("[{}]\n", c))
+            .unwrap_or_default();
         let actions_str: String = display_labels.iter().enumerate()
             .map(|(i, label)| format!("{}:{} ", i, label))
             .collect();
-        let prompt = format!("{}\n{}", state_str, actions_str);
+        let prompt = format!("{}{}\n{}", state_str, context_str, actions_str);
 
         self.log("THINKING", &format!("{} actions (collapsed from {})", display_labels.len(), legal_actions.len()));
         let idx = self.choose_with_retry(&prompt, display_labels.len(), legal_actions);
