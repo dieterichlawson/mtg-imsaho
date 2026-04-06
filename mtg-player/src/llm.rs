@@ -4,7 +4,7 @@ use std::io::Write;
 
 use mtg_engine::actions::{Action, CombatPrompt};
 use mtg_engine::ids::ObjectId;
-use mtg_engine::types::CardType;
+use mtg_engine::types::{CardType, Step};
 use mtg_engine::view::GameView;
 use reqwest::blocking::Client;
 
@@ -319,15 +319,50 @@ impl LlmPlayer {
     /// Compact game state — much shorter than the CLI version.
     fn format_state_compact(view: &GameView) -> String {
         let mut s = String::new();
-        s.push_str(&format!("T{} {:?} ", view.turn_number, view.step));
-        s.push_str(&format!("You:{}hp Opp:", view.your_life));
+
+        // Turn, phase, whose turn
+        let step_name = match view.step {
+            Step::PrecombatMain => "Main 1",
+            Step::PostcombatMain => "Main 2",
+            Step::BeginCombat => "Begin Combat",
+            Step::DeclareAttackers => "Declare Attackers",
+            Step::DeclareBlockers => "Declare Blockers",
+            Step::CombatDamage => "Combat Damage",
+            Step::EndCombat => "End Combat",
+            Step::Upkeep => "Upkeep",
+            Step::Draw => "Draw",
+            Step::EndStep => "End Step",
+            Step::Untap => "Untap",
+            Step::Cleanup => "Cleanup",
+        };
+        let whose_turn = if view.active_player == view.you { "your turn" } else { "opp's turn" };
+        s.push_str(&format!("Turn {} - {} ({})\n", view.turn_number, step_name, whose_turn));
+
+        // Zone counts
+        let your_gy_count: usize = view.graveyards.iter()
+            .filter(|(pid, _)| *pid == view.you)
+            .map(|(_, cards)| cards.len()).sum();
+        let your_exile_count = view.exile.iter().filter(|c| c.owner == view.you).count();
+        let opp_gy_count: usize = view.graveyards.iter()
+            .filter(|(pid, _)| *pid != view.you)
+            .map(|(_, cards)| cards.len()).sum();
+        let opp_exile_count = view.exile.iter().filter(|c| c.owner != view.you).count();
+
+        s.push_str(&format!("You: {}hp, {}cards, {}lib, {}gy, {}exile\n",
+            view.your_life, view.your_hand.len(), view.your_library_size,
+            your_gy_count, your_exile_count));
         for opp in &view.opponents {
-            s.push_str(&format!("{}hp,{}cards ", opp.life, opp.hand_size));
+            s.push_str(&format!("Opp: {}hp, {}cards, {}lib, {}gy, {}exile\n",
+                opp.life, opp.hand_size, opp.library_size,
+                opp_gy_count, opp_exile_count));
         }
-        s.push('\n');
 
         if !view.your_mana_pool.is_empty() {
-            s.push_str(&format!("Pool: {:?}\n", view.your_mana_pool.mana));
+            let pool_parts: Vec<String> = view.your_mana_pool.mana.iter()
+                .filter(|(_, &v)| v > 0)
+                .map(|(t, v)| format!("{:?}:{}", t, v))
+                .collect();
+            s.push_str(&format!("Mana pool: {}\n", pool_parts.join(", ")));
         }
 
         // Battlefield — compact
@@ -364,7 +399,7 @@ impl LlmPlayer {
             s.push_str("Hand: ");
             let cards: Vec<String> = view.your_hand.iter()
                 .map(|c| {
-                    let cost = c.cost.as_ref().map(|co| format!("{}", co)).unwrap_or_default();
+                    let cost = c.cost.as_ref().map(|co| format!(" {}", co)).unwrap_or_default();
                     let pt = match (c.power, c.toughness) {
                         (Some(p), Some(t)) => format!(" {}/{}", p, t),
                         _ => String::new(),
@@ -374,6 +409,15 @@ impl LlmPlayer {
                 .collect();
             s.push_str(&cards.join(", "));
             s.push('\n');
+        }
+
+        // Graveyard contents (both players)
+        for (pid, cards) in &view.graveyards {
+            if !cards.is_empty() {
+                let whose = if *pid == view.you { "Your" } else { "Opp" };
+                let names: Vec<&str> = cards.iter().map(|c| c.name.as_str()).collect();
+                s.push_str(&format!("{} graveyard: {}\n", whose, names.join(", ")));
+            }
         }
 
         // Show flashback-eligible cards in your graveyard.
@@ -389,9 +433,7 @@ impl LlmPlayer {
                 })
                 .collect();
             if !fb_cards.is_empty() {
-                s.push_str("Graveyard flashback: ");
-                s.push_str(&fb_cards.join(", "));
-                s.push('\n');
+                s.push_str(&format!("Flashback available: {}\n", fb_cards.join(", ")));
             }
         }
 
@@ -421,11 +463,11 @@ impl LlmPlayer {
             for (name, untapped, tapped) in &land_groups {
                 let total = untapped + tapped;
                 if *tapped == 0 {
-                    parts.push(format!("{}x{}", total, name));
+                    parts.push(format!("{}x {}", total, name));
                 } else if *untapped == 0 {
-                    parts.push(format!("{}x{}(tapped)", total, name));
+                    parts.push(format!("{}x {} (tapped)", total, name));
                 } else {
-                    parts.push(format!("{}x{}({}tapped)", total, name, tapped));
+                    parts.push(format!("{}x {} ({} tapped)", total, name, tapped));
                 }
             }
         }
@@ -443,15 +485,17 @@ impl LlmPlayer {
         }
 
         for c in &creatures {
+            let power = c.effective_power.or(c.power).unwrap_or(0);
+            let toughness = c.effective_toughness.or(c.toughness).unwrap_or(0);
             let t = if c.tapped { "T" } else { "" };
             let s = if c.summoning_sick { "S" } else { "" };
-            let d = if c.damage_marked > 0 { format!("{}d", c.damage_marked) } else { String::new() };
+            let d = if c.damage_marked > 0 { format!("{}dmg", c.damage_marked) } else { String::new() };
             let flags = format!("{}{}{}", t, s, d);
-            let flags_str = if flags.is_empty() { String::new() } else { format!("[{}]", flags) };
+            let flags_str = if flags.is_empty() { String::new() } else { format!(" [{}]", flags) };
             let auras = aura_map.get(&c.object_id)
-                .map(|names| format!("({})", names.join(",")))
+                .map(|names| format!(" ({})", names.join(", ")))
                 .unwrap_or_default();
-            parts.push(format!("{} {}/{}{}{}", c.name, c.power.unwrap_or(0), c.toughness.unwrap_or(0), flags_str, auras));
+            parts.push(format!("{} {}/{}{}{}", c.name, power, toughness, flags_str, auras));
         }
 
         // Show non-aura other permanents.
