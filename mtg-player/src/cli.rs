@@ -1105,7 +1105,8 @@ impl CliPlayer {
                     (Some(pw), Some(t)) => format!(" {}/{}", pw, t),
                     _ => String::new(),
                 };
-                format!("{}{}", p.name, pt)
+                let owner = if p.controller == view.you { "your" } else { "opp" };
+                format!("{}{} ({})", p.name, pt, owner)
             })
             .or_else(|| view.your_hand.iter()
                 .find(|c| c.object_id == id)

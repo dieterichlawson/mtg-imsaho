@@ -597,12 +597,13 @@ impl LlmPlayer {
     }
 
     fn obj_name(view: &GameView, id: ObjectId) -> String {
-        view.battlefield.iter()
-            .find(|p| p.object_id == id)
-            .map(|p| p.name.clone())
-            .or_else(|| view.your_hand.iter()
-                .find(|c| c.object_id == id)
-                .map(|c| c.name.clone()))
+        if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
+            let owner = if p.controller == view.you { "your" } else { "opponent's" };
+            return format!("{} ({})", p.name, owner);
+        }
+        view.your_hand.iter()
+            .find(|c| c.object_id == id)
+            .map(|c| c.name.clone())
             .or_else(|| view.stack.iter()
                 .find(|s| s.object_id == id)
                 .map(|s| s.name.clone()))
