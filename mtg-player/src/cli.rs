@@ -1106,8 +1106,13 @@ impl CliPlayer {
                     (Some(pw), Some(t)) => format!(" {}/{}", pw, t),
                     _ => String::new(),
                 };
-                let owner = if p.controller == view.you { "your" } else { "opp" };
-                format!("{}{} ({})", p.name, pt, owner)
+                let is_land = p.card_types.iter().all(|t| matches!(t, CardType::Land));
+                if is_land {
+                    format!("{}{}", p.name, pt)
+                } else {
+                    let owner = if p.controller == view.you { "your" } else { "opp" };
+                    format!("{}{} ({})", p.name, pt, owner)
+                }
             })
             .or_else(|| view.your_hand.iter()
                 .find(|c| c.object_id == id)

@@ -598,8 +598,12 @@ impl LlmPlayer {
 
     fn obj_name(view: &GameView, id: ObjectId) -> String {
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
-            let owner = if p.controller == view.you { "your" } else { "opponent's" };
-            return format!("{} ({})", p.name, owner);
+            let is_land = p.card_types.iter().all(|t| matches!(t, mtg_engine::types::CardType::Land));
+            if !is_land {
+                let owner = if p.controller == view.you { "your" } else { "opponent's" };
+                return format!("{} ({})", p.name, owner);
+            }
+            return p.name.clone();
         }
         view.your_hand.iter()
             .find(|c| c.object_id == id)
