@@ -158,6 +158,65 @@ impl CliPlayer {
         lines
     }
 
+    // ── Mana coloring ─────────────────────────────────────────────
+
+    /// Map a mana symbol character to its color.
+    fn mana_color(ch: char) -> Option<Color> {
+        match ch {
+            'W' => Some(Color::Yellow),
+            'U' => Some(Color::Blue),
+            'B' => Some(Color::DarkMagenta),
+            'R' => Some(Color::Red),
+            'G' => Some(Color::Green),
+            _ => None, // generic/colorless/X — no special color
+        }
+    }
+
+    /// Print a string to `out`, coloring mana symbols like {R}, {W}, etc.
+    /// Non-mana text is printed with `default_color` (or reset if None).
+    fn print_with_mana(out: &mut io::Stdout, text: &str, default_color: Option<Color>) {
+        let mut chars = text.chars().peekable();
+        let mut buf = String::new();
+
+        while let Some(ch) = chars.next() {
+            if ch == '{' {
+                // Check for mana symbol pattern: {X}
+                let sym = chars.peek().copied();
+                if let Some(s) = sym {
+                    let mut lookahead = chars.clone();
+                    lookahead.next(); // skip the symbol char
+                    if lookahead.peek() == Some(&'}') {
+                        if let Some(color) = Self::mana_color(s) {
+                            // Flush buffered text first
+                            if !buf.is_empty() {
+                                if let Some(c) = default_color {
+                                    let _ = execute!(out, SetForegroundColor(c), Print(buf.as_str()), ResetColor);
+                                } else {
+                                    let _ = execute!(out, Print(buf.as_str()));
+                                }
+                                buf.clear();
+                            }
+                            let _ = execute!(out, SetForegroundColor(color),
+                                Print(format!("{{{}}}", s)), ResetColor);
+                            chars.next(); // skip symbol
+                            chars.next(); // skip '}'
+                            continue;
+                        }
+                    }
+                }
+            }
+            buf.push(ch);
+        }
+        // Flush remaining
+        if !buf.is_empty() {
+            if let Some(c) = default_color {
+                let _ = execute!(out, SetForegroundColor(c), Print(buf.as_str()), ResetColor);
+            } else {
+                let _ = execute!(out, Print(buf.as_str()));
+            }
+        }
+    }
+
     // ── Rendering ──────────────────────────────────────────────────
 
     fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
@@ -582,12 +641,11 @@ impl CliPlayer {
     fn mid_print(out: &mut io::Stdout, col: u16, row: &mut u16, max_w: usize,
                   text: &str, color: Option<Color>, bold: bool) {
         let _ = execute!(out, cursor::MoveTo(col, *row));
-        if let Some(c) = color { let _ = execute!(out, SetForegroundColor(c)); }
         if bold { let _ = execute!(out, SetAttribute(Attribute::Bold)); }
         let truncated: String = text.chars().take(max_w).collect();
-        let _ = execute!(out, Print(&truncated));
+        Self::print_with_mana(out, &truncated, color);
         if bold { let _ = execute!(out, SetAttribute(Attribute::Reset)); }
-        if color.is_some() { let _ = execute!(out, ResetColor); }
+        let _ = execute!(out, ResetColor);
         *row += 1;
     }
 
@@ -700,8 +758,9 @@ impl CliPlayer {
             let cost_str = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
             let name_line = format!("{}{}", card.name, cost_str);
             let truncated: String = name_line.chars().take(content_w).collect();
-            let _ = execute!(out, cursor::MoveTo(right_col, row),
-                SetAttribute(Attribute::Bold), Print(&truncated), SetAttribute(Attribute::Reset));
+            let _ = execute!(out, cursor::MoveTo(right_col, row), SetAttribute(Attribute::Bold));
+            Self::print_with_mana(out, &truncated, None);
+            let _ = execute!(out, SetAttribute(Attribute::Reset));
             row += 1;
             if row >= max_row { break; }
 
@@ -775,7 +834,8 @@ impl CliPlayer {
                     let wrapped = Self::wrap_text(text.trim(), content_w);
                     for line in wrapped {
                         if row >= max_row { break; }
-                        let _ = execute!(out, cursor::MoveTo(right_col, row), Print(&line));
+                        let _ = execute!(out, cursor::MoveTo(right_col, row));
+                        Self::print_with_mana(out, &line, None);
                         row += 1;
                     }
                 }
@@ -786,8 +846,8 @@ impl CliPlayer {
                 if row < max_row {
                     let fb_line = format!("Flashback {}", fb);
                     let truncated: String = fb_line.chars().take(content_w).collect();
-                    let _ = execute!(out, cursor::MoveTo(right_col, row),
-                        SetForegroundColor(Color::Cyan), Print(&truncated), ResetColor);
+                    let _ = execute!(out, cursor::MoveTo(right_col, row));
+                    Self::print_with_mana(out, &truncated, Some(Color::Cyan));
                     row += 1;
                 }
             }
@@ -1686,9 +1746,9 @@ impl CliPlayer {
             // Show detail for selected card.
             if let Some(card) = filtered.get(selected) {
                 let _ = execute!(out, Print("\n\r"));
-                let _ = execute!(out, SetForegroundColor(Color::Cyan),
-                    Print(format!("  {} {}\n\r", card.name, card.cost)),
-                    ResetColor);
+                let _ = execute!(out, Print("  "));
+                Self::print_with_mana(&mut out, &format!("{} {}", card.name, card.cost), Some(Color::Cyan));
+                let _ = execute!(out, Print("\n\r"), ResetColor);
                 let _ = execute!(out, SetForegroundColor(Color::DarkGrey),
                     Print(format!("  {}", card.type_line)),
                     ResetColor);
@@ -1867,7 +1927,9 @@ impl Player for CliPlayer {
                                     (Some(p), Some(t)) => format!(" {}/{}", p, t),
                                     _ => String::new(),
                                 };
-                                let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
+                                let _ = execute!(out, Print("   "));
+                                Self::print_with_mana(&mut out, &format!("{}{}{}", card.name, cost, pt), None);
+                                let _ = execute!(out, Print("\n"));
                             }
                         }
                         let _ = execute!(out, Print("\n"));
