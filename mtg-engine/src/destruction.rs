@@ -86,10 +86,6 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
 
 /// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.
 fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>) {
-    let name = registry
-        .and_then(|r| state.get_object(id).and_then(|o| r.card_data(o.card_id).map(|d| d.name)))
-        .or_else(|| state.get_object(id).map(|o| o.name.clone()))
-        .unwrap_or_else(|| "?".into());
     let is_creature = state.get_object(id).map(|o| o.power.is_some()).unwrap_or(false);
     if is_creature {
         // Capture last-known information before the zone change clears it.
@@ -102,10 +98,8 @@ fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>)
             .unwrap_or(0);
         state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness });
         state.creature_died_this_turn = true;
-        state.log(crate::state::LogLevel::Event, format!("{} died", name));
-    } else {
-        state.log(crate::state::LogLevel::Event, format!("{} went to graveyard", name));
     }
+    // move_object handles the death/graveyard log message.
     state.move_object(id, Zone::Graveyard);
 }
 

@@ -84,10 +84,6 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
 
         // Rule 704.5f: zero toughness goes directly to graveyard.
         for id in zero_toughness_ids {
-            let name = registry
-                .and_then(|r| state.get_object(id).and_then(|o| r.card_data(o.card_id).map(|d| d.name)))
-                .or_else(|| state.get_object(id).map(|o| o.name.clone()))
-                .unwrap_or_else(|| "?".into());
             let (cid, ctrl, damaged_by) = state.get_object(id)
                 .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
                 .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
@@ -96,7 +92,7 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
                 .or_else(|| state.get_object(id).and_then(|o| o.toughness))
                 .unwrap_or(0);
             state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness });
-            state.log(crate::state::LogLevel::Event, format!("{} died", name));
+            // move_object handles the death log message.
             state.move_object(id, Zone::Graveyard);
             state.creature_died_this_turn = true;
             took_action = true;

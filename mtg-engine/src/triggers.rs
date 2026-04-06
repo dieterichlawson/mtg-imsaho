@@ -433,7 +433,13 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
                     .map(|o| (o.id, o.card_id, o.controller))
                     .collect();
                 for (watcher_id, watcher_card_id, watcher_controller) in watchers {
-                    if registry.get(watcher_card_id).is_some() {
+                    // Only create death-watch triggers for cards that actually have
+                    // an AnyCreatureDies triggered ability.
+                    let has_death_trigger = registry.get(watcher_card_id)
+                        .map(|b| b.card_data().triggered_abilities.iter()
+                            .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies))
+                        .unwrap_or(false);
+                    if has_death_trigger {
                         let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, false);
                         let trigger = PendingTrigger::DeathWatch {
                             watcher_id,
