@@ -16,6 +16,10 @@ use mtg_engine::view::{GameView, CardView, PermanentView};
 
 use crate::Player;
 
+/// Global flag: set to true when the user requests a hot reload (rr).
+pub static HOT_RELOAD_REQUESTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 /// Handle for the background spinner thread. Drop to stop.
 pub struct SpinnerHandle {
     running: std::sync::Arc<std::sync::atomic::AtomicBool>,
@@ -1222,6 +1226,20 @@ impl CliPlayer {
                     KeyCode::Char('/') if buf.is_empty() => {
                         break None; // trigger card search
                     }
+                    KeyCode::Char('r') if buf.is_empty() => {
+                        // Wait briefly for a second 'r' to trigger hot reload.
+                        if event::poll(std::time::Duration::from_millis(300)).unwrap_or(false) {
+                            if let Ok(Event::Key(KeyEvent { code: KeyCode::Char('r'), .. })) = event::read() {
+                                HOT_RELOAD_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+                                let _ = terminal::disable_raw_mode();
+                                break Some("__hot_reload__".into());
+                            }
+                        }
+                        // Single 'r' — treat as normal input.
+                        buf.push('r');
+                        let _ = execute!(out, Print("r"));
+                        let _ = out.flush();
+                    }
                     KeyCode::Enter => {
                         break Some(buf.clone());
                     }
@@ -2054,6 +2072,10 @@ impl Player for CliPlayer {
                         return Action::PassPriority;
                     }
                     continue;
+                }
+                "__hot_reload__" => {
+                    // Hot reload triggered by rapid 'rr' in raw mode.
+                    return Action::Concede;
                 }
                 "l" => {
                     Self::show_log(&view.display_log);

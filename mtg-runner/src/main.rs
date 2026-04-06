@@ -119,18 +119,24 @@ fn main() {
 
     let save_file_ref = save_file.clone();
     let player_names_ref = player_names.clone();
+    // Always save to a hot-reload temp file so 'rr' can work without --save.
+    let hot_reload_path = "/tmp/mtg-hot-reload.json".to_string();
+    let hot_reload_ref = hot_reload_path.clone();
 
     let mut game_callback = |game_state: &GameState, acting_player: PlayerId, legal: &engine::LegalActions| -> mtg_engine::actions::Action {
         action_count += 1;
 
         // Save state before each decision point.
+        let save = SaveData {
+            state: game_state.clone(),
+            player_names: player_names_ref.clone(),
+        };
+        let json = serde_json::to_string(&save).expect("Failed to serialize game state");
+        // Always write hot-reload save.
+        fs::write(&hot_reload_ref, &json).expect("Failed to write hot-reload save");
+        // Also write user-specified save file if set.
         if let Some(ref path) = save_file_ref {
-            let save = SaveData {
-                state: game_state.clone(),
-                player_names: player_names_ref.clone(),
-            };
-            let json = serde_json::to_string(&save).expect("Failed to serialize game state");
-            fs::write(path, json).expect("Failed to write save file");
+            fs::write(path, &json).expect("Failed to write save file");
         }
 
         if action_count >= max_actions {
@@ -177,10 +183,51 @@ fn main() {
         engine::run_game_loop(&mut state, &registry, &mut game_callback);
     }
 
-    // Clean up save file when game completes.
+    // Check for hot reload request.
+    if mtg_player::cli::HOT_RELOAD_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+        eprintln!("\nHot reload requested. Rebuilding and relaunching...");
+        // Build the project.
+        let build_status = std::process::Command::new("cargo")
+            .args(["build", "--release"])
+            .status();
+        match build_status {
+            Ok(s) if s.success() => {
+                // Re-exec with --resume pointing to the hot-reload save.
+                let exe = env::current_exe().expect("Failed to get current exe path");
+                let mut new_args: Vec<String> = env::args().collect();
+                // Remove any existing --resume args.
+                while let Some(pos) = new_args.iter().position(|a| a == "--resume") {
+                    new_args.remove(pos); // --resume
+                    if pos < new_args.len() { new_args.remove(pos); } // its value
+                }
+                // Add --resume with hot-reload path.
+                new_args.push("--resume".into());
+                new_args.push(hot_reload_path.clone());
+                // Exec replaces the current process.
+                use std::os::unix::process::CommandExt;
+                let err = std::process::Command::new(&exe)
+                    .args(&new_args[1..]) // skip argv[0]
+                    .exec();
+                eprintln!("Failed to exec: {}", err);
+                std::process::exit(1);
+            }
+            Ok(s) => {
+                eprintln!("Build failed (exit code {:?}). Continuing with save at {}",
+                    s.code(), hot_reload_path);
+                eprintln!("Resume manually with: cargo run --release -- --resume {}", hot_reload_path);
+            }
+            Err(e) => {
+                eprintln!("Failed to run cargo build: {}. Save at {}", e, hot_reload_path);
+            }
+        }
+        return;
+    }
+
+    // Clean up save file when game completes normally.
     if let Some(ref path) = save_file {
         let _ = fs::remove_file(path);
     }
+    let _ = fs::remove_file(&hot_reload_path);
 
     match &state.result {
         Some(mtg_engine::state::GameResult::Winner(id)) => {
