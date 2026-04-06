@@ -612,18 +612,22 @@ impl GameState {
     /// For Library/Hand/Graveyard: filter by owner (per rule 400.3).
     /// For Battlefield: filter by controller.
     pub fn objects_in_zone(&self, zone: Zone, player: PlayerId) -> Vec<&GameObject> {
-        self.objects.values().filter(|obj| {
+        let mut result: Vec<_> = self.objects.values().filter(|obj| {
             obj.zone == zone && match zone {
                 Zone::Library | Zone::Hand | Zone::Graveyard => obj.owner == player,
                 Zone::Battlefield => obj.controller == player,
                 _ => true,
             }
-        }).collect()
+        }).collect();
+        result.sort_by_key(|o| o.id);
+        result
     }
 
     /// Get all objects in a zone (regardless of player).
     pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
-        self.objects.values().filter(|obj| obj.zone == zone).collect()
+        let mut result: Vec<_> = self.objects.values().filter(|obj| obj.zone == zone).collect();
+        result.sort_by_key(|o| o.id);
+        result
     }
 
     /// Get the next player after the given player (turn order).
