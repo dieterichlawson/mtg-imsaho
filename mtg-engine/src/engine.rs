@@ -1846,7 +1846,13 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             }
 
             let name = card_name(&new_state, registry, *object_id);
-            new_state.log(LogLevel::Debug, format!("p{} tapped {} for mana", controller.0, name));
+            let pool = &new_state.get_player(controller).mana_pool;
+            let pool_str: Vec<String> = pool.mana.iter()
+                .filter(|(_, &v)| v > 0)
+                .map(|(t, v)| format!("{:?}:{}", t, v))
+                .collect();
+            new_state.log(LogLevel::Info, format!("p{} tapped {} for mana (pool: {})",
+                controller.0, name, if pool_str.is_empty() { "empty".into() } else { pool_str.join(" ") }));
         }
 
         Action::ActivateAbility { object_id, ability_index, targets } => {
