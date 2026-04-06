@@ -208,8 +208,11 @@ impl CliPlayer {
                                 }
                                 buf.clear();
                             }
-                            let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
-                                Print(format!("{{{}}}", s)), ResetColor);
+                            // Reset all attributes before/after to avoid bold/dim bleeding into background
+                            let _ = execute!(out, SetAttribute(Attribute::Reset),
+                                SetBackgroundColor(bg), SetForegroundColor(Color::Black),
+                                Print(format!("{{{}}}", s)),
+                                SetAttribute(Attribute::Reset));
                             chars.next(); // skip symbol
                             chars.next(); // skip '}'
                             continue;
