@@ -3064,7 +3064,8 @@ fn has_castable_with_potential_mana(
             let is_instant = data.card_types.contains(&CardType::Instant);
             let has_flash = data.keywords.contains(&Keyword::Flash);
             let can_cast_timing = if is_instant || has_flash {
-                instants_relevant
+                // Instants can be cast at sorcery speed too (main phase, empty stack).
+                instants_relevant || is_sorcery_speed
             } else if data.card_types.contains(&CardType::Sorcery)
                 || data.card_types.contains(&CardType::Creature)
                 || data.card_types.contains(&CardType::Enchantment)
