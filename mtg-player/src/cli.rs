@@ -232,6 +232,36 @@ impl CliPlayer {
         }
     }
 
+    /// Print an action label, coloring mana symbols and basic land names.
+    fn print_action_label(out: &mut io::Stdout, label: &str) {
+        const BASIC_LANDS: &[(&str, char)] = &[
+            ("Plains", 'W'), ("Island", 'U'), ("Swamp", 'B'),
+            ("Mountain", 'R'), ("Forest", 'G'),
+        ];
+        // Check if any basic land name appears in the label.
+        let mut colored = false;
+        for &(land_name, mana_ch) in BASIC_LANDS {
+            if let Some(pos) = label.find(land_name) {
+                // Print prefix with mana coloring
+                let prefix = &label[..pos];
+                Self::print_with_mana(out, prefix, None);
+                // Print land name with background
+                if let Some(bg) = Self::mana_bg_color(mana_ch) {
+                    let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
+                        Print(land_name), SetAttribute(Attribute::Reset));
+                }
+                // Print suffix with mana coloring
+                let suffix = &label[pos + land_name.len()..];
+                Self::print_with_mana(out, suffix, None);
+                colored = true;
+                break;
+            }
+        }
+        if !colored {
+            Self::print_with_mana(out, label, None);
+        }
+    }
+
     // ── Rendering ──────────────────────────────────────────────────
 
     fn render(view: &GameView, actions: Option<&[String]>, message: Option<&str>, log: &[String], card_filter: &str, pass_mode_label: Option<&str>) {
@@ -536,7 +566,8 @@ impl CliPlayer {
             for (i, label) in labels.iter().enumerate() {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
-                    SetAttribute(Attribute::Reset), Print(format!(": {}", label)));
+                    SetAttribute(Attribute::Reset), Print(": "));
+                Self::print_action_label(&mut out, label);
                 row += 1;
             }
             let has_pass = labels.first().map(|l| l == "Pass priority").unwrap_or(false);
