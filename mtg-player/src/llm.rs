@@ -1057,6 +1057,7 @@ impl Player for LlmPlayer {
         let mut display_entries: Vec<DisplayEntry> = Vec::new();
         let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
 
+        let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
             match action {
                 Action::CastSpell { object_id, .. } => {
@@ -1068,11 +1069,15 @@ impl Player for LlmPlayer {
                             let cs = &legal.castable_spells[cs_idx];
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
                             let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
-                            if tap_str.is_empty() {
-                                display_labels.push(format!("{} {}", verb, cs.name));
+                            let label = if tap_str.is_empty() {
+                                format!("{} {}", verb, cs.name)
                             } else {
-                                display_labels.push(format!("{} {} (tap {})", verb, cs.name, tap_str));
-                            }
+                                format!("{} {} (tap {})", verb, cs.name, tap_str)
+                            };
+                            // Deduplicate identical cast labels (e.g. two copies of same spell).
+                            if seen_cast_labels.contains(&label) { continue; }
+                            seen_cast_labels.push(label.clone());
+                            display_labels.push(label);
                             display_entries.push(DisplayEntry::Cast(cs_idx));
                         }
                     }
