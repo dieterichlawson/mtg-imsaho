@@ -38,23 +38,41 @@ pub struct LegalActions {
     pub context: Option<String>,
 }
 
-/// Check if Rooftop Storm is on the battlefield and provides a {0} alternative cost
-/// for a Zombie creature spell cast by the given player.
-fn rooftop_storm_applies(state: &GameState, registry: &CardRegistry, card_id: CardId, caster: PlayerId) -> bool {
-    // Check if the spell is a Zombie creature spell.
-    let is_zombie_creature = registry.card_data(card_id).map(|d| {
-        d.card_types.contains(&CardType::Creature)
-            && d.subtypes.iter().any(|s| s == "Zombie")
-    }).unwrap_or(false);
-    if !is_zombie_creature {
-        return false;
+/// Find alternative costs provided by continuous effects on permanents the caster controls.
+/// Returns a list of alternative ManaCosts that the caster may use for the given spell.
+fn alternative_costs_from_effects(state: &GameState, registry: &CardRegistry, card_id: CardId, caster: PlayerId) -> Vec<ManaCost> {
+    use crate::types::{ContinuousEffect, SpellFilter};
+
+    let card_data = registry.card_data(card_id);
+    let is_creature = card_data.as_ref()
+        .map(|d| d.card_types.contains(&CardType::Creature))
+        .unwrap_or(false);
+    let subtypes: Vec<String> = card_data.as_ref()
+        .map(|d| d.subtypes.clone())
+        .unwrap_or_default();
+
+    let mut alt_costs = Vec::new();
+    for obj in state.objects.values() {
+        if obj.zone != Zone::Battlefield || obj.controller != caster {
+            continue;
+        }
+        if let Some(behavior) = registry.get(obj.card_id) {
+            for effect in &behavior.card_data().continuous_effects {
+                if let ContinuousEffect::AlternativeCost { cost, filter } = effect {
+                    let applies = match filter {
+                        SpellFilter::CreatureSpells => is_creature,
+                        SpellFilter::CreatureWithSubtype(sub) => {
+                            is_creature && subtypes.iter().any(|s| s == sub)
+                        }
+                    };
+                    if applies {
+                        alt_costs.push(cost.clone());
+                    }
+                }
+            }
+        }
     }
-    // Check if the caster controls a Rooftop Storm on the battlefield.
-    state.objects.values().any(|o| {
-        o.zone == Zone::Battlefield
-            && o.controller == caster
-            && o.name == "Rooftop Storm"
-    })
+    alt_costs
 }
 
 /// Compute the effective mana cost of a spell after applying cost reduction effects.
@@ -99,10 +117,6 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
             }
         }
     }
-
-    // Rooftop Storm's alternative cost is handled via the alternative_cost field
-    // on CastSpell actions (see rooftop_storm_applies() and action generation).
-    // It is NOT a cost reduction — it's an alternative cost chosen at cast time.
 
     if total_reduction == 0 {
         return base_cost.clone();
@@ -575,15 +589,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
 
             // Check mana (applying cost reduction effects).
-            // Also check if Rooftop Storm provides an alternative {0} cost.
-            let has_rooftop_alt = rooftop_storm_applies(state, registry, obj.card_id, player);
+            // Also check if any continuous effects provide an alternative cost.
+            let alt_costs = alternative_costs_from_effects(state, registry, obj.card_id, player);
+            let has_alt_cost = !alt_costs.is_empty();
             let can_pay_normal = if let Some(cost) = &data.cost {
                 let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
                 mana::can_pay(&player_state.mana_pool, &effective_cost)
             } else {
                 true
             };
-            if !can_pay_normal && !has_rooftop_alt {
+            if !can_pay_normal && !has_alt_cost {
                 continue;
             }
 
@@ -689,20 +704,18 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 }
             }
 
-            // Rooftop Storm: generate alternative {0} cost actions for Zombie creatures.
-            // The player chooses between the normal cost and the free alternative cost.
-            let is_zombie_creature = data.card_types.contains(&CardType::Creature)
-                && data.subtypes.iter().any(|s| s == "Zombie");
-            let has_rooftop_alt = is_zombie_creature && state.objects.values().any(|o| {
-                o.zone == Zone::Battlefield && o.controller == player && o.name == "Rooftop Storm"
-            });
-            let can_pay_normal = if let Some(cost) = &data.cost {
-                let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                mana::can_pay(&player_state.mana_pool, &effective_cost)
-            } else {
-                false
-            };
-            if has_rooftop_alt {
+            // Generate alternative cost actions from continuous effects (e.g. Rooftop Storm).
+            // The player chooses between the normal cost and the alternative cost.
+            if has_alt_cost {
+                let can_pay_normal = if let Some(cost) = &data.cost {
+                    let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
+                    mana::can_pay(&player_state.mana_pool, &effective_cost)
+                } else {
+                    false
+                };
+                // Use the first (cheapest) alternative cost. Multiple alternative costs
+                // would need a chooser, but for now there's only one source at a time.
+                let alt_mana = alt_costs[0].clone();
                 if can_pay_normal {
                     // Player can pay normally — add alternative cost copies alongside normal ones.
                     let alt_actions: Vec<Action> = cast_actions.iter().filter_map(|a| {
@@ -713,7 +726,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 sacrifice: *sacrifice,
                                 exile_count: *exile_count,
                                 exile_ids: exile_ids.clone(),
-                                alternative_cost: Some(ManaCost::free()),
+                                alternative_cost: Some(alt_mana.clone()),
                             })
                         } else {
                             None
@@ -724,7 +737,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     // Player can't pay normally — replace all actions with alternative cost versions.
                     for action in &mut cast_actions {
                         if let Action::CastSpell { alternative_cost, .. } = action {
-                            *alternative_cost = Some(ManaCost::free());
+                            *alternative_cost = Some(alt_mana.clone());
                         }
                     }
                 }
