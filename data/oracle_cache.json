@@ -640,7 +640,7 @@
       "toughness": null,
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/isd/94/curse-of-deaths-hold?utm_source=api",
-      "cached_at": "2026-04-01",
+      "cached_at": "2026-04-04",
       "keywords": [
         "Enchant"
       ]
@@ -1124,7 +1124,7 @@
       "toughness": null,
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/isd/180/full-moons-rise?utm_source=api",
-      "cached_at": "2026-04-01"
+      "cached_at": "2026-04-04"
     },
     "Furor of the Bitten": {
       "name": "Furor of the Bitten",
@@ -1252,8 +1252,8 @@
       "power": "*",
       "toughness": "*",
       "source": "Scryfall API",
-      "source_url": "https://scryfall.com/card/isd/17/geist-honored-monk?utm_source=api",
-      "cached_at": "2026-04-01",
+      "source_url": "https://scryfall.com/card/khc/25/geist-honored-monk?utm_source=api",
+      "cached_at": "2026-04-04",
       "keywords": [
         "Vigilance"
       ]
@@ -1395,8 +1395,8 @@
       "power": "5",
       "toughness": "5",
       "source": "Scryfall API",
-      "source_url": "https://scryfall.com/card/isd/214/grimgrin-corpse-born?utm_source=api",
-      "cached_at": "2026-04-01"
+      "source_url": "https://scryfall.com/card/inr/239/grimgrin-corpse-born?utm_source=api",
+      "cached_at": "2026-04-03"
     },
     "Grimoire of the Dead": {
       "name": "Grimoire of the Dead",
@@ -1981,8 +1981,8 @@
       "power": "0",
       "toughness": "0",
       "source": "Scryfall API",
-      "source_url": "https://scryfall.com/card/isd/23/mikaeus-the-lunarch?utm_source=api",
-      "cached_at": "2026-04-01"
+      "source_url": "https://scryfall.com/card/moc/197/mikaeus-the-lunarch?utm_source=api",
+      "cached_at": "2026-04-04"
     },
     "Mindshrieker": {
       "name": "Mindshrieker",
@@ -2008,7 +2008,7 @@
       "toughness": "1",
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/isd/68/mirror-mad-phantasm?utm_source=api",
-      "cached_at": "2026-04-01",
+      "cached_at": "2026-04-04",
       "keywords": [
         "Flying"
       ]
@@ -2236,7 +2236,7 @@
       "toughness": "3",
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/isd/230/one-eyed-scarecrow?utm_source=api",
-      "cached_at": "2026-04-01",
+      "cached_at": "2026-04-04",
       "keywords": [
         "Defender"
       ]
@@ -2382,8 +2382,8 @@
       "power": null,
       "toughness": null,
       "source": "Scryfall API",
-      "source_url": "https://scryfall.com/card/isd/201/rangers-guile?utm_source=api",
-      "cached_at": "2026-04-01"
+      "source_url": "https://scryfall.com/card/m21/199/rangers-guile?utm_source=api",
+      "cached_at": "2026-04-04"
     },
     "Reaper from the Abyss": {
       "name": "Reaper from the Abyss",
@@ -2649,7 +2649,7 @@
       "toughness": null,
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/isd/233/silver-inlaid-dagger?utm_source=api",
-      "cached_at": "2026-04-01",
+      "cached_at": "2026-04-04",
       "keywords": [
         "Equip"
       ]
@@ -3240,8 +3240,8 @@
       "power": "1",
       "toughness": "4",
       "source": "Scryfall API",
-      "source_url": "https://scryfall.com/card/isd/41/village-bell-ringer?utm_source=api",
-      "cached_at": "2026-04-01",
+      "source_url": "https://scryfall.com/card/moc/216/village-bell-ringer?utm_source=api",
+      "cached_at": "2026-04-04",
       "keywords": [
         "Flash"
       ]
@@ -3389,6 +3389,321 @@
       "keywords": [
         "Enchant"
       ]
+    },
+    "Solitude": {
+      "name": "Solitude",
+      "mana_cost": "{3}{W}{W}",
+      "type_line": "Creature — Elemental Incarnation",
+      "oracle_text": "Flash\nLifelink\nWhen this creature enters, exile up to one other target creature. That creature's controller gains life equal to its power.\nEvoke—Exile a white card from your hand.",
+      "power": "3",
+      "toughness": "2",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/32/solitude?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Lifelink",
+        "Evoke",
+        "Flash"
+      ]
+    },
+    "Fury": {
+      "name": "Fury",
+      "mana_cost": "{3}{R}{R}",
+      "type_line": "Creature — Elemental Incarnation",
+      "oracle_text": "Double strike\nWhen this creature enters, it deals 4 damage divided as you choose among any number of target creatures and/or planeswalkers.\nEvoke—Exile a red card from your hand.",
+      "power": "3",
+      "toughness": "3",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/ecc/50/fury?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Evoke",
+        "Double strike"
+      ]
+    },
+    "Endurance": {
+      "name": "Endurance",
+      "mana_cost": "{1}{G}{G}",
+      "type_line": "Creature — Elemental Incarnation",
+      "oracle_text": "Flash\nReach\nWhen this creature enters, up to one target player puts all the cards from their graveyard on the bottom of their library in a random order.\nEvoke—Exile a green card from your hand.",
+      "power": "3",
+      "toughness": "4",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/ecc/51/endurance?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Reach",
+        "Evoke",
+        "Flash"
+      ]
+    },
+    "Force of Negation": {
+      "name": "Force of Negation",
+      "mana_cost": "{1}{U}{U}",
+      "type_line": "Instant",
+      "oracle_text": "If it's not your turn, you may exile a blue card from your hand rather than pay this spell's mana cost.\nCounter target noncreature spell. If that spell is countered this way, exile it instead of putting it into its owner's graveyard.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/2x2/50/force-of-negation?utm_source=api",
+      "cached_at": "2026-04-06"
+    },
+    "Urza, Lord High Artificer": {
+      "name": "Urza, Lord High Artificer",
+      "mana_cost": "{2}{U}{U}",
+      "type_line": "Legendary Creature — Human Artificer",
+      "oracle_text": "When Urza enters, create a 0/0 colorless Construct artifact creature token with \"This token gets +1/+1 for each artifact you control.\"\nTap an untapped artifact you control: Add {U}.\n{5}: Shuffle your library, then exile the top card. Until end of turn, you may play that card without paying its mana cost.",
+      "power": "1",
+      "toughness": "4",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/cmm/130/urza-lord-high-artificer?utm_source=api",
+      "cached_at": "2026-04-06"
+    },
+    "Dauthi Voidwalker": {
+      "name": "Dauthi Voidwalker",
+      "mana_cost": "{B}{B}",
+      "type_line": "Creature — Dauthi Rogue",
+      "oracle_text": "Shadow (This creature can block or be blocked by only creatures with shadow.)\nIf a card would be put into an opponent's graveyard from anywhere, instead exile it with a void counter on it.\n{T}, Sacrifice this creature: Choose an exiled card an opponent owns with a void counter on it. You may play it this turn without paying its mana cost.",
+      "power": "3",
+      "toughness": "2",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/tdc/176/dauthi-voidwalker?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Shadow"
+      ]
+    },
+    "Ragavan, Nimble Pilferer": {
+      "name": "Ragavan, Nimble Pilferer",
+      "mana_cost": "{R}",
+      "type_line": "Legendary Creature — Monkey Pirate",
+      "oracle_text": "Whenever Ragavan deals combat damage to a player, create a Treasure token and exile the top card of that player's library. Until end of turn, you may cast that card.\nDash {1}{R} (You may cast this spell for its dash cost. If you do, it gains haste, and it's returned from the battlefield to its owner's hand at the beginning of the next end step.)",
+      "power": "2",
+      "toughness": "1",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/138/ragavan-nimble-pilferer?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Treasure",
+        "Dash"
+      ]
+    },
+    "Yawgmoth, Thran Physician": {
+      "name": "Yawgmoth, Thran Physician",
+      "mana_cost": "{2}{B}{B}",
+      "type_line": "Legendary Creature — Human Cleric",
+      "oracle_text": "Protection from Humans\nPay 1 life, Sacrifice another creature: Put a -1/-1 counter on up to one target creature and draw a card.\n{B}{B}, Discard a card: Proliferate. (Choose any number of permanents and/or players, then give each another counter of each kind already there.)",
+      "power": "2",
+      "toughness": "4",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/dmr/110/yawgmoth-thran-physician?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Protection",
+        "Proliferate"
+      ]
+    },
+    "Prismatic Ending": {
+      "name": "Prismatic Ending",
+      "mana_cost": "{X}{W}",
+      "type_line": "Sorcery",
+      "oracle_text": "Converge — Exile target nonland permanent if its mana value is less than or equal to the number of colors of mana spent to cast this spell.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/25/prismatic-ending?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Converge"
+      ]
+    },
+    "Grief": {
+      "name": "Grief",
+      "mana_cost": "{2}{B}{B}",
+      "type_line": "Creature — Elemental Incarnation",
+      "oracle_text": "Menace\nWhen this creature enters, target opponent reveals their hand. You choose a nonland card from it. That player discards that card.\nEvoke—Exile a black card from your hand.",
+      "power": "3",
+      "toughness": "2",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/87/grief?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Evoke",
+        "Menace"
+      ]
+    },
+    "Sanctifier en-Vec": {
+      "name": "Sanctifier en-Vec",
+      "mana_cost": "{W}{W}",
+      "type_line": "Creature — Human Cleric",
+      "oracle_text": "Protection from black and from red\nWhen this creature enters, exile all cards that are black or red from all graveyards.\nIf a black or red permanent, spell, or card not on the battlefield would be put into a graveyard, exile it instead.",
+      "power": "2",
+      "toughness": "2",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/27/sanctifier-en-vec?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Protection"
+      ]
+    },
+    "Shardless Agent": {
+      "name": "Shardless Agent",
+      "mana_cost": "{1}{G}{U}",
+      "type_line": "Artifact Creature — Human Rogue",
+      "oracle_text": "Cascade (When you cast this spell, exile cards from the top of your library until you exile a nonland card that costs less. You may cast it without paying its mana cost. Put the exiled cards on the bottom in a random order.)",
+      "power": "2",
+      "toughness": "2",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/292/shardless-agent?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Cascade"
+      ]
+    },
+    "Living End": {
+      "name": "Living End",
+      "mana_cost": "",
+      "type_line": "Sorcery",
+      "oracle_text": "Suspend 3—{2}{B}{B}\nEach player exiles all creature cards from their graveyard, then sacrifices all creatures they control, then puts all cards they exiled this way onto the battlefield.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/tsr/121/living-end?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Suspend"
+      ]
+    },
+    "Subtlety": {
+      "name": "Subtlety",
+      "mana_cost": "{2}{U}{U}",
+      "type_line": "Creature — Elemental Incarnation",
+      "oracle_text": "Flash\nFlying\nWhen this creature enters, choose up to one target creature spell or planeswalker spell. Its owner puts it on their choice of the top or bottom of their library.\nEvoke—Exile a blue card from your hand.",
+      "power": "3",
+      "toughness": "3",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/67/subtlety?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Flying",
+        "Evoke",
+        "Flash"
+      ]
+    },
+    "Esper Sentinel": {
+      "name": "Esper Sentinel",
+      "mana_cost": "{W}",
+      "type_line": "Artifact Creature — Human Soldier",
+      "oracle_text": "Whenever an opponent casts their first noncreature spell each turn, draw a card unless that player pays {X}, where X is this creature's power.",
+      "power": "1",
+      "toughness": "1",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/12/esper-sentinel?utm_source=api",
+      "cached_at": "2026-04-06"
+    },
+    "Crashing Footfalls": {
+      "name": "Crashing Footfalls",
+      "mana_cost": "",
+      "type_line": "Sorcery",
+      "oracle_text": "Suspend 4—{G} (Rather than cast this card from your hand, pay {G} and exile it with four time counters on it. At the beginning of your upkeep, remove a time counter. When the last is removed, you may cast it without paying its mana cost.)\nCreate two 4/4 green Rhino creature tokens with trample.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh1/160/crashing-footfalls?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Suspend"
+      ]
+    },
+    "Persist": {
+      "name": "Persist",
+      "mana_cost": "{1}{B}",
+      "type_line": "Sorcery",
+      "oracle_text": "Return target nonlegendary creature card from your graveyard to the battlefield with a -1/-1 counter on it.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/ecc/83/persist?utm_source=api",
+      "cached_at": "2026-04-06"
+    },
+    "Omnath, Locus of Creation": {
+      "name": "Omnath, Locus of Creation",
+      "mana_cost": "{R}{G}{W}{U}",
+      "type_line": "Legendary Creature — Elemental",
+      "oracle_text": "When Omnath enters, draw a card.\nLandfall — Whenever a land you control enters, you gain 4 life if this is the first time this ability has resolved this turn. If it's the second time, add {R}{G}{W}{U}. If it's the third time, Omnath deals 4 damage to each opponent and each planeswalker you don't control.",
+      "power": "4",
+      "toughness": "4",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/znr/232/omnath-locus-of-creation?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Landfall"
+      ]
+    },
+    "Asmoranomardicadaistinaculdacar": {
+      "name": "Asmoranomardicadaistinaculdacar",
+      "mana_cost": "",
+      "type_line": "Legendary Creature — Human Wizard",
+      "oracle_text": "As long as you've discarded a card this turn, you may pay {B/R} to cast this spell.\nWhen Asmoranomardicadaistinaculdacar enters, you may search your library for a card named The Underworld Cookbook, reveal it, put it into your hand, then shuffle.\nSacrifice two Foods: Target creature deals 6 damage to itself.",
+      "power": "3",
+      "toughness": "3",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/186/asmoranomardicadaistinaculdacar?utm_source=api",
+      "cached_at": "2026-04-06"
+    },
+    "Tourach, Dread Cantor": {
+      "name": "Tourach, Dread Cantor",
+      "mana_cost": "{1}{B}",
+      "type_line": "Legendary Creature — Human Cleric",
+      "oracle_text": "Kicker {B}{B} (You may pay an additional {B}{B} as you cast this spell.)\nProtection from white\nWhenever an opponent discards a card, put a +1/+1 counter on Tourach.\nWhen Tourach enters, if it was kicked, target opponent discards two cards at random.",
+      "power": "2",
+      "toughness": "1",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/102/tourach-dread-cantor?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Protection",
+        "Kicker"
+      ]
+    },
+    "Sword of Hearth and Home": {
+      "name": "Sword of Hearth and Home",
+      "mana_cost": "{3}",
+      "type_line": "Artifact — Equipment",
+      "oracle_text": "Equipped creature gets +2/+2 and has protection from green and from white.\nWhenever equipped creature deals combat damage to a player, exile up to one target creature you own, then search your library for a basic land card. Put both cards onto the battlefield under your control, then shuffle.\nEquip {2}",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/238/sword-of-hearth-and-home?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Equip"
+      ]
+    },
+    "Ignoble Hierarch": {
+      "name": "Ignoble Hierarch",
+      "mana_cost": "{G}",
+      "type_line": "Creature — Goblin Shaman",
+      "oracle_text": "Exalted (Whenever a creature you control attacks alone, that creature gets +1/+1 until end of turn.)\n{T}: Add {B}, {R}, or {G}.",
+      "power": "0",
+      "toughness": "1",
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/ecc/52/ignoble-hierarch?utm_source=api",
+      "cached_at": "2026-04-06",
+      "keywords": [
+        "Exalted"
+      ]
+    },
+    "Cabal Coffers": {
+      "name": "Cabal Coffers",
+      "mana_cost": "",
+      "type_line": "Land",
+      "oracle_text": "{2}, {T}: Add {B} for each Swamp you control.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/mh2/301/cabal-coffers?utm_source=api",
+      "cached_at": "2026-04-06"
     }
   },
   "rulings": {
@@ -4645,7 +4960,7 @@
         "text": "In order to regenerate Werewolves involved in combat, you must sacrifice Full Moon’s Rise before combat damage is assigned. This means they will lose the +1/+0 and trample bonuses before combat damage assignment.",
         "source": "Scryfall API",
         "source_url": "https://api.scryfall.com/cards/02a35eac-b962-466e-a4da-a4010c68ef16/rulings",
-        "cached_at": "2026-04-01"
+        "cached_at": "2026-04-04"
       }
     ],
     "Furor of the Bitten": [
@@ -4768,15 +5083,15 @@
         "date": "2011-09-22",
         "text": "The ability that defines Geist-Honored Monk's power and toughness works in all zones, not just the battlefield.",
         "source": "Scryfall API",
-        "source_url": "https://api.scryfall.com/cards/5d51355e-55fa-43bb-a5de-fc55ac7b6446/rulings",
-        "cached_at": "2026-04-01"
+        "source_url": "https://api.scryfall.com/cards/4d09ef1d-3552-43a3-91c7-0d14c0f06780/rulings",
+        "cached_at": "2026-04-04"
       },
       {
         "date": "2011-09-22",
         "text": "As long as Geist-Honored Monk is on the battlefield, its second ability will count itself.",
         "source": "Scryfall API",
-        "source_url": "https://api.scryfall.com/cards/5d51355e-55fa-43bb-a5de-fc55ac7b6446/rulings",
-        "cached_at": "2026-04-01"
+        "source_url": "https://api.scryfall.com/cards/4d09ef1d-3552-43a3-91c7-0d14c0f06780/rulings",
+        "cached_at": "2026-04-04"
       }
     ],
     "Geist of Saint Traft": [
@@ -4941,22 +5256,22 @@
         "date": "2013-07-01",
         "text": "If Grimgrin's last ability resolves, but the targeted creature isn't destroyed (perhaps because it regenerated or has indestructible), you'll still put a +1/+1 on Grimgrin.",
         "source": "Scryfall API",
-        "source_url": "https://api.scryfall.com/cards/a8648734-ed6c-471f-91a1-6b710bbaf370/rulings",
-        "cached_at": "2026-04-01"
+        "source_url": "https://api.scryfall.com/cards/3c257fe6-1038-4167-ae78-90309974b925/rulings",
+        "cached_at": "2026-04-03"
       },
       {
         "date": "2011-09-22",
         "text": "If the targeted creature is an illegal target by the time Grimgrin's last ability resolves, the entire ability doesn't resolve and none of its effects will occur. You won't put a +1/+1 counter on Grimgrin.",
         "source": "Scryfall API",
-        "source_url": "https://api.scryfall.com/cards/a8648734-ed6c-471f-91a1-6b710bbaf370/rulings",
-        "cached_at": "2026-04-01"
+        "source_url": "https://api.scryfall.com/cards/3c257fe6-1038-4167-ae78-90309974b925/rulings",
+        "cached_at": "2026-04-03"
       },
       {
         "date": "2011-09-22",
         "text": "If the defending player controls no creatures when Grimgrin attacks, the last ability will be removed from the stack and have no effect.",
         "source": "Scryfall API",
-        "source_url": "https://api.scryfall.com/cards/a8648734-ed6c-471f-91a1-6b710bbaf370/rulings",
-        "cached_at": "2026-04-01"
+        "source_url": "https://api.scryfall.com/cards/3c257fe6-1038-4167-ae78-90309974b925/rulings",
+        "cached_at": "2026-04-03"
       }
     ],
     "Grimoire of the Dead": [
@@ -5416,21 +5731,21 @@
         "text": "You can only activate the ability if you control Mirror-Mad Phantasm, even if you don't own it.",
         "source": "Scryfall API",
         "source_url": "https://api.scryfall.com/cards/b20eea41-9daf-4ac1-8bad-bb4aa211bb53/rulings",
-        "cached_at": "2026-04-01"
+        "cached_at": "2026-04-04"
       },
       {
         "date": "2011-09-22",
         "text": "If no card named Mirror-Mad Phantasm is revealed (possibly because it was a card copying Mirror-Mad Phantasm or it was a token), all cards from that library will be put into their owner's graveyard.",
         "source": "Scryfall API",
         "source_url": "https://api.scryfall.com/cards/b20eea41-9daf-4ac1-8bad-bb4aa211bb53/rulings",
-        "cached_at": "2026-04-01"
+        "cached_at": "2026-04-04"
       },
       {
         "date": "2011-09-22",
         "text": "If another creature (such as Necrotic Ooze) gains Mirror-Mad Phantasm's activated ability, its owner reveals cards until they reveal a card named Mirror-Mad Phantasm.",
         "source": "Scryfall API",
         "source_url": "https://api.scryfall.com/cards/b20eea41-9daf-4ac1-8bad-bb4aa211bb53/rulings",
-        "cached_at": "2026-04-01"
+        "cached_at": "2026-04-04"
       }
     ],
     "Moan of the Unhallowed": [
@@ -6785,8 +7100,8 @@
         "date": "2011-09-22",
         "text": "Untapping an attacking creature doesn't remove it from combat.",
         "source": "Scryfall API",
-        "source_url": "https://api.scryfall.com/cards/cb6912b3-bab9-4937-afdd-3711e6d792a0/rulings",
-        "cached_at": "2026-04-01"
+        "source_url": "https://api.scryfall.com/cards/b72b39fd-507d-432b-b5b0-5657e5ed0a47/rulings",
+        "cached_at": "2026-04-04"
       }
     ],
     "Village Ironsmith": [
@@ -6839,6 +7154,944 @@
         "source": "Scryfall API",
         "source_url": "https://api.scryfall.com/cards/7604e22e-1f29-4a8f-b887-b18f43e3745e/rulings",
         "cached_at": "2026-04-01"
+      }
+    ],
+    "Solitude": [
+      {
+        "date": "2021-06-18",
+        "text": "To determine the total cost of a spell, start with the mana cost or alternative cost you're paying (such as an evoke cost), add any cost increases, then apply any cost reductions. The mana value of the spell is determined by only its mana cost, no matter what the total cost to cast that spell was.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/47a6234f-309f-4e03-9263-66da48b57153/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you pay the evoke cost, you can have the creature's own triggered ability resolve before the evoke triggered ability. You can cast spells after that ability resolves but before you have to sacrifice the creature.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/47a6234f-309f-4e03-9263-66da48b57153/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Fury": [
+      {
+        "date": "2021-06-18",
+        "text": "If some of the targets are illegal as the triggered ability tries to resolve, the original division of damage still applies, but the damage that would have been dealt to the illegal targets isn't dealt at all.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/932d0fb9-382d-464a-9427-b91fa2398cdb/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you pay the evoke cost, you can have the creature's own triggered ability resolve before the evoke triggered ability. You can cast spells after that ability resolves but before you have to sacrifice the creature.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/932d0fb9-382d-464a-9427-b91fa2398cdb/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "You divide the damage as you put the triggered ability on the stack, not as it resolves. Each target must be assigned at least 1 damage. You can't choose more than four targets and deal 0 damage to some of them.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/932d0fb9-382d-464a-9427-b91fa2398cdb/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "To determine the total cost of a spell, start with the mana cost or alternative cost you're paying (such as an evoke cost), add any cost increases, then apply any cost reductions. The mana value of the spell is determined by only its mana cost, no matter what the total cost to cast that spell was.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/932d0fb9-382d-464a-9427-b91fa2398cdb/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Endurance": [
+      {
+        "date": "2021-06-18",
+        "text": "To determine the total cost of a spell, start with the mana cost or alternative cost you're paying (such as an evoke cost), add any cost increases, then apply any cost reductions. The mana value of the spell is determined by only its mana cost, no matter what the total cost to cast that spell was.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b770471c-1bf7-4179-8418-dcd790ca5405/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you pay the evoke cost, you can have the creature's own triggered ability resolve before the evoke triggered ability. You can cast spells after that ability resolves but before you have to sacrifice the creature.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b770471c-1bf7-4179-8418-dcd790ca5405/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Urza, Lord High Artificer": [
+      {
+        "date": "2022-12-08",
+        "text": "The token created by Urza's first ability will count itself, so it'll be at least 1/1.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/7b7a348a-51f7-4dc5-8fe7-1c70fea5e050/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "You can tap any untapped artifact you control to pay the cost of the mana ability, including an artifact creature you haven't controlled continuously since the beginning of your most recent turn. Tapping an Equipment this way won't affect its abilities or the equipped creature.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/7b7a348a-51f7-4dc5-8fe7-1c70fea5e050/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "If you don't play the card exiled with Urza's last ability, it remains in exile.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/7b7a348a-51f7-4dc5-8fe7-1c70fea5e050/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "Urza's last ability doesn't change when you can play the exiled card. For example, if you exile a sorcery card, you can cast it only during your main phase when the stack is empty. If you exile a land card, you can play it only during your main phase and only if you have an available land play remaining.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/7b7a348a-51f7-4dc5-8fe7-1c70fea5e050/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "If a spell has {X} in its mana cost, you must choose 0 as the value of X when casting it without paying its mana cost.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/7b7a348a-51f7-4dc5-8fe7-1c70fea5e050/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "If you cast a card \"without paying its mana cost,\" you can't choose to cast it for any alternative costs. You can, however, pay additional costs. If the card has any mandatory additional costs, you must pay those to cast the card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/7b7a348a-51f7-4dc5-8fe7-1c70fea5e050/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Dauthi Voidwalker": [
+      {
+        "date": "2021-06-18",
+        "text": "If an attacking creature has multiple evasion abilities, such as shadow and flying, a creature can block it only if that creature satisfies all of the appropriate evasion abilities.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/3573b9a2-7911-475c-8ae7-25bd0dbb7159/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If your opponent discards a card while you control Dauthi Voidwalker, abilities that function when that card is discarded still work, even though that card never reaches that player's graveyard. In addition, spells or abilities that check the characteristics of the discarded card can find that card in exile.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/3573b9a2-7911-475c-8ae7-25bd0dbb7159/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "While Dauthi Voidwalker is on the battlefield, nontoken creatures your opponents control won't die. They'll be exiled instead. Abilities that would trigger when those creatures die won't trigger.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/3573b9a2-7911-475c-8ae7-25bd0dbb7159/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Tokens still die while Dauthi Voidwalker is on the battlefield.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/3573b9a2-7911-475c-8ae7-25bd0dbb7159/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If a card has {X} in its mana cost, you must choose 0 as the value of X when casting it without paying its mana cost.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/3573b9a2-7911-475c-8ae7-25bd0dbb7159/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Playing a card with Dauthi Voidwalker's last ability is still subject to normal timing restrictions.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/3573b9a2-7911-475c-8ae7-25bd0dbb7159/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you cast a card this way, you may not cast it for any other alternative costs it has, but you may pay for additional costs, such as kicker costs. If the spell requires an additional cost, you must pay that cost.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/3573b9a2-7911-475c-8ae7-25bd0dbb7159/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Ragavan, Nimble Pilferer": [
+      {
+        "date": "2021-06-18",
+        "text": "You'll create a Treasure token even if that player has no cards left in their library to exile.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a9738cda-adb1-47fb-9f4c-ecd930228c4d/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "You must still follow all timing restrictions and pay all costs when casting the exiled card. If you exile a land card, you can't play that card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a9738cda-adb1-47fb-9f4c-ecd930228c4d/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you choose to pay the dash cost rather than the mana cost, you're still casting the spell. It goes on the stack and can be responded to and countered. You can cast a creature spell for its dash cost only when you otherwise could cast that creature spell. Most of the time, this means during your main phase when the stack is empty.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a9738cda-adb1-47fb-9f4c-ecd930228c4d/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you pay the dash cost to cast a creature spell, that card will be returned to its owner's hand only if it's still on the battlefield when its triggered ability resolves. If it dies or goes to another zone before then, it will stay where it is.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a9738cda-adb1-47fb-9f4c-ecd930228c4d/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "You don't have to attack with the creature with dash unless another ability says you do.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a9738cda-adb1-47fb-9f4c-ecd930228c4d/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If a creature enters the battlefield as a copy of or becomes a copy of a creature whose dash cost was paid, the copy won't have haste and won't be returned to its owner's hand.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a9738cda-adb1-47fb-9f4c-ecd930228c4d/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Yawgmoth, Thran Physician": [
+      {
+        "date": "2023-02-04",
+        "text": "If a permanent ever has both +1/+1 counters and -1/-1 counters on it at the same time, they're removed in pairs as a state-based action so that the permanent has only one of those kinds of counters on it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2023-02-04",
+        "text": "To proliferate, you can choose any permanent that has a counter, including ones controlled by opponents. You can choose any player who has a counter, including opponents. You can't choose cards in any zone other than the battlefield, even if they have counters on them.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2023-02-04",
+        "text": "You don't have to choose every permanent or player that has a counter, only the ones you want to add another counter to. Since \"any number\" includes zero, you don't have to choose any permanents at all, and you don't have to choose any players at all.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2023-02-04",
+        "text": "If a player or permanent has more than one kind of counter on it, and you choose for it to get additional counters, it must get one of each kind of counter it already has. You can't have it get just one kind of counter it already has and not the others.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2023-02-04",
+        "text": "An ability that triggers \"Whenever you proliferate\" triggers even if you chose no permanents or players while doing so.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2023-02-04",
+        "text": "Players can respond to a spell or ability whose effect includes proliferating. Once that spell or ability starts to resolve, however, and its controller chooses which permanents and players will get new counters, it's too late for anyone to respond.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "If a permanent has +1/+1 counters and -1/-1 counters on it, they're removed in pairs as a state-based action until that permanent has only one of those kinds of counters on it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "To proliferate, you can choose any permanent that has a counter, including ones controlled by opponents. You can't choose cards in any zone other than the battlefield, even if they have counters on them.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "You don't have to choose every permanent or player that has a counter, only the ones you want to add another counter to. Since \"any number\" includes zero, you don't have to choose any permanents at all, and you don't have to choose any players at all.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2022-12-08",
+        "text": "Players can respond to a spell or ability whose effect includes proliferating. Once that spell or ability starts to resolve, however, and its controller chooses which permanents and players will get new counters, it's too late for anyone to respond.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-03-19",
+        "text": "Protection from Humans refers only to the creature type Human. As far as Yawgmoth is concerned, you, your opponents, and planeswalkers aren't Humans.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-03-19",
+        "text": "You may activate Yawgmoth's first activated ability without choosing a target creature. You'll just draw a card. However, if you choose a target and it becomes illegal before the ability tries to resolve, the ability won't resolve and you won't draw a card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b5a79f5d-d0df-4799-ac3a-84305e3af0c9/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Prismatic Ending": [
+      {
+        "date": "2021-06-18",
+        "text": "The mana value is not a targeting condition. It is checked only as the spell resolves.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/825969b9-3c70-4fca-8cab-696e9ca7cdb2/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "You can choose any value for X. Choosing a higher value for X lets you pay more mana and thus spend more colors of mana to cast it. For example, if you choose 0 for the value of X and pay {W} to cast Prismatic Ending, you can exile a nonland permanent with mana value 0 or 1. If you choose 4 for the value of X and pay {W}{U}{B}{R}{G}, you can exile a nonland permanent with mana value 5 or less.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/825969b9-3c70-4fca-8cab-696e9ca7cdb2/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "The maximum number of colors of mana you can spend to cast a spell is five. Colorless is not a color. Note that the cost of a spell with converge may limit how many colors of mana you can spend.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/825969b9-3c70-4fca-8cab-696e9ca7cdb2/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Unless a spell or ability allows you to, you can't choose to pay more mana for a spell with a converge ability just to spend more colors of mana. Likewise, if a spell or ability reduces the amount of mana it costs you to cast a spell with converge, you can't ignore that cost reduction in order to spend more colors of mana.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/825969b9-3c70-4fca-8cab-696e9ca7cdb2/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If there are any alternative or additional costs to cast a spell with a converge ability, the colors of mana spent to pay those costs will count.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/825969b9-3c70-4fca-8cab-696e9ca7cdb2/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you cast a spell with converge without spending any mana to cast it (perhaps because an effect allowed you to cast it without paying its mana cost), then the number of colors spent to cast it will be zero.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/825969b9-3c70-4fca-8cab-696e9ca7cdb2/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If a spell with a converge ability is copied, no mana was spent to cast the copy, so the number of colors of mana spent to cast the spell will be zero. The number of colors spent to cast the original spell is not copied.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/825969b9-3c70-4fca-8cab-696e9ca7cdb2/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Grief": [
+      {
+        "date": "2021-06-18",
+        "text": "To determine the total cost of a spell, start with the mana cost or alternative cost you're paying (such as an evoke cost), add any cost increases, then apply any cost reductions. The mana value of the spell is determined by only its mana cost, no matter what the total cost to cast that spell was.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/e6befbc4-1320-4f26-bd9f-b1814fedda10/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you pay the evoke cost, you can have the creature's own triggered ability resolve before the evoke triggered ability. You can cast spells after that ability resolves but before you have to sacrifice the creature.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/e6befbc4-1320-4f26-bd9f-b1814fedda10/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Sanctifier en-Vec": [
+      {
+        "date": "2021-11-19",
+        "text": "Sanctifier En-Vec's last ability cares only what the color of the card would be in the zone it's moving from, not what it would be in the graveyard. For example, if a Clone is a copy of a red creature on the battlefield and then dies, the Clone will be exiled. Conversely, if you cast Order, the white half of the split card Order//Chaos, it will not be exiled as it resolves because it is not red before it goes to the graveyard.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f8c3cca4-23c0-4c14-ab56-51ba011f5974/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If a black or red spell causes Sanctifier en-Vec to leave the battlefield as part of its resolution, that spell will go to its owner's graveyard and won't be exiled instead.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f8c3cca4-23c0-4c14-ab56-51ba011f5974/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If a black or red spell causes Sanctifier en-Vec to have lethal damage marked on it or causes it to have 0 toughness, Sanctifier en-Vec will not be put into a graveyard until the next time state-based actions are checked after the spell has finished resolving. In this case, the spell will be exiled instead of going to its owner's graveyard.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f8c3cca4-23c0-4c14-ab56-51ba011f5974/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If a black or red permanent would go to the graveyard at the same time as Sanctifier en-Vec, that permanent will be exiled instead.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f8c3cca4-23c0-4c14-ab56-51ba011f5974/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Shardless Agent": [
+      {
+        "date": "2021-06-18",
+        "text": "A spell's mana value is determined only by its mana cost. Ignore any alternative costs, additional costs, cost increases, or cost reductions.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Cascade triggers when you cast the spell, meaning that it resolves before that spell. If you end up casting the exiled card, it will go on the stack above the spell with cascade.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "When the cascade ability resolves, you must exile cards. The only optional part of the ability is whether or not you cast the last card exiled.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If a spell with cascade is countered, the cascade ability will still resolve normally.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "You exile the cards face up. All players will be able to see them.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you cast a card \"without paying its mana cost,\" you can't choose to cast it for any alternative costs. You can, however, pay additional costs. If the card has any mandatory additional costs, you must pay those to cast the card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If the card has {X} in its mana cost, you must choose 0 as the value of X when casting it without paying its mana cost.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Due to a 2021 rules change to cascade, not only do you stop exiling cards if you exile a nonland card with lesser mana value than the spell with cascade, but the resulting spell you cast must also have lesser mana value. Previously, in cases where a card's mana value differed from the resulting spell, such as with some modal double-faced cards or cards with an Adventure, you could cast a spell with a higher mana value than the exiled card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "The mana value of a split card is determined by the combined mana cost of its two halves. If cascade allows you to cast a split card, you may cast either half but not both halves.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b0824e77-c84b-464a-aa0c-44af5f6faa50/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Living End": [
+      {
+        "date": "2024-02-02",
+        "text": "If a card with no mana cost is given an alternative cost equal to its mana cost (by Snapcaster Mage, for example), that cost cannot be paid and the card cannot be cast this way.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the card has {X} in its mana cost, you must choose 0 as the value of X when casting it without paying its mana cost.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "The mana value of a spell cast without paying its mana cost is determined by its mana cost, even though that cost wasn't paid.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "A card with no mana cost can't be cast normally; you'll need a way to cast it for an alternative cost or without paying its mana cost, such as by suspending it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "Suspend is a keyword that represents three abilities. The first is a static ability that allows you to exile the card from your hand with the specified number of time counters (the number before the dash) on it by paying its suspend cost (listed after the dash). The second is a triggered ability that removes a time counter from the suspended card at the beginning of each of your upkeeps. The third is a triggered ability that gives you the option to cast the card when the last time counter is removed.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "You can exile a card in your hand using suspend any time you could cast that card. Consider its card type, any effects that modify when you could cast it (such as flash) and any other effects that stop you from casting it (such as from Meddling Mage's ability) to determine if and when you can do this. Whether you could actually complete all steps in casting the card is irrelevant. For example, you can exile a card with suspend that has no mana cost or that requires a target even if no legal targets are available at that time.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "Cards exiled with suspend are exiled face up.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "Exiling a card with suspend isn't casting that card. This action doesn't use the stack and can't be responded to.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the spell requires any targets, those targets are chosen when the spell is finally cast, not when it's exiled.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If an effect refers to a \"suspended card,\" that means a card that (1) has suspend, (2) is in exile, and (3) has one or more time counters on it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the first triggered ability of suspend (the one that removes time counters) is countered, no time counter is removed. The ability will trigger again at the beginning of the card's owner's next upkeep.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "When the last time counter is removed, the second triggered ability of suspend (the one that lets you cast the card) triggers. It doesn't matter why the last time counter was removed or what effect removed it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the second triggered ability is countered, the card can't be cast. It remains exiled with no time counters on it, and it's no longer suspended.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "Due to a recent rules change to suspend, you are no longer required to cast the suspended card as the second triggered ability of suspend resolves. Instead, as the second triggered ability resolves, you may cast the card. Timing permissions based on the card's type are ignored. If you don't cast the card, it remains exiled with no time counters on it, and it's no longer suspended.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If you cast a card \"without paying its mana cost,\" such as with suspend, you can't choose to cast it for any alternative costs. You can, however, pay additional costs. If the card has any mandatory additional costs, you must pay those if you want to cast the card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-03-19",
+        "text": "While Living End is resolving, first each player exiles their graveyard at the same time, then each player sacrifices all creatures they control at the same time, and finally each player puts their exiled cards onto the battlefield at the same time.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-03-19",
+        "text": "\"All cards they exiled this way\" refers only to the cards exiled in the first part of the effect. If a replacement effect (such as that of Leyline of the Void) exiles any of the sacrificed creatures instead of putting them into the graveyard, those cards aren't returned to the battlefield.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2013-06-07",
+        "text": "Although originally printed with a characteristic-defining ability that defined its color, this card now has a color indicator. This color indicator can't be affected by text-changing effects (such as the one created by Crystal Spray), although color-changing effects can still overwrite it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/b1eede29-17a4-437f-a5c2-e24cccbc6a33/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Subtlety": [
+      {
+        "date": "2021-06-18",
+        "text": "Subtlety's triggered ability targets a spell on the stack. It can't target creatures or planeswalkers on the battlefield.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/701256d5-1389-48b7-9581-d6037209bd06/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "A spell that's put into its owner's library doesn't resolve, but it isn't countered. This will work on spells that say they can't be countered.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/701256d5-1389-48b7-9581-d6037209bd06/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "The owner of the spell is the one who chooses whether it goes on the top or bottom of their library. All players will know this information.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/701256d5-1389-48b7-9581-d6037209bd06/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "To determine the total cost of a spell, start with the mana cost or alternative cost you're paying (such as an evoke cost), add any cost increases, then apply any cost reductions. The mana value of the spell is determined by only its mana cost, no matter what the total cost to cast that spell was.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/701256d5-1389-48b7-9581-d6037209bd06/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you pay the evoke cost, you can have the creature's own triggered ability resolve before the evoke triggered ability. You can cast spells after that ability resolves but before you have to sacrifice the creature.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/701256d5-1389-48b7-9581-d6037209bd06/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Esper Sentinel": [
+      {
+        "date": "2021-06-18",
+        "text": "If a noncreature spell was already cast by an opponent the turn Esper Sentinel enters the battlefield, that opponent already cast their first noncreature spell this turn, and Esper Sentinel's ability won't trigger for that opponent that turn.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3537373-ef54-4578-9d05-6216420ee349/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "This ability checks Esper Sentinel's power when it resolves, not when the ability goes on the stack. If Esper Sentinel is no longer on the battlefield when it resolves, use the power it had the last time it was on the battlefield.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3537373-ef54-4578-9d05-6216420ee349/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If Esper Sentinel's has negative power when this ability resolves, then {X} is {0}. The opponent may still choose not to pay the cost if they want you to draw a card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3537373-ef54-4578-9d05-6216420ee349/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Crashing Footfalls": [
+      {
+        "date": "2024-02-02",
+        "text": "Suspend is a keyword that represents three abilities. The first is a static ability that allows you to exile the card from your hand with the specified number of time counters (the number before the dash) on it by paying its suspend cost (listed after the dash). The second is a triggered ability that removes a time counter from the suspended card at the beginning of each of your upkeeps. The third is a triggered ability that gives you the option to cast the card when the last time counter is removed.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "You can exile a card in your hand using suspend any time you could cast that card. Consider its card type, any effects that modify when you could cast it (such as flash) and any other effects that stop you from casting it (such as from Meddling Mage's ability) to determine if and when you can do this. Whether you could actually complete all steps in casting the card is irrelevant. For example, you can exile a card with suspend that has no mana cost or that requires a target even if no legal targets are available at that time.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "Cards exiled with suspend are exiled face up.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "Exiling a card with suspend isn't casting that card. This action doesn't use the stack and can't be responded to.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the spell requires any targets, those targets are chosen when the spell is finally cast, not when it's exiled.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If an effect refers to a \"suspended card,\" that means a card that (1) has suspend, (2) is in exile, and (3) has one or more time counters on it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the first triggered ability of suspend (the one that removes time counters) is countered, no time counter is removed. The ability will trigger again at the beginning of the card's owner's next upkeep.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "When the last time counter is removed, the second triggered ability of suspend (the one that lets you cast the card) triggers. It doesn't matter why the last time counter was removed or what effect removed it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the second triggered ability is countered, the card can't be cast. It remains exiled with no time counters on it, and it's no longer suspended.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "Due to a recent rules change to suspend, you are no longer required to cast the suspended card as the second triggered ability of suspend resolves. Instead, as the second triggered ability resolves, you may cast the card. Timing permissions based on the card's type are ignored. If you don't cast the card, it remains exiled with no time counters on it, and it's no longer suspended.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If you cast a card \"without paying its mana cost,\" such as with suspend, you can't choose to cast it for any alternative costs. You can, however, pay additional costs. If the card has any mandatory additional costs, you must pay those if you want to cast the card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If the card has {X} in its mana cost, you must choose 0 as the value of X when casting it without paying its mana cost.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "The mana value of a spell cast without paying its mana cost is determined by its mana cost, even though that cost wasn't paid.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "A card with no mana cost can't be cast normally; you'll need a way to cast it for an alternative cost or without paying its mana cost, such as by suspending it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-02-02",
+        "text": "If a card with no mana cost is given an alternative cost equal to its mana cost (by Snapcaster Mage, for example), that cost cannot be paid and the card cannot be cast this way.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a8cca2a2-69e3-4136-936c-7a2774c19351/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Omnath, Locus of Creation": [
+      {
+        "date": "2024-11-08",
+        "text": "A landfall ability triggers whenever a land you control enters for any reason. It triggers whenever you play a land, as well as whenever a spell or ability puts a land onto the battlefield under your control.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/4e4fb50c-a81f-44d3-93c5-fa9a0b37f617/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "A landfall ability doesn't trigger if a permanent already on the battlefield becomes a land.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/4e4fb50c-a81f-44d3-93c5-fa9a0b37f617/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "Whenever a land you control enters, each landfall ability of the permanents you control will trigger. You can put them   on the stack in any order. The last ability you put on the stack will be the first one to resolve (As a result, you can have those abilities resolve in the order of your choosing.).",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/4e4fb50c-a81f-44d3-93c5-fa9a0b37f617/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2020-09-25",
+        "text": "Omnath's landfall ability has no effect each time beyond the third it resolves in a turn.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/4e4fb50c-a81f-44d3-93c5-fa9a0b37f617/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2020-09-25",
+        "text": "Omnath's landfall ability always uses the stack and players may respond to it. It isn't a mana ability because the event that causes it to trigger isn't a mana ability, even if it's the second time the ability has resolved in a turn.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/4e4fb50c-a81f-44d3-93c5-fa9a0b37f617/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2020-09-25",
+        "text": "In a Two-Headed Giant game, Omnath's second ability causes the opposing team to lose 8 life the third time it resolves. Each other player's planeswalkers—including your teammate's—are dealt 4 damage.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/4e4fb50c-a81f-44d3-93c5-fa9a0b37f617/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Asmoranomardicadaistinaculdacar": [
+      {
+        "date": "2021-06-14",
+        "text": "Pronunciation guide available here: https://www.youtube.com/watch?v=NrP62rgFAKQ",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "Whatever you do, don't eat the delicious cards.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "Food is an artifact type. Even though it appears on some creatures, it's never a creature type.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "You can't sacrifice a Food to pay multiple costs. For example, you can't sacrifice a Food token to activate its own ability and also to activate Maraleaf Rider's ability.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Asmoranomardicadaistinaculdacar is pronounced just like it's spelled.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "The target creature of Asmoranomardicadaistinaculdacar's last ability is the source of the damage, not Asmoranomardicadaistinaculdacar itself. If the creature has deathtouch or lifelink, both will apply to the damage it deals to itself.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Asmoranomardicadaistinaculdacar has no mana cost and its mana value is 0. It cannot be cast normally. You'll need an alternative cost (like the one provided by Asmoranomardicadaistinaculdacar's own ability) to be able to cast it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Asmoranomardicadaistinaculdacar doesn't allow you to discard cards. You'll need to find another way to discard a card to allow you to cast it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/d99a9a7d-d9ca-4c11-80ab-e39d5943a315/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Tourach, Dread Cantor": [
+      {
+        "date": "2024-11-08",
+        "text": "If you put a permanent with a kicker ability onto the battlefield without casting it, you can't kick it.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3526751-0101-4d91-a496-c53cd92326e0/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "If a spell's kicker cost was paid, the spell is \"kicked.\"",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3526751-0101-4d91-a496-c53cd92326e0/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "The kicker ability doesn't let you pay a kicker cost more than once.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3526751-0101-4d91-a496-c53cd92326e0/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "To determine a spell's total cost, start with the mana cost (or an alternative cost if another card's effect allows you to pay one instead), add any cost increases (such as kicker), then apply any cost reductions. The spell's mana value remains unchanged, no matter what the total cost to cast it was.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3526751-0101-4d91-a496-c53cd92326e0/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "If you copy a kicked spell on the stack, the copy is also kicked. If the copied spell is a permanent spell, the token the copy of that spell becomes when it enters is also kicked.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3526751-0101-4d91-a496-c53cd92326e0/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2024-11-08",
+        "text": "If a card or token enters as a copy of a permanent, the new permanent isn't kicked, even if the original was.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3526751-0101-4d91-a496-c53cd92326e0/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "Triggered abilities are put on the stack in turn order, starting with the player whose turn it is. For example, if an opponent discards a card with madness during your turn, the madness trigger will resolve before Tourach's ability can put a +1/+1 counter on it. If they discard it during their turn, Tourach's ability puts a +1/+1 counter on it before they can cast the spell.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/f3526751-0101-4d91-a496-c53cd92326e0/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Sword of Hearth and Home": [
+      {
+        "date": "2021-06-18",
+        "text": "As Sword of Hearth and Home's second ability resolves, the land and the creature will enter the battlefield at the same time.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a16fabbe-4557-4067-b882-f2e5dbd8b458/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If you choose a target creature you own and that creature isn't a legal target as the triggered ability tries to resolve, that ability won't resolve and none of its effects will happen. You won't search for a basic land card.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a16fabbe-4557-4067-b882-f2e5dbd8b458/rulings",
+        "cached_at": "2026-04-06"
+      },
+      {
+        "date": "2021-06-18",
+        "text": "If the creature you own is a token, it won't return to the battlefield. It will stay in exile and cease to exist after the ability finishes resolving.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/a16fabbe-4557-4067-b882-f2e5dbd8b458/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Ignoble Hierarch": [
+      {
+        "date": "2021-06-18",
+        "text": "A creature attacks alone if it's the only creature declared as an attacker during the declare attackers step (including creatures controlled by your teammates, if applicable). For example, exalted won't trigger if you attack with multiple creatures and all but one of them are removed from combat.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/e802cfe1-45e0-47cd-8745-363ccc0f2af8/rulings",
+        "cached_at": "2026-04-06"
+      }
+    ],
+    "Cabal Coffers": [
+      {
+        "date": "2021-06-18",
+        "text": "The mana ability of Cabal Coffers counts each land you control with the subtype Swamp, not just ones named Swamp.",
+        "source": "Scryfall API",
+        "source_url": "https://api.scryfall.com/cards/e1efb0d3-2c72-46ff-bdc1-1069967365a0/rulings",
+        "cached_at": "2026-04-06"
       }
     ]
   }
