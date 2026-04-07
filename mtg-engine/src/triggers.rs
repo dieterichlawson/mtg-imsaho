@@ -348,9 +348,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     Some(o) => (o.card_id, o.controller),
                     _ => continue,
                 };
-                // Only collect if the card has an on_enter_battlefield handler.
-                // Self ETB trigger.
-                if registry.get(card_id).is_some() {
+                // Self ETB trigger: only collect if the card has an EntersBattlefield trigger defined.
+                let has_etb_trigger = registry.get(card_id)
+                    .map(|b| b.card_data().triggered_abilities.iter()
+                        .any(|t| t.kind == crate::cards::TriggerKind::EntersBattlefield))
+                    .unwrap_or(false);
+                if has_etb_trigger {
                     let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield, false);
                     let trigger = PendingTrigger::EnteredBattlefield {
                         object_id: *object,

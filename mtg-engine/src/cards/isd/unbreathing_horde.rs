@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -80,7 +80,12 @@ impl CardBehavior for UnbreathingHorde {
                 ContinuousEffect::PreventDamageRemoveCounter { scope: EffectScope::OnSelf },
             ],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EntersBattlefield,
+                    description: "enters with +1/+1 counters for each Zombie".into(),
+                },
+            ],
         }
     }
 
