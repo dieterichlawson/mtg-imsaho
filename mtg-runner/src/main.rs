@@ -122,6 +122,20 @@ fn main() {
         llm.init_conversation(&deck2_entries, &deck1_entries, &registry);
     }
 
+    // If resuming, feed the existing game log to LLM players so they
+    // have context about what happened before the reload.
+    if resume_file.is_some() {
+        let full_log: Vec<String> = state.game_log.iter()
+            .map(|e| e.message.clone())
+            .collect();
+        if let PlayerKind::Llm(ref mut llm) = p1 {
+            llm.resume_from_log(&full_log);
+        }
+        if let PlayerKind::Llm(ref mut llm) = p2 {
+            llm.resume_from_log(&full_log);
+        }
+    }
+
     let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
 
     let mut action_count: u64 = 0;

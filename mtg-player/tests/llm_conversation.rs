@@ -93,3 +93,63 @@ fn build_prompt_includes_board_state() {
     // Verify last_log_index starts at 0
     assert_eq!(player.last_log_index_for_test(), 0);
 }
+
+#[test]
+fn resume_from_log_seeds_conversation() {
+    let registry = CardRegistry::with_all_cards();
+    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let deck = vec![("Mountain".to_string(), 20)];
+    player.init_conversation(&deck, &deck, &registry);
+
+    assert_eq!(player.conversation_len_for_test(), 0);
+    assert_eq!(player.last_log_index_for_test(), 0);
+
+    let log = vec![
+        "Game started".to_string(),
+        "p0 drew 7 cards".to_string(),
+        "p1 drew 7 cards".to_string(),
+        "── Turn 1 (p0) ──".to_string(),
+        "p0 played Mountain".to_string(),
+    ];
+
+    player.resume_from_log(&log);
+
+    // Should have 2 messages: user recap + assistant acknowledgment
+    assert_eq!(player.conversation_len_for_test(), 2,
+        "Resume should add a user+assistant message pair");
+
+    // last_log_index should be set to the log length
+    assert_eq!(player.last_log_index_for_test(), 5,
+        "last_log_index should match the log length");
+}
+
+#[test]
+fn resume_from_empty_log_does_nothing() {
+    let registry = CardRegistry::with_all_cards();
+    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let deck = vec![("Mountain".to_string(), 20)];
+    player.init_conversation(&deck, &deck, &registry);
+
+    player.resume_from_log(&[]);
+
+    assert_eq!(player.conversation_len_for_test(), 0,
+        "Empty log should not add any messages");
+    assert_eq!(player.last_log_index_for_test(), 0,
+        "Empty log should not change last_log_index");
+}
+
+#[test]
+fn resume_preserves_system_prompt() {
+    let registry = CardRegistry::with_all_cards();
+    let mut player = mtg_player::llm::LlmPlayer::new("test");
+    let deck = vec![("Lightning Bolt".to_string(), 4)];
+    player.init_conversation(&deck, &deck, &registry);
+
+    let system_before = player.system_prompt_for_test().to_string();
+
+    player.resume_from_log(&["p0 played Mountain".to_string()]);
+
+    let system_after = player.system_prompt_for_test().to_string();
+    assert_eq!(system_before, system_after,
+        "Resume should not change the system prompt");
+}

@@ -231,6 +231,35 @@ impl LlmPlayer {
         self.log("SYSTEM", &self.system_prompt);
     }
 
+    /// Resume conversation from an existing game state.
+    /// Sends the full game log as a catch-up message so the AI has context
+    /// about what happened before the reload.
+    pub fn resume_from_log(&mut self, game_log: &[String]) {
+        if game_log.is_empty() {
+            return;
+        }
+        // Build a catch-up message with the full game history.
+        let mut recap = String::from("Game resumed. Here is the complete game log so far:\n\n");
+        for entry in game_log {
+            recap.push_str(entry);
+            recap.push('\n');
+        }
+        recap.push_str("\nThe game continues from this point. You will be prompted for your next action.");
+
+        // Add as a user message with a synthetic assistant acknowledgment.
+        self.conversation.push(serde_json::json!({
+            "role": "user",
+            "content": recap,
+        }));
+        self.conversation.push(serde_json::json!({
+            "role": "assistant",
+            "content": "Understood. I've reviewed the game history and I'm ready to continue playing.",
+        }));
+        // Set log index to current length so we don't re-send these entries.
+        self.last_log_index = game_log.len();
+        self.log("RESUME", &format!("Resumed with {} log entries", game_log.len()));
+    }
+
     fn format_decklist(entries: &[(String, u32)], registry: &mtg_engine::cards::CardRegistry) -> String {
         let mut s = String::new();
         let mut seen = std::collections::HashSet::new();
