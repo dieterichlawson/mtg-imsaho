@@ -379,6 +379,9 @@ pub enum ContinuousEffect {
     ConditionalPreventBlock { condition: EffectCondition, scope: EffectScope },
     /// Reduce cost of spells matching a filter.
     ReduceCost { reduction: u32, filter: SpellFilter },
+    /// Provide an alternative cost for spells matching a filter.
+    /// Used by Rooftop Storm ({0} for Zombies).
+    AlternativeCost { cost: ManaCost, filter: SpellFilter },
     /// Creature can't be blocked except by N or more creatures.
     /// Used for "can't be blocked except by two or more creatures" (Terror of Kruin Pass).
     MinimumBlockers { count: u32, scope: EffectScope },
