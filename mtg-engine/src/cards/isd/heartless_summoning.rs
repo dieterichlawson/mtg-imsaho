@@ -26,7 +26,7 @@ impl CardBehavior for HeartlessSummoning {
                 ContinuousEffect::ModifyPT {
                     power: -1,
                     toughness: -1,
-                    scope: EffectScope::Global(CreatureFilter::You),
+                    scope: EffectScope::Global(CreatureFilter::ControlledByYou),
                 },
                 ContinuousEffect::ReduceCost {
                     reduction: 2,

@@ -68,7 +68,7 @@ impl CardBehavior for BloodlineKeeper {
                     power: 2,
                     toughness: 2,
                     scope: EffectScope::GlobalOther(CreatureFilter::And(vec![
-                        CreatureFilter::You,
+                        CreatureFilter::ControlledByYou,
                         CreatureFilter::HasSubtype("Vampire".into()),
                     ])),
                 },

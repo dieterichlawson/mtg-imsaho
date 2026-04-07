@@ -30,14 +30,14 @@ impl CardBehavior for FullMoonsRise {
                     power: 1,
                     toughness: 0,
                     scope: EffectScope::Global(CreatureFilter::And(vec![
-                        CreatureFilter::You,
+                        CreatureFilter::ControlledByYou,
                         CreatureFilter::HasSubtype("Werewolf".into()),
                     ])),
                 },
                 ContinuousEffect::GrantKeyword {
                     keyword: Keyword::Trample,
                     scope: EffectScope::Global(CreatureFilter::And(vec![
-                        CreatureFilter::You,
+                        CreatureFilter::ControlledByYou,
                         CreatureFilter::HasSubtype("Werewolf".into()),
                     ])),
                 },

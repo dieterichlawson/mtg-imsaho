@@ -31,7 +31,7 @@ impl CardBehavior for CurseOfDeathsHold {
                 ContinuousEffect::ModifyPT {
                     power: -1,
                     toughness: -1,
-                    scope: EffectScope::Global(CreatureFilter::AttachedPlayer),
+                    scope: EffectScope::Global(CreatureFilter::ControlledByAttachedPlayer),
                 },
             ],
             additional_cost: None, triggered_abilities: vec![],

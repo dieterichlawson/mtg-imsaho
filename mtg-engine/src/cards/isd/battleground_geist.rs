@@ -26,7 +26,7 @@ impl CardBehavior for BattlegroundGeist {
                     power: 1,
                     toughness: 0,
                     scope: EffectScope::GlobalOther(CreatureFilter::And(vec![
-                        CreatureFilter::You,
+                        CreatureFilter::ControlledByYou,
                         CreatureFilter::HasSubtype("Spirit".into()),
                     ])),
                 },

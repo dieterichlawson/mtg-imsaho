@@ -26,7 +26,7 @@ impl CardBehavior for GallowsWarden {
                     power: 0,
                     toughness: 1,
                     scope: EffectScope::GlobalOther(CreatureFilter::And(vec![
-                        CreatureFilter::You,
+                        CreatureFilter::ControlledByYou,
                         CreatureFilter::HasSubtype("Spirit".into()),
                     ])),
                 },

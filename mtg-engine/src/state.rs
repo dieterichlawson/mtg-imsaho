@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use crate::ids::{ObjectId, PlayerId, CardId};
-use crate::types::{Zone, Step, ManaPool, ManaCost};
+use crate::types::{Zone, Step, ManaPool};
 
 /// An entry on the stack — either a spell or a triggered ability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,34 +85,9 @@ pub struct GameState {
     /// Game log with levels. File gets everything, UI filters by level.
     pub game_log: Vec<LogEntry>,
 
-    /// Temporary effects that expire at end of turn (e.g., Giant Growth's +3/+3).
-    pub until_end_of_turn_effects: Vec<UntilEndOfTurnEffect>,
-
-    /// Temporary keyword grants that expire at end of turn.
-    pub until_end_of_turn_keywords: Vec<UntilEndOfTurnKeyword>,
-
-    /// Temporary "can't block" restrictions that expire at end of turn.
-    pub until_end_of_turn_cant_block: Vec<ObjectId>,
-
-    /// Temporary protection grants that expire at end of turn.
-    /// Each entry grants a creature protection from creatures matching a filter.
+    /// All temporary effects that expire at end of turn (cleanup step).
     #[serde(default)]
-    pub until_end_of_turn_protection: Vec<UntilEndOfTurnProtection>,
-
-    /// Keywords temporarily removed until end of turn (e.g., Manor Gargoyle loses defender).
-    /// At cleanup, these keywords are restored on their objects.
-    #[serde(default)]
-    pub until_end_of_turn_removed_keywords: Vec<UntilEndOfTurnKeyword>,
-
-    /// Temporary control changes that revert at end of turn.
-    /// Each entry is (object_id, original_controller).
-    #[serde(default)]
-    pub until_end_of_turn_control_changes: Vec<(ObjectId, PlayerId)>,
-
-    /// Temporary flashback grants that expire at end of turn.
-    /// Each entry is (object_id, flashback_cost).
-    #[serde(default)]
-    pub until_end_of_turn_flashback: Vec<(ObjectId, ManaCost)>,
+    pub until_end_of_turn: Vec<TemporaryEffect>,
 
     /// Whether a creature has died this turn (for morbid).
     #[serde(default)]
@@ -124,16 +99,11 @@ pub struct GameState {
 
     /// Number of spells cast this turn by each player (for werewolf transforms).
     #[serde(default)]
-    pub spells_cast_this_turn: HashMap<PlayerId, u32>,
+    pub num_spells_cast_this_turn: HashMap<PlayerId, u32>,
 
     /// Spells cast last turn (saved at turn start for werewolf condition checking).
     #[serde(default)]
-    pub spells_cast_last_turn: HashMap<PlayerId, u32>,
-
-    /// When true, prevent all combat damage dealt by creatures that are not
-    /// Wolves or Werewolves (set by Moonmist). Cleared at end of turn.
-    #[serde(default)]
-    pub prevent_non_wolf_werewolf_combat_damage: bool,
+    pub num_spells_cast_last_turn: HashMap<PlayerId, u32>,
 
     /// X value chosen for the most recently activated X-cost ability.
     /// Set by the engine before calling on_activate_ability; cards read this.
@@ -171,27 +141,25 @@ pub struct LogEntry {
     pub message: String,
 }
 
-/// A temporary modifier applied to an object that expires at cleanup.
+/// A temporary effect that expires during the cleanup step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UntilEndOfTurnEffect {
-    pub target: ObjectId,
-    pub power_mod: i32,
-    pub toughness_mod: i32,
-}
-
-/// A temporary keyword grant that expires at cleanup.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UntilEndOfTurnKeyword {
-    pub target: ObjectId,
-    pub keyword: crate::types::Keyword,
-}
-
-/// A temporary protection grant that expires at cleanup.
-/// Grants protection from creatures matching a filter.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UntilEndOfTurnProtection {
-    pub target: ObjectId,
-    pub filter: crate::types::CreatureFilter,
+pub enum TemporaryEffect {
+    /// Modify power and/or toughness (e.g., Giant Growth +3/+3).
+    ModifyPT { target: ObjectId, power_mod: i32, toughness_mod: i32 },
+    /// Grant a keyword (e.g., Moment of Heroism grants lifelink).
+    GrantKeyword { target: ObjectId, keyword: crate::types::Keyword },
+    /// Remove a keyword (e.g., Manor Gargoyle loses defender).
+    RemoveKeyword { target: ObjectId, keyword: crate::types::Keyword },
+    /// Creature can't block this turn (e.g., Nightbird's Clutches).
+    CantBlock { target: ObjectId },
+    /// Grant protection from creatures matching a filter (e.g., Spare from Evil).
+    GrantProtection { target: ObjectId, filter: crate::types::CreatureFilter },
+    /// Temporary control change; reverts at cleanup (e.g., Traitorous Blood).
+    ChangeControl { target: ObjectId, original_controller: PlayerId },
+    /// Grant flashback to a card in the graveyard (e.g., Snapcaster Mage).
+    GrantFlashback { target: ObjectId, cost: crate::types::ManaCost },
+    /// Prevent combat damage from non-Wolf/Werewolf creatures (Moonmist).
+    PreventNonWolfWerewolfCombatDamage,
 }
 
 impl GameState {
@@ -218,18 +186,11 @@ impl GameState {
             is_first_turn: true,
             events: Vec::new(),
             game_log: Vec::new(),
-            until_end_of_turn_effects: Vec::new(),
-            until_end_of_turn_keywords: Vec::new(),
-            until_end_of_turn_cant_block: Vec::new(),
-            until_end_of_turn_protection: Vec::new(),
-            until_end_of_turn_removed_keywords: Vec::new(),
-            until_end_of_turn_control_changes: Vec::new(),
-            until_end_of_turn_flashback: Vec::new(),
+            until_end_of_turn: Vec::new(),
             creature_died_this_turn: false,
             day_night: None,
-            spells_cast_this_turn: HashMap::new(),
-            spells_cast_last_turn: HashMap::new(),
-            prevent_non_wolf_werewolf_combat_damage: false,
+            num_spells_cast_this_turn: HashMap::new(),
+            num_spells_cast_last_turn: HashMap::new(),
             last_activated_x_value: None,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
@@ -666,9 +627,9 @@ impl GameState {
             None => return false,
         };
         match filter {
-            CreatureFilter::You => creature.controller == source_controller,
-            CreatureFilter::Opponents => creature.controller != source_controller,
-            CreatureFilter::YourTokens => creature.controller == source_controller && creature.is_token,
+            CreatureFilter::ControlledByYou => creature.controller == source_controller,
+            CreatureFilter::ControlledByOpponent => creature.controller != source_controller,
+            CreatureFilter::ControlledByYouToken => creature.controller == source_controller && creature.is_token,
             CreatureFilter::HasSubtype(subtype) => {
                 // For transformed DFCs, use back face subtypes instead of front face.
                 if creature.is_transformed {
@@ -693,7 +654,7 @@ impl GameState {
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Not(inner) => !self.matches_filter(creature_id, inner, source_controller, registry),
-            CreatureFilter::AttachedPlayer => {
+            CreatureFilter::ControlledByAttachedPlayer => {
                 // This filter requires knowing the source object's attached_to_player.
                 // It's resolved in effect_applies_to which has source_id.
                 // If called directly from matches_filter without source context,
@@ -723,7 +684,7 @@ impl GameState {
             }
             EffectScope::Global(filter) => {
                 // For AttachedPlayer filter, use the source's attached_to_player.
-                if matches!(filter, crate::types::CreatureFilter::AttachedPlayer) {
+                if matches!(filter, crate::types::CreatureFilter::ControlledByAttachedPlayer) {
                     let attached_player = self.get_object(source_id)
                         .and_then(|o| o.attached_to_player);
                     if let Some(player) = attached_player {
@@ -911,9 +872,11 @@ impl GameState {
         power -= *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
 
         // Until-end-of-turn effects.
-        for effect in &self.until_end_of_turn_effects {
-            if effect.target == id {
-                power += effect.power_mod;
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::ModifyPT { target, power_mod, .. } = effect {
+                if *target == id {
+                    power += power_mod;
+                }
             }
         }
 
@@ -953,9 +916,11 @@ impl GameState {
         toughness += *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
         toughness -= *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
 
-        for effect in &self.until_end_of_turn_effects {
-            if effect.target == id {
-                toughness += effect.toughness_mod;
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::ModifyPT { target, toughness_mod, .. } = effect {
+                if *target == id {
+                    toughness += toughness_mod;
+                }
             }
         }
 
@@ -1007,8 +972,10 @@ impl GameState {
         };
 
         // Check if this keyword was temporarily removed until end of turn.
-        if self.until_end_of_turn_removed_keywords.iter()
-            .any(|r| r.target == creature_id && r.keyword == keyword) {
+        if self.until_end_of_turn.iter().any(|e| matches!(e,
+            TemporaryEffect::RemoveKeyword { target, keyword: kw }
+            if *target == creature_id && *kw == keyword
+        )) {
             return false;
         }
 
@@ -1053,9 +1020,11 @@ impl GameState {
         }
 
         // 3. Temporary keyword grants (until end of turn).
-        for grant in &self.until_end_of_turn_keywords {
-            if grant.target == creature_id && grant.keyword == keyword {
-                return true;
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::GrantKeyword { target, keyword: kw } = effect {
+                if *target == creature_id && *kw == keyword {
+                    return true;
+                }
             }
         }
 
@@ -1102,10 +1071,12 @@ impl GameState {
         }
 
         // Check until-end-of-turn protection grants (e.g., Spare from Evil).
-        for prot in &self.until_end_of_turn_protection {
-            if prot.target == target_id {
-                if self.matches_filter(source_id, &prot.filter, crate::ids::PlayerId(0), registry) {
-                    return true;
+        for effect in &self.until_end_of_turn {
+            if let TemporaryEffect::GrantProtection { target, filter } = effect {
+                if *target == target_id {
+                    if self.matches_filter(source_id, filter, crate::ids::PlayerId(0), registry) {
+                        return true;
+                    }
                 }
             }
         }
@@ -1213,17 +1184,21 @@ impl GameState {
                 })
             }
             EffectCondition::SelfHasKeyword(kw) => {
+                let removed = self.until_end_of_turn.iter().any(|e| matches!(e,
+                    TemporaryEffect::RemoveKeyword { target, keyword }
+                    if *target == source_id && *keyword == *kw
+                ));
+                if removed {
+                    return false;
+                }
                 self.get_object(source_id)
                     .map(|o| {
                         if o.keywords.contains(kw) {
-                            !self.until_end_of_turn_removed_keywords.iter()
-                                .any(|r| r.target == source_id && r.keyword == *kw)
+                            true
                         } else {
                             registry.card_data(o.card_id)
                                 .map(|d| d.keywords.contains(kw))
                                 .unwrap_or(false)
-                                && !self.until_end_of_turn_removed_keywords.iter()
-                                    .any(|r| r.target == source_id && r.keyword == *kw)
                         }
                     })
                     .unwrap_or(false)

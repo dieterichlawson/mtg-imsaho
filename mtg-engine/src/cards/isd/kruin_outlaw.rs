@@ -10,11 +10,11 @@ pub struct KruinOutlaw;
 impl KruinOutlaw {
     fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
         let is_transformed = state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false);
-        let total_spells_last_turn: u32 = state.spells_cast_last_turn.values().sum();
+        let total_spells_last_turn: u32 = state.num_spells_cast_last_turn.values().sum();
         if !is_transformed {
             total_spells_last_turn == 0 && !state.is_first_turn
         } else {
-            state.spells_cast_last_turn.values().any(|&count| count >= 2)
+            state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
         }
     }
 }
@@ -64,7 +64,7 @@ impl CardBehavior for KruinOutlaw {
                 ContinuousEffect::GrantKeyword {
                     keyword: Keyword::Menace,
                     scope: EffectScope::Global(CreatureFilter::And(vec![
-                        CreatureFilter::You,
+                        CreatureFilter::ControlledByYou,
                         CreatureFilter::HasSubtype("Werewolf".into()),
                     ])),
                 },

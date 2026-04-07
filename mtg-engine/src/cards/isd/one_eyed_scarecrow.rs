@@ -21,7 +21,7 @@ impl CardBehavior for OneEyedScarecrow {
             keywords: vec![Keyword::Defender],
             flashback_cost: None,
             continuous_effects: vec![
-                ContinuousEffect::ModifyPT { power: -1, toughness: 0, scope: EffectScope::Global(CreatureFilter::And(vec![CreatureFilter::Opponents, CreatureFilter::HasKeyword(Keyword::Flying)])) },
+                ContinuousEffect::ModifyPT { power: -1, toughness: 0, scope: EffectScope::Global(CreatureFilter::And(vec![CreatureFilter::ControlledByOpponent, CreatureFilter::HasKeyword(Keyword::Flying)])) },
             ],
             additional_cost: None, triggered_abilities: vec![],
         }

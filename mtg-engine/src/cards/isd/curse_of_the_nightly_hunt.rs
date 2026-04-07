@@ -28,7 +28,7 @@ impl CardBehavior for CurseOfTheNightlyHunt {
             // Force attack on the cursed player's creatures.
             continuous_effects: vec![
                 ContinuousEffect::ForceAttack {
-                    scope: EffectScope::Global(CreatureFilter::AttachedPlayer),
+                    scope: EffectScope::Global(CreatureFilter::ControlledByAttachedPlayer),
                 },
             ],
             additional_cost: None, triggered_abilities: vec![],
