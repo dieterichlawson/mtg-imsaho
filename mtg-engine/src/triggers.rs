@@ -348,12 +348,9 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     Some(o) => (o.card_id, o.controller),
                     _ => continue,
                 };
-                // Self ETB trigger: only collect if the card has an EntersBattlefield trigger defined.
-                let has_etb_trigger = registry.get(card_id)
-                    .map(|b| b.card_data().triggered_abilities.iter()
-                        .any(|t| t.kind == crate::cards::TriggerKind::EntersBattlefield))
-                    .unwrap_or(false);
-                if has_etb_trigger {
+                // Only collect if the card has an on_enter_battlefield handler.
+                // Self ETB trigger.
+                if registry.get(card_id).is_some() {
                     let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield, false);
                     let trigger = PendingTrigger::EnteredBattlefield {
                         object_id: *object,
@@ -369,27 +366,23 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 }
 
                 // ETB-watch: notify other permanents (and graveyard cards like Dearly Departed)
-                // that a creature entered. Only collect if the watcher's zone matches
-                // the trigger's allowed zones.
+                // that a creature entered.
                 if state.get_object(*object).map(|o| o.power.is_some()).unwrap_or(false) {
-                    let watchers: Vec<(ObjectId, CardId, PlayerId, Zone)> = state.objects.values()
+                    let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
                         .filter(|o| (o.zone == Zone::Battlefield || o.zone == Zone::Graveyard) && o.id != *object)
-                        .map(|o| (o.id, o.card_id, o.controller, o.zone))
+                        .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
-                    for (watcher_id, watcher_card_id, watcher_controller, watcher_zone) in watchers {
-                        let trigger_def = registry.get(watcher_card_id)
-                            .and_then(|b| b.card_data().triggered_abilities.iter()
-                                .find(|t| t.kind == crate::cards::TriggerKind::AnyCreatureEnters)
-                                .cloned());
-                        if let Some(def) = trigger_def {
-                            if def.trigger_zones.contains(&watcher_zone) {
+                    for (watcher_id, watcher_card_id, watcher_controller) in watchers {
+                        if registry.get(watcher_card_id).is_some() {
+                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureEnters, false);
+                            if !desc.is_empty() {
                                 let trigger = PendingTrigger::EnterWatch {
                                     watcher_id,
                                     watcher_card_id,
                                     controller: watcher_controller,
                                     entered_id: *object,
                                     entered_controller: controller,
-                                    description: def.description,
+                                    description: desc,
                                 };
                                 if watcher_controller == active_player {
                                     ap_triggers.push(trigger);

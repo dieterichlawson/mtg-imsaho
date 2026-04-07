@@ -38,6 +38,103 @@ pub struct LegalActions {
     pub context: Option<String>,
 }
 
+/// Gather all available mana sources for a player, classified by opportunity cost.
+fn gather_mana_sources(
+    state: &GameState,
+    player: PlayerId,
+    registry: &CardRegistry,
+    prevent_artifact_abilities: bool,
+) -> Vec<mana::ManaSource> {
+    use mana::{ManaSource, ManaSourceKind};
+
+    let mut sources = Vec::new();
+    for obj in state.objects_in_zone(Zone::Battlefield, player) {
+        // Stony Silence: skip mana abilities from artifacts.
+        if prevent_artifact_abilities {
+            let is_artifact = registry.card_data(obj.card_id)
+                .map(|d| d.card_types.contains(&CardType::Artifact))
+                .unwrap_or(false)
+                || obj.card_types.contains(&CardType::Artifact);
+            if is_artifact { continue; }
+        }
+        if let Some(behavior) = registry.get(obj.card_id) {
+            let abilities = behavior.mana_abilities(state, obj.id);
+            if abilities.is_empty() { continue; }
+
+            // Classify the source kind.
+            let has_side_effects = abilities.iter().any(|a| a.has_side_effects);
+            let is_creature = obj.power.is_some()
+                || registry.card_data(obj.card_id)
+                    .map(|d| d.card_types.contains(&CardType::Creature))
+                    .unwrap_or(false);
+            let has_utility = !behavior.activated_abilities(state, obj.id, registry).is_empty();
+            let is_basic = registry.card_data(obj.card_id)
+                .map(|d| d.supertypes.contains(&Supertype::Basic))
+                .unwrap_or(false);
+
+            let source_kind = if has_side_effects {
+                ManaSourceKind::HasSideEffects
+            } else if is_creature {
+                ManaSourceKind::Creature
+            } else if has_utility {
+                ManaSourceKind::HasUtilityAbility
+            } else if is_basic {
+                ManaSourceKind::BasicMana
+            } else {
+                ManaSourceKind::NonBasicMana
+            };
+
+            sources.push(ManaSource {
+                object_id: obj.id,
+                abilities,
+                source_kind,
+            });
+        }
+    }
+    sources
+}
+
+/// Activate a single mana source (tap + add mana + side effects).
+/// Shared by both ActivateManaAbility and CastSpell tap_plan execution.
+fn activate_mana_source(
+    state: &mut GameState,
+    source_id: ObjectId,
+    ability_index: usize,
+    registry: &CardRegistry,
+) {
+    let obj = state.get_object(source_id).expect("mana source must exist");
+    let card_id = obj.card_id;
+    let controller = obj.controller;
+
+    if let Some(behavior) = registry.get(card_id) {
+        let abilities = behavior.mana_abilities(state, source_id);
+        if let Some(ability) = abilities.iter().find(|a| a.ability_index == ability_index) {
+            if ability.requires_tap {
+                state.get_object_mut(source_id).expect("object must exist for tapping").tapped = true;
+                state.events.push(GameEvent::Tapped { object: source_id });
+            }
+            for &(mana_type, amount) in &ability.produced {
+                state.get_player_mut(controller).mana_pool.add(mana_type, amount);
+                state.events.push(GameEvent::ManaAdded {
+                    player: controller,
+                    mana_type,
+                    amount,
+                });
+            }
+            behavior.on_activate_mana_ability(state, source_id, ability_index, registry);
+        }
+    }
+
+    let name = card_name(state, registry, source_id);
+    let pool = &state.get_player(controller).mana_pool;
+    let pool_str: Vec<String> = pool.mana.iter()
+        .filter(|(_, &v)| v > 0)
+        .map(|(t, v)| format!("{:?}:{}", t, v))
+        .collect();
+    state.log(LogLevel::Info, format!("p{} tapped {} for mana (pool: {})",
+        controller.0, name, if pool_str.is_empty() { "empty".into() } else { pool_str.join(" ") }));
+}
+
 /// Find alternative costs provided by continuous effects on permanents the caster controls.
 /// Returns a list of alternative ManaCosts that the caster may use for the given spell.
 fn alternative_costs_from_effects(state: &GameState, registry: &CardRegistry, card_id: CardId, caster: PlayerId) -> Vec<ManaCost> {
@@ -1846,38 +1943,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::ActivateManaAbility { object_id, ability_index } => {
-            let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
-            let card_id = obj.card_id;
-            let controller = obj.controller;
-
-            if let Some(behavior) = registry.get(card_id) {
-                let abilities = behavior.mana_abilities(&new_state, *object_id);
-                if let Some(ability) = abilities.get(*ability_index) {
-                    if ability.requires_tap {
-                        new_state.get_object_mut(*object_id).expect("object must exist for tapping").tapped = true;
-                        new_state.events.push(GameEvent::Tapped { object: *object_id });
-                    }
-                    for &(mana_type, amount) in &ability.produced {
-                        new_state.get_player_mut(controller).mana_pool.add(mana_type, amount);
-                        new_state.events.push(GameEvent::ManaAdded {
-                            player: controller,
-                            mana_type,
-                            amount,
-                        });
-                    }
-                    // Call card-specific mana ability callback (e.g., Deranged Assistant mills).
-                    behavior.on_activate_mana_ability(&mut new_state, *object_id, *ability_index, registry);
-                }
-            }
-
-            let name = card_name(&new_state, registry, *object_id);
-            let pool = &new_state.get_player(controller).mana_pool;
-            let pool_str: Vec<String> = pool.mana.iter()
-                .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{:?}:{}", t, v))
-                .collect();
-            new_state.log(LogLevel::Info, format!("p{} tapped {} for mana (pool: {})",
-                controller.0, name, if pool_str.is_empty() { "empty".into() } else { pool_str.join(" ") }));
+            activate_mana_source(&mut new_state, *object_id, *ability_index, registry);
         }
 
         Action::ActivateAbility { object_id, ability_index, targets } => {
