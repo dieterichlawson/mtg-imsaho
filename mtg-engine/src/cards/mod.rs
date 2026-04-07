@@ -326,6 +326,13 @@ pub trait CardBehavior: Send + Sync {
     /// Similar to on_any_creature_dies but for ETB. Used by Champion of the Parish.
     fn on_any_creature_enters(&self, _state: &mut GameState, _self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) {}
 
+    /// Which zones a given triggered ability fires from.
+    /// Defaults to Battlefield for all trigger kinds.
+    /// Override for cards that trigger from other zones (e.g. Dearly Departed from Graveyard).
+    fn trigger_zones(&self, _kind: &TriggerKind) -> Vec<Zone> {
+        vec![Zone::Battlefield]
+    }
+
     /// Called when this creature deals combat damage to a player.
     /// Used by Stromkirk Noble, Falkenrath Marauders, Sturmgeist, etc.
     fn on_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
