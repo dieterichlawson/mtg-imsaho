@@ -388,6 +388,10 @@ pub enum ContinuousEffect {
     /// Double combat damage dealt by and to this creature.
     /// Used by Inquisitor's Flail.
     DoubleCombatDamage { scope: EffectScope },
+    /// Activated abilities of artifacts can't be activated (Stony Silence).
+    PreventArtifactAbilities,
+    /// Spells with the named card can't be cast (Nevermore).
+    PreventCastingNamed { name: String },
 }
 
 /// A replacement effect (CR 614) that modifies an event as it happens.
