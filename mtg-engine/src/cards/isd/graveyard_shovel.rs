@@ -26,7 +26,7 @@ impl CardBehavior for GraveyardShovel {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -51,7 +51,7 @@ impl CardBehavior for GraveyardShovel {
         }]
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Player(pid) => {
                 // Only valid if the targeted player has at least one card in their graveyard.

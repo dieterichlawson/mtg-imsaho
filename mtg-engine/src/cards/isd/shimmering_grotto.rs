@@ -48,7 +48,7 @@ impl CardBehavior for ShimmeringGrotto {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -113,7 +113,7 @@ impl CardBehavior for ShimmeringGrotto {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(_object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
         let (mana_type, symbol) = match ability_index {
             1 => (ManaType::White, "W"),

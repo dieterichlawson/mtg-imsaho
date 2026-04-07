@@ -38,7 +38,7 @@ impl CardBehavior for OliviaVoldaren {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
@@ -80,7 +80,7 @@ impl CardBehavior for OliviaVoldaren {
         abilities
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 let obj = state.get_object(*id);
@@ -90,7 +90,7 @@ impl CardBehavior for OliviaVoldaren {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         match ability_index {
@@ -158,7 +158,7 @@ impl CardBehavior for OliviaVoldaren {
         }
     }
 
-    fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         // When Olivia leaves the battlefield, return all stolen creatures to their original controllers.
         let stolen_entries: Vec<(ObjectId, ObjectId)> = {
             if let Some(olivia) = state.get_object(object_id) {

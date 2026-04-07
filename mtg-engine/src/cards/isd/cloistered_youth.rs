@@ -67,7 +67,7 @@ impl CardBehavior for CloisteredYouth {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
@@ -102,7 +102,7 @@ impl CardBehavior for CloisteredYouth {
             format!("Cloistered Youth transforms into {}", new_name));
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
@@ -121,7 +121,7 @@ impl CardBehavior for CloisteredYouth {
         }
     }
 
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> bool {
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
         false
     }
 }

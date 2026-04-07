@@ -299,7 +299,7 @@ impl CardBehavior for GarrukRelentless {
 
     }
 
-    fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         // State-triggered ability (CR 603.8): transform Garruk Relentless into
         // Garruk, the Veil-Cursed when he has 2 or fewer loyalty counters.
         if let Some(obj) = state.get_object_mut(self_id) {

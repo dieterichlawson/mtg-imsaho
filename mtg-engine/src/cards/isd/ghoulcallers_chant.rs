@@ -41,7 +41,7 @@ impl CardBehavior for GhoulcallersChant {
         ])
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         // Both modes require cards in the caster's graveyard.
         // The TargetRequirement handles creature/subtype filtering.
         match target {

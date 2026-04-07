@@ -76,7 +76,7 @@ impl CardBehavior for ScreechingBat {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -136,7 +136,7 @@ impl CardBehavior for ScreechingBat {
             format!("Transforms into {}", new_name));
     }
 
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> bool {
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
         false
     }
 }

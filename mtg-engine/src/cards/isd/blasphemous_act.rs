@@ -32,7 +32,7 @@ impl CardBehavior for BlasphemousAct {
         }
     }
 
-    fn modified_cost(&self, state: &GameState, registry: &CardRegistry) -> Option<ManaCost> {
+    fn modified_cost(&self, state: &GameState, _registry: &CardRegistry) -> Option<ManaCost> {
         let creature_count = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
             .count();

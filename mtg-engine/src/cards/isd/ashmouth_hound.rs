@@ -39,12 +39,12 @@ impl CardBehavior for AshmouthHound {
         }
     }
 
-    fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, blocked_attacker: ObjectId, registry: &CardRegistry) {
+    fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, blocked_attacker: ObjectId, _registry: &CardRegistry) {
         // When Ashmouth Hound blocks: deal 1 damage to the creature it's blocking.
         deal_1_damage(state, self_id, blocked_attacker);
     }
 
-    fn on_becomes_blocked(&self, state: &mut GameState, self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) {
+    fn on_becomes_blocked(&self, state: &mut GameState, self_id: ObjectId, blocker_id: ObjectId, _registry: &CardRegistry) {
         // When Ashmouth Hound becomes blocked: deal 1 damage to the blocking creature.
         deal_1_damage(state, self_id, blocker_id);
     }

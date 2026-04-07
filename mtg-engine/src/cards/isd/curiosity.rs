@@ -43,7 +43,7 @@ impl CardBehavior for Curiosity {
         crate::cards::helpers::resolve_aura(state, object_id, targets, registry);
     }
 
-    fn on_any_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {
+    fn on_any_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
         // "Whenever enchanted creature deals damage to an opponent"
         let aura = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o,

@@ -31,7 +31,7 @@ impl CardBehavior for BumpInTheNight {
         TargetRequirement::PlayerOnly
     }
 
-    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         // "Target opponent" — can only target opponents, not yourself.
         match target {
             Target::Player(pid) => *pid != caster,

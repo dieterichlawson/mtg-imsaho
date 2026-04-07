@@ -28,7 +28,7 @@ impl CardBehavior for DiscipleOfGriselbrand {
         }
     }
 
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{1}, Sacrifice a creature: Gain life equal to its toughness".into(),
@@ -41,7 +41,7 @@ impl CardBehavior for DiscipleOfGriselbrand {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // The engine already sacrificed a creature before calling this.

@@ -30,7 +30,7 @@ impl CardBehavior for Rebuke {
         TargetRequirement::CreatureWithFilter(TargetFilter::Attacking)
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 let obj = match state.get_object(*id) {

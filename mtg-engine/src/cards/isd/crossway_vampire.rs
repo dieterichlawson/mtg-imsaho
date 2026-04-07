@@ -33,7 +33,7 @@ impl CardBehavior for CrosswayVampire {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Target creature" — any creature, including self (Oracle doesn't say "another").
         let targets = crate::cards::helpers::creature_targets(state);

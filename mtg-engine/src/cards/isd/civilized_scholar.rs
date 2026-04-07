@@ -74,7 +74,7 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield && !o.is_transformed => o,
             _ => return vec![],
@@ -142,7 +142,7 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, registry: &CardRegistry) {
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, _registry: &CardRegistry) {
         // Check if the discarded card was a creature.
         let is_creature = state.get_object(discarded_id).map(|o| o.power.is_some()).unwrap_or(false);
         if is_creature {
@@ -156,14 +156,14 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         // Mark that we attacked this turn (so end-step doesn't transform back).
         if let Some(obj) = state.get_object_mut(self_id) {
             obj.card_state.insert("attacked_this_turn".into(), crate::ids::ObjectId(1));
         }
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
@@ -190,7 +190,7 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> bool {
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
         false
     }
 }

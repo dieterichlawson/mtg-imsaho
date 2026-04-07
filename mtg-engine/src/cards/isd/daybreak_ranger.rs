@@ -66,7 +66,7 @@ impl CardBehavior for DaybreakRanger {
         })
     }
 
-    fn should_transform(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> bool {
+    fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
         Self::werewolf_should_transform(state, object_id)
     }
 
@@ -78,7 +78,7 @@ impl CardBehavior for DaybreakRanger {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => return vec![],

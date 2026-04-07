@@ -39,7 +39,7 @@ impl CardBehavior for GrimoireOfTheDead {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => return vec![],
@@ -179,7 +179,7 @@ impl CardBehavior for GrimoireOfTheDead {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, registry: &CardRegistry) {
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {
         // After the player chooses a card to discard, add a study counter to the Grimoire.
         state.add_counters(self_id, CounterType::Study, 1);
         let count = state.get_counter_count(self_id, CounterType::Study);

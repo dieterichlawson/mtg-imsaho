@@ -153,7 +153,7 @@ impl CardBehavior for DelverOfSecrets {
         }
     }
 
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> bool {
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
         false
     }
 }

@@ -55,7 +55,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             "Grimgrin, Corpse-Born enters the battlefield tapped".into());
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
@@ -73,7 +73,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         // The engine already sacrificed another creature as part of paying the cost.
         // Now untap Grimgrin and add a +1/+1 counter.
         if let Some(obj) = state.get_object_mut(object_id) {

@@ -74,7 +74,7 @@ impl CardBehavior for InstigatorGang {
         })
     }
 
-    fn should_transform(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> bool {
+    fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
         Self::werewolf_should_transform(state, object_id)
     }
 
@@ -86,7 +86,7 @@ impl CardBehavior for InstigatorGang {
         }
     }
 
-    fn on_any_creature_attacks(&self, state: &mut GameState, self_id: ObjectId, attacker_id: ObjectId, attacker_controller: PlayerId, registry: &CardRegistry) {
+    fn on_any_creature_attacks(&self, state: &mut GameState, self_id: ObjectId, attacker_id: ObjectId, attacker_controller: PlayerId, _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,

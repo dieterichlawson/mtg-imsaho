@@ -39,7 +39,7 @@ impl CardBehavior for FiendHunter {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Another target creature" — any creature except Fiend Hunter itself.
         // Can target own creatures (Oracle doesn't restrict to opponents).

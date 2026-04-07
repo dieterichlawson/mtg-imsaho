@@ -31,7 +31,7 @@ impl CardBehavior for VillageBellRinger {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
         let to_untap: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some() && o.tapped)
