@@ -7,7 +7,7 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -292,7 +292,7 @@ fn divine_reckoning_keeps_one_per_player() {
         &reg,
     );
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // P0 should have exactly 1 creature left on battlefield (c1).
     let p0_creatures: Vec<_> = state.objects.values()
@@ -502,7 +502,7 @@ fn corpse_lunge_deals_damage_equal_to_exiled_power() {
     // Put a 4/4 creature in P0's graveyard.
     let gy_creature = ready_creature(&mut state, P0, 4, 4);
     state.get_object_mut(gy_creature).unwrap().name = "Big Creature".into();
-    state.move_object(gy_creature, Zone::Graveyard);
+    state.move_object(gy_creature, Zone::Graveyard, &reg);
 
     // Target creature on P1's battlefield.
     let target = ready_creature(&mut state, P1, 5, 5);
@@ -541,9 +541,9 @@ fn corpse_lunge_picks_highest_power_creature() {
 
     // Put two creatures in graveyard: a 2/2 and a 5/5.
     let small = ready_creature(&mut state, P0, 2, 2);
-    state.move_object(small, Zone::Graveyard);
+    state.move_object(small, Zone::Graveyard, &reg);
     let big = ready_creature(&mut state, P0, 5, 5);
-    state.move_object(big, Zone::Graveyard);
+    state.move_object(big, Zone::Graveyard, &reg);
 
     let target = ready_creature(&mut state, P1, 6, 6);
 
@@ -567,7 +567,7 @@ fn harvest_pyre_deals_damage_equal_to_chosen_x() {
     // Put 4 cards in P0's graveyard.
     for _ in 0..4 {
         let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let target = ready_creature(&mut state, P1, 5, 5);
@@ -600,7 +600,7 @@ fn harvest_pyre_player_chooses_partial_x() {
 
     for _ in 0..4 {
         let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let target = ready_creature(&mut state, P1, 5, 5);
@@ -637,7 +637,7 @@ fn harvest_pyre_x_zero_deals_no_damage() {
 
     for _ in 0..3 {
         let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let target = ready_creature(&mut state, P1, 3, 3);
@@ -662,7 +662,7 @@ fn harvest_pyre_legal_actions_include_different_x_values() {
 
     for _ in 0..3 {
         let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let _target = ready_creature(&mut state, P1, 3, 3);
@@ -691,12 +691,12 @@ fn harvest_pyre_only_exiles_own_graveyard() {
     // Put 3 cards in P0's graveyard.
     for _ in 0..3 {
         let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
     // Put 2 cards in P1's graveyard.
     for _ in 0..2 {
         let c = state.create_object(CardId(9999), P1, Zone::Battlefield, Some(1), Some(1));
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let target = ready_creature(&mut state, P1, 6, 6);

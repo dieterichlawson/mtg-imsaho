@@ -60,7 +60,7 @@ impl CardBehavior for Ghoulraiser {
             zombies.shuffle(&mut rng);
             let chosen = zombies[0];
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(chosen, Zone::Hand);
+            state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Ghoulraiser returned {} to hand", name));
         }

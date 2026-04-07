@@ -34,7 +34,7 @@ impl CardBehavior for MorkrutBanshee {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         if !state.creature_died_this_turn {
             return;
         }

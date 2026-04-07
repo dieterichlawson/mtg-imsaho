@@ -41,11 +41,11 @@ impl CardBehavior for CurseOfStalkedPrey {
         TargetRequirement::PlayerOnly
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        crate::cards::helpers::resolve_curse(state, object_id, targets);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
-    fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
+    fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {
         // Only trigger when the enchanted player is dealt damage.
         let cursed_player = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,

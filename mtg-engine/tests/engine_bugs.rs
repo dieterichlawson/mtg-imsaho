@@ -13,7 +13,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -56,7 +56,7 @@ fn cleanup_sba_kills_creature_when_buff_expires() {
 
     // Verify it's alive during the turn.
     assert_eq!(state.effective_toughness(creature, &reg), Some(1));
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "Creature should be alive during the turn (effective toughness 1)");
 

@@ -107,6 +107,6 @@ impl CardBehavior for Moonmist {
         state.log(crate::state::LogLevel::Event,
             "Moonmist: preventing combat damage from non-Wolf/non-Werewolf creatures this turn".into());
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

@@ -41,7 +41,7 @@ fn fizzled_spell_does_not_emit_resolved_event() {
     );
 
     // Target dies before resolution.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
     state.events.clear();
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
@@ -109,7 +109,7 @@ fn swords_fizzle_no_side_effects() {
     );
 
     // Target leaves battlefield before resolution.
-    state.move_object(creature, Zone::Exile);
+    state.move_object(creature, Zone::Exile, &reg);
     state.events.clear();
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
@@ -158,7 +158,7 @@ fn flashback_spell_fizzle_goes_to_exile() {
     assert!(state.get_object(geistflame).unwrap().cast_with_flashback);
 
     // Target dies before resolution.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
@@ -193,7 +193,7 @@ fn flashback_spell_fizzle_no_resolved_event() {
     );
 
     // Target dies before resolution.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
     state.events.clear();
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
@@ -241,7 +241,7 @@ fn counterspell_fizzle_no_resolved_event() {
 
     // Bolt removed from stack before Counterspell resolves.
     state.stack.retain(|e| e.as_spell() != Some(bolt));
-    state.move_object(bolt, Zone::Graveyard);
+    state.move_object(bolt, Zone::Graveyard, &reg);
     state.events.clear();
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);

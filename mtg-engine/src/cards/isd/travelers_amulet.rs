@@ -27,7 +27,7 @@ impl CardBehavior for TravelersAmulet {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -69,7 +69,7 @@ impl CardBehavior for TravelersAmulet {
             let player = state.get_player_mut(controller);
             player.library_order.retain(|&id| id != land_id);
             // Put into hand.
-            state.move_object(land_id, Zone::Hand);
+            state.move_object(land_id, Zone::Hand, registry);
 
             let name = registry.card_data(
                 state.get_object(land_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))

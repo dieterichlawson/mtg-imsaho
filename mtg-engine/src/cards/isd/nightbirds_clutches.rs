@@ -31,7 +31,7 @@ impl CardBehavior for NightbirdsClutches {
         TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature))
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(target_id) = target {
                 if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
@@ -41,6 +41,6 @@ impl CardBehavior for NightbirdsClutches {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

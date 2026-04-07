@@ -32,14 +32,14 @@ impl CardBehavior for GrimoireOfTheDead {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield, registry);
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.is_legendary = true;
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => return vec![],
@@ -81,7 +81,7 @@ impl CardBehavior for GrimoireOfTheDead {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -102,7 +102,7 @@ impl CardBehavior for GrimoireOfTheDead {
                     // Only one card in hand -- auto-discard it.
                     let card_id = hand[0];
                     let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    state.move_object(card_id, Zone::Graveyard);
+                    state.move_object(card_id, Zone::Graveyard, registry);
                     state.events.push(crate::events::GameEvent::Discarded {
                         player: controller,
                         object: card_id,
@@ -151,13 +151,13 @@ impl CardBehavior for GrimoireOfTheDead {
                 for cid in creatures {
                     let (name, is_legendary) = state.get_object(cid)
                         .map(|o| {
-                            let legendary = _registry.card_data(o.card_id)
+                            let legendary = registry.card_data(o.card_id)
                                 .map(|d| d.supertypes.contains(&Supertype::Legendary))
                                 .unwrap_or(false);
                             (o.name.clone(), legendary)
                         })
                         .unwrap_or_else(|| (String::new(), false));
-                    state.move_object(cid, Zone::Battlefield);
+                    state.move_object(cid, Zone::Battlefield, registry);
                     if let Some(obj) = state.get_object_mut(cid) {
                         obj.controller = controller;
                         obj.is_legendary = is_legendary;
@@ -179,7 +179,7 @@ impl CardBehavior for GrimoireOfTheDead {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, registry: &CardRegistry) {
         // After the player chooses a card to discard, add a study counter to the Grimoire.
         state.add_counters(self_id, CounterType::Study, 1);
         let count = state.get_counter_count(self_id, CounterType::Study);

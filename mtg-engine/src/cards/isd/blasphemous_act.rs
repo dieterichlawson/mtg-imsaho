@@ -32,7 +32,7 @@ impl CardBehavior for BlasphemousAct {
         }
     }
 
-    fn modified_cost(&self, state: &GameState, _registry: &CardRegistry) -> Option<ManaCost> {
+    fn modified_cost(&self, state: &GameState, registry: &CardRegistry) -> Option<ManaCost> {
         let creature_count = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
             .count();
@@ -44,7 +44,7 @@ impl CardBehavior for BlasphemousAct {
         Some(ManaCost::new(vec![ManaSymbol::Generic(generic), ManaSymbol::Colored(Color::Red)]))
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let creatures: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
             .map(|o| o.id)
@@ -62,6 +62,6 @@ impl CardBehavior for BlasphemousAct {
         }
         state.log(crate::state::LogLevel::Event,
             "Blasphemous Act deals 13 damage to each creature".into());
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

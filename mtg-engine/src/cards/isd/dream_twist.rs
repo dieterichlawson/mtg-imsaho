@@ -30,10 +30,10 @@ impl CardBehavior for DreamTwist {
         TargetRequirement::PlayerOnly
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
-            crate::engine::mill_cards(state, *player_id, 3);
+            crate::engine::mill_cards(state, *player_id, 3, registry);
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

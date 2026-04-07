@@ -107,7 +107,7 @@ impl CardBehavior for BackFromTheBrink {
 
         // Exile the creature card first (part of the cost — everything before the colon).
         // Per oracle: "Exile a creature card from your graveyard and pay its mana cost:"
-        state.move_object(creature_id, Zone::Exile);
+        state.move_object(creature_id, Zone::Exile, registry);
 
         // Create a token copy (the effect — after the colon).
         state.create_token_copy(creature_id, controller, registry);

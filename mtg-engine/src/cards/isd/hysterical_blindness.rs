@@ -26,7 +26,7 @@ impl CardBehavior for HystericalBlindness {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // Collect creature IDs controlled by opponents.
@@ -49,6 +49,6 @@ impl CardBehavior for HystericalBlindness {
             );
         }
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

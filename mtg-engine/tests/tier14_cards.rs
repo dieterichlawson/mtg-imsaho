@@ -6,7 +6,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::actions::{Action, Target};
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -52,7 +52,7 @@ fn no_lab_maniac_loses_on_empty_draw() {
     assert!(state.players[0].has_drawn_from_empty);
 
     // SBA should kill P0.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert!(state.players[0].lost, "Player without Lab Maniac should lose");
 }
 
@@ -70,7 +70,7 @@ fn laboratory_maniac_only_helps_controller() {
 
     // P1 should still lose (Lab Maniac only helps P0).
     assert!(state.players[1].has_drawn_from_empty);
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert!(state.players[1].lost);
 }
 
@@ -399,7 +399,7 @@ fn snapcaster_mage_grants_flashback() {
 
     // Put Lightning Bolt in P0's graveyard.
     let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(bolt, Zone::Graveyard);
+    state.move_object(bolt, Zone::Graveyard, &reg);
 
     // Cast Snapcaster Mage (resolve immediately for ETB trigger).
     let snap = castable_spell(&mut state, &reg, "Snapcaster Mage", P0);
@@ -433,14 +433,14 @@ fn past_in_flames_grants_flashback_to_all() {
 
     // Put some instants/sorceries in P0's graveyard.
     let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(bolt, Zone::Graveyard);
+    state.move_object(bolt, Zone::Graveyard, &reg);
 
     let divination = spell_in_hand(&mut state, &reg, "Divination", P0);
-    state.move_object(divination, Zone::Graveyard);
+    state.move_object(divination, Zone::Graveyard, &reg);
 
     // Also put a creature in graveyard (should NOT get flashback).
     let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     // Cast Past in Flames.
     let spell = castable_spell(&mut state, &reg, "Past in Flames", P0);

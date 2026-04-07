@@ -56,6 +56,6 @@ impl CardBehavior for ArmyOfTheDamned {
         }
         state.log(crate::state::LogLevel::Event,
             "Army of the Damned created 13 tapped Zombie tokens".to_string());
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

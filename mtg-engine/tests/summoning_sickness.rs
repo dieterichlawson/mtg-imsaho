@@ -41,23 +41,25 @@ fn summoning_sickness_clears_at_own_untap() {
 /// from any zone.
 #[test]
 fn entering_battlefield_gives_summoning_sickness() {
+    let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
     assert!(!state.get_object(creature).unwrap().summoning_sick);
 
-    state.move_object(creature, Zone::Battlefield);
+    state.move_object(creature, Zone::Battlefield, &registry);
     assert!(state.get_object(creature).unwrap().summoning_sick);
 }
 
 /// Leaving and re-entering the battlefield resets summoning sickness.
 #[test]
 fn re_entering_battlefield_resets_summoning_sickness() {
+    let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
     assert!(!state.get_object(creature).unwrap().summoning_sick);
 
-    state.move_object(creature, Zone::Hand);
-    state.move_object(creature, Zone::Battlefield);
+    state.move_object(creature, Zone::Hand, &registry);
+    state.move_object(creature, Zone::Battlefield, &registry);
     assert!(state.get_object(creature).unwrap().summoning_sick,
         "Should be sick again after re-entering battlefield");
 }
@@ -78,10 +80,11 @@ fn sick_creature_cant_attack_but_can_block() {
 /// Lands should NOT get summoning sickness when entering battlefield.
 #[test]
 fn lands_never_have_summoning_sickness() {
+    let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let land = state.create_object(CardId(1), P0, Zone::Hand, None, None);
 
-    state.move_object(land, Zone::Battlefield);
+    state.move_object(land, Zone::Battlefield, &registry);
     // Lands do get the flag set by move_object, but it doesn't matter
     // since they can't attack and their mana abilities don't use the tap symbol
     // in the summoning sickness sense. The engine handles this by
@@ -95,11 +98,12 @@ fn lands_never_have_summoning_sickness() {
 /// Summoning sickness is cleared when leaving the battlefield.
 #[test]
 fn leaving_battlefield_clears_sickness() {
+    let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = sick_creature(&mut state, P0, 2, 2);
     assert!(state.get_object(creature).unwrap().summoning_sick);
 
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &registry);
     assert!(!state.get_object(creature).unwrap().summoning_sick,
         "Summoning sickness should be cleared when leaving battlefield");
 }

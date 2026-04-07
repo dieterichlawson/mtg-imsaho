@@ -24,7 +24,7 @@ fn mode1_returns_one_creature_from_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
     let new_state = cast_and_resolve(&state, &reg, chant, vec![Target::Object(creature)]);
@@ -40,9 +40,9 @@ fn mode2_returns_two_zombies_from_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let zombie1 = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(zombie1, Zone::Graveyard);
+    state.move_object(zombie1, Zone::Graveyard, &reg);
     let zombie2 = spell_in_hand(&mut state, &reg, "Diregraf Ghoul", P0);
-    state.move_object(zombie2, Zone::Graveyard);
+    state.move_object(zombie2, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
     let new_state = cast_and_resolve(&state, &reg, chant, vec![
@@ -64,7 +64,7 @@ fn legal_actions_include_mode1_single_creature() {
 
     // Put a non-Zombie creature in graveyard.
     let bear = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(bear, Zone::Graveyard);
+    state.move_object(bear, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
 
@@ -91,9 +91,9 @@ fn legal_actions_include_mode2_two_zombies() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let zombie1 = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(zombie1, Zone::Graveyard);
+    state.move_object(zombie1, Zone::Graveyard, &reg);
     let zombie2 = spell_in_hand(&mut state, &reg, "Diregraf Ghoul", P0);
-    state.move_object(zombie2, Zone::Graveyard);
+    state.move_object(zombie2, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
 
@@ -122,9 +122,9 @@ fn legal_actions_no_mode2_for_non_zombies() {
 
     // Two non-Zombie creatures in graveyard.
     let bear1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(bear1, Zone::Graveyard);
+    state.move_object(bear1, Zone::Graveyard, &reg);
     let bear2 = spell_in_hand(&mut state, &reg, "Savannah Lions", P0);
-    state.move_object(bear2, Zone::Graveyard);
+    state.move_object(bear2, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
 
@@ -164,7 +164,7 @@ fn cannot_target_opponents_graveyard() {
 
     // Put creature in opponent's graveyard only.
     let enemy_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(enemy_creature, Zone::Graveyard);
+    state.move_object(enemy_creature, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
 
@@ -186,9 +186,9 @@ fn mixed_graveyard_correct_modes() {
 
     // One Zombie and one non-Zombie.
     let zombie = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(zombie, Zone::Graveyard);
+    state.move_object(zombie, Zone::Graveyard, &reg);
     let bear = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(bear, Zone::Graveyard);
+    state.move_object(bear, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
 

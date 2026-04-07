@@ -17,7 +17,7 @@ use mtg_engine::destruction;
 use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
-use mtg_engine::sba::{check_state_based_actions, check_state_based_actions_with_registry};
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -44,7 +44,7 @@ fn indestructible_creature_with_zero_toughness_still_dies() {
         },
     );
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(
         state.get_object(creature).unwrap().zone,
@@ -69,7 +69,7 @@ fn indestructible_creature_survives_lethal_damage() {
         },
     );
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(
         state.get_object(creature).unwrap().zone,
@@ -143,7 +143,7 @@ fn mutually_lethal_combat_both_die() {
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 3);
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 3);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(
         state.get_object(attacker).unwrap().zone,
@@ -177,10 +177,10 @@ fn aura_goes_to_graveyard_when_creature_dies() {
     state.get_object_mut(aura).unwrap().summoning_sick = false;
 
     // Kill the creature directly.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     // SBA should clean up the unattached aura.
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(
         state.get_object(aura).unwrap().zone,
@@ -192,13 +192,14 @@ fn aura_goes_to_graveyard_when_creature_dies() {
 /// Aura stays on the battlefield as long as its enchanted creature is alive.
 #[test]
 fn aura_stays_while_creature_alive() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
 
     let aura = state.create_object(CardId(50), P0, Zone::Battlefield, None, None);
     state.get_object_mut(aura).unwrap().attached_to = Some(creature);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(
         state.get_object(aura).unwrap().zone,
@@ -224,7 +225,7 @@ fn token_dies_goes_to_graveyard_then_ceases_to_exist() {
     state.get_object_mut(token).unwrap().damage_marked = 3;
 
     // SBA should: 1) kill the token (move to graveyard), 2) cease to exist (remove from objects).
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     // Token should be completely gone — removed from the objects map.
     assert!(
@@ -251,7 +252,7 @@ fn damage_does_not_reduce_effective_toughness() {
         "Effective toughness should not be reduced by damage — damage is tracked separately"
     );
     // But the creature is still alive (2 damage < 3 toughness).
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
 }
 
@@ -272,10 +273,10 @@ fn blinked_creature_loses_aura() {
     state.get_object_mut(aura).unwrap().attached_to = Some(creature);
 
     // "Blink" the creature: exile then return to battlefield.
-    state.move_object(creature, Zone::Exile);
+    state.move_object(creature, Zone::Exile, &reg);
 
     // SBA should clean up the aura (its target left the battlefield).
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(
         state.get_object(aura).unwrap().zone,
@@ -287,6 +288,7 @@ fn blinked_creature_loses_aura() {
 /// When a creature leaves and re-enters, damage should be cleared.
 #[test]
 fn zone_change_clears_damage() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
 
@@ -294,8 +296,8 @@ fn zone_change_clears_damage() {
     state.get_object_mut(creature).unwrap().damage_marked = 2;
 
     // Move to hand and back to battlefield.
-    state.move_object(creature, Zone::Hand);
-    state.move_object(creature, Zone::Battlefield);
+    state.move_object(creature, Zone::Hand, &reg);
+    state.move_object(creature, Zone::Battlefield, &reg);
 
     assert_eq!(
         state.get_object(creature).unwrap().damage_marked, 0,
@@ -320,7 +322,7 @@ fn dies_trigger_has_correct_info() {
     // Kill via lethal damage.
     state.get_object_mut(creature).unwrap().damage_marked = 5;
     state.events.clear();
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     // Find the CreatureDied event.
     let died_event = state.events.iter().find(|e| {
@@ -348,7 +350,7 @@ fn death_watch_triggers_fire_on_creature_death() {
     state.get_object_mut(victim).unwrap().damage_marked = 2;
 
     // Run SBAs to kill the victim.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // Process triggers (the death-watch should fire).
     mtg_engine::triggers::process_triggers(&mut state, &reg);
@@ -425,7 +427,7 @@ fn creature_dies_in_cleanup_when_eot_buff_expires() {
 
     // With the buff, effective toughness is 2, damage is 1 — survives.
     assert_eq!(state.effective_toughness(creature, &reg), Some(2));
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
 
     // Advance to cleanup (buff removed, damage cleared).

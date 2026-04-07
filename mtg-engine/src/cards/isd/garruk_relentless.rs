@@ -59,7 +59,7 @@ impl GarrukRelentless {
             let found_name = state.get_object(found_id).map(|o| o.name.clone()).unwrap_or_default();
             let player = state.get_player_mut(controller);
             player.library_order.retain(|&lid| lid != found_id);
-            state.move_object(found_id, Zone::Hand);
+            state.move_object(found_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Garruk, the Veil-Cursed: searched and found {}", found_name));
             use rand::seq::SliceRandom;
@@ -299,7 +299,7 @@ impl CardBehavior for GarrukRelentless {
 
     }
 
-    fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         // State-triggered ability (CR 603.8): transform Garruk Relentless into
         // Garruk, the Veil-Cursed when he has 2 or fewer loyalty counters.
         if let Some(obj) = state.get_object_mut(self_id) {
@@ -312,8 +312,8 @@ impl CardBehavior for GarrukRelentless {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[crate::actions::Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[crate::actions::Target], registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield, registry);
         state.add_counters(object_id, CounterType::Loyalty, 3);
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.card_types = vec![CardType::Planeswalker];

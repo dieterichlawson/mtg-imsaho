@@ -27,7 +27,7 @@ impl CardBehavior for BrainWeevil {
         }
     }
 
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "Sacrifice: Target player discards two cards".into(),
@@ -40,7 +40,7 @@ impl CardBehavior for BrainWeevil {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(target_player)) = targets.first() {
             let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
                 .iter()
@@ -53,7 +53,7 @@ impl CardBehavior for BrainWeevil {
             // If exactly 1 card, discard it (no choice needed, still need a second discard of 0).
             if hand.len() == 1 {
                 let card_id = hand[0];
-                state.move_object(card_id, Zone::Graveyard);
+                state.move_object(card_id, Zone::Graveyard, registry);
                 state.events.push(crate::events::GameEvent::Discarded {
                     player: *target_player,
                     object: card_id,
@@ -65,7 +65,7 @@ impl CardBehavior for BrainWeevil {
             // If exactly 2 cards, discard both (no choice needed).
             if hand.len() == 2 {
                 for &card_id in &hand {
-                    state.move_object(card_id, Zone::Graveyard);
+                    state.move_object(card_id, Zone::Graveyard, registry);
                     state.events.push(crate::events::GameEvent::Discarded {
                         player: *target_player,
                         object: card_id,
@@ -93,7 +93,7 @@ impl CardBehavior for BrainWeevil {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, registry: &CardRegistry) {
         // Retrieve and remove the pending second-discard marker.
         let target_player_raw = state.get_object(self_id)
             .and_then(|o| o.card_state.get("weevil_target_player").copied());
@@ -118,7 +118,7 @@ impl CardBehavior for BrainWeevil {
         if hand.len() == 1 {
             // Only one card left — auto-discard.
             let card_id = hand[0];
-            state.move_object(card_id, Zone::Graveyard);
+            state.move_object(card_id, Zone::Graveyard, registry);
             state.events.push(crate::events::GameEvent::Discarded {
                 player: target_player,
                 object: card_id,

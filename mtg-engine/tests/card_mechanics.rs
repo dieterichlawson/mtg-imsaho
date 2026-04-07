@@ -11,7 +11,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::ids::{CardId, PlayerId};
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -33,7 +33,7 @@ fn morbid_flag_set_on_creature_death() {
     let creature = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(creature).unwrap().damage_marked = 1;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert!(state.creature_died_this_turn,
         "Morbid flag should be set after creature dies");
 }
@@ -157,7 +157,7 @@ fn fiend_hunter_returns_exiled_on_death() {
     state.get_object_mut(fh).unwrap().damage_marked = 3;
     state.events.clear();
     state.trigger_event_index = 0;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_object(fh).unwrap().zone, Zone::Graveyard,
@@ -422,7 +422,7 @@ fn elder_cathar_gives_two_counters_to_human() {
 
     // Kill Elder Cathar.
     state.get_object_mut(ec).unwrap().damage_marked = 2;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(human, CounterType::PlusOnePlusOne), 2,
@@ -440,7 +440,7 @@ fn elder_cathar_gives_one_counter_to_non_human() {
     let bears = ready_creature(&mut state, P0, 2, 2);
 
     state.get_object_mut(ec).unwrap().damage_marked = 2;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(bears, CounterType::PlusOnePlusOne), 1,
@@ -684,7 +684,7 @@ fn pitchburn_devils_choice_with_targets() {
     // Kill Pitchburn Devils.
     state.events.clear();
     state.get_object_mut(pd).unwrap().damage_marked = 3;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     triggers::process_triggers(&mut state, &reg);
 
     // Should have a choice (creature + both players = 3+ targets).
@@ -768,7 +768,7 @@ fn regeneration_shield_prevents_lethal_damage_death() {
     state.get_object_mut(creature).unwrap().regeneration_shields = 1;
     state.get_object_mut(creature).unwrap().damage_marked = 2; // lethal
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // Should have regenerated, not died.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
@@ -791,7 +791,7 @@ fn regeneration_does_not_prevent_zero_toughness_death() {
     let creature = ready_creature(&mut state, P0, 2, 0);
     state.get_object_mut(creature).unwrap().regeneration_shields = 1;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "Regeneration should not save from 0 toughness");
@@ -807,7 +807,7 @@ fn multiple_regeneration_shields() {
     state.get_object_mut(creature).unwrap().regeneration_shields = 2;
     state.get_object_mut(creature).unwrap().damage_marked = 2;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 1,
@@ -815,7 +815,7 @@ fn multiple_regeneration_shields() {
 
     // Deal lethal damage again.
     state.get_object_mut(creature).unwrap().damage_marked = 2;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "Second shield should save from second lethal");
@@ -901,7 +901,7 @@ fn indestructible_survives_lethal_damage() {
     state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
     state.get_object_mut(creature).unwrap().damage_marked = 10;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "Indestructible creature should survive lethal damage");
@@ -918,7 +918,7 @@ fn indestructible_does_not_prevent_zero_toughness() {
     let creature = ready_creature(&mut state, P0, 4, 0);
     state.get_object_mut(creature).unwrap().keywords = vec![Keyword::Indestructible];
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "Indestructible should NOT prevent death from 0 toughness");
@@ -935,7 +935,7 @@ fn indestructible_survives_deathtouch() {
     state.get_object_mut(creature).unwrap().damage_marked = 1;
     state.get_object_mut(creature).unwrap().dealt_deathtouch_damage = true;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "Indestructible creature should survive deathtouch damage");
@@ -999,7 +999,7 @@ fn regeneration_saves_from_deathtouch() {
     state.get_object_mut(creature).unwrap().damage_marked = 1;
     state.get_object_mut(creature).unwrap().dealt_deathtouch_damage = true;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "Regeneration should save from deathtouch damage");
@@ -1062,7 +1062,7 @@ fn skeletal_grimace_regeneration_saves_from_lethal() {
 
     // Now deal lethal damage (effective toughness is 3 with the aura).
     state.get_object_mut(creature).unwrap().damage_marked = 3;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // Should have regenerated, not died.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
@@ -1135,7 +1135,7 @@ fn skeletal_grimace_regeneration_vs_deathtouch() {
     // Simulate deathtouch damage (even 1 damage from deathtouch is lethal).
     state.get_object_mut(creature).unwrap().damage_marked = 1;
     state.get_object_mut(creature).unwrap().dealt_deathtouch_damage = true;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // Creature should survive via regeneration.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,

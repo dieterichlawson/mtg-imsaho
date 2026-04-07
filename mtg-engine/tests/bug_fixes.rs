@@ -13,7 +13,7 @@ use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
 use mtg_engine::ids::CardId;
-use mtg_engine::sba::{check_state_based_actions, check_state_based_actions_with_registry};
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -49,7 +49,7 @@ fn legend_rule_removes_duplicate() {
     state.get_object_mut(legend2).unwrap().summoning_sick = false;
     state.get_object_mut(legend2).unwrap().is_legendary = true;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // One should be on battlefield, one in graveyard.
     let on_bf: Vec<_> = state.objects.values()
@@ -79,7 +79,7 @@ fn legend_rule_different_names_coexist() {
     state.get_object_mut(legend2).unwrap().name = "Geist".into();
     state.get_object_mut(legend2).unwrap().is_legendary = true;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(legend1).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(legend2).unwrap().zone, Zone::Battlefield);
@@ -100,7 +100,7 @@ fn legend_rule_different_controllers_ok() {
     state.get_object_mut(legend_p1).unwrap().name = "Thalia".into();
     state.get_object_mut(legend_p1).unwrap().is_legendary = true;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(legend_p0).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(legend_p1).unwrap().zone, Zone::Battlefield);
@@ -109,6 +109,7 @@ fn legend_rule_different_controllers_ok() {
 /// Non-legendary permanents with the same name are unaffected.
 #[test]
 fn legend_rule_ignores_non_legendary() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let c1 = ready_creature(&mut state, P0, 2, 2);
@@ -116,7 +117,7 @@ fn legend_rule_ignores_non_legendary() {
     let c2 = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(c2).unwrap().name = "Grizzly Bears".into();
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(c1).unwrap().zone, Zone::Battlefield);
     assert_eq!(state.get_object(c2).unwrap().zone, Zone::Battlefield);
@@ -132,13 +133,14 @@ fn legend_rule_ignores_non_legendary() {
 /// Equal numbers of +1/+1 and -1/-1 counters: all removed.
 #[test]
 fn counter_annihilation_equal_counts() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     state.add_counters(creature, CounterType::PlusOnePlusOne, 3);
     state.add_counters(creature, CounterType::MinusOneMinusOne, 3);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 0,
         "Counter annihilation: equal +1/+1 and -1/-1 should cancel out (CR 704.5q)");
@@ -148,13 +150,14 @@ fn counter_annihilation_equal_counts() {
 /// More +1/+1 than -1/-1: some +1/+1 remain.
 #[test]
 fn counter_annihilation_more_plus() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     state.add_counters(creature, CounterType::PlusOnePlusOne, 5);
     state.add_counters(creature, CounterType::MinusOneMinusOne, 2);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 3,
         "Counter annihilation: 5 plus - 2 minus = 3 plus remaining");
@@ -164,13 +167,14 @@ fn counter_annihilation_more_plus() {
 /// More -1/-1 than +1/+1: some -1/-1 remain (creature may die from reduced toughness).
 #[test]
 fn counter_annihilation_more_minus() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 5, 5);
 
     state.add_counters(creature, CounterType::PlusOnePlusOne, 1);
     state.add_counters(creature, CounterType::MinusOneMinusOne, 4);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 0,
         "Counter annihilation: 1 plus - 4 minus = 0 plus, 3 minus remaining");
@@ -191,7 +195,7 @@ fn counter_annihilation_can_kill() {
     state.add_counters(creature, CounterType::MinusOneMinusOne, 2);
 
     // Need registry so effective_toughness accounts for counters.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // After annihilation: 0 plus, 1 minus. Creature is 0/0 — dies.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
@@ -201,12 +205,13 @@ fn counter_annihilation_can_kill() {
 /// No annihilation needed when only one type of counter exists.
 #[test]
 fn counter_annihilation_noop_single_type() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     state.add_counters(creature, CounterType::PlusOnePlusOne, 3);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 3,
         "No annihilation when only +1/+1 counters exist");
@@ -237,7 +242,7 @@ fn spell_fizzles_when_single_target_illegal() {
     );
 
     // Creature dies before bolt resolves.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     // Clear events so we can check what the resolution generates.
     state.events.clear();
@@ -271,7 +276,7 @@ fn destroy_spell_fizzles_when_target_gone() {
     );
 
     // Creature exiled before resolution.
-    state.move_object(creature, Zone::Exile);
+    state.move_object(creature, Zone::Exile, &reg);
 
     state.events.clear();
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
@@ -307,7 +312,7 @@ fn counterspell_fizzles_when_target_already_countered() {
 
     // Bolt is removed by some other effect before Counterspell resolves.
     state.stack.retain(|e| e.as_spell() != Some(bolt));
-    state.move_object(bolt, Zone::Graveyard);
+    state.move_object(bolt, Zone::Graveyard, &reg);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
@@ -411,7 +416,7 @@ fn falkenrath_noble_triggers_on_opponent_creature_death() {
     let p0_life_before = state.get_player(P0).life;
     let p1_life_before = state.get_player(P1).life;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     process_triggers_auto_target_opponent(&mut state, &reg);
 
     // Noble SHOULD trigger — "another creature dies" includes opponent's creatures.
@@ -434,7 +439,7 @@ fn falkenrath_noble_triggers_on_own_creature_death() {
     let p0_life_before = state.get_player(P0).life;
     let p1_life_before = state.get_player(P1).life;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     process_triggers_auto_target_opponent(&mut state, &reg);
 
     assert_eq!(state.get_player(P0).life, p0_life_before + 1,
@@ -456,7 +461,7 @@ fn falkenrath_noble_triggers_on_self_death() {
     let p0_life_before = state.get_player(P0).life;
     let p1_life_before = state.get_player(P1).life;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     process_triggers_auto_target_opponent(&mut state, &reg);
 
     // Noble SHOULD trigger on its own death ("this creature ... dies").

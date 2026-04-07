@@ -8,7 +8,7 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -261,7 +261,7 @@ fn deathtouch_kills_with_one_damage() {
     assert!(state.get_object(blocker).unwrap().dealt_deathtouch_damage);
 
     // SBA should kill it despite only 1 damage on a 5-toughness creature.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
         "Creature dealt deathtouch damage should die regardless of toughness");
 }
@@ -397,7 +397,7 @@ fn first_strike_kills_before_normal_damage() {
     // First strike deals 2 to Moon Heron (toughness 2), kills it in first strike step.
     // Then in normal damage step, Moon Heron is dead and doesn't deal damage back.
     // So Voiceless Spirit should survive.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
         "Blocker should die from first strike damage");

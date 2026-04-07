@@ -8,7 +8,7 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -66,7 +66,7 @@ fn manor_skeleton_regeneration_saves_from_lethal() {
 
     // Deal lethal damage.
     state.get_object_mut(skeleton).unwrap().damage_marked = 1;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // Should survive via regeneration.
     assert_eq!(state.get_object(skeleton).unwrap().zone, Zone::Battlefield,

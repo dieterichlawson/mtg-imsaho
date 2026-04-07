@@ -60,7 +60,7 @@ fn angel_exiled_at_end_of_combat() {
         .expect("Angel should exist");
 
     // End combat — Angel should be exiled.
-    combat::end_combat(&mut state);
+    combat::end_combat(&mut state, &reg);
 
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile,
         "Angel token should be exiled at end of combat");
@@ -88,12 +88,12 @@ fn angel_exiled_even_if_geist_dies() {
         .expect("Angel should exist");
 
     // Kill the Geist before end of combat.
-    state.move_object(geist, Zone::Graveyard);
+    state.move_object(geist, Zone::Graveyard, &reg);
     assert_eq!(state.get_object(geist).unwrap().zone, Zone::Graveyard,
         "Geist should be dead");
 
     // End combat — Angel should STILL be exiled even though Geist is gone.
-    combat::end_combat(&mut state);
+    combat::end_combat(&mut state, &reg);
 
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile,
         "Angel should be exiled even when Geist has left the battlefield");

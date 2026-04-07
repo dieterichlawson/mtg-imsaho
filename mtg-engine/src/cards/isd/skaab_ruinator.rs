@@ -34,9 +34,9 @@ impl CardBehavior for SkaabRuinator {
 
     fn can_cast_from_graveyard(&self) -> bool { true }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // The exile of 3 creature cards happens at cast time (additional cost),
         // handled by the engine. On resolve, just enter the battlefield.
-        state.move_object(object_id, Zone::Battlefield);
+        state.move_object(object_id, Zone::Battlefield, registry);
     }
 }

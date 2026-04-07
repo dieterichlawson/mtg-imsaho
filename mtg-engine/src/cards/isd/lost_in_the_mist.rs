@@ -35,7 +35,7 @@ impl CardBehavior for LostInTheMist {
         )
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
@@ -46,14 +46,14 @@ impl CardBehavior for LostInTheMist {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // Counter the spell (first target)
         if let Some(Target::Object(spell_id)) = targets.first() {
             if let Some(obj) = state.get_object(*spell_id) {
                 if obj.zone == Zone::Stack {
                     let name = obj.name.clone();
                     state.stack.retain(|e| e.as_spell() != Some(*spell_id));
-                    state.move_spell_after_resolve(*spell_id);
+                    state.move_spell_after_resolve(*spell_id, registry);
                     state.log(LogLevel::Event, format!("{} was countered", name));
                 }
             }
@@ -63,11 +63,11 @@ impl CardBehavior for LostInTheMist {
             if let Some(obj) = state.get_object(*perm_id) {
                 if obj.zone == Zone::Battlefield {
                     let name = obj.name.clone();
-                    state.move_object(*perm_id, Zone::Hand);
+                    state.move_object(*perm_id, Zone::Hand, registry);
                     state.log(LogLevel::Event, format!("{} was returned to hand", name));
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

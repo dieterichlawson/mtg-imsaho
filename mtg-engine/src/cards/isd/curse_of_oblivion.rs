@@ -41,11 +41,11 @@ impl CardBehavior for CurseOfOblivion {
         TargetRequirement::PlayerOnly
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        crate::cards::helpers::resolve_curse(state, object_id, targets);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let cursed_player = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,
             _ => return,
@@ -73,7 +73,7 @@ impl CardBehavior for CurseOfOblivion {
                 .collect();
             let count = to_exile.len();
             for id in to_exile {
-                state.move_object(id, Zone::Exile);
+                state.move_object(id, Zone::Exile, registry);
             }
             state.log(crate::state::LogLevel::Event,
                 format!("Curse of Oblivion: p{} exiled {} card(s) from graveyard", cursed_player.0, count));

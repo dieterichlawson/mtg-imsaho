@@ -75,7 +75,7 @@ impl CardBehavior for CaravanVigil {
                 // Don't move spell yet or shuffle — on_yes_no_choice will handle that.
                 return;
             } else {
-                state.move_object(land_id, Zone::Hand);
+                state.move_object(land_id, Zone::Hand, registry);
                 state.log(LogLevel::Event,
                     format!("Caravan Vigil: {} put into hand", name));
             }
@@ -93,14 +93,14 @@ impl CardBehavior for CaravanVigil {
             state.get_player_mut(controller).library_order.shuffle(&mut rng);
         }
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 
-    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         let land_id = match state.get_object(self_id).and_then(|o| o.card_state.get("morbid_land").copied()) {
             Some(id) => id,
             None => {
-                state.move_spell_after_resolve(self_id);
+                state.move_spell_after_resolve(self_id, registry);
                 return;
             }
         };
@@ -108,11 +108,11 @@ impl CardBehavior for CaravanVigil {
         let name = state.get_object(land_id).map(|o| o.name.clone()).unwrap_or_default();
 
         if yes {
-            state.move_object(land_id, Zone::Battlefield);
+            state.move_object(land_id, Zone::Battlefield, registry);
             state.log(LogLevel::Event,
                 format!("Caravan Vigil (morbid): {} enters the battlefield", name));
         } else {
-            state.move_object(land_id, Zone::Hand);
+            state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
                 format!("Caravan Vigil: {} put into hand", name));
         }
@@ -122,6 +122,6 @@ impl CardBehavior for CaravanVigil {
         let mut rng = rand::thread_rng();
         state.get_player_mut(controller).library_order.shuffle(&mut rng);
 
-        state.move_spell_after_resolve(self_id);
+        state.move_spell_after_resolve(self_id, registry);
     }
 }

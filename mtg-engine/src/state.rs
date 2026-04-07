@@ -304,12 +304,12 @@ impl GameState {
 
         // Create the primary token.
         let id = self.create_token_internal(name, owner, power, toughness,
-            colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone());
+            colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(), registry);
 
         // Create extra copies for token doublers.
         for _ in 0..extra_copies {
             self.create_token_internal(name, owner, power, toughness,
-                colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone());
+                colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(), registry);
         }
 
         id
@@ -326,6 +326,7 @@ impl GameState {
         card_types: Vec<crate::types::CardType>,
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
+        registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let id = self.next_id();
         let obj = GameObject {
@@ -367,7 +368,7 @@ impl GameState {
         };
         self.objects.insert(id, obj);
         // Apply entering-battlefield replacement effects (CR 614.1d) for tokens too.
-        self.apply_entering_copy_replacement(id);
+        self.apply_entering_copy_replacement(id, registry);
         let controller = self.get_object(id).map(|o| o.controller).unwrap_or(owner);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
             object: id,
@@ -426,7 +427,7 @@ impl GameState {
 
     /// Move an object to a new zone.
     /// Per MTG rules, changing zones makes it a "new object" — we increment zone_change_count.
-    pub fn move_object(&mut self, id: ObjectId, to: Zone) {
+    pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) {
         // Collect log info before mutating.
         let log_msg = self.objects.get(&id).and_then(|obj| {
             if obj.zone == Zone::Battlefield && to != Zone::Battlefield && obj.power.is_some() {
@@ -485,10 +486,10 @@ impl GameState {
             }
             if to == Zone::Battlefield && from_zone != Zone::Battlefield {
                 // Apply entering-battlefield replacement effects (CR 614.1d).
-                // If a permanent with entering_copy_source is on the battlefield
-                // under the same controller, the entering creature becomes a copy
-                // of that source before it officially "enters."
-                self.apply_entering_copy_replacement(id);
+                // If a permanent with ReplacementEffect::EnterAsCopy is on the
+                // battlefield under the same controller, the entering creature
+                // becomes a copy of that source before it officially "enters."
+                self.apply_entering_copy_replacement(id, registry);
 
                 let controller = self.get_object(id).map(|o| o.controller).unwrap_or(PlayerId(0));
                 self.events.push(crate::events::GameEvent::EnteredBattlefield {
@@ -500,11 +501,11 @@ impl GameState {
     }
 
     /// Apply entering-battlefield copy replacement effects (CR 614.1d).
-    /// If any permanent with `entering_copy_source` is on the battlefield under the
-    /// same controller as `entering_id`, the entering creature's characteristics are
-    /// replaced with those of the copy source. The entering creature keeps its own
+    /// If any permanent with `ReplacementEffect::EnterAsCopy` is on the battlefield
+    /// under the same controller as `entering_id`, the entering creature's characteristics
+    /// are replaced with those of the copy source. The entering creature keeps its own
     /// identity (ObjectId, owner, controller) but gains the source's copiable values.
-    fn apply_entering_copy_replacement(&mut self, entering_id: ObjectId) {
+    fn apply_entering_copy_replacement(&mut self, entering_id: ObjectId, registry: &crate::cards::CardRegistry) {
         // Get the entering creature's controller and check it's a creature.
         let (controller, is_creature) = match self.get_object(entering_id) {
             Some(o) => (o.controller, o.power.is_some()),
@@ -516,29 +517,45 @@ impl GameState {
 
         // Find a copy source on the battlefield under the same controller.
         // The entering creature itself cannot be its own copy source.
-        let source_data: Option<(String, i32, i32, Vec<crate::types::Color>, Vec<crate::types::CardType>, Vec<String>, Vec<crate::types::Keyword>, String, bool)> = self.objects.values()
+        // Check for ReplacementEffect::EnterAsCopy via the card registry.
+        // Find the source permanent and get its card data for copiable values.
+        let source_info: Option<(crate::ids::CardId, String)> = self.objects.values()
             .find(|o| {
                 o.zone == Zone::Battlefield
                     && o.controller == controller
-                    && o.entering_copy_source
                     && o.id != entering_id
+                    && registry.get(o.card_id)
+                        .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::EnterAsCopy))
+                        .unwrap_or(false)
             })
-            .map(|source| {
-                (
-                    source.name.clone(),
-                    source.power.unwrap_or(0),
-                    source.toughness.unwrap_or(0),
-                    source.colors.clone(),
-                    source.card_types.clone(),
-                    source.subtypes.clone(),
-                    source.keywords.clone(),
-                    source.instance_oracle_text.clone()
-                        .unwrap_or_else(|| String::new()),
-                    source.entering_copy_source,
-                )
-            });
+            .map(|source| (source.card_id, source.name.clone()));
 
-        if let Some((name, power, toughness, colors, card_types, subtypes, keywords, oracle_text, entering_copy_source)) = source_data {
+        // Get copiable values from card data (the authoritative source for characteristics).
+        let source_data = source_info.and_then(|(card_id, name)| {
+            registry.card_data(card_id).map(|d| {
+                (
+                    name,
+                    d.power.unwrap_or(0),
+                    d.toughness.unwrap_or(0),
+                    // Derive colors from mana cost.
+                    d.cost.as_ref().map(|c| {
+                        let mut cols = Vec::new();
+                        for sym in &c.symbols {
+                            if let crate::types::ManaSymbol::Colored(c) = sym {
+                                if !cols.contains(c) { cols.push(*c); }
+                            }
+                        }
+                        cols
+                    }).unwrap_or_default(),
+                    d.card_types.clone(),
+                    d.subtypes.clone(),
+                    d.keywords.clone(),
+                    d.oracle_text.clone(),
+                )
+            })
+        });
+
+        if let Some((name, power, toughness, colors, card_types, subtypes, keywords, oracle_text)) = source_data {
             let old_name = self.get_object(entering_id).map(|o| o.name.clone()).unwrap_or_default();
             if let Some(obj) = self.get_object_mut(entering_id) {
                 obj.name = name.clone();
@@ -550,7 +567,6 @@ impl GameState {
                 obj.keywords = keywords;
                 obj.instance_continuous_effects = Some(vec![]);
                 obj.instance_oracle_text = Some(oracle_text);
-                obj.entering_copy_source = entering_copy_source;
             }
             self.log(LogLevel::Event,
                 format!("{} enters as a copy of {} ({}/{})", old_name, name, power, toughness));
@@ -1238,14 +1254,14 @@ impl GameState {
 
     /// Move a resolving spell to the appropriate zone.
     /// Flashback spells go to exile; others go to graveyard.
-    pub fn move_spell_after_resolve(&mut self, object_id: ObjectId) {
+    pub fn move_spell_after_resolve(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {
         let exile = self.get_object(object_id)
             .map(|o| o.cast_with_flashback)
             .unwrap_or(false);
         if exile {
-            self.move_object(object_id, Zone::Exile);
+            self.move_object(object_id, Zone::Exile, registry);
         } else {
-            self.move_object(object_id, Zone::Graveyard);
+            self.move_object(object_id, Zone::Graveyard, registry);
         }
     }
 
@@ -1645,12 +1661,13 @@ mod tests {
 
     #[test]
     fn create_and_move_object() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
         let mut state = GameState::new(2);
         let id = state.create_object(CardId(1), PlayerId(0), Zone::Hand, None, None);
 
         assert_eq!(state.get_object(id).unwrap().zone, Zone::Hand);
 
-        state.move_object(id, Zone::Battlefield);
+        state.move_object(id, Zone::Battlefield, &registry);
         let obj = state.get_object(id).unwrap();
         assert_eq!(obj.zone, Zone::Battlefield);
         assert!(obj.summoning_sick);
@@ -1673,6 +1690,7 @@ mod tests {
 
     #[test]
     fn leaving_battlefield_resets_state() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
         let mut state = GameState::new(2);
         let id = state.create_object(CardId(1), PlayerId(0), Zone::Battlefield, Some(2), Some(2));
 
@@ -1682,7 +1700,7 @@ mod tests {
             obj.damage_marked = 1;
         }
 
-        state.move_object(id, Zone::Graveyard);
+        state.move_object(id, Zone::Graveyard, &registry);
         let obj = state.get_object(id).unwrap();
         assert!(!obj.tapped);
         assert_eq!(obj.damage_marked, 0);

@@ -39,7 +39,7 @@ impl CardBehavior for WreathOfGeists {
         Some((creature_count, creature_count))
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        crate::cards::helpers::resolve_aura(state, object_id, targets);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        crate::cards::helpers::resolve_aura(state, object_id, targets, registry);
     }
 }

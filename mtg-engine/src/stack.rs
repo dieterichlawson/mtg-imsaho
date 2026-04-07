@@ -110,7 +110,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         if !any_legal {
             state.log(LogLevel::Event, format!("{} fizzled (all targets illegal)", name));
             // Move to graveyard (or exile for flashback) without resolving.
-            state.move_spell_after_resolve(object_id);
+            state.move_spell_after_resolve(object_id, registry);
             return;
         }
     }
@@ -135,7 +135,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
     // appropriate zone. Flashback spells go to exile; others to graveyard.
     if let Some(obj) = state.get_object(object_id) {
         if obj.zone == Zone::Stack {
-            state.move_spell_after_resolve(object_id);
+            state.move_spell_after_resolve(object_id, registry);
         }
     }
 }

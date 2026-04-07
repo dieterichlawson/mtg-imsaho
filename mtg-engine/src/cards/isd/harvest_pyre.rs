@@ -35,7 +35,7 @@ impl CardBehavior for HarvestPyre {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // The exile happened at cast time (additional cost). Read the count.
         let count = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exile_count").copied())
@@ -60,6 +60,6 @@ impl CardBehavior for HarvestPyre {
             }
         }
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

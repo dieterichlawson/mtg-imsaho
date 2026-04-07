@@ -4,15 +4,9 @@ use crate::ids::ObjectId;
 use crate::state::{GameResult, GameState, LogLevel};
 use crate::types::Zone;
 
-/// Perform state-based actions without a registry (for backward compat with tests).
-/// Uses raw P/T values only.
-pub fn check_state_based_actions(state: &mut GameState) -> bool {
-    check_state_based_actions_with_registry(state, None)
-}
-
 /// Perform state-based actions. Returns true if any were performed.
 /// Per rule 704.3, this is called repeatedly until no actions are taken.
-pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: Option<&CardRegistry>) -> bool {
+pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry) -> bool {
     let mut any_action = false;
 
     loop {
@@ -61,8 +55,7 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
         let mut destroyed_ids = Vec::new();
 
         for id in creature_ids {
-            let effective_t = registry
-                .and_then(|r| state.effective_toughness(id, r))
+            let effective_t = state.effective_toughness(id, registry)
                 .or_else(|| state.get_object(id).and_then(|o| o.toughness));
             let obj = state.get_object(id);
             let damage = obj.map(|o| o.damage_marked).unwrap_or(0);
@@ -87,13 +80,12 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             let (cid, ctrl, damaged_by) = state.get_object(id)
                 .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
                 .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
-            let last_known_toughness = registry
-                .and_then(|r| state.effective_toughness(id, r))
+            let last_known_toughness = state.effective_toughness(id, registry)
                 .or_else(|| state.get_object(id).and_then(|o| o.toughness))
                 .unwrap_or(0);
             state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness });
             // move_object handles the death log message.
-            state.move_object(id, Zone::Graveyard);
+            state.move_object(id, Zone::Graveyard, registry);
             state.creature_died_this_turn = true;
             took_action = true;
         }
@@ -102,57 +94,25 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
         // Per rule 704.3, SBAs happen simultaneously. We must snapshot indestructible
         // status BEFORE processing any deaths, so that e.g. Angelic Overseer retains
         // indestructible even if the Human granting it dies in the same SBA batch.
-        let indestructible_snapshot: std::collections::HashSet<ObjectId> = if let Some(reg) = registry {
-            destroyed_ids.iter()
-                .filter(|&&id| state.has_keyword(id, crate::types::Keyword::Indestructible, reg))
-                .copied()
-                .collect()
-        } else {
-            std::collections::HashSet::new()
-        };
+        let indestructible_snapshot: std::collections::HashSet<ObjectId> = destroyed_ids.iter()
+            .filter(|&&id| state.has_keyword(id, crate::types::Keyword::Indestructible, registry))
+            .copied()
+            .collect();
 
         for id in destroyed_ids {
-            if let Some(reg) = registry {
-                // Check indestructible from the snapshot (before any deaths in this batch).
-                if indestructible_snapshot.contains(&id) {
-                    continue;
-                }
-                // Skip indestructible check in try_destroy since we already checked.
-                // Still need regeneration check.
-                let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
-                if shields > 0 {
-                    crate::destruction::regenerate_sba(state, id);
-                    took_action = true;
-                    continue;
-                }
-                crate::destruction::destroy_sba(state, id, reg);
-                took_action = true;
-            } else {
-                // No registry (legacy tests): skip indestructible check,
-                // but still handle regeneration shields inline.
-                let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
-                if shields > 0 {
-                    crate::destruction::remove_from_combat(state, id);
-                    if let Some(obj) = state.get_object_mut(id) {
-                        obj.tapped = true;
-                        obj.damage_marked = 0;
-                        obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
-                        obj.regeneration_shields -= 1;
-                    }
-                    state.log(LogLevel::Event, format!("{} regenerated",
-                        state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
-                    took_action = true;
-                    continue;
-                }
-                let (cid, ctrl, damaged_by) = state.get_object(id)
-                    .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
-                    .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
-                let last_known_toughness = state.get_object(id).and_then(|o| o.toughness).unwrap_or(0);
-                state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness });
-                state.move_object(id, Zone::Graveyard);
-                state.creature_died_this_turn = true;
-                took_action = true;
+            // Check indestructible from the snapshot (before any deaths in this batch).
+            if indestructible_snapshot.contains(&id) {
+                continue;
             }
+            // Still need regeneration check.
+            let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
+            if shields > 0 {
+                crate::destruction::regenerate_sba(state, id);
+                took_action = true;
+                continue;
+            }
+            crate::destruction::destroy_sba(state, id, registry);
+            took_action = true;
         }
 
         // Rule 704.5m: Aura not attached to anything goes to graveyard.
@@ -197,7 +157,7 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
         }
 
         for id in unattached_auras {
-            state.move_object(id, Zone::Graveyard);
+            state.move_object(id, Zone::Graveyard, registry);
             took_action = true;
         }
 
@@ -231,25 +191,21 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
             .map(|o| o.id)
             .collect();
         // Also check via registry for non-token planeswalkers.
-        let pw_zero_loyalty_registry: Vec<_> = if let Some(reg) = registry {
-            state.objects.values()
-                .filter(|o| {
-                    o.zone == Zone::Battlefield
-                        && !o.card_types.contains(&crate::types::CardType::Planeswalker)
-                        && reg.card_data(o.card_id)
-                            .map(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
-                            .unwrap_or(false)
-                        && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
-                })
-                .map(|o| o.id)
-                .collect()
-        } else {
-            vec![]
-        };
+        let pw_zero_loyalty_registry: Vec<_> = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                    && !o.card_types.contains(&crate::types::CardType::Planeswalker)
+                    && registry.card_data(o.card_id)
+                        .map(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
+                        .unwrap_or(false)
+                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
+            })
+            .map(|o| o.id)
+            .collect();
         for id in pw_zero_loyalty.into_iter().chain(pw_zero_loyalty_registry) {
             state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
                 state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
-            state.move_object(id, Zone::Graveyard);
+            state.move_object(id, Zone::Graveyard, registry);
             took_action = true;
         }
 
@@ -257,8 +213,8 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
         // When the condition is met and the trigger is not already on the stack,
         // push a trigger onto pending_triggers so it goes on the stack and can
         // be responded to. The trigger won't fire again while it's on the stack.
-        if let Some(reg) = registry {
-            let garruk_card_id = reg.get_id_by_name("Garruk Relentless");
+        {
+            let garruk_card_id = registry.get_id_by_name("Garruk Relentless");
             if let Some(gid) = garruk_card_id {
                 let garruk_to_trigger: Vec<_> = state.objects.values()
                     .filter(|o| {
@@ -306,7 +262,7 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
                 if ids.len() > 1 {
                     // Keep the first (oldest), remove the rest.
                     for &id in &ids[1..] {
-                        state.move_object(id, Zone::Graveyard);
+                        state.move_object(id, Zone::Graveyard, registry);
                         took_action = true;
                     }
                 }
@@ -348,51 +304,61 @@ pub fn check_state_based_actions_with_registry(state: &mut GameState, registry: 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cards::CardRegistry;
     use crate::ids::{CardId, PlayerId};
+
+    fn registry() -> CardRegistry {
+        CardRegistry::with_all_cards()
+    }
 
     #[test]
     fn creature_dies_from_lethal_damage() {
+        let reg = registry();
         let mut state = GameState::new(2);
         let id = state.create_object(CardId(1), PlayerId(0), Zone::Battlefield, Some(2), Some(2));
         state.get_object_mut(id).unwrap().damage_marked = 2;
 
-        assert!(check_state_based_actions(&mut state));
+        assert!(check_state_based_actions(&mut state, &reg));
         assert_eq!(state.get_object(id).unwrap().zone, Zone::Graveyard);
     }
 
     #[test]
     fn creature_dies_from_zero_toughness() {
+        let reg = registry();
         let mut state = GameState::new(2);
         let id = state.create_object(CardId(1), PlayerId(0), Zone::Battlefield, Some(1), Some(0));
 
-        assert!(check_state_based_actions(&mut state));
+        assert!(check_state_based_actions(&mut state, &reg));
         assert_eq!(state.get_object(id).unwrap().zone, Zone::Graveyard);
     }
 
     #[test]
     fn player_loses_at_zero_life() {
+        let reg = registry();
         let mut state = GameState::new(2);
         state.players[0].life = 0;
 
-        assert!(check_state_based_actions(&mut state));
+        assert!(check_state_based_actions(&mut state, &reg));
         assert!(state.players[0].lost);
         assert_eq!(state.result, Some(GameResult::Winner(PlayerId(1))));
     }
 
     #[test]
     fn player_loses_from_empty_library_draw() {
+        let reg = registry();
         let mut state = GameState::new(2);
         state.players[1].has_drawn_from_empty = true;
 
-        assert!(check_state_based_actions(&mut state));
+        assert!(check_state_based_actions(&mut state, &reg));
         assert!(state.players[1].lost);
     }
 
     #[test]
     fn no_action_when_everything_fine() {
+        let reg = registry();
         let mut state = GameState::new(2);
         state.create_object(CardId(1), PlayerId(0), Zone::Battlefield, Some(2), Some(3));
 
-        assert!(!check_state_based_actions(&mut state));
+        assert!(!check_state_based_actions(&mut state, &reg));
     }
 }

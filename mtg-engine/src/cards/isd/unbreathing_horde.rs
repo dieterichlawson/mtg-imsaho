@@ -102,7 +102,7 @@ impl CardBehavior for UnbreathingHorde {
         let gy_count = Self::count_zombies_in_graveyard(state, controller, registry);
 
         // Move to battlefield.
-        state.move_object(object_id, Zone::Battlefield);
+        state.move_object(object_id, Zone::Battlefield, registry);
 
         // Add counters after entering.
         let total = bf_count + gy_count;

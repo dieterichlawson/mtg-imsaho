@@ -31,14 +31,14 @@ impl CardBehavior for DemonmailHauberk {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield, registry);
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.is_equipment = true;
         }
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         // Equip can only target creatures you control.
         match target {
             Target::Object(id) => {
@@ -50,7 +50,7 @@ impl CardBehavior for DemonmailHauberk {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -83,7 +83,7 @@ impl CardBehavior for DemonmailHauberk {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         // Attach equipment to the target creature.
         if let Some(Target::Object(creature_id)) = targets.first() {
             if let Some(obj) = state.get_object_mut(object_id) {

@@ -31,9 +31,9 @@ impl CardBehavior for FesterhideBoar {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Move to battlefield first.
-        state.move_object(object_id, Zone::Battlefield);
+        state.move_object(object_id, Zone::Battlefield, registry);
         // "Enters with" — add counters as part of entering, before ETB events.
         if state.creature_died_this_turn {
             state.add_counters(object_id, CounterType::PlusOnePlusOne, 2);

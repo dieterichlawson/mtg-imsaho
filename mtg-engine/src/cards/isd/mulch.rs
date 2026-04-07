@@ -66,16 +66,16 @@ impl CardBehavior for Mulch {
         // Lands go to hand.
         for &land_id in &lands {
             let name = state.get_object(land_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(land_id, Zone::Hand);
+            state.move_object(land_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Mulch: {} put into hand", name));
         }
 
         // Non-lands go to graveyard.
         for &non_land_id in &non_lands {
-            state.move_object(non_land_id, Zone::Graveyard);
+            state.move_object(non_land_id, Zone::Graveyard, registry);
         }
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

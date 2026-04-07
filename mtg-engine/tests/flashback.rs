@@ -178,7 +178,7 @@ fn mill_cards_moves_to_graveyard() {
     state.get_player_mut(P1).library_order = lib_cards.clone();
 
     // Mill 3 cards.
-    engine::mill_cards(&mut state, P1, 3);
+    engine::mill_cards(&mut state, P1, 3, &reg);
 
     // First 3 should be in graveyard, last 2 remain in library.
     for &id in &lib_cards[0..3] {

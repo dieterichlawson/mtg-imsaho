@@ -30,8 +30,8 @@ impl CardBehavior for SkaabGoliath {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Additional cost (exile 2 creatures from graveyard) is handled at cast time by the engine.
-        state.move_object(object_id, Zone::Battlefield);
+        state.move_object(object_id, Zone::Battlefield, registry);
     }
 }

@@ -26,7 +26,7 @@ impl CardBehavior for GraveyardShovel {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -51,7 +51,7 @@ impl CardBehavior for GraveyardShovel {
         }]
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Player(pid) => {
                 // Only valid if the targeted player has at least one card in their graveyard.
@@ -61,7 +61,7 @@ impl CardBehavior for GraveyardShovel {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         if let Some(Target::Player(target_player)) = targets.first() {
@@ -80,13 +80,13 @@ impl CardBehavior for GraveyardShovel {
                 if let Target::Object(card_id) = &gy_cards[0] {
                     let is_creature = state.get_object(*card_id)
                         .map(|o| {
-                            _registry.card_data(o.card_id)
+                            registry.card_data(o.card_id)
                                 .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
                                 .unwrap_or(o.power.is_some())
                         })
                         .unwrap_or(false);
                     let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    state.move_object(*card_id, Zone::Exile);
+                    state.move_object(*card_id, Zone::Exile, registry);
                     state.log(crate::state::LogLevel::Event,
                         format!("Graveyard Shovel: p{} exiled {} from graveyard", target_player.0, name));
 

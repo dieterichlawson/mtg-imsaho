@@ -67,7 +67,7 @@ impl CardBehavior for CloisteredYouth {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
@@ -88,7 +88,7 @@ impl CardBehavior for CloisteredYouth {
         }
     }
 
-    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
             state.log(LogLevel::Event,
                 "Cloistered Youth: chose not to transform".into());
@@ -96,13 +96,13 @@ impl CardBehavior for CloisteredYouth {
         }
 
         // Transform using the generic helper (updates name, keywords, subtypes, is_transformed).
-        helpers::apply_transform(state, self_id, _registry);
+        helpers::apply_transform(state, self_id, registry);
         let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
         state.log(LogLevel::Event,
             format!("Cloistered Youth transforms into {}", new_name));
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
@@ -121,7 +121,7 @@ impl CardBehavior for CloisteredYouth {
         }
     }
 
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> bool {
         false
     }
 }

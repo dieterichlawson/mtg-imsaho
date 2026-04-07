@@ -100,7 +100,7 @@ fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>)
         state.creature_died_this_turn = true;
     }
     // move_object handles the death/graveyard log message.
-    state.move_object(id, Zone::Graveyard);
+    state.move_object(id, Zone::Graveyard, registry.expect("registry required for move_object"));
 }
 
 /// Regenerate during SBA processing (public for sba.rs).

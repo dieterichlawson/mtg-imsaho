@@ -9,7 +9,7 @@ use mtg_engine::cards::{CardRegistry, TriggerKind};
 use mtg_engine::ids::CardId;
 use mtg_engine::engine;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 
 use mtg_engine::types::*;
 
@@ -52,7 +52,7 @@ fn dearly_departed_gives_counter_to_entering_humans() {
 
     // Put Dearly Departed in the graveyard.
     let dd = named_creature(&mut state, &reg, "Dearly Departed", P0);
-    state.move_object(dd, Zone::Graveyard);
+    state.move_object(dd, Zone::Graveyard, &reg);
 
     // Place a Human creature on the battlefield (Champion of the Parish is a Human).
     let human = named_creature(&mut state, &reg, "Champion of the Parish", P0);
@@ -126,7 +126,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     // Put 3 creatures in graveyard.
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 2, 2);
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let behavior = reg.get(state.get_object(cage).unwrap().card_id).unwrap();
@@ -410,7 +410,7 @@ fn heretics_punishment_fizzles_when_target_illegal() {
 
     // Create a creature target then move it off the battlefield (illegal target).
     let target_creature = ready_creature(&mut state, P1, 3, 3);
-    state.move_object(target_creature, Zone::Graveyard);
+    state.move_object(target_creature, Zone::Graveyard, &reg);
 
     let behavior = reg.get(state.get_object(hp).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, hp, 0, &[Target::Object(target_creature)], &reg);
@@ -485,7 +485,7 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 2, 2);
         state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
@@ -524,12 +524,12 @@ fn creeping_renaissance_only_returns_chosen_type() {
     for _ in 0..2 {
         let c = ready_creature(&mut state, P0, 2, 2);
         state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
     for _ in 0..2 {
         let e = state.create_object(CardId(9999), P0, Zone::Battlefield, None, None);
         state.get_object_mut(e).unwrap().card_types = vec![CardType::Enchantment];
-        state.move_object(e, Zone::Graveyard);
+        state.move_object(e, Zone::Graveyard, &reg);
     }
 
     let spell = castable_spell(&mut state, &reg, "Creeping Renaissance", P0);
@@ -570,7 +570,7 @@ fn creeping_renaissance_flashback_exiles() {
     // Put a creature in graveyard.
     let c = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
-    state.move_object(c, Zone::Graveyard);
+    state.move_object(c, Zone::Graveyard, &reg);
 
     // Put Creeping Renaissance itself in graveyard for flashback.
     let card_id = reg.get_id_by_name("Creeping Renaissance").unwrap();
@@ -651,7 +651,7 @@ fn skaab_ruinator_exiles_creatures_from_graveyard() {
     // Put 3 creature cards in graveyard for the additional cost.
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 1, 1);
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     let spell = castable_spell(&mut state, &reg, "Skaab Ruinator", P0);
@@ -678,12 +678,12 @@ fn skaab_ruinator_cast_from_graveyard() {
 
     // Put Skaab Ruinator in graveyard.
     let ruinator = spell_in_hand(&mut state, &reg, "Skaab Ruinator", P0);
-    state.move_object(ruinator, Zone::Graveyard);
+    state.move_object(ruinator, Zone::Graveyard, &reg);
 
     // Put 3 creature cards in graveyard for the additional cost.
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 1, 1);
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     // Give enough mana ({1}{U}{U}).
@@ -721,12 +721,12 @@ fn skaab_ruinator_not_castable_without_enough_creatures() {
     state.priority_player = Some(P0);
 
     let ruinator = spell_in_hand(&mut state, &reg, "Skaab Ruinator", P0);
-    state.move_object(ruinator, Zone::Graveyard);
+    state.move_object(ruinator, Zone::Graveyard, &reg);
 
     // Only 2 creatures (need 3).
     for _ in 0..2 {
         let c = ready_creature(&mut state, P0, 1, 1);
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Blue, 2);
@@ -807,7 +807,7 @@ fn unbreathing_horde_enters_with_counters_for_zombies() {
 
     // Put 1 Zombie card in graveyard.
     let gy_zombie = named_creature(&mut state, &reg, "Diregraf Ghoul", P0);
-    state.move_object(gy_zombie, Zone::Graveyard);
+    state.move_object(gy_zombie, Zone::Graveyard, &reg);
 
     // Cast Unbreathing Horde — on_resolve counts graveyard BEFORE moving to battlefield.
     let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
@@ -834,7 +834,7 @@ fn back_from_the_brink_creates_token_copy() {
 
     // Put a creature in graveyard.
     let dead = named_creature(&mut state, &reg, "Kalonian Tusker", P0);
-    state.move_object(dead, Zone::Graveyard);
+    state.move_object(dead, Zone::Graveyard, &reg);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
 
@@ -866,9 +866,9 @@ fn back_from_the_brink_ability_per_creature_in_graveyard() {
 
     // Put two different creatures in the graveyard.
     let tusker = named_creature(&mut state, &reg, "Kalonian Tusker", P0);
-    state.move_object(tusker, Zone::Graveyard);
+    state.move_object(tusker, Zone::Graveyard, &reg);
     let piker = named_creature(&mut state, &reg, "Goblin Piker", P0);
-    state.move_object(piker, Zone::Graveyard);
+    state.move_object(piker, Zone::Graveyard, &reg);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
     let abilities = behavior.activated_abilities(&state, enchant, &reg);
@@ -921,7 +921,7 @@ fn back_from_the_brink_uses_creature_mana_cost() {
 
     // Savannah Lions costs {W}.
     let lions = named_creature(&mut state, &reg, "Savannah Lions", P0);
-    state.move_object(lions, Zone::Graveyard);
+    state.move_object(lions, Zone::Graveyard, &reg);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
     let abilities = behavior.activated_abilities(&state, enchant, &reg);
@@ -957,7 +957,7 @@ fn delver_transforms_when_player_reveals_instant() {
 
     // Put a Lightning Bolt (instant) on top of library.
     let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(bolt, Zone::Library);
+    state.move_object(bolt, Zone::Library, &reg);
     state.players[0].library_order.insert(0, bolt);
 
     // Trigger upkeep — should present a YesNo choice.
@@ -994,7 +994,7 @@ fn delver_does_not_transform_when_player_declines_reveal() {
 
     // Put a Lightning Bolt (instant) on top of library.
     let bolt = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(bolt, Zone::Library);
+    state.move_object(bolt, Zone::Library, &reg);
     state.players[0].library_order.insert(0, bolt);
 
     // Trigger upkeep — should present a YesNo choice.
@@ -1027,7 +1027,7 @@ fn delver_does_not_transform_when_top_card_is_creature() {
 
     // Put a creature on top of library.
     let creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(creature, Zone::Library);
+    state.move_object(creature, Zone::Library, &reg);
     state.players[0].library_order.insert(0, creature);
 
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
@@ -1779,7 +1779,7 @@ fn geist_angel_exiled_at_end_of_combat() {
         .unwrap();
 
     // End of combat — angel should be exiled via delayed trigger in end_combat.
-    mtg_engine::combat::end_combat(&mut state);
+    mtg_engine::combat::end_combat(&mut state, &reg);
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile);
 }
 
@@ -1825,10 +1825,10 @@ fn moldgraf_monstrosity_returns_creatures_on_death() {
     // Put two creatures in P0's graveyard.
     let gy1 = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(gy1).unwrap().name = "Creature 1".into();
-    state.move_object(gy1, Zone::Graveyard);
+    state.move_object(gy1, Zone::Graveyard, &reg);
     let gy2 = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(gy2).unwrap().name = "Creature 2".into();
-    state.move_object(gy2, Zone::Graveyard);
+    state.move_object(gy2, Zone::Graveyard, &reg);
 
     // Trigger death.
     let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
@@ -2302,7 +2302,7 @@ fn garruk_transforms_at_two_or_fewer_loyalty() {
 
     // Transform is now a state-triggered ability: SBA detects the condition and
     // queues a trigger, which then goes on the stack and resolves.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     // Should have transformed.
@@ -2357,7 +2357,7 @@ fn garruk_back_face_sacrifice_to_tutor() {
 
     // Put a creature card in the library.
     let lib_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(lib_creature, Zone::Library);
+    state.move_object(lib_creature, Zone::Library, &reg);
     state.get_player_mut(P0).library_order.push(lib_creature);
     if let Some(obj) = state.get_object_mut(lib_creature) {
         obj.card_types = vec![CardType::Creature];
@@ -2440,7 +2440,7 @@ fn garruk_back_face_tutor_shuffles_library() {
     let mut lib_ids = Vec::new();
     for name in &["Grizzly Bears", "Doom Blade", "Giant Growth", "Divination", "Lightning Bolt"] {
         let id = spell_in_hand(&mut state, &reg, name, P0);
-        state.move_object(id, Zone::Library);
+        state.move_object(id, Zone::Library, &reg);
         state.get_player_mut(P0).library_order.push(id);
         if *name == "Grizzly Bears" {
             if let Some(obj) = state.get_object_mut(id) {
@@ -2485,7 +2485,7 @@ fn garruk_back_face_overrun() {
     for _ in 0..2 {
         let c = ready_creature(&mut state, P0, 1, 1);
         state.get_object_mut(c).unwrap().card_types = vec![CardType::Creature];
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     // Put a creature on the battlefield.
@@ -2546,8 +2546,8 @@ fn essence_overrides_entering_creatures() {
     let essence = castable_spell(&mut state, &reg, "Essence of the Wild", P0);
     state = cast_and_resolve(&state, &reg, essence, vec![]);
 
-    // Verify Essence itself is on the battlefield with the copy source flag.
-    assert!(state.get_object(essence).unwrap().entering_copy_source);
+    // Verify Essence itself is on the battlefield.
+    assert_eq!(state.get_object(essence).unwrap().zone, Zone::Battlefield);
 
     // Now cast a creature — it should enter as a 6/6 copy of Essence
     // via the replacement effect (before ETB triggers fire).
@@ -2573,7 +2573,7 @@ fn essence_does_not_override_opponent_creatures() {
     // Opponent's creature enters via move_object — should NOT be affected
     // because Essence only applies to its controller's creatures.
     let opp_bear = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(opp_bear, Zone::Battlefield);
+    state.move_object(opp_bear, Zone::Battlefield, &reg);
 
     // Opponent's creature should be unchanged.
     assert_eq!(state.get_object(opp_bear).unwrap().power, Some(2));
@@ -2592,9 +2592,9 @@ fn mirror_mad_phantasm_mills_to_find_itself() {
 
     // Set up library with some cards (phantasm will be shuffled in at random position).
     let card1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(card1, Zone::Library);
+    state.move_object(card1, Zone::Library, &reg);
     let card2 = spell_in_hand(&mut state, &reg, "Lightning Bolt", P0);
-    state.move_object(card2, Zone::Library);
+    state.move_object(card2, Zone::Library, &reg);
     state.players[0].library_order = vec![card1, card2];
 
     let behavior = reg.get(state.get_object(phantasm).unwrap().card_id).unwrap();
@@ -2742,11 +2742,11 @@ fn grimoire_reanimates_all_graveyard_creatures() {
     // Put creatures in both graveyards.
     let gy1 = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(gy1).unwrap().name = "Creature A".into();
-    state.move_object(gy1, Zone::Graveyard);
+    state.move_object(gy1, Zone::Graveyard, &reg);
 
     let gy2 = ready_creature(&mut state, P1, 4, 4);
     state.get_object_mut(gy2).unwrap().name = "Creature B".into();
-    state.move_object(gy2, Zone::Graveyard);
+    state.move_object(gy2, Zone::Graveyard, &reg);
 
     // Activate ability 1 via the engine (tap + sacrifice + remove counters).
     state = engine::submit_action(
@@ -2798,7 +2798,7 @@ fn civilized_scholar_discard_creature_transforms() {
 
     // Put a card in the library (will be drawn).
     let lib_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(lib_card, Zone::Library);
+    state.move_object(lib_card, Zone::Library, &reg);
     state.players[0].library_order = vec![lib_card];
 
     // Put a non-creature in hand (so we have a choice after drawing).
@@ -2839,7 +2839,7 @@ fn civilized_scholar_discard_noncreature_no_transform() {
 
     // Put a card in the library (will be drawn).
     let lib_card = spell_in_hand(&mut state, &reg, "Doom Blade", P0);
-    state.move_object(lib_card, Zone::Library);
+    state.move_object(lib_card, Zone::Library, &reg);
     state.players[0].library_order = vec![lib_card];
 
     // Put a creature in hand.
@@ -2888,7 +2888,7 @@ fn planeswalker_with_zero_loyalty_dies() {
     state.get_object_mut(liliana).unwrap().card_types = vec![CardType::Planeswalker];
     // 0 loyalty counters.
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(liliana).unwrap().zone, Zone::Graveyard);
 }
@@ -2904,7 +2904,7 @@ fn planeswalker_with_loyalty_survives() {
     state.get_object_mut(liliana).unwrap().card_types = vec![CardType::Planeswalker];
     state.add_counters(liliana, CounterType::Loyalty, 3);
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(liliana).unwrap().zone, Zone::Battlefield);
 }

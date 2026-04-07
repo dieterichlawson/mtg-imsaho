@@ -223,7 +223,7 @@ fn moorland_haunt_creates_spirit_token() {
 
     // Put a creature in graveyard.
     let creature = ready_creature(&mut state, P0, 2, 2);
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     // Give mana.
     state.get_player_mut(P0).mana_pool.add(ManaType::White, 1);
@@ -395,7 +395,7 @@ fn graveyard_shovel_exiles_and_gains_life() {
 
     // Put a creature in graveyard.
     let creature = ready_creature(&mut state, P1, 3, 3);
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
@@ -507,11 +507,11 @@ fn make_a_wish_returns_cards_from_graveyard() {
 
     // Put 3 cards in graveyard.
     let c1 = ready_creature(&mut state, P0, 1, 1);
-    state.move_object(c1, Zone::Graveyard);
+    state.move_object(c1, Zone::Graveyard, &reg);
     let c2 = ready_creature(&mut state, P0, 2, 2);
-    state.move_object(c2, Zone::Graveyard);
+    state.move_object(c2, Zone::Graveyard, &reg);
     let c3 = ready_creature(&mut state, P0, 3, 3);
-    state.move_object(c3, Zone::Graveyard);
+    state.move_object(c3, Zone::Graveyard, &reg);
 
     let spell = castable_spell(&mut state, &reg, "Make a Wish", P0);
     state = cast_and_resolve(&state, &reg, spell, vec![]);

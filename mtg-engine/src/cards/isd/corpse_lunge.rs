@@ -35,7 +35,7 @@ impl CardBehavior for CorpseLunge {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // The creature was exiled at cast time (additional cost). Read the stored power.
         let power = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exiled_power").copied())
@@ -63,6 +63,6 @@ impl CardBehavior for CorpseLunge {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

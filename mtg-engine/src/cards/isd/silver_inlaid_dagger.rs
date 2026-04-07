@@ -51,7 +51,7 @@ impl CardBehavior for SilverInlaidDagger {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -68,7 +68,7 @@ impl CardBehavior for SilverInlaidDagger {
         }
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => state.get_object(*id)
                 .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
@@ -87,8 +87,8 @@ impl CardBehavior for SilverInlaidDagger {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield, registry);
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.is_equipment = true;
         }

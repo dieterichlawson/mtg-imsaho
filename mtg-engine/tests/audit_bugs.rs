@@ -147,7 +147,7 @@ fn bug_etb_trigger_suppressed_when_source_leaves() {
     assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Battlefield);
 
     // Kill Skaab before the ETB trigger resolves (move to graveyard)
-    state.move_object(skaab, Zone::Graveyard);
+    state.move_object(skaab, Zone::Graveyard, &registry);
     assert_eq!(state.get_object(skaab).unwrap().zone, Zone::Graveyard);
 
     // Process pending triggers — the ETB mill should still happen
@@ -181,7 +181,7 @@ fn bug_falkenrath_noble_auto_targets_opponent() {
     // Place a creature for P1 and kill it to trigger Noble
     let victim = ready_creature(&mut state, P1, 1, 1);
     mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
-    mtg_engine::sba::check_state_based_actions(&mut state);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     // Process the death trigger
     mtg_engine::triggers::process_triggers(&mut state, &registry);
@@ -232,7 +232,7 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
     }
 
     // Run SBAs — all three die at once
-    mtg_engine::sba::check_state_based_actions(&mut state);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     // Process death triggers — each trigger presents a "target player" choice,
     // so we must resolve them one at a time.
@@ -307,7 +307,7 @@ fn bug_ghost_quarter_missing_shuffle() {
 
     // Activate Ghost Quarter's ability
     let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
-    state.move_object(gq, Zone::Graveyard);
+    state.move_object(gq, Zone::Graveyard, &registry);
     behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
 
     // Ghost Quarter now presents a "may search" choice. Resolve by choosing the first Plains.
@@ -447,7 +447,7 @@ fn bug_ghost_quarter_may_search_is_mandatory() {
 
     // Activate Ghost Quarter
     let behavior = registry.get(state.get_object(gq).unwrap().card_id).unwrap();
-    state.move_object(gq, Zone::Graveyard);
+    state.move_object(gq, Zone::Graveyard, &registry);
     behavior.on_activate_ability(&mut state, gq, 1, &[Target::Object(target_land)], &registry);
 
     let bf_count_after = state.objects.values()
@@ -803,10 +803,10 @@ fn bug_card_state_not_reset_on_zone_change() {
     }
 
     // Move to graveyard (dies)
-    state.move_object(subject, Zone::Graveyard);
+    state.move_object(subject, Zone::Graveyard, &registry);
 
     // Move back to battlefield (reanimated)
-    state.move_object(subject, Zone::Battlefield);
+    state.move_object(subject, Zone::Battlefield, &registry);
 
     // card_state should be empty — new battlefield instance
     let has_counters = state.get_object(subject).unwrap()
@@ -869,7 +869,7 @@ fn bug_thraben_sentry_auto_transforms_without_choice() {
     // Place and kill another creature
     let victim = ready_creature(&mut state, P0, 1, 1);
     mtg_engine::destruction::sacrifice(&mut state, victim, &registry);
-    mtg_engine::sba::check_state_based_actions(&mut state);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     // Process triggers
     mtg_engine::triggers::process_triggers(&mut state, &registry);
@@ -1328,7 +1328,7 @@ fn bug_woodland_sleuth_can_return_itself_from_graveyard() {
 
     // Place Woodland Sleuth, then move to graveyard (died in response to own ETB)
     let sleuth = named_creature(&mut state, &registry, "Woodland Sleuth", P0);
-    state.move_object(sleuth, Zone::Graveyard);
+    state.move_object(sleuth, Zone::Graveyard, &registry);
 
     // Fire the ETB trigger manually (it was triggered before death)
     let behavior = registry.get(state.get_object(sleuth).unwrap().card_id).unwrap();
@@ -1636,7 +1636,7 @@ fn bug_grimoire_legend_rule_not_applied() {
 
     // After returning, we should have two legendary Grimgrins controlled by P0.
     // SBA should destroy one (legend rule).
-    mtg_engine::sba::check_state_based_actions(&mut state);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     // Count Grimgrins on battlefield
     let grimgrin_count = state.objects.values()
@@ -1792,7 +1792,7 @@ fn bug_sturmgeist_draw_skipped_when_leaves() {
     let hand_before = state.objects_in_zone(Zone::Hand, P0).len();
 
     // Simulate combat damage to player trigger, then move Sturmgeist to GY
-    state.move_object(sturmgeist, Zone::Graveyard);
+    state.move_object(sturmgeist, Zone::Graveyard, &registry);
 
     // Call the trigger handler directly
     let behavior = registry.get(state.get_object(sturmgeist).unwrap().card_id).unwrap();

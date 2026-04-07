@@ -47,7 +47,7 @@ impl CardBehavior for Splinterfright {
         Some((creature_cards_in_gy, creature_cards_in_gy))
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -56,7 +56,7 @@ impl CardBehavior for Splinterfright {
         if state.active_player != controller {
             return;
         }
-        crate::engine::mill_cards(state, controller, 2);
+        crate::engine::mill_cards(state, controller, 2, registry);
         state.log(crate::state::LogLevel::Event, "Splinterfright: milled 2 cards".into());
     }
 }

@@ -35,13 +35,13 @@ impl CardBehavior for GraspOfPhantoms {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Battlefield {
                     let name = obj.name.clone();
                     let owner = obj.owner;
-                    state.move_object(*target_id, Zone::Library);
+                    state.move_object(*target_id, Zone::Library, registry);
                     // Insert at position 0 (top of library).
                     state.get_player_mut(owner).library_order.insert(0, *target_id);
                     state.log(crate::state::LogLevel::Event,
@@ -49,6 +49,6 @@ impl CardBehavior for GraspOfPhantoms {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

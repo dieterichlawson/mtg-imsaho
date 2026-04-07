@@ -41,7 +41,7 @@ impl CardBehavior for GhoulcallersChant {
         ])
     }
 
-    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         // Both modes require cards in the caster's graveyard.
         // The TargetRequirement handles creature/subtype filtering.
         match target {
@@ -54,19 +54,19 @@ impl CardBehavior for GhoulcallersChant {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(card_id) = target {
                 if let Some(obj) = state.get_object(*card_id) {
                     if obj.zone == Zone::Graveyard {
                         let name = obj.name.clone();
-                        state.move_object(*card_id, Zone::Hand);
+                        state.move_object(*card_id, Zone::Hand, registry);
                         state.log(crate::state::LogLevel::Event,
                             format!("Ghoulcaller's Chant returned {} to hand", name));
                     }
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

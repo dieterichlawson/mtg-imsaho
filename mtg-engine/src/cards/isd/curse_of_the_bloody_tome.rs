@@ -40,11 +40,11 @@ impl CardBehavior for CurseOfTheBloodyTome {
         TargetRequirement::PlayerOnly
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        crate::cards::helpers::resolve_curse(state, object_id, targets);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let cursed_player = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,
             _ => return,
@@ -56,7 +56,7 @@ impl CardBehavior for CurseOfTheBloodyTome {
         if state.active_player != cursed_player {
             return;
         }
-        crate::engine::mill_cards(state, cursed_player, 2);
+        crate::engine::mill_cards(state, cursed_player, 2, registry);
         state.log(crate::state::LogLevel::Event,
             format!("Curse of the Bloody Tome: p{} milled 2 cards", cursed_player.0));
     }

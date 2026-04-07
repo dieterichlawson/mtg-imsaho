@@ -8,7 +8,7 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -409,7 +409,7 @@ fn equipment_detaches_when_creature_dies() {
 
     // Kill the creature.
     state.get_object_mut(creature).unwrap().damage_marked = 2;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // Creature is dead but equipment should remain on battlefield, unattached.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);

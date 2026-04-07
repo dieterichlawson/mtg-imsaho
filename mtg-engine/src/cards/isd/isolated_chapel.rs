@@ -40,7 +40,7 @@ impl CardBehavior for IsolatedChapel {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         if !Self::controller_has_matching_land(state, object_id) {
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.tapped = true;

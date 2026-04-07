@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -248,7 +248,7 @@ fn dead_weight_kills_small_creature() {
     assert_eq!(state.effective_power(creature, &reg), Some(0));
     assert_eq!(state.effective_toughness(creature, &reg), Some(0));
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "Creature with 0 toughness from Dead Weight should die");
 }

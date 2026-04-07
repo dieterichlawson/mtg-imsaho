@@ -66,13 +66,13 @@ impl CardBehavior for CharmbreakerDevils {
             candidates.shuffle(&mut rng);
             let chosen = candidates[0];
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(chosen, Zone::Hand);
+            state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Charmbreaker Devils: returned {} to hand", name));
         }
     }
 
-    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, _spell_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

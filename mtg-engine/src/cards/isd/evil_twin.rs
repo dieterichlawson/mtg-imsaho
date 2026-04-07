@@ -38,7 +38,7 @@ impl CardBehavior for EvilTwin {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Collect all creatures on the battlefield except Evil Twin itself.
@@ -58,7 +58,7 @@ impl CardBehavior for EvilTwin {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => return vec![],
@@ -83,7 +83,7 @@ impl CardBehavior for EvilTwin {
         }]
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         // Basic validation: target must be a creature on the battlefield.
         // The SameNameAsSource filter in matches_ability_target_filter handles
         // the name-matching restriction for the activated ability.

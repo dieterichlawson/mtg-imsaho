@@ -75,7 +75,7 @@ impl CardBehavior for UndeadAlchemist {
         }
         // Move to graveyard, then check for creatures.
         for &obj_id in &milled_ids {
-            state.move_object(obj_id, Zone::Graveyard);
+            state.move_object(obj_id, Zone::Graveyard, registry);
         }
 
         // Check each milled card: if it's a creature, exile it and create a Zombie.
@@ -88,7 +88,7 @@ impl CardBehavior for UndeadAlchemist {
                 })
                 .unwrap_or(false);
             if is_creature {
-                state.move_object(obj_id, Zone::Exile);
+                state.move_object(obj_id, Zone::Exile, registry);
                 state.create_token_with_subtypes(
                     "Zombie", controller, 2, 2,
                     vec![Color::Black],

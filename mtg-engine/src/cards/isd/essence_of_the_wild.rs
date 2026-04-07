@@ -1,28 +1,13 @@
-use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry};
-use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::cards::{CardBehavior, CardData};
 use crate::types::*;
 
 /// Essence of the Wild {3}{G}{G}{G} 6/6 Avatar.
 /// Creatures you control enter as a copy of Essence of the Wild.
 ///
 /// This is a replacement effect (CR 614.1d): the creature never exists in its
-/// original form on the battlefield. Implemented by setting `entering_copy_source`
-/// on the GameObject so that `GameState::move_object` applies the copy replacement
-/// before the `EnteredBattlefield` event is emitted.
+/// original form on the battlefield. The engine checks for EnterAsCopy via
+/// the card registry in apply_entering_copy_replacement.
 pub struct EssenceOfTheWild;
-
-impl EssenceOfTheWild {
-    fn setup_copy_source(&self, state: &mut GameState, object_id: ObjectId) {
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.entering_copy_source = true;
-            obj.instance_oracle_text = Some("Creatures you control enter as a copy of this creature.".into());
-            obj.subtypes = vec!["Avatar".into()];
-            obj.colors = vec![Color::Green];
-        }
-    }
-}
 
 impl CardBehavior for EssenceOfTheWild {
     fn card_data(&self) -> CardData {
@@ -48,13 +33,7 @@ impl CardBehavior for EssenceOfTheWild {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
-        self.setup_copy_source(state, object_id);
-    }
-
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        // Also set up when entering via non-cast paths (reanimation, etc.).
-        self.setup_copy_source(state, object_id);
+    fn replacement_effects(&self) -> Vec<ReplacementEffect> {
+        vec![ReplacementEffect::EnterAsCopy]
     }
 }

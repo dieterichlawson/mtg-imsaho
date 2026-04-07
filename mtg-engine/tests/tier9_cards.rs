@@ -7,7 +7,7 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -592,7 +592,7 @@ fn equipment_detaches_when_creature_dies() {
     state.get_object_mut(creature).unwrap().damage_marked = 10;
 
     // Run SBAs to kill the creature.
-    while check_state_based_actions_with_registry(&mut state, Some(&reg)) {}
+    while check_state_based_actions(&mut state, &reg) {}
 
     // Creature should be dead.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);

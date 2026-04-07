@@ -33,9 +33,9 @@ impl CardBehavior for MikaeusTheLunarch {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Move to battlefield.
-        state.move_object(object_id, Zone::Battlefield);
+        state.move_object(object_id, Zone::Battlefield, registry);
         // Enter with X +1/+1 counters.
         let x = state.get_object(object_id).and_then(|o| o.x_value).unwrap_or(0);
         if x > 0 {
@@ -49,7 +49,7 @@ impl CardBehavior for MikaeusTheLunarch {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
@@ -87,7 +87,7 @@ impl CardBehavior for MikaeusTheLunarch {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,

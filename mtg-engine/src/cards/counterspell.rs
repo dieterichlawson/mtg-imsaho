@@ -30,7 +30,7 @@ impl CardBehavior for Counterspell {
         TargetRequirement::Spell
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
@@ -41,17 +41,17 @@ impl CardBehavior for Counterspell {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Stack {
                     let name = obj.name.clone();
                     state.stack.retain(|e| e.as_spell() != Some(*target_id));
-                    state.move_spell_after_resolve(*target_id);
+                    state.move_spell_after_resolve(*target_id, registry);
                     state.log(LogLevel::Event, format!("{} was countered", name));
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

@@ -37,7 +37,7 @@ impl CardBehavior for MirrorMadPhantasm {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
@@ -58,7 +58,7 @@ impl CardBehavior for MirrorMadPhantasm {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let owner = match state.get_object(object_id) {
             Some(o) => o.owner,
             None => return,
@@ -66,7 +66,7 @@ impl CardBehavior for MirrorMadPhantasm {
 
         // "shuffles it into their library" — move to library zone, add to library order,
         // then shuffle so the card is at a random position before the reveal loop.
-        state.move_object(object_id, Zone::Library);
+        state.move_object(object_id, Zone::Library, registry);
         state.get_player_mut(owner).library_order.push(object_id);
         {
             use rand::seq::SliceRandom;
@@ -98,12 +98,12 @@ impl CardBehavior for MirrorMadPhantasm {
 
         // Put all milled cards into graveyard.
         for card_id in &milled {
-            state.move_object(*card_id, Zone::Graveyard);
+            state.move_object(*card_id, Zone::Graveyard, registry);
         }
 
         // If found, put Mirror-Mad Phantasm onto the battlefield.
         if let Some(phantasm_id) = found {
-            state.move_object(phantasm_id, Zone::Battlefield);
+            state.move_object(phantasm_id, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(phantasm_id) {
                 obj.controller = owner;
             }

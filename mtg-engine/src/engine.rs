@@ -6,7 +6,7 @@ use crate::combat;
 use crate::events::GameEvent;
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::mana;
-use crate::sba::check_state_based_actions_with_registry;
+use crate::sba::check_state_based_actions;
 use crate::stack;
 use crate::state::{AwaitingAction, GameState, LogLevel};
 use crate::triggers;
@@ -1597,7 +1597,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
         Action::PlayLand { object_id } => {
             let player = new_state.priority_player.expect("PlayLand requires priority");
-            new_state.move_object(*object_id, Zone::Battlefield);
+            new_state.move_object(*object_id, Zone::Battlefield, registry);
             // Remove from library order if somehow there (shouldn't be, it's in hand).
             new_state.get_player_mut(player).land_plays_remaining -= 1;
             new_state.events.push(GameEvent::LandPlayed {
@@ -1733,7 +1733,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
                     for (exile_id, _) in &exile_candidates {
                         let name = card_name(&new_state, registry, *exile_id);
-                        new_state.move_object(*exile_id, Zone::Exile);
+                        new_state.move_object(*exile_id, Zone::Exile, registry);
                         new_state.log(LogLevel::Event,
                             format!("Exiled {} from graveyard as additional cost", name));
                     }
@@ -1762,7 +1762,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     };
                     let count = graveyard_cards.len() as u32;
                     for gid in &graveyard_cards {
-                        new_state.move_object(*gid, Zone::Exile);
+                        new_state.move_object(*gid, Zone::Exile, registry);
                     }
                     // Store the count on the spell for resolution.
                     if let Some(obj) = new_state.get_object_mut(*object_id) {
@@ -1774,7 +1774,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             }
 
             // Move to stack and store targets.
-            new_state.move_object(*object_id, Zone::Stack);
+            new_state.move_object(*object_id, Zone::Stack, registry);
             {
                 let obj = new_state.get_object_mut(*object_id).expect("spell must exist after moving to stack");
                 obj.targets = targets.clone();
@@ -2100,7 +2100,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 .collect();
             for &card_id in cards {
                 new_state.events.push(GameEvent::Discarded { player, object: card_id });
-                new_state.move_object(card_id, Zone::Graveyard);
+                new_state.move_object(card_id, Zone::Graveyard, registry);
             }
             if is_hand_size {
                 new_state.log(LogLevel::Event,
@@ -2164,7 +2164,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         if !*pay {
                             let name = new_state.get_object(*spell_id).map(|o| o.name.clone()).unwrap_or_default();
                             new_state.stack.retain(|e| e.as_spell() != Some(*spell_id));
-                            new_state.move_spell_after_resolve(*spell_id);
+                            new_state.move_spell_after_resolve(*spell_id, registry);
                             new_state.log(LogLevel::Event, format!("{} was countered", name));
                         } else {
                             // Deduct {1} from the player's mana pool.
@@ -2178,7 +2178,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
                             .iter().map(|o| o.id).collect();
                         if hand.len() == 1 {
-                            new_state.move_object(hand[0], Zone::Graveyard);
+                            new_state.move_object(hand[0], Zone::Graveyard, registry);
                             new_state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
                             new_state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
                         } else if !hand.is_empty() {
@@ -2192,10 +2192,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                 },
                             });
                             // Move the spell to graveyard before the discard choice.
-                            new_state.move_spell_after_resolve(*source_spell_id);
+                            new_state.move_spell_after_resolve(*source_spell_id, registry);
                             return new_state;
                         }
-                        new_state.move_spell_after_resolve(*source_spell_id);
+                        new_state.move_spell_after_resolve(*source_spell_id, registry);
                     }
                     (ResolutionChoiceKind::YesNo { source_card, .. },
                      ResolvedChoice::PayDecision(yes)) => {
@@ -2214,7 +2214,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     (ResolutionChoiceKind::ChooseCardFromHand { .. },
                      ResolvedChoice::ChosenCard(discard_id)) => {
                         let name = new_state.get_object(*discard_id).map(|o| o.name.clone()).unwrap_or_default();
-                        new_state.move_object(*discard_id, Zone::Graveyard);
+                        new_state.move_object(*discard_id, Zone::Graveyard, registry);
                         new_state.events.push(GameEvent::Discarded {
                             player: new_state.get_object(*discard_id).map(|o| o.owner).unwrap_or(PlayerId(0)),
                             object: *discard_id,
@@ -2230,21 +2230,21 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     (ResolutionChoiceKind::ChooseFromRevealed { revealed, spell_id, .. },
                      ResolvedChoice::ChosenCard(keep_id)) => {
                         let keep_name = new_state.get_object(*keep_id).map(|o| o.name.clone()).unwrap_or_default();
-                        new_state.move_object(*keep_id, Zone::Hand);
+                        new_state.move_object(*keep_id, Zone::Hand, registry);
                         for &card_id in revealed {
                             if card_id != *keep_id {
-                                new_state.move_object(card_id, Zone::Graveyard);
+                                new_state.move_object(card_id, Zone::Graveyard, registry);
                             }
                         }
                         new_state.log(LogLevel::Event, format!("Kept {}", keep_name));
-                        new_state.move_spell_after_resolve(*spell_id);
+                        new_state.move_spell_after_resolve(*spell_id, registry);
                     }
                     (ResolutionChoiceKind::ChooseFromLibrary { searcher, .. },
                      ResolvedChoice::ChosenCard(chosen_id)) => {
                         let chosen_name = new_state.get_object(*chosen_id).map(|o| o.name.clone()).unwrap_or_default();
                         let player = new_state.get_player_mut(*searcher);
                         player.library_order.retain(|&id| id != *chosen_id);
-                        new_state.move_object(*chosen_id, Zone::Hand);
+                        new_state.move_object(*chosen_id, Zone::Hand, registry);
                         new_state.log(LogLevel::Event, format!("Searched library and found {}", chosen_name));
                         // Shuffle library after searching.
                         {
@@ -2280,12 +2280,12 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             .collect();
                         let count = to_return.len();
                         for id in to_return {
-                            new_state.move_object(id, Zone::Hand);
+                            new_state.move_object(id, Zone::Hand, registry);
                         }
                         new_state.log(LogLevel::Event,
                             format!("Creeping Renaissance: chose {}. Returned {} cards from graveyard to hand",
                                 chosen_type, count));
-                        new_state.move_spell_after_resolve(*spell_id);
+                        new_state.move_spell_after_resolve(*spell_id, registry);
                     }
                     (ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, source_id, .. },
                      ResolvedChoice::ChosenSubset(pile_1_ids)) => {
@@ -2433,9 +2433,9 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::ReturnToBattlefield { spell_id }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*id, Zone::Battlefield);
+            state.move_object(*id, Zone::Battlefield, registry);
             state.log(LogLevel::Event, format!("{} returned to the battlefield", name));
-            state.move_spell_after_resolve(*spell_id);
+            state.move_spell_after_resolve(*spell_id, registry);
         }
         (Target::Object(id), PendingEffect::AddCounters { count, human_bonus }) => {
             let mut final_count = *count;
@@ -2473,12 +2473,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{} prevents {} from blocking this turn", source_name, name));
         }
         (Target::Player(pid), PendingEffect::Mill { count, source_name }) => {
-            mill_cards(state, *pid, *count as usize);
+            mill_cards(state, *pid, *count as usize, registry);
             state.log(LogLevel::Event, format!("{} milled {} card(s) from p{}", source_name, count, pid.0));
         }
         (Target::Object(id), PendingEffect::ExileAndStore { source_id, source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*id, Zone::Exile);
+            state.move_object(*id, Zone::Exile, registry);
             // Store the exiled creature's ID on the source permanent for LTB retrieval.
             if let Some(source_obj) = state.get_object_mut(*source_id) {
                 source_obj.card_state.insert("exiled_creature".into(), *id);
@@ -2487,9 +2487,9 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::ExileCardAndCleanup { spell_id, source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*id, Zone::Exile);
+            state.move_object(*id, Zone::Exile, registry);
             state.log(LogLevel::Event, format!("{} exiled {} from hand", source_name, name));
-            state.move_spell_after_resolve(*spell_id);
+            state.move_spell_after_resolve(*spell_id, registry);
         }
         (Target::Player(pid), PendingEffect::DrawAndLoseLife { source_name }) => {
             draw_cards(state, *pid, 1, registry);
@@ -2519,7 +2519,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::ExileCurseOfOblivion { remaining }) => {
             let owner = state.get_object(*id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
-            state.move_object(*id, Zone::Exile);
+            state.move_object(*id, Zone::Exile, registry);
             state.log(LogLevel::Event, format!("Curse of Oblivion: exiled a card from p{}'s graveyard", owner.0));
             // If more cards to exile, present another choice.
             if *remaining > 0 {
@@ -2543,13 +2543,13 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*id, Zone::Hand);
+            state.move_object(*id, Zone::Hand, registry);
             state.log(LogLevel::Event, format!("{}: returned {} to hand", source_name, name));
         }
         (Target::Object(id), PendingEffect::PutOnTopOfLibrary { source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
             let owner = state.get_object(*id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
-            state.move_object(*id, Zone::Library);
+            state.move_object(*id, Zone::Library, registry);
             // Insert at position 0 (top of library).
             state.get_player_mut(owner).library_order.insert(0, *id);
             state.log(LogLevel::Event, format!("{}: put {} on top of library", source_name, name));
@@ -2575,7 +2575,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {}", name));
             }
 
-            state.move_spell_after_resolve(*spell_id);
+            state.move_spell_after_resolve(*spell_id, registry);
         }
         (Target::Object(id), PendingEffect::ExileFromGraveyardGainLife { controller }) => {
             let is_creature = state.get_object(*id)
@@ -2586,7 +2586,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 })
                 .unwrap_or(false);
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*id, Zone::Exile);
+            state.move_object(*id, Zone::Exile, registry);
             state.log(LogLevel::Event, format!("Graveyard Shovel: exiled {} from graveyard", name));
 
             if is_creature {
@@ -2642,7 +2642,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 let found_name = state.get_object(found_id).map(|o| o.name.clone()).unwrap_or_default();
                 let player = state.get_player_mut(controller);
                 player.library_order.retain(|&lid| lid != found_id);
-                state.move_object(found_id, Zone::Hand);
+                state.move_object(found_id, Zone::Hand, registry);
                 state.log(LogLevel::Event,
                     format!("Garruk, the Veil-Cursed: searched and found {}", found_name));
                 use rand::seq::SliceRandom;
@@ -2847,7 +2847,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // Remove from library.
             state.get_player_mut(*searcher).library_order.retain(|&id| id != *curse_id);
             // Put on battlefield attached to the chosen player.
-            state.move_object(*curse_id, Zone::Battlefield);
+            state.move_object(*curse_id, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(*curse_id) {
                 obj.attached_to_player = Some(*pid);
                 obj.summoning_sick = false;
@@ -2876,7 +2876,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // Put the chosen basic land onto the battlefield, then shuffle.
             let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
             state.get_player_mut(*searcher).library_order.retain(|&id| id != *land_id);
-            state.move_object(*land_id, Zone::Battlefield);
+            state.move_object(*land_id, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(*land_id) {
                 obj.summoning_sick = false;
             }
@@ -2973,7 +2973,7 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
         };
         match card_id {
             Some(id) => {
-                state.move_object(id, Zone::Hand);
+                state.move_object(id, Zone::Hand, registry);
                 state.events.push(GameEvent::CardDrawn { player, object: id });
                 drawn += 1;
             }
@@ -3023,7 +3023,7 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
 }
 
 /// Mill N cards from a player's library (move top N cards to graveyard).
-pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize) {
+pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) {
     let mut milled = 0;
     for _ in 0..count {
         let card_id = {
@@ -3033,7 +3033,7 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize) {
             }
             player_state.library_order.remove(0)
         };
-        state.move_object(card_id, Zone::Graveyard);
+        state.move_object(card_id, Zone::Graveyard, registry);
         milled += 1;
     }
     if milled > 0 {
@@ -3278,7 +3278,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         }
 
         Step::EndCombat => {
-            combat::end_combat(state);
+            combat::end_combat(state, registry);
             state.priority_player = Some(active);
         }
 
@@ -3324,7 +3324,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             // CR 514.3a: Check SBAs after clearing effects. If any SBA
             // fires, players get priority (the cleanup step essentially restarts).
             let registry_ref = registry;
-            let sba_fired = crate::sba::check_state_based_actions_with_registry(state, Some(registry_ref));
+            let sba_fired = crate::sba::check_state_based_actions(state, registry_ref);
             if sba_fired {
                 // SBA occurred — give active player priority. The game loop
                 // will process actions and eventually advance past cleanup.
@@ -3402,7 +3402,7 @@ fn run_game_loop_inner<F>(
         // Process triggers from the last action, then SBA+trigger loop.
         triggers::process_triggers(state, registry);
         loop {
-            let sba = check_state_based_actions_with_registry(state, Some(registry));
+            let sba = check_state_based_actions(state, registry);
             if sba {
                 triggers::process_triggers(state, registry);
             }

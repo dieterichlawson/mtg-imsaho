@@ -66,7 +66,7 @@ impl CardBehavior for WoodlandSleuth {
             creatures.shuffle(&mut rng);
             let chosen = creatures[0];
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(chosen, Zone::Hand);
+            state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Woodland Sleuth (morbid): returned {} to hand", name));
         }

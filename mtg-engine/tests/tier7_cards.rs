@@ -4,7 +4,7 @@ mod common;
 
 use common::*;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -29,7 +29,7 @@ fn boneyard_wurm_pt_equals_creatures_in_graveyard() {
     // Put 3 creatures in graveyard.
     for _ in 0..3 {
         let c = ready_creature(&mut state, P0, 1, 1);
-        state.move_object(c, Zone::Graveyard);
+        state.move_object(c, Zone::Graveyard, &reg);
     }
 
     assert_eq!(state.effective_power(wurm, &reg).unwrap(), 3);
@@ -145,7 +145,7 @@ fn reaper_destroys_non_demon_on_morbid_end_step() {
     triggers::process_triggers(&mut state, &reg);
 
     // SBAs to move destroyed creature to graveyard.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(target).unwrap().zone, Zone::Graveyard,
         "Reaper should destroy a non-Demon creature");
@@ -231,7 +231,7 @@ fn angel_of_flight_alabaster_returns_spirit() {
 
     // Put a Spirit in graveyard.
     let spirit = named_creature(&mut state, &reg, "Chapel Geist", P0);
-    state.move_object(spirit, Zone::Graveyard);
+    state.move_object(spirit, Zone::Graveyard, &reg);
 
     state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
     triggers::process_triggers(&mut state, &reg);

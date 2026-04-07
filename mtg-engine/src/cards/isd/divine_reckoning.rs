@@ -36,7 +36,7 @@ impl CardBehavior for DivineReckoning {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // Collect players in turn order starting with the active player.
         let active = state.active_player;
         let mut player_order: Vec<PlayerId> = state.players.iter().map(|p| p.id).collect();
@@ -68,7 +68,7 @@ impl CardBehavior for DivineReckoning {
         }
 
         // Clean up the spell first.
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
 
         if pending_players.is_empty() {
             // All players had 0-1 creatures; destroy everything not kept.
@@ -78,7 +78,7 @@ impl CardBehavior for DivineReckoning {
                 .collect();
             for cid in all_creatures {
                 if !kept.contains(&cid) {
-                    crate::destruction::try_destroy(state, cid, _registry);
+                    crate::destruction::try_destroy(state, cid, registry);
                 }
             }
         } else {

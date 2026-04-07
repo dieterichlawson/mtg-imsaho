@@ -31,7 +31,7 @@ impl CardBehavior for BumpInTheNight {
         TargetRequirement::PlayerOnly
     }
 
-    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         // "Target opponent" — can only target opponents, not yourself.
         match target {
             Target::Player(pid) => *pid != caster,
@@ -39,7 +39,7 @@ impl CardBehavior for BumpInTheNight {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
             let old_life = state.get_player(*player_id).life;
             let new_life = old_life - 3;
@@ -50,6 +50,6 @@ impl CardBehavior for BumpInTheNight {
                 new_life,
             });
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

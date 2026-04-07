@@ -202,7 +202,7 @@ fn bug_prey_upon_doesnt_fizzle_with_one_illegal_target() {
     );
 
     // Remove one target before resolution
-    state.move_object(their_creature, Zone::Graveyard);
+    state.move_object(their_creature, Zone::Graveyard, &registry);
 
     // Resolve — should fizzle because fight requires both creatures
     let my_damage_before = state.get_object(my_creature).unwrap().damage_marked;
@@ -491,7 +491,7 @@ fn bug_angelic_overseer_sba_ordering() {
     //         indestructible (Human still alive at snapshot) → survives.
     // Pass 2: Overseer still has lethal damage, no longer indestructible → dies.
     // End result: both die, but in SEPARATE SBA passes (not simultaneously).
-    mtg_engine::sba::check_state_based_actions_with_registry(&mut state, Some(&registry));
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     let overseer_zone = state.get_object(overseer).unwrap().zone;
     let human_zone = state.get_object(human).unwrap().zone;
@@ -684,7 +684,7 @@ fn bug_bitterheart_witch_hexproof_not_filtered() {
     // Place and kill Bitterheart Witch
     let witch = named_creature(&mut state, &registry, "Bitterheart Witch", P0);
     mtg_engine::destruction::sacrifice(&mut state, witch, &registry);
-    mtg_engine::sba::check_state_based_actions(&mut state);
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
     mtg_engine::triggers::process_triggers(&mut state, &registry);
 
     // If there's a yes/no choice, accept it

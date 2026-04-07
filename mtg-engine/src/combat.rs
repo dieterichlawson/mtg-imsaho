@@ -144,7 +144,7 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
         // First strike damage step: only first/double strikers deal damage.
         deal_damage_step(state, &combat, registry, true);
         // Run SBAs between first strike and normal damage.
-        while crate::sba::check_state_based_actions_with_registry(state, Some(registry)) {}
+        while crate::sba::check_state_based_actions(state, registry) {}
         // Normal damage step: non-first-strikers + double strikers.
         deal_damage_step(state, &combat, registry, false);
     } else {
@@ -596,13 +596,13 @@ fn deal_damage_to_player(
 }
 
 /// Clean up combat state at end of combat.
-pub fn end_combat(state: &mut GameState) {
+pub fn end_combat(state: &mut GameState, registry: &crate::cards::CardRegistry) {
     // Process delayed exile triggers (e.g., Geist of Saint Traft's Angel token).
     // These fire independently of the source permanent's presence on the battlefield.
     let exiles: Vec<_> = state.end_of_combat_exiles.drain(..).collect();
     for exile_id in exiles {
         if state.get_object(exile_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-            state.move_object(exile_id, Zone::Exile);
+            state.move_object(exile_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
                 "Token exiled at end of combat (delayed trigger)".into());
         }

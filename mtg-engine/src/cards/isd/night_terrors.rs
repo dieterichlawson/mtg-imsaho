@@ -56,7 +56,7 @@ impl CardBehavior for NightTerrors {
                 // Only one option — auto-select.
                 let exile_id = nonland_cards[0];
                 let name = state.get_object(exile_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.move_object(exile_id, Zone::Exile);
+                state.move_object(exile_id, Zone::Exile, registry);
                 state.log(crate::state::LogLevel::Event,
                     format!("Night Terrors: exiled {} from p{}'s hand", name, target_player.0));
             } else {
@@ -70,6 +70,6 @@ impl CardBehavior for NightTerrors {
                 return; // Don't move spell yet — awaiting choice.
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

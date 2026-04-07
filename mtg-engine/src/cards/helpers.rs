@@ -15,10 +15,10 @@ use crate::types::Zone;
 /// Resolve an aura spell: attach it to the target creature on the battlefield.
 /// If the target is no longer on the battlefield, the aura goes to graveyard.
 /// Returns true if the aura was successfully attached.
-pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target]) -> bool {
+pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target], registry: &CardRegistry) -> bool {
     if let Some(Target::Object(target_id)) = targets.first() {
         if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-            state.move_object(aura_id, Zone::Battlefield);
+            state.move_object(aura_id, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(aura_id) {
                 obj.attached_to = Some(*target_id);
                 obj.summoning_sick = false;
@@ -26,27 +26,27 @@ pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target]
             return true;
         }
     }
-    state.move_spell_after_resolve(aura_id);
+    state.move_spell_after_resolve(aura_id, registry);
     false
 }
 
 /// Resolve a curse aura: attach to a target player and move to battlefield.
-pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Target]) -> bool {
+pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Target], registry: &CardRegistry) -> bool {
     if let Some(Target::Player(player_id)) = targets.first() {
-        state.move_object(curse_id, Zone::Battlefield);
+        state.move_object(curse_id, Zone::Battlefield, registry);
         if let Some(obj) = state.get_object_mut(curse_id) {
             obj.attached_to_player = Some(*player_id);
             obj.summoning_sick = false;
         }
         return true;
     }
-    state.move_spell_after_resolve(curse_id);
+    state.move_spell_after_resolve(curse_id, registry);
     false
 }
 
 /// Resolve a damage spell: deal `amount` damage to the first target
 /// (creature or player), then move the spell to the appropriate zone.
-pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Target], amount: u32) {
+pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Target], amount: u32, registry: &CardRegistry) {
     if let Some(target) = targets.first() {
         match target {
             Target::Object(target_id) => {
@@ -79,7 +79,7 @@ pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Targ
             }
         }
     }
-    state.move_spell_after_resolve(spell_id);
+    state.move_spell_after_resolve(spell_id, registry);
 }
 
 /// Resolve a targeted destruction spell: destroy the first target creature
@@ -98,7 +98,7 @@ pub fn resolve_destroy(
             }
         }
     }
-    state.move_spell_after_resolve(spell_id);
+    state.move_spell_after_resolve(spell_id, registry);
 }
 
 // ═══════════════════════════════════════════════════════════════════

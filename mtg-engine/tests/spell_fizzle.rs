@@ -44,7 +44,7 @@ fn bolt_target_dies_before_resolution() {
     assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Stack);
 
     // Before the bolt resolves, the creature is removed (e.g., exiled by another spell).
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     // Resolve the bolt — target is no longer on the battlefield.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
@@ -76,7 +76,7 @@ fn giant_growth_target_dies_before_resolution() {
     );
 
     // Creature dies before Giant Growth resolves.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
@@ -106,7 +106,7 @@ fn doom_blade_target_already_gone() {
     );
 
     // Creature is sacrificed before Doom Blade resolves.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
@@ -142,7 +142,7 @@ fn counterspell_target_removed_from_stack() {
     // Bolt is somehow removed from the stack before Counterspell resolves
     // (e.g., another Counterspell countered it first).
     state.stack.retain(|e| e.as_spell() != Some(bolt));
-    state.move_object(bolt, Zone::Graveyard);
+    state.move_object(bolt, Zone::Graveyard, &reg);
 
     // Resolve the Counterspell — its target (bolt) is no longer on the stack.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
@@ -170,7 +170,7 @@ fn aura_target_dies_before_resolution() {
     );
 
     // Creature dies before Pacifism resolves.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
@@ -247,7 +247,7 @@ fn multi_target_spell_with_one_target_dying() {
     );
 
     // Creature A dies before resolution.
-    state.move_object(creature_a, Zone::Graveyard);
+    state.move_object(creature_a, Zone::Graveyard, &reg);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
@@ -279,8 +279,8 @@ fn multi_target_spell_with_all_targets_dying() {
     );
 
     // Both creatures die before resolution.
-    state.move_object(creature_a, Zone::Graveyard);
-    state.move_object(creature_b, Zone::Graveyard);
+    state.move_object(creature_a, Zone::Graveyard, &reg);
+    state.move_object(creature_b, Zone::Graveyard, &reg);
 
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 

@@ -5,7 +5,7 @@ mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -30,7 +30,7 @@ fn abattoir_ghoul_gains_life_from_damaged_creature_death() {
     state.get_object_mut(victim).unwrap().damage_marked = 3;
 
     // SBA should kill the victim.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     // Process death triggers.
     triggers::process_triggers(&mut state, &reg);
 
@@ -50,7 +50,7 @@ fn abattoir_ghoul_no_life_if_not_damaged_by_ghoul() {
     // Victim dies without being damaged by the ghoul.
     state.get_object_mut(victim).unwrap().damage_marked = 3;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_player(P0).life, 20, "should NOT gain life");
@@ -73,7 +73,7 @@ fn abattoir_ghoul_uses_last_known_toughness_with_counters() {
     // Mark lethal damage (4 toughness with counter, 4 damage).
     state.get_object_mut(victim).unwrap().damage_marked = 4;
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     triggers::process_triggers(&mut state, &reg);
 
     // Should gain 4 life (last-known toughness with counter), not 3 (base).

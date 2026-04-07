@@ -5,7 +5,7 @@ mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::GameEvent;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -103,7 +103,7 @@ fn night_revelers_has_haste_with_opponent_human() {
         "Night Revelers should have haste when opponent controls a Human");
 
     // Remove the Human.
-    state.move_object(human, Zone::Graveyard);
+    state.move_object(human, Zone::Graveyard, &reg);
     assert!(!state.has_keyword(revelers, Keyword::Haste, &reg),
         "Night Revelers should lose haste when opponent no longer controls a Human");
 }
@@ -597,7 +597,7 @@ fn angelic_overseer_hexproof_indestructible_with_human() {
         "Angelic Overseer should be indestructible when you control a Human");
 
     // Remove the Human.
-    state.move_object(human, Zone::Graveyard);
+    state.move_object(human, Zone::Graveyard, &reg);
     assert!(!state.has_keyword(angel, Keyword::Hexproof, &reg),
         "Angelic Overseer should lose hexproof when Human leaves");
     assert!(!state.has_keyword(angel, Keyword::Indestructible, &reg),

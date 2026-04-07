@@ -50,13 +50,13 @@ impl CardBehavior for DerangedAssistant {
         }
     }
 
-    fn on_activate_mana_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {
+    fn on_activate_mana_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
         };
         // Mill a card as part of the mana ability cost.
-        crate::engine::mill_cards(state, controller, 1);
+        crate::engine::mill_cards(state, controller, 1, registry);
         state.log(crate::state::LogLevel::Event,
             "Deranged Assistant: milled a card".into());
     }

@@ -31,8 +31,8 @@ impl CardBehavior for BrimstoneVolley {
         TargetRequirement::AnyTarget
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         let damage = if state.creature_died_this_turn { 5 } else { 3 };
-        crate::cards::helpers::resolve_damage(state, object_id, targets, damage);
+        crate::cards::helpers::resolve_damage(state, object_id, targets, damage, registry);
     }
 }

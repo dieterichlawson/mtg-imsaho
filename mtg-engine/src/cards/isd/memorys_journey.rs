@@ -40,7 +40,7 @@ impl CardBehavior for MemorysJourney {
         )
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         // Determine which player's graveyard the cards come from.
@@ -60,7 +60,7 @@ impl CardBehavior for MemorysJourney {
                     None => continue,
                 };
                 if in_gy {
-                    state.move_object(*card_id, Zone::Library);
+                    state.move_object(*card_id, Zone::Library, registry);
                     state.get_player_mut(owner).library_order.push(*card_id);
                     state.log(crate::state::LogLevel::Event,
                         format!("Memory's Journey: {} shuffled into library", name));
@@ -77,6 +77,6 @@ impl CardBehavior for MemorysJourney {
                 format!("Memory's Journey: p{}'s library shuffled", target_player.0));
         }
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

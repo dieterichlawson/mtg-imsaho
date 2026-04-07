@@ -61,7 +61,7 @@ impl CardBehavior for LilianaOfTheVeil {
         ]
     }
 
-    fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_loyalty_ability(&self, state: &mut GameState, self_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             None => return,
@@ -133,7 +133,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     // Only one card — auto-discard.
                     let card_id = hand[0];
                     let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    state.move_object(card_id, Zone::Graveyard);
+                    state.move_object(card_id, Zone::Graveyard, registry);
                     state.events.push(crate::events::GameEvent::Discarded {
                         player: first_player,
                         object: card_id,
@@ -141,7 +141,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     state.log(crate::state::LogLevel::Event,
                         format!("Liliana +1: p{} discarded {}", first_player.0, name));
                     // Chain to next player.
-                    self.chain_next_discard(state, self_id);
+                    self.chain_next_discard(state, self_id, registry);
                 } else {
                     // Present choice to the first player.
                     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -220,16 +220,16 @@ impl CardBehavior for LilianaOfTheVeil {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, registry: &CardRegistry) {
         // After a player discards for Liliana +1, chain to the next player.
-        self.chain_next_discard(state, self_id);
+        self.chain_next_discard(state, self_id, registry);
     }
 }
 
 impl LilianaOfTheVeil {
     /// After one player has discarded for the +1, check if more players need to discard
     /// and present the choice to the next one.
-    fn chain_next_discard(&self, state: &mut GameState, self_id: ObjectId) {
+    fn chain_next_discard(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         // Read remaining player count from card_state.
         let count = state.get_object(self_id)
             .and_then(|o| o.card_state.get("liliana_discard_count").copied())
@@ -269,7 +269,7 @@ impl LilianaOfTheVeil {
             // This player has no cards — skip and chain to next.
             state.log(crate::state::LogLevel::Event,
                 format!("Liliana +1: p{} has no cards to discard", next_player_id.0));
-            self.chain_next_discard(state, self_id);
+            self.chain_next_discard(state, self_id, registry);
             return;
         }
 
@@ -277,14 +277,14 @@ impl LilianaOfTheVeil {
             // Only one card — auto-discard.
             let card_id = hand[0];
             let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(card_id, Zone::Graveyard);
+            state.move_object(card_id, Zone::Graveyard, registry);
             state.events.push(crate::events::GameEvent::Discarded {
                 player: next_player_id,
                 object: card_id,
             });
             state.log(crate::state::LogLevel::Event,
                 format!("Liliana +1: p{} discarded {}", next_player_id.0, name));
-            self.chain_next_discard(state, self_id);
+            self.chain_next_discard(state, self_id, registry);
             return;
         }
 

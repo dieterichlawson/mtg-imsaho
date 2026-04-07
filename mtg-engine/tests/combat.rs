@@ -30,7 +30,7 @@ fn blocked_creature_with_removed_blocker_deals_no_damage() {
     combat::declare_blockers(&mut state, &[(blocker, attacker)]);
 
     // Blocker is removed before damage (e.g., by a spell).
-    state.move_object(blocker, Zone::Graveyard);
+    state.move_object(blocker, Zone::Graveyard, &reg);
 
     combat::deal_combat_damage(&mut state, &reg);
 
@@ -168,7 +168,7 @@ fn full_combat_with_partial_block() {
     // Attacker B unblocked — 2 damage to P1.
     assert_eq!(state.get_player(P1).life, 18);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(attacker_a).unwrap().zone, Zone::Graveyard);
     assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard);
     assert_eq!(state.get_object(attacker_b).unwrap().zone, Zone::Battlefield);
@@ -190,7 +190,7 @@ fn attacker_survives_small_blocker() {
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 1);
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 5);
 
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(attacker).unwrap().zone, Zone::Battlefield,
         "5/5 should survive being blocked by 1/1");
     assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,

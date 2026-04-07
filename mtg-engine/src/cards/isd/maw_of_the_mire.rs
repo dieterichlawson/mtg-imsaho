@@ -54,7 +54,7 @@ impl CardBehavior for MawOfTheMire {
         if let Some(Target::Object(land_id)) = targets.first() {
             // If the target is illegal (not on battlefield), the spell fizzles — no effects.
             if !state.get_object(*land_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                state.move_spell_after_resolve(object_id);
+                state.move_spell_after_resolve(object_id, registry);
                 return;
             }
             let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
@@ -75,6 +75,6 @@ impl CardBehavior for MawOfTheMire {
                 format!("Maw of the Mire: p{} gained 4 life", controller.0));
         }
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

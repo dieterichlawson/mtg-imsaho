@@ -7,7 +7,7 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -85,7 +85,7 @@ fn doomed_traveler_creates_spirit_on_death() {
     // Kill it with lethal damage.
     state.get_object_mut(dt).unwrap().damage_marked = 1;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(dt).unwrap().zone, Zone::Graveyard,
         "Doomed Traveler should be dead");
@@ -115,7 +115,7 @@ fn mausoleum_guard_creates_two_spirits_on_death() {
     // Kill it with lethal damage.
     state.get_object_mut(mg).unwrap().damage_marked = 2;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(mg).unwrap().zone, Zone::Graveyard);
 
@@ -197,7 +197,7 @@ fn slayer_of_the_wicked_destroys_zombie() {
             },
             &reg,
         );
-        check_state_based_actions_with_registry(&mut state, Some(&reg));
+        check_state_based_actions(&mut state, &reg);
     }
 
     assert_eq!(state.get_object(slayer).unwrap().zone, Zone::Battlefield,
@@ -258,7 +258,7 @@ fn pitchburn_devils_deals_3_on_death() {
     // Kill it with lethal damage.
     state.get_object_mut(pd).unwrap().damage_marked = 3;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(pd).unwrap().zone, Zone::Graveyard);
 
@@ -293,7 +293,7 @@ fn falkenrath_noble_drains_on_any_death() {
     // Kill the victim.
     state.get_object_mut(victim).unwrap().damage_marked = 1;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard);
 
@@ -320,7 +320,7 @@ fn rage_thrower_deals_2_on_death() {
     // Kill the victim.
     state.get_object_mut(victim).unwrap().damage_marked = 1;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard);
 
@@ -360,7 +360,7 @@ fn unruly_mob_gains_counter_when_ally_dies() {
     // Kill the ally.
     state.get_object_mut(ally).unwrap().damage_marked = 1;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(ally).unwrap().zone, Zone::Graveyard);
 
@@ -387,7 +387,7 @@ fn lumberknot_gains_counter_on_any_death() {
     // Kill the victim.
     state.get_object_mut(victim).unwrap().damage_marked = 1;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(victim).unwrap().zone, Zone::Graveyard);
 
@@ -414,7 +414,7 @@ fn elder_cathar_grants_counter_on_death() {
     // Kill Elder Cathar.
     state.get_object_mut(cathar).unwrap().damage_marked = 2;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(cathar).unwrap().zone, Zone::Graveyard);
 
@@ -441,7 +441,7 @@ fn village_cannibals_gains_counter_on_human_death() {
     // Kill the Human.
     state.get_object_mut(human).unwrap().damage_marked = 1;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(human).unwrap().zone, Zone::Graveyard);
 
@@ -468,7 +468,7 @@ fn village_cannibals_ignores_non_human_death() {
     // Kill the Zombie.
     state.get_object_mut(zombie).unwrap().damage_marked = 2;
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     assert_eq!(state.get_object(zombie).unwrap().zone, Zone::Graveyard);
 
@@ -570,7 +570,7 @@ fn tokens_cease_to_exist_when_killed() {
     state = cast_and_resolve(&state, &reg, bolt, vec![Target::Object(token)]);
 
     // Bolt deals 3 damage to the 1/1 token. Run SBAs to kill it.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     // Token should be completely gone (not in graveyard, not anywhere).
     assert!(state.get_object(token).is_none(),

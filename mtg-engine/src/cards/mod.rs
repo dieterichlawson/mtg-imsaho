@@ -287,7 +287,7 @@ pub trait CardBehavior: Send + Sync {
 
     /// Check if a specific target is valid for this spell.
     /// Called for each potential target when building legal actions.
-    fn is_valid_target(&self, _state: &GameState, _caster: PlayerId, _target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, _state: &GameState, _caster: PlayerId, _target: &Target, registry: &CardRegistry) -> bool {
         true
     }
 
@@ -308,95 +308,95 @@ pub trait CardBehavior: Send + Sync {
     }
 
     /// Called when this permanent enters the battlefield (ETB trigger).
-    fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called when this creature dies (moves from battlefield to graveyard).
-    fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called when ANY creature dies. `self_id` is this permanent, `dead_id` is the deceased.
     /// `dead_damaged_by` and `dead_toughness` are last-known information captured before
     /// the zone change clears battlefield state.
-    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {}
+    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {}
 
     /// Called when ANY creature enters the battlefield. `self_id` is this permanent, `entered_id` is the new creature.
     /// Similar to on_any_creature_dies but for ETB. Used by Champion of the Parish.
-    fn on_any_creature_enters(&self, _state: &mut GameState, _self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) {}
+    fn on_any_creature_enters(&self, _state: &mut GameState, _self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, registry: &CardRegistry) {}
 
     /// Called when this creature deals combat damage to a player.
     /// Used by Stromkirk Noble, Falkenrath Marauders, Sturmgeist, etc.
-    fn on_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+    fn on_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {}
 
     /// Called when this creature deals combat damage to another creature.
     /// Used by Creepy Doll.
-    fn on_deals_combat_damage_to_creature(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_creature: ObjectId, _amount: u32, _registry: &CardRegistry) {}
+    fn on_deals_combat_damage_to_creature(&self, _state: &mut GameState, _self_id: ObjectId, _damaged_creature: ObjectId, _amount: u32, registry: &CardRegistry) {}
 
     /// Called when ANY creature deals combat damage to a player.
     /// `self_id` is this permanent (the watcher), `source_id` is the creature that dealt damage.
     /// Used by Rakish Heir (watches Vampires).
-    fn on_any_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+    fn on_any_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {}
 
     /// Called when ANY creature deals damage (combat or non-combat) to a player.
     /// Used by Curiosity (watches enchanted creature).
-    fn on_any_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+    fn on_any_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {}
 
     /// Called at the beginning of the upkeep step for each permanent with an upkeep trigger.
-    fn on_upkeep(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_upkeep(&self, _state: &mut GameState, _self_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called at the beginning of the end step for each permanent with an end-step trigger.
-    fn on_end_step(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_end_step(&self, _state: &mut GameState, _self_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called at the beginning of the end of combat step.
-    fn on_end_combat(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_end_combat(&self, _state: &mut GameState, _self_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called when a player casts an instant or sorcery spell.
     /// `caster` is the player who cast the spell, `spell_id` is the spell object.
-    fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, registry: &CardRegistry) {}
 
     /// Loyalty abilities for planeswalkers.
     fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
 
     /// Called when a loyalty ability is activated.
-    fn on_loyalty_ability(&self, _state: &mut GameState, _self_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
+    fn on_loyalty_ability(&self, _state: &mut GameState, _self_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {}
 
     /// Starting loyalty for planeswalkers.
     fn starting_loyalty(&self) -> Option<u32> { None }
 
     /// Called when this creature attacks (declared as an attacker).
-    fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called when this creature blocks (declared as a blocker).
-    fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) {}
+    fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, registry: &CardRegistry) {}
 
     /// Called when this creature becomes blocked (it attacked and a creature blocked it).
-    fn on_becomes_blocked(&self, _state: &mut GameState, _self_id: ObjectId, _blocker_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_becomes_blocked(&self, _state: &mut GameState, _self_id: ObjectId, _blocker_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called when ANY creature attacks — watcher for permanents that care about attacks.
     /// `self_id` is this watcher permanent, `attacker_id` is the attacking creature.
-    fn on_any_creature_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _attacker_id: ObjectId, _attacker_controller: PlayerId, _registry: &CardRegistry) {}
+    fn on_any_creature_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _attacker_id: ObjectId, _attacker_controller: PlayerId, registry: &CardRegistry) {}
 
     /// Called when the equipped creature blocks or is blocked by another creature.
     /// Used by equipment like Wooden Stake. `self_id` is the equipment,
     /// `equipped_creature` is the creature wearing this equipment,
     /// `other_creature` is the creature on the other side of the block.
-    fn on_equipment_block_trigger(&self, _state: &mut GameState, _self_id: ObjectId, _equipped_creature: ObjectId, _other_creature: ObjectId, _registry: &CardRegistry) {}
+    fn on_equipment_block_trigger(&self, _state: &mut GameState, _self_id: ObjectId, _equipped_creature: ObjectId, _other_creature: ObjectId, registry: &CardRegistry) {}
 
     /// Return a modified mana cost for this spell, or None to use the normal cost.
     /// Used for cost reduction (e.g., Blasphemous Act costs {1} less per creature).
-    fn modified_cost(&self, _state: &GameState, _registry: &CardRegistry) -> Option<ManaCost> { None }
+    fn modified_cost(&self, _state: &GameState, registry: &CardRegistry) -> Option<ManaCost> { None }
 
     /// For double-faced cards: return the back face data if this card has one.
     fn back_face_data(&self) -> Option<CardData> { None }
 
     /// For DFCs: check if the transform condition is met (called during upkeep for werewolves).
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool { false }
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> bool { false }
 
     /// Called when a state-triggered ability (CR 603.8) for this permanent resolves.
     /// State-triggered abilities check a condition continuously and trigger when the
     /// condition is first true. They don't trigger again while already on the stack.
-    fn on_state_trigger(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_state_trigger(&self, _state: &mut GameState, _object_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called when this permanent leaves the battlefield (moves to any other zone).
-    fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_leave_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, registry: &CardRegistry) {}
 
     /// List of mana abilities this permanent has while on the battlefield.
     fn mana_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<ManaAbilityDef> {
@@ -408,36 +408,36 @@ pub trait CardBehavior: Send + Sync {
 
     /// Called after a mana ability is activated. Used for mana abilities with side effects
     /// (e.g., Deranged Assistant mills a card when tapped for mana).
-    fn on_activate_mana_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}
+    fn on_activate_mana_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, registry: &CardRegistry) {}
 
     /// List of non-mana activated abilities this permanent has.
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![]
     }
 
     /// Called when a non-mana activated ability is activated.
     /// `targets` contains targets chosen by the player (empty if untargeted).
-    fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
+    fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {}
 
     /// Called after the player chooses and discards a card via ChooseCardFromHand
     /// that was initiated by this permanent. Used by Civilized Scholar to check
     /// if the discarded card was a creature and trigger untap/transform.
-    fn on_discard_choice(&self, _state: &mut GameState, _self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_discard_choice(&self, _state: &mut GameState, _self_id: ObjectId, _discarded_id: ObjectId, registry: &CardRegistry) {}
 
     /// Called after the player answers a YesNo resolution choice initiated by this permanent.
     /// `yes` is true if the player chose yes, false if they declined.
-    fn on_yes_no_choice(&self, _state: &mut GameState, _self_id: ObjectId, _yes: bool, _registry: &CardRegistry) {}
+    fn on_yes_no_choice(&self, _state: &mut GameState, _self_id: ObjectId, _yes: bool, registry: &CardRegistry) {}
 
     /// Called when this spell resolves from the stack.
     /// `targets` contains the targets chosen at cast time.
     /// For permanents: default moves to battlefield.
     /// For instants/sorceries: override to apply effect.
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         let _ = targets; // default ignores targets
         // Default for permanents: move to battlefield.
         let card_data = self.card_data();
         if card_data.card_types.iter().any(|t| t.is_permanent()) {
-            state.move_object(object_id, Zone::Battlefield);
+            state.move_object(object_id, Zone::Battlefield, registry);
             // Set is_legendary from card data for legend rule enforcement.
             if card_data.supertypes.contains(&crate::types::Supertype::Legendary) {
                 if let Some(obj) = state.get_object_mut(object_id) {

@@ -31,7 +31,7 @@ impl CardBehavior for HereticsPunishment {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -97,7 +97,7 @@ impl CardBehavior for HereticsPunishment {
         let milled: Vec<ObjectId> = state.get_player_mut(controller)
             .library_order.drain(..mill_count).collect();
         for card_id in milled {
-            state.move_object(card_id, Zone::Graveyard);
+            state.move_object(card_id, Zone::Graveyard, registry);
         }
 
         // Deal damage to target equal to highest mana value.

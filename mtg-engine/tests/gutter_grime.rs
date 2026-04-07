@@ -39,7 +39,7 @@ fn gutter_grime_creates_dynamic_pt_ooze() {
 
     // Simulate the creature dying.
     let card_id = state.get_object(creature).unwrap().card_id;
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: creature,
         card_id,
@@ -82,7 +82,7 @@ fn gutter_grime_ooze_tokens_grow_with_more_counters() {
     let creature1 = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(creature1).unwrap().card_types = vec![CardType::Creature];
     let card_id1 = state.get_object(creature1).unwrap().card_id;
-    state.move_object(creature1, Zone::Graveyard);
+    state.move_object(creature1, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: creature1, card_id: card_id1, controller: P0,
         damaged_by: vec![], last_known_toughness: 2,
@@ -97,7 +97,7 @@ fn gutter_grime_ooze_tokens_grow_with_more_counters() {
     let creature2 = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(creature2).unwrap().card_types = vec![CardType::Creature];
     let card_id2 = state.get_object(creature2).unwrap().card_id;
-    state.move_object(creature2, Zone::Graveyard);
+    state.move_object(creature2, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: creature2, card_id: card_id2, controller: P0,
         damaged_by: vec![], last_known_toughness: 3,
@@ -140,7 +140,7 @@ fn gutter_grime_ignores_token_deaths() {
 
     // Kill the token.
     let card_id = state.get_object(token_id).unwrap().card_id;
-    state.move_object(token_id, Zone::Graveyard);
+    state.move_object(token_id, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: token_id, card_id, controller: P0,
         damaged_by: vec![], last_known_toughness: 1,
@@ -165,7 +165,7 @@ fn gutter_grime_ignores_opponent_deaths() {
     let opp_creature = ready_creature(&mut state, P1, 2, 2);
     state.get_object_mut(opp_creature).unwrap().card_types = vec![CardType::Creature];
     let card_id = state.get_object(opp_creature).unwrap().card_id;
-    state.move_object(opp_creature, Zone::Graveyard);
+    state.move_object(opp_creature, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: opp_creature, card_id, controller: P1,
         damaged_by: vec![], last_known_toughness: 2,
@@ -189,7 +189,7 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(creature).unwrap().card_types = vec![CardType::Creature];
     let card_id = state.get_object(creature).unwrap().card_id;
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: creature, card_id, controller: P0,
         damaged_by: vec![], last_known_toughness: 2,
@@ -201,7 +201,7 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
         .unwrap().id;
 
     // Remove Gutter Grime from battlefield.
-    state.move_object(gutter_grime, Zone::Graveyard);
+    state.move_object(gutter_grime, Zone::Graveyard, &reg);
 
     // The Ooze token should now have effective P/T = 0 (source has no slime counters visible).
     let eff_power = state.effective_power(ooze_id, &reg).unwrap();

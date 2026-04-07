@@ -39,7 +39,7 @@ fn lightning_bolt_kills_creature() {
     assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Graveyard);
 
     // SBA should kill the creature.
-    check_state_based_actions(&mut state);
+    check_state_based_actions(&mut state, &registry);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
 }
 

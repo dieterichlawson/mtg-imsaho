@@ -29,7 +29,7 @@ impl CardBehavior for ForbiddenAlchemy {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
         // Remove top 4 cards from library_order (they stay in Zone::Library but aren't drawable).
         let player = state.get_player_mut(controller);
@@ -38,14 +38,14 @@ impl CardBehavior for ForbiddenAlchemy {
 
         if revealed.is_empty() {
             // No cards to reveal.
-            state.move_spell_after_resolve(object_id);
+            state.move_spell_after_resolve(object_id, registry);
         } else if revealed.len() == 1 {
             // Only 1 card -- auto-put it in hand.
             let card_id = revealed[0];
-            state.move_object(card_id, Zone::Hand);
+            state.move_object(card_id, Zone::Hand, registry);
             let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(LogLevel::Event, format!("Forbidden Alchemy: {} put into hand", name));
-            state.move_spell_after_resolve(object_id);
+            state.move_spell_after_resolve(object_id, registry);
         } else {
             // 2+ cards -- ask the player which one to keep.
             let names: Vec<String> = revealed.iter()

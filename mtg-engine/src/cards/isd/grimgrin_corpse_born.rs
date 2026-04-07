@@ -44,8 +44,8 @@ impl CardBehavior for GrimgrinCorpseBorn {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield, registry);
         // Enters tapped.
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.tapped = true;
@@ -55,7 +55,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             "Grimgrin, Corpse-Born enters the battlefield tapped".into());
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
@@ -73,7 +73,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         // The engine already sacrificed another creature as part of paying the cost.
         // Now untap Grimgrin and add a +1/+1 counter.
         if let Some(obj) = state.get_object_mut(object_id) {
@@ -84,7 +84,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into());
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -100,7 +100,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
         let targets: Vec<Target> = state.objects_in_zone(Zone::Battlefield, defender)
             .iter()
             .filter(|o| o.power.is_some())
-            .filter(|o| !state.has_protection_from(o.id, self_id, _registry))
+            .filter(|o| !state.has_protection_from(o.id, self_id, registry))
             .map(|o| Target::Object(o.id))
             .collect();
 

@@ -50,6 +50,6 @@ impl CardBehavior for PreyUpon {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

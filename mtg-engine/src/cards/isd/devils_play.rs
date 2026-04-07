@@ -43,15 +43,15 @@ impl CardBehavior for DevilsPlay {
         TargetRequirement::AnyTarget
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // Read X from the stored x_value on the spell object.
         let x = state.get_object(object_id)
             .and_then(|o| o.x_value)
             .unwrap_or(0);
         if x > 0 {
-            crate::cards::helpers::resolve_damage(state, object_id, targets, x);
+            crate::cards::helpers::resolve_damage(state, object_id, targets, x, registry);
         } else {
-            state.move_spell_after_resolve(object_id);
+            state.move_spell_after_resolve(object_id, registry);
         }
     }
 }

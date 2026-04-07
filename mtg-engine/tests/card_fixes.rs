@@ -9,7 +9,7 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::ids::CardId;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -228,7 +228,7 @@ fn murder_of_crows_presents_draw_choice() {
 
     state.events.clear();
     state.trigger_event_index = 0;
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     triggers::process_triggers(&mut state, &reg);
 
     // Murder of Crows should present a "you may draw" yes/no choice.

@@ -33,7 +33,7 @@ fn lands_should_not_trigger_on_creature_death() {
 
     // Kill the victim via combat damage.
     state.get_object_mut(victim).unwrap().damage_marked = 5;
-    mtg_engine::sba::check_state_based_actions_with_registry(&mut state, Some(&registry));
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     // Verify the CreatureDied event was generated.
     let death_events: Vec<_> = state.events.iter().filter(|e|
@@ -83,7 +83,7 @@ fn creature_death_logged_once() {
     combat::declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &registry);
     combat::deal_combat_damage(&mut state, &registry);
     // SBAs kill both creatures.
-    mtg_engine::sba::check_state_based_actions_with_registry(&mut state, Some(&registry));
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     // Count how many "died" log entries there are.
     let death_logs: Vec<_> = state.game_log.iter()

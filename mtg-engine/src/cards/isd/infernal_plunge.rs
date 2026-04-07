@@ -30,7 +30,7 @@ impl CardBehavior for InfernalPlunge {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id)
             .map(|o| o.controller)
             .unwrap_or(crate::ids::PlayerId(0));
@@ -38,6 +38,6 @@ impl CardBehavior for InfernalPlunge {
         // The creature sacrifice happens at cast time (as an additional cost).
         // On resolution, just add {R}{R}{R}.
         state.get_player_mut(controller).mana_pool.add(ManaType::Red, 3);
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

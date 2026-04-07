@@ -26,8 +26,8 @@ impl CardBehavior for DiregrafGhoul {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
-        state.move_object(object_id, Zone::Battlefield);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+        state.move_object(object_id, Zone::Battlefield, registry);
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.tapped = true;
         }

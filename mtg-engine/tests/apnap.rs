@@ -16,7 +16,7 @@ use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::GameEvent;
 use mtg_engine::ids::PlayerId;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
@@ -109,7 +109,7 @@ fn non_active_player_triggers_resolve_first() {
     let p1_life_before = state.get_player(P1).life;
 
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     process_triggers_with_choices(&mut state, &reg);
 
     // Both effects should have happened.
@@ -165,7 +165,7 @@ fn same_player_multiple_triggers_all_fire() {
     let p1_life_before = state.get_player(P1).life;
 
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     process_triggers_with_choices(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, p1_life_before - 2,
@@ -205,7 +205,7 @@ fn apnap_lifo_order_with_life_totals() {
     state.get_player_mut(P1).life = 2;
 
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     process_triggers_with_choices(&mut state, &reg);
 
     // With LIFO: Noble first (P1: 2→3), then Thrower (P1: 3→1).

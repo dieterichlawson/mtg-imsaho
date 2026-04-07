@@ -39,14 +39,14 @@ impl CardBehavior for MoldgrafMonstrosity {
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.owner,
             None => return,
         };
 
         // Exile Moldgraf Monstrosity.
-        state.move_object(object_id, Zone::Exile);
+        state.move_object(object_id, Zone::Exile, registry);
         state.log(crate::state::LogLevel::Event,
             "Moldgraf Monstrosity: exiled on death".into());
 
@@ -64,7 +64,7 @@ impl CardBehavior for MoldgrafMonstrosity {
         let to_return: Vec<ObjectId> = creatures_in_gy.into_iter().take(2).collect();
         for cid in &to_return {
             let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*cid, Zone::Battlefield);
+            state.move_object(*cid, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(*cid) {
                 obj.controller = controller;
             }

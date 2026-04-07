@@ -13,6 +13,7 @@ use mtg_engine::types::*;
 /// even if controlled by another player.
 #[test]
 fn objects_go_to_owners_graveyard() {
+    let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 owns a creature, but P1 controls it.
@@ -24,7 +25,7 @@ fn objects_go_to_owners_graveyard() {
     assert_eq!(state.objects_in_zone(Zone::Battlefield, P1).len(), 1);
 
     // When it dies, it goes to the OWNER's graveyard.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &registry);
     assert_eq!(state.objects_in_zone(Zone::Graveyard, P0).len(), 1,
         "Card should go to owner's graveyard (rule 400.3)");
     assert_eq!(state.objects_in_zone(Zone::Graveyard, P1).len(), 0);
@@ -65,30 +66,32 @@ fn submit_action_preserves_original_state() {
 /// Zone change counter increments on each zone change.
 #[test]
 fn zone_change_counter_increments() {
+    let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
     assert_eq!(state.get_object(creature).unwrap().zone_change_count, 0);
 
-    state.move_object(creature, Zone::Battlefield);
+    state.move_object(creature, Zone::Battlefield, &registry);
     assert_eq!(state.get_object(creature).unwrap().zone_change_count, 1);
 
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &registry);
     assert_eq!(state.get_object(creature).unwrap().zone_change_count, 2);
 
-    state.move_object(creature, Zone::Exile);
+    state.move_object(creature, Zone::Exile, &registry);
     assert_eq!(state.get_object(creature).unwrap().zone_change_count, 3);
 }
 
 /// Leaving the battlefield resets tapped, damage, and summoning sickness.
 #[test]
 fn leaving_battlefield_resets_state() {
+    let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
 
     state.get_object_mut(creature).unwrap().tapped = true;
     state.get_object_mut(creature).unwrap().damage_marked = 2;
 
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &registry);
 
     let obj = state.get_object(creature).unwrap();
     assert!(!obj.tapped);

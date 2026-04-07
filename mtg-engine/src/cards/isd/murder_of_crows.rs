@@ -35,7 +35,7 @@ impl CardBehavior for MurderOfCrows {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -64,7 +64,7 @@ impl CardBehavior for MurderOfCrows {
         let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
             .iter().map(|o| o.id).collect();
         if hand.len() == 1 {
-            state.move_object(hand[0], Zone::Graveyard);
+            state.move_object(hand[0], Zone::Graveyard, registry);
             state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
             state.log(LogLevel::Event, format!("Drew and discarded a card"));
         } else if !hand.is_empty() {

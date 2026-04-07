@@ -40,7 +40,7 @@ impl CardBehavior for SwordsToPlowshares {
                     let power = state.effective_power(*target_id, registry).unwrap_or(0).max(0);
 
                     // Exile the creature.
-                    state.move_object(*target_id, Zone::Exile);
+                    state.move_object(*target_id, Zone::Exile, registry);
 
                     // Controller gains life equal to its power.
                     if power > 0 {
@@ -56,6 +56,6 @@ impl CardBehavior for SwordsToPlowshares {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

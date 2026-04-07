@@ -26,7 +26,7 @@ impl CardBehavior for SelflessCathar {
         }
     }
 
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{1}{W}, Sacrifice: Creatures you control get +1/+1 until end of turn".into(),
@@ -39,7 +39,7 @@ impl CardBehavior for SelflessCathar {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         // The creature was already sacrificed by the engine before this is called.
         // Use the controller from the object (even though it's in the graveyard now).
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();

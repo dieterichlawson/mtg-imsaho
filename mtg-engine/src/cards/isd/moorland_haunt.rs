@@ -43,7 +43,7 @@ impl CardBehavior for MoorlandHaunt {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -90,7 +90,7 @@ impl CardBehavior for MoorlandHaunt {
 
         if let Some(exile_id) = creature_in_gy {
             let name = state.get_object(exile_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(exile_id, Zone::Exile);
+            state.move_object(exile_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Moorland Haunt exiled {} from graveyard", name));
         }

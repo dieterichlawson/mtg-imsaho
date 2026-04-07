@@ -34,7 +34,7 @@ impl CardBehavior for TributeToHunger {
         TargetRequirement::PlayerOnly
     }
 
-    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, _state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         // "Target opponent" — can only target opponents, not self.
         match target {
             Target::Player(pid) => *pid != caster,
@@ -42,7 +42,7 @@ impl CardBehavior for TributeToHunger {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id)
             .map(|o| o.controller)
             .unwrap_or(PlayerId(0));
@@ -58,7 +58,7 @@ impl CardBehavior for TributeToHunger {
 
         if opp_creatures.is_empty() {
             // No creatures to sacrifice.
-            state.move_spell_after_resolve(object_id);
+            state.move_spell_after_resolve(object_id, registry);
             return;
         }
 

@@ -23,7 +23,7 @@ fn makeshift_mauler_exiles_creature_from_graveyard() {
 
     // Put a creature card in P0's graveyard.
     let graveyard_creature = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(graveyard_creature, Zone::Graveyard);
+    state.move_object(graveyard_creature, Zone::Graveyard, &reg);
 
     // Cast Makeshift Mauler.
     let mauler = castable_spell(&mut state, &reg, "Makeshift Mauler", P0);
@@ -40,7 +40,7 @@ fn makeshift_mauler_is_4_5_zombie() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let graveyard_creature = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(graveyard_creature, Zone::Graveyard);
+    state.move_object(graveyard_creature, Zone::Graveyard, &reg);
 
     let mauler = castable_spell(&mut state, &reg, "Makeshift Mauler", P0);
     let new_state = cast_and_resolve(&state, &reg, mauler, vec![]);
@@ -59,7 +59,7 @@ fn stitched_drake_exiles_creature_and_has_flying() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let graveyard_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(graveyard_creature, Zone::Graveyard);
+    state.move_object(graveyard_creature, Zone::Graveyard, &reg);
 
     let drake = castable_spell(&mut state, &reg, "Stitched Drake", P0);
     let new_state = cast_and_resolve(&state, &reg, drake, vec![]);
@@ -83,9 +83,9 @@ fn skaab_goliath_exiles_two_creatures() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let gy1 = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(gy1, Zone::Graveyard);
+    state.move_object(gy1, Zone::Graveyard, &reg);
     let gy2 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(gy2, Zone::Graveyard);
+    state.move_object(gy2, Zone::Graveyard, &reg);
 
     let goliath = castable_spell(&mut state, &reg, "Skaab Goliath", P0);
     let new_state = cast_and_resolve(&state, &reg, goliath, vec![]);
@@ -107,7 +107,7 @@ fn ghoulcallers_chant_returns_creature_from_graveyard() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let gy_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(gy_creature, Zone::Graveyard);
+    state.move_object(gy_creature, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
     let new_state = cast_and_resolve(&state, &reg, chant, vec![mtg_engine::actions::Target::Object(gy_creature)]);
@@ -123,9 +123,9 @@ fn ghoulcallers_chant_returns_two_zombies() {
 
     // Put two Zombies in graveyard.
     let zombie1 = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(zombie1, Zone::Graveyard);
+    state.move_object(zombie1, Zone::Graveyard, &reg);
     let zombie2 = spell_in_hand(&mut state, &reg, "Diregraf Ghoul", P0);
-    state.move_object(zombie2, Zone::Graveyard);
+    state.move_object(zombie2, Zone::Graveyard, &reg);
 
     let chant = castable_spell(&mut state, &reg, "Ghoulcaller's Chant", P0);
     let new_state = cast_and_resolve(&state, &reg, chant, vec![
@@ -149,7 +149,7 @@ fn ghoulraiser_returns_zombie_from_graveyard() {
 
     // Put a Zombie in P0's graveyard.
     let zombie = spell_in_hand(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(zombie, Zone::Graveyard);
+    state.move_object(zombie, Zone::Graveyard, &reg);
 
     // Cast Ghoulraiser.
     let raiser = castable_spell(&mut state, &reg, "Ghoulraiser", P0);
@@ -256,7 +256,7 @@ fn purify_the_grave_exiles_card_from_graveyard() {
 
     // Put a card in P1's graveyard.
     let gy_card = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(gy_card, Zone::Graveyard);
+    state.move_object(gy_card, Zone::Graveyard, &reg);
 
     let purify = castable_spell(&mut state, &reg, "Purify the Grave", P0);
     let new_state = cast_and_resolve(&state, &reg, purify, vec![mtg_engine::actions::Target::Object(gy_card)]);
@@ -345,9 +345,9 @@ fn memorys_journey_shuffles_cards_into_library() {
 
     // Put cards in P1's graveyard.
     let gy1 = spell_in_hand(&mut state, &reg, "Grizzly Bears", P1);
-    state.move_object(gy1, Zone::Graveyard);
+    state.move_object(gy1, Zone::Graveyard, &reg);
     let gy2 = spell_in_hand(&mut state, &reg, "Walking Corpse", P1);
-    state.move_object(gy2, Zone::Graveyard);
+    state.move_object(gy2, Zone::Graveyard, &reg);
 
     let journey = castable_spell(&mut state, &reg, "Memory's Journey", P0);
     // Must target a player (to determine whose graveyard) plus the cards.
@@ -384,7 +384,7 @@ fn woodland_sleuth_morbid_returns_creature() {
 
     // Put a creature in P0's graveyard.
     let gy_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(gy_creature, Zone::Graveyard);
+    state.move_object(gy_creature, Zone::Graveyard, &reg);
 
     let sleuth = castable_spell(&mut state, &reg, "Woodland Sleuth", P0);
     let mut new_state = cast_and_resolve(&state, &reg, sleuth, vec![]);
@@ -401,7 +401,7 @@ fn woodland_sleuth_no_morbid_no_return() {
     // creature_died_this_turn is false by default.
 
     let gy_creature = spell_in_hand(&mut state, &reg, "Grizzly Bears", P0);
-    state.move_object(gy_creature, Zone::Graveyard);
+    state.move_object(gy_creature, Zone::Graveyard, &reg);
 
     let sleuth = castable_spell(&mut state, &reg, "Woodland Sleuth", P0);
     let mut new_state = cast_and_resolve(&state, &reg, sleuth, vec![]);

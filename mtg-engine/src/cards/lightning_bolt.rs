@@ -29,7 +29,7 @@ impl CardBehavior for LightningBolt {
         TargetRequirement::AnyTarget
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
-        crate::cards::helpers::resolve_damage(state, object_id, targets, 3);
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+        crate::cards::helpers::resolve_damage(state, object_id, targets, 3, registry);
     }
 }

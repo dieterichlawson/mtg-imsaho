@@ -7,7 +7,7 @@ use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::ids::CardId;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
@@ -67,10 +67,10 @@ fn token_ceases_to_exist_when_killed() {
     let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], &reg);
 
     // Kill the token (move to graveyard).
-    state.move_object(token, Zone::Graveyard);
+    state.move_object(token, Zone::Graveyard, &reg);
 
     // SBA should remove it entirely from the game.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert!(state.get_object(token).is_none(),
         "Token should cease to exist after leaving the battlefield");
 }
@@ -84,9 +84,9 @@ fn token_ceases_to_exist_when_bounced() {
     state.players[1].life = 20;
     let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], &reg);
 
-    state.move_object(token, Zone::Hand);
+    state.move_object(token, Zone::Hand, &reg);
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert!(state.get_object(token).is_none(),
         "Token should cease to exist when bounced to hand");
 }
@@ -167,7 +167,7 @@ fn minus_counters_kill_creature() {
 
     state.add_counters(creature, CounterType::MinusOneMinusOne, 2);
 
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "Creature with 0 effective toughness from counters should die");
 }
@@ -175,11 +175,12 @@ fn minus_counters_kill_creature() {
 /// Counters are cleared when leaving the battlefield.
 #[test]
 fn counters_cleared_on_zone_change() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let creature = ready_creature(&mut state, P0, 1, 1);
     state.add_counters(creature, CounterType::PlusOnePlusOne, 5);
 
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &reg);
 
     assert_eq!(state.get_counter_count(creature, CounterType::PlusOnePlusOne), 0,
         "Counters should be cleared when leaving the battlefield");
@@ -215,11 +216,12 @@ fn counters_stack_with_auras() {
 /// EnteredBattlefield events are emitted when objects move to the battlefield.
 #[test]
 fn etb_event_emitted_on_zone_change() {
+    let reg = registry();
     let mut state = GameState::new(2);
     let id = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
     state.events.clear();
 
-    state.move_object(id, Zone::Battlefield);
+    state.move_object(id, Zone::Battlefield, &reg);
 
     let has_etb = state.events.iter().any(|e|
         matches!(e, mtg_engine::events::GameEvent::EnteredBattlefield { object, .. } if *object == id)
@@ -230,11 +232,12 @@ fn etb_event_emitted_on_zone_change() {
 /// ETB is NOT emitted when moving between non-battlefield zones.
 #[test]
 fn no_etb_for_non_battlefield_moves() {
+    let reg = registry();
     let mut state = GameState::new(2);
     let id = state.create_object(CardId(99), P0, Zone::Hand, Some(2), Some(2));
     state.events.clear();
 
-    state.move_object(id, Zone::Graveyard);
+    state.move_object(id, Zone::Graveyard, &reg);
 
     let has_etb = state.events.iter().any(|e|
         matches!(e, mtg_engine::events::GameEvent::EnteredBattlefield { .. })
@@ -270,7 +273,7 @@ fn dying_token_emits_creature_died() {
     state.get_object_mut(token).unwrap().damage_marked = 1;
 
     state.events.clear();
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
 
     let died = state.events.iter().any(|e|
         matches!(e, mtg_engine::events::GameEvent::CreatureDied { object, .. } if *object == token)

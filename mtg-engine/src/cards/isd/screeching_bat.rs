@@ -76,7 +76,7 @@ impl CardBehavior for ScreechingBat {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -106,7 +106,7 @@ impl CardBehavior for ScreechingBat {
         });
     }
 
-    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
             let current_name = state.get_object(self_id)
                 .map(|o| o.name.clone())
@@ -130,13 +130,13 @@ impl CardBehavior for ScreechingBat {
         }
 
         // Transform — uses the generic helper to update name, keywords, and subtypes.
-        helpers::apply_transform(state, self_id, _registry);
+        helpers::apply_transform(state, self_id, registry);
         let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
         state.log(LogLevel::Event,
             format!("Transforms into {}", new_name));
     }
 
-    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {
+    fn should_transform(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> bool {
         false
     }
 }

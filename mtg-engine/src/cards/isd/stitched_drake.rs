@@ -31,9 +31,9 @@ impl CardBehavior for StitchedDrake {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // The additional cost (exile a creature from graveyard) is handled by the
         // engine at cast time via AdditionalCost::ExileCreaturesFromGraveyard(1).
-        state.move_object(object_id, Zone::Battlefield);
+        state.move_object(object_id, Zone::Battlefield, registry);
     }
 }

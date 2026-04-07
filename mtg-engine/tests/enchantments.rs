@@ -6,7 +6,7 @@ use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 use mtg_engine::view::GameView;
 
@@ -44,10 +44,10 @@ fn aura_falls_off_when_creature_dies() {
     state = cast_and_resolve(&state, &registry, hs, vec![Target::Object(creature)]);
 
     // Kill the creature.
-    state.move_object(creature, Zone::Graveyard);
+    state.move_object(creature, Zone::Graveyard, &registry);
 
     // SBA should put the unattached aura in graveyard.
-    check_state_based_actions_with_registry(&mut state, Some(&registry));
+    check_state_based_actions(&mut state, &registry);
     assert_eq!(state.get_object(hs).unwrap().zone, Zone::Graveyard);
 }
 
@@ -150,13 +150,13 @@ fn aura_toughness_bonus_prevents_death() {
     // Deal 3 damage — enough to kill a 2/2 but not a 3/4.
     state.get_object_mut(creature).unwrap().damage_marked = 3;
 
-    check_state_based_actions_with_registry(&mut state, Some(&registry));
+    check_state_based_actions(&mut state, &registry);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Battlefield,
         "3/4 creature with 3 damage should survive");
 
     // Deal 4th damage — now it dies.
     state.get_object_mut(creature).unwrap().damage_marked = 4;
-    check_state_based_actions_with_registry(&mut state, Some(&registry));
+    check_state_based_actions(&mut state, &registry);
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "3/4 creature with 4 damage should die");
 }

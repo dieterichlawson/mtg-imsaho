@@ -31,7 +31,7 @@ impl CardBehavior for FrightfulDelusion {
         TargetRequirement::Spell
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
@@ -42,7 +42,7 @@ impl CardBehavior for FrightfulDelusion {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Stack {
@@ -67,14 +67,14 @@ impl CardBehavior for FrightfulDelusion {
                     // Can't pay -- auto-counter.
                     let name = obj.name.clone();
                     state.stack.retain(|e| e.as_spell() != Some(*target_id));
-                    state.move_spell_after_resolve(*target_id);
+                    state.move_spell_after_resolve(*target_id, registry);
                     state.log(LogLevel::Event, format!("{} was countered", name));
 
                     // Force discard — player chooses which card.
                     let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
                         .iter().map(|o| o.id).collect();
                     if hand.len() == 1 {
-                        state.move_object(hand[0], Zone::Graveyard);
+                        state.move_object(hand[0], Zone::Graveyard, registry);
                         state.events.push(crate::events::GameEvent::Discarded { player: controller, object: hand[0] });
                         state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
                     } else if !hand.is_empty() {
@@ -88,12 +88,12 @@ impl CardBehavior for FrightfulDelusion {
                             },
                         });
                         // Move spell to graveyard before the discard choice.
-                        state.move_spell_after_resolve(object_id);
+                        state.move_spell_after_resolve(object_id, registry);
                         return;
                     }
                 }
             }
         }
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

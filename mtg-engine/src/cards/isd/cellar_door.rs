@@ -30,7 +30,7 @@ impl CardBehavior for CellarDoor {
         }
     }
 
-    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         let obj = match state.get_object(object_id) {
             Some(o) => o,
             None => return vec![],
@@ -67,7 +67,7 @@ impl CardBehavior for CellarDoor {
             let last_idx = player.library_order.len() - 1;
             let milled_id = player.library_order[last_idx];
             state.get_player_mut(*player_id).library_order.remove(last_idx);
-            state.move_object(milled_id, Zone::Graveyard);
+            state.move_object(milled_id, Zone::Graveyard, registry);
 
             // Check if it was a creature.
             let is_creature = state.get_object(milled_id)

@@ -27,7 +27,7 @@ impl CardBehavior for MakeAWish {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         // Get all cards in graveyard (excluding tokens).
@@ -45,7 +45,7 @@ impl CardBehavior for MakeAWish {
         let to_return: Vec<ObjectId> = gy_cards.into_iter().take(2).collect();
         for card_id in &to_return {
             let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*card_id, Zone::Hand);
+            state.move_object(*card_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Make a Wish returned {} to hand", name));
         }
@@ -55,6 +55,6 @@ impl CardBehavior for MakeAWish {
                 "Make a Wish: no cards in graveyard to return".into());
         }
 
-        state.move_spell_after_resolve(object_id);
+        state.move_spell_after_resolve(object_id, registry);
     }
 }

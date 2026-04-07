@@ -39,7 +39,7 @@ impl CardBehavior for StromkirkNoble {
         }
     }
 
-    fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
+    fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, registry: &CardRegistry) {
         if state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }

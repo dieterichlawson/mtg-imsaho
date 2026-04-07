@@ -36,7 +36,7 @@ impl CardBehavior for BalefireDragon {
         }
     }
 
-    fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, damaged_player: PlayerId, amount: u32, _registry: &CardRegistry) {
+    fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, damaged_player: PlayerId, amount: u32, registry: &CardRegistry) {
         if !state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
             return;
         }

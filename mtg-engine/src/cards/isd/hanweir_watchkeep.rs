@@ -65,7 +65,7 @@ impl CardBehavior for HanweirWatchkeep {
         })
     }
 
-    fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
+    fn should_transform(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> bool {
         Self::werewolf_should_transform(state, object_id)
     }
 

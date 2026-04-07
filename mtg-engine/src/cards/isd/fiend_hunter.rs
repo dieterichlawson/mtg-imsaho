@@ -39,7 +39,7 @@ impl CardBehavior for FiendHunter {
         }
     }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Another target creature" — any creature except Fiend Hunter itself.
         // Can target own creatures (Oracle doesn't restrict to opponents).
@@ -52,13 +52,13 @@ impl CardBehavior for FiendHunter {
         );
     }
 
-    fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_leave_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let exiled_id = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exiled_creature").copied());
         if let Some(target_id) = exiled_id {
             if state.get_object(target_id).map(|o| o.zone == Zone::Exile).unwrap_or(false) {
                 let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.move_object(target_id, Zone::Battlefield);
+                state.move_object(target_id, Zone::Battlefield, registry);
                 // "under its owner's control" — reset controller to owner
                 if let Some(obj) = state.get_object_mut(target_id) {
                     obj.controller = obj.owner;

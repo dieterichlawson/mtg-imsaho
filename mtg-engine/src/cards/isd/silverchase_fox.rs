@@ -27,7 +27,7 @@ impl CardBehavior for SilverchaseFox {
         }
     }
 
-    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
+    fn activated_abilities(&self, _state: &GameState, _object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         vec![ActivatedAbilityDef {
             ability_index: 0,
             description: "{1}{W}, Sacrifice: Exile target enchantment".into(),
@@ -42,11 +42,11 @@ impl CardBehavior for SilverchaseFox {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-                state.move_object(*target_id, Zone::Exile);
+                state.move_object(*target_id, Zone::Exile, registry);
                 state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {}", name));
             }
         }

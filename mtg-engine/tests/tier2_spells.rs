@@ -8,7 +8,7 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::engine;
-use mtg_engine::sba::check_state_based_actions_with_registry;
+use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -351,7 +351,7 @@ fn prey_upon_fight() {
     assert_eq!(state.get_object(theirs).unwrap().damage_marked, 3);
 
     // SBA kills the 2/2.
-    check_state_based_actions_with_registry(&mut state, Some(&reg));
+    check_state_based_actions(&mut state, &reg);
     assert_eq!(state.get_object(theirs).unwrap().zone, Zone::Graveyard);
     assert_eq!(state.get_object(mine).unwrap().zone, Zone::Battlefield);
 }

@@ -31,7 +31,7 @@ impl CardBehavior for PitchburnDevils {
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Any target" — all creatures + all players.
         let targets = crate::cards::helpers::any_targets(state);
