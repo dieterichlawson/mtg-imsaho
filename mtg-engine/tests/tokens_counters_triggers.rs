@@ -23,12 +23,14 @@ fn registry() -> CardRegistry {
 /// Basic token creation puts a creature on the battlefield.
 #[test]
 fn token_created_on_battlefield() {
+    let reg = registry();
     let mut state = GameState::new(2);
     let token = state.create_token(
         "Spirit", P0, 1, 1,
         vec![Color::White],
         vec![CardType::Creature],
         vec![Keyword::Flying],
+        &reg,
     );
 
     let obj = state.get_object(token).unwrap();
@@ -46,8 +48,9 @@ fn token_created_on_battlefield() {
 /// Token has correct controller/owner.
 #[test]
 fn token_owned_by_creator() {
+    let reg = registry();
     let mut state = GameState::new(2);
-    let token = state.create_token("Zombie", P1, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![]);
+    let token = state.create_token("Zombie", P1, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![], &reg);
 
     let obj = state.get_object(token).unwrap();
     assert_eq!(obj.owner, P1);
@@ -61,7 +64,7 @@ fn token_ceases_to_exist_when_killed() {
     let mut state = GameState::new(2);
     state.players[0].life = 20;
     state.players[1].life = 20;
-    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![]);
+    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], &reg);
 
     // Kill the token (move to graveyard).
     state.move_object(token, Zone::Graveyard);
@@ -79,7 +82,7 @@ fn token_ceases_to_exist_when_bounced() {
     let mut state = GameState::new(2);
     state.players[0].life = 20;
     state.players[1].life = 20;
-    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![]);
+    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![], &reg);
 
     state.move_object(token, Zone::Hand);
 
@@ -91,9 +94,10 @@ fn token_ceases_to_exist_when_bounced() {
 /// Multiple tokens can be created at once.
 #[test]
 fn multiple_tokens_created() {
+    let reg = registry();
     let mut state = GameState::new(2);
-    let t1 = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying]);
-    let t2 = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying]);
+    let t1 = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], &reg);
+    let t2 = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], &reg);
 
     assert_ne!(t1, t2, "Tokens should have unique IDs");
     assert_eq!(state.objects_in_zone(Zone::Battlefield, P0).len(), 2);
@@ -104,7 +108,7 @@ fn multiple_tokens_created() {
 fn token_keyword_check_works() {
     let reg = registry();
     let mut state = GameState::new(2);
-    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying]);
+    let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], &reg);
 
     assert!(state.has_keyword(token, Keyword::Flying, &reg),
         "Token with flying keyword should be detected by has_keyword");
@@ -114,9 +118,10 @@ fn token_keyword_check_works() {
 /// Token emits EnteredBattlefield event.
 #[test]
 fn token_creation_emits_etb_event() {
+    let reg = registry();
     let mut state = GameState::new(2);
     state.events.clear();
-    let _token = state.create_token("Spirit", P0, 1, 1, vec![], vec![CardType::Creature], vec![]);
+    let _token = state.create_token("Spirit", P0, 1, 1, vec![], vec![CardType::Creature], vec![], &reg);
 
     let has_etb = state.events.iter().any(|e| matches!(e, mtg_engine::events::GameEvent::EnteredBattlefield { .. }));
     assert!(has_etb, "Token creation should emit EnteredBattlefield event");
@@ -261,7 +266,7 @@ fn dying_token_emits_creature_died() {
     let mut state = GameState::new(2);
     state.players[0].life = 20;
     state.players[1].life = 20;
-    let token = state.create_token("Spirit", P0, 1, 1, vec![], vec![CardType::Creature], vec![]);
+    let token = state.create_token("Spirit", P0, 1, 1, vec![], vec![CardType::Creature], vec![], &reg);
     state.get_object_mut(token).unwrap().damage_marked = 1;
 
     state.events.clear();

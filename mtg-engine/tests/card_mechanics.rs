@@ -340,7 +340,7 @@ fn intangible_virtue_token_only() {
 
     // Create a token and a non-token creature.
     let token = state.create_token("Spirit", P0, 1, 1, vec![Color::White],
-        vec![CardType::Creature], vec![Keyword::Flying]);
+        vec![CardType::Creature], vec![Keyword::Flying], &reg);
     let non_token = ready_creature(&mut state, P0, 2, 2);
 
     // Cast Intangible Virtue.
@@ -399,7 +399,7 @@ fn one_eyed_scarecrow_debuffs_opponent_flyers() {
 
     // P0's own flyers should NOT be debuffed.
     let own_flyer = state.create_token("Spirit", P0, 1, 1, vec![Color::White],
-        vec![CardType::Creature], vec![Keyword::Flying]);
+        vec![CardType::Creature], vec![Keyword::Flying], &reg);
     assert_eq!(state.effective_power(own_flyer, &reg), Some(1),
         "Own flyers should not be debuffed by own Scarecrow");
 }

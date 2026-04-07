@@ -85,6 +85,7 @@ impl CardBehavior for CellarDoor {
                     vec![CardType::Creature],
                     vec![],
                     vec!["Zombie".into()],
+                    registry,
                 );
                 state.log(crate::state::LogLevel::Event,
                     "Cellar Door milled a creature, created a 2/2 Zombie token".to_string());

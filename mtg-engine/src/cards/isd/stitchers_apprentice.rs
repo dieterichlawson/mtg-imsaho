@@ -47,7 +47,7 @@ impl CardBehavior for StitchersApprentice {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(_object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         // Create a 2/2 blue Homunculus creature token.
@@ -55,6 +55,7 @@ impl CardBehavior for StitchersApprentice {
             "Homunculus", controller, 2, 2,
             vec![Color::Blue], vec![CardType::Creature],
             vec![], vec!["Homunculus".into()],
+            registry,
         );
         state.log(LogLevel::Event, format!("Stitcher's Apprentice created a 2/2 Homunculus token"));
 

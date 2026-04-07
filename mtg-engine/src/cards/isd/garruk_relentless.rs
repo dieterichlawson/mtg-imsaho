@@ -202,6 +202,7 @@ impl CardBehavior for GarrukRelentless {
                     vec![CardType::Creature],
                     vec![],
                     vec!["Wolf".into()],
+                    registry,
                 );
                 state.log(crate::state::LogLevel::Event,
                     "Garruk: created a 2/2 Wolf token".into());
@@ -218,6 +219,7 @@ impl CardBehavior for GarrukRelentless {
                     vec![CardType::Creature],
                     vec![Keyword::Deathtouch],
                     vec!["Wolf".into()],
+                    registry,
                 );
                 state.log(crate::state::LogLevel::Event,
                     "Garruk, the Veil-Cursed: created a 1/1 black Wolf token with deathtouch".into());

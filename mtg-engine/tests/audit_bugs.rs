@@ -78,6 +78,7 @@ fn bug_victim_of_night_can_target_vampire_token() {
         vec![CardType::Creature],
         vec![],
         vec!["Vampire".into()],
+        &registry,
     );
     if let Some(obj) = state.get_object_mut(vampire_token) {
         obj.summoning_sick = false;
@@ -1911,6 +1912,7 @@ fn bug_essence_of_wild_replacement_not_applied_for_tokens() {
         vec![CardType::Creature],
         vec![Keyword::Flying],
         vec!["Spirit".into()],
+        &registry,
     );
 
     // The token should be a 6/6 copy of Essence of the Wild

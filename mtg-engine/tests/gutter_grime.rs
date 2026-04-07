@@ -136,7 +136,7 @@ fn gutter_grime_ignores_token_deaths() {
 
     // Create a token creature.
     let token_id = state.create_token("Spirit", P0, 1, 1,
-        vec![Color::White], vec![CardType::Creature], vec![]);
+        vec![Color::White], vec![CardType::Creature], vec![], &reg);
 
     // Kill the token.
     let card_id = state.get_object(token_id).unwrap().card_id;

@@ -79,7 +79,7 @@ impl CardBehavior for SkirsdagHighPriest {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -125,6 +125,7 @@ impl CardBehavior for SkirsdagHighPriest {
             vec![CardType::Creature],
             vec![Keyword::Flying],
             vec!["Demon".into()],
+            registry,
         );
 
         state.log(crate::state::LogLevel::Event,

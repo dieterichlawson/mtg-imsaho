@@ -434,6 +434,7 @@ fn undead_alchemist_mills_instead_of_damage() {
         "Zombie", P0, 2, 2,
         vec![Color::Black], vec![CardType::Creature], vec![],
         vec!["Zombie".into()],
+        &reg,
     );
     state.get_object_mut(zombie).unwrap().summoning_sick = false;
 
@@ -800,6 +801,7 @@ fn unbreathing_horde_enters_with_counters_for_zombies() {
             "Zombie", P0, 2, 2,
             vec![Color::Black], vec![CardType::Creature], vec![],
             vec!["Zombie".into()],
+            &reg,
         );
     }
 

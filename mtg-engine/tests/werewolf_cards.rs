@@ -361,6 +361,7 @@ fn howlpack_alpha_werewolf_wolf_creature_gets_only_plus_one() {
         vec![CardType::Creature],
         vec![],
         vec!["Werewolf".into(), "Wolf".into()],
+        &reg,
     );
 
     // The creature should get exactly +1/+1 (not +2/+2) from Howlpack Alpha

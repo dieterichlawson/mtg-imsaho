@@ -38,7 +38,7 @@ impl CardBehavior for ArmyOfTheDamned {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
         for _ in 0..13 {
             let token_id = state.create_token_with_subtypes(
@@ -47,6 +47,7 @@ impl CardBehavior for ArmyOfTheDamned {
                 vec![CardType::Creature],
                 vec![],
                 vec!["Zombie".into()],
+                registry,
             );
             // They enter the battlefield tapped.
             if let Some(obj) = state.get_object_mut(token_id) {

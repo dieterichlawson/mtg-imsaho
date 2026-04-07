@@ -495,6 +495,7 @@ fn intangible_virtue_buffs_creatures() {
         vec![Color::White],
         vec![CardType::Creature],
         vec![],
+        &reg,
     );
     state.get_object_mut(token).unwrap().summoning_sick = false;
 
@@ -534,11 +535,13 @@ fn intangible_virtue_buffs_creatures() {
 fn token_has_summoning_sickness() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
+    let reg = registry();
     let token = state.create_token(
         "Spirit", P0, 1, 1,
         vec![Color::White],
         vec![CardType::Creature],
         vec![Keyword::Flying],
+        &reg,
     );
 
     let obj = state.get_object(token).unwrap();
@@ -558,6 +561,7 @@ fn tokens_cease_to_exist_when_killed() {
         vec![Color::White],
         vec![CardType::Creature],
         vec![Keyword::Flying],
+        &reg,
     );
 
     // Kill it by casting Lightning Bolt on it.

@@ -4,8 +4,6 @@ use crate::types::*;
 /// Parallel Lives — {3}{G} Enchantment.
 /// If an effect would create one or more tokens under your control,
 /// it creates twice that many of those tokens instead.
-///
-/// The doubling is handled in GameState::create_token_with_subtypes.
 pub struct ParallelLives;
 
 impl CardBehavior for ParallelLives {
@@ -25,5 +23,9 @@ impl CardBehavior for ParallelLives {
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
+    }
+
+    fn replacement_effects(&self) -> Vec<ReplacementEffect> {
+        vec![ReplacementEffect::DoubleTokens]
     }
 }

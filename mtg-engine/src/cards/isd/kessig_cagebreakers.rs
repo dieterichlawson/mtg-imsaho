@@ -64,6 +64,7 @@ impl CardBehavior for KessigCagebreakers {
                 vec![CardType::Creature],
                 vec![],
                 vec!["Wolf".into()],
+                registry,
             );
             // Tapped and attacking.
             if let Some(obj) = state.get_object_mut(token_id) {

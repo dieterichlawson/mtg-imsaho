@@ -78,7 +78,7 @@ impl CardBehavior for MoorlandHaunt {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
         // Exile a creature card from graveyard (auto-pick the first one).
@@ -104,6 +104,7 @@ impl CardBehavior for MoorlandHaunt {
             vec![CardType::Creature],
             vec![Keyword::Flying],
             vec!["Spirit".into()],
+            registry,
         );
         state.log(crate::state::LogLevel::Event,
             "Moorland Haunt created a 1/1 white Spirit token with flying".into());

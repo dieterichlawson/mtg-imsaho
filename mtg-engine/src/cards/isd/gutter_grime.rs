@@ -40,7 +40,7 @@ impl CardBehavior for GutterGrime {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -66,6 +66,7 @@ impl CardBehavior for GutterGrime {
             vec![CardType::Creature],
             vec![],
             vec!["Ooze".into()],
+            registry,
         );
         // Link the token's P/T to this Gutter Grime's slime counters.
         // pt_source_counter = ObjectId of the Gutter Grime

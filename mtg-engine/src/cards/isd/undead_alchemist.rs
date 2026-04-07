@@ -95,6 +95,7 @@ impl CardBehavior for UndeadAlchemist {
                     vec![CardType::Creature],
                     vec![],
                     vec!["Zombie".into()],
+                    registry,
                 );
             }
         }

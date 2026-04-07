@@ -91,6 +91,7 @@ fn parallel_lives_doubles_tokens() {
         vec![Color::White],
         vec![CardType::Creature],
         vec![Keyword::Flying],
+        &reg,
     );
 
     // Should have 2 tokens (1 + 1 extra from Parallel Lives).
@@ -103,7 +104,7 @@ fn parallel_lives_doubles_tokens() {
 /// Without Parallel Lives, token creation is normal.
 #[test]
 fn no_parallel_lives_single_token() {
-    let _reg = registry();
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     state.create_token(
@@ -111,6 +112,7 @@ fn no_parallel_lives_single_token() {
         vec![Color::White],
         vec![CardType::Creature],
         vec![Keyword::Flying],
+        &reg,
     );
 
     let spirits: Vec<_> = state.objects.values()
@@ -134,6 +136,7 @@ fn parallel_lives_only_doubles_for_controller() {
         vec![Color::Black],
         vec![CardType::Creature],
         vec![],
+        &reg,
     );
 
     let zombies: Vec<_> = state.objects.values()

@@ -213,10 +213,11 @@ fn aura_stays_while_creature_alive() {
 /// then cease to exist as a separate SBA.
 #[test]
 fn token_dies_goes_to_graveyard_then_ceases_to_exist() {
+    let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Create a token creature.
-    let token = state.create_token("Zombie", P0, 2, 2, vec![], vec![CardType::Creature], vec![]);
+    let token = state.create_token("Zombie", P0, 2, 2, vec![], vec![CardType::Creature], vec![], &reg);
     state.get_object_mut(token).unwrap().summoning_sick = false;
 
     // Deal lethal damage.

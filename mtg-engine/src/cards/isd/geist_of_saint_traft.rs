@@ -47,7 +47,7 @@ impl CardBehavior for GeistOfSaintTraft {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -62,6 +62,7 @@ impl CardBehavior for GeistOfSaintTraft {
             vec![CardType::Creature],
             vec![Keyword::Flying],
             vec!["Angel".into()],
+            registry,
         );
 
         // Set the token as tapped and attacking.

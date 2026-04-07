@@ -112,6 +112,7 @@ fn endless_ranks_creates_zombie_tokens() {
         let z = state.create_token_with_subtypes(
             "Zombie", P0, 2, 2, vec![Color::Black],
             vec![CardType::Creature], vec![], vec!["Zombie".into()],
+            &reg,
         );
         state.get_object_mut(z).unwrap().summoning_sick = false;
     }

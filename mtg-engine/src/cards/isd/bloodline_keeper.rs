@@ -127,7 +127,7 @@ impl CardBehavior for BloodlineKeeper {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
@@ -144,6 +144,7 @@ impl CardBehavior for BloodlineKeeper {
                     vec![CardType::Creature],
                     vec![Keyword::Flying],
                     vec!["Vampire".into()],
+                    registry,
                 );
                 let face_name = state.get_object(object_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.log(crate::state::LogLevel::Event,

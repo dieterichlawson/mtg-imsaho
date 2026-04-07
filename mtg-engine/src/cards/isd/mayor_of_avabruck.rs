@@ -121,7 +121,7 @@ impl CardBehavior for MayorOfAvabruck {
         }
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
@@ -138,6 +138,7 @@ impl CardBehavior for MayorOfAvabruck {
             vec![CardType::Creature],
             vec![],
             vec!["Wolf".into()],
+            registry,
         );
         state.log(crate::state::LogLevel::Event,
             "Howlpack Alpha: created a 2/2 Wolf token".into());

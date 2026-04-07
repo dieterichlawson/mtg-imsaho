@@ -65,6 +65,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
                 vec![CardType::Creature],
                 vec![],
                 vec!["Zombie".into()],
+                registry,
             );
         }
         if tokens_to_create > 0 {

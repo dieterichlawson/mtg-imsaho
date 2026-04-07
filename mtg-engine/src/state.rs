@@ -265,13 +265,14 @@ impl GameState {
         colors: Vec<crate::types::Color>,
         card_types: Vec<crate::types::CardType>,
         keywords: Vec<crate::types::Keyword>,
+        registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
-        self.create_token_with_subtypes(name, owner, power, toughness, colors, card_types, keywords, vec![])
+        self.create_token_with_subtypes(name, owner, power, toughness, colors, card_types, keywords, vec![], registry)
     }
 
     /// Create a token on the battlefield with specific creature subtypes.
-    /// If Parallel Lives is on the battlefield under the same controller,
-    /// an additional copy of the token is created.
+    /// If a permanent with ReplacementEffect::DoubleTokens is on the battlefield
+    /// under the same controller, extra copies of the token are created.
     pub fn create_token_with_subtypes(
         &mut self,
         name: &str,
@@ -282,15 +283,21 @@ impl GameState {
         card_types: Vec<crate::types::CardType>,
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
+        registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
-        // Check for Parallel Lives (doubling effect).
-        let parallel_lives_count = self.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == owner && o.name == "Parallel Lives")
+        // Check for token-doubling replacement effects (e.g. Parallel Lives).
+        let doubler_count = self.objects.values()
+            .filter(|o| o.zone == Zone::Battlefield && o.controller == owner)
+            .filter(|o| {
+                registry.get(o.card_id)
+                    .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::DoubleTokens))
+                    .unwrap_or(false)
+            })
             .count();
-        // Each Parallel Lives doubles, so 1 PL = 2x, 2 PL = 4x, etc.
+        // Each doubler doubles, so 1 = 2x, 2 = 4x, etc.
         // We create (2^N - 1) extra tokens.
-        let extra_copies = if parallel_lives_count > 0 {
-            (1u32 << parallel_lives_count) - 1
+        let extra_copies = if doubler_count > 0 {
+            (1u32 << doubler_count) - 1
         } else {
             0
         };
@@ -299,7 +306,7 @@ impl GameState {
         let id = self.create_token_internal(name, owner, power, toughness,
             colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone());
 
-        // Create extra copies for Parallel Lives.
+        // Create extra copies for token doublers.
         for _ in 0..extra_copies {
             self.create_token_internal(name, owner, power, toughness,
                 colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone());
@@ -408,6 +415,7 @@ impl GameState {
             card_types,
             keywords,
             subtypes.iter().map(|s| s.to_string()).collect(),
+            registry,
         );
         // Copy the card_id so the token gets the same CardBehavior.
         if let Some(obj) = self.get_object_mut(id) {
