@@ -108,7 +108,7 @@ fn creature_spell_goes_on_stack() {
     let creature = castable_spell(&mut state, &registry, "Kalonian Tusker", P0);
 
     let new_state = engine::submit_action(
-        &state, &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }, &registry,
+        &state, &Action::CastSpell { object_id: creature, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }, &registry,
     );
 
     assert_eq!(new_state.get_object(creature).unwrap().zone, Zone::Stack);
@@ -166,7 +166,7 @@ fn full_cast_and_resolve_sequence() {
 
     // Cast Kalonian Tusker.
     state = engine::submit_action(
-        &state, &Action::CastSpell { object_id: tusker, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }, &registry,
+        &state, &Action::CastSpell { object_id: tusker, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }, &registry,
     );
     assert_eq!(state.get_object(tusker).unwrap().zone, Zone::Stack);
     assert_eq!(state.get_player(P0).mana_pool.total(), 0);

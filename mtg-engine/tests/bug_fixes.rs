@@ -237,7 +237,7 @@ fn spell_fizzles_when_single_target_illegal() {
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -271,7 +271,7 @@ fn destroy_spell_fizzles_when_target_gone() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: doom, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: doom, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -297,7 +297,7 @@ fn counterspell_fizzles_when_target_already_countered() {
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -306,7 +306,7 @@ fn counterspell_fizzles_when_target_already_countered() {
     let counter = castable_spell(&mut state, &reg, "Counterspell", P1);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 

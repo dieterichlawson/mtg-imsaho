@@ -137,7 +137,7 @@ fn bug_etb_trigger_suppressed_when_source_leaves() {
     let skaab = castable_spell(&mut state, &registry, "Armored Skaab", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: skaab, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: skaab, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &registry,
     );
     // Resolve — moves to battlefield, queues ETB trigger
@@ -761,7 +761,7 @@ fn bug_hexproof_not_rechecked_at_resolution() {
         &Action::CastSpell {
             object_id: doom,
             targets: vec![Target::Object(creature)],
-            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
         },
         &registry,
     );
@@ -1290,7 +1290,7 @@ fn bug_smite_power_not_rechecked_at_resolution() {
         &Action::CastSpell {
             object_id: smite,
             targets: vec![Target::Object(creature)],
-            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
         },
         &registry,
     );

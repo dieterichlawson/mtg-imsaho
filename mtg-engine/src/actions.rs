@@ -29,7 +29,7 @@ pub enum Action {
     ///   When empty and `exile_count` is set, the engine falls back to auto-selecting the first N cards (legacy behavior).
     /// `alternative_cost` is an optional alternative mana cost (e.g. Rooftop Storm's {0}).
     /// When set, this cost is used instead of the normal mana cost.
-    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId>, exile_count: Option<u32>, exile_ids: Vec<ObjectId>, alternative_cost: Option<crate::types::ManaCost> },
+    CastSpell { object_id: ObjectId, targets: Vec<Target>, sacrifice: Option<ObjectId>, exile_count: Option<u32>, exile_ids: Vec<ObjectId>, alternative_cost: Option<crate::types::ManaCost>, tap_plan: Vec<(ObjectId, usize)> },
 
     /// Activate a mana ability (doesn't use the stack, player retains priority).
     ActivateManaAbility { object_id: ObjectId, ability_index: usize },
@@ -96,6 +96,8 @@ pub struct CastableSpell {
     pub name: String,
     pub is_flashback: bool,
     pub target_spec: CastTargetSpec,
+    /// Pre-computed mana sources to tap when casting this spell.
+    pub tap_plan: Vec<(ObjectId, usize)>,
 }
 
 /// Describes how targets should be chosen for a castable spell.

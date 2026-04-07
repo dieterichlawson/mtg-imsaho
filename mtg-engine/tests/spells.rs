@@ -25,7 +25,7 @@ fn lightning_bolt_kills_creature() {
     // Cast Lightning Bolt targeting the creature.
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &registry,
     );
     assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Stack);
@@ -225,7 +225,7 @@ fn counterspell_counters_spell() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &registry,
     );
     assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Stack);

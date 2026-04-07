@@ -660,7 +660,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice: Some(sac_id),
-                                exile_count: None, exile_ids: vec![], alternative_cost: None,
+                                exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                             });
                         }
                     }
@@ -685,7 +685,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             sacrifice,
                             exile_count: Some(0),
                             exile_ids: vec![],
-                            alternative_cost: None,
+                            alternative_cost: None, tap_plan: vec![],
                         });
                         // For each X from 1 to gy_count, enumerate all C(gy_count, X) subsets
                         for x in 1..=gy_count {
@@ -696,7 +696,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                     sacrifice,
                                     exile_count: Some(x as u32),
                                     exile_ids: combo,
-                                    alternative_cost: None,
+                                    alternative_cost: None, tap_plan: vec![],
                                 });
                             }
                         }
@@ -726,7 +726,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 sacrifice: *sacrifice,
                                 exile_count: *exile_count,
                                 exile_ids: exile_ids.clone(),
-                                alternative_cost: Some(alt_mana.clone()),
+                                alternative_cost: Some(alt_mana.clone()), tap_plan: vec![],
                             })
                         } else {
                             None
@@ -751,6 +751,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     name: data.name.clone(),
                     is_flashback: false,
                     target_spec: spec,
+                    tap_plan: vec![],
                 });
             }
         }
@@ -842,6 +843,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     name: data.name.clone(),
                     is_flashback: !cast_from_gy,
                     target_spec: spec,
+                    tap_plan: vec![],
                 });
             }
         }
@@ -987,7 +989,7 @@ fn generate_cast_actions_with_targets(
 
     match target_req {
         TargetRequirement::None => {
-            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None }]
+            vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }]
         }
         TargetRequirement::AnyTarget => {
             // Can target any creature on the battlefield or any player.
@@ -1000,7 +1002,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         });
                     }
                 }
@@ -1012,7 +1014,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         });
                     }
                 }
@@ -1029,7 +1031,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         });
                     }
                 }
@@ -1045,7 +1047,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         });
                     }
                 }
@@ -1062,7 +1064,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         });
                     }
                 }
@@ -1080,7 +1082,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         });
                     }
                 }
@@ -1101,7 +1103,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                     });
                 }
             }
@@ -1118,7 +1120,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: vec![target],
-                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                     });
                 }
             }
@@ -1129,7 +1131,7 @@ fn generate_cast_actions_with_targets(
         | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
             let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
             targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] })
                 .collect()
         }
         TargetRequirement::ModalChoice(ref modes) => {
@@ -1151,7 +1153,7 @@ fn generate_cast_actions_with_targets(
                         actions.push(Action::CastSpell {
                             object_id: spell_id,
                             targets: pair,
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                         });
                     }
                 }
@@ -1181,7 +1183,7 @@ fn generate_cast_actions_with_targets(
                     actions.push(Action::CastSpell {
                         object_id: spell_id,
                         targets: combo,
-                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None,
+                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
                     });
                 }
             }
@@ -1635,7 +1637,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, alternative_cost } => {
+        Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, alternative_cost, tap_plan: _tap_plan, .. } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
             // Detect flashback vs cast-from-graveyard.

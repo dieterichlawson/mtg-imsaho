@@ -74,7 +74,7 @@ fn sacrifice_at_cast_time() {
             object_id: plunge,
             targets: vec![],
             sacrifice: Some(creature),
-            exile_count: None, exile_ids: vec![], alternative_cost: None },
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -103,7 +103,7 @@ fn adds_three_red_mana() {
             object_id: plunge,
             targets: vec![],
             sacrifice: Some(creature),
-            exile_count: None, exile_ids: vec![], alternative_cost: None },
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 

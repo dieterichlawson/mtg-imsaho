@@ -583,7 +583,7 @@ fn frightful_delusion_choice_when_opponent_has_mana() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -622,7 +622,7 @@ fn frightful_delusion_auto_counters_without_mana() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bears, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 

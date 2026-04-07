@@ -64,7 +64,7 @@ fn pacifism_prevents_attacking() {
     // Cast Pacifism on P0's creature.
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: pac, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: pac, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &registry,
     );
     state.priority_player = Some(P0); // back to P0

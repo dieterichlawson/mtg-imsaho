@@ -212,6 +212,7 @@ fn cast_instant_in_response_to_trigger() {
                 exile_count: None,
                 exile_ids: vec![],
                 alternative_cost: None,
+                tap_plan: vec![],
             };
         }
 
@@ -336,6 +337,7 @@ fn spell_resolves_before_trigger_on_stack() {
                 exile_count: None,
                 exile_ids: vec![],
                 alternative_cost: None,
+                tap_plan: vec![],
             };
         }
 

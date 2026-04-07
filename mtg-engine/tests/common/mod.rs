@@ -90,7 +90,7 @@ pub fn cast_and_resolve(
 ) -> GameState {
     let mut new_state = mtg_engine::engine::submit_action(
         state,
-        &Action::CastSpell { object_id: spell_id, targets, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: spell_id, targets, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         registry,
     );
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, registry);

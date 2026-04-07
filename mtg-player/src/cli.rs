@@ -1042,15 +1042,15 @@ impl CliPlayer {
 
         match &spell.target_spec {
             CastTargetSpec::NoTargets => {
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] })
             }
             CastTargetSpec::SingleTarget(options) => {
                 if options.len() == 1 {
                     // Only one valid target — skip the sub-prompt.
-                    return Some(Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None });
+                    return Some(Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] });
                 }
                 let target = self.prompt_target(view, options, &format!("{}: select a target", spell.name))?;
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] })
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
                 let t1 = self.prompt_target(view, options1, &format!("{}: select first of two targets", spell.name))?;
@@ -1059,7 +1059,7 @@ impl CliPlayer {
                     return None; // no valid second target
                 }
                 let t2 = self.prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] })
             }
             CastTargetSpec::UpToTargets { max, options } => {
                 let mut chosen = Vec::new();
@@ -1079,7 +1079,7 @@ impl CliPlayer {
                 if chosen.is_empty() {
                     return None; // must pick at least one
                 }
-                Some(Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None })
+                Some(Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] })
             }
         }
     }

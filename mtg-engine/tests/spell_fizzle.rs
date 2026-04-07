@@ -38,7 +38,7 @@ fn bolt_target_dies_before_resolution() {
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
     assert_eq!(state.get_object(bolt).unwrap().zone, Zone::Stack);
@@ -71,7 +71,7 @@ fn giant_growth_target_dies_before_resolution() {
     let growth = castable_spell(&mut state, &reg, "Giant Growth", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: growth, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: growth, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -101,7 +101,7 @@ fn doom_blade_target_already_gone() {
     let doom = castable_spell(&mut state, &reg, "Doom Blade", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: doom, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: doom, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -126,7 +126,7 @@ fn counterspell_target_removed_from_stack() {
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -135,7 +135,7 @@ fn counterspell_target_removed_from_stack() {
     let counter = castable_spell(&mut state, &reg, "Counterspell", P1);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: counter, targets: vec![Target::Object(bolt)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -165,7 +165,7 @@ fn aura_target_dies_before_resolution() {
     let pacifism = castable_spell(&mut state, &reg, "Pacifism", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: pacifism, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: pacifism, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -199,7 +199,7 @@ fn bolt_target_gains_hexproof_before_resolution() {
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: bolt, targets: vec![Target::Object(creature)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -242,7 +242,7 @@ fn multi_target_spell_with_one_target_dying() {
             object_id: dread,
             targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
             sacrifice: None,
-            exile_count: None, exile_ids: vec![], alternative_cost: None },
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -274,7 +274,7 @@ fn multi_target_spell_with_all_targets_dying() {
             object_id: dread,
             targets: vec![Target::Object(creature_a), Target::Object(creature_b)],
             sacrifice: None,
-            exile_count: None, exile_ids: vec![], alternative_cost: None },
+            exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 

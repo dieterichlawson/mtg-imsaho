@@ -138,7 +138,7 @@ fn flashback_spell_countered_is_exiled() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: gf, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: gf, targets: vec![Target::Player(P1)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
 
@@ -149,7 +149,7 @@ fn flashback_spell_countered_is_exiled() {
 
     state = engine::submit_action(
         &state,
-        &Action::CastSpell { object_id: cs, targets: vec![Target::Object(gf)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None },
+        &Action::CastSpell { object_id: cs, targets: vec![Target::Object(gf)], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
     // Resolve the Counterspell (top of stack).
