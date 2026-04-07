@@ -1805,8 +1805,13 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.consecutive_passes = 0;
         }
 
-        Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, alternative_cost, tap_plan: _tap_plan, .. } => {
+        Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, alternative_cost, tap_plan } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
+
+            // Execute autotap plan: activate mana sources before paying the spell cost.
+            for &(source_id, ability_index) in tap_plan {
+                activate_mana_source(&mut new_state, source_id, ability_index, registry);
+            }
 
             // Detect flashback vs cast-from-graveyard.
             // Flashback: card has flashback_cost or dynamically granted flashback.
