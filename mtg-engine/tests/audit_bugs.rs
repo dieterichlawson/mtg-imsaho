@@ -579,19 +579,16 @@ fn bug_control_change_not_reverted_at_eot() {
         "Traitorous Blood should give control to P0");
 
     // Simulate the cleanup step inline (matching engine.rs cleanup)
-    state.until_end_of_turn_effects.clear();
-    state.until_end_of_turn_keywords.clear();
-    state.until_end_of_turn_cant_block.clear();
-    state.until_end_of_turn_protection.clear();
-    state.until_end_of_turn_removed_keywords.clear();
-    // Revert control changes
-    for (cid, original) in state.until_end_of_turn_control_changes.drain(..).collect::<Vec<_>>() {
-        if let Some(obj) = state.get_object_mut(cid) {
-            if obj.zone == Zone::Battlefield {
-                obj.controller = original;
+    for effect in &state.until_end_of_turn {
+        if let mtg_engine::state::TemporaryEffect::ChangeControl { target, original_controller } = effect {
+            if let Some(obj) = state.objects.get_mut(target) {
+                if obj.zone == Zone::Battlefield {
+                    obj.controller = *original_controller;
+                }
             }
         }
     }
+    state.until_end_of_turn.clear();
 
     // After cleanup, control should revert to P1.
     assert_eq!(state.get_object(creature).unwrap().controller, P1,
@@ -602,29 +599,29 @@ fn bug_control_change_not_reverted_at_eot() {
 // ENGINE: SPELL CAST COUNTING FOR WEREWOLF TRANSFORM
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: spells_cast_this_turn is never incremented when spells are cast.
-/// This breaks werewolf transform conditions which check spells_cast_last_turn.
+/// Bug: num_spells_cast_this_turn is never incremented when spells are cast.
+/// This breaks werewolf transform conditions which check num_spells_cast_last_turn.
 /// If no spells are ever counted, the "no spells cast last turn" condition
 /// is always true and werewolves would transform every upkeep.
 #[test]
-fn bug_spells_cast_this_turn_never_incremented() {
+fn bug_num_spells_cast_this_turn_never_incremented() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Record spells cast before
-    let cast_before: u32 = state.spells_cast_this_turn.values().sum();
+    let cast_before: u32 = state.num_spells_cast_this_turn.values().sum();
 
     // Cast a spell
     let bolt = castable_spell(&mut state, &registry, "Lightning Bolt", P0);
     let target = ready_creature(&mut state, P1, 3, 3);
     state = cast_and_resolve(&state, &registry, bolt, vec![Target::Object(target)]);
 
-    // spells_cast_this_turn should have been incremented
-    let cast_after: u32 = state.spells_cast_this_turn.values().sum();
+    // num_spells_cast_this_turn should have been incremented
+    let cast_after: u32 = state.num_spells_cast_this_turn.values().sum();
 
-    // BUG: Count is still 0 because submit_action never updates spells_cast_this_turn
+    // BUG: Count is still 0 because submit_action never updates num_spells_cast_this_turn
     assert!(cast_after > cast_before,
-        "spells_cast_this_turn should increment when a spell is cast. Before: {}, After: {}",
+        "num_spells_cast_this_turn should increment when a spell is cast. Before: {}, After: {}",
         cast_before, cast_after);
 }
 
@@ -694,8 +691,7 @@ fn bug_once_per_turn_never_clears() {
 
     // Simulate turn change — clear turn-based state
     // The engine now clears abilities_activated_this_turn at turn transition.
-    state.until_end_of_turn_effects.clear();
-    state.until_end_of_turn_keywords.clear();
+    state.until_end_of_turn.clear();
     for obj in state.objects.values_mut() {
         obj.abilities_activated_this_turn.clear();
     }
@@ -1256,11 +1252,14 @@ fn bug_past_in_flames_free_flashback_for_no_cost_cards() {
     let pif = castable_spell(&mut state, &registry, "Past in Flames", P0);
     state = cast_and_resolve(&state, &registry, pif, vec![]);
 
-    // Check the until_end_of_turn_flashback entries
+    // Check the until_end_of_turn flashback entries
     // Any card with cost=None should NOT get flashback (or should get cost=None flashback
     // which is uncastable), not ManaCost::free()
-    let free_flashbacks: Vec<_> = state.until_end_of_turn_flashback.iter()
-        .filter(|(_, cost)| cost.symbols.is_empty())
+    let free_flashbacks: Vec<_> = state.until_end_of_turn.iter()
+        .filter_map(|e| if let mtg_engine::state::TemporaryEffect::GrantFlashback { cost, .. } = e {
+            Some(cost)
+        } else { None })
+        .filter(|cost| cost.symbols.is_empty())
         .collect();
 
     // BUG: Cards with no mana cost get ManaCost::free() flashback

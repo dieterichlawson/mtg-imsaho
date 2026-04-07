@@ -10,11 +10,11 @@ pub struct InstigatorGang;
 impl InstigatorGang {
     fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
         let is_transformed = state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false);
-        let total_spells_last_turn: u32 = state.spells_cast_last_turn.values().sum();
+        let total_spells_last_turn: u32 = state.num_spells_cast_last_turn.values().sum();
         if !is_transformed {
             total_spells_last_turn == 0 && !state.is_first_turn
         } else {
-            state.spells_cast_last_turn.values().any(|&count| count >= 2)
+            state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
         }
     }
 }
@@ -96,8 +96,8 @@ impl CardBehavior for InstigatorGang {
             return;
         }
         let bonus = if is_transformed { 3 } else { 1 };
-        state.until_end_of_turn_effects.push(
-            crate::state::UntilEndOfTurnEffect {
+        state.until_end_of_turn.push(
+            crate::state::TemporaryEffect::ModifyPT {
                 target: attacker_id,
                 power_mod: bonus,
                 toughness_mod: 0,

@@ -744,9 +744,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
 
             // Check for flashback cost, dynamic flashback, or "cast from graveyard" ability.
-            let dynamic_fb = state.until_end_of_turn_flashback.iter()
-                .find(|(id, _)| *id == obj.id)
-                .map(|(_, c)| c.clone());
+            let dynamic_fb = state.until_end_of_turn.iter()
+                .find_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
+                    if *target == obj.id { Some(cost.clone()) } else { None }
+                } else { None });
             let cast_from_gy = behavior.can_cast_from_graveyard();
             let fb_cost = match dynamic_fb {
                 Some(ref c) => c,
@@ -1633,10 +1634,11 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let cost = if let Some(alt) = alternative_cost {
                 alt.clone()
             } else if is_flashback {
-                // Check until_end_of_turn_flashback for dynamically granted flashback.
-                let dynamic_fb = new_state.until_end_of_turn_flashback.iter()
-                    .find(|(id, _)| *id == *object_id)
-                    .map(|(_, c)| c.clone());
+                // Check until_end_of_turn for dynamically granted flashback.
+                let dynamic_fb = new_state.until_end_of_turn.iter()
+                    .find_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
+                        if *target == *object_id { Some(cost.clone()) } else { None }
+                    } else { None });
                 dynamic_fb.unwrap_or_else(|| {
                     data.flashback_cost.expect("flashback cast on card without flashback_cost")
                 })
@@ -1803,7 +1805,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             });
 
             // Track spells cast this turn (for werewolf transform conditions etc.)
-            *new_state.spells_cast_this_turn.entry(player).or_insert(0) += 1;
+            *new_state.num_spells_cast_this_turn.entry(player).or_insert(0) += 1;
 
             let name = card_name(&new_state, registry, *object_id);
             let suffix = if is_flashback { " (flashback)" } else { "" };
@@ -2458,7 +2460,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::DebuffUntilEOT { power, toughness, source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
+            state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
                 target: *id,
                 power_mod: *power,
                 toughness_mod: *toughness,
@@ -2467,7 +2469,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(id), PendingEffect::CantBlockThisTurn { source_name }) => {
             let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
-            state.until_end_of_turn_cant_block.push(*id);
+            state.until_end_of_turn.push(crate::state::TemporaryEffect::CantBlock { target: *id });
             state.log(LogLevel::Event, format!("{} prevents {} from blocking this turn", source_name, name));
         }
         (Target::Player(pid), PendingEffect::Mill { count, source_name }) => {
@@ -2865,7 +2867,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     .and_then(|d| d.cost.clone())
                     .unwrap_or(ManaCost::free());
                 let name = obj.name.clone();
-                state.until_end_of_turn_flashback.push((*target_id, cost));
+                state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: *target_id, cost });
                 state.log(LogLevel::Event,
                     format!("{} grants flashback to {}", source_name, name));
             }
@@ -3148,8 +3150,8 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
             state.is_first_turn = false;
             state.creature_died_this_turn = false;
             // Copy this turn's spell counts to last_turn, then clear for next turn.
-            state.spells_cast_last_turn = state.spells_cast_this_turn.clone();
-            state.spells_cast_this_turn.clear();
+            state.num_spells_cast_last_turn = state.num_spells_cast_this_turn.clone();
+            state.num_spells_cast_this_turn.clear();
             // Clear once-per-turn ability tracking for all permanents.
             for obj in state.objects.values_mut() {
                 obj.abilities_activated_this_turn.clear();
@@ -3286,21 +3288,17 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
             }
 
             // Remove "until end of turn" effects.
-            state.until_end_of_turn_effects.clear();
-            state.until_end_of_turn_keywords.clear();
-            state.until_end_of_turn_cant_block.clear();
-            state.until_end_of_turn_protection.clear();
-            state.until_end_of_turn_removed_keywords.clear();
-            state.prevent_non_wolf_werewolf_combat_damage = false;
-
-            // Revert "until end of turn" control changes (e.g., Traitorous Blood).
-            for (creature_id, original_controller) in state.until_end_of_turn_control_changes.drain(..).collect::<Vec<_>>() {
-                if let Some(obj) = state.get_object_mut(creature_id) {
-                    if obj.zone == Zone::Battlefield {
-                        obj.controller = original_controller;
+            // First, revert control changes before clearing.
+            for effect in &state.until_end_of_turn {
+                if let crate::state::TemporaryEffect::ChangeControl { target, original_controller } = effect {
+                    if let Some(obj) = state.objects.get_mut(target) {
+                        if obj.zone == Zone::Battlefield {
+                            obj.controller = *original_controller;
+                        }
                     }
                 }
             }
+            state.until_end_of_turn.clear();
 
             // Clear unused regeneration shields.
             for obj in state.objects.values_mut() {

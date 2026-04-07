@@ -28,7 +28,7 @@ fn trigger_upkeep(state: &mut mtg_engine::state::GameState, registry: &CardRegis
 fn reckless_waif_transforms_when_no_spells_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    // spells_cast_last_turn is empty (no spells cast), is_first_turn is false
+    // num_spells_cast_last_turn is empty (no spells cast), is_first_turn is false
     let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
 
     assert_eq!(state.effective_power(waif, &reg).unwrap(), 1);
@@ -61,7 +61,7 @@ fn reckless_waif_stays_human_on_first_turn() {
 fn reckless_waif_stays_human_when_spells_cast() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P0);
-    state.spells_cast_last_turn.insert(P0, 1);
+    state.num_spells_cast_last_turn.insert(P0, 1);
     let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
 
     trigger_upkeep(&mut state, &reg);
@@ -81,7 +81,7 @@ fn reckless_waif_transforms_back_when_two_spells_cast() {
     state.get_object_mut(waif).unwrap().name = "Merciless Predator".into();
 
     // Set up: a player cast 2 spells last turn
-    state.spells_cast_last_turn.insert(P0, 2);
+    state.num_spells_cast_last_turn.insert(P0, 2);
 
     trigger_upkeep(&mut state, &reg);
 
@@ -121,7 +121,7 @@ fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
     assert!(state.has_keyword(shepherd, Keyword::Intimidate, &reg));
 
     // Set up transform back
-    state.spells_cast_last_turn.insert(P1, 2);
+    state.num_spells_cast_last_turn.insert(P1, 2);
     trigger_upkeep(&mut state, &reg);
 
     assert!(!state.get_object(shepherd).unwrap().is_transformed);
@@ -649,7 +649,7 @@ fn multiple_werewolves_transform_back_together() {
     state.get_object_mut(shepherd).unwrap().is_transformed = true;
 
     // A player cast 2 spells last turn
-    state.spells_cast_last_turn.insert(P1, 2);
+    state.num_spells_cast_last_turn.insert(P1, 2);
 
     trigger_upkeep(&mut state, &reg);
 
@@ -667,7 +667,7 @@ fn werewolf_side_stays_if_one_spell_cast() {
     state.get_object_mut(waif).unwrap().is_transformed = true;
 
     // Only 1 spell cast last turn: not enough to transform back
-    state.spells_cast_last_turn.insert(P0, 1);
+    state.num_spells_cast_last_turn.insert(P0, 1);
 
     trigger_upkeep(&mut state, &reg);
 
@@ -682,7 +682,7 @@ fn human_side_stays_if_any_spell_cast() {
     let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
 
     // Opponent cast 1 spell last turn
-    state.spells_cast_last_turn.insert(P1, 1);
+    state.num_spells_cast_last_turn.insert(P1, 1);
 
     trigger_upkeep(&mut state, &reg);
 
