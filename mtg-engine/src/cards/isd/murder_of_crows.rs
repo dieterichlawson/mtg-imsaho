@@ -53,14 +53,14 @@ impl CardBehavior for MurderOfCrows {
         });
     }
 
-    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
             return;
         }
         // "You may draw a card. If you do, discard a card."
         let controller = state.get_object(self_id)
             .map(|o| o.controller).unwrap_or(PlayerId(0));
-        draw_cards(state, controller, 1);
+        draw_cards(state, controller, 1, registry);
         let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
             .iter().map(|o| o.id).collect();
         if hand.len() == 1 {

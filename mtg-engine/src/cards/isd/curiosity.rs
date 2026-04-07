@@ -73,13 +73,13 @@ impl CardBehavior for Curiosity {
         });
     }
 
-    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
             return;
         }
         let controller = state.get_object(self_id)
             .map(|o| o.controller).unwrap_or(PlayerId(0));
-        draw_cards(state, controller, 1);
+        draw_cards(state, controller, 1, registry);
         state.log(LogLevel::Event, "Curiosity: drew a card".into());
     }
 }

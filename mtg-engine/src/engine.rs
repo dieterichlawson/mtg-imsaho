@@ -2492,7 +2492,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.move_spell_after_resolve(*spell_id);
         }
         (Target::Player(pid), PendingEffect::DrawAndLoseLife { source_name }) => {
-            draw_cards(state, *pid, 1);
+            draw_cards(state, *pid, 1, registry);
             let old = state.get_player(*pid).life;
             let new_life = old - 1;
             state.get_player_mut(*pid).life = new_life;
@@ -2955,7 +2955,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     // Draw opening hands (7 cards each).
     for player_idx in 0..num_players {
         let player_id = PlayerId(player_idx);
-        draw_cards(&mut state, player_id, 7);
+        draw_cards(&mut state, player_id, 7, registry);
     }
 
     state.events.push(GameEvent::GameStarted);
@@ -2964,7 +2964,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 }
 
 /// Draw N cards for a player. Logs a single summary entry.
-pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
+pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) {
     let mut drawn = 0;
     for _ in 0..count {
         let card_id = {
@@ -2978,14 +2978,16 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
                 drawn += 1;
             }
             None => {
-                // Check for Laboratory Maniac: if the player controls one,
-                // they win the game instead of losing from empty library draw.
-                let has_lab_maniac = state.objects.values().any(|o| {
+                // Check for ReplaceEmptyDraw replacement effect (e.g. Laboratory Maniac):
+                // if the player controls a permanent with this effect, they win instead.
+                let has_replace_empty_draw = state.objects.values().any(|o| {
                     o.zone == Zone::Battlefield
                         && o.controller == player
-                        && o.name == "Laboratory Maniac"
+                        && registry.get(o.card_id)
+                            .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw))
+                            .unwrap_or(false)
                 });
-                if has_lab_maniac {
+                if has_replace_empty_draw {
                     // Player wins the game instead of drawing from empty library.
                     // Clear the has_drawn_from_empty flag so SBA doesn't kill them.
                     state.get_player_mut(player).has_drawn_from_empty = false;
@@ -2996,8 +2998,15 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize) {
                         reason: crate::events::LossReason::LifeReachedZero, // closest reason
                     });
                     state.result = Some(crate::state::GameResult::Winner(player));
+                    let source_name = state.objects.values()
+                        .find(|o| o.zone == Zone::Battlefield && o.controller == player
+                            && registry.get(o.card_id)
+                                .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw))
+                                .unwrap_or(false))
+                        .map(|o| o.name.clone())
+                        .unwrap_or_default();
                     state.log(LogLevel::Milestone,
-                        format!("p{} wins the game with Laboratory Maniac!", player.0));
+                        format!("p{} wins the game with {}!", player.0, source_name));
                 }
                 // Otherwise SBA will catch the empty library draw.
                 break;
@@ -3226,7 +3235,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         Step::Draw => {
             // Active player draws a card (skip on the very first turn).
             if !state.is_first_turn {
-                draw_cards(state, active, 1);
+                draw_cards(state, active, 1, registry);
             }
             state.priority_player = Some(active);
         }

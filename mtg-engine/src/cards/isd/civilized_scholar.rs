@@ -92,14 +92,14 @@ impl CardBehavior for CivilizedScholar {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
         };
 
         // Draw a card.
-        crate::engine::draw_cards(state, controller, 1);
+        crate::engine::draw_cards(state, controller, 1, registry);
 
         // Player must choose which card to discard.
         let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)

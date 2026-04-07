@@ -7,7 +7,12 @@ use mtg_engine::engine;
 use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameResult;
+use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
+
+fn registry() -> CardRegistry {
+    CardRegistry::with_all_cards()
+}
 
 /// Rule 104.4a: If both players reach 0 life simultaneously, it's a draw.
 #[test]
@@ -43,9 +48,10 @@ fn creature_survives_until_sba_check() {
 /// when SBAs are next checked, not immediately.
 #[test]
 fn empty_library_loss_is_deferred_to_sba() {
+    let reg = registry();
     let mut state = game_at_step(Step::Draw, P0);
 
-    engine::draw_cards(&mut state, P0, 1);
+    engine::draw_cards(&mut state, P0, 1, &reg);
 
     assert!(state.get_player(P0).has_drawn_from_empty);
     assert!(!state.get_player(P0).lost,

@@ -61,7 +61,7 @@ impl CardBehavior for MentorOfTheMeek {
         });
     }
 
-    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, _registry: &CardRegistry) {
+    fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
             return;
         }
@@ -87,7 +87,7 @@ impl CardBehavior for MentorOfTheMeek {
             paid = found;
         }
         if paid {
-            crate::engine::draw_cards(state, controller, 1);
+            crate::engine::draw_cards(state, controller, 1, registry);
             state.log(LogLevel::Event, "Mentor of the Meek: paid {1}, drew a card".into());
         }
     }

@@ -23,4 +23,8 @@ impl CardBehavior for LaboratoryManiac {
             flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
         }
     }
+
+    fn replacement_effects(&self) -> Vec<ReplacementEffect> {
+        vec![ReplacementEffect::ReplaceEmptyDraw]
+    }
 }

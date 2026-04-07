@@ -28,7 +28,7 @@ fn laboratory_maniac_wins_on_empty_library_draw() {
     state.players[0].library_order.clear();
 
     // Attempt to draw a card.
-    engine::draw_cards(&mut state, P0, 1);
+    engine::draw_cards(&mut state, P0, 1, &reg);
 
     // P0 should win the game (opponent loses).
     assert!(state.result.is_some(), "Game should be over");
@@ -46,7 +46,7 @@ fn no_lab_maniac_loses_on_empty_draw() {
     state.players[0].library_order.clear();
 
     // Attempt to draw a card.
-    engine::draw_cards(&mut state, P0, 1);
+    engine::draw_cards(&mut state, P0, 1, &reg);
 
     // P0 should be flagged for SBA loss.
     assert!(state.players[0].has_drawn_from_empty);
@@ -66,7 +66,7 @@ fn laboratory_maniac_only_helps_controller() {
     let _lab_maniac = named_creature(&mut state, &reg, "Laboratory Maniac", P0);
 
     state.players[1].library_order.clear();
-    engine::draw_cards(&mut state, P1, 1);
+    engine::draw_cards(&mut state, P1, 1, &reg);
 
     // P1 should still lose (Lab Maniac only helps P0).
     assert!(state.players[1].has_drawn_from_empty);

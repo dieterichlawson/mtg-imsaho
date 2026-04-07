@@ -31,14 +31,14 @@ impl CardBehavior for AltarsReap {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id)
             .map(|o| o.controller)
             .unwrap_or(crate::ids::PlayerId(0));
 
         // The creature sacrifice happens at cast time (as an additional cost).
         // On resolution, just draw two cards.
-        crate::engine::draw_cards(state, controller, 2);
+        crate::engine::draw_cards(state, controller, 2, registry);
         state.move_spell_after_resolve(object_id);
     }
 }
