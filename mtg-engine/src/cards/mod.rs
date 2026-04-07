@@ -504,6 +504,11 @@ impl CardRegistry {
         self.get(id).map(|b| b.card_data())
     }
 
+    /// Return all registered card names.
+    pub fn all_names(&self) -> Vec<&str> {
+        self.name_to_id.keys().map(|s| s.as_str()).collect()
+    }
+
     /// Build a registry with all built-in cards.
     pub fn with_all_cards() -> Self {
         let mut reg = Self::new();
