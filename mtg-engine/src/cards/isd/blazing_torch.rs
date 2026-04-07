@@ -28,7 +28,7 @@ impl CardBehavior for BlazingTorch {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
-                ContinuousEffect::BlockRestriction {
+                ContinuousEffect::CanOnlyBeBlockedBy {
                     allowed_blockers: CreatureFilter::Not(Box::new(CreatureFilter::Or(vec![
                         CreatureFilter::HasSubtype("Vampire".into()),
                         CreatureFilter::HasSubtype("Zombie".into()),

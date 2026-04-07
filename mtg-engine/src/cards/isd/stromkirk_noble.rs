@@ -24,7 +24,7 @@ impl CardBehavior for StromkirkNoble {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
-                ContinuousEffect::BlockRestriction {
+                ContinuousEffect::CanOnlyBeBlockedBy {
                     allowed_blockers: CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into()))),
                     scope: EffectScope::OnSelf,
                 },

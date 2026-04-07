@@ -22,7 +22,7 @@ impl CardBehavior for OrchardSpirit {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
-                ContinuousEffect::BlockRestriction {
+                ContinuousEffect::CanOnlyBeBlockedBy {
                     allowed_blockers: CreatureFilter::Or(vec![
                         CreatureFilter::HasKeyword(Keyword::Flying),
                         CreatureFilter::HasKeyword(Keyword::Reach),

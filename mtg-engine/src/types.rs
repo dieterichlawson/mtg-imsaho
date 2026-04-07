@@ -308,11 +308,11 @@ pub enum Keyword {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum CreatureFilter {
     /// All creatures you control.
-    You,
+    ControlledByYou,
     /// All creatures opponents control.
-    Opponents,
+    ControlledByOpponent,
     /// Token creatures you control.
-    YourTokens,
+    ControlledByYouToken,
     /// Creatures matching a subtype (e.g., "Human", "Zombie").
     HasSubtype(String),
     /// Creatures with a specific keyword.
@@ -324,7 +324,7 @@ pub enum CreatureFilter {
     /// Negation.
     Not(Box<CreatureFilter>),
     /// Creatures controlled by the player this curse/aura is attached to.
-    AttachedPlayer,
+    ControlledByAttachedPlayer,
 }
 
 /// Where a continuous effect applies.
@@ -358,7 +358,7 @@ pub enum ContinuousEffect {
     CantBeBlocked { scope: EffectScope },
     /// Creature can only be blocked by creatures matching the filter.
     /// Used for Orchard Spirit (flying/reach), Skulk (power < N), Shadow, Fear, etc.
-    BlockRestriction { allowed_blockers: CreatureFilter, scope: EffectScope },
+    CanOnlyBeBlockedBy { allowed_blockers: CreatureFilter, scope: EffectScope },
     /// Prevent all combat damage dealt to and by creature.
     PreventCombatDamage { scope: EffectScope },
     /// Creature doesn't untap during controller's untap step.

@@ -343,7 +343,9 @@ fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, 
 /// Check if a creature's combat damage should be prevented because it's not a Wolf/Werewolf
 /// (set by Moonmist's effect for the rest of the turn).
 fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
-    if !state.prevent_non_wolf_werewolf_combat_damage {
+    if !state.until_end_of_turn.iter().any(|e| matches!(e,
+        crate::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage
+    )) {
         return false;
     }
     let subtypes = get_subtypes(state, source, registry);
@@ -448,13 +450,13 @@ fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker
     }
 
     // Check until-end-of-turn protection grants.
-    for prot in &state.until_end_of_turn_protection {
-        if prot.target == protected {
-            // Check if the attacker matches the filter.
-            // Use controller of the protected creature for filter context.
-            let controller = state.get_object(protected).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-            if state.matches_filter(attacker, &prot.filter, controller, registry) {
-                return true;
+    for effect in &state.until_end_of_turn {
+        if let crate::state::TemporaryEffect::GrantProtection { target, filter } = effect {
+            if *target == protected {
+                let controller = state.get_object(protected).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+                if state.matches_filter(attacker, filter, controller, registry) {
+                    return true;
+                }
             }
         }
     }
@@ -652,7 +654,9 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardReg
             }, registry)
         })
         // "Can't block this turn" (e.g., Nightbird's Clutches).
-        .filter(|&id| !state.until_end_of_turn_cant_block.contains(&id))
+        .filter(|&id| !state.until_end_of_turn.iter().any(|e| matches!(e,
+            crate::state::TemporaryEffect::CantBlock { target } if *target == id
+        )))
         .collect()
 }
 
@@ -695,10 +699,10 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
         if source.zone != crate::types::Zone::Battlefield {
             continue;
         }
-        // Check instance-level effects first (e.g., equipment with BlockRestriction).
+        // Check instance-level effects first (e.g., equipment with CanOnlyBeBlockedBy).
         if let Some(ref instance_effects) = source.instance_continuous_effects {
             for effect in instance_effects {
-                if let crate::types::ContinuousEffect::BlockRestriction { allowed_blockers, scope } = effect {
+                if let crate::types::ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, scope } = effect {
                     if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
                         if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
                             return false;
@@ -714,7 +718,7 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
                 behavior.card_data().continuous_effects
             };
             for effect in &effects {
-                if let crate::types::ContinuousEffect::BlockRestriction { allowed_blockers, scope } = effect {
+                if let crate::types::ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, scope } = effect {
                     if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
                         // This attacker has a block restriction. Check if the blocker passes the filter.
                         if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
