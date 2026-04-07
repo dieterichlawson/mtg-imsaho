@@ -45,103 +45,6 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 - Targeted spells show their target in the action (e.g. "Cast Lightning Bolt → Goblin Piker 2/1").
 - Attack to win! Creatures deal damage to the opponent when unblocked.
 
-## Card knowledge
-
-### Creatures
-- Abbey Griffin ({3}{W} 2/2 flying, vigilance): Flyer that doesn't tap when attacking.
-- Chapel Geist ({1}{W}{W} 2/3 flying): Solid flying body.
-- Voiceless Spirit ({2}{W} 2/1 flying, first strike): Deals damage before blockers hit back.
-- Moon Heron ({3}{U} 3/2 flying): Evasive flyer.
-- Typhoid Rats ({B} 1/1 deathtouch): Kills anything it damages. Great blocker.
-- Markov Patrician ({2}{B} 3/1 lifelink): You gain life equal to damage dealt.
-- Ambush Viper ({1}{G} 2/1 flash, deathtouch): Cast anytime (flash)! Surprise blocker that kills anything.
-- Vampire Interloper ({1}{B} 2/1 flying): Can't block.
-- Spectral Rider ({W}{W} 2/2 intimidate): Only blocked by artifact creatures or same-color creatures.
-- Invisible Stalker ({1}{U} 1/1 hexproof): Can't be targeted by opponents. Can't be blocked.
-- Delver of Secrets ({U} 1/1 Human Wizard): At your upkeep, looks at top card of library. If it's an instant or sorcery, you may reveal it to transform into Insectile Aberration (3/2 flying). ALWAYS choose yes when asked to reveal — a 3/2 flyer for {U} is incredible.
-- Somberwald Spider ({4}{G} 2/4 reach): Can block flyers.
-- Diregraf Ghoul ({B} 2/2): Enters tapped.
-- Grave Bramble ({1}{G}{G} 3/4 defender): Can't attack, but great blocker.
-- One-Eyed Scarecrow ({3} 2/3 artifact creature, defender): Can't attack.
-- Screeching Bat ({2}{B} 2/2 flying, DFC): At your upkeep, you may pay {2}{B}{B} to transform into Stalking Vampire (5/5, no flying). Transform back the same way. Pay to transform when you need a bigger body for attacking or blocking; stay as the Bat when flying evasion matters more.
-
-### Spells
-- Lightning Bolt ({R} instant): Deal 3 damage to any target. Use to kill creatures or finish off opponent.
-- Giant Growth ({G} instant): Target creature gets +3/+3 until end of turn. SAVE THIS FOR COMBAT — cast it during DeclareBlockers to pump your attacker or save a blocker.
-- Doom Blade ({1}{B} instant): Destroy target nonblack creature. Can cast during combat to remove a blocker before damage.
-- Swords to Plowshares ({W} instant): Exile target creature. Controller gains life equal to power. Best used on big threats.
-- Counterspell ({U}{U} instant): Counter target spell on the stack. Use when opponent casts a threatening creature or spell.
-- Dissipate ({1}{U}{U} instant): Counter target spell and exile it (not graveyard).
-- Frightful Delusion ({2}{U} instant): Counter target spell. Its controller discards a card.
-- Lost in the Mist ({3}{U}{U} instant): Counter target spell AND return target permanent to its owner's hand. Two-for-one!
-- Holy Strength ({W} aura): Enchanted creature gets +1/+2. Cast on your creatures during main phase.
-- Pacifism ({1}{W} aura): Enchanted creature can't attack or block. Cast on opponent's creatures.
-- Rebuke ({2}{W} instant): Destroy target ATTACKING creature. Cast during combat after attackers are declared.
-- Smite the Monstrous ({3}{W} instant): Destroy target creature with power 4 or greater.
-- Victim of Night ({B}{B} instant): Destroy target non-Vampire, non-Werewolf, non-Zombie creature.
-- Geistflame ({R} instant): Deal 1 damage to any target.
-- Brimstone Volley ({2}{R} instant): Deal 3 damage to any target.
-- Bump in the Night ({B} sorcery): Target opponent loses 3 life.
-- Silent Departure ({U} sorcery): Return target creature to its owner's hand.
-- Naturalize ({1}{G} instant): Destroy target artifact or enchantment. Use to remove auras like Pacifism from your creatures!
-- Urgent Exorcism ({1}{W} instant): Destroy target Spirit or enchantment.
-- Bramblecrush ({2}{G}{G} sorcery): Destroy target noncreature permanent (lands, artifacts, enchantments).
-- Prey Upon ({G} sorcery): Target creature you control fights target creature you don't control. Both deal damage equal to their power to the other.
-- Moment of Heroism ({1}{W} instant): Target creature gets +2/+2 and gains lifelink until end of turn.
-- Ranger's Guile ({G} instant): Target creature gets +1/+1 and gains hexproof until end of turn.
-- Spidery Grasp ({2}{G} instant): Untap target creature. It gets +2/+4 and gains reach until end of turn.
-- Rally the Peasants ({2}{W} instant): Creatures you control get +2/+0 until end of turn.
-- Vampiric Fury ({1}{R} instant): Vampire creatures you control get +2/+0 and gain first strike until end of turn.
-- Midnight Haunting ({2}{W} instant): Create two 1/1 white Spirit creature tokens with flying. Great for surprise blockers!
-- Moan of the Unhallowed ({2}{B}{B} sorcery): Create two 2/2 black Zombie creature tokens.
-- Doomed Traveler ({W} creature 1/1): When it dies, creates a 1/1 Spirit token with flying. Good early blocker.
-- Mausoleum Guard ({3}{W} creature 2/2): When it dies, creates two 1/1 Spirit tokens with flying.
-- Village Bell-Ringer ({2}{W} creature 1/4 flash): When it enters, untaps all your creatures. Cast during combat to untap blockers!
-- Slayer of the Wicked ({3}{W} creature 3/2): When it enters, destroys a Vampire, Werewolf, or Zombie.
-- Pitchburn Devils ({4}{R} creature 3/3): When it dies, deals 3 damage to opponent.
-- Falkenrath Noble ({3}{B} creature 2/2 flying): Whenever ANY creature dies, opponent loses 1 life and you gain 1.
-- Rage Thrower ({5}{R} creature 4/2): Whenever another creature dies, deals 2 damage to opponent.
-- Fiend Hunter ({1}{W}{W} creature 1/3): When it enters, you may exile another target creature (any creature, not just opponent's). When it leaves, the exiled card returns.
-- Intangible Virtue ({1}{W} enchantment): Creature tokens you control get +1/+1 and have vigilance.
-- Unruly Mob ({1}{W} creature 1/1): Gets a +1/+1 counter whenever another of your creatures dies.
-- Lumberknot ({2}{G}{G} creature 1/1 hexproof): Gets a +1/+1 counter whenever any creature dies. Can't be targeted!
-- Elder Cathar ({2}{W} creature 2/2): When it dies, puts a +1/+1 counter on one of your creatures.
-- Think Twice ({1}{U} instant, flashback {2}{U}): Draw a card. Can cast from graveyard!
-- Dream Twist ({U} instant, flashback {1}{U}): Target player mills 3 cards.
-- Travel Preparations ({1}{G} sorcery, flashback {1}{W}): Put a +1/+1 counter on target creature.
-- Feeling of Dread ({1}{W} instant, flashback {1}{U}): Tap target creature.
-- Nightbird's Clutches ({1}{R} sorcery, flashback {3}{R}): Tap target creature so it can't block.
-- Gnaw to the Bone ({2}{G} instant, flashback {2}{G}): Gain 2 life per creature in your graveyard.
-- Forbidden Alchemy ({2}{U} instant, flashback {6}{B}): Draw 1 card, mill 3.
-- Rolling Temblor ({2}{R} sorcery, flashback {4}{R}{R}): 2 damage to each creature without flying.
-- Unburial Rites ({4}{B} sorcery, flashback {3}{W}): Return a creature from your graveyard to the battlefield.
-- Desperate Ravings ({1}{R} instant, flashback {2}{U}): Draw 2 cards, discard 1.
-- Skeletal Grimace ({1}{B} aura): Enchanted creature gets +1/+1 and has "{B}: Regenerate this creature." Activate the regeneration ability (shows as "Activate <creature name>") to protect the creature from destruction — it gets a regeneration shield that saves it from the next lethal damage or destroy effect. Activate it BEFORE the creature would die!
-- Village Cannibals ({2}{B} creature 2/2): Whenever another Human dies, gets a +1/+1 counter. Grows when Humans on either side die.
-- Bloodcrazed Neonate ({1}{R} creature 2/1): Must attack each turn. Gets a +1/+1 counter whenever it deals combat damage to a player.
-- Stromkirk Noble ({R} creature 1/1): Can't be blocked by Humans. Gets a +1/+1 counter on combat damage to a player. Snowballs fast.
-- Champion of the Parish ({W} creature 1/1): Gets a +1/+1 counter whenever another Human enters under your control. Play Humans to grow it!
-- Festerhide Boar ({3}{G} creature 3/3 trample): Morbid — enters with two +1/+1 counters if a creature died this turn. Cast AFTER combat or removal for a 5/5 trampler.
-- Hollowhenge Scavenger ({3}{G}{G} creature 4/5): Morbid — gain 5 life if a creature died this turn. Big body.
-- Morkrut Banshee ({3}{B}{B} creature 4/4): Morbid — gives target creature -4/-4 when it enters if a creature died this turn. Kills most creatures!
-- Dead Weight ({B} aura): Enchanted creature gets -2/-2. Kills 2-toughness creatures immediately.
-- Spectral Flight ({1}{U} aura): Enchanted creature gets +2/+2 and flying. Great on any creature.
-- Bonds of Faith ({1}{W} aura): +2/+2 if enchanted creature is Human. If not Human, it can't attack or block (like Pacifism).
-- Glorious Anthem ({1}{W}{W} enchantment): All your creatures get +1/+1. Board-wide buff.
-- Spider Spawning ({4}{G} sorcery, flashback {6}{B}): Creates a 1/2 Spider with reach for each creature in your graveyard. Better late game.
-- Wreath of Geists ({G} aura): Enchanted creature gets +X/+X where X is creature cards in your graveyard. Grows as creatures die.
-- Geist-Honored Monk ({3}{W}{W} creature */* vigilance): Power/toughness = number of creatures you control. Creates two 1/1 Spirit tokens with flying on entry.
-- Murder of Crows ({3}{U}{U} creature 4/4 flying): Whenever another creature dies, you may draw a card then discard a card. Card filtering engine.
-- Sturmgeist ({3}{U}{U} creature */* flying): Power/toughness = cards in your hand. Draw a card when it deals combat damage.
-- Curiosity ({U} aura): Whenever enchanted creature deals damage to an opponent, you may draw a card. Put on evasive creatures!
-- Abattoir Ghoul ({3}{B} creature 3/2 first strike): When a creature it damaged this turn dies, you gain life equal to its toughness.
-- Crossway Vampire ({1}{R}{R} creature 3/2): When it enters, target creature can't block this turn. Clears the way for attackers.
-- Rakish Heir ({2}{R} creature 2/2): Whenever a Vampire you control deals combat damage to a player, that Vampire gets a +1/+1 counter.
-- Grimoire of the Dead ({4} legendary artifact): Has two activated abilities. First: pay {1}, tap, discard a card to add a study counter. Second: tap, remove 3 study counters, sacrifice it to put ALL creature cards from ALL graveyards onto the battlefield under your control as black Zombies. Build up counters over 3 turns (discard your worst cards), then sacrifice for a massive board. The reanimation ability is a game-winner — plan around it.
-
-### Planeswalkers
-- Liliana of the Veil ({1}{B}{B} legendary planeswalker, 3 loyalty): Three loyalty abilities. +1: Each player discards a card — use when your hand is empty or low-value to break parity. -2: Target player sacrifices a creature — the target player chooses which creature, so best when opponent has only one creature or only valuable ones. Can target yourself if needed. -6: Separate target player's permanents into two piles, that player sacrifices one pile — game-ending ultimate. When dividing piles, try to make both piles painful so the opponent loses either way. Build toward -6 with repeated +1 activations.
-
 ## Flashback
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. Tap lands to get mana, then the Flashback option appears.
 
@@ -253,6 +156,13 @@ pub struct LlmPlayer {
     model: String,
     provider: Provider,
     log_file: Option<String>,
+    /// System prompt (rules + decklists). Set by init_conversation.
+    system_prompt: String,
+    /// Multi-turn conversation history for Anthropic API.
+    /// Each entry is a {"role": "user"|"assistant", "content": "..."} JSON object.
+    conversation: Vec<serde_json::Value>,
+    /// Index into the game log — tracks which log entries have been sent.
+    last_log_index: usize,
 }
 
 impl LlmPlayer {
@@ -264,9 +174,12 @@ impl LlmPlayer {
             name: name.to_string(),
             client: Client::new(),
             api_key,
-            model: "claude-sonnet-4-20250514".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
             provider: Provider::Anthropic,
             log_file: None,
+            system_prompt: SYSTEM_PROMPT.to_string(),
+            conversation: Vec::new(),
+            last_log_index: 0,
         }
     }
 
@@ -281,6 +194,9 @@ impl LlmPlayer {
             model: "gemini-2.5-flash".to_string(),
             provider: Provider::Gemini,
             log_file: None,
+            system_prompt: SYSTEM_PROMPT.to_string(),
+            conversation: Vec::new(),
+            last_log_index: 0,
         }
     }
 
@@ -294,6 +210,61 @@ impl LlmPlayer {
         let _ = std::fs::write(path, "");
         self.log_file = Some(path.to_string());
         self
+    }
+
+    /// Initialize the conversation with decklists and oracle text.
+    /// Call this once before the game starts.
+    pub fn init_conversation(
+        &mut self,
+        your_deck: &[(String, u32)],
+        opp_deck: &[(String, u32)],
+        registry: &mtg_engine::cards::CardRegistry,
+    ) {
+        let mut deck_info = String::new();
+        deck_info.push_str("\n\n## Your decklist\n\n");
+        deck_info.push_str(&Self::format_decklist(your_deck, registry));
+        deck_info.push_str("\n\n## Opponent's decklist\n\n");
+        deck_info.push_str(&Self::format_decklist(opp_deck, registry));
+        self.system_prompt = format!("{}{}", SYSTEM_PROMPT, deck_info);
+        self.conversation.clear();
+        self.last_log_index = 0;
+        self.log("SYSTEM", &self.system_prompt);
+    }
+
+    fn format_decklist(entries: &[(String, u32)], registry: &mtg_engine::cards::CardRegistry) -> String {
+        let mut s = String::new();
+        let mut seen = std::collections::HashSet::new();
+        for (name, count) in entries {
+            s.push_str(&format!("{}x {}\n", count, name));
+            if !seen.contains(name) {
+                seen.insert(name.clone());
+                if let Some(id) = registry.get_id_by_name(name) {
+                    if let Some(data) = registry.card_data(id) {
+                        let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                        let types: Vec<&str> = data.card_types.iter().map(|t| match t {
+                            CardType::Creature => "Creature",
+                            CardType::Instant => "Instant",
+                            CardType::Sorcery => "Sorcery",
+                            CardType::Enchantment => "Enchantment",
+                            CardType::Artifact => "Artifact",
+                            CardType::Land => "Land",
+                            CardType::Planeswalker => "Planeswalker",
+                        }).collect();
+                        let subtypes = if data.subtypes.is_empty() { String::new() }
+                            else { format!(" — {}", data.subtypes.join(" ")) };
+                        let pt = match (data.power, data.toughness) {
+                            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                            _ => String::new(),
+                        };
+                        s.push_str(&format!("  {}{} {}{}{}\n", name, cost, types.join(" "), subtypes, pt));
+                        if !data.oracle_text.is_empty() {
+                            s.push_str(&format!("  {}\n", data.oracle_text.replace('\n', "\n  ")));
+                        }
+                    }
+                }
+            }
+        }
+        s
     }
 
     fn log(&self, label: &str, content: &str) {
@@ -662,23 +633,103 @@ impl LlmPlayer {
             .unwrap_or_else(|| format!("{}", id))
     }
 
+    /// Build a user message with log delta + board state + prompt, append to
+    /// conversation, send to API, append assistant response, return the text.
+    fn send_message(&mut self, user_message: &str) -> String {
+        self.log("PROMPT", user_message);
+
+        // Append user message to conversation.
+        self.conversation.push(serde_json::json!({
+            "role": "user",
+            "content": user_message,
+        }));
+
+        let result = match self.provider {
+            Provider::Anthropic => self.call_anthropic_conv(),
+            Provider::Gemini => self.call_gemini_conv(),
+        };
+
+        // Append assistant response.
+        self.conversation.push(serde_json::json!({
+            "role": "assistant",
+            "content": result,
+        }));
+
+        result
+    }
+
+    /// Build a prompt that includes new log entries + board state + the action prompt.
+    fn build_prompt(&mut self, view: &GameView, action_prompt: &str) -> String {
+        // Collect new log entries since last message.
+        let new_logs: Vec<String> = view.full_log.iter()
+            .skip(self.last_log_index)
+            .cloned()
+            .collect();
+        self.last_log_index = view.full_log.len();
+
+        let mut prompt = String::new();
+        if !new_logs.is_empty() {
+            prompt.push_str("Recent events:\n");
+            for entry in &new_logs {
+                prompt.push_str(entry);
+                prompt.push('\n');
+            }
+            prompt.push('\n');
+        }
+        prompt.push_str(&Self::format_state_compact(view));
+        prompt.push_str(action_prompt);
+        prompt
+    }
+
+    /// Legacy one-shot API call (for sub-prompts like target selection within a turn).
     fn call_api(&self, user_message: &str) -> String {
         self.log("PROMPT", user_message);
 
         match self.provider {
-            Provider::Anthropic => self.call_anthropic(user_message),
-            Provider::Gemini => self.call_gemini(user_message),
+            Provider::Anthropic => {
+                // Use conversation context for sub-prompts too.
+                let mut messages = self.conversation.clone();
+                messages.push(serde_json::json!({"role": "user", "content": user_message}));
+                self.call_anthropic_with_messages(&messages)
+            }
+            Provider::Gemini => self.call_gemini_oneshot(user_message),
         }
     }
 
-    fn call_anthropic(&self, user_message: &str) -> String {
+    fn call_anthropic_conv(&self) -> String {
+        self.call_anthropic_with_messages(&self.conversation)
+    }
+
+    fn call_anthropic_with_messages(&self, messages: &[serde_json::Value]) -> String {
+        // Set cache_control on the system prompt (always cached) and on
+        // the second-to-last message (conversation prefix cached).
+        let system = serde_json::json!([{
+            "type": "text",
+            "text": self.system_prompt,
+            "cache_control": {"type": "ephemeral"}
+        }]);
+
+        let mut msgs = messages.to_vec();
+        // Set cache_control on the second-to-last message if there are at least 2.
+        if msgs.len() >= 2 {
+            let idx = msgs.len() - 2;
+            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(|s| s.to_string()) {
+                msgs[idx] = serde_json::json!({
+                    "role": msgs[idx]["role"],
+                    "content": [{
+                        "type": "text",
+                        "text": content,
+                        "cache_control": {"type": "ephemeral"}
+                    }]
+                });
+            }
+        }
+
         let body = serde_json::json!({
             "model": self.model,
             "max_tokens": 4096,
-            "system": SYSTEM_PROMPT,
-            "messages": [
-                {"role": "user", "content": user_message}
-            ]
+            "system": system,
+            "messages": msgs
         });
 
         for attempt in 0..3 {
@@ -734,12 +785,30 @@ impl LlmPlayer {
         "0".to_string()
     }
 
-    fn call_gemini(&self, user_message: &str) -> String {
+    fn call_gemini_conv(&self) -> String {
+        // Convert conversation to Gemini format.
+        let contents: Vec<serde_json::Value> = self.conversation.iter().map(|msg| {
+            let role = msg["role"].as_str().unwrap_or("user");
+            let gemini_role = if role == "assistant" { "model" } else { "user" };
+            serde_json::json!({"role": gemini_role, "parts": [{"text": msg["content"].as_str().unwrap_or("")}]})
+        }).collect();
+        self.call_gemini_with_contents(&contents)
+    }
+
+    fn call_gemini_oneshot(&self, user_message: &str) -> String {
+        let mut contents: Vec<serde_json::Value> = self.conversation.iter().map(|msg| {
+            let role = msg["role"].as_str().unwrap_or("user");
+            let gemini_role = if role == "assistant" { "model" } else { "user" };
+            serde_json::json!({"role": gemini_role, "parts": [{"text": msg["content"].as_str().unwrap_or("")}]})
+        }).collect();
+        contents.push(serde_json::json!({"role": "user", "parts": [{"text": user_message}]}));
+        self.call_gemini_with_contents(&contents)
+    }
+
+    fn call_gemini_with_contents(&self, contents: &[serde_json::Value]) -> String {
         let body = serde_json::json!({
-            "contents": [
-                {"role": "user", "parts": [{"text": user_message}]}
-            ],
-            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "contents": contents,
+            "systemInstruction": {"parts": [{"text": self.system_prompt}]},
             "generationConfig": {"maxOutputTokens": 512}
         });
 
@@ -828,12 +897,44 @@ impl LlmPlayer {
         None
     }
 
-    /// Call the API with a retry on malformed response.
+    /// Send a message via conversation and parse the action index.
+    fn choose_with_retry_conv(&mut self, prompt: &str, max: usize, actions: &[Action]) -> usize {
+        for attempt in 0..2 {
+            let response = self.send_message(prompt);
+            if let Some(idx) = self.parse_action_index(&response, max) {
+                // Double-check concede: ask the model to confirm.
+                if matches!(actions.get(idx), Some(Action::Concede)) {
+                    self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
+                    let confirm = self.send_message(
+                        "You chose to CONCEDE the game. Are you sure? Reply ONLY 'yes' or 'no'."
+                    );
+                    let last = confirm.lines().rev()
+                        .find(|l| !l.trim().is_empty())
+                        .unwrap_or("")
+                        .trim()
+                        .to_lowercase();
+                    if !last.contains("yes") {
+                        self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
+                        return 0;
+                    }
+                }
+                self.log("CHOSE", &format!("action {}", idx));
+                return idx;
+            }
+            if attempt == 0 {
+                self.log("MALFORMED", &format!("'{}', retrying...", response));
+            } else {
+                self.log("MALFORMED", &format!("Retry also malformed '{}', defaulting to 0", response));
+            }
+        }
+        0
+    }
+
+    /// Call the API with a retry on malformed response (legacy one-shot).
     fn choose_with_retry(&self, prompt: &str, max: usize, actions: &[Action]) -> usize {
         for attempt in 0..2 {
             let response = self.call_api(prompt);
             if let Some(idx) = self.parse_action_index(&response, max) {
-                // Double-check concede: ask the model to confirm.
                 if matches!(actions.get(idx), Some(Action::Concede)) {
                     self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
                     let confirm = self.call_api(
@@ -906,17 +1007,17 @@ impl Player for LlmPlayer {
             }
         }
 
-        let state_str = Self::format_state_compact(view);
         let context_str = legal.context.as_ref()
             .map(|c| format!("[{}]\n", c))
             .unwrap_or_default();
         let actions_str: String = display_labels.iter().enumerate()
             .map(|(i, label)| format!("{}:{} ", i, label))
             .collect();
-        let prompt = format!("{}{}\n{}", state_str, context_str, actions_str);
+        let action_prompt = format!("{}\n{}", context_str, actions_str);
+        let prompt = self.build_prompt(view, &action_prompt);
 
         self.log("THINKING", &format!("{} actions (collapsed from {})", display_labels.len(), legal_actions.len()));
-        let idx = self.choose_with_retry(&prompt, display_labels.len(), legal_actions);
+        let idx = self.choose_with_retry_conv(&prompt, display_labels.len(), legal_actions);
 
         if idx >= display_entries.len() {
             return Action::PassPriority;
@@ -951,7 +1052,6 @@ impl LlmPlayer {
                     return Action::DeclareAttackers { attackers: vec![] };
                 }
 
-                let state = Self::format_state_compact(view);
                 let mut combat_text = String::new();
                 if !must_attack.is_empty() {
                     combat_text.push_str("MUST ATTACK: ");
@@ -976,7 +1076,8 @@ impl LlmPlayer {
                 combat_text.push_str("\nNumbers, 'all', or 'none' (forced attackers are auto-included)");
 
                 self.log("THINKING", "attackers...");
-                let response = self.call_api(&format!("{}\n{}", state, combat_text));
+                let full_prompt = self.build_prompt(view, &combat_text);
+                let response = self.send_message(&full_prompt);
                 self.log("ATTACKERS", &response);
 
                 // Parse from last line, strip "ANSWER:" prefix.
@@ -1011,7 +1112,6 @@ impl LlmPlayer {
                     return Action::DeclareBlockers { assignments: vec![] };
                 }
 
-                let state = Self::format_state_compact(view);
                 let mut combat_text = String::from("Attackers: ");
                 for (i, &id) in attackers.iter().enumerate() {
                     let name = Self::obj_name(view, id);
@@ -1025,7 +1125,8 @@ impl LlmPlayer {
                 combat_text.push_str("\nFormat: 'blocker:attacker' pairs, or 'none'");
 
                 self.log("THINKING", "blockers...");
-                let response = self.call_api(&format!("{}\n{}", state, combat_text));
+                let full_prompt = self.build_prompt(view, &combat_text);
+                let response = self.send_message(&full_prompt);
                 self.log("BLOCKERS", &response);
 
                 // Parse from last line, strip "ANSWER:" prefix.

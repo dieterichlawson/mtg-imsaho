@@ -112,6 +112,16 @@ fn main() {
     let mut p1 = make_player(p1_spec, "P1", log_file);
     let mut p2 = make_player(p2_spec, "P2", log_file);
 
+    // Initialize LLM player conversations with decklists.
+    let deck1_entries = load_deck(deck1_spec, &registry).entries;
+    let deck2_entries = load_deck(deck2_spec, &registry).entries;
+    if let PlayerKind::Llm(ref mut llm) = p1 {
+        llm.init_conversation(&deck1_entries, &deck2_entries, &registry);
+    }
+    if let PlayerKind::Llm(ref mut llm) = p2 {
+        llm.init_conversation(&deck2_entries, &deck1_entries, &registry);
+    }
+
     let has_human = matches!(p1, PlayerKind::Cli(_)) || matches!(p2, PlayerKind::Cli(_));
 
     let mut action_count: u64 = 0;
