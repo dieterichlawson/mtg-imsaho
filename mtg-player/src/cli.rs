@@ -118,6 +118,12 @@ impl CliPlayer {
                     }
                 }
 
+                // Break after combat ends (post-combat main on either turn)
+                // so the player can use removal/burn on damaged creatures.
+                if view.step == Step::PostcombatMain {
+                    return true;
+                }
+
                 false
             }
         }
