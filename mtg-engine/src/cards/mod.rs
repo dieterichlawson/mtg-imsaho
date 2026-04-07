@@ -291,6 +291,10 @@ pub trait CardBehavior: Send + Sync {
         true
     }
 
+    /// Replacement effects (CR 614) this permanent provides while on the battlefield.
+    /// The engine checks these instead of hardcoding card names.
+    fn replacement_effects(&self) -> Vec<crate::types::ReplacementEffect> { vec![] }
+
     /// Whether this card can be cast from the graveyard (not flashback — stays in graveyard after).
     /// Used by Skaab Ruinator.
     fn can_cast_from_graveyard(&self) -> bool { false }

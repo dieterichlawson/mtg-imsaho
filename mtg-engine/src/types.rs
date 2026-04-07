@@ -390,6 +390,22 @@ pub enum ContinuousEffect {
     DoubleCombatDamage { scope: EffectScope },
 }
 
+/// A replacement effect (CR 614) that modifies an event as it happens.
+/// Unlike triggered abilities, these don't use the stack — they intercept
+/// the event before it occurs and replace it with a different outcome.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ReplacementEffect {
+    /// If an effect would create one or more tokens under your control,
+    /// create twice that many instead. (Parallel Lives)
+    DoubleTokens,
+    /// If you would draw a card while your library has no cards in it,
+    /// you win the game instead. (Laboratory Maniac)
+    ReplaceEmptyDraw,
+    /// Creatures you control enter the battlefield as a copy of this permanent.
+    /// (Essence of the Wild)
+    EnterAsCopy,
+}
+
 /// Condition for conditional effects.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum EffectCondition {
