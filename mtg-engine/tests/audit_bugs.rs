@@ -898,10 +898,9 @@ fn bug_nevermore_not_enforced_for_flashback() {
     // Place Nevermore naming "Think Twice"
     let nevermore = named_creature(&mut state, &registry, "Nevermore", P0);
     if let Some(obj) = state.get_object_mut(nevermore) {
-        obj.card_state.insert("named_card".into(),
-            mtg_engine::ids::ObjectId(
-                registry.get_id_by_name("Think Twice").unwrap().0 as u64
-            ));
+        obj.instance_continuous_effects = Some(vec![
+            ContinuousEffect::PreventCastingNamed { name: "Think Twice".into() },
+        ]);
     }
 
     // Put Think Twice in P1's graveyard with flashback

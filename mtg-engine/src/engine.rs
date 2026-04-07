@@ -521,23 +521,22 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
     }
 
-    // Collect names banned by Nevermore (spells with that name can't be cast).
-    let nevermore_banned: Vec<String> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.name == "Nevermore")
-        .filter_map(|o| {
-            // Primary: instance_oracle_text set by on_enter_battlefield.
-            if let Some(name) = o.instance_oracle_text.as_ref()
-                .and_then(|t| t.strip_prefix("nevermore:"))
-                .map(|s| s.to_string())
-            {
-                return Some(name);
-            }
-            // Secondary: card_state["named_card"] stores a CardId as ObjectId (used in tests).
-            if let Some(oid) = o.card_state.get("named_card") {
-                let card_id = crate::ids::CardId(oid.0 as u32);
-                return registry.card_data(card_id).map(|d| d.name);
-            }
-            None
+    // Collect names banned by PreventCastingNamed effects (e.g. Nevermore).
+    let casting_banned: Vec<String> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield)
+        .flat_map(|o| {
+            o.instance_continuous_effects.as_ref()
+                .map(|v| v.as_slice())
+                .unwrap_or(&[])
+                .iter()
+                .filter_map(|e| {
+                    if let ContinuousEffect::PreventCastingNamed { name } = e {
+                        Some(name.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect::<Vec<_>>()
         })
         .collect();
 
@@ -549,8 +548,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
 
-            // Check Nevermore: spells with the banned name can't be cast.
-            if nevermore_banned.iter().any(|n| *n == data.name) {
+            // Check PreventCastingNamed: spells with the banned name can't be cast.
+            if casting_banned.iter().any(|n| *n == data.name) {
                 continue;
             }
 
@@ -750,8 +749,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
 
-            // Check Nevermore: spells with the banned name can't be cast, even via flashback.
-            if nevermore_banned.iter().any(|n| *n == data.name) {
+            // Check PreventCastingNamed: banned spells can't be cast, even via flashback.
+            if casting_banned.iter().any(|n| *n == data.name) {
                 continue;
             }
 

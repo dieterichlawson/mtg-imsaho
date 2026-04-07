@@ -254,7 +254,9 @@ fn nevermore_prevents_named_spell() {
     // Create a Nevermore for P0 that names "Lightning Bolt".
     let nevermore = named_creature(&mut state, &reg, "Nevermore", P0);
     if let Some(obj) = state.get_object_mut(nevermore) {
-        obj.instance_oracle_text = Some("nevermore:Lightning Bolt".into());
+        obj.instance_continuous_effects = Some(vec![
+            ContinuousEffect::PreventCastingNamed { name: "Lightning Bolt".into() },
+        ]);
     }
 
     // Put Lightning Bolt in P1's hand with mana.
@@ -278,7 +280,9 @@ fn nevermore_allows_other_spells() {
     // Create a Nevermore for P0 that names "Lightning Bolt".
     let nevermore = named_creature(&mut state, &reg, "Nevermore", P0);
     if let Some(obj) = state.get_object_mut(nevermore) {
-        obj.instance_oracle_text = Some("nevermore:Lightning Bolt".into());
+        obj.instance_continuous_effects = Some(vec![
+            ContinuousEffect::PreventCastingNamed { name: "Lightning Bolt".into() },
+        ]);
     }
 
     // Put Giant Growth in P1's hand with mana.

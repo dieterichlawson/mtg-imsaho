@@ -7,8 +7,8 @@ use crate::types::*;
 /// As this enchantment enters, choose a nonland card name.
 /// Spells with the chosen name can't be cast.
 ///
-/// Stores the chosen card name in instance_oracle_text (prefixed with "nevermore:").
-/// The engine checks for Nevermore in legal_actions to prevent casting spells with that name.
+/// Stores the chosen name as a PreventCastingNamed instance continuous effect.
+/// The engine checks for this effect in legal_actions.
 pub struct Nevermore;
 
 impl CardBehavior for Nevermore {
@@ -52,9 +52,10 @@ impl CardBehavior for Nevermore {
             .next()
             .unwrap_or_else(|| "Lightning Bolt".into()); // Default if nothing found.
 
-        // Store the named card in instance_oracle_text with a "nevermore:" prefix.
+        // Store the restriction as an instance continuous effect.
         if let Some(obj) = state.get_object_mut(object_id) {
-            obj.instance_oracle_text = Some(format!("nevermore:{}", chosen_name));
+            let effect = ContinuousEffect::PreventCastingNamed { name: chosen_name.clone() };
+            obj.instance_continuous_effects = Some(vec![effect]);
         }
         state.log(crate::state::LogLevel::Event,
             format!("Nevermore names \"{}\"", chosen_name));
