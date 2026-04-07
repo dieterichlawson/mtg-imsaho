@@ -1990,8 +1990,9 @@ impl Player for CliPlayer {
         let mut display_labels: Vec<String> = Vec::new();
         let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
 
-        // Two-pass display: non-tap actions + cast spells first, then tap actions.
+        // Ordering: non-tap actions, cast spells, tap actions, concede last.
         let mut deferred_taps: Vec<(usize, String)> = Vec::new();
+        let mut deferred_concede: Option<(usize, String)> = None;
         let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
             match action {
@@ -2023,6 +2024,10 @@ impl Player for CliPlayer {
                     // Defer tap actions to appear after cast spells.
                     deferred_taps.push((i, Self::format_action(view, action)));
                 }
+                Action::Concede => {
+                    // Defer concede to always be last.
+                    deferred_concede = Some((i, Self::format_action(view, action)));
+                }
                 _ => {
                     display.push(DisplayEntry::Direct(i));
                     display_labels.push(Self::format_action(view, action));
@@ -2032,6 +2037,12 @@ impl Player for CliPlayer {
 
         // Append deferred tap actions after cast spells.
         for (action_idx, label) in deferred_taps {
+            display.push(DisplayEntry::Direct(action_idx));
+            display_labels.push(label);
+        }
+
+        // Concede is always last.
+        if let Some((action_idx, label)) = deferred_concede {
             display.push(DisplayEntry::Direct(action_idx));
             display_labels.push(label);
         }
