@@ -651,6 +651,19 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         })
         .collect();
 
+    // Gather available mana sources for autotap.
+    let mana_sources = gather_mana_sources(state, player, registry, prevent_artifact_abilities);
+
+    // Collect costs of all castable spells in hand for hand-demand heuristic.
+    // This is a quick pre-pass: gather effective costs for spells that could be cast this turn.
+    let hand_costs: Vec<ManaCost> = state.objects_in_zone(Zone::Hand, player).iter()
+        .filter_map(|obj| {
+            let behavior = registry.get(obj.card_id)?;
+            let data = behavior.card_data();
+            data.cost.as_ref().map(|c| effective_spell_cost(state, registry, obj.card_id, c, player))
+        })
+        .collect();
+
     // Cast spells from hand.
     // Deduplicate untargeted spells — only show one "Cast Kalonian Tusker" even if you have 3.
     // Targeted spells still get one entry per valid target.
@@ -685,15 +698,51 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 continue;
             }
 
-            // Check mana (applying cost reduction effects).
+            // Check mana via autotap (applying cost reduction effects).
             // Also check if any continuous effects provide an alternative cost.
             let alt_costs = alternative_costs_from_effects(state, registry, obj.card_id, player);
             let has_alt_cost = !alt_costs.is_empty();
-            let can_pay_normal = if let Some(cost) = &data.cost {
+
+            // Build hand_costs for other spells (exclude this spell's cost).
+            let other_hand_costs: Vec<ManaCost> = hand_costs.iter()
+                .enumerate()
+                .filter(|&(i, _)| {
+                    // Exclude this spell's cost from hand demand.
+                    // Find the index in hand_costs that corresponds to this object.
+                    let hand_objs: Vec<_> = state.objects_in_zone(Zone::Hand, player);
+                    i < hand_objs.len() && hand_objs[i].id != obj.id
+                })
+                .map(|(_, c)| c.clone())
+                .collect();
+
+            // Compute autotap plan for the normal cost (if not X-cost).
+            let has_x = data.cost.as_ref()
+                .map(|c| c.symbols.iter().any(|s| matches!(s, ManaSymbol::X)))
+                .unwrap_or(false);
+            let (can_pay_normal, normal_tap_plan) = if has_x {
+                // X-cost spells: check affordability with potential pool (old behavior),
+                // but don't compute a tap plan (player taps manually).
+                let can_pay = if let Some(cost) = &data.cost {
+                    let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
+                    // For X spells, check if non-X portion can be paid with potential mana.
+                    let non_x_cost = ManaCost::new(
+                        effective_cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                    );
+                    mana::can_pay(&player_state.mana_pool, &non_x_cost)
+                        || mana::compute_autotap(&non_x_cost, &player_state.mana_pool, &mana_sources, &other_hand_costs).is_some()
+                } else {
+                    true
+                };
+                (can_pay, vec![])
+            } else if let Some(cost) = &data.cost {
                 let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                mana::can_pay(&player_state.mana_pool, &effective_cost)
+                match mana::compute_autotap(&effective_cost, &player_state.mana_pool, &mana_sources, &other_hand_costs) {
+                    Some(plan) => (true, plan),
+                    None => (false, vec![]),
+                }
             } else {
-                true
+                // No cost (e.g. lands that somehow got here) — free.
+                (true, vec![])
             };
             if !can_pay_normal && !has_alt_cost {
                 continue;
@@ -746,18 +795,27 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 state, player, obj.id, &target_req, behavior,
             );
 
+            // Set the autotap plan on all generated cast actions.
+            if !normal_tap_plan.is_empty() {
+                for action in &mut cast_actions {
+                    if let Action::CastSpell { tap_plan, .. } = action {
+                        *tap_plan = normal_tap_plan.clone();
+                    }
+                }
+            }
+
             // If the spell requires a creature sacrifice, expand each action
             // into one per eligible creature.
             if !eligible_sacrifices.is_empty() {
                 let base_actions = std::mem::take(&mut cast_actions);
                 for action in base_actions {
-                    if let Action::CastSpell { object_id, targets, .. } = action {
+                    if let Action::CastSpell { object_id, targets, tap_plan, .. } = action {
                         for &sac_id in &eligible_sacrifices {
                             cast_actions.push(Action::CastSpell {
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice: Some(sac_id),
-                                exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
+                                exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: tap_plan.clone(),
                             });
                         }
                     }
@@ -774,7 +832,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 let gy_count = gy_cards.len();
                 let base_actions = std::mem::take(&mut cast_actions);
                 for action in base_actions {
-                    if let Action::CastSpell { object_id, targets, sacrifice, .. } = action {
+                    if let Action::CastSpell { object_id, targets, sacrifice, tap_plan, .. } = action {
                         // X=0: cast exiling nothing
                         cast_actions.push(Action::CastSpell {
                             object_id,
@@ -782,7 +840,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             sacrifice,
                             exile_count: Some(0),
                             exile_ids: vec![],
-                            alternative_cost: None, tap_plan: vec![],
+                            alternative_cost: None, tap_plan: tap_plan.clone(),
                         });
                         // For each X from 1 to gy_count, enumerate all C(gy_count, X) subsets
                         for x in 1..=gy_count {
@@ -793,7 +851,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                     sacrifice,
                                     exile_count: Some(x as u32),
                                     exile_ids: combo,
-                                    alternative_cost: None, tap_plan: vec![],
+                                    alternative_cost: None, tap_plan: tap_plan.clone(),
                                 });
                             }
                         }
@@ -804,15 +862,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // Generate alternative cost actions from continuous effects (e.g. Rooftop Storm).
             // The player chooses between the normal cost and the alternative cost.
             if has_alt_cost {
-                let can_pay_normal = if let Some(cost) = &data.cost {
-                    let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
-                    mana::can_pay(&player_state.mana_pool, &effective_cost)
-                } else {
-                    false
-                };
                 // Use the first (cheapest) alternative cost. Multiple alternative costs
                 // would need a chooser, but for now there's only one source at a time.
                 let alt_mana = alt_costs[0].clone();
+                // Compute autotap for the alternative cost.
+                let alt_tap_plan = mana::compute_autotap(&alt_mana, &player_state.mana_pool, &mana_sources, &other_hand_costs)
+                    .unwrap_or_default();
                 if can_pay_normal {
                     // Player can pay normally — add alternative cost copies alongside normal ones.
                     let alt_actions: Vec<Action> = cast_actions.iter().filter_map(|a| {
@@ -823,7 +878,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 sacrifice: *sacrifice,
                                 exile_count: *exile_count,
                                 exile_ids: exile_ids.clone(),
-                                alternative_cost: Some(alt_mana.clone()), tap_plan: vec![],
+                                alternative_cost: Some(alt_mana.clone()), tap_plan: alt_tap_plan.clone(),
                             })
                         } else {
                             None
@@ -833,14 +888,19 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 } else {
                     // Player can't pay normally — replace all actions with alternative cost versions.
                     for action in &mut cast_actions {
-                        if let Action::CastSpell { alternative_cost, .. } = action {
+                        if let Action::CastSpell { alternative_cost, tap_plan, .. } = action {
                             *alternative_cost = Some(alt_mana.clone());
+                            *tap_plan = alt_tap_plan.clone();
                         }
                     }
                 }
             }
 
             if !cast_actions.is_empty() {
+                // Use the tap_plan from the first cast action for the CastableSpell.
+                let spell_tap_plan = cast_actions.iter().find_map(|a| {
+                    if let Action::CastSpell { tap_plan, .. } = a { Some(tap_plan.clone()) } else { None }
+                }).unwrap_or_default();
                 actions.extend(cast_actions);
                 let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
                 castable_spells.push(crate::actions::CastableSpell {
@@ -848,7 +908,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     name: data.name.clone(),
                     is_flashback: false,
                     target_spec: spec,
-                    tap_plan: vec![],
+                    tap_plan: spell_tap_plan,
                 });
             }
         }
@@ -903,7 +963,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             if !can_cast_timing { continue; }
 
-            if !mana::can_pay(&player_state.mana_pool, fb_cost) { continue; }
+            // Compute autotap for flashback cost.
+            let fb_tap_plan = mana::compute_autotap(fb_cost, &player_state.mana_pool, &mana_sources, &hand_costs);
+            if fb_tap_plan.is_none() { continue; }
+            let fb_tap_plan = fb_tap_plan.unwrap();
 
             // Check additional cost eligibility for graveyard casts.
             {
@@ -929,9 +992,17 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 seen_untargeted_flashbacks.push(obj.card_id);
             }
 
-            let cast_actions = generate_cast_actions_with_targets(
+            let mut cast_actions = generate_cast_actions_with_targets(
                 state, player, obj.id, &target_req, behavior,
             );
+            // Set autotap plan on flashback actions.
+            if !fb_tap_plan.is_empty() {
+                for action in &mut cast_actions {
+                    if let Action::CastSpell { tap_plan, .. } = action {
+                        *tap_plan = fb_tap_plan.clone();
+                    }
+                }
+            }
             if !cast_actions.is_empty() {
                 actions.extend(cast_actions);
                 let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
@@ -940,7 +1011,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     name: data.name.clone(),
                     is_flashback: !cast_from_gy,
                     target_spec: spec,
-                    tap_plan: vec![],
+                    tap_plan: fb_tap_plan,
                 });
             }
         }
