@@ -37,6 +37,7 @@ impl CardBehavior for GhostQuarter {
                 description: "Add {C}".into(),
                 produced: vec![(ManaType::Colorless, 1)],
                 requires_tap: true,
+                has_side_effects: false,
             }]
         } else {
             vec![]

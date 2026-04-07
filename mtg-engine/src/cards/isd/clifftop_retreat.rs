@@ -61,12 +61,14 @@ impl CardBehavior for ClifftopRetreat {
                     description: "Add {R}".into(),
                     produced: vec![(ManaType::Red, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
                 ManaAbilityDef {
                     ability_index: 1,
                     description: "Add {W}".into(),
                     produced: vec![(ManaType::White, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
             ]
         } else {

@@ -67,12 +67,14 @@ impl CardBehavior for HinterlandHarbor {
                     description: "Add {G}".into(),
                     produced: vec![(ManaType::Green, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
                 ManaAbilityDef {
                     ability_index: 1,
                     description: "Add {U}".into(),
                     produced: vec![(ManaType::Blue, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
             ]
         } else {

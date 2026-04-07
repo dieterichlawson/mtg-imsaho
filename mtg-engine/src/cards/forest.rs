@@ -32,6 +32,7 @@ impl CardBehavior for Forest {
                 description: "Add {G}".into(),
                 produced: vec![(ManaType::Green, 1)],
                 requires_tap: true,
+                has_side_effects: false,
             }]
         } else {
             vec![]

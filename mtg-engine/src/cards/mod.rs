@@ -56,11 +56,15 @@ pub struct CardData {
 }
 
 /// A mana ability definition.
+#[derive(Debug, Clone)]
 pub struct ManaAbilityDef {
     pub ability_index: usize,
     pub description: String,
     pub produced: Vec<(ManaType, u32)>,
     pub requires_tap: bool,
+    /// True if activating this ability has side effects beyond producing mana
+    /// (e.g. Deranged Assistant mills a card).
+    pub has_side_effects: bool,
 }
 
 /// What sacrifice cost an activated ability requires.

@@ -61,12 +61,14 @@ impl CardBehavior for SulfurFalls {
                     description: "Add {U}".into(),
                     produced: vec![(ManaType::Blue, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
                 ManaAbilityDef {
                     ability_index: 1,
                     description: "Add {R}".into(),
                     produced: vec![(ManaType::Red, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
             ]
         } else {

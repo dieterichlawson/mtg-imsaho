@@ -61,12 +61,14 @@ impl CardBehavior for IsolatedChapel {
                     description: "Add {W}".into(),
                     produced: vec![(ManaType::White, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
                 ManaAbilityDef {
                     ability_index: 1,
                     description: "Add {B}".into(),
                     produced: vec![(ManaType::Black, 1)],
                     requires_tap: true,
+                    has_side_effects: false,
                 },
             ]
         } else {

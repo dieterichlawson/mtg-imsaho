@@ -32,6 +32,7 @@ impl CardBehavior for Island {
                 description: "Add {U}".into(),
                 produced: vec![(ManaType::Blue, 1)],
                 requires_tap: true,
+                has_side_effects: false,
             }]
         } else {
             vec![]

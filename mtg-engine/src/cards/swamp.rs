@@ -32,6 +32,7 @@ impl CardBehavior for Swamp {
                 description: "Add {B}".into(),
                 produced: vec![(ManaType::Black, 1)],
                 requires_tap: true,
+                has_side_effects: false,
             }]
         } else {
             vec![]

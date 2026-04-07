@@ -32,6 +32,7 @@ impl CardBehavior for Mountain {
                 description: "Add {R}".into(),
                 produced: vec![(ManaType::Red, 1)],
                 requires_tap: true,
+                has_side_effects: false,
             }]
         } else {
             vec![]
