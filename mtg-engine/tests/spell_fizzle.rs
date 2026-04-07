@@ -204,8 +204,8 @@ fn bolt_target_gains_hexproof_before_resolution() {
     );
 
     // Creature gains hexproof before bolt resolves.
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: creature,
             keyword: Keyword::Hexproof,
         },

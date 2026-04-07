@@ -279,12 +279,12 @@ impl CardBehavior for GarrukRelentless {
                     .collect();
 
                 for cid in &creatures {
-                    state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
+                    state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
                         target: *cid,
                         power_mod: x,
                         toughness_mod: x,
                     });
-                    state.until_end_of_turn_keywords.push(crate::state::UntilEndOfTurnKeyword {
+                    state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantKeyword {
                         target: *cid,
                         keyword: Keyword::Trample,
                     });

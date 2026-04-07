@@ -82,7 +82,7 @@ impl CardBehavior for CharmbreakerDevils {
             return;
         }
         // +4/+0 until end of turn.
-        state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
+        state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
             target: self_id,
             power_mod: 4,
             toughness_mod: 0,

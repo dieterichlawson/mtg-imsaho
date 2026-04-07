@@ -107,8 +107,8 @@ impl CardBehavior for TrepanationBlade {
 
             // Equipped creature gets +1/+0 per card milled until end of turn.
             if state.get_object(creature_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                state.until_end_of_turn_effects.push(
-                    crate::state::UntilEndOfTurnEffect {
+                state.until_end_of_turn.push(
+                    crate::state::TemporaryEffect::ModifyPT {
                         target: creature_id,
                         power_mod: cards_milled,
                         toughness_mod: 0,

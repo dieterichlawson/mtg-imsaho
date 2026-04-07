@@ -415,8 +415,8 @@ fn snapcaster_mage_grants_flashback() {
     }
 
     // Lightning Bolt should have flashback granted.
-    let has_flashback = new_state.until_end_of_turn_flashback.iter()
-        .any(|(id, _)| *id == bolt);
+    let has_flashback = new_state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == bolt));
     assert!(has_flashback, "Snapcaster Mage should grant flashback to Lightning Bolt");
 }
 
@@ -444,12 +444,12 @@ fn past_in_flames_grants_flashback_to_all() {
     let state = cast_and_resolve(&state, &reg, spell, vec![]);
 
     // Lightning Bolt and Divination should have flashback.
-    let bolt_fb = state.until_end_of_turn_flashback.iter()
-        .any(|(id, _)| *id == bolt);
-    let div_fb = state.until_end_of_turn_flashback.iter()
-        .any(|(id, _)| *id == divination);
-    let creature_fb = state.until_end_of_turn_flashback.iter()
-        .any(|(id, _)| *id == creature);
+    let bolt_fb = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == bolt));
+    let div_fb = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == divination));
+    let creature_fb = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == creature));
 
     assert!(bolt_fb, "Past in Flames should grant flashback to Lightning Bolt");
     assert!(div_fb, "Past in Flames should grant flashback to Divination");

@@ -103,7 +103,7 @@ impl CardBehavior for Moonmist {
                 format!("Moonmist transformed {} Human(s)", count));
         }
         // Prevent all combat damage from non-Wolf/non-Werewolf creatures this turn.
-        state.prevent_non_wolf_werewolf_combat_damage = true;
+        state.until_end_of_turn.push(crate::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
         state.log(crate::state::LogLevel::Event,
             "Moonmist: preventing combat damage from non-Wolf/non-Werewolf creatures this turn".into());
 

@@ -61,10 +61,10 @@ impl CardBehavior for PastInFlames {
         let mut count = 0;
         for (target_id, cost) in targets {
             // Don't duplicate if already granted flashback.
-            let already_has = state.until_end_of_turn_flashback.iter()
-                .any(|(id, _)| *id == target_id);
+            let already_has = state.until_end_of_turn.iter()
+                .any(|e| matches!(e, crate::state::TemporaryEffect::GrantFlashback { target, .. } if *target == target_id));
             if !already_has {
-                state.until_end_of_turn_flashback.push((target_id, cost));
+                state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: target_id, cost });
                 count += 1;
             }
         }

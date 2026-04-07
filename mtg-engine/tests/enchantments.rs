@@ -129,7 +129,7 @@ fn giant_growth_until_end_of_turn() {
     }
 
     // Effect should be gone.
-    assert_eq!(state.until_end_of_turn_effects.len(), 0);
+    assert_eq!(state.until_end_of_turn.len(), 0);
     assert_eq!(state.effective_power(creature, &registry), Some(2));
     assert_eq!(state.effective_toughness(creature, &registry), Some(2));
 }

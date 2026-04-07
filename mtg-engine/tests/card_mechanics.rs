@@ -181,7 +181,8 @@ fn nightbirds_clutches_prevents_blocking() {
 
     state = cast_and_resolve(&state, &reg, nc, vec![Target::Object(blocker)]);
 
-    assert!(state.until_end_of_turn_cant_block.contains(&blocker));
+    assert!(state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::CantBlock { target } if *target == blocker)));
 
     let eligible = combat::eligible_blockers(&state, P1, &reg);
     assert!(!eligible.contains(&blocker),

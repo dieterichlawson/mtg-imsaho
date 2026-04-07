@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
-use crate::state::{GameState, UntilEndOfTurnKeyword};
+use crate::state::{GameState, TemporaryEffect};
 use crate::types::*;
 
 /// Manor Gargoyle — {5} 4/4 Artifact Creature — Gargoyle.
@@ -58,13 +58,13 @@ impl CardBehavior for ManorGargoyle {
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
         // Gain flying until end of turn.
-        state.until_end_of_turn_keywords.push(UntilEndOfTurnKeyword {
+        state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
             target: object_id,
             keyword: Keyword::Flying,
         });
         // Lose defender until end of turn (which also loses indestructible
         // since "has indestructible as long as it has defender").
-        state.until_end_of_turn_removed_keywords.push(UntilEndOfTurnKeyword {
+        state.until_end_of_turn.push(TemporaryEffect::RemoveKeyword {
             target: object_id,
             keyword: Keyword::Defender,
         });

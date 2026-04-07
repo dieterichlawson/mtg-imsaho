@@ -76,8 +76,8 @@ impl CardBehavior for Mindshrieker {
             // Apply +X/+X until end of turn.
             if mana_value > 0 {
                 if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                    state.until_end_of_turn_effects.push(
-                        crate::state::UntilEndOfTurnEffect {
+                    state.until_end_of_turn.push(
+                        crate::state::TemporaryEffect::ModifyPT {
                             target: object_id,
                             power_mod: mana_value,
                             toughness_mod: mana_value,

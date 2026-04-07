@@ -86,8 +86,8 @@ fn x_equals_3_gives_plus_3() {
         "Creature should have 2 + 3 = 5 power (got {})", power);
 
     // Check trample keyword.
-    let has_trample = state.until_end_of_turn_keywords.iter()
-        .any(|k| k.target == creature && k.keyword == Keyword::Trample);
+    let has_trample = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == creature && *keyword == Keyword::Trample));
     assert!(has_trample, "Creature should have trample");
 
     // All mana should be spent.
@@ -121,7 +121,7 @@ fn x_equals_0_gives_trample_only() {
     assert_eq!(power, 2, "Creature should still have 2 power with X=0");
 
     // Should still have trample.
-    let has_trample = state.until_end_of_turn_keywords.iter()
-        .any(|k| k.target == creature && k.keyword == Keyword::Trample);
+    let has_trample = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == creature && *keyword == Keyword::Trample));
     assert!(has_trample, "Creature should have trample even with X=0");
 }

@@ -72,13 +72,13 @@ impl CardBehavior for KessigWolfRun {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 // Grant +X/+0 until end of turn.
-                state.until_end_of_turn_effects.push(crate::state::UntilEndOfTurnEffect {
+                state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
                     target: *target_id,
                     power_mod: x,
                     toughness_mod: 0,
                 });
                 // Grant trample until end of turn.
-                state.until_end_of_turn_keywords.push(crate::state::UntilEndOfTurnKeyword {
+                state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantKeyword {
                     target: *target_id,
                     keyword: Keyword::Trample,
                 });

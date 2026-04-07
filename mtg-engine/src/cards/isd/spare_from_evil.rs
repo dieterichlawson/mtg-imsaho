@@ -46,8 +46,8 @@ impl CardBehavior for SpareFromEvil {
         // Grant protection from non-Human creatures until end of turn.
         let filter = CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into())));
         for id in &creature_ids {
-            state.until_end_of_turn_protection.push(
-                crate::state::UntilEndOfTurnProtection {
+            state.until_end_of_turn.push(
+                crate::state::TemporaryEffect::GrantProtection {
                     target: *id,
                     filter: filter.clone(),
                 }

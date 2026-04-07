@@ -52,7 +52,7 @@ impl CardBehavior for SnapcasterMage {
                     })
                     .unwrap_or(false)
             })
-            .filter(|o| !state.until_end_of_turn_flashback.iter().any(|(id, _)| *id == o.id))
+            .filter(|o| !state.until_end_of_turn.iter().any(|e| matches!(e, crate::state::TemporaryEffect::GrantFlashback { target, .. } if *target == o.id)))
             .map(|o| o.id)
             .collect();
 
@@ -66,7 +66,7 @@ impl CardBehavior for SnapcasterMage {
             let cost = registry.card_data(state.get_object(target_id).unwrap().card_id)
                 .and_then(|d| d.cost.clone())
                 .unwrap_or(ManaCost::free());
-            state.until_end_of_turn_flashback.push((target_id, cost));
+            state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: target_id, cost });
             let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event,
                 format!("Snapcaster Mage grants flashback to {}", name));

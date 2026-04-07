@@ -454,7 +454,8 @@ fn nightbirds_clutches_taps_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P1, 3, 3);
-    assert!(!state.until_end_of_turn_cant_block.contains(&creature),
+    assert!(!state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::CantBlock { target } if *target == creature)),
         "Creature should start able to block");
 
     // Cast Nightbird's Clutches. Cost: {1}{R}.
@@ -462,7 +463,8 @@ fn nightbirds_clutches_taps_creature() {
 
     state = cast_and_resolve(&state, &reg, nc, vec![Target::Object(creature)]);
 
-    assert!(state.until_end_of_turn_cant_block.contains(&creature),
+    assert!(state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::CantBlock { target } if *target == creature)),
         "Nightbird's Clutches should prevent the target creature from blocking");
 }
 

@@ -46,8 +46,8 @@ fn cleanup_sba_kills_creature_when_buff_expires() {
     state.add_counters(creature, CounterType::MinusOneMinusOne, 1);
 
     // +0/+1 until end of turn keeps it alive.
-    state.until_end_of_turn_effects.push(
-        mtg_engine::state::UntilEndOfTurnEffect {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::ModifyPT {
             target: creature,
             power_mod: 0,
             toughness_mod: 1,
@@ -82,7 +82,7 @@ fn cleanup_sba_kills_creature_when_buff_expires() {
     // After cleanup: EOT buff expired, SBAs ran and found 0 toughness.
     // The creature should have been killed during cleanup (CR 514.3a).
     // (Moving to graveyard clears counters, so we check zone, not counters.)
-    assert!(state.until_end_of_turn_effects.is_empty(), "EOT effects should be cleared");
+    assert!(state.until_end_of_turn.is_empty(), "EOT effects should be cleared");
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard,
         "Creature with 0 toughness after buff expires should die during cleanup (CR 514.3a)");
 }
@@ -97,8 +97,8 @@ fn cleanup_sba_creature_survives_when_still_healthy() {
     let creature = ready_creature(&mut state, P0, 3, 3);
 
     // +2/+2 until end of turn. After cleanup: base 3/3, no damage. Survives.
-    state.until_end_of_turn_effects.push(
-        mtg_engine::state::UntilEndOfTurnEffect {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::ModifyPT {
             target: creature,
             power_mod: 2,
             toughness_mod: 2,
@@ -139,8 +139,8 @@ fn cleanup_clears_damage_and_buffs_simultaneously() {
     // Cleanup: buff expires AND damage clears → effective toughness 2, damage 0 → alive.
     let creature = ready_creature(&mut state, P0, 2, 2);
     state.get_object_mut(creature).unwrap().damage_marked = 2;
-    state.until_end_of_turn_effects.push(
-        mtg_engine::state::UntilEndOfTurnEffect {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::ModifyPT {
             target: creature,
             power_mod: 0,
             toughness_mod: 1,

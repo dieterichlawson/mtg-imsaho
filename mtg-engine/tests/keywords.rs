@@ -147,8 +147,8 @@ fn haste_overrides_summoning_sickness() {
     assert!(!eligible.contains(&creature));
 
     // Mark it as having haste via until-end-of-turn keyword.
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: creature,
             keyword: Keyword::Haste,
         }
@@ -274,11 +274,11 @@ fn deathtouch_trample_assigns_minimum() {
 
     // 5/5 with deathtouch + trample (simulated via EOT keywords).
     let attacker = ready_creature(&mut state, P0, 5, 5);
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword { target: attacker, keyword: Keyword::Deathtouch }
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword { target: attacker, keyword: Keyword::Deathtouch }
     );
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword { target: attacker, keyword: Keyword::Trample }
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword { target: attacker, keyword: Keyword::Trample }
     );
 
     let blocker = ready_creature(&mut state, P1, 2, 4);
@@ -341,8 +341,8 @@ fn trample_excess_damage_to_player() {
 
     // 5/5 with trample.
     let attacker = ready_creature(&mut state, P0, 5, 5);
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword { target: attacker, keyword: Keyword::Trample }
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword { target: attacker, keyword: Keyword::Trample }
     );
 
     let blocker = ready_creature(&mut state, P1, 2, 2);

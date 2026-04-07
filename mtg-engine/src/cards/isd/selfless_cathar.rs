@@ -54,8 +54,8 @@ impl CardBehavior for SelflessCathar {
             .collect();
 
         for id in creature_ids {
-            state.until_end_of_turn_effects.push(
-                crate::state::UntilEndOfTurnEffect {
+            state.until_end_of_turn.push(
+                crate::state::TemporaryEffect::ModifyPT {
                     target: id,
                     power_mod: 1,
                     toughness_mod: 1,

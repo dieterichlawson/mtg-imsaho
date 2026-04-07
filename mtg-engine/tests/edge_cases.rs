@@ -37,8 +37,8 @@ fn indestructible_creature_with_zero_toughness_still_dies() {
     let creature = state.create_object(CardId(99), P0, Zone::Battlefield, Some(5), Some(0));
     state.get_object_mut(creature).unwrap().summoning_sick = false;
     // Grant indestructible via keyword.
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: creature,
             keyword: Keyword::Indestructible,
         },
@@ -62,8 +62,8 @@ fn indestructible_creature_survives_lethal_damage() {
 
     let creature = ready_creature(&mut state, P0, 3, 3);
     state.get_object_mut(creature).unwrap().damage_marked = 10;
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: creature,
             keyword: Keyword::Indestructible,
         },
@@ -85,8 +85,8 @@ fn sacrifice_bypasses_indestructible() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 5, 5);
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: creature,
             keyword: Keyword::Indestructible,
         },
@@ -109,8 +109,8 @@ fn try_destroy_blocked_by_indestructible() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 5, 5);
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: creature,
             keyword: Keyword::Indestructible,
         },
@@ -372,8 +372,8 @@ fn cleanup_clears_until_end_of_turn_effects() {
     let creature = ready_creature(&mut state, P0, 2, 2);
 
     // Simulate Giant Growth: +3/+3 until end of turn.
-    state.until_end_of_turn_effects.push(
-        mtg_engine::state::UntilEndOfTurnEffect {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::ModifyPT {
             target: creature,
             power_mod: 3,
             toughness_mod: 3,
@@ -414,8 +414,8 @@ fn creature_dies_in_cleanup_when_eot_buff_expires() {
     // 1/1 creature with 1 damage — alive because of +0/+1 until EOT.
     let creature = ready_creature(&mut state, P0, 1, 1);
     state.get_object_mut(creature).unwrap().damage_marked = 1;
-    state.until_end_of_turn_effects.push(
-        mtg_engine::state::UntilEndOfTurnEffect {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::ModifyPT {
             target: creature,
             power_mod: 0,
             toughness_mod: 1,
@@ -449,8 +449,8 @@ fn cleanup_clears_keyword_grants() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = ready_creature(&mut state, P0, 2, 2);
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: creature,
             keyword: Keyword::Flying,
         },
@@ -468,5 +468,178 @@ fn cleanup_clears_keyword_grants() {
     assert!(
         !state.has_keyword(creature, Keyword::Flying, &reg),
         "Until-end-of-turn flying should expire during cleanup"
+    );
+}
+
+/// Until-end-of-turn removed keywords should be restored during cleanup.
+/// Manor Gargoyle loses defender (and thus indestructible) until end of turn.
+#[test]
+fn cleanup_restores_removed_keywords() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 4, 4);
+    // Give it defender via object keywords.
+    state.get_object_mut(creature).unwrap().keywords.push(Keyword::Defender);
+    assert!(state.has_keyword(creature, Keyword::Defender, &reg));
+
+    // Remove defender until end of turn.
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::RemoveKeyword {
+            target: creature,
+            keyword: Keyword::Defender,
+        },
+    );
+    assert!(
+        !state.has_keyword(creature, Keyword::Defender, &reg),
+        "Defender should be temporarily removed"
+    );
+
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup {
+            break;
+        }
+    }
+
+    assert!(
+        state.has_keyword(creature, Keyword::Defender, &reg),
+        "Defender should be restored after cleanup"
+    );
+}
+
+/// Until-end-of-turn can't-block should be cleared during cleanup.
+#[test]
+fn cleanup_clears_cant_block() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 3, 3);
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::CantBlock { target: creature });
+
+    // Verify it's in the list.
+    assert!(state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::CantBlock { target } if *target == creature)));
+
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup {
+            break;
+        }
+    }
+
+    assert!(
+        state.until_end_of_turn.is_empty(),
+        "Can't-block should be cleared after cleanup"
+    );
+}
+
+/// Until-end-of-turn protection should be cleared during cleanup.
+#[test]
+fn cleanup_clears_protection_grants() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P0, 2, 2);
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantProtection {
+            target: creature,
+            filter: CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into()))),
+        },
+    );
+
+    assert!(!state.until_end_of_turn.is_empty());
+
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup {
+            break;
+        }
+    }
+
+    assert!(
+        state.until_end_of_turn.is_empty(),
+        "Protection grants should be cleared after cleanup"
+    );
+}
+
+/// Until-end-of-turn control changes should be reverted during cleanup.
+#[test]
+fn cleanup_reverts_control_changes() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let creature = ready_creature(&mut state, P1, 4, 4);
+    assert_eq!(state.get_object(creature).unwrap().controller, P1);
+
+    // Steal creature until end of turn.
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::ChangeControl { target: creature, original_controller: P1 });
+    state.get_object_mut(creature).unwrap().controller = P0;
+    assert_eq!(state.get_object(creature).unwrap().controller, P0);
+
+    loop {
+        engine::advance_step(&mut state, &reg);
+        if state.step == Step::Cleanup {
+            break;
+        }
+    }
+
+    assert_eq!(
+        state.get_object(creature).unwrap().controller,
+        P1,
+        "Control should revert to original controller after cleanup"
+    );
+}
+
+/// Until-end-of-turn protection should prevent a non-Human from blocking.
+#[test]
+fn eot_protection_prevents_blocking() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 3, 3);
+
+    // Attacker has protection from non-Human creatures.
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantProtection {
+            target: attacker,
+            filter: CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into()))),
+        },
+    );
+
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+
+    // Blocker is not a Human, so can_block_attacker should reject it.
+    assert!(
+        !combat::can_block_attacker(&state, blocker, attacker, &reg),
+        "Non-Human blocker should not be able to block creature with protection from non-Humans"
+    );
+}
+
+/// Cant-block prevents a creature from appearing in eligible blockers.
+#[test]
+fn eot_cant_block_prevents_blocking() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+
+    // Without can't-block, blocker should be eligible.
+    let eligible_before = combat::eligible_blockers(&state, P1, &reg);
+    assert!(
+        eligible_before.contains(&blocker),
+        "Blocker should be eligible before can't-block"
+    );
+
+    // Apply can't-block.
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::CantBlock { target: blocker });
+    let eligible_after = combat::eligible_blockers(&state, P1, &reg);
+    assert!(
+        !eligible_after.contains(&blocker),
+        "Blocker should not be eligible after can't-block"
     );
 }

@@ -761,8 +761,8 @@ fn manor_gargoyle_loses_defender_and_gains_flying() {
         "Manor Gargoyle should lose Defender after activation");
 
     // Should have gained Flying (as until-end-of-turn keyword).
-    let has_flying = state.until_end_of_turn_keywords.iter()
-        .any(|k| k.target == gargoyle && k.keyword == Keyword::Flying);
+    let has_flying = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == gargoyle && *keyword == Keyword::Flying));
     assert!(has_flying, "Manor Gargoyle should gain Flying until end of turn");
 }
 
@@ -2496,13 +2496,13 @@ fn garruk_back_face_overrun() {
 
     // X should be 2 (2 creature cards in graveyard).
     // Creature should have +2/+2 until end of turn.
-    let has_buff = state.until_end_of_turn_effects.iter()
-        .any(|e| e.target == creature && e.power_mod == 2 && e.toughness_mod == 2);
+    let has_buff = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::ModifyPT { target, power_mod, toughness_mod } if *target == creature && *power_mod == 2 && *toughness_mod == 2));
     assert!(has_buff, "Creature should have +2/+2 until end of turn");
 
     // Should have trample.
-    let has_trample = state.until_end_of_turn_keywords.iter()
-        .any(|k| k.target == creature && k.keyword == Keyword::Trample);
+    let has_trample = state.until_end_of_turn.iter()
+        .any(|e| matches!(e, mtg_engine::state::TemporaryEffect::GrantKeyword { target, keyword } if *target == creature && *keyword == Keyword::Trample));
     assert!(has_trample, "Creature should have trample until end of turn");
 }
 

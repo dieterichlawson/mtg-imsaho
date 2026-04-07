@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
-use crate::state::{GameState, UntilEndOfTurnKeyword};
+use crate::state::{GameState, TemporaryEffect};
 use crate::types::*;
 
 /// Kessig Wolf — {2}{R} 3/1 Wolf. {1}{R}: Kessig Wolf gains first strike until end of turn.
@@ -50,7 +50,7 @@ impl CardBehavior for KessigWolf {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        state.until_end_of_turn_keywords.push(UntilEndOfTurnKeyword {
+        state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
             target: object_id,
             keyword: Keyword::FirstStrike,
         });

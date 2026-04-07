@@ -794,8 +794,8 @@ fn bug_spare_from_evil_protection_non_combat_damage() {
     }
 
     // Give it protection from non-Human creatures (Spare from Evil effect)
-    // The protection is stored as until_end_of_turn_protection
-    state.until_end_of_turn_protection.push(mtg_engine::state::UntilEndOfTurnProtection {
+    // The protection is stored as a TemporaryEffect
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::GrantProtection {
         target: human,
         filter: mtg_engine::types::CreatureFilter::Not(Box::new(
             mtg_engine::types::CreatureFilter::HasSubtype("Human".into())

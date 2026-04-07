@@ -40,8 +40,8 @@ impl CardBehavior for HystericalBlindness {
             .collect();
 
         for id in opponent_creature_ids {
-            state.until_end_of_turn_effects.push(
-                crate::state::UntilEndOfTurnEffect {
+            state.until_end_of_turn.push(
+                crate::state::TemporaryEffect::ModifyPT {
                     target: id,
                     power_mod: -4,
                     toughness_mod: 0,

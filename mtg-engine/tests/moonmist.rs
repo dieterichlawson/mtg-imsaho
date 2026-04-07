@@ -24,7 +24,8 @@ fn sets_prevention_flag() {
     let moonmist = castable_spell(&mut state, &reg, "Moonmist", P0);
     let new_state = cast_and_resolve(&state, &reg, moonmist, vec![]);
 
-    assert!(new_state.prevent_non_wolf_werewolf_combat_damage,
+    assert!(new_state.until_end_of_turn.iter().any(|e| matches!(e,
+        mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage)),
         "Moonmist should set the prevention flag");
 }
 
@@ -33,7 +34,7 @@ fn sets_prevention_flag() {
 fn prevents_non_wolf_combat_damage_to_player() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.prevent_non_wolf_werewolf_combat_damage = true;
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     // A plain 3/3 creature (not Wolf or Werewolf).
@@ -51,7 +52,7 @@ fn prevents_non_wolf_combat_damage_to_player() {
 fn wolf_still_deals_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.prevent_non_wolf_werewolf_combat_damage = true;
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     // Use a named Wolf card.
@@ -69,7 +70,7 @@ fn wolf_still_deals_damage() {
 fn prevents_non_wolf_combat_damage_to_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.prevent_non_wolf_werewolf_combat_damage = true;
+    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     let attacker = ready_creature(&mut state, P0, 3, 3);

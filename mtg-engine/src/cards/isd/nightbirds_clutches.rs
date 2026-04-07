@@ -35,7 +35,7 @@ impl CardBehavior for NightbirdsClutches {
         for target in targets {
             if let Target::Object(target_id) = target {
                 if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                    state.until_end_of_turn_cant_block.push(*target_id);
+                    state.until_end_of_turn.push(crate::state::TemporaryEffect::CantBlock { target: *target_id });
                     let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
                     state.log(crate::state::LogLevel::Event, format!("{} can't block this turn", name));
                 }

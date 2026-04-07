@@ -395,9 +395,13 @@ fn traitorous_blood_reverts_at_end_of_turn() {
     assert_eq!(state.get_object(enemy).unwrap().controller, P0);
 
     // The control change should be tracked for revert.
-    assert!(!state.until_end_of_turn_control_changes.is_empty(),
-        "Control change should be recorded for end-of-turn revert");
-    let (obj_id, original_controller) = state.until_end_of_turn_control_changes[0];
+    let control_change = state.until_end_of_turn.iter().find_map(|e| {
+        if let mtg_engine::state::TemporaryEffect::ChangeControl { target, original_controller } = e {
+            Some((*target, *original_controller))
+        } else { None }
+    });
+    assert!(control_change.is_some(), "Control change should be recorded for end-of-turn revert");
+    let (obj_id, original_controller) = control_change.unwrap();
     assert_eq!(obj_id, enemy);
     assert_eq!(original_controller, P1, "Original controller should be recorded as P1");
 }

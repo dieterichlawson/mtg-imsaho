@@ -256,8 +256,8 @@ fn bramblecrush_respects_indestructible() {
     let enchantment = state.create_object(CardId(9999), P1, Zone::Battlefield, None, None);
     state.get_object_mut(enchantment).unwrap().name = "Indestructible Enchantment".into();
     state.get_object_mut(enchantment).unwrap().card_types = vec![CardType::Enchantment];
-    state.until_end_of_turn_keywords.push(
-        mtg_engine::state::UntilEndOfTurnKeyword {
+    state.until_end_of_turn.push(
+        mtg_engine::state::TemporaryEffect::GrantKeyword {
             target: enchantment,
             keyword: Keyword::Indestructible,
         },

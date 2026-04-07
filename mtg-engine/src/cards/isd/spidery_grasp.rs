@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
-use crate::state::{GameState, UntilEndOfTurnKeyword};
+use crate::state::{GameState, TemporaryEffect};
 use crate::types::*;
 
 /// Spidery Grasp — {2}{G} instant. Untap target creature. It gets +2/+4 and gains reach until end of turn.
@@ -37,15 +37,15 @@ impl CardBehavior for SpideryGrasp {
                 if let Some(target) = state.get_object_mut(*target_id) {
                     target.tapped = false;
                 }
-                state.until_end_of_turn_effects.push(
-                    crate::state::UntilEndOfTurnEffect {
+                state.until_end_of_turn.push(
+                    crate::state::TemporaryEffect::ModifyPT {
                         target: *target_id,
                         power_mod: 2,
                         toughness_mod: 4,
                     }
                 );
-                state.until_end_of_turn_keywords.push(
-                    UntilEndOfTurnKeyword {
+                state.until_end_of_turn.push(
+                    TemporaryEffect::GrantKeyword {
                         target: *target_id,
                         keyword: Keyword::Reach,
                     }

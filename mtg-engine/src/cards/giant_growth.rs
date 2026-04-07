@@ -32,8 +32,8 @@ impl CardBehavior for GiantGrowth {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                state.until_end_of_turn_effects.push(
-                    crate::state::UntilEndOfTurnEffect {
+                state.until_end_of_turn.push(
+                    crate::state::TemporaryEffect::ModifyPT {
                         target: *target_id,
                         power_mod: 3,
                         toughness_mod: 3,

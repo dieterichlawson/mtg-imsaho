@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{GameState, UntilEndOfTurnKeyword};
+use crate::state::{GameState, TemporaryEffect};
 use crate::types::*;
 
 /// Traitorous Blood — {1}{R}{R} Sorcery.
@@ -42,18 +42,18 @@ impl CardBehavior for TraiterousBlood {
                 let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
                 // Save original controller for revert at end of turn.
                 let original = state.get_object(*creature_id).map(|o| o.controller).unwrap_or(PlayerId(0));
-                state.until_end_of_turn_control_changes.push((*creature_id, original));
+                state.until_end_of_turn.push(TemporaryEffect::ChangeControl { target: *creature_id, original_controller: original });
                 // Change controller and untap.
                 if let Some(obj) = state.get_object_mut(*creature_id) {
                     obj.controller = controller;
                     obj.tapped = false;
                 }
                 // Grant haste and trample.
-                state.until_end_of_turn_keywords.push(UntilEndOfTurnKeyword {
+                state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
                     target: *creature_id,
                     keyword: Keyword::Haste,
                 });
-                state.until_end_of_turn_keywords.push(UntilEndOfTurnKeyword {
+                state.until_end_of_turn.push(TemporaryEffect::GrantKeyword {
                     target: *creature_id,
                     keyword: Keyword::Trample,
                 });

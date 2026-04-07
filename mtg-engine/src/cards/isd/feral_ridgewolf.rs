@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
-use crate::state::{GameState, UntilEndOfTurnEffect};
+use crate::state::{GameState, TemporaryEffect};
 use crate::types::*;
 
 /// Feral Ridgewolf — {2}{R} 1/2 Wolf with Trample. {1}{R}: Feral Ridgewolf gets +2/+0 until end of turn.
@@ -50,7 +50,7 @@ impl CardBehavior for FeralRidgewolf {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        state.until_end_of_turn_effects.push(UntilEndOfTurnEffect {
+        state.until_end_of_turn.push(TemporaryEffect::ModifyPT {
             target: object_id,
             power_mod: 2,
             toughness_mod: 0,
