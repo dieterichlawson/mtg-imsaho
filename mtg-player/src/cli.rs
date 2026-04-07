@@ -558,18 +558,42 @@ impl CliPlayer {
                 &format!("  Mana: {}", mana_str.join(" ")), Some(Color::Yellow), false);
         }
 
-        // Actions separator with optional label (always drawn)
-        let action_label = if let Some(msg) = message {
-            format!("─── {} ", msg)
+        // Actions separator with optional label (always drawn, wraps if needed)
+        if let Some(msg) = message {
+            let prefix = "─── ";
+            let indent = "    ";
+            let prefix_len = prefix.chars().count(); // 4
+            // Leave room for prefix/indent + trailing space + at least 1 dash
+            let text_w = mid_w.saturating_sub(prefix_len + 2);
+            let wrapped = Self::word_wrap(msg, text_w);
+            for (i, line) in wrapped.iter().enumerate() {
+                let leader = if i == 0 { prefix } else { indent };
+                let label = format!("{}{} ", leader, line);
+                let full = format!("{}{}", label, "─".repeat(mid_w.saturating_sub(label.chars().count())));
+                let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                    SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
+                let left_border = if i == 0 { "├" } else { "│" };
+                let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+                    SetAttribute(Attribute::Dim), Print(left_border), SetAttribute(Attribute::Reset));
+                if has_right {
+                    let right_border = if i == 0 { "┤" } else { "│" };
+                    let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
+                        SetAttribute(Attribute::Dim), Print(right_border), SetAttribute(Attribute::Reset));
+                }
+                row += 1;
+            }
         } else {
-            String::new()
-        };
-        let action_line = format!("{}{}", action_label, "─".repeat(mid_w.saturating_sub(action_label.chars().count())));
-        let _ = execute!(out, cursor::MoveTo(mid_col, row),
-            SetAttribute(Attribute::Dim), Print(&action_line), SetAttribute(Attribute::Reset));
-        let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
-            SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
-        row += 1;
+            let action_line = "─".repeat(mid_w);
+            let _ = execute!(out, cursor::MoveTo(mid_col, row),
+                SetAttribute(Attribute::Dim), Print(&action_line), SetAttribute(Attribute::Reset));
+            let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+                SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
+            if has_right {
+                let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
+                    SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
+            }
+            row += 1;
+        }
 
         // Action list (only when actions are provided)
         if let Some(labels) = actions {
