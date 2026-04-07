@@ -4,9 +4,8 @@ use crate::types::*;
 /// Stony Silence — {1}{W} Enchantment.
 /// Activated abilities of artifacts can't be activated.
 ///
-/// Enforced by the engine in legal_actions(): when Stony Silence is on the
-/// battlefield, both mana abilities and non-mana activated abilities of
-/// artifacts are excluded from the legal action list.
+/// Declares PreventArtifactAbilities as a continuous effect. The engine
+/// checks for this effect in legal_actions() to exclude artifact abilities.
 pub struct StonySilence;
 
 impl CardBehavior for StonySilence {
@@ -24,7 +23,10 @@ impl CardBehavior for StonySilence {
             toughness: None,
             oracle_text: "Activated abilities of artifacts can't be activated.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            flashback_cost: None,
+            continuous_effects: vec![ContinuousEffect::PreventArtifactAbilities],
+            additional_cost: None,
+            triggered_abilities: vec![],
         }
     }
 }

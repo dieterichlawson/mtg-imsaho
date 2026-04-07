@@ -284,9 +284,21 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     // PassPriority is always available when you have priority.
     actions.push(Action::PassPriority);
 
-    // Check for Stony Silence: no abilities of artifacts can be activated, including mana abilities.
-    let stony_silence_active = state.objects.values().any(|o| {
-        o.zone == Zone::Battlefield && o.name == "Stony Silence"
+    // Check for PreventArtifactAbilities effect (e.g. Stony Silence):
+    // no abilities of artifacts can be activated, including mana abilities.
+    let prevent_artifact_abilities = state.objects.values().any(|o| {
+        if o.zone != Zone::Battlefield { return false; }
+        // Check instance effects.
+        if let Some(ref effects) = o.instance_continuous_effects {
+            if effects.iter().any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities)) {
+                return true;
+            }
+        }
+        // Check card data effects.
+        registry.get(o.card_id)
+            .map(|b| b.card_data().continuous_effects.iter()
+                .any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities)))
+            .unwrap_or(false)
     });
 
     // Mana abilities: can activate anytime you have priority.
@@ -294,7 +306,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     let mut seen_mana_abilities: Vec<(CardId, usize)> = Vec::new();
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         // Stony Silence: skip mana abilities from artifacts.
-        if stony_silence_active {
+        if prevent_artifact_abilities {
             let is_artifact = registry.card_data(obj.card_id)
                 .map(|d| d.card_types.contains(&CardType::Artifact))
                 .unwrap_or(false)
@@ -331,7 +343,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         let activated_this_turn = obj.abilities_activated_this_turn.clone();
 
         // Stony Silence: skip artifact activated abilities.
-        if stony_silence_active {
+        if prevent_artifact_abilities {
             let is_artifact = registry.card_data(obj_card_id)
                 .map(|d| d.card_types.contains(&CardType::Artifact))
                 .unwrap_or(false)
