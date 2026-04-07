@@ -1990,6 +1990,8 @@ impl Player for CliPlayer {
         let mut display_labels: Vec<String> = Vec::new();
         let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
 
+        // Two-pass display: non-tap actions + cast spells first, then tap actions.
+        let mut deferred_taps: Vec<(usize, String)> = Vec::new();
         let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
             match action {
@@ -2017,11 +2019,21 @@ impl Player for CliPlayer {
                         }
                     }
                 }
+                Action::ActivateManaAbility { .. } => {
+                    // Defer tap actions to appear after cast spells.
+                    deferred_taps.push((i, Self::format_action(view, action)));
+                }
                 _ => {
                     display.push(DisplayEntry::Direct(i));
                     display_labels.push(Self::format_action(view, action));
                 }
             }
+        }
+
+        // Append deferred tap actions after cast spells.
+        for (action_idx, label) in deferred_taps {
+            display.push(DisplayEntry::Direct(action_idx));
+            display_labels.push(label);
         }
 
         loop {
