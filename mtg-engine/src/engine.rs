@@ -3066,7 +3066,16 @@ fn has_castable_with_potential_mana(
         .map(|c| !c.attackers.is_empty())
         .unwrap_or(false)
         && matches!(state.step, Step::DeclareAttackers | Step::DeclareBlockers);
-    let instants_relevant = stack_has_items || in_key_combat_step;
+    // Instants are relevant when responding to stack items, during key combat
+    // steps, or during meaningful phases of the opponent's turn (main phases,
+    // end step, combat) where you might want to use removal or tricks.
+    let opp_meaningful_phase = state.active_player != player
+        && matches!(state.step,
+            Step::PrecombatMain | Step::PostcombatMain | Step::EndStep
+            | Step::BeginCombat | Step::DeclareAttackers | Step::DeclareBlockers
+            | Step::CombatDamage
+        );
+    let instants_relevant = stack_has_items || in_key_combat_step || opp_meaningful_phase;
 
     for obj in state.objects_in_zone(Zone::Hand, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
