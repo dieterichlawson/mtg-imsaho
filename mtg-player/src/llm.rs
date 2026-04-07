@@ -267,6 +267,28 @@ impl LlmPlayer {
         s
     }
 
+    // ── Test helpers ──────────────────────────────────────────────
+
+    /// Expose format_decklist for testing.
+    pub fn format_decklist_for_test(entries: &[(String, u32)], registry: &mtg_engine::cards::CardRegistry) -> String {
+        Self::format_decklist(entries, registry)
+    }
+
+    /// Expose system prompt for testing.
+    pub fn system_prompt_for_test(&self) -> &str {
+        &self.system_prompt
+    }
+
+    /// Expose conversation length for testing.
+    pub fn conversation_len_for_test(&self) -> usize {
+        self.conversation.len()
+    }
+
+    /// Expose last_log_index for testing.
+    pub fn last_log_index_for_test(&self) -> usize {
+        self.last_log_index
+    }
+
     fn log(&self, label: &str, content: &str) {
         if let Some(path) = &self.log_file {
             if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(path) {
