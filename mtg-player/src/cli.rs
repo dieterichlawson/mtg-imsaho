@@ -1132,6 +1132,26 @@ impl CliPlayer {
 
     // ── Action formatting ──────────────────────────────────────────
 
+    /// Format a tap plan as a compact string like "2x Plains, Hinterland Harbor".
+    fn format_tap_plan(view: &GameView, tap_plan: &[(ObjectId, usize)]) -> String {
+        if tap_plan.is_empty() { return String::new(); }
+        let mut name_counts: Vec<(String, usize)> = Vec::new();
+        for &(source_id, _) in tap_plan {
+            let name = Self::perm_name(view, source_id);
+            if let Some(entry) = name_counts.iter_mut().find(|(n, _)| *n == name) {
+                entry.1 += 1;
+            } else {
+                name_counts.push((name, 1));
+            }
+        }
+        name_counts.iter()
+            .map(|(name, count)| {
+                if *count > 1 { format!("{}x {}", count, name) } else { name.clone() }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn perm_name(view: &GameView, id: ObjectId) -> String {
         view.battlefield.iter()
             .find(|p| p.object_id == id)
@@ -1162,10 +1182,12 @@ impl CliPlayer {
             Action::PassPriority => "Pass priority".into(),
             Action::PlayLand { object_id } =>
                 format!("Play land {}", Self::perm_name(view, *object_id)),
-            Action::CastSpell { object_id, targets, .. } => {
+            Action::CastSpell { object_id, targets, tap_plan, .. } => {
                 let name = Self::perm_name(view, *object_id);
+                let tap_str = Self::format_tap_plan(view, tap_plan);
+                let tap_suffix = if tap_str.is_empty() { String::new() } else { format!(" (tap {})", tap_str) };
                 if targets.is_empty() {
-                    format!("Cast {}", name)
+                    format!("Cast {}{}", name, tap_suffix)
                 } else {
                     let target_names: Vec<String> = targets.iter().map(|t| match t {
                         Target::Object(id) => Self::perm_name(view, *id),
@@ -1173,7 +1195,7 @@ impl CliPlayer {
                             if *pid == view.you { "you".into() } else { "opponent".into() }
                         }
                     }).collect();
-                    format!("Cast {} -> {}", name, target_names.join(", "))
+                    format!("Cast {} -> {}{}", name, target_names.join(", "), tap_suffix)
                 }
             }
             Action::ActivateManaAbility { object_id, .. } =>

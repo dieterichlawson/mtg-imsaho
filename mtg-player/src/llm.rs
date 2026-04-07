@@ -662,6 +662,27 @@ impl LlmPlayer {
             .unwrap_or(Action::PassPriority)
     }
 
+    /// Format a tap plan as a compact string like "2x Plains, Hinterland Harbor".
+    fn format_tap_plan(view: &GameView, tap_plan: &[(ObjectId, usize)]) -> String {
+        if tap_plan.is_empty() { return String::new(); }
+        // Collect names, count duplicates.
+        let mut name_counts: Vec<(String, usize)> = Vec::new();
+        for &(source_id, _) in tap_plan {
+            let name = Self::obj_name(view, source_id);
+            if let Some(entry) = name_counts.iter_mut().find(|(n, _)| *n == name) {
+                entry.1 += 1;
+            } else {
+                name_counts.push((name, 1));
+            }
+        }
+        name_counts.iter()
+            .map(|(name, count)| {
+                if *count > 1 { format!("{}x {}", count, name) } else { name.clone() }
+            })
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+
     fn obj_name(view: &GameView, id: ObjectId) -> String {
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
             let is_land = p.card_types.iter().all(|t| matches!(t, mtg_engine::types::CardType::Land));
@@ -1046,7 +1067,12 @@ impl Player for LlmPlayer {
                             seen_spell_objects.push(*object_id);
                             let cs = &legal.castable_spells[cs_idx];
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
-                            display_labels.push(format!("{} {}", verb, cs.name));
+                            let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
+                            if tap_str.is_empty() {
+                                display_labels.push(format!("{} {}", verb, cs.name));
+                            } else {
+                                display_labels.push(format!("{} {} (tap {})", verb, cs.name, tap_str));
+                            }
                             display_entries.push(DisplayEntry::Cast(cs_idx));
                         }
                     }
