@@ -2003,7 +2003,12 @@ impl Player for CliPlayer {
                             let cs = &legal.castable_spells[cs_idx];
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
                             display.push(DisplayEntry::Cast(cs_idx));
-                            display_labels.push(format!("{} {}", verb, cs.name));
+                            let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
+                            if tap_str.is_empty() {
+                                display_labels.push(format!("{} {}", verb, cs.name));
+                            } else {
+                                display_labels.push(format!("{} {} (tap {})", verb, cs.name, tap_str));
+                            }
                         }
                     }
                 }
