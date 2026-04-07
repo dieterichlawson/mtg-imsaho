@@ -51,10 +51,10 @@ impl CardBehavior for LostInTheMist {
         if let Some(Target::Object(spell_id)) = targets.first() {
             if let Some(obj) = state.get_object(*spell_id) {
                 if obj.zone == Zone::Stack {
-                    let name = obj.name.clone();
+                    let countered_name = state.obj_name(*spell_id);
                     state.stack.retain(|e| e.as_spell() != Some(*spell_id));
                     state.move_spell_after_resolve(*spell_id, registry);
-                    state.log(LogLevel::Event, format!("{} was countered", name));
+                    state.log(LogLevel::Event, format!("{} was countered", countered_name));
                 }
             }
         }
@@ -62,9 +62,9 @@ impl CardBehavior for LostInTheMist {
         if let Some(Target::Object(perm_id)) = targets.get(1) {
             if let Some(obj) = state.get_object(*perm_id) {
                 if obj.zone == Zone::Battlefield {
-                    let name = obj.name.clone();
+                    let bounced_name = state.obj_name(*perm_id);
                     state.move_object(*perm_id, Zone::Hand, registry);
-                    state.log(LogLevel::Event, format!("{} was returned to hand", name));
+                    state.log(LogLevel::Event, format!("{} was returned to hand", bounced_name));
                 }
             }
         }

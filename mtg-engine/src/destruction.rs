@@ -81,7 +81,7 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
     }
     remove_from_combat(state, id);
     state.log(LogLevel::Event, format!("{} regenerated",
-        state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
+        state.obj_name(id)));
 }
 
 /// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.

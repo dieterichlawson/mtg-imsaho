@@ -51,14 +51,15 @@ impl CardBehavior for CorpseLunge {
                         if obj.zone == Zone::Battlefield {
                             obj.damage_marked += damage;
                             obj.damaged_by.push(object_id);
-                            let name = obj.name.clone();
-                            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                                source: object_id,
-                                target: crate::events::DamageTarget::Object(*target_id),
-                                amount: damage,
-                            });
-                            state.log(LogLevel::Event, format!("Corpse Lunge dealt {} damage to {}", damage, name));
                         }
+                    }
+                    if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                            source: object_id,
+                            target: crate::events::DamageTarget::Object(*target_id),
+                            amount: damage,
+                        });
+                        state.log(LogLevel::Event, format!("Corpse Lunge dealt {} damage to {}", damage, state.obj_name(*target_id)));
                     }
                 }
             }

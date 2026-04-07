@@ -59,8 +59,7 @@ impl CardBehavior for DivineReckoning {
                 // 0 or 1 creature: auto-keep (no choice needed).
                 if let Some(&only) = creatures.first() {
                     kept.push(only);
-                    let name = state.get_object(only).map(|o| o.name.clone()).unwrap_or_default();
-                    state.log(LogLevel::Event, format!("Divine Reckoning: p{} keeps {} (only creature)", player_id.0, name));
+                    state.log(LogLevel::Event, format!("Divine Reckoning: p{} keeps {} (only creature)", player_id.0, state.obj_name(only)));
                 }
             } else {
                 pending_players.push(player_id);

@@ -48,14 +48,15 @@ impl CardBehavior for HarvestPyre {
                     if obj.zone == Zone::Battlefield {
                         obj.damage_marked += count;
                         obj.damaged_by.push(object_id);
-                        let name = obj.name.clone();
-                        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                            source: object_id,
-                            target: crate::events::DamageTarget::Object(*target_id),
-                            amount: count,
-                        });
-                        state.log(LogLevel::Event, format!("Harvest Pyre dealt {} damage to {}", count, name));
                     }
+                }
+                if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
+                        source: object_id,
+                        target: crate::events::DamageTarget::Object(*target_id),
+                        amount: count,
+                    });
+                    state.log(LogLevel::Event, format!("Harvest Pyre dealt {} damage to {}", count, state.obj_name(*target_id)));
                 }
             }
         }

@@ -116,9 +116,8 @@ impl CardBehavior for OliviaVoldaren {
                             });
                             // +1/+1 counter on Olivia.
                             state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-                            let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
                             state.log(crate::state::LogLevel::Event,
-                                format!("Olivia Voldaren deals 1 damage to {}, makes it a Vampire, and gets a +1/+1 counter", target_name));
+                                format!("Olivia Voldaren deals 1 damage to {}, makes it a Vampire, and gets a +1/+1 counter", state.obj_name(*target_id)));
                         }
                     }
                 }
@@ -132,12 +131,12 @@ impl CardBehavior for OliviaVoldaren {
                     if is_vampire {
                         // Record the original controller so we can revert when Olivia leaves.
                         let original_controller = state.get_object(*target_id).map(|o| o.controller).unwrap_or(controller);
+                        let stolen_name = state.obj_name(*target_id);
                         if let Some(obj) = state.get_object_mut(*target_id) {
-                            let target_name = obj.name.clone();
                             obj.controller = controller;
-                            state.log(crate::state::LogLevel::Event,
-                                format!("Olivia Voldaren gains control of {}", target_name));
                         }
+                        state.log(crate::state::LogLevel::Event,
+                            format!("Olivia Voldaren gains control of {}", stolen_name));
                         // Track the stolen creature in Olivia's card_state.
                         // We use "stolen_N" keys to track multiple stolen creatures,
                         // storing the original controller as an ObjectId (abusing the type for PlayerId).
@@ -183,13 +182,13 @@ impl CardBehavior for OliviaVoldaren {
 
         for (target_id, orig_controller_id) in stolen_entries {
             let orig_controller = crate::ids::PlayerId(orig_controller_id.0 as u8);
-            if let Some(obj) = state.get_object_mut(target_id) {
-                if obj.zone == Zone::Battlefield {
-                    let name = obj.name.clone();
+            if state.get_object(target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                let returned_name = state.obj_name(target_id);
+                if let Some(obj) = state.get_object_mut(target_id) {
                     obj.controller = orig_controller;
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Olivia Voldaren left: {} returned to p{}", name, orig_controller.0));
                 }
+                state.log(crate::state::LogLevel::Event,
+                    format!("Olivia Voldaren left: {} returned to p{}", returned_name, orig_controller.0));
             }
         }
     }

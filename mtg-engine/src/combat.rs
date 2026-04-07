@@ -567,19 +567,7 @@ fn deal_damage_to_player(
         new_life,
     });
 
-    let name = state.get_object(source)
-        .map(|o| {
-            // Use object name directly (works for tokens); fall back to registry.
-            if !o.name.is_empty() {
-                o.name.clone()
-            } else {
-                registry.card_data(o.card_id)
-                    .map(|d| d.name)
-                    .unwrap_or_else(|| "?".into())
-            }
-        })
-        .unwrap_or_else(|| "?".into());
-    state.log(LogLevel::Event, format!("p{} took {} combat damage ({}) from {}", player.0, amount, new_life, name));
+    state.log(LogLevel::Event, format!("p{} took {} combat damage ({}) from {}", player.0, amount, new_life, state.obj_name(source)));
 
     // Lifelink: source's controller gains life.
     if state.has_keyword(source, Keyword::Lifelink, registry) {

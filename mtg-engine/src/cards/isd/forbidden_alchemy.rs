@@ -42,14 +42,14 @@ impl CardBehavior for ForbiddenAlchemy {
         } else if revealed.len() == 1 {
             // Only 1 card -- auto-put it in hand.
             let card_id = revealed[0];
+            let chosen_name = state.obj_name(card_id);
             state.move_object(card_id, Zone::Hand, registry);
-            let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(LogLevel::Event, format!("Forbidden Alchemy: {} put into hand", name));
+            state.log(LogLevel::Event, format!("Forbidden Alchemy: {} put into hand", chosen_name));
             state.move_spell_after_resolve(object_id, registry);
         } else {
             // 2+ cards -- ask the player which one to keep.
             let names: Vec<String> = revealed.iter()
-                .filter_map(|id| state.get_object(*id).map(|o| o.name.clone()))
+                .map(|id| state.obj_name(*id))
                 .collect();
             state.log(LogLevel::Event, format!("Forbidden Alchemy revealed: {}", names.join(", ")));
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {

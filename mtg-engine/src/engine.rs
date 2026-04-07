@@ -1598,12 +1598,8 @@ fn combinations(items: &[ObjectId], k: usize) -> Vec<Vec<ObjectId>> {
     result
 }
 
-fn card_name(state: &GameState, registry: &CardRegistry, obj_id: ObjectId) -> String {
-    state.get_object(obj_id)
-        .map(|o| registry.card_data(o.card_id)
-            .map(|d| d.name)
-            .unwrap_or_else(|| o.name.clone()))
-        .unwrap_or_else(|| "?".into())
+fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: ObjectId) -> String {
+    state.obj_name(obj_id)
 }
 
 /// Apply an action to the game state and return the new state.
@@ -2186,7 +2182,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, .. },
                      ResolvedChoice::PayDecision(pay)) => {
                         if !*pay {
-                            let name = new_state.get_object(*spell_id).map(|o| o.name.clone()).unwrap_or_default();
+                            let name = new_state.obj_name(*spell_id);
                             new_state.stack.retain(|e| e.as_spell() != Some(*spell_id));
                             new_state.move_spell_after_resolve(*spell_id, registry);
                             new_state.log(LogLevel::Event, format!("{} was countered", name));
@@ -2237,7 +2233,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                     (ResolutionChoiceKind::ChooseCardFromHand { .. },
                      ResolvedChoice::ChosenCard(discard_id)) => {
-                        let name = new_state.get_object(*discard_id).map(|o| o.name.clone()).unwrap_or_default();
+                        let name = new_state.obj_name(*discard_id);
                         new_state.move_object(*discard_id, Zone::Graveyard, registry);
                         new_state.events.push(GameEvent::Discarded {
                             player: new_state.get_object(*discard_id).map(|o| o.owner).unwrap_or(PlayerId(0)),
@@ -2253,7 +2249,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                     (ResolutionChoiceKind::ChooseFromRevealed { revealed, spell_id, .. },
                      ResolvedChoice::ChosenCard(keep_id)) => {
-                        let keep_name = new_state.get_object(*keep_id).map(|o| o.name.clone()).unwrap_or_default();
+                        let keep_name = new_state.obj_name(*keep_id);
                         new_state.move_object(*keep_id, Zone::Hand, registry);
                         for &card_id in revealed {
                             if card_id != *keep_id {
@@ -2265,7 +2261,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                     (ResolutionChoiceKind::ChooseFromLibrary { searcher, .. },
                      ResolvedChoice::ChosenCard(chosen_id)) => {
-                        let chosen_name = new_state.get_object(*chosen_id).map(|o| o.name.clone()).unwrap_or_default();
+                        let chosen_name = new_state.obj_name(*chosen_id);
                         let player = new_state.get_player_mut(*searcher);
                         player.library_order.retain(|&id| id != *chosen_id);
                         new_state.move_object(*chosen_id, Zone::Hand, registry);
@@ -2323,10 +2319,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
                         // Log the division.
                         let pile_1_names: Vec<String> = pile_1.iter()
-                            .filter_map(|id| new_state.get_object(*id).map(|o| o.name.clone()))
+                            .map(|id| new_state.obj_name(*id))
                             .collect();
                         let pile_2_names: Vec<String> = pile_2.iter()
-                            .filter_map(|id| new_state.get_object(*id).map(|o| o.name.clone()))
+                            .map(|id| new_state.obj_name(*id))
                             .collect();
                         new_state.log(LogLevel::Event,
                             format!("Liliana -6: Pile 1: [{}], Pile 2: [{}]",
@@ -2356,7 +2352,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.log(LogLevel::Event,
                             format!("Liliana -6: chose to sacrifice {}", pile_label));
                         for &perm_id in chosen_pile {
-                            let name = new_state.get_object(perm_id).map(|o| o.name.clone()).unwrap_or_default();
+                            let name = new_state.obj_name(perm_id);
                             if new_state.get_object(perm_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                                 crate::destruction::sacrifice(&mut new_state, perm_id, registry);
                                 new_state.log(LogLevel::Event,
@@ -2400,14 +2396,14 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                             obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
                         }
                     }
-                    let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+                    let name = state.obj_name(*id);
                     state.log(LogLevel::Event,
                         format!("{}: damage prevented, removed a +1/+1 counter", name));
                 }
                 // Damage prevented — skip normal damage application.
             } else if state.has_protection_from(*id, *source_id, registry) {
                 // Protection prevents damage from the source.
-                let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+                let name = state.obj_name(*id);
                 state.log(LogLevel::Event,
                     format!("{}: damage from {} prevented by protection", name, source_name));
             } else if let Some(obj) = state.get_object_mut(*id) {
@@ -2416,7 +2412,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     let is_planeswalker = registry.card_data(obj.card_id)
                         .map(|d| d.card_types.contains(&CardType::Planeswalker))
                         .unwrap_or(false);
-                    let name = obj.name.clone();
 
                     if is_planeswalker {
                         // Remove loyalty counters equal to damage.
@@ -2434,7 +2429,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         target: crate::events::DamageTarget::Object(*id),
                         amount: *amount,
                     });
-                    state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, name));
+                    state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, state.obj_name(*id)));
                 }
             }
         }
@@ -2451,12 +2446,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{} dealt {} damage to p{}", source_name, amount, pid.0));
         }
         (Target::Object(id), PendingEffect::Destroy { source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             crate::destruction::try_destroy(state, *id, registry);
             state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
         }
         (Target::Object(id), PendingEffect::ReturnToBattlefield { spell_id }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.move_object(*id, Zone::Battlefield, registry);
             state.log(LogLevel::Event, format!("{} returned to the battlefield", name));
             state.move_spell_after_resolve(*spell_id, registry);
@@ -2477,13 +2472,13 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     final_count = count * 2;
                 }
             }
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.add_counters(*id, crate::types::CounterType::PlusOnePlusOne, final_count);
             state.log(LogLevel::Event,
                 format!("Added {} +1/+1 counter{} to {}", final_count, if final_count > 1 { "s" } else { "" }, name));
         }
         (Target::Object(id), PendingEffect::DebuffUntilEOT { power, toughness, source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
                 target: *id,
                 power_mod: *power,
@@ -2492,7 +2487,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{} gave {} {}/{} until end of turn", source_name, name, power, toughness));
         }
         (Target::Object(id), PendingEffect::CantBlockThisTurn { source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.until_end_of_turn.push(crate::state::TemporaryEffect::CantBlock { target: *id });
             state.log(LogLevel::Event, format!("{} prevents {} from blocking this turn", source_name, name));
         }
@@ -2501,7 +2496,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{} milled {} card(s) from p{}", source_name, count, pid.0));
         }
         (Target::Object(id), PendingEffect::ExileAndStore { source_id, source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.move_object(*id, Zone::Exile, registry);
             // Store the exiled creature's ID on the source permanent for LTB retrieval.
             if let Some(source_obj) = state.get_object_mut(*source_id) {
@@ -2510,7 +2505,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{} exiled {}", source_name, name));
         }
         (Target::Object(id), PendingEffect::ExileCardAndCleanup { spell_id, source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.move_object(*id, Zone::Exile, registry);
             state.log(LogLevel::Event, format!("{} exiled {} from hand", source_name, name));
             state.move_spell_after_resolve(*spell_id, registry);
@@ -2537,7 +2532,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{}: p{} lost 1 life, p{} gained 1 life", source_name, pid.0, controller.0));
         }
         (Target::Object(id), PendingEffect::DestroyCreature { source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             crate::destruction::try_destroy(state, *id, registry);
             state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
         }
@@ -2566,12 +2561,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             }
         }
         (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.move_object(*id, Zone::Hand, registry);
             state.log(LogLevel::Event, format!("{}: returned {} to hand", source_name, name));
         }
         (Target::Object(id), PendingEffect::PutOnTopOfLibrary { source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             let owner = state.get_object(*id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
             state.move_object(*id, Zone::Library, registry);
             // Insert at position 0 (top of library).
@@ -2583,7 +2578,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let toughness = state.effective_toughness(*id, registry)
                 .or_else(|| state.get_object(*id).and_then(|o| o.toughness))
                 .unwrap_or(0);
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
 
             crate::destruction::sacrifice(state, *id, registry);
 
@@ -2609,7 +2604,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         .unwrap_or(o.power.is_some())
                 })
                 .unwrap_or(false);
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             state.move_object(*id, Zone::Exile, registry);
             state.log(LogLevel::Event, format!("Graveyard Shovel: exiled {} from graveyard", name));
 
@@ -2629,7 +2624,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::SacrificeAndTutor { garruk_id }) => {
             use crate::state::ResolutionChoiceKind;
             // Garruk -1: sacrifice the chosen creature, then search library for a creature card.
-            let sac_name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let sac_name = state.obj_name(*id);
             let controller = state.get_object(*garruk_id).map(|o| o.controller).unwrap_or(PlayerId(0));
             crate::destruction::sacrifice(state, *id, registry);
             state.log(LogLevel::Event,
@@ -2663,7 +2658,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             } else if creature_options.len() == 1 {
                 // Only one option — auto-select and shuffle.
                 let found_id = creature_options[0];
-                let found_name = state.get_object(found_id).map(|o| o.name.clone()).unwrap_or_default();
+                let found_name = state.obj_name(found_id);
                 let player = state.get_player_mut(controller);
                 player.library_order.retain(|&lid| lid != found_id);
                 state.move_object(found_id, Zone::Hand, registry);
@@ -2687,7 +2682,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             }
         }
         (Target::Object(id), PendingEffect::SacrificeCreature { source_name }) => {
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             crate::destruction::sacrifice(state, *id, registry);
             state.log(LogLevel::Event, format!("{}: sacrificed {}", source_name, name));
         }
@@ -2695,7 +2690,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // Destroy the target creature, then add a +1/+1 counter to the source.
             // The counter is added regardless of whether destruction succeeds
             // (e.g. indestructible/regenerate), per MTG rules.
-            let name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*id);
             crate::destruction::try_destroy(state, *id, registry);
             state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
             // Add +1/+1 counter to the source permanent.
@@ -2736,7 +2731,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
             }
             state.log(LogLevel::Event,
-                format!("Evil Twin enters as a copy of {}", name));
+                format!("Evil Twin enters as a copy of {}", state.obj_name(*target_id)));
         }
         (Target::Object(id), PendingEffect::KeepOneDestroyRest {
             remaining_players, kept_so_far, source_name,
@@ -2744,7 +2739,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // Record this player's choice.
             let mut kept = kept_so_far.clone();
             kept.push(*id);
-            let chosen_name = state.get_object(*id).map(|o| o.name.clone()).unwrap_or_default();
+            let chosen_name = state.obj_name(*id);
             let chooser = state.get_object(*id).map(|o| o.controller).unwrap_or(PlayerId(0));
             state.log(LogLevel::Event, format!("{}: p{} keeps {}", source_name, chooser.0, chosen_name));
 
@@ -2773,7 +2768,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     // 0 or 1 creature — auto-keep and continue.
                     if let Some(crate::actions::Target::Object(auto_id)) = options.first() {
                         kept.push(*auto_id);
-                        let auto_name = state.get_object(*auto_id).map(|o| o.name.clone()).unwrap_or_default();
+                        let auto_name = state.obj_name(*auto_id);
                         state.log(LogLevel::Event, format!("{}: p{} keeps {} (only creature)", source_name, next_player.0, auto_name));
                     }
                     // Continue chaining: apply as if this was a recursive call with rest.
@@ -2802,7 +2797,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         if np_options.len() <= 1 {
                             if let Some(crate::actions::Target::Object(auto_id)) = np_options.first() {
                                 kept.push(*auto_id);
-                                let auto_name = state.get_object(*auto_id).map(|o| o.name.clone()).unwrap_or_default();
+                                let auto_name = state.obj_name(*auto_id);
                                 state.log(LogLevel::Event, format!("{}: p{} keeps {} (only creature)", source_name, np.0, auto_name));
                             }
                             remaining = nr;
@@ -2867,7 +2862,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             });
         }
         (Target::Player(pid), PendingEffect::AttachCurseToPlayer { curse_id, searcher }) => {
-            let name = state.get_object(*curse_id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*curse_id);
             // Remove from library.
             state.get_player_mut(*searcher).library_order.retain(|&id| id != *curse_id);
             // Put on battlefield attached to the chosen player.
@@ -2885,20 +2880,21 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(target_id), PendingEffect::GrantFlashback { source_name }) => {
             // Grant flashback to the chosen card until end of turn.
-            if let Some(obj) = state.get_object(*target_id) {
+            let fb_info = state.get_object(*target_id).map(|obj| {
                 let card_id = obj.card_id;
-                let cost = registry.card_data(card_id)
+                registry.card_data(card_id)
                     .and_then(|d| d.cost.clone())
-                    .unwrap_or(ManaCost::free());
-                let name = obj.name.clone();
+                    .unwrap_or(ManaCost::free())
+            });
+            if let Some(cost) = fb_info {
                 state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: *target_id, cost });
                 state.log(LogLevel::Event,
-                    format!("{} grants flashback to {}", source_name, name));
+                    format!("{} grants flashback to {}", source_name, state.obj_name(*target_id)));
             }
         }
         (Target::Object(land_id), PendingEffect::GhostQuarterSearch { searcher }) => {
             // Put the chosen basic land onto the battlefield, then shuffle.
-            let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
+            let name = state.obj_name(*land_id);
             state.get_player_mut(*searcher).library_order.retain(|&id| id != *land_id);
             state.move_object(*land_id, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(*land_id) {

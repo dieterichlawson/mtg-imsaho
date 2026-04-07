@@ -578,6 +578,14 @@ impl GameState {
         self.objects.get(&id)
     }
 
+    /// Return "CardName (#id)" for use in log messages.
+    pub fn obj_name(&self, id: ObjectId) -> String {
+        let name = self.get_object(id)
+            .map(|o| o.name.clone())
+            .unwrap_or_else(|| "?".into());
+        format!("{} (#{})", name, id.0)
+    }
+
     /// Get a mutable reference to an object by ID.
     pub fn get_object_mut(&mut self, id: ObjectId) -> Option<&mut GameObject> {
         self.objects.get_mut(&id)

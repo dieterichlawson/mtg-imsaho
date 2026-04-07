@@ -50,7 +50,7 @@ impl CardBehavior for CaravanVigil {
             .copied();
 
         if let Some(land_id) = basic_land {
-            let name = state.get_object(land_id).map(|o| o.name.clone()).unwrap_or_default();
+            let land_name = state.obj_name(land_id);
 
             // Remove from library order.
             state.get_player_mut(controller).library_order.retain(|&id| id != land_id);
@@ -67,7 +67,7 @@ impl CardBehavior for CaravanVigil {
                     choice: ResolutionChoiceKind::YesNo {
                         description: format!(
                             "Caravan Vigil (morbid): put {} onto the battlefield? (No = put into hand)",
-                            name
+                            land_name
                         ),
                         source_card: object_id,
                     },
@@ -77,7 +77,7 @@ impl CardBehavior for CaravanVigil {
             } else {
                 state.move_object(land_id, Zone::Hand, registry);
                 state.log(LogLevel::Event,
-                    format!("Caravan Vigil: {} put into hand", name));
+                    format!("Caravan Vigil: {} put into hand", land_name));
             }
 
             // Shuffle library.
@@ -105,16 +105,16 @@ impl CardBehavior for CaravanVigil {
             }
         };
         let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        let name = state.get_object(land_id).map(|o| o.name.clone()).unwrap_or_default();
+        let land_name = state.obj_name(land_id);
 
         if yes {
             state.move_object(land_id, Zone::Battlefield, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil (morbid): {} enters the battlefield", name));
+                format!("Caravan Vigil (morbid): {} enters the battlefield", land_name));
         } else {
             state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil: {} put into hand", name));
+                format!("Caravan Vigil: {} put into hand", land_name));
         }
 
         // Shuffle library.

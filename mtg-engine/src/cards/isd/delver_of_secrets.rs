@@ -94,9 +94,9 @@ impl CardBehavior for DelverOfSecrets {
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
 
         // Log what was seen (the player "looks at" the top card).
-        let top_card_name = state.get_player(controller).library_order.first()
-            .and_then(|id| state.get_object(*id))
-            .map(|o| o.name.clone())
+        let top_card_id = state.get_player(controller).library_order.first().copied();
+        let top_card_name = top_card_id
+            .map(|id| state.obj_name(id))
             .unwrap_or_else(|| "nothing".into());
         state.log(LogLevel::Debug,
             format!("Delver of Secrets: top card is {}", top_card_name));
@@ -135,9 +135,9 @@ impl CardBehavior for DelverOfSecrets {
             Some(o) => o.controller,
             None => return,
         };
-        let top_card_name = state.get_player(controller).library_order.first()
-            .and_then(|id| state.get_object(*id))
-            .map(|o| o.name.clone())
+        let top_card_id = state.get_player(controller).library_order.first().copied();
+        let top_card_name = top_card_id
+            .map(|id| state.obj_name(id))
             .unwrap_or_else(|| "a card".into());
         let top_is_instant_or_sorcery = Self::top_card_is_instant_or_sorcery(state, controller, registry);
         if top_is_instant_or_sorcery {

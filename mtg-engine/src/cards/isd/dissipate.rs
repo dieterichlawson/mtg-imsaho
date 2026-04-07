@@ -46,10 +46,10 @@ impl CardBehavior for Dissipate {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Stack {
-                    let name = obj.name.clone();
+                    let countered_name = state.obj_name(*target_id);
                     state.stack.retain(|e| e.as_spell() != Some(*target_id));
                     state.move_object(*target_id, Zone::Exile, registry);
-                    state.log(LogLevel::Event, format!("{} was countered and exiled", name));
+                    state.log(LogLevel::Event, format!("{} was countered and exiled", countered_name));
                 }
             }
         }

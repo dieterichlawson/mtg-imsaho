@@ -35,9 +35,9 @@ impl CardBehavior for UnburialRites {
         // The target was chosen at cast time; use it directly.
         if let Some(Target::Object(id)) = targets.first() {
             let id = *id;
-            let name = state.get_object(id).map(|o| o.name.clone()).unwrap_or_default();
+            let returned_name = state.obj_name(id);
             state.move_object(id, Zone::Battlefield, registry);
-            state.log(LogLevel::Event, format!("{} returned to the battlefield", name));
+            state.log(LogLevel::Event, format!("{} returned to the battlefield", returned_name));
         }
         // If target is missing (fizzled), do nothing — just clean up.
         state.move_spell_after_resolve(object_id, registry);

@@ -45,9 +45,9 @@ impl CardBehavior for SilverchaseFox {
     fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
+                let exiled_name = state.obj_name(*target_id);
                 state.move_object(*target_id, Zone::Exile, registry);
-                state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {}", name));
+                state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {}", exiled_name));
             }
         }
     }

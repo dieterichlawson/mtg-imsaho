@@ -86,8 +86,6 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
         None => return,
     };
 
-    let name = registry.card_data(card_id).map(|d| d.name).unwrap_or_else(|| "?".into());
-
     // CR 608.2b: Check target legality. If the spell has targets and ALL
     // are illegal, it's countered by game rules (fizzled).
     // This now checks hexproof at resolution time (not just at cast time).
@@ -108,7 +106,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
             }
         });
         if !any_legal {
-            state.log(LogLevel::Event, format!("{} fizzled (all targets illegal)", name));
+            state.log(LogLevel::Event, format!("{} fizzled (all targets illegal)", state.obj_name(object_id)));
             // Move to graveyard (or exile for flashback) without resolving.
             state.move_spell_after_resolve(object_id, registry);
             return;
@@ -116,7 +114,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
     }
 
     // Spell resolves normally.
-    state.log(LogLevel::Event, format!("{} resolved", name));
+    state.log(LogLevel::Event, format!("{} resolved", state.obj_name(object_id)));
     state.events.push(GameEvent::SpellResolved { object: object_id });
 
     // Call the card's on_resolve behavior with targets.

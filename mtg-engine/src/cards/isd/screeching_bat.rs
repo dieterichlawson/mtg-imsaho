@@ -92,9 +92,7 @@ impl CardBehavior for ScreechingBat {
             return;
         }
 
-        let current_name = state.get_object(self_id)
-            .map(|o| o.name.clone())
-            .unwrap_or_else(|| "this creature".into());
+        let current_name = state.obj_name(self_id);
 
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
@@ -108,11 +106,8 @@ impl CardBehavior for ScreechingBat {
 
     fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
         if !yes {
-            let current_name = state.get_object(self_id)
-                .map(|o| o.name.clone())
-                .unwrap_or_else(|| "this creature".into());
             state.log(LogLevel::Event,
-                format!("{}: chose not to pay", current_name));
+                format!("{}: chose not to pay", state.obj_name(self_id)));
             return;
         }
 
@@ -131,9 +126,8 @@ impl CardBehavior for ScreechingBat {
 
         // Transform — uses the generic helper to update name, keywords, and subtypes.
         helpers::apply_transform(state, self_id, registry);
-        let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
         state.log(LogLevel::Event,
-            format!("Transforms into {}", new_name));
+            format!("Transforms into {}", state.obj_name(self_id)));
     }
 
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool {

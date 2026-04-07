@@ -57,13 +57,13 @@ impl CardBehavior for FiendHunter {
             .and_then(|o| o.card_state.get("exiled_creature").copied());
         if let Some(target_id) = exiled_id {
             if state.get_object(target_id).map(|o| o.zone == Zone::Exile).unwrap_or(false) {
-                let name = state.get_object(target_id).map(|o| o.name.clone()).unwrap_or_default();
+                let returned_name = state.obj_name(target_id);
                 state.move_object(target_id, Zone::Battlefield, registry);
                 // "under its owner's control" — reset controller to owner
                 if let Some(obj) = state.get_object_mut(target_id) {
                     obj.controller = obj.owner;
                 }
-                state.log(crate::state::LogLevel::Event, format!("{} returned to the battlefield", name));
+                state.log(crate::state::LogLevel::Event, format!("{} returned to the battlefield", returned_name));
             }
         }
     }

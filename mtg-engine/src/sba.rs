@@ -204,7 +204,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             .collect();
         for id in pw_zero_loyalty.into_iter().chain(pw_zero_loyalty_registry) {
             state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
-                state.get_object(id).map(|o| o.name.as_str()).unwrap_or("?")));
+                state.obj_name(id)));
             state.move_object(id, Zone::Graveyard, registry);
             took_action = true;
         }
