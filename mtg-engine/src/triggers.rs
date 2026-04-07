@@ -331,7 +331,7 @@ fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::c
 ///
 /// Does NOT resolve them — the game loop resolves them one at a time,
 /// giving players priority between each.
-pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
+pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool {
     let events = state.events.clone();
     let start = state.trigger_event_index;
     let active_player = state.active_player;
@@ -875,6 +875,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
         }
     }
 
+    let had_triggers = !ap_triggers.is_empty() || !nap_triggers.is_empty();
+
     // APNAP: Active player's triggers go on stack first (bottom),
     // non-active player's go on top. LIFO = NAP resolves first.
     use crate::state::StackEntry;
@@ -887,6 +889,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) {
 
     // Mark all events as processed.
     state.trigger_event_index = events.len();
+    had_triggers
 }
 
 /// Resolve the top trigger from the stack.

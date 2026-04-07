@@ -1606,6 +1606,7 @@ fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: ObjectId) -> S
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     let mut new_state = state.clone();
     new_state.events.clear();
+    new_state.trigger_event_index = 0;
 
     match action {
         Action::PassPriority => {
@@ -3419,14 +3420,21 @@ fn run_game_loop_inner<F>(
             break;
         }
 
-        // Process triggers from the last action, then SBA+trigger loop.
-        triggers::process_triggers(state, registry);
+        // CR 117.5: Before a player gets priority, check SBAs and collect
+        // triggered abilities onto the stack. Repeat until neither produces
+        // new work. Triggers resolve through the normal priority cycle,
+        // giving players a chance to respond between each resolution.
         loop {
-            let sba = check_state_based_actions(state, registry);
-            if sba {
-                triggers::process_triggers(state, registry);
+            let mut any_work = false;
+            loop {
+                let sba = check_state_based_actions(state, registry);
+                if !sba { break; }
+                any_work = true;
             }
-            if !sba { break; }
+            if triggers::collect_triggers(state, registry) {
+                any_work = true;
+            }
+            if !any_work { break; }
         }
         if state.is_game_over() {
             break;
