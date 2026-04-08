@@ -20,6 +20,7 @@ use mtg_player::Player;
 
 use serde::Serialize;
 
+mod draft_log;
 mod llm_client;
 
 // ─── CLI Argument Parsing ────────────────────────────────────────────
@@ -31,6 +32,7 @@ struct Args {
     best_of: usize,
     guides: Vec<Option<String>>,
     output: String,
+    log: String,
     quiet: bool,
 }
 
@@ -53,6 +55,7 @@ fn parse_args() -> Args {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
     let output = get("--output").unwrap_or_else(|| "draft-results.json".to_string());
+    let log = get("--log").unwrap_or_else(|| "draft.log".to_string());
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
 
     // Load guides: --guide applies to all, --guide-N overrides for player N
@@ -74,6 +77,7 @@ fn parse_args() -> Args {
         best_of,
         guides,
         output,
+        log,
         quiet,
     }
 }
@@ -158,11 +162,16 @@ fn main() {
         std::process::exit(1);
     });
 
+    // Create streaming log file
+    let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
+    log.header(&set_data.set_name, args.players, args.best_of, &args.model);
+
     if !args.quiet {
         eprintln!(
             "=== {} Draft: {} players, best-of-{} ===",
             set_data.set_name, args.players, args.best_of
         );
+        eprintln!("Log file: {}", args.log);
     }
 
     // ── Phase 1: Generate packs ──
@@ -171,7 +180,16 @@ fn main() {
     }
     let packs = generate_draft_packs(&sheets, args.players, &mut rng);
 
+    // Log original pack contents
+    log.section("BOOSTER PACKS");
+    for (seat, player_packs) in packs.iter().enumerate() {
+        for (pack_num, pack) in player_packs.iter().enumerate() {
+            log.pack_contents(seat, pack_num + 1, &pack.all_cards());
+        }
+    }
+
     // ── Phase 2: Draft ──
+    log.section("DRAFT");
     if !args.quiet {
         eprintln!("Starting draft...");
     }
@@ -244,7 +262,10 @@ fn main() {
                     handles.into_iter().map(|h| h.join().unwrap()).collect()
                 });
 
-            // Apply picks sequentially (mutates draft state)
+            // Apply picks sequentially (mutates draft state) and log
+            if pick_num == 0 {
+                log.subsection(&format!("Pack {}", round + 1));
+            }
             for (seat, chosen, prompt, response) in pick_results {
                 let available = draft.current_pack_for(seat).to_vec();
 
@@ -253,6 +274,8 @@ fn main() {
                     let first = draft.current_pack_for(seat)[0].clone();
                     draft.make_pick(seat, &first).unwrap();
                 });
+
+                log.draft_pick(seat, round + 1, pick_num + 1, &available, &chosen, &response);
 
                 pick_logs[seat].push(PickLog {
                     pack: round + 1,
@@ -272,7 +295,14 @@ fn main() {
         eprintln!("\nDraft complete!");
     }
 
+    // Log final pools
+    log.section("DRAFT POOLS");
+    for seat in 0..args.players {
+        log.pool_summary(seat, &draft.players[seat].pool);
+    }
+
     // ── Phase 3: Deck Building ──
+    log.section("DECK BUILDING");
     if !args.quiet {
         eprintln!("Building decks...");
     }
@@ -296,11 +326,19 @@ fn main() {
     let mut deck_logs: Vec<DeckBuildingLog> = Vec::new();
     let mut decklists: Vec<Decklist> = Vec::new();
 
-    for (deck, log) in deck_results {
+    for (seat, (deck, deck_log_entry)) in deck_results.into_iter().enumerate() {
+        log.deck_building(
+            seat,
+            &deck.maindeck,
+            &deck.lands,
+            &deck.sideboard,
+            &deck_log_entry.response,
+            deck_log_entry.retries,
+        );
         decklists.push(Decklist {
             entries: deckbuilding::to_decklist(&deck),
         });
-        deck_logs.push(log);
+        deck_logs.push(deck_log_entry);
     }
 
     if !args.quiet {
@@ -308,6 +346,7 @@ fn main() {
     }
 
     // ── Phase 4: Tournament ──
+    log.section("TOURNAMENT");
     if !args.quiet {
         eprintln!("Starting Swiss tournament...");
     }
@@ -362,8 +401,34 @@ fn main() {
             handles.into_iter().map(|h| h.join().unwrap()).collect()
         });
 
-        if !args.quiet {
-            for result in &results {
+        // Log byes
+        for &(a, b) in &pairings {
+            if b == usize::MAX {
+                log.bye(round_num, a);
+            }
+        }
+
+        // Log match results and game logs
+        for result in &results {
+            log.match_result(
+                round_num,
+                result.player_a,
+                result.player_b,
+                result.wins_a,
+                result.wins_b,
+                result.winner(),
+            );
+            for (game_num, game) in result.games.iter().enumerate() {
+                log.game_log(
+                    round_num,
+                    game_num + 1,
+                    result.player_a,
+                    result.player_b,
+                    &game.game_log,
+                );
+            }
+
+            if !args.quiet {
                 eprintln!(
                     "  Seat {} vs Seat {}: {}-{} (winner: Seat {})",
                     result.player_a,
@@ -379,9 +444,17 @@ fn main() {
     }
 
     // ── Phase 5: Output ──
+    log.section("FINAL STANDINGS");
+    let sorted = tournament.sorted_standings();
+    let standings_data: Vec<(usize, usize, usize, usize)> = sorted
+        .iter()
+        .map(|s| (s.seat, s.match_wins, s.match_losses, s.game_wins))
+        .collect();
+    log.standings(&standings_data);
+
     if !args.quiet {
         eprintln!("\nFinal Standings:");
-        for (rank, s) in tournament.sorted_standings().iter().enumerate() {
+        for (rank, s) in sorted.iter().enumerate() {
             eprintln!(
                 "  {}. Seat {} — {} match wins, {} game wins",
                 rank + 1,
@@ -681,9 +754,16 @@ fn play_game(
         }
     });
 
+    let game_log: Vec<String> = state
+        .game_log
+        .iter()
+        .map(|entry| entry.message.clone())
+        .collect();
+
     GameOutcome {
         winner,
         turns: state.turn_number,
+        game_log,
     }
 }
 

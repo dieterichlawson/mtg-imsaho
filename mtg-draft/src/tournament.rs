@@ -30,6 +30,8 @@ impl MatchResult {
 pub struct GameOutcome {
     pub winner: Option<usize>,
     pub turns: u32,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub game_log: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -285,9 +287,9 @@ mod tests {
                 wins_a: 2,
                 wins_b: 1,
                 games: vec![
-                    GameOutcome { winner: Some(0), turns: 10 },
-                    GameOutcome { winner: Some(1), turns: 8 },
-                    GameOutcome { winner: Some(0), turns: 12 },
+                    GameOutcome { winner: Some(0), turns: 10, game_log: vec![] },
+                    GameOutcome { winner: Some(1), turns: 8, game_log: vec![] },
+                    GameOutcome { winner: Some(0), turns: 12, game_log: vec![] },
                 ],
             },
             MatchResult {
@@ -296,8 +298,8 @@ mod tests {
                 wins_a: 0,
                 wins_b: 2,
                 games: vec![
-                    GameOutcome { winner: Some(3), turns: 7 },
-                    GameOutcome { winner: Some(3), turns: 9 },
+                    GameOutcome { winner: Some(3), turns: 7, game_log: vec![] },
+                    GameOutcome { winner: Some(3), turns: 9, game_log: vec![] },
                 ],
             },
         ];
@@ -322,15 +324,15 @@ mod tests {
                 MatchResult {
                     player_a: 0, player_b: 1, wins_a: 2, wins_b: 0,
                     games: vec![
-                        GameOutcome { winner: Some(0), turns: 5 },
-                        GameOutcome { winner: Some(0), turns: 5 },
+                        GameOutcome { winner: Some(0), turns: 5, game_log: vec![] },
+                        GameOutcome { winner: Some(0), turns: 5, game_log: vec![] },
                     ],
                 },
                 MatchResult {
                     player_a: 2, player_b: 3, wins_a: 2, wins_b: 0,
                     games: vec![
-                        GameOutcome { winner: Some(2), turns: 5 },
-                        GameOutcome { winner: Some(2), turns: 5 },
+                        GameOutcome { winner: Some(2), turns: 5, game_log: vec![] },
+                        GameOutcome { winner: Some(2), turns: 5, game_log: vec![] },
                     ],
                 },
             ],
