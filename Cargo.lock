@@ -694,6 +694,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "mtg-draft-runner"
+version = "0.1.0"
+dependencies = [
+ "mtg-draft",
+ "mtg-engine",
+ "mtg-player",
+ "rand",
+ "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "mtg-engine"
 version = "0.1.0"
 dependencies = [
