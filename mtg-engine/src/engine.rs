@@ -13,6 +13,7 @@ use crate::triggers;
 use crate::types::*;
 
 /// A decklist: card name -> count.
+#[derive(Clone)]
 pub struct Decklist {
     pub entries: Vec<(String, u32)>,
 }
