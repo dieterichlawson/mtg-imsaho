@@ -18,8 +18,6 @@ use mtg_engine::view::GameView;
 use mtg_player::llm::LlmPlayer;
 use mtg_player::Player;
 
-use serde::Serialize;
-
 mod draft_log;
 mod llm_client;
 
@@ -31,7 +29,6 @@ struct Args {
     model: String,
     best_of: usize,
     guides: Vec<Option<String>>,
-    output: String,
     log: String,
     quiet: bool,
 }
@@ -54,7 +51,6 @@ fn parse_args() -> Args {
     let best_of: usize = get("--best-of")
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
-    let output = get("--output").unwrap_or_else(|| "draft-results.json".to_string());
     let log = get("--log").unwrap_or_else(|| "draft.log".to_string());
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
 
@@ -76,63 +72,16 @@ fn parse_args() -> Args {
         model,
         best_of,
         guides,
-        output,
         log,
         quiet,
     }
 }
 
-// ─── Output Types ────────────────────────────────────────────────────
-
-#[derive(Serialize)]
-struct DraftOutput {
-    draft_log: DraftLog,
-    tournament: TournamentLog,
-}
-
-#[derive(Serialize)]
-struct DraftLog {
-    set: String,
-    pod_size: usize,
-    original_packs: Vec<Vec<Vec<String>>>,
-    players: Vec<PlayerLog>,
-}
-
-#[derive(Serialize)]
-struct PlayerLog {
-    seat: usize,
-    guide: Option<String>,
-    picks: Vec<PickLog>,
-    pool: Vec<String>,
-    deck_building: DeckBuildingLog,
-}
-
-#[derive(Serialize)]
-struct PickLog {
-    pack: usize,
-    pick: usize,
-    available: Vec<String>,
-    chosen: String,
-    prompt: String,
-    response: String,
-}
-
-#[derive(Serialize)]
-struct DeckBuildingLog {
-    prompt: String,
+/// Return type for deck building LLM interaction.
+struct DeckBuildResult {
+    deck: deckbuilding::DraftDeck,
     response: String,
     retries: usize,
-    maindeck: Vec<String>,
-    lands: HashMap<String, u32>,
-    sideboard: Vec<String>,
-}
-
-#[derive(Serialize)]
-struct TournamentLog {
-    format: String,
-    best_of: usize,
-    rounds: Vec<serde_json::Value>,
-    standings: Vec<serde_json::Value>,
 }
 
 // ─── Main ────────────────────────────────────────────────────────────
@@ -206,9 +155,6 @@ fn main() {
         })
         .collect();
 
-    // Pick logs per player
-    let mut pick_logs: Vec<Vec<PickLog>> = (0..args.players).map(|_| Vec::new()).collect();
-
     // Run the draft — all players pick in parallel each round
     for round in 0..3 {
         if round > 0 {
@@ -266,7 +212,7 @@ fn main() {
             if pick_num == 0 {
                 log.subsection(&format!("Pack {}", round + 1));
             }
-            for (seat, chosen, prompt, response) in pick_results {
+            for (seat, chosen, _prompt, response) in pick_results {
                 let available = draft.current_pack_for(seat).to_vec();
 
                 draft.make_pick(seat, &chosen).unwrap_or_else(|e| {
@@ -276,15 +222,6 @@ fn main() {
                 });
 
                 log.draft_pick(seat, round + 1, pick_num + 1, &available, &chosen, &response);
-
-                pick_logs[seat].push(PickLog {
-                    pack: round + 1,
-                    pick: pick_num + 1,
-                    available,
-                    chosen,
-                    prompt,
-                    response,
-                });
             }
 
             draft.rotate_packs();
@@ -310,35 +247,30 @@ fn main() {
     // Build all decks in parallel
     let pools: Vec<Vec<String>> = draft.players.iter().map(|p| p.pool.clone()).collect();
 
-    let deck_results: Vec<(deckbuilding::DraftDeck, DeckBuildingLog)> =
-        std::thread::scope(|s| {
-            let handles: Vec<_> = clients
-                .iter_mut()
-                .zip(pools.iter())
-                .map(|(client, pool)| {
-                    s.spawn(move || build_deck_with_llm(client, pool))
-                })
-                .collect();
+    let deck_results: Vec<DeckBuildResult> = std::thread::scope(|s| {
+        let handles: Vec<_> = clients
+            .iter_mut()
+            .zip(pools.iter())
+            .map(|(client, pool)| s.spawn(move || build_deck_with_llm(client, pool)))
+            .collect();
 
-            handles.into_iter().map(|h| h.join().unwrap()).collect()
-        });
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    });
 
-    let mut deck_logs: Vec<DeckBuildingLog> = Vec::new();
     let mut decklists: Vec<Decklist> = Vec::new();
 
-    for (seat, (deck, deck_log_entry)) in deck_results.into_iter().enumerate() {
+    for (seat, result) in deck_results.iter().enumerate() {
         log.deck_building(
             seat,
-            &deck.maindeck,
-            &deck.lands,
-            &deck.sideboard,
-            &deck_log_entry.response,
-            deck_log_entry.retries,
+            &result.deck.maindeck,
+            &result.deck.lands,
+            &result.deck.sideboard,
+            &result.response,
+            result.retries,
         );
         decklists.push(Decklist {
-            entries: deckbuilding::to_decklist(&deck),
+            entries: deckbuilding::to_decklist(&result.deck),
         });
-        deck_logs.push(deck_log_entry);
     }
 
     if !args.quiet {
@@ -465,53 +397,8 @@ fn main() {
         }
     }
 
-    // Assemble output
-    let output = DraftOutput {
-        draft_log: DraftLog {
-            set: set_data.set_code.clone(),
-            pod_size: args.players,
-            original_packs: draft.original_packs.clone(),
-            players: (0..args.players)
-                .map(|seat| PlayerLog {
-                    seat,
-                    guide: args.guides[seat].clone(),
-                    picks: std::mem::take(&mut pick_logs[seat]),
-                    pool: draft.players[seat].pool.clone(),
-                    deck_building: std::mem::replace(
-                        &mut deck_logs[seat],
-                        DeckBuildingLog {
-                            prompt: String::new(),
-                            response: String::new(),
-                            retries: 0,
-                            maindeck: Vec::new(),
-                            lands: HashMap::new(),
-                            sideboard: Vec::new(),
-                        },
-                    ),
-                })
-                .collect(),
-        },
-        tournament: TournamentLog {
-            format: "swiss".to_string(),
-            best_of: args.best_of,
-            rounds: tournament
-                .rounds
-                .iter()
-                .map(|r| serde_json::to_value(r).unwrap_or_default())
-                .collect(),
-            standings: tournament
-                .sorted_standings()
-                .iter()
-                .map(|s| serde_json::to_value(s).unwrap_or_default())
-                .collect(),
-        },
-    };
-
-    let json = serde_json::to_string_pretty(&output).expect("Failed to serialize output");
-    fs::write(&args.output, &json).expect("Failed to write output file");
-
     if !args.quiet {
-        eprintln!("\nResults written to {}", args.output);
+        eprintln!("\nDone. Log written to {}", args.log);
     }
 }
 
@@ -545,7 +432,7 @@ fn parse_pick_response(response: &str, available: &[String]) -> String {
 fn build_deck_with_llm(
     client: &mut llm_client::DraftLlmClient,
     pool: &[String],
-) -> (deckbuilding::DraftDeck, DeckBuildingLog) {
+) -> DeckBuildResult {
     let prompt = build_deck_prompt(pool);
     let mut last_response = String::new();
     let mut retries = 0;
@@ -565,17 +452,7 @@ fn build_deck_with_llm(
         match deckbuilding::parse_deck_response(&response) {
             Ok((maindeck, lands)) => match deckbuilding::validate_deck(pool, &maindeck, &lands) {
                 Ok(deck) => {
-                    return (
-                        deck.clone(),
-                        DeckBuildingLog {
-                            prompt: prompt.clone(),
-                            response,
-                            retries,
-                            maindeck: deck.maindeck,
-                            lands: deck.lands,
-                            sideboard: deck.sideboard,
-                        },
-                    );
+                    return DeckBuildResult { deck, response, retries };
                 }
                 Err(e) => {
                     last_response = e;
@@ -591,28 +468,19 @@ fn build_deck_with_llm(
 
     // Fallback: include all cards, add 17 lands split by color
     eprintln!("Warning: deck building failed after 3 attempts, using fallback");
-    let maindeck = pool.to_vec();
     let mut lands = HashMap::new();
     lands.insert("Island".to_string(), 9);
     lands.insert("Swamp".to_string(), 8);
 
-    let deck = deckbuilding::DraftDeck {
-        maindeck: maindeck.clone(),
-        lands: lands.clone(),
-        sideboard: Vec::new(),
-    };
-
-    (
-        deck,
-        DeckBuildingLog {
-            prompt,
-            response: format!("FALLBACK (all attempts failed: {})", last_response),
-            retries,
-            maindeck,
+    DeckBuildResult {
+        deck: deckbuilding::DraftDeck {
+            maindeck: pool.to_vec(),
             lands,
             sideboard: Vec::new(),
         },
-    )
+        response: format!("FALLBACK (all attempts failed: {})", last_response),
+        retries,
+    }
 }
 
 fn build_deck_prompt(pool: &[String]) -> String {
