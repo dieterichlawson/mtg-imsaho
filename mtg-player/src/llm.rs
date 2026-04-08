@@ -663,6 +663,12 @@ impl LlmPlayer {
 
     /// Make a second API call to select one target from a list.
     fn prompt_target_selection(&mut self, view: &GameView, spell_name: &str, options: &[mtg_engine::actions::Target]) -> mtg_engine::actions::Target {
+        if options.is_empty() {
+            // No targets available — default to targeting opponent
+            return mtg_engine::actions::Target::Player(
+                if view.you == mtg_engine::ids::PlayerId(0) { mtg_engine::ids::PlayerId(1) } else { mtg_engine::ids::PlayerId(0) }
+            );
+        }
         let target_list: String = options.iter().enumerate()
             .map(|(i, t)| {
                 let desc = match t {
