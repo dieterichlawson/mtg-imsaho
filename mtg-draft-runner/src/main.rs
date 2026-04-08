@@ -191,7 +191,7 @@ fn main() {
     // Pick logs per player
     let mut pick_logs: Vec<Vec<PickLog>> = (0..args.players).map(|_| Vec::new()).collect();
 
-    // Run the draft
+    // Run the draft — all players pick in parallel each round
     for round in 0..3 {
         if round > 0 {
             draft.start_next_pack_round();
@@ -200,41 +200,59 @@ fn main() {
         let initial_cards = draft.cards_remaining(0);
 
         for pick_num in 0..initial_cards {
-            for seat in 0..args.players {
+            if !args.quiet {
+                eprint!("\rPack {} Pick {}/{}", round + 1, pick_num + 1, initial_cards);
+            }
+
+            // Gather inputs for each player before spawning threads
+            let pick_inputs: Vec<(usize, Vec<String>, Vec<String>, Vec<mtg_draft::draft::DraftPick>)> =
+                (0..args.players)
+                    .map(|seat| {
+                        (
+                            seat,
+                            draft.current_pack_for(seat).to_vec(),
+                            draft.players[seat].pool.clone(),
+                            draft.players[seat].picks.clone(),
+                        )
+                    })
+                    .collect();
+
+            // All players pick in parallel
+            let pick_results: Vec<(usize, String, String, String)> =
+                std::thread::scope(|s| {
+                    let handles: Vec<_> = pick_inputs
+                        .iter()
+                        .zip(clients.iter_mut())
+                        .map(|((seat, available, pool, history), client)| {
+                            let seat = *seat;
+                            s.spawn(move || {
+                                let prompt = client.build_pick_prompt(
+                                    round + 1,
+                                    pick_num + 1,
+                                    available,
+                                    pool,
+                                    history,
+                                );
+                                let response = client.send_message(&prompt);
+                                let chosen = parse_pick_response(&response, available);
+                                client.record_pick(&chosen);
+                                (seat, chosen, prompt, response)
+                            })
+                        })
+                        .collect();
+
+                    handles.into_iter().map(|h| h.join().unwrap()).collect()
+                });
+
+            // Apply picks sequentially (mutates draft state)
+            for (seat, chosen, prompt, response) in pick_results {
                 let available = draft.current_pack_for(seat).to_vec();
-                let pool = draft.players[seat].pool.clone();
-
-                if !args.quiet {
-                    eprint!(
-                        "\rPack {} Pick {}/{}",
-                        round + 1,
-                        pick_num + 1,
-                        initial_cards,
-                    );
-                }
-
-                // Build pick prompt and get LLM response
-                let prompt = clients[seat].build_pick_prompt(
-                    round + 1,
-                    pick_num + 1,
-                    &available,
-                    &pool,
-                    &draft.players[seat].picks,
-                );
-                let response = clients[seat].send_message(&prompt);
-
-                // Parse pick from response
-                let chosen = parse_pick_response(&response, &available);
 
                 draft.make_pick(seat, &chosen).unwrap_or_else(|e| {
                     eprintln!("\nDraft pick error for seat {}: {}", seat, e);
-                    // Fallback: pick first card
                     let first = draft.current_pack_for(seat)[0].clone();
                     draft.make_pick(seat, &first).unwrap();
                 });
-
-                // Record the pick in conversation history
-                clients[seat].record_pick(&chosen);
 
                 pick_logs[seat].push(PickLog {
                     pack: round + 1,
@@ -259,24 +277,30 @@ fn main() {
         eprintln!("Building decks...");
     }
 
+    // Build all decks in parallel
+    let pools: Vec<Vec<String>> = draft.players.iter().map(|p| p.pool.clone()).collect();
+
+    let deck_results: Vec<(deckbuilding::DraftDeck, DeckBuildingLog)> =
+        std::thread::scope(|s| {
+            let handles: Vec<_> = clients
+                .iter_mut()
+                .zip(pools.iter())
+                .map(|(client, pool)| {
+                    s.spawn(move || build_deck_with_llm(client, pool))
+                })
+                .collect();
+
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
     let mut deck_logs: Vec<DeckBuildingLog> = Vec::new();
     let mut decklists: Vec<Decklist> = Vec::new();
 
-    for seat in 0..args.players {
-        let pool = &draft.players[seat].pool;
-
-        if !args.quiet {
-            eprint!("\rBuilding deck for seat {}/{}...", seat + 1, args.players);
-        }
-
-        let (deck, log) = build_deck_with_llm(&mut clients[seat], pool);
-
-        let decklist = Decklist {
+    for (deck, log) in deck_results {
+        decklists.push(Decklist {
             entries: deckbuilding::to_decklist(&deck),
-        };
-
+        });
         deck_logs.push(log);
-        decklists.push(decklist);
     }
 
     if !args.quiet {
@@ -301,42 +325,54 @@ fn main() {
             eprintln!("Round {}/{}", round_num, tournament.total_rounds());
         }
 
-        let mut results: Vec<MatchResult> = Vec::new();
+        // Separate byes from real matches
+        let real_matches: Vec<(usize, usize)> = pairings
+            .iter()
+            .filter(|&&(_, b)| b != usize::MAX)
+            .copied()
+            .collect();
 
-        for &(a, b) in &pairings {
-            if b == usize::MAX {
-                // Bye
-                if !args.quiet {
-                    eprintln!("  Seat {} gets a bye", a);
-                }
-                continue;
-            }
-
+        for &(a, _) in pairings.iter().filter(|&&(_, b)| b == usize::MAX) {
             if !args.quiet {
+                eprintln!("  Seat {} gets a bye", a);
+            }
+        }
+
+        if !args.quiet {
+            for &(a, b) in &real_matches {
                 eprintln!("  Seat {} vs Seat {}", a, b);
             }
+        }
 
-            let result = play_match(
-                a,
-                b,
-                &decklists[a],
-                &decklists[b],
-                &registry,
-                &args.model,
-                args.best_of,
-                args.quiet,
-            );
+        // Play all matches in the round in parallel
+        let results: Vec<MatchResult> = std::thread::scope(|s| {
+            let handles: Vec<_> = real_matches
+                .iter()
+                .map(|&(a, b)| {
+                    let deck_a = &decklists[a];
+                    let deck_b = &decklists[b];
+                    let reg = &registry;
+                    let model = &args.model;
+                    let best_of = args.best_of;
+                    let quiet = args.quiet;
+                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model, best_of, quiet))
+                })
+                .collect();
 
-            if !args.quiet {
+            handles.into_iter().map(|h| h.join().unwrap()).collect()
+        });
+
+        if !args.quiet {
+            for result in &results {
                 eprintln!(
-                    "    Result: {}-{} (winner: Seat {})",
+                    "  Seat {} vs Seat {}: {}-{} (winner: Seat {})",
+                    result.player_a,
+                    result.player_b,
                     result.wins_a,
                     result.wins_b,
                     result.winner().map(|w| w.to_string()).unwrap_or("draw".to_string())
                 );
             }
-
-            results.push(result);
         }
 
         tournament.record_round(pairings, results);
