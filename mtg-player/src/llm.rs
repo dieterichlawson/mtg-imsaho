@@ -1,7 +1,6 @@
 use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use mtg_engine::actions::{Action, CombatPrompt};
 use mtg_engine::ids::ObjectId;
@@ -11,28 +10,57 @@ use reqwest::blocking::Client;
 
 use crate::Player;
 
-/// Global token usage counters for LlmPlayer API calls.
-pub static LLM_INPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static LLM_OUTPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static LLM_CACHE_READ_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static LLM_CACHE_CREATION_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static LLM_API_CALLS: AtomicU64 = AtomicU64::new(0);
+/// Per-model token usage tracking for LlmPlayer game calls.
+use std::sync::Mutex;
+use std::collections::HashMap;
 
-fn record_llm_usage(json: &serde_json::Value) {
+#[derive(Default, Debug, Clone)]
+pub struct LlmModelUsage {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_create: u64,
+    pub calls: u64,
+}
+
+static LLM_MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, LlmModelUsage>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn record_llm_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
+    let mut map = LLM_MODEL_USAGE.lock().unwrap();
+    let entry = map.entry(model.to_string()).or_default();
+    entry.calls += 1;
+    entry.input += input;
+    entry.output += output;
+    entry.cache_read += cache_read;
+    entry.cache_create += cache_create;
+}
+
+fn record_anthropic_llm_usage(model: &str, json: &serde_json::Value) {
     let usage = &json["usage"];
-    LLM_API_CALLS.fetch_add(1, Ordering::Relaxed);
-    if let Some(n) = usage["input_tokens"].as_u64() {
-        LLM_INPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage["output_tokens"].as_u64() {
-        LLM_OUTPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage["cache_read_input_tokens"].as_u64() {
-        LLM_CACHE_READ_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage["cache_creation_input_tokens"].as_u64() {
-        LLM_CACHE_CREATION_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
+    record_llm_usage(
+        model,
+        usage["input_tokens"].as_u64().unwrap_or(0),
+        usage["output_tokens"].as_u64().unwrap_or(0),
+        usage["cache_read_input_tokens"].as_u64().unwrap_or(0),
+        usage["cache_creation_input_tokens"].as_u64().unwrap_or(0),
+    );
+}
+
+fn record_gemini_llm_usage(model: &str, json: &serde_json::Value) {
+    let usage = &json["usageMetadata"];
+    record_llm_usage(
+        model,
+        usage["promptTokenCount"].as_u64().unwrap_or(0),
+        usage["candidatesTokenCount"].as_u64().unwrap_or(0),
+        usage["cachedContentTokenCount"].as_u64().unwrap_or(0),
+        0,
+    );
+}
+
+/// Get the per-model usage map.
+pub fn get_llm_model_usage() -> HashMap<String, LlmModelUsage> {
+    LLM_MODEL_USAGE.lock().unwrap().clone()
 }
 
 const SYSTEM_PROMPT: &str = r#"You are playing Magic: The Gathering. Respond with ONLY your choice. No explanation, no reasoning, just the answer.
@@ -849,7 +877,7 @@ impl LlmPlayer {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_llm_usage(&json);
+                        record_anthropic_llm_usage(&self.model, &json);
                         let result = json["content"][0]["text"]
                             .as_str()
                             .unwrap_or("0")
@@ -933,8 +961,7 @@ impl LlmPlayer {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
-                        // Gemini uses usageMetadata instead of usage
-                        record_llm_usage(&json["usageMetadata"]);
+                        record_gemini_llm_usage(&self.model, &json);
                         let result = json["candidates"][0]["content"]["parts"][0]["text"]
                             .as_str()
                             .unwrap_or("0")

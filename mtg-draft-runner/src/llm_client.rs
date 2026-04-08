@@ -1,93 +1,130 @@
 use std::env;
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use reqwest::blocking::Client;
 
 use mtg_draft::draft::DraftPick;
 
-/// Global token usage counters, safe to accumulate from multiple threads.
-pub static TOTAL_INPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static TOTAL_OUTPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static TOTAL_CACHE_READ_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static TOTAL_CACHE_CREATION_TOKENS: AtomicU64 = AtomicU64::new(0);
-pub static TOTAL_API_CALLS: AtomicU64 = AtomicU64::new(0);
+/// Per-model token usage tracking. Thread-safe via Mutex.
+use std::sync::Mutex;
+use std::collections::HashMap;
 
-/// Record token usage from an Anthropic API response's usage object.
-pub fn record_anthropic_usage(usage: &serde_json::Value) {
-    TOTAL_API_CALLS.fetch_add(1, Ordering::Relaxed);
-    if let Some(n) = usage["input_tokens"].as_u64() {
-        TOTAL_INPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage["output_tokens"].as_u64() {
-        TOTAL_OUTPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage["cache_read_input_tokens"].as_u64() {
-        TOTAL_CACHE_READ_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage["cache_creation_input_tokens"].as_u64() {
-        TOTAL_CACHE_CREATION_TOKENS.fetch_add(n, Ordering::Relaxed);
+#[derive(Default, Debug)]
+pub struct ModelUsage {
+    pub input: u64,
+    pub output: u64,
+    pub cache_read: u64,
+    pub cache_create: u64,
+    pub calls: u64,
+}
+
+static MODEL_USAGE: std::sync::LazyLock<Mutex<HashMap<String, ModelUsage>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn record_model_usage(model: &str, input: u64, output: u64, cache_read: u64, cache_create: u64) {
+    let mut map = MODEL_USAGE.lock().unwrap();
+    let entry = map.entry(model.to_string()).or_default();
+    entry.calls += 1;
+    entry.input += input;
+    entry.output += output;
+    entry.cache_read += cache_read;
+    entry.cache_create += cache_create;
+}
+
+/// Record token usage from an Anthropic API response.
+pub fn record_anthropic_usage(model: &str, usage: &serde_json::Value) {
+    record_model_usage(
+        model,
+        usage["input_tokens"].as_u64().unwrap_or(0),
+        usage["output_tokens"].as_u64().unwrap_or(0),
+        usage["cache_read_input_tokens"].as_u64().unwrap_or(0),
+        usage["cache_creation_input_tokens"].as_u64().unwrap_or(0),
+    );
+}
+
+/// Record token usage from a Gemini API response.
+pub fn record_gemini_usage(model: &str, usage_metadata: &serde_json::Value) {
+    record_model_usage(
+        model,
+        usage_metadata["promptTokenCount"].as_u64().unwrap_or(0),
+        usage_metadata["candidatesTokenCount"].as_u64().unwrap_or(0),
+        usage_metadata["cachedContentTokenCount"].as_u64().unwrap_or(0),
+        0,
+    );
+}
+
+/// Get the per-model usage map for external reporting.
+pub fn get_model_usage() -> HashMap<String, ModelUsage> {
+    MODEL_USAGE.lock().unwrap().clone()
+}
+
+impl Clone for ModelUsage {
+    fn clone(&self) -> Self {
+        Self { input: self.input, output: self.output, cache_read: self.cache_read, cache_create: self.cache_create, calls: self.calls }
     }
 }
 
-/// Record token usage from a Gemini API response's usageMetadata object.
-pub fn record_gemini_usage(usage_metadata: &serde_json::Value) {
-    TOTAL_API_CALLS.fetch_add(1, Ordering::Relaxed);
-    if let Some(n) = usage_metadata["promptTokenCount"].as_u64() {
-        TOTAL_INPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage_metadata["candidatesTokenCount"].as_u64() {
-        TOTAL_OUTPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
-    }
-    if let Some(n) = usage_metadata["cachedContentTokenCount"].as_u64() {
-        TOTAL_CACHE_READ_TOKENS.fetch_add(n, Ordering::Relaxed);
+/// Known model pricing ($/MTok). (input, output, cache_read, cache_write)
+fn model_pricing(model: &str) -> (f64, f64, f64, f64) {
+    match model {
+        m if m.contains("opus-4-6") => (5.00, 25.00, 0.50, 6.25),
+        m if m.contains("sonnet-4-6") => (3.00, 15.00, 0.30, 3.75),
+        m if m.contains("haiku-4-5") => (1.00, 5.00, 0.10, 1.25),
+        m if m.contains("gemini-2.5-flash-lite") => (0.10, 0.40, 0.025, 0.0),
+        m if m.contains("gemini-2.5-flash") => (0.30, 2.50, 0.075, 0.0),
+        m if m.contains("gemini-3.1-flash-lite") => (0.25, 1.50, 0.0625, 0.0),
+        m if m.contains("gemini-3-flash") || m.contains("gemini-3.0-flash") => (0.50, 3.00, 0.125, 0.0),
+        m if m.contains("gemini") => (0.30, 2.50, 0.075, 0.0), // default gemini
+        _ => (3.00, 15.00, 0.30, 3.75), // default to sonnet pricing
     }
 }
 
-/// Print a summary of all token usage and estimated cost.
-/// Combines draft client counters with LlmPlayer game counters.
+/// Print a summary of all token usage and estimated cost, broken down by model.
 pub fn print_usage_summary() {
-    use mtg_player::llm;
+    // Merge draft client usage and LlmPlayer game usage
+    let draft_usage = get_model_usage();
+    let game_usage = mtg_player::llm::get_llm_model_usage();
 
-    // Draft client (picks + deck building)
-    let draft_input = TOTAL_INPUT_TOKENS.load(Ordering::Relaxed);
-    let draft_output = TOTAL_OUTPUT_TOKENS.load(Ordering::Relaxed);
-    let draft_cache_read = TOTAL_CACHE_READ_TOKENS.load(Ordering::Relaxed);
-    let draft_cache_create = TOTAL_CACHE_CREATION_TOKENS.load(Ordering::Relaxed);
-    let draft_calls = TOTAL_API_CALLS.load(Ordering::Relaxed);
+    let mut combined: HashMap<String, ModelUsage> = HashMap::new();
+    for (model, u) in &draft_usage {
+        let entry = combined.entry(model.clone()).or_default();
+        entry.calls += u.calls;
+        entry.input += u.input;
+        entry.output += u.output;
+        entry.cache_read += u.cache_read;
+        entry.cache_create += u.cache_create;
+    }
+    for (model, u) in &game_usage {
+        let entry = combined.entry(model.clone()).or_default();
+        entry.calls += u.calls;
+        entry.input += u.input;
+        entry.output += u.output;
+        entry.cache_read += u.cache_read;
+        entry.cache_create += u.cache_create;
+    }
 
-    // Game player (tournament)
-    let game_input = llm::LLM_INPUT_TOKENS.load(Ordering::Relaxed);
-    let game_output = llm::LLM_OUTPUT_TOKENS.load(Ordering::Relaxed);
-    let game_cache_read = llm::LLM_CACHE_READ_TOKENS.load(Ordering::Relaxed);
-    let game_cache_create = llm::LLM_CACHE_CREATION_TOKENS.load(Ordering::Relaxed);
-    let game_calls = llm::LLM_API_CALLS.load(Ordering::Relaxed);
+    eprintln!("\n=== Token Usage by Model ===");
+    let mut total_cost = 0.0;
+    let mut total_calls = 0u64;
 
-    // Combined
-    let input = draft_input + game_input;
-    let output = draft_output + game_output;
-    let cache_read = draft_cache_read + game_cache_read;
-    let cache_create = draft_cache_create + game_cache_create;
-    let calls = draft_calls + game_calls;
+    let mut models: Vec<_> = combined.iter().collect();
+    models.sort_by_key(|(name, _)| (*name).clone());
 
-    // Sonnet pricing
-    let input_cost = (input as f64) * 3.0 / 1_000_000.0;
-    let output_cost = (output as f64) * 15.0 / 1_000_000.0;
-    let cache_read_cost = (cache_read as f64) * 0.30 / 1_000_000.0;
-    let cache_create_cost = (cache_create as f64) * 3.75 / 1_000_000.0;
-    let total_cost = input_cost + output_cost + cache_read_cost + cache_create_cost;
+    for (model, u) in &models {
+        let (in_p, out_p, cache_r_p, cache_w_p) = model_pricing(model);
+        let cost = (u.input as f64) * in_p / 1_000_000.0
+            + (u.output as f64) * out_p / 1_000_000.0
+            + (u.cache_read as f64) * cache_r_p / 1_000_000.0
+            + (u.cache_create as f64) * cache_w_p / 1_000_000.0;
+        total_cost += cost;
+        total_calls += u.calls;
 
-    eprintln!("\n=== Token Usage ===");
-    eprintln!("  Draft phase:  {} calls, {}in/{}out/{}cache_read/{}cache_write",
-        draft_calls, draft_input, draft_output, draft_cache_read, draft_cache_create);
-    eprintln!("  Game phase:   {} calls, {}in/{}out/{}cache_read/{}cache_write",
-        game_calls, game_input, game_output, game_cache_read, game_cache_create);
+        eprintln!(
+            "  {}: {} calls, {}in + {}out + {}cache_rd + {}cache_wr = ${:.4}",
+            model, u.calls, u.input, u.output, u.cache_read, u.cache_create, cost
+        );
+    }
     eprintln!("  ---");
-    eprintln!("  Total calls:          {}", calls);
-    eprintln!("  Input tokens:         {:>8} (${:.4})", input, input_cost);
-    eprintln!("  Output tokens:        {:>8} (${:.4})", output, output_cost);
-    eprintln!("  Cache read tokens:    {:>8} (${:.4})", cache_read, cache_read_cost);
-    eprintln!("  Cache creation tokens:{:>8} (${:.4})", cache_create, cache_create_cost);
-    eprintln!("  Estimated cost:       ${:.2}", total_cost);
+    eprintln!("  Total: {} calls, ${:.2}", total_calls, total_cost);
 }
 
 /// LLM client for draft picks and deck building.
@@ -322,7 +359,7 @@ where <number> is the 0-indexed number of the card you want."#,
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_anthropic_usage(&json["usage"]);
+                        record_anthropic_usage(&self.model, &json["usage"]);
                         return json["content"][0]["text"]
                             .as_str()
                             .unwrap_or("PICK: 0")
@@ -389,7 +426,7 @@ where <number> is the 0-indexed number of the card you want."#,
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_gemini_usage(&json["usageMetadata"]);
+                        record_gemini_usage(&self.model, &json["usageMetadata"]);
                         return json["candidates"][0]["content"]["parts"][0]["text"]
                             .as_str()
                             .unwrap_or("PICK: 0")
