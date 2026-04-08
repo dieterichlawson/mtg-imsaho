@@ -338,7 +338,6 @@ fn generate_foil(
     // ~14% chance of DFC foil (1 DFC sheet out of ~7 total print sheets)
     if rng.gen_ratio(1, 7) {
         // DFC foil: pick a random DFC weighted by sheet position.
-        // Use the DFC sheet frequencies: common=11x, uncommon=6x, rare=2x, mythic=1x.
         // Simplification: pick a random position on the 121-card DFC sheet.
         let pos = rng.gen_range(0..sheets.dfc_sheet.len());
         let card = sheets.dfc_sheet[pos].clone();
@@ -347,43 +346,48 @@ fn generate_foil(
 
     // Non-DFC foil: determine rarity.
     // 11/16 common, 3/16 uncommon, 7/128 rare, 1/128 mythic, 1/16 basic land
+    //
+    // Common/basic foils only appear in C1 packs. If this is a C2 pack and we
+    // roll common/basic, skip the foil entirely (those foils don't occur in C2).
     let roll: u32 = rng.gen_range(0..128);
     let (rarity, pool) = if roll < 88 {
-        // 88/128 = 11/16 common
         (FoilRarity::Common, &sheets.foil_pool_commons)
     } else if roll < 112 {
-        // 24/128 = 3/16 uncommon
         (FoilRarity::Uncommon, &sheets.foil_pool_uncommons)
     } else if roll < 119 {
-        // 7/128 rare
         (FoilRarity::Rare, &sheets.foil_pool_rares)
     } else if roll < 120 {
-        // 1/128 mythic
         (FoilRarity::Mythic, &sheets.foil_pool_mythics)
     } else {
-        // 8/128 = 1/16 basic land
         (FoilRarity::BasicLand, &sheets.foil_pool_basics)
     };
 
-    // Select a random card from the pool
+    // Common/basic foils only appear in C1 packs
+    if !is_c1 && matches!(rarity, FoilRarity::Common | FoilRarity::BasicLand) {
+        // No foil in this pack — common/basic foils can't appear in C2 packs.
+        // Treat as uncommon foil instead (displaces B common, works in any pack).
+        let card = sheets.foil_pool_uncommons[rng.gen_range(0..sheets.foil_pool_uncommons.len())].clone();
+        remove_from_run(commons, "b");
+        return Foil::NonDfc {
+            card,
+            rarity: FoilRarity::Uncommon,
+            displaced_run: "b".to_string(),
+        };
+    }
+
     let card = pool[rng.gen_range(0..pool.len())].clone();
 
-    // Displace the appropriate common
     let displaced_run = match rarity {
         FoilRarity::Common | FoilRarity::BasicLand => {
-            // Displaces C1 common. Only in C1 packs.
-            if is_c1 && !commons.is_empty() {
-                commons.pop(); // Remove last common (a C card)
-            }
+            // Displaces C1 common (only in C1 packs, verified above).
+            commons.pop();
             "c1".to_string()
         }
         FoilRarity::Uncommon => {
-            // Displaces B common.
             remove_from_run(commons, "b");
             "b".to_string()
         }
         FoilRarity::Rare | FoilRarity::Mythic => {
-            // Displaces A common.
             remove_from_run(commons, "a");
             "a".to_string()
         }
