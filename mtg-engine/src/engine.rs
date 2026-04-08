@@ -1176,7 +1176,7 @@ fn generate_cast_actions_with_targets(
             let mut actions = Vec::new();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 if obj.power.is_some() { // is a creature
-                    if !can_be_targeted(state, obj.id, caster, registry) { continue; }
+                    if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
                     let target = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -1205,7 +1205,7 @@ fn generate_cast_actions_with_targets(
             let mut actions = Vec::new();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 if obj.power.is_some() { // is a creature
-                    if !can_be_targeted(state, obj.id, caster, registry) { continue; }
+                    if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
                     let target = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -1256,7 +1256,7 @@ fn generate_cast_actions_with_targets(
                         .map(|d| d.card_types.contains(&CardType::Planeswalker))
                         .unwrap_or(false);
                 if is_pw {
-                    if !can_be_targeted(state, obj.id, caster, registry) { continue; }
+                    if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
                     let target = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
                         actions.push(Action::CastSpell {
@@ -1294,7 +1294,7 @@ fn generate_cast_actions_with_targets(
             // Actual filtering is done by the card's is_valid_target.
             let mut actions = Vec::new();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                if !can_be_targeted(state, obj.id, caster, registry) { continue; }
+                if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
                 let target = Target::Object(obj.id);
                 if behavior.is_valid_target(state, caster, &target, registry) {
                     actions.push(Action::CastSpell {
