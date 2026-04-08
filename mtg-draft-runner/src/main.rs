@@ -754,9 +754,12 @@ fn play_game(
         }
     });
 
+    // Capture game log, filtering out Debug-level entries (priority passes etc.)
+    // to keep the log readable
     let game_log: Vec<String> = state
         .game_log
         .iter()
+        .filter(|entry| entry.level as u8 >= 1) // Info and above
         .map(|entry| entry.message.clone())
         .collect();
 
