@@ -524,8 +524,14 @@ fn play_match(
     let mut wins_b = 0;
     let mut games = Vec::new();
 
+    // Create LLM players once per match, reuse across games.
+    let name_a = format!("Seat{}", seat_a);
+    let name_b = format!("Seat{}", seat_b);
+    let mut p1 = make_game_player(model_spec, &name_a);
+    let mut p2 = make_game_player(model_spec, &name_b);
+
     while wins_a < wins_needed && wins_b < wins_needed {
-        let outcome = play_game(seat_a, seat_b, deck_a, deck_b, registry, model_spec);
+        let outcome = play_game(seat_a, seat_b, deck_a, deck_b, registry, &mut p1, &mut p2);
 
         match outcome.winner {
             Some(w) if w == seat_a => wins_a += 1,
@@ -551,24 +557,18 @@ fn play_game(
     deck_a: &Decklist,
     deck_b: &Decklist,
     registry: &CardRegistry,
-    model_spec: &str,
+    p1: &mut LlmPlayer,
+    p2: &mut LlmPlayer,
 ) -> GameOutcome {
-    let name_a = format!("Seat{}", seat_a);
-    let name_b = format!("Seat{}", seat_b);
-
     let config = GameConfig {
-        player_names: vec![name_a.clone(), name_b.clone()],
+        player_names: vec![p1.name().to_string(), p2.name().to_string()],
         decklists: vec![deck_a.clone(), deck_b.clone()],
         starting_life: 20,
     };
 
     let mut state = engine::setup_game(&config, registry);
 
-    // Create LLM players for the game
-    let mut p1 = make_game_player(model_spec, &name_a);
-    let mut p2 = make_game_player(model_spec, &name_b);
-
-    // Initialize conversations with decklists
+    // Re-initialize conversations for this game (fresh context per game)
     p1.init_conversation(&deck_a.entries, &deck_b.entries, registry);
     p2.init_conversation(&deck_b.entries, &deck_a.entries, registry);
 
@@ -595,9 +595,9 @@ fn play_game(
             let view = GameView::for_player(game_state, acting_player, registry);
 
             let player: &mut LlmPlayer = if acting_player == PlayerId(0) {
-                &mut p1
+                p1
             } else {
-                &mut p2
+                p2
             };
 
             if let Some(prompt) = &legal.combat_prompt {
