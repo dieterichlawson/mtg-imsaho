@@ -1,8 +1,80 @@
 use std::env;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use reqwest::blocking::Client;
 
 use mtg_draft::draft::DraftPick;
+
+/// Global token usage counters, safe to accumulate from multiple threads.
+pub static TOTAL_INPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static TOTAL_OUTPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static TOTAL_CACHE_READ_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static TOTAL_CACHE_CREATION_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static TOTAL_API_CALLS: AtomicU64 = AtomicU64::new(0);
+
+/// Record token usage from an API response's usage object.
+pub fn record_usage(usage: &serde_json::Value) {
+    TOTAL_API_CALLS.fetch_add(1, Ordering::Relaxed);
+    if let Some(n) = usage["input_tokens"].as_u64() {
+        TOTAL_INPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage["output_tokens"].as_u64() {
+        TOTAL_OUTPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage["cache_read_input_tokens"].as_u64() {
+        TOTAL_CACHE_READ_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage["cache_creation_input_tokens"].as_u64() {
+        TOTAL_CACHE_CREATION_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+}
+
+/// Print a summary of all token usage and estimated cost.
+/// Combines draft client counters with LlmPlayer game counters.
+pub fn print_usage_summary() {
+    use mtg_player::llm;
+
+    // Draft client (picks + deck building)
+    let draft_input = TOTAL_INPUT_TOKENS.load(Ordering::Relaxed);
+    let draft_output = TOTAL_OUTPUT_TOKENS.load(Ordering::Relaxed);
+    let draft_cache_read = TOTAL_CACHE_READ_TOKENS.load(Ordering::Relaxed);
+    let draft_cache_create = TOTAL_CACHE_CREATION_TOKENS.load(Ordering::Relaxed);
+    let draft_calls = TOTAL_API_CALLS.load(Ordering::Relaxed);
+
+    // Game player (tournament)
+    let game_input = llm::LLM_INPUT_TOKENS.load(Ordering::Relaxed);
+    let game_output = llm::LLM_OUTPUT_TOKENS.load(Ordering::Relaxed);
+    let game_cache_read = llm::LLM_CACHE_READ_TOKENS.load(Ordering::Relaxed);
+    let game_cache_create = llm::LLM_CACHE_CREATION_TOKENS.load(Ordering::Relaxed);
+    let game_calls = llm::LLM_API_CALLS.load(Ordering::Relaxed);
+
+    // Combined
+    let input = draft_input + game_input;
+    let output = draft_output + game_output;
+    let cache_read = draft_cache_read + game_cache_read;
+    let cache_create = draft_cache_create + game_cache_create;
+    let calls = draft_calls + game_calls;
+
+    // Sonnet pricing
+    let input_cost = (input as f64) * 3.0 / 1_000_000.0;
+    let output_cost = (output as f64) * 15.0 / 1_000_000.0;
+    let cache_read_cost = (cache_read as f64) * 0.30 / 1_000_000.0;
+    let cache_create_cost = (cache_create as f64) * 3.75 / 1_000_000.0;
+    let total_cost = input_cost + output_cost + cache_read_cost + cache_create_cost;
+
+    eprintln!("\n=== Token Usage ===");
+    eprintln!("  Draft phase:  {} calls, {}in/{}out/{}cache_read/{}cache_write",
+        draft_calls, draft_input, draft_output, draft_cache_read, draft_cache_create);
+    eprintln!("  Game phase:   {} calls, {}in/{}out/{}cache_read/{}cache_write",
+        game_calls, game_input, game_output, game_cache_read, game_cache_create);
+    eprintln!("  ---");
+    eprintln!("  Total calls:          {}", calls);
+    eprintln!("  Input tokens:         {:>8} (${:.4})", input, input_cost);
+    eprintln!("  Output tokens:        {:>8} (${:.4})", output, output_cost);
+    eprintln!("  Cache read tokens:    {:>8} (${:.4})", cache_read, cache_read_cost);
+    eprintln!("  Cache creation tokens:{:>8} (${:.4})", cache_create, cache_create_cost);
+    eprintln!("  Estimated cost:       ${:.2}", total_cost);
+}
 
 /// LLM client for draft picks and deck building.
 /// Maintains a multi-turn conversation for the draft process.
@@ -236,6 +308,7 @@ where <number> is the 0-indexed number of the card you want."#,
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
+                        record_usage(&json["usage"]);
                         return json["content"][0]["text"]
                             .as_str()
                             .unwrap_or("PICK: 0")

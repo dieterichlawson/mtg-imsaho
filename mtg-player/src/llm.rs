@@ -1,6 +1,7 @@
 use std::env;
 use std::fs::OpenOptions;
 use std::io::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use mtg_engine::actions::{Action, CombatPrompt};
 use mtg_engine::ids::ObjectId;
@@ -9,6 +10,30 @@ use mtg_engine::view::GameView;
 use reqwest::blocking::Client;
 
 use crate::Player;
+
+/// Global token usage counters for LlmPlayer API calls.
+pub static LLM_INPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static LLM_OUTPUT_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static LLM_CACHE_READ_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static LLM_CACHE_CREATION_TOKENS: AtomicU64 = AtomicU64::new(0);
+pub static LLM_API_CALLS: AtomicU64 = AtomicU64::new(0);
+
+fn record_llm_usage(json: &serde_json::Value) {
+    let usage = &json["usage"];
+    LLM_API_CALLS.fetch_add(1, Ordering::Relaxed);
+    if let Some(n) = usage["input_tokens"].as_u64() {
+        LLM_INPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage["output_tokens"].as_u64() {
+        LLM_OUTPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage["cache_read_input_tokens"].as_u64() {
+        LLM_CACHE_READ_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage["cache_creation_input_tokens"].as_u64() {
+        LLM_CACHE_CREATION_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+}
 
 const SYSTEM_PROMPT: &str = r#"You are playing Magic: The Gathering. Respond with ONLY your choice. No explanation, no reasoning, just the answer.
 
@@ -823,6 +848,7 @@ impl LlmPlayer {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
+                        record_llm_usage(&json);
                         let result = json["content"][0]["text"]
                             .as_str()
                             .unwrap_or("0")
@@ -906,6 +932,8 @@ impl LlmPlayer {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
+                        // Gemini uses usageMetadata instead of usage
+                        record_llm_usage(&json["usageMetadata"]);
                         let result = json["candidates"][0]["content"]["parts"][0]["text"]
                             .as_str()
                             .unwrap_or("0")

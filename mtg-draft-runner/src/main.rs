@@ -397,6 +397,9 @@ fn main() {
         }
     }
 
+    // Print token usage summary (draft client + game player combined)
+    llm_client::print_usage_summary();
+
     if !args.quiet {
         eprintln!("\nDone. Log written to {}", args.log);
     }
