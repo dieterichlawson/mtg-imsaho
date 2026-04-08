@@ -576,7 +576,7 @@ fn play_match(
     registry: &CardRegistry,
     model_spec: &str,
     best_of: usize,
-    quiet: bool,
+    _quiet: bool,
 ) -> MatchResult {
     let wins_needed = best_of / 2 + 1;
     let mut wins_a = 0;
@@ -584,25 +584,12 @@ fn play_match(
     let mut games = Vec::new();
 
     while wins_a < wins_needed && wins_b < wins_needed {
-        let game_num = games.len() + 1;
-        if !quiet {
-            eprint!("    Game {}...", game_num);
-        }
-
         let outcome = play_game(seat_a, seat_b, deck_a, deck_b, registry, model_spec);
 
         match outcome.winner {
             Some(w) if w == seat_a => wins_a += 1,
             Some(_) => wins_b += 1,
-            None => {} // draw, no one gets a win
-        }
-
-        if !quiet {
-            let winner_str = match outcome.winner {
-                Some(w) => format!("Seat {} wins in {} turns", w, outcome.turns),
-                None => format!("Draw after {} turns", outcome.turns),
-            };
-            eprintln!(" {}", winner_str);
+            None => {}
         }
 
         games.push(outcome);
