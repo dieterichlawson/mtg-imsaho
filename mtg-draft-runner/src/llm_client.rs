@@ -12,8 +12,8 @@ pub static TOTAL_CACHE_READ_TOKENS: AtomicU64 = AtomicU64::new(0);
 pub static TOTAL_CACHE_CREATION_TOKENS: AtomicU64 = AtomicU64::new(0);
 pub static TOTAL_API_CALLS: AtomicU64 = AtomicU64::new(0);
 
-/// Record token usage from an API response's usage object.
-pub fn record_usage(usage: &serde_json::Value) {
+/// Record token usage from an Anthropic API response's usage object.
+pub fn record_anthropic_usage(usage: &serde_json::Value) {
     TOTAL_API_CALLS.fetch_add(1, Ordering::Relaxed);
     if let Some(n) = usage["input_tokens"].as_u64() {
         TOTAL_INPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
@@ -26,6 +26,20 @@ pub fn record_usage(usage: &serde_json::Value) {
     }
     if let Some(n) = usage["cache_creation_input_tokens"].as_u64() {
         TOTAL_CACHE_CREATION_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+}
+
+/// Record token usage from a Gemini API response's usageMetadata object.
+pub fn record_gemini_usage(usage_metadata: &serde_json::Value) {
+    TOTAL_API_CALLS.fetch_add(1, Ordering::Relaxed);
+    if let Some(n) = usage_metadata["promptTokenCount"].as_u64() {
+        TOTAL_INPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage_metadata["candidatesTokenCount"].as_u64() {
+        TOTAL_OUTPUT_TOKENS.fetch_add(n, Ordering::Relaxed);
+    }
+    if let Some(n) = usage_metadata["cachedContentTokenCount"].as_u64() {
+        TOTAL_CACHE_READ_TOKENS.fetch_add(n, Ordering::Relaxed);
     }
 }
 
@@ -308,7 +322,7 @@ where <number> is the 0-indexed number of the card you want."#,
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_usage(&json["usage"]);
+                        record_anthropic_usage(&json["usage"]);
                         return json["content"][0]["text"]
                             .as_str()
                             .unwrap_or("PICK: 0")
@@ -375,6 +389,7 @@ where <number> is the 0-indexed number of the card you want."#,
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
+                        record_gemini_usage(&json["usageMetadata"]);
                         return json["candidates"][0]["content"]["parts"][0]["text"]
                             .as_str()
                             .unwrap_or("PICK: 0")

@@ -26,7 +26,8 @@ mod llm_client;
 struct Args {
     set: String,
     players: usize,
-    model: String,
+    /// Per-player model specs. --model sets the default, --model-N overrides for player N.
+    models: Vec<String>,
     best_of: usize,
     guides: Vec<Option<String>>,
     log: String,
@@ -47,12 +48,21 @@ fn parse_args() -> Args {
     let players: usize = get("--players")
         .and_then(|s| s.parse().ok())
         .unwrap_or(8);
-    let model = get("--model").unwrap_or_else(|| "claude".to_string());
+    let default_model = get("--model").unwrap_or_else(|| "claude".to_string());
     let best_of: usize = get("--best-of")
         .and_then(|s| s.parse().ok())
         .unwrap_or(3);
     let log = get("--log").unwrap_or_else(|| "draft.log".to_string());
     let quiet = args.iter().any(|a| a == "--quiet" || a == "-q");
+
+    // Load per-player models: --model sets default, --model-N overrides for player N
+    let mut models: Vec<String> = vec![default_model; players];
+    for i in 0..players {
+        let flag = format!("--model-{}", i);
+        if let Some(m) = get(&flag) {
+            models[i] = m;
+        }
+    }
 
     // Load guides: --guide applies to all, --guide-N overrides for player N
     let global_guide = get("--guide").and_then(|path| fs::read_to_string(&path).ok());
@@ -69,7 +79,7 @@ fn parse_args() -> Args {
     Args {
         set,
         players,
-        model,
+        models,
         best_of,
         guides,
         log,
@@ -113,7 +123,12 @@ fn main() {
 
     // Create streaming log file
     let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
-    log.header(&set_data.set_name, args.players, args.best_of, &args.model);
+    let models_desc = if args.models.iter().all(|m| m == &args.models[0]) {
+        args.models[0].clone()
+    } else {
+        args.models.iter().enumerate().map(|(i, m)| format!("S{}:{}", i, m)).collect::<Vec<_>>().join(", ")
+    };
+    log.header(&set_data.set_name, args.players, args.best_of, &models_desc);
 
     if !args.quiet {
         eprintln!(
@@ -144,11 +159,11 @@ fn main() {
     }
     let mut draft = DraftState::new(packs);
 
-    // Create LLM clients for each drafter
+    // Create LLM clients for each drafter (each may use a different model)
     let mut clients: Vec<llm_client::DraftLlmClient> = (0..args.players)
         .map(|seat| {
             llm_client::DraftLlmClient::new(
-                &args.model,
+                &args.models[seat],
                 &set_data.set_name,
                 args.guides[seat].as_deref(),
             )
@@ -323,10 +338,11 @@ fn main() {
                     let deck_a = &decklists[a];
                     let deck_b = &decklists[b];
                     let reg = &registry;
-                    let model = &args.model;
+                    let model_a = &args.models[a];
+                    let model_b = &args.models[b];
                     let best_of = args.best_of;
                     let quiet = args.quiet;
-                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model, best_of, quiet))
+                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet))
                 })
                 .collect();
 
@@ -518,7 +534,8 @@ fn play_match(
     deck_a: &Decklist,
     deck_b: &Decklist,
     registry: &CardRegistry,
-    model_spec: &str,
+    model_spec_a: &str,
+    model_spec_b: &str,
     best_of: usize,
     _quiet: bool,
 ) -> MatchResult {
@@ -530,8 +547,8 @@ fn play_match(
     // Create LLM players once per match, reuse across games.
     let name_a = format!("Seat{}", seat_a);
     let name_b = format!("Seat{}", seat_b);
-    let mut p1 = make_game_player(model_spec, &name_a);
-    let mut p2 = make_game_player(model_spec, &name_b);
+    let mut p1 = make_game_player(model_spec_a, &name_a);
+    let mut p2 = make_game_player(model_spec_b, &name_b);
 
     while wins_a < wins_needed && wins_b < wins_needed {
         let outcome = play_game(seat_a, seat_b, deck_a, deck_b, registry, &mut p1, &mut p2);
