@@ -269,12 +269,24 @@ where <number> is the 0-indexed number of the card you want."#,
             "content": user_message
         }));
 
-        let response = self.call_llm(&self.conversation.clone());
+        let response = match self.provider {
+            Provider::Anthropic => self.call_anthropic(&self.conversation.clone()),
+            Provider::Gemini => {
+                // For Gemini: use the cache for prefix, only send the new user message
+                let new_msg = self.conversation.last().cloned().unwrap();
+                self.call_gemini_with_cache(&[new_msg])
+            }
+        };
 
         self.conversation.push(serde_json::json!({
             "role": "assistant",
             "content": &response
         }));
+
+        // Update the Gemini cache to include the new exchange
+        if matches!(self.provider, Provider::Gemini) {
+            self.update_gemini_cache(&self.conversation.clone());
+        }
 
         response
     }
@@ -292,7 +304,13 @@ where <number> is the 0-indexed number of the card you want."#,
             "content": user_message
         }));
 
-        let response = self.call_llm(&self.deck_conversation.clone());
+        let response = match self.provider {
+            Provider::Anthropic => self.call_anthropic(&self.deck_conversation.clone()),
+            Provider::Gemini => {
+                // Deck building is short — no caching needed, send everything
+                self.call_gemini_uncached(&self.deck_conversation.clone())
+            }
+        };
 
         self.deck_conversation.push(serde_json::json!({
             "role": "assistant",
@@ -300,13 +318,6 @@ where <number> is the 0-indexed number of the card you want."#,
         }));
 
         response
-    }
-
-    fn call_llm(&mut self, messages: &[serde_json::Value]) -> String {
-        match self.provider {
-            Provider::Anthropic => self.call_anthropic(messages),
-            Provider::Gemini => self.call_gemini(messages),
-        }
     }
 
     fn call_anthropic(&self, messages: &[serde_json::Value]) -> String {
@@ -402,30 +413,25 @@ where <number> is the 0-indexed number of the card you want."#,
             .collect()
     }
 
-    /// Create or update the Gemini context cache with the conversation prefix.
-    /// The prefix is everything except the last user message.
+    /// Create or update the Gemini context cache to include all messages.
+    /// Called after each complete exchange (user + assistant) so the next
+    /// call only needs to send the new user message.
     fn update_gemini_cache(&mut self, messages: &[serde_json::Value]) {
-        if messages.len() < 4 {
-            // Too few messages to bother caching (min 1024 tokens)
-            return;
-        }
-
-        // Cache everything except the last message (which is the new user turn)
-        let prefix = &messages[..messages.len() - 1];
-        let contents = Self::gemini_contents(prefix);
+        let contents = Self::gemini_contents(messages);
 
         let cache_url = format!(
             "https://generativelanguage.googleapis.com/v1beta/cachedContents?key={}",
             self.api_key
         );
 
-        // Delete old cache if it exists
+        // Delete old cache before creating new one
         if let Some(ref name) = self.gemini_cache_name {
             let delete_url = format!(
                 "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
                 name, self.api_key
             );
             let _ = self.client.delete(&delete_url).send();
+            self.gemini_cache_name = None;
         }
 
         let body = serde_json::json!({
@@ -435,7 +441,8 @@ where <number> is the 0-indexed number of the card you want."#,
             "ttl": "300s"
         });
 
-        match self.client.post(&cache_url)
+        match self.client
+            .post(&cache_url)
             .header("content-type", "application/json")
             .json(&body)
             .send()
@@ -447,41 +454,60 @@ where <number> is the 0-indexed number of the card you want."#,
                 }
             }
             Ok(resp) => {
-                // Cache creation failed — fall back to uncached
                 let text = resp.text().unwrap_or_default();
                 eprintln!("Gemini cache creation failed: {}", &text[..text.len().min(200)]);
-                self.gemini_cache_name = None;
             }
             Err(e) => {
                 eprintln!("Gemini cache request failed: {}", e);
-                self.gemini_cache_name = None;
             }
         }
     }
 
-    fn call_gemini(&mut self, messages: &[serde_json::Value]) -> String {
-        // Try to use context caching for conversations with enough history
-        self.update_gemini_cache(messages);
+    /// Call Gemini using the cached prefix, sending only new messages.
+    fn call_gemini_with_cache(&mut self, new_messages: &[serde_json::Value]) -> String {
+        if let Some(ref cache_name) = self.gemini_cache_name {
+            // Have a cache — send only the new messages
+            let result = self.call_gemini_raw(
+                &Self::gemini_contents(new_messages),
+                Some(cache_name),
+            );
+            if let Some(text) = result {
+                return text;
+            }
+            // Cache failed — fall through to uncached
+            eprintln!("Gemini cached call failed, falling back to uncached");
+            self.gemini_cache_name = None;
+        }
 
-        let (_contents, body) = if let Some(ref cache_name) = self.gemini_cache_name {
-            // Cached: only send the last message (new user turn)
-            let last_msg = &messages[messages.len() - 1..];
-            let contents = Self::gemini_contents(last_msg);
-            let body = serde_json::json!({
+        // No cache — send the full conversation
+        self.call_gemini_uncached(&self.conversation.clone())
+    }
+
+    /// Call Gemini without caching, sending all messages.
+    fn call_gemini_uncached(&self, messages: &[serde_json::Value]) -> String {
+        let contents = Self::gemini_contents(messages);
+        self.call_gemini_raw(&contents, None).unwrap_or_else(|| "PICK: 0".to_string())
+    }
+
+    /// Low-level Gemini generateContent call.
+    /// Returns None on failure (caller should retry or fall back).
+    fn call_gemini_raw(
+        &self,
+        contents: &[serde_json::Value],
+        cached_content: Option<&str>,
+    ) -> Option<String> {
+        let body = if let Some(cache_name) = cached_content {
+            serde_json::json!({
                 "contents": contents,
                 "cachedContent": cache_name,
                 "generationConfig": {"maxOutputTokens": 4096}
-            });
-            (contents, body)
+            })
         } else {
-            // Uncached: send everything
-            let contents = Self::gemini_contents(messages);
-            let body = serde_json::json!({
+            serde_json::json!({
                 "contents": contents,
                 "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
                 "generationConfig": {"maxOutputTokens": 4096}
-            });
-            (contents, body)
+            })
         };
 
         let url = format!(
@@ -507,11 +533,13 @@ where <number> is the 0-indexed number of the card you want."#,
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
                         record_gemini_usage(&self.model, &json["usageMetadata"]);
-                        return json["candidates"][0]["content"]["parts"][0]["text"]
-                            .as_str()
-                            .unwrap_or("PICK: 0")
-                            .trim()
-                            .to_string();
+                        return Some(
+                            json["candidates"][0]["content"]["parts"][0]["text"]
+                                .as_str()
+                                .unwrap_or("PICK: 0")
+                                .trim()
+                                .to_string(),
+                        );
                     }
 
                     let code = resp.status().as_u16();
@@ -520,32 +548,7 @@ where <number> is the 0-indexed number of the card you want."#,
                     }
                     let text = resp.text().unwrap_or_default();
                     eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
-
-                    // If cached request failed, retry without cache
-                    if self.gemini_cache_name.is_some() {
-                        self.gemini_cache_name = None;
-                        let uncached_body = serde_json::json!({
-                            "contents": Self::gemini_contents(messages),
-                            "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
-                            "generationConfig": {"maxOutputTokens": 4096}
-                        });
-                        if let Ok(retry_resp) = self.client.post(&url)
-                            .header("content-type", "application/json")
-                            .json(&uncached_body)
-                            .send()
-                        {
-                            if retry_resp.status().is_success() {
-                                let json: serde_json::Value = retry_resp.json().unwrap_or_default();
-                                record_gemini_usage(&self.model, &json["usageMetadata"]);
-                                return json["candidates"][0]["content"]["parts"][0]["text"]
-                                    .as_str()
-                                    .unwrap_or("PICK: 0")
-                                    .trim()
-                                    .to_string();
-                            }
-                        }
-                    }
-                    return "PICK: 0".to_string();
+                    return None;
                 }
                 Err(e) => {
                     eprintln!("Request failed: {}", e);
@@ -554,6 +557,6 @@ where <number> is the 0-indexed number of the card you want."#,
             }
         }
 
-        "PICK: 0".to_string()
+        None
     }
 }
