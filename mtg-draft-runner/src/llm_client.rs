@@ -139,6 +139,8 @@ pub struct DraftLlmClient {
     conversation: Vec<serde_json::Value>,
     /// Separate conversation for deck building.
     deck_conversation: Vec<serde_json::Value>,
+    /// Gemini cached content name (for context caching).
+    gemini_cache_name: Option<String>,
 }
 
 enum Provider {
@@ -204,6 +206,7 @@ where <number> is the 0-indexed number of the card you want."#,
             system_prompt,
             conversation: Vec::new(),
             deck_conversation: Vec::new(),
+            gemini_cache_name: None,
         }
     }
 
@@ -299,7 +302,7 @@ where <number> is the 0-indexed number of the card you want."#,
         response
     }
 
-    fn call_llm(&self, messages: &[serde_json::Value]) -> String {
+    fn call_llm(&mut self, messages: &[serde_json::Value]) -> String {
         match self.provider {
             Provider::Anthropic => self.call_anthropic(messages),
             Provider::Gemini => self.call_gemini(messages),
@@ -385,8 +388,8 @@ where <number> is the 0-indexed number of the card you want."#,
         "PICK: 0".to_string()
     }
 
-    fn call_gemini(&self, messages: &[serde_json::Value]) -> String {
-        let contents: Vec<serde_json::Value> = messages
+    fn gemini_contents(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
+        messages
             .iter()
             .map(|msg| {
                 let role = msg["role"].as_str().unwrap_or("user");
@@ -396,13 +399,90 @@ where <number> is the 0-indexed number of the card you want."#,
                     "parts": [{"text": msg["content"].as_str().unwrap_or("")}]
                 })
             })
-            .collect();
+            .collect()
+    }
+
+    /// Create or update the Gemini context cache with the conversation prefix.
+    /// The prefix is everything except the last user message.
+    fn update_gemini_cache(&mut self, messages: &[serde_json::Value]) {
+        if messages.len() < 4 {
+            // Too few messages to bother caching (min 1024 tokens)
+            return;
+        }
+
+        // Cache everything except the last message (which is the new user turn)
+        let prefix = &messages[..messages.len() - 1];
+        let contents = Self::gemini_contents(prefix);
+
+        let cache_url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/cachedContents?key={}",
+            self.api_key
+        );
+
+        // Delete old cache if it exists
+        if let Some(ref name) = self.gemini_cache_name {
+            let delete_url = format!(
+                "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
+                name, self.api_key
+            );
+            let _ = self.client.delete(&delete_url).send();
+        }
 
         let body = serde_json::json!({
+            "model": format!("models/{}", self.model),
             "contents": contents,
             "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
-            "generationConfig": {"maxOutputTokens": 4096}
+            "ttl": "300s"
         });
+
+        match self.client.post(&cache_url)
+            .header("content-type", "application/json")
+            .json(&body)
+            .send()
+        {
+            Ok(resp) if resp.status().is_success() => {
+                let json: serde_json::Value = resp.json().unwrap_or_default();
+                if let Some(name) = json["name"].as_str() {
+                    self.gemini_cache_name = Some(name.to_string());
+                }
+            }
+            Ok(resp) => {
+                // Cache creation failed — fall back to uncached
+                let text = resp.text().unwrap_or_default();
+                eprintln!("Gemini cache creation failed: {}", &text[..text.len().min(200)]);
+                self.gemini_cache_name = None;
+            }
+            Err(e) => {
+                eprintln!("Gemini cache request failed: {}", e);
+                self.gemini_cache_name = None;
+            }
+        }
+    }
+
+    fn call_gemini(&mut self, messages: &[serde_json::Value]) -> String {
+        // Try to use context caching for conversations with enough history
+        self.update_gemini_cache(messages);
+
+        let (_contents, body) = if let Some(ref cache_name) = self.gemini_cache_name {
+            // Cached: only send the last message (new user turn)
+            let last_msg = &messages[messages.len() - 1..];
+            let contents = Self::gemini_contents(last_msg);
+            let body = serde_json::json!({
+                "contents": contents,
+                "cachedContent": cache_name,
+                "generationConfig": {"maxOutputTokens": 4096}
+            });
+            (contents, body)
+        } else {
+            // Uncached: send everything
+            let contents = Self::gemini_contents(messages);
+            let body = serde_json::json!({
+                "contents": contents,
+                "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
+                "generationConfig": {"maxOutputTokens": 4096}
+            });
+            (contents, body)
+        };
 
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
@@ -440,6 +520,31 @@ where <number> is the 0-indexed number of the card you want."#,
                     }
                     let text = resp.text().unwrap_or_default();
                     eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
+
+                    // If cached request failed, retry without cache
+                    if self.gemini_cache_name.is_some() {
+                        self.gemini_cache_name = None;
+                        let uncached_body = serde_json::json!({
+                            "contents": Self::gemini_contents(messages),
+                            "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
+                            "generationConfig": {"maxOutputTokens": 4096}
+                        });
+                        if let Ok(retry_resp) = self.client.post(&url)
+                            .header("content-type", "application/json")
+                            .json(&uncached_body)
+                            .send()
+                        {
+                            if retry_resp.status().is_success() {
+                                let json: serde_json::Value = retry_resp.json().unwrap_or_default();
+                                record_gemini_usage(&self.model, &json["usageMetadata"]);
+                                return json["candidates"][0]["content"]["parts"][0]["text"]
+                                    .as_str()
+                                    .unwrap_or("PICK: 0")
+                                    .trim()
+                                    .to_string();
+                            }
+                        }
+                    }
                     return "PICK: 0".to_string();
                 }
                 Err(e) => {
