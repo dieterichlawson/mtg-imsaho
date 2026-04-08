@@ -206,12 +206,10 @@ fn main() {
 
                 if !args.quiet {
                     eprint!(
-                        "\rPack {} Pick {}/{} (Seat {}/{})",
+                        "\rPack {} Pick {}/{}",
                         round + 1,
                         pick_num + 1,
                         initial_cards,
-                        seat + 1,
-                        args.players
                     );
                 }
 
