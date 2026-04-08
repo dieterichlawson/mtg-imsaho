@@ -721,24 +721,27 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 .map(|c| c.symbols.iter().any(|s| matches!(s, ManaSymbol::X)))
                 .unwrap_or(false);
             let (can_pay_normal, normal_tap_plan) = if has_x {
-                // X-cost spells: compute a tap plan that taps ALL available mana
-                // sources. The non-X cost is paid first, then remaining mana becomes X.
+                // X-cost spells: tap ALL available mana sources to maximize X.
+                // The non-X cost is paid first, then remaining mana becomes X.
                 if let Some(cost) = &data.cost {
                     let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
                     let non_x_cost = ManaCost::new(
                         effective_cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
                     );
-                    // Compute tap plan for the non-X portion (at minimum).
-                    match mana::compute_autotap(&non_x_cost, &player_state.mana_pool, &mana_sources, &other_hand_costs) {
-                        Some(plan) => (true, plan),
-                        None => {
-                            if mana::can_pay(&player_state.mana_pool, &non_x_cost) {
-                                // Already have enough mana in pool, no tapping needed.
-                                (true, vec![])
-                            } else {
-                                (false, vec![])
-                            }
-                        }
+                    // Check if the non-X portion is payable.
+                    let can_pay = mana::can_pay(&player_state.mana_pool, &non_x_cost)
+                        || mana::compute_autotap(&non_x_cost, &player_state.mana_pool, &mana_sources, &other_hand_costs).is_some();
+                    if can_pay {
+                        // Build a tap plan that taps ALL untapped mana sources.
+                        let all_tap_plan: Vec<(ObjectId, usize)> = mana_sources
+                            .iter()
+                            .flat_map(|ms| {
+                                ms.abilities.iter().enumerate().map(move |(idx, _)| (ms.object_id, idx))
+                            })
+                            .collect();
+                        (true, all_tap_plan)
+                    } else {
+                        (false, vec![])
                     }
                 } else {
                     (true, vec![])
