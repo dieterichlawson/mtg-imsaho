@@ -94,10 +94,52 @@ struct DeckBuildResult {
     retries: usize,
 }
 
+/// Validate model specs before starting the draft. Catches invalid thinking
+/// levels and other config errors so we fail fast rather than silently
+/// falling back to defaults mid-draft.
+fn validate_model_specs(models: &[String]) {
+    // Known thinking-level constraints per model family.
+    // Models not listed here accept any level the API supports.
+    let restricted: &[(&str, &[&str])] = &[
+        ("gemini-3-pro", &["low", "high"]),
+        ("gemini-3.0-pro", &["low", "high"]),
+        ("gemini-3.1-pro", &["low", "high"]),
+    ];
+
+    let valid_levels = ["minimal", "low", "medium", "high"];
+
+    for (i, spec) in models.iter().enumerate() {
+        let parts: Vec<&str> = spec.split(':').collect();
+        let provider = parts[0];
+        if provider != "gemini" {
+            continue;
+        }
+        let model = parts.get(1).copied().unwrap_or("gemini-2.5-flash");
+        let levels: Vec<&str> = parts.iter().skip(2).copied().collect();
+
+        for level in &levels {
+            if !valid_levels.contains(level) {
+                eprintln!("ERROR: Seat {} model '{}': '{}' is not a valid thinking level (valid: {})",
+                    i, spec, level, valid_levels.join(", "));
+                std::process::exit(1);
+            }
+            // Check model-specific restrictions
+            for (model_prefix, allowed) in restricted {
+                if model.contains(model_prefix) && !allowed.contains(level) {
+                    eprintln!("ERROR: Seat {} model '{}': '{}' is not supported by {} (allowed: {})",
+                        i, spec, level, model, allowed.join(", "));
+                    std::process::exit(1);
+                }
+            }
+        }
+    }
+}
+
 // ─── Main ────────────────────────────────────────────────────────────
 
 fn main() {
     let args = parse_args();
+    validate_model_specs(&args.models);
     let mut rng = rand::thread_rng();
 
     // Load set data
@@ -159,6 +201,9 @@ fn main() {
     }
     let mut draft = DraftState::new(packs);
 
+    // Build card reference with oracle text for all cards in the set
+    let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
+
     // Create LLM clients for each drafter (each may use a different model)
     let mut clients: Vec<llm_client::DraftLlmClient> = (0..args.players)
         .map(|seat| {
@@ -166,6 +211,7 @@ fn main() {
                 &args.models[seat],
                 &set_data.set_name,
                 args.guides[seat].as_deref(),
+                &card_reference,
             )
         })
         .collect();
