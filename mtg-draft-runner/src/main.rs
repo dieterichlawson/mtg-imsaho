@@ -672,10 +672,12 @@ fn play_game(
 }
 
 fn make_game_player(model_spec: &str, name: &str) -> LlmPlayer {
+    // Parse "provider:model:draft_thinking:game_thinking"
     let parts: Vec<&str> = model_spec.split(':').collect();
     let provider = parts[0];
     let model = parts.get(1).copied();
-    let thinking_level = parts.get(2).copied();
+    // Game thinking is the 4th part, or falls back to 3rd, or defaults
+    let game_thinking = parts.get(3).or(parts.get(2)).copied();
 
     let mut p = match provider {
         "gemini" => {
@@ -697,7 +699,7 @@ fn make_game_player(model_spec: &str, name: &str) -> LlmPlayer {
             LlmPlayer::new(name)
         }
     };
-    if let Some(level) = thinking_level {
+    if let Some(level) = game_thinking {
         p = p.with_thinking_level(level);
     }
     p

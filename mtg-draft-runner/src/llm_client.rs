@@ -178,8 +178,10 @@ pub struct DraftLlmClient {
     api_key: String,
     model: String,
     provider: Provider,
-    /// Gemini thinking level (e.g., "low", "medium", "high"). None for Anthropic.
-    thinking_level: Option<String>,
+    /// Gemini thinking level for draft picks. None for Anthropic.
+    draft_thinking: Option<String>,
+    /// Gemini thinking level for game play. None for Anthropic.
+    game_thinking: Option<String>,
     system_prompt: String,
     /// Draft conversation history (picks).
     conversation: Vec<serde_json::Value>,
@@ -194,13 +196,18 @@ enum Provider {
 
 impl DraftLlmClient {
     /// Create a new DraftLlmClient.
-    /// Model spec format: "provider:model:thinking_level"
-    /// Examples: "claude", "gemini:gemini-2.5-flash", "gemini:gemini-3-flash-preview:low"
+    /// Model spec format: "provider:model:draft_thinking:game_thinking"
+    /// Examples:
+    ///   "claude" — Claude Sonnet (default)
+    ///   "gemini:gemini-3-flash-preview" — Gemini 3 Flash, high thinking (default)
+    ///   "gemini:gemini-3-flash-preview:medium" — medium thinking for both phases
+    ///   "gemini:gemini-3-flash-preview:high:low" — high for draft, low for games
     pub fn new(model_spec: &str, set_name: &str, guide: Option<&str>) -> Self {
         let parts: Vec<&str> = model_spec.split(':').collect();
         let provider_name = parts[0];
         let model_override = parts.get(1).copied();
-        let thinking_level_override = parts.get(2).map(|s| s.to_string());
+        let draft_thinking_override = parts.get(2).map(|s| s.to_string());
+        let game_thinking_override = parts.get(3).map(|s| s.to_string());
 
         let (provider, api_key, default_model) = match provider_name {
             "gemini" => (
@@ -219,9 +226,13 @@ impl DraftLlmClient {
             .unwrap_or(default_model)
             .to_string();
 
-        let thinking_level = match &provider {
-            Provider::Gemini => Some(thinking_level_override.unwrap_or_else(|| "high".to_string())),
-            Provider::Anthropic => None,
+        let (draft_thinking, game_thinking) = match &provider {
+            Provider::Gemini => {
+                let draft = draft_thinking_override.clone().unwrap_or_else(|| "high".to_string());
+                let game = game_thinking_override.unwrap_or_else(|| draft.clone());
+                (Some(draft), Some(game))
+            }
+            Provider::Anthropic => (None, None),
         };
 
         let guide_section = guide
@@ -256,7 +267,8 @@ where <number> is the 0-indexed number of the card you want."#,
             api_key,
             model,
             provider,
-            thinking_level,
+            draft_thinking,
+            game_thinking,
             system_prompt,
             conversation: Vec::new(),
             deck_conversation: Vec::new(),
@@ -342,7 +354,7 @@ where <number> is the 0-indexed number of the card you want."#,
         let response = match self.provider {
             Provider::Anthropic => self.call_anthropic(&self.conversation.clone()),
             Provider::Gemini => {
-                let raw = self.call_gemini(&self.conversation.clone(), Some(&Self::pick_schema()));
+                let raw = self.call_gemini(&self.conversation.clone(), Some(&Self::pick_schema()), true);
                 // Parse JSON and convert to text format that parse_pick_response expects
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
                     let pick = parsed["pick"].as_u64().unwrap_or(0);
@@ -378,7 +390,7 @@ where <number> is the 0-indexed number of the card you want."#,
         let response = match self.provider {
             Provider::Anthropic => self.call_anthropic(&self.deck_conversation.clone()),
             Provider::Gemini => {
-                let raw = self.call_gemini(&self.deck_conversation.clone(), Some(&Self::deck_schema()));
+                let raw = self.call_gemini(&self.deck_conversation.clone(), Some(&Self::deck_schema()), true);
                 // Parse JSON and convert to text format that parse_deck_response expects
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
                     let mut text = String::from("MAINDECK:\n");
@@ -493,7 +505,7 @@ where <number> is the 0-indexed number of the card you want."#,
         "PICK: 0".to_string()
     }
 
-    fn call_gemini(&self, messages: &[serde_json::Value], schema: Option<&serde_json::Value>) -> String {
+    fn call_gemini(&self, messages: &[serde_json::Value], schema: Option<&serde_json::Value>, is_draft: bool) -> String {
         let contents: Vec<serde_json::Value> = messages
             .iter()
             .map(|msg| {
@@ -506,9 +518,8 @@ where <number> is the 0-indexed number of the card you want."#,
             })
             .collect();
 
-        let thinking_config = if let Some(ref level) = self.thinking_level {
-            // Gemini 3: thinkingLevel. Gemini 2.5: thinkingBudget.
-            // thinkingLevel works on both, thinkingBudget only on 2.5.
+        let thinking_level = if is_draft { &self.draft_thinking } else { &self.game_thinking };
+        let thinking_config = if let Some(ref level) = thinking_level {
             serde_json::json!({"includeThoughts": true, "thinkingLevel": level})
         } else {
             serde_json::json!({"includeThoughts": true})
