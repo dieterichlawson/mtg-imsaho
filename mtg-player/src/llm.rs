@@ -90,9 +90,9 @@ ANSWER: 0:0
 The system parses ONLY the last line. If the last line isn't a valid number/format, you default to passing.
 
 ## Key rules
-- AUTO-TAP: When you choose "Cast [spell]", the engine automatically taps the right lands for you. You do NOT need to tap lands manually before casting. Just pick the Cast option directly.
+- AUTO-TAP: When you choose "Cast [spell]", the engine automatically taps the right lands for you. Just pick the Cast option directly — no need to tap lands first.
 - The Cast option shows which lands will be tapped, e.g. "Cast Doom Blade (tap Swamp, Swamp)".
-- If you see "Tap [land]" as a separate option, you usually don't need it — the Cast action handles tapping.
+- MANUAL TAPPING: Rarely needed. You might manually tap a land if you want to float mana before combat (e.g. to bluff an instant), or to use a mana ability with a side effect (e.g. Deranged Assistant mills a card). In most cases, just use the Cast option.
 - Spells go on the stack and resolve when both players pass priority.
 - Creatures have summoning sickness — can't attack the turn they enter. [S] means sick.
 - Play one land per turn, only during your main phase.
