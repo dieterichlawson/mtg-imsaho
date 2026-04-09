@@ -375,9 +375,16 @@ impl LlmPlayer {
     }
 
     fn log(&self, label: &str, content: &str) {
+        use std::sync::Mutex;
+
+        // Global mutex ensures multi-threaded writes to the same log file don't interleave.
+        static LOG_MUTEX: Mutex<()> = Mutex::new(());
+
         if let Some(path) = &self.log_file {
+            let _guard = LOG_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
             if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(path) {
-                let _ = writeln!(f, "=== {} [{}] ===", label, self.name);
+                let tid = std::thread::current().id();
+                let _ = writeln!(f, "=== {} [{}] [thread:{:?}] ===", label, self.name, tid);
                 let _ = writeln!(f, "{}", content);
                 let _ = writeln!(f);
             }

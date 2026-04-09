@@ -34,12 +34,13 @@ impl DraftLogger {
         }
     }
 
-    fn timestamp(&self) -> String {
+    fn prefix(&self) -> String {
         let elapsed = self.start.elapsed();
         let secs = elapsed.as_secs();
         let mins = secs / 60;
         let secs = secs % 60;
-        format!("{:02}:{:02}", mins, secs)
+        let tid = std::thread::current().id();
+        format!("{:02}:{:02} {:?}", mins, secs, tid)
     }
 
     pub fn header(&self, set_name: &str, players: usize, best_of: usize, model: &str, file: &str, line: u32) {
@@ -47,29 +48,29 @@ impl DraftLogger {
             "[{}] [{}] ╔═══��══════════════════════════════════════════════════════╗\n\
              [{}] [{}] ║  {} Draft — {} players, best-of-{}, model: {}\n\
              [{}] [{}] ╚══════════════════════════════════════════════════════════╝\n\n",
-            self.timestamp(), src(file, line),
-            self.timestamp(), src(file, line),
+            self.prefix(), src(file, line),
+            self.prefix(), src(file, line),
             set_name, players, best_of, model,
-            self.timestamp(), src(file, line),
+            self.prefix(), src(file, line),
         ));
     }
 
     pub fn section(&self, title: &str, file: &str, line: u32) {
         let bar = "═".repeat(60);
         self.raw_write(&format!("\n[{}] [{}] {}\n[{}] [{}]   {}\n[{}] [{}] {}\n\n",
-            self.timestamp(), src(file, line), bar,
-            self.timestamp(), src(file, line), title,
-            self.timestamp(), src(file, line), bar,
+            self.prefix(), src(file, line), bar,
+            self.prefix(), src(file, line), title,
+            self.prefix(), src(file, line), bar,
         ));
     }
 
     pub fn subsection(&self, title: &str, file: &str, line: u32) {
-        self.raw_write(&format!("[{}] [{}] --- {} ---\n\n", self.timestamp(), src(file, line), title));
+        self.raw_write(&format!("[{}] [{}] --- {} ---\n\n", self.prefix(), src(file, line), title));
     }
 
     pub fn pack_contents(&self, seat: usize, pack_num: usize, cards: &[String], file: &str, line: u32) {
         let s = src(file, line);
-        let ts = self.timestamp();
+        let ts = self.prefix();
         let mut buf = format!("[{}] [{}] Seat {} — Pack {} ({} cards):\n", ts, s, seat, pack_num, cards.len());
         for (i, card) in cards.iter().enumerate() {
             let name = card.split(" // ").next().unwrap_or(card);
@@ -93,7 +94,7 @@ impl DraftLogger {
     ) {
         let chosen_name = chosen.split(" // ").next().unwrap_or(chosen);
         let s = src(file, line);
-        let ts = self.timestamp();
+        let ts = self.prefix();
         let mut buf = format!(
             "[{}] [{}] Seat {} | Pack {} Pick {} | Chose: {} (from {} cards)\n",
             ts, s, seat, pack, pick, chosen_name, available.len()
@@ -117,7 +118,7 @@ impl DraftLogger {
 
     pub fn pool_summary(&self, seat: usize, pool: &[String], file: &str, line: u32) {
         let s = src(file, line);
-        let ts = self.timestamp();
+        let ts = self.prefix();
         let mut buf = format!("[{}] [{}] Seat {} — Final pool ({} cards):\n", ts, s, seat, pool.len());
         for card in pool {
             let name = card.split(" // ").next().unwrap_or(card);
@@ -140,7 +141,7 @@ impl DraftLogger {
     ) {
         let total = maindeck.len() + lands.values().sum::<u32>() as usize;
         let s = src(file, line);
-        let ts = self.timestamp();
+        let ts = self.prefix();
         let mut buf = format!("[{}] [{}] Seat {} — Deck ({} cards, {} retries)\n", ts, s, seat, total, retries);
 
         buf.push_str(&format!("[{}] [{}]   Maindeck:\n", ts, s));
@@ -194,13 +195,13 @@ impl DraftLogger {
             .unwrap_or_else(|| "Draw".to_string());
         self.raw_write(&format!(
             "[{}] [{}] Round {} — Seat {} vs Seat {}: {}-{} ({})\n",
-            self.timestamp(), src(file, line), round, seat_a, seat_b, wins_a, wins_b, winner_str
+            self.prefix(), src(file, line), round, seat_a, seat_b, wins_a, wins_b, winner_str
         ));
     }
 
     pub fn game_log(&self, _round: usize, game_num: usize, seat_a: usize, seat_b: usize, log: &[String], file: &str, line: u32) {
         let s = src(file, line);
-        let ts = self.timestamp();
+        let ts = self.prefix();
         let mut buf = format!("[{}] [{}] Game {} (Seat {} vs Seat {}):\n", ts, s, game_num, seat_a, seat_b);
         for entry in log {
             buf.push_str(&format!("[{}] [{}]     {}\n", ts, s, entry));
@@ -212,13 +213,13 @@ impl DraftLogger {
     pub fn bye(&self, round: usize, seat: usize, file: &str, line: u32) {
         self.raw_write(&format!(
             "[{}] [{}] Round {} — Seat {} gets a bye\n",
-            self.timestamp(), src(file, line), round, seat
+            self.prefix(), src(file, line), round, seat
         ));
     }
 
     pub fn standings(&self, standings: &[(usize, usize, usize, usize)], file: &str, line: u32) {
         let s = src(file, line);
-        let ts = self.timestamp();
+        let ts = self.prefix();
         let mut buf = format!("[{}] [{}] Final Standings:\n", ts, s);
         for (rank, &(seat, match_wins, match_losses, game_wins)) in standings.iter().enumerate() {
             buf.push_str(&format!(
