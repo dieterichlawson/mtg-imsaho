@@ -951,10 +951,9 @@ impl LlmPlayer {
                 "responseSchema": {
                     "type": "object",
                     "properties": {
-                        "reasoning": {"type": "string"},
                         "action": {"type": "integer", "minimum": 0}
                     },
-                    "required": ["reasoning", "action"]
+                    "required": ["action"]
                 },
                 "thinkingConfig": {"includeThoughts": true}
             }
@@ -999,11 +998,8 @@ impl LlmPlayer {
                             }
                         }
 
-                        // Parse JSON structured output: {"reasoning": "...", "action": N}
+                        // Parse JSON structured output: {"action": N}
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
-                            if let Some(reasoning) = parsed["reasoning"].as_str() {
-                                self.log("REASONING", reasoning);
-                            }
                             if let Some(action) = parsed["action"].as_u64() {
                                 let result = action.to_string();
                                 self.log("RESPONSE", &result);

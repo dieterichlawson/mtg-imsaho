@@ -308,10 +308,9 @@ where <number> is the 0-indexed number of the card you want."#,
         serde_json::json!({
             "type": "object",
             "properties": {
-                "reasoning": {"type": "string", "description": "Brief reasoning about why this card is the best pick"},
                 "pick": {"type": "integer", "minimum": 0, "description": "0-indexed number of the card to pick"}
             },
-            "required": ["reasoning", "pick"]
+            "required": ["pick"]
         })
     }
 
@@ -320,7 +319,6 @@ where <number> is the 0-indexed number of the card you want."#,
         serde_json::json!({
             "type": "object",
             "properties": {
-                "reasoning": {"type": "string", "description": "Analysis of the pool and deck building decisions"},
                 "maindeck": {"type": "array", "items": {"type": "string"}, "description": "Card names for the maindeck"},
                 "lands": {"type": "object", "properties": {
                     "Plains": {"type": "integer"},
@@ -330,7 +328,7 @@ where <number> is the 0-indexed number of the card you want."#,
                     "Forest": {"type": "integer"}
                 }, "description": "Basic land counts"}
             },
-            "required": ["reasoning", "maindeck", "lands"]
+            "required": ["maindeck", "lands"]
         })
     }
 
@@ -348,9 +346,8 @@ where <number> is the 0-indexed number of the card you want."#,
                 let raw = self.call_gemini(&self.conversation.clone(), Some(&Self::pick_schema()));
                 // Parse JSON and convert to text format that parse_pick_response expects
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                    let reasoning = parsed["reasoning"].as_str().unwrap_or("");
                     let pick = parsed["pick"].as_u64().unwrap_or(0);
-                    format!("{}\nPICK: {}", reasoning, pick)
+                    format!("PICK: {}", pick)
                 } else {
                     raw
                 }
@@ -385,8 +382,7 @@ where <number> is the 0-indexed number of the card you want."#,
                 let raw = self.call_gemini(&self.deck_conversation.clone(), Some(&Self::deck_schema()));
                 // Parse JSON and convert to text format that parse_deck_response expects
                 if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                    let reasoning = parsed["reasoning"].as_str().unwrap_or("");
-                    let mut text = format!("{}\n\nMAINDECK:\n", reasoning);
+                    let mut text = String::from("MAINDECK:\n");
                     if let Some(cards) = parsed["maindeck"].as_array() {
                         for card in cards {
                             if let Some(name) = card.as_str() {
