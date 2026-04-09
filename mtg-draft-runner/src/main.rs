@@ -461,8 +461,14 @@ fn build_deck_with_llm(
     let prompt = build_deck_prompt(pool);
     let mut last_response = String::new();
     let mut retries = 0;
+    let max_retries = 10;
 
-    for attempt in 0..3 {
+    for attempt in 0..max_retries {
+        if attempt > 0 {
+            // Brief delay before retry (helps with transient network errors)
+            std::thread::sleep(std::time::Duration::from_secs(2));
+        }
+
         let msg = if attempt == 0 {
             prompt.clone()
         } else {
@@ -492,7 +498,7 @@ fn build_deck_with_llm(
     }
 
     // Fallback: include all cards, add 17 lands split by color
-    eprintln!("Warning: deck building failed after 3 attempts, using fallback");
+    eprintln!("Warning: deck building failed after {} attempts, using fallback", max_retries);
     let mut lands = HashMap::new();
     lands.insert("Island".to_string(), 9);
     lands.insert("Swamp".to_string(), 8);
