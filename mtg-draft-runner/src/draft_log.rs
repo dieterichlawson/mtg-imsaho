@@ -36,11 +36,13 @@ impl DraftLogger {
 
     fn prefix(&self) -> String {
         let elapsed = self.start.elapsed();
-        let secs = elapsed.as_secs();
-        let mins = secs / 60;
-        let secs = secs % 60;
+        let total_secs = elapsed.as_secs();
+        let millis = elapsed.subsec_millis();
+        let hrs = total_secs / 3600;
+        let mins = (total_secs % 3600) / 60;
+        let secs = total_secs % 60;
         let tid = std::thread::current().id();
-        format!("{:02}:{:02} {:?}", mins, secs, tid)
+        format!("{:02}:{:02}:{:02}.{:03} {:?}", hrs, mins, secs, millis, tid)
     }
 
     pub fn header(&self, set_name: &str, players: usize, best_of: usize, model: &str, file: &str, line: u32) {
