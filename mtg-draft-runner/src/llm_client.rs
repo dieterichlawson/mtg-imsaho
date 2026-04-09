@@ -139,8 +139,6 @@ pub struct DraftLlmClient {
     conversation: Vec<serde_json::Value>,
     /// Separate conversation for deck building.
     deck_conversation: Vec<serde_json::Value>,
-    /// Gemini cached content name (for context caching).
-    gemini_cache_name: Option<String>,
 }
 
 enum Provider {
@@ -206,7 +204,6 @@ where <number> is the 0-indexed number of the card you want."#,
             system_prompt,
             conversation: Vec::new(),
             deck_conversation: Vec::new(),
-            gemini_cache_name: None,
         }
     }
 
@@ -271,22 +268,13 @@ where <number> is the 0-indexed number of the card you want."#,
 
         let response = match self.provider {
             Provider::Anthropic => self.call_anthropic(&self.conversation.clone()),
-            Provider::Gemini => {
-                // For Gemini: use the cache for prefix, only send the new user message
-                let new_msg = self.conversation.last().cloned().unwrap();
-                self.call_gemini_with_cache(&[new_msg])
-            }
+            Provider::Gemini => self.call_gemini(&self.conversation.clone()),
         };
 
         self.conversation.push(serde_json::json!({
             "role": "assistant",
             "content": &response
         }));
-
-        // Update the Gemini cache to include the new exchange
-        if matches!(self.provider, Provider::Gemini) {
-            self.update_gemini_cache(&self.conversation.clone());
-        }
 
         response
     }
@@ -306,10 +294,7 @@ where <number> is the 0-indexed number of the card you want."#,
 
         let response = match self.provider {
             Provider::Anthropic => self.call_anthropic(&self.deck_conversation.clone()),
-            Provider::Gemini => {
-                // Deck building is short — no caching needed, send everything
-                self.call_gemini_uncached(&self.deck_conversation.clone())
-            }
+            Provider::Gemini => self.call_gemini(&self.deck_conversation.clone()),
         };
 
         self.deck_conversation.push(serde_json::json!({
@@ -399,8 +384,8 @@ where <number> is the 0-indexed number of the card you want."#,
         "PICK: 0".to_string()
     }
 
-    fn gemini_contents(messages: &[serde_json::Value]) -> Vec<serde_json::Value> {
-        messages
+    fn call_gemini(&self, messages: &[serde_json::Value]) -> String {
+        let contents: Vec<serde_json::Value> = messages
             .iter()
             .map(|msg| {
                 let role = msg["role"].as_str().unwrap_or("user");
@@ -410,105 +395,13 @@ where <number> is the 0-indexed number of the card you want."#,
                     "parts": [{"text": msg["content"].as_str().unwrap_or("")}]
                 })
             })
-            .collect()
-    }
-
-    /// Create or update the Gemini context cache to include all messages.
-    /// Called after each complete exchange (user + assistant) so the next
-    /// call only needs to send the new user message.
-    fn update_gemini_cache(&mut self, messages: &[serde_json::Value]) {
-        let contents = Self::gemini_contents(messages);
-
-        let cache_url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/cachedContents?key={}",
-            self.api_key
-        );
-
-        // Delete old cache before creating new one
-        if let Some(ref name) = self.gemini_cache_name {
-            let delete_url = format!(
-                "https://generativelanguage.googleapis.com/v1beta/{}?key={}",
-                name, self.api_key
-            );
-            let _ = self.client.delete(&delete_url).send();
-            self.gemini_cache_name = None;
-        }
+            .collect();
 
         let body = serde_json::json!({
-            "model": format!("models/{}", self.model),
             "contents": contents,
             "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
-            "ttl": "300s"
+            "generationConfig": {"maxOutputTokens": 4096}
         });
-
-        match self.client
-            .post(&cache_url)
-            .header("content-type", "application/json")
-            .json(&body)
-            .send()
-        {
-            Ok(resp) if resp.status().is_success() => {
-                let json: serde_json::Value = resp.json().unwrap_or_default();
-                if let Some(name) = json["name"].as_str() {
-                    self.gemini_cache_name = Some(name.to_string());
-                }
-            }
-            Ok(resp) => {
-                let text = resp.text().unwrap_or_default();
-                eprintln!("Gemini cache creation failed: {}", &text[..text.len().min(200)]);
-            }
-            Err(e) => {
-                eprintln!("Gemini cache request failed: {}", e);
-            }
-        }
-    }
-
-    /// Call Gemini using the cached prefix, sending only new messages.
-    fn call_gemini_with_cache(&mut self, new_messages: &[serde_json::Value]) -> String {
-        if let Some(ref cache_name) = self.gemini_cache_name {
-            // Have a cache — send only the new messages
-            let result = self.call_gemini_raw(
-                &Self::gemini_contents(new_messages),
-                Some(cache_name),
-            );
-            if let Some(text) = result {
-                return text;
-            }
-            // Cache failed — fall through to uncached
-            eprintln!("Gemini cached call failed, falling back to uncached");
-            self.gemini_cache_name = None;
-        }
-
-        // No cache — send the full conversation
-        self.call_gemini_uncached(&self.conversation.clone())
-    }
-
-    /// Call Gemini without caching, sending all messages.
-    fn call_gemini_uncached(&self, messages: &[serde_json::Value]) -> String {
-        let contents = Self::gemini_contents(messages);
-        self.call_gemini_raw(&contents, None).unwrap_or_else(|| "PICK: 0".to_string())
-    }
-
-    /// Low-level Gemini generateContent call.
-    /// Returns None on failure (caller should retry or fall back).
-    fn call_gemini_raw(
-        &self,
-        contents: &[serde_json::Value],
-        cached_content: Option<&str>,
-    ) -> Option<String> {
-        let body = if let Some(cache_name) = cached_content {
-            serde_json::json!({
-                "contents": contents,
-                "cachedContent": cache_name,
-                "generationConfig": {"maxOutputTokens": 4096}
-            })
-        } else {
-            serde_json::json!({
-                "contents": contents,
-                "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
-                "generationConfig": {"maxOutputTokens": 4096}
-            })
-        };
 
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
@@ -533,13 +426,11 @@ where <number> is the 0-indexed number of the card you want."#,
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
                         record_gemini_usage(&self.model, &json["usageMetadata"]);
-                        return Some(
-                            json["candidates"][0]["content"]["parts"][0]["text"]
-                                .as_str()
-                                .unwrap_or("PICK: 0")
-                                .trim()
-                                .to_string(),
-                        );
+                        return json["candidates"][0]["content"]["parts"][0]["text"]
+                            .as_str()
+                            .unwrap_or("PICK: 0")
+                            .trim()
+                            .to_string();
                     }
 
                     let code = resp.status().as_u16();
@@ -548,7 +439,7 @@ where <number> is the 0-indexed number of the card you want."#,
                     }
                     let text = resp.text().unwrap_or_default();
                     eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
-                    return None;
+                    return "PICK: 0".to_string();
                 }
                 Err(e) => {
                     eprintln!("Request failed: {}", e);
@@ -557,6 +448,6 @@ where <number> is the 0-indexed number of the card you want."#,
             }
         }
 
-        None
+        "PICK: 0".to_string()
     }
 }
