@@ -822,7 +822,12 @@ impl LlmPlayer {
         for (pid, cards) in &view.graveyards {
             if !cards.is_empty() {
                 let whose = if *pid == view.you { "Your" } else { "Opp" };
-                let names: Vec<&str> = cards.iter().map(|c| c.name.as_str()).collect();
+                let names: Vec<String> = cards.iter().map(|c| {
+                    match (c.power, c.toughness) {
+                        (Some(p), Some(t)) => format!("{} {}/{}", c.name, p, t),
+                        _ => c.name.clone(),
+                    }
+                }).collect();
                 s.push_str(&format!("{} graveyard: {}\n", whose, names.join(", ")));
             }
         }
