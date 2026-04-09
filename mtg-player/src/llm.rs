@@ -390,12 +390,15 @@ impl LlmPlayer {
 
     /// Check if the AI should auto-pass (nothing interesting to do).
     fn should_auto_pass(_view: &GameView, actions: &[Action]) -> bool {
-        // Auto-pass when the only options are Pass and Concede.
         let has_pass = actions.iter().any(|a| matches!(a, Action::PassPriority));
         if !has_pass {
             return false;
         }
-        actions.iter().all(|a| matches!(a, Action::PassPriority | Action::Concede))
+        // Auto-pass when the only options are Pass, Concede, and/or mana abilities.
+        // Tapping mana with nothing to cast is pointless.
+        actions.iter().all(|a| matches!(a,
+            Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
+        ))
     }
 
     /// Compact game state — much shorter than the CLI version.
@@ -693,6 +696,39 @@ impl LlmPlayer {
                     Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
                 }
             }
+        }
+    }
+
+    /// Choose targets for an activated ability, prompting the LLM if needed.
+    fn choose_ability_targets(&mut self, view: &GameView, ab: &mtg_engine::actions::ActivatableAbility, legal_actions: &[Action]) -> Action {
+        if ab.target_options.is_empty() {
+            // Untargeted ability — find the matching action directly
+            return legal_actions.iter()
+                .find(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
+                    if *object_id == ab.object_id && *ability_index == ab.ability_index))
+                .cloned()
+                .unwrap_or(Action::PassPriority);
+        }
+
+        if ab.target_options.len() == 1 {
+            // Single valid target — no need to prompt
+            return Action::ActivateAbility {
+                object_id: ab.object_id,
+                ability_index: ab.ability_index,
+                targets: vec![ab.target_options[0].clone()],
+            };
+        }
+
+        // Multiple targets — prompt for selection
+        let target = self.prompt_target_selection(
+            view,
+            &format!("{}: select target for {}", ab.name, ab.description),
+            &ab.target_options,
+        );
+        Action::ActivateAbility {
+            object_id: ab.object_id,
+            ability_index: ab.ability_index,
+            targets: vec![target],
         }
     }
 
@@ -1145,14 +1181,17 @@ impl Player for LlmPlayer {
             return Action::PassPriority;
         }
 
-        // Build collapsed display: non-CastSpell actions + one per castable spell.
+        // Build collapsed display: non-CastSpell/ActivateAbility actions + one per
+        // castable spell + one per activatable ability.
         let mut display_labels = Vec::new();
         enum DisplayEntry {
             Direct(usize),   // index into legal_actions
             Cast(usize),     // index into legal.castable_spells
+            Ability(usize),  // index into legal.activatable_abilities
         }
         let mut display_entries: Vec<DisplayEntry> = Vec::new();
         let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
+        let mut seen_ability_keys: Vec<(mtg_engine::ids::ObjectId, usize)> = Vec::new();
 
         let mut seen_cast_labels: Vec<String> = Vec::new();
         for (i, action) in legal_actions.iter().enumerate() {
@@ -1176,6 +1215,20 @@ impl Player for LlmPlayer {
                             seen_cast_labels.push(label.clone());
                             display_labels.push(label);
                             display_entries.push(DisplayEntry::Cast(cs_idx));
+                        }
+                    }
+                }
+                Action::ActivateAbility { object_id, ability_index, .. } => {
+                    let key = (*object_id, *ability_index);
+                    if !seen_ability_keys.contains(&key) {
+                        if let Some(ab_idx) = legal.activatable_abilities.iter()
+                            .position(|ab| ab.object_id == *object_id && ab.ability_index == *ability_index)
+                        {
+                            seen_ability_keys.push(key);
+                            let ab = &legal.activatable_abilities[ab_idx];
+                            let label = format!("Activate {} ({})", ab.name, ab.description);
+                            display_labels.push(label);
+                            display_entries.push(DisplayEntry::Ability(ab_idx));
                         }
                     }
                 }
@@ -1209,6 +1262,10 @@ impl Player for LlmPlayer {
             DisplayEntry::Cast(cs_idx) => {
                 let cs = &legal.castable_spells[*cs_idx];
                 self.choose_cast_targets(view, cs, legal_actions)
+            }
+            DisplayEntry::Ability(ab_idx) => {
+                let ab = &legal.activatable_abilities[*ab_idx];
+                self.choose_ability_targets(view, ab, legal_actions)
             }
         }
     }

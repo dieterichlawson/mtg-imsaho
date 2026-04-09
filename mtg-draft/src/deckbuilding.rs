@@ -159,10 +159,10 @@ pub fn validate_deck(
         *pool_counts.entry(name).or_insert(0) += 1;
     }
 
-    // Check maindeck against pool
+    // Check maindeck against pool (strip DFC back face names)
     let mut used_counts: HashMap<&str, u32> = HashMap::new();
     for card in maindeck {
-        let name = card.as_str();
+        let name = card.split(" // ").next().unwrap_or(card.as_str());
         *used_counts.entry(name).or_insert(0) += 1;
 
         let available = pool_counts.get(name).copied().unwrap_or(0);

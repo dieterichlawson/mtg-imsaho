@@ -100,6 +100,17 @@ pub struct CastableSpell {
     pub tap_plan: Vec<(ObjectId, usize)>,
 }
 
+/// An activated ability that can be activated, with its valid target options.
+/// Used by player implementations to present a collapsed ability UI.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivatableAbility {
+    pub object_id: ObjectId,
+    pub ability_index: usize,
+    pub name: String,
+    pub description: String,
+    pub target_options: Vec<Target>,
+}
+
 /// Describes how targets should be chosen for a castable spell.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CastTargetSpec {

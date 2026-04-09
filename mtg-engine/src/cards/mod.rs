@@ -495,8 +495,17 @@ impl CardRegistry {
     }
 
     /// Look up a card ID by name.
+    /// Handles DFC names like "Front // Back" by trying the full name first,
+    /// then falling back to just the front face.
     pub fn get_id_by_name(&self, name: &str) -> Option<CardId> {
-        self.name_to_id.get(name).copied()
+        self.name_to_id.get(name).copied().or_else(|| {
+            let front = name.split(" // ").next()?;
+            if front.len() < name.len() {
+                self.name_to_id.get(front).copied()
+            } else {
+                None
+            }
+        })
     }
 
     /// Get card data by ID.

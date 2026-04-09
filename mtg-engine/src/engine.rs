@@ -35,6 +35,10 @@ pub struct LegalActions {
     /// Each entry is one castable spell (collapsed view). The `actions` list still
     /// contains the fully-expanded CastSpell entries for LLM/random players.
     pub castable_spells: Vec<crate::actions::CastableSpell>,
+    /// Activated abilities with valid target options, for interactive target selection.
+    /// Each entry is one ability (collapsed view). The `actions` list still
+    /// contains the fully-expanded ActivateAbility entries.
+    pub activatable_abilities: Vec<crate::actions::ActivatableAbility>,
     /// Human-readable description of why the player has priority or needs to act.
     pub context: Option<String>,
 }
@@ -243,7 +247,7 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
 /// Compute all legal actions for the player who currently needs to act.
 pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions {
     if state.is_game_over() {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], context: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None };
     }
 
     // If we're waiting for a specific action (attackers, blockers, discard).
@@ -273,7 +277,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         defending_player: defending,
                     }),
                     castable_spells: vec![],
-                    context: Some("DECLARE ATTACKERS".into()),
+                    activatable_abilities: vec![], context: Some("DECLARE ATTACKERS".into()),
                 }
             }
             AwaitingAction::DeclareBlockers { defending_player } => {
@@ -288,6 +292,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         attackers: attacker_ids,
                     }),
                     castable_spells: vec![],
+                    activatable_abilities: vec![],
                     context: Some("DECLARE BLOCKERS".into()),
                 }
             }
@@ -296,6 +301,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     actions: legal_discard_actions(state, *player, *discard_count),
                     combat_prompt: None,
                     castable_spells: vec![],
+                    activatable_abilities: vec![],
                     context: Some(format!("DISCARD {} CARD{}", discard_count,
                         if *discard_count == 1 { "" } else { "S" })),
                 }
@@ -380,14 +386,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     ResolutionChoiceKind::DividePermanentsIntoPiles { .. } => format!("{}: divide into piles", source_name),
                     ResolutionChoiceKind::ChoosePile { .. } => format!("{}: choose a pile", source_name),
                 };
-                LegalActions { actions, combat_prompt: None, castable_spells: vec![], context: Some(context) }
+                LegalActions { actions, combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: Some(context) }
             }
         };
     }
 
     let player = match state.priority_player {
         Some(p) => p,
-        None => return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], context: None },
+        None => return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None },
     };
 
     let mut actions = Vec::new();
@@ -1076,7 +1082,41 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
     };
 
-    LegalActions { actions, combat_prompt: None, castable_spells, context: Some(context) }
+    // Build collapsed activatable abilities from the expanded ActivateAbility actions.
+    // Group by (object_id, ability_index) and collect all targets for each.
+    let mut ability_map: std::collections::HashMap<(ObjectId, usize), (String, String, Vec<crate::actions::Target>)> =
+        std::collections::HashMap::new();
+    for action in &actions {
+        if let Action::ActivateAbility { object_id, ability_index, targets } = action {
+            let entry = ability_map.entry((*object_id, *ability_index)).or_insert_with(|| {
+                let name = state.obj_name(*object_id);
+                let desc = registry.get(
+                    state.get_object(*object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
+                ).and_then(|b| {
+                    b.activated_abilities(state, *object_id, registry)
+                        .into_iter()
+                        .find(|a| a.ability_index == *ability_index)
+                        .map(|a| a.description.clone())
+                }).unwrap_or_default();
+                (name, desc, Vec::new())
+            });
+            entry.2.extend(targets.iter().cloned());
+        }
+    }
+    let activatable_abilities: Vec<crate::actions::ActivatableAbility> = ability_map
+        .into_iter()
+        .map(|((object_id, ability_index), (name, description, target_options))| {
+            crate::actions::ActivatableAbility {
+                object_id,
+                ability_index,
+                name,
+                description,
+                target_options,
+            }
+        })
+        .collect();
+
+    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context) }
 }
 
 /// Check if a permanent can be targeted by a spell from the given caster.
