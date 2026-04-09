@@ -940,10 +940,24 @@ impl LlmPlayer {
     }
 
     fn call_gemini_with_contents(&self, contents: &[serde_json::Value]) -> String {
+        // Use structured output to constrain Gemini to valid JSON with an action number.
+        // This prevents degenerate repetition loops (e.g., _ov_ov_ov).
         let body = serde_json::json!({
             "contents": contents,
             "systemInstruction": {"parts": [{"text": self.system_prompt}]},
-            "generationConfig": {"maxOutputTokens": 512}
+            "generationConfig": {
+                "maxOutputTokens": 4096,
+                "responseMimeType": "application/json",
+                "responseSchema": {
+                    "type": "object",
+                    "properties": {
+                        "reasoning": {"type": "string"},
+                        "action": {"type": "integer", "minimum": 0}
+                    },
+                    "required": ["reasoning", "action"]
+                },
+                "thinkingConfig": {"includeThoughts": true}
+            }
         });
 
         let url = format!(
@@ -969,13 +983,37 @@ impl LlmPlayer {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
                         record_gemini_llm_usage(&self.model, &json);
-                        let result = json["candidates"][0]["content"]["parts"][0]["text"]
-                            .as_str()
-                            .unwrap_or("0")
-                            .trim()
-                            .to_string();
-                        self.log("RESPONSE", &result);
-                        return result;
+
+                        // Extract output, skipping thought parts. Log thoughts.
+                        let parts = &json["candidates"][0]["content"]["parts"];
+                        let mut output_text = String::new();
+                        if let Some(parts_arr) = parts.as_array() {
+                            for part in parts_arr {
+                                if part["thought"].as_bool() == Some(true) {
+                                    if let Some(t) = part["text"].as_str() {
+                                        self.log("THOUGHT", t);
+                                    }
+                                } else if let Some(t) = part["text"].as_str() {
+                                    output_text = t.trim().to_string();
+                                }
+                            }
+                        }
+
+                        // Parse JSON structured output: {"reasoning": "...", "action": N}
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
+                            if let Some(reasoning) = parsed["reasoning"].as_str() {
+                                self.log("REASONING", reasoning);
+                            }
+                            if let Some(action) = parsed["action"].as_u64() {
+                                let result = action.to_string();
+                                self.log("RESPONSE", &result);
+                                return result;
+                            }
+                        }
+
+                        // Fallback: try parsing as plain text (last line)
+                        self.log("RESPONSE", &output_text);
+                        return if output_text.is_empty() { "0".to_string() } else { output_text };
                     }
 
                     let status = resp.status();

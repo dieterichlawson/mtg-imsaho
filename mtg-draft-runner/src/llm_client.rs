@@ -303,7 +303,39 @@ where <number> is the 0-indexed number of the card you want."#,
         prompt
     }
 
-    /// Send a message to the LLM and get a response. Adds to conversation history.
+    /// JSON schema for draft pick responses (Gemini structured output).
+    fn pick_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "reasoning": {"type": "string", "description": "Brief reasoning about why this card is the best pick"},
+                "pick": {"type": "integer", "minimum": 0, "description": "0-indexed number of the card to pick"}
+            },
+            "required": ["reasoning", "pick"]
+        })
+    }
+
+    /// JSON schema for deck building responses (Gemini structured output).
+    fn deck_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "reasoning": {"type": "string", "description": "Analysis of the pool and deck building decisions"},
+                "maindeck": {"type": "array", "items": {"type": "string"}, "description": "Card names for the maindeck"},
+                "lands": {"type": "object", "properties": {
+                    "Plains": {"type": "integer"},
+                    "Island": {"type": "integer"},
+                    "Swamp": {"type": "integer"},
+                    "Mountain": {"type": "integer"},
+                    "Forest": {"type": "integer"}
+                }, "description": "Basic land counts"}
+            },
+            "required": ["reasoning", "maindeck", "lands"]
+        })
+    }
+
+    /// Send a draft pick message. Returns the raw response text.
+    /// For Gemini, uses structured output and converts back to text format.
     pub fn send_message(&mut self, user_message: &str) -> String {
         self.conversation.push(serde_json::json!({
             "role": "user",
@@ -312,7 +344,17 @@ where <number> is the 0-indexed number of the card you want."#,
 
         let response = match self.provider {
             Provider::Anthropic => self.call_anthropic(&self.conversation.clone()),
-            Provider::Gemini => self.call_gemini(&self.conversation.clone()),
+            Provider::Gemini => {
+                let raw = self.call_gemini(&self.conversation.clone(), Some(&Self::pick_schema()));
+                // Parse JSON and convert to text format that parse_pick_response expects
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                    let reasoning = parsed["reasoning"].as_str().unwrap_or("");
+                    let pick = parsed["pick"].as_u64().unwrap_or(0);
+                    format!("{}\nPICK: {}", reasoning, pick)
+                } else {
+                    raw
+                }
+            }
         };
 
         self.conversation.push(serde_json::json!({
@@ -329,7 +371,8 @@ where <number> is the 0-indexed number of the card you want."#,
         // No additional recording needed.
     }
 
-    /// Send a deck building message (uses separate conversation).
+    /// Send a deck building message. Returns the raw response text.
+    /// For Gemini, uses structured output and converts back to text format.
     pub fn send_deck_building_message(&mut self, user_message: &str) -> String {
         self.deck_conversation.push(serde_json::json!({
             "role": "user",
@@ -338,7 +381,34 @@ where <number> is the 0-indexed number of the card you want."#,
 
         let response = match self.provider {
             Provider::Anthropic => self.call_anthropic(&self.deck_conversation.clone()),
-            Provider::Gemini => self.call_gemini(&self.deck_conversation.clone()),
+            Provider::Gemini => {
+                let raw = self.call_gemini(&self.deck_conversation.clone(), Some(&Self::deck_schema()));
+                // Parse JSON and convert to text format that parse_deck_response expects
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
+                    let reasoning = parsed["reasoning"].as_str().unwrap_or("");
+                    let mut text = format!("{}\n\nMAINDECK:\n", reasoning);
+                    if let Some(cards) = parsed["maindeck"].as_array() {
+                        for card in cards {
+                            if let Some(name) = card.as_str() {
+                                text.push_str(&format!("{}\n", name));
+                            }
+                        }
+                    }
+                    text.push_str("\nLANDS:\n");
+                    if let Some(lands) = parsed["lands"].as_object() {
+                        for (name, count) in lands {
+                            if let Some(n) = count.as_u64() {
+                                if n > 0 {
+                                    text.push_str(&format!("{} {}\n", n, name));
+                                }
+                            }
+                        }
+                    }
+                    text
+                } else {
+                    raw
+                }
+            }
         };
 
         self.deck_conversation.push(serde_json::json!({
@@ -428,7 +498,7 @@ where <number> is the 0-indexed number of the card you want."#,
         "PICK: 0".to_string()
     }
 
-    fn call_gemini(&self, messages: &[serde_json::Value]) -> String {
+    fn call_gemini(&self, messages: &[serde_json::Value], schema: Option<&serde_json::Value>) -> String {
         let contents: Vec<serde_json::Value> = messages
             .iter()
             .map(|msg| {
@@ -441,10 +511,21 @@ where <number> is the 0-indexed number of the card you want."#,
             })
             .collect();
 
+        let gen_config = if let Some(s) = schema {
+            serde_json::json!({
+                "maxOutputTokens": 4096,
+                "responseMimeType": "application/json",
+                "responseSchema": s,
+                "thinkingConfig": {"includeThoughts": true}
+            })
+        } else {
+            serde_json::json!({"maxOutputTokens": 4096})
+        };
+
         let body = serde_json::json!({
             "contents": contents,
             "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
-            "generationConfig": {"maxOutputTokens": 4096}
+            "generationConfig": gen_config
         });
 
         let url = format!(
@@ -470,11 +551,26 @@ where <number> is the 0-indexed number of the card you want."#,
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
                         record_gemini_usage(&self.model, &json["usageMetadata"]);
-                        return json["candidates"][0]["content"]["parts"][0]["text"]
-                            .as_str()
-                            .unwrap_or("PICK: 0")
-                            .trim()
-                            .to_string();
+
+                        // Extract text from parts, skipping thought parts.
+                        // Log thoughts if present.
+                        let parts = &json["candidates"][0]["content"]["parts"];
+                        let mut output_text = String::new();
+                        if let Some(parts_arr) = parts.as_array() {
+                            for part in parts_arr {
+                                if part["thought"].as_bool() == Some(true) {
+                                    if let Some(t) = part["text"].as_str() {
+                                        mtg_player::game_log::write(file!(), line!(), "GEMINI_THOUGHT", t);
+                                    }
+                                } else if let Some(t) = part["text"].as_str() {
+                                    output_text = t.trim().to_string();
+                                }
+                            }
+                        }
+                        if output_text.is_empty() {
+                            output_text = "PICK: 0".to_string();
+                        }
+                        return output_text;
                     }
 
                     let code = resp.status().as_u16();
