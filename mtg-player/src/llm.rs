@@ -182,6 +182,12 @@ IMPORTANT: For blocking, the format is BLOCKER_NUMBER:ATTACKER_NUMBER (e.g. "0:0
 trait LlmBackend {
     /// Send a message and get a response. Manages conversation state internally.
     fn send(&mut self, message: &str) -> String;
+    /// Send a message with a custom JSON response schema. Returns the parsed JSON.
+    /// Default implementation: calls send() and wraps the text in a JSON string.
+    fn send_with_schema(&mut self, message: &str, _schema: &serde_json::Value) -> serde_json::Value {
+        let text = self.send(message);
+        serde_json::Value::String(text)
+    }
     /// Initialize with a system prompt (rules + decklists).
     fn init(&mut self, system_prompt: &str);
     /// Resume from a game log recap.
@@ -375,16 +381,9 @@ impl GeminiBackend {
         }
     }
 
-    fn call_interactions(&mut self, user_message: &str) -> String {
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "thoughts": {"type": "string", "description": "Brief reasoning for this action"},
-                "action": {"type": "integer", "minimum": 0}
-            },
-            "required": ["thoughts", "action"]
-        });
-
+    /// Core interactions API call. Sends a message with a custom JSON schema
+    /// and returns the parsed JSON response. Handles retries, rate limits, etc.
+    fn call_interactions_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
         let mut body = serde_json::json!({
             "model": &self.model,
             "input": user_message,
@@ -442,22 +441,15 @@ impl GeminiBackend {
                             }
                         }
 
-                        // Parse structured output: {"thoughts": "...", "action": N}
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
                             if let Some(thoughts) = parsed["thoughts"].as_str() {
                                 crate::game_log::write(file!(), line!(), "GEMINI_THOUGHT", thoughts);
                             }
-                            if let Some(action) = parsed["action"].as_u64() {
-                                return action.to_string();
-                            }
+                            return parsed;
                         }
 
-                        // Fallback: if model returned a bare number instead of JSON, use it
-                        // but warn so we can detect structured output failures.
-                        if !output_text.is_empty() {
-                            eprintln!("WARN: Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
-                        }
-                        return if output_text.is_empty() { "0".to_string() } else { output_text };
+                        eprintln!("WARN: Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
+                        return serde_json::json!({});
                     }
 
                     let code = resp.status().as_u16();
@@ -483,7 +475,7 @@ impl GeminiBackend {
                         std::process::exit(1);
                     }
                     eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
-                    return "0".to_string();
+                    return serde_json::json!({});
                 }
                 Err(e) => {
                     eprintln!("Request failed: {}", e);
@@ -492,13 +484,32 @@ impl GeminiBackend {
             }
         }
         eprintln!("WARN: Gemini API exhausted all retries");
-        "0".to_string()
+        serde_json::json!({})
+    }
+
+    /// Convenience wrapper: sends with the default action schema, returns just
+    /// the action number as a string (backward-compatible with existing callers).
+    fn call_interactions(&mut self, user_message: &str) -> String {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Brief reasoning for this action"},
+                "action": {"type": "integer", "minimum": 0}
+            },
+            "required": ["thoughts", "action"]
+        });
+        let parsed = self.call_interactions_structured(user_message, &schema);
+        parsed["action"].as_u64().map(|n| n.to_string()).unwrap_or_else(|| "0".to_string())
     }
 }
 
 impl LlmBackend for GeminiBackend {
     fn send(&mut self, message: &str) -> String {
         self.call_interactions(message)
+    }
+
+    fn send_with_schema(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        self.call_interactions_structured(message, schema)
     }
 
     fn init(&mut self, deck_info: &str) {
@@ -1098,6 +1109,14 @@ impl LlmPlayer {
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
             .unwrap_or_else(|| format!("{}", id))
+    }
+
+    /// Send a message with a custom JSON response schema, returning parsed JSON.
+    fn send_message_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        self.log("PROMPT", user_message);
+        let result = self.backend.send_with_schema(user_message, schema);
+        self.log("RESPONSE", &result.to_string());
+        result
     }
 
     /// Build a user message with log delta + board state + prompt, send to
