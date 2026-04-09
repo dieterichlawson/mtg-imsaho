@@ -126,6 +126,7 @@ fn main() {
     // have context about what happened before the reload.
     if resume_file.is_some() {
         let full_log: Vec<String> = state.game_log.iter()
+            .filter(|e| e.level >= mtg_engine::state::LogLevel::Info)
             .map(|e| e.message.clone())
             .collect();
         if let PlayerKind::Llm(ref mut llm) = p1 {

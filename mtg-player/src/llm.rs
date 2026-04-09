@@ -1190,12 +1190,13 @@ impl LlmPlayer {
 
     /// Build a prompt that includes new log entries + board state + the action prompt.
     fn build_prompt(&mut self, view: &GameView, action_prompt: &str) -> String {
-        // Collect new log entries since last message.
-        let new_logs: Vec<String> = view.full_log.iter()
+        // Use display_log (Info level and above) to skip debug noise like
+        // "passes priority" and "Step: Draw" entries that add no information.
+        let new_logs: Vec<String> = view.display_log.iter()
             .skip(self.last_log_index)
             .cloned()
             .collect();
-        self.last_log_index = view.full_log.len();
+        self.last_log_index = view.display_log.len();
 
         let mut prompt = String::new();
         if !new_logs.is_empty() {
