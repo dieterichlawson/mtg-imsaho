@@ -90,19 +90,20 @@ ANSWER: 0:0
 The system parses ONLY the last line. If the last line isn't a valid number/format, you default to passing.
 
 ## Key rules
-- Mana pools empty at EVERY step boundary. Tap lands and cast spells in the same step.
-- The "Cast" option only appears AFTER you have enough mana in pool. Tap lands first.
-- Generic mana (numbers like {1}, {2}) can be paid with ANY color. For example, {1}{G} can be paid with {G}{G} — the first {G} pays the generic {1} cost. So if a spell costs {1}{G}, tapping two Forests ({G}{G}) is enough.
+- AUTO-TAP: When you choose "Cast [spell]", the engine automatically taps the right lands for you. You do NOT need to tap lands manually before casting. Just pick the Cast option directly.
+- The Cast option shows which lands will be tapped, e.g. "Cast Doom Blade (tap Swamp, Swamp)".
+- If you see "Tap [land]" as a separate option, you usually don't need it — the Cast action handles tapping.
 - Spells go on the stack and resolve when both players pass priority.
 - Creatures have summoning sickness — can't attack the turn they enter. [S] means sick.
 - Play one land per turn, only during your main phase.
 - Instants can be cast anytime you have priority (including during combat or opponent's turn).
 - Sorceries, creatures, enchantments, and artifacts can only be cast during your main phase with an empty stack.
 - Targeted spells show their target in the action (e.g. "Cast Lightning Bolt → Goblin Piker 2/1").
+- For spells or abilities with multiple possible targets, you'll be asked to choose a target after selecting the action.
 - Attack to win! Creatures deal damage to the opponent when unblocked.
 
 ## Flashback
-Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. Tap lands to get mana, then the Flashback option appears.
+Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. The engine auto-taps for flashback too.
 
 ## Strategy tips
 - Save instants for combat! Giant Growth during DeclareBlockers makes your 2/2 into a 5/5. Lightning Bolt during DeclareAttackers can kill a would-be blocker.
@@ -1248,7 +1249,9 @@ impl Player for LlmPlayer {
         let action_prompt = format!("{}\n{}", context_str, actions_str);
         let prompt = self.build_prompt(view, &action_prompt);
 
-        self.log("THINKING", &format!("{} actions (collapsed from {})", display_labels.len(), legal_actions.len()));
+        if display_labels.len() != legal_actions.len() {
+            self.log("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_labels.len()));
+        }
         let idx = self.choose_with_retry_conv(&prompt, display_labels.len(), legal_actions);
 
         if idx >= display_entries.len() {
