@@ -342,8 +342,7 @@ fn main() {
                     let model_b = &args.models[b];
                     let best_of = args.best_of;
                     let quiet = args.quiet;
-                    let log_path = &args.log;
-                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet, log_path))
+                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet))
                 })
                 .collect();
 
@@ -545,7 +544,6 @@ fn play_match(
     model_spec_b: &str,
     best_of: usize,
     _quiet: bool,
-    log_path: &str,
 ) -> MatchResult {
     let wins_needed = best_of / 2 + 1;
     let mut wins_a = 0;
@@ -556,8 +554,8 @@ fn play_match(
     // Set log file so all API prompts/responses are written to the draft log.
     let name_a = format!("Seat{}", seat_a);
     let name_b = format!("Seat{}", seat_b);
-    let mut p1 = make_game_player(model_spec_a, &name_a).with_log(log_path);
-    let mut p2 = make_game_player(model_spec_b, &name_b).with_log(log_path);
+    let mut p1 = make_game_player(model_spec_a, &name_a);
+    let mut p2 = make_game_player(model_spec_b, &name_b);
 
     while wins_a < wins_needed && wins_b < wins_needed {
         let outcome = play_game(seat_a, seat_b, deck_a, deck_b, registry, &mut p1, &mut p2);

@@ -375,16 +375,13 @@ impl LlmPlayer {
     }
 
     fn log(&self, label: &str, content: &str) {
-        use std::sync::Mutex;
+        let full_label = format!("{} [{}]", label, self.name);
+        crate::game_log::write(file!(), line!(), &full_label, content);
 
-        // Global mutex ensures multi-threaded writes to the same log file don't interleave.
-        static LOG_MUTEX: Mutex<()> = Mutex::new(());
-
+        // Also write to per-player log file if configured (for mtg-runner backward compat)
         if let Some(path) = &self.log_file {
-            let _guard = LOG_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
             if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(path) {
-                let tid = std::thread::current().id();
-                let _ = writeln!(f, "=== {} [{}] [thread:{:?}] ===", label, self.name, tid);
+                let _ = writeln!(f, "=== {} [{}] ===", label, self.name);
                 let _ = writeln!(f, "{}", content);
                 let _ = writeln!(f);
             }

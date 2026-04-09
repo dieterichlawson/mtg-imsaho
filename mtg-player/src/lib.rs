@@ -2,6 +2,7 @@ pub mod random;
 pub mod cli;
 pub mod llm;
 pub mod scripted;
+pub mod game_log;
 
 use mtg_engine::view::GameView;
 use mtg_engine::actions::Action;
