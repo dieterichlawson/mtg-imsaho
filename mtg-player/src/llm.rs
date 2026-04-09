@@ -977,26 +977,36 @@ impl LlmPlayer {
                     .collect::<Vec<_>>()
                     .join(" ");
                 let prompt = format!(
-                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with space-separated numbers (e.g. '0' for one target, '0 2' for two)",
-                    spell.name, max, target_list
+                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with target_indices (list of numbers 0-{}).",
+                    spell.name, max, target_list, options.len() - 1
                 );
                 self.log("TARGETS", &prompt);
-                let response = self.call_api(&prompt);
-                self.log("TARGET-RESPONSE", &response);
 
-                let last_line = response.lines().rev()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or(&response)
-                    .trim();
-                let answer = last_line.strip_prefix("ANSWER:").or_else(|| last_line.strip_prefix("Answer:"))
-                    .unwrap_or(last_line)
-                    .trim();
+                let schema = serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "thoughts": {"type": "string", "description": "Brief reasoning about target selection"},
+                        "target_indices": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 0},
+                            "description": "Indices of chosen targets"
+                        }
+                    },
+                    "required": ["thoughts", "target_indices"]
+                });
 
-                let chosen: Vec<Target> = answer.split_whitespace()
-                    .filter_map(|s| s.parse::<usize>().ok())
-                    .filter(|&i| i < options.len())
-                    .map(|i| options[i].clone())
-                    .collect();
+                let response = self.send_message_structured(&prompt, &schema);
+                self.log("TARGET-RESPONSE", &response.to_string());
+
+                let chosen: Vec<Target> = response["target_indices"]
+                    .as_array()
+                    .map(|arr| arr.iter()
+                        .filter_map(|v| v.as_u64().map(|n| n as usize))
+                        .filter(|&i| i < options.len())
+                        .take(*max)
+                        .map(|i| options[i].clone())
+                        .collect())
+                    .unwrap_or_default();
 
                 if chosen.is_empty() {
                     // Pick at least one — use the first option.
@@ -1192,24 +1202,39 @@ impl LlmPlayer {
         None
     }
 
+    /// Confirm concede via structured output. Returns true if the AI confirms.
+    fn confirm_concede(&mut self) -> bool {
+        self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Brief reasoning about whether to concede"},
+                "confirm": {"type": "boolean", "description": "true to concede, false to cancel"}
+            },
+            "required": ["thoughts", "confirm"]
+        });
+
+        let response = self.send_message_structured(
+            "You chose to CONCEDE the game. Are you sure? Respond with confirm: true to concede, or false to cancel.",
+            &schema
+        );
+        let confirmed = response["confirm"].as_bool().unwrap_or(false);
+        if !confirmed {
+            self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
+        } else {
+            self.log("CONCEDE-CHECK", "Concede confirmed");
+        }
+        confirmed
+    }
+
     /// Send a message via conversation and parse the action index.
     fn choose_with_retry_conv(&mut self, prompt: &str, max: usize, actions: &[Action]) -> usize {
         for attempt in 0..2 {
             let response = self.send_message(prompt);
             if let Some(idx) = self.parse_action_index(&response, max) {
-                // Double-check concede: ask the model to confirm.
                 if matches!(actions.get(idx), Some(Action::Concede)) {
-                    self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
-                    let confirm = self.send_message(
-                        "You chose to CONCEDE the game. Are you sure? Reply ONLY 'yes' or 'no'."
-                    );
-                    let last = confirm.lines().rev()
-                        .find(|l| !l.trim().is_empty())
-                        .unwrap_or("")
-                        .trim()
-                        .to_lowercase();
-                    if !last.contains("yes") {
-                        self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
+                    if !self.confirm_concede() {
                         return 0;
                     }
                 }
@@ -1231,17 +1256,7 @@ impl LlmPlayer {
             let response = self.call_api(prompt);
             if let Some(idx) = self.parse_action_index(&response, max) {
                 if matches!(actions.get(idx), Some(Action::Concede)) {
-                    self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
-                    let confirm = self.call_api(
-                        "You chose to CONCEDE the game. Are you sure? Reply ONLY 'yes' or 'no'."
-                    );
-                    let last = confirm.lines().rev()
-                        .find(|l| !l.trim().is_empty())
-                        .unwrap_or("")
-                        .trim()
-                        .to_lowercase();
-                    if !last.contains("yes") {
-                        self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
+                    if !self.confirm_concede() {
                         return 0;
                     }
                 }
@@ -1373,6 +1388,17 @@ impl Player for LlmPlayer {
 }
 
 impl LlmPlayer {
+    /// Format a permanent for combat display: "Name P/T" using effective values.
+    fn format_combat_creature(view: &GameView, id: ObjectId) -> String {
+        if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
+            let power = p.effective_power.or(p.power).unwrap_or(0);
+            let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
+            format!("{} {}/{}", p.name, power, toughness)
+        } else {
+            Self::obj_name(view, id)
+        }
+    }
+
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
             CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player } => {
@@ -1385,52 +1411,63 @@ impl LlmPlayer {
                     combat_text.push_str("MUST ATTACK: ");
                     for &id in must_attack.iter() {
                         if let Some(idx) = eligible.iter().position(|&e| e == id) {
-                            let p = view.battlefield.iter().find(|p| p.object_id == id);
-                            let name = p.map(|p| format!("{} {}/{}", p.name, p.power.unwrap_or(0), p.toughness.unwrap_or(0)))
-                                .unwrap_or_else(|| format!("{}", id));
-                            combat_text.push_str(&format!("{}:{} ", idx, name));
+                            combat_text.push_str(&format!("{}:{} ", idx, Self::format_combat_creature(view, id)));
                         }
                     }
                     combat_text.push('\n');
                 }
                 combat_text.push_str("Choose attackers: ");
                 for (i, &id) in eligible.iter().enumerate() {
-                    let p = view.battlefield.iter().find(|p| p.object_id == id);
-                    let name = p.map(|p| format!("{} {}/{}", p.name, p.power.unwrap_or(0), p.toughness.unwrap_or(0)))
-                        .unwrap_or_else(|| format!("{}", id));
                     let forced = if must_attack.contains(&id) { " [MUST]" } else { "" };
-                    combat_text.push_str(&format!("{}:{}{} ", i, name, forced));
+                    combat_text.push_str(&format!("{}:{}{} ", i, Self::format_combat_creature(view, id), forced));
                 }
-                combat_text.push_str("\nNumbers, 'all', or 'none' (forced attackers are auto-included)");
+                combat_text.push_str(&format!(
+                    "\nRespond with attacker_indices (list of numbers 0-{}), or empty list for none. Forced attackers are auto-included.",
+                    eligible.len() - 1
+                ));
 
                 self.log("THINKING", "attackers...");
                 let full_prompt = self.build_prompt(view, &combat_text);
-                let response = self.send_message(&full_prompt);
-                self.log("ATTACKERS", &response);
 
-                // Parse from last line, strip "ANSWER:" prefix.
-                let last_line = response.lines().rev()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or(&response)
-                    .trim();
-                let answer = last_line.strip_prefix("ANSWER:").or_else(|| last_line.strip_prefix("Answer:"))
-                    .unwrap_or(last_line)
-                    .trim()
-                    .to_lowercase();
+                let schema = serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "thoughts": {"type": "string", "description": "Brief reasoning about which creatures to attack with"},
+                        "attacker_indices": {
+                            "type": "array",
+                            "items": {"type": "integer", "minimum": 0},
+                            "description": "Indices of creatures to attack with (empty array for none)"
+                        }
+                    },
+                    "required": ["thoughts", "attacker_indices"]
+                });
 
-                if answer.contains("none") || answer.is_empty() {
-                    return Action::DeclareAttackers { attackers: vec![] };
+                let response = self.send_message_structured(&full_prompt, &schema);
+                self.log("ATTACKERS", &response.to_string());
+
+                let mut indices: Vec<usize> = response["attacker_indices"]
+                    .as_array()
+                    .map(|arr| arr.iter()
+                        .filter_map(|v| v.as_u64().map(|n| n as usize))
+                        .filter(|&i| i < eligible.len())
+                        .collect())
+                    .unwrap_or_default();
+
+                // Always include forced attackers.
+                for &id in must_attack {
+                    if let Some(idx) = eligible.iter().position(|&e| e == id) {
+                        if !indices.contains(&idx) {
+                            indices.push(idx);
+                        }
+                    }
                 }
-                if answer.contains("all") {
-                    return Action::DeclareAttackers {
-                        attackers: eligible.iter().map(|&id| (id, *defending_player)).collect(),
-                    };
-                }
 
-                let attackers = answer.split_whitespace()
-                    .filter_map(|s| s.parse::<usize>().ok())
-                    .filter(|&i| i < eligible.len())
-                    .map(|i| (eligible[i], *defending_player))
+                // Deduplicate.
+                let mut seen = std::collections::HashSet::new();
+                indices.retain(|i| seen.insert(*i));
+
+                let attackers = indices.iter()
+                    .map(|&i| (eligible[i], *defending_player))
                     .collect();
                 Action::DeclareAttackers { attackers }
             }
@@ -1442,51 +1479,59 @@ impl LlmPlayer {
 
                 let mut combat_text = String::from("Attackers: ");
                 for (i, &id) in attackers.iter().enumerate() {
-                    let name = Self::obj_name(view, id);
-                    combat_text.push_str(&format!("{}:{} ", i, name));
+                    combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
                 }
                 combat_text.push_str("\nYour blockers: ");
                 for (i, &id) in eligible_blockers.iter().enumerate() {
-                    let name = Self::obj_name(view, id);
-                    combat_text.push_str(&format!("{}:{} ", i, name));
+                    let owner = if view.battlefield.iter().any(|p| p.object_id == id && p.controller == view.you) {
+                        "your"
+                    } else {
+                        "opponent's"
+                    };
+                    combat_text.push_str(&format!("{}:{} ({}) ", i, Self::format_combat_creature(view, id), owner));
                 }
-                combat_text.push_str("\nFormat: 'blocker:attacker' pairs, or 'none'");
+                combat_text.push_str("\nRespond with blocker_assignments: list of {\"blocker\": N, \"attacker\": N} pairs, or empty list for no blocks.");
 
                 self.log("THINKING", "blockers...");
                 let full_prompt = self.build_prompt(view, &combat_text);
-                let response = self.send_message(&full_prompt);
-                self.log("BLOCKERS", &response);
 
-                // Parse from last line, strip "ANSWER:" prefix.
-                let last_line = response.lines().rev()
-                    .find(|l| !l.trim().is_empty())
-                    .unwrap_or(&response)
-                    .trim();
-                let answer = last_line.strip_prefix("ANSWER:").or_else(|| last_line.strip_prefix("Answer:"))
-                    .unwrap_or(last_line)
-                    .trim();
-
-                let lower = answer.to_lowercase();
-                if lower.contains("none") || lower.is_empty() {
-                    return Action::DeclareBlockers { assignments: vec![] };
-                }
-
-                let mut assignments = Vec::new();
-                for pair in answer.split_whitespace() {
-                    // Accept both "0:0" and "0->0" formats
-                    let parts: Vec<&str> = if pair.contains("->") {
-                        pair.split("->").collect()
-                    } else {
-                        pair.split(':').collect()
-                    };
-                    if parts.len() == 2 {
-                        if let (Ok(b), Ok(a)) = (parts[0].parse::<usize>(), parts[1].parse::<usize>()) {
-                            if b < eligible_blockers.len() && a < attackers.len() {
-                                assignments.push((eligible_blockers[b], attackers[a]));
-                            }
+                let schema = serde_json::json!({
+                    "type": "object",
+                    "properties": {
+                        "thoughts": {"type": "string", "description": "Brief reasoning about blocking decisions"},
+                        "blocker_assignments": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "blocker": {"type": "integer", "minimum": 0, "description": "Index of your blocking creature"},
+                                    "attacker": {"type": "integer", "minimum": 0, "description": "Index of the attacking creature to block"}
+                                },
+                                "required": ["blocker", "attacker"]
+                            },
+                            "description": "List of blocker-attacker pairs (empty for no blocks)"
                         }
-                    }
-                }
+                    },
+                    "required": ["thoughts", "blocker_assignments"]
+                });
+
+                let response = self.send_message_structured(&full_prompt, &schema);
+                self.log("BLOCKERS", &response.to_string());
+
+                let assignments = response["blocker_assignments"]
+                    .as_array()
+                    .map(|arr| arr.iter()
+                        .filter_map(|pair| {
+                            let b = pair["blocker"].as_u64()? as usize;
+                            let a = pair["attacker"].as_u64()? as usize;
+                            if b < eligible_blockers.len() && a < attackers.len() {
+                                Some((eligible_blockers[b], attackers[a]))
+                            } else {
+                                None
+                            }
+                        })
+                        .collect())
+                    .unwrap_or_default();
                 Action::DeclareBlockers { assignments }
             }
         }
