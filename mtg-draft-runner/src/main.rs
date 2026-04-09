@@ -128,7 +128,7 @@ fn main() {
     } else {
         args.models.iter().enumerate().map(|(i, m)| format!("S{}:{}", i, m)).collect::<Vec<_>>().join(", ")
     };
-    log.header(&set_data.set_name, args.players, args.best_of, &models_desc);
+    log_header!(log, &set_data.set_name, args.players, args.best_of, &models_desc);
 
     if !args.quiet {
         eprintln!(
@@ -145,15 +145,15 @@ fn main() {
     let packs = generate_draft_packs(&sheets, args.players, &mut rng);
 
     // Log original pack contents
-    log.section("BOOSTER PACKS");
+    log_section!(log, "BOOSTER PACKS");
     for (seat, player_packs) in packs.iter().enumerate() {
         for (pack_num, pack) in player_packs.iter().enumerate() {
-            log.pack_contents(seat, pack_num + 1, &pack.all_cards());
+            log_pack_contents!(log, seat, pack_num + 1, &pack.all_cards());
         }
     }
 
     // ── Phase 2: Draft ──
-    log.section("DRAFT");
+    log_section!(log, "DRAFT");
     if !args.quiet {
         eprintln!("Starting draft...");
     }
@@ -225,9 +225,9 @@ fn main() {
 
             // Apply picks sequentially (mutates draft state) and log
             if pick_num == 0 {
-                log.subsection(&format!("Pack {}", round + 1));
+                log_subsection!(log, &format!("Pack {}", round + 1));
             }
-            for (seat, chosen, _prompt, response) in pick_results {
+            for (seat, chosen, prompt, response) in pick_results {
                 let available = draft.current_pack_for(seat).to_vec();
 
                 draft.make_pick(seat, &chosen).unwrap_or_else(|e| {
@@ -236,7 +236,7 @@ fn main() {
                     draft.make_pick(seat, &first).unwrap();
                 });
 
-                log.draft_pick(seat, round + 1, pick_num + 1, &available, &chosen, &response);
+                log_draft_pick!(log, seat, round + 1, pick_num + 1, &available, &chosen, &prompt, &response);
             }
 
             draft.rotate_packs();
@@ -248,13 +248,13 @@ fn main() {
     }
 
     // Log final pools
-    log.section("DRAFT POOLS");
+    log_section!(log, "DRAFT POOLS");
     for seat in 0..args.players {
-        log.pool_summary(seat, &draft.players[seat].pool);
+        log_pool_summary!(log, seat, &draft.players[seat].pool);
     }
 
     // ── Phase 3: Deck Building ──
-    log.section("DECK BUILDING");
+    log_section!(log, "DECK BUILDING");
     if !args.quiet {
         eprintln!("Building decks...");
     }
@@ -275,7 +275,7 @@ fn main() {
     let mut decklists: Vec<Decklist> = Vec::new();
 
     for (seat, result) in deck_results.iter().enumerate() {
-        log.deck_building(
+        log_deck_building!(log, 
             seat,
             &result.deck.maindeck,
             &result.deck.lands,
@@ -293,7 +293,7 @@ fn main() {
     }
 
     // ── Phase 4: Tournament ──
-    log.section("TOURNAMENT");
+    log_section!(log, "TOURNAMENT");
     if !args.quiet {
         eprintln!("Starting Swiss tournament...");
     }
@@ -342,7 +342,8 @@ fn main() {
                     let model_b = &args.models[b];
                     let best_of = args.best_of;
                     let quiet = args.quiet;
-                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet))
+                    let log_path = &args.log;
+                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet, log_path))
                 })
                 .collect();
 
@@ -352,13 +353,13 @@ fn main() {
         // Log byes
         for &(a, b) in &pairings {
             if b == usize::MAX {
-                log.bye(round_num, a);
+                log_bye!(log, round_num, a);
             }
         }
 
         // Log match results and game logs
         for result in &results {
-            log.match_result(
+            log_match_result!(log, 
                 round_num,
                 result.player_a,
                 result.player_b,
@@ -367,7 +368,7 @@ fn main() {
                 result.winner(),
             );
             for (game_num, game) in result.games.iter().enumerate() {
-                log.game_log(
+                log_game_log!(log, 
                     round_num,
                     game_num + 1,
                     result.player_a,
@@ -392,13 +393,13 @@ fn main() {
     }
 
     // ── Phase 5: Output ──
-    log.section("FINAL STANDINGS");
+    log_section!(log, "FINAL STANDINGS");
     let sorted = tournament.sorted_standings();
     let standings_data: Vec<(usize, usize, usize, usize)> = sorted
         .iter()
         .map(|s| (s.seat, s.match_wins, s.match_losses, s.game_wins))
         .collect();
-    log.standings(&standings_data);
+    log_standings!(log, &standings_data);
 
     if !args.quiet {
         eprintln!("\nFinal Standings:");
@@ -544,6 +545,7 @@ fn play_match(
     model_spec_b: &str,
     best_of: usize,
     _quiet: bool,
+    log_path: &str,
 ) -> MatchResult {
     let wins_needed = best_of / 2 + 1;
     let mut wins_a = 0;
@@ -551,10 +553,11 @@ fn play_match(
     let mut games = Vec::new();
 
     // Create LLM players once per match, reuse across games.
+    // Set log file so all API prompts/responses are written to the draft log.
     let name_a = format!("Seat{}", seat_a);
     let name_b = format!("Seat{}", seat_b);
-    let mut p1 = make_game_player(model_spec_a, &name_a);
-    let mut p2 = make_game_player(model_spec_b, &name_b);
+    let mut p1 = make_game_player(model_spec_a, &name_a).with_log(log_path);
+    let mut p2 = make_game_player(model_spec_b, &name_b).with_log(log_path);
 
     while wins_a < wins_needed && wins_b < wins_needed {
         let outcome = play_game(seat_a, seat_b, deck_a, deck_b, registry, &mut p1, &mut p2);
