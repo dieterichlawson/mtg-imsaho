@@ -178,6 +178,8 @@ pub struct DraftLlmClient {
     api_key: String,
     model: String,
     provider: Provider,
+    /// Gemini thinking level (e.g., "low", "medium", "high"). None for Anthropic.
+    thinking_level: Option<String>,
     system_prompt: String,
     /// Draft conversation history (picks).
     conversation: Vec<serde_json::Value>,
@@ -191,10 +193,14 @@ enum Provider {
 }
 
 impl DraftLlmClient {
+    /// Create a new DraftLlmClient.
+    /// Model spec format: "provider:model:thinking_level"
+    /// Examples: "claude", "gemini:gemini-2.5-flash", "gemini:gemini-3-flash-preview:low"
     pub fn new(model_spec: &str, set_name: &str, guide: Option<&str>) -> Self {
-        let parts: Vec<&str> = model_spec.splitn(2, ':').collect();
+        let parts: Vec<&str> = model_spec.split(':').collect();
         let provider_name = parts[0];
         let model_override = parts.get(1).copied();
+        let thinking_level_override = parts.get(2).map(|s| s.to_string());
 
         let (provider, api_key, default_model) = match provider_name {
             "gemini" => (
@@ -212,6 +218,11 @@ impl DraftLlmClient {
         let model = model_override
             .unwrap_or(default_model)
             .to_string();
+
+        let thinking_level = match &provider {
+            Provider::Gemini => Some(thinking_level_override.unwrap_or_else(|| "high".to_string())),
+            Provider::Anthropic => None,
+        };
 
         let guide_section = guide
             .map(|g| format!("\n## Draft Guide\n\n{}\n", g))
@@ -245,6 +256,7 @@ where <number> is the 0-indexed number of the card you want."#,
             api_key,
             model,
             provider,
+            thinking_level,
             system_prompt,
             conversation: Vec::new(),
             deck_conversation: Vec::new(),
@@ -494,15 +506,26 @@ where <number> is the 0-indexed number of the card you want."#,
             })
             .collect();
 
+        let thinking_config = if let Some(ref level) = self.thinking_level {
+            // Gemini 3: thinkingLevel. Gemini 2.5: thinkingBudget.
+            // thinkingLevel works on both, thinkingBudget only on 2.5.
+            serde_json::json!({"includeThoughts": true, "thinkingLevel": level})
+        } else {
+            serde_json::json!({"includeThoughts": true})
+        };
+
         let gen_config = if let Some(s) = schema {
             serde_json::json!({
                 "maxOutputTokens": 4096,
                 "responseMimeType": "application/json",
                 "responseSchema": s,
-                "thinkingConfig": {"includeThoughts": true}
+                "thinkingConfig": thinking_config
             })
         } else {
-            serde_json::json!({"maxOutputTokens": 4096})
+            serde_json::json!({
+                "maxOutputTokens": 4096,
+                "thinkingConfig": thinking_config
+            })
         };
 
         let body = serde_json::json!({

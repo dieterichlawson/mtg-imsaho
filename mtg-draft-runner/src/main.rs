@@ -672,20 +672,21 @@ fn play_game(
 }
 
 fn make_game_player(model_spec: &str, name: &str) -> LlmPlayer {
-    let parts: Vec<&str> = model_spec.splitn(2, ':').collect();
+    let parts: Vec<&str> = model_spec.split(':').collect();
     let provider = parts[0];
     let model = parts.get(1).copied();
+    let thinking_level = parts.get(2).copied();
 
-    match provider {
-        "claude" => {
-            let mut p = LlmPlayer::new(name);
+    let mut p = match provider {
+        "gemini" => {
+            let mut p = LlmPlayer::new_gemini(name);
             if let Some(m) = model {
                 p = p.with_model(m);
             }
             p
         }
-        "gemini" => {
-            let mut p = LlmPlayer::new_gemini(name);
+        "claude" => {
+            let mut p = LlmPlayer::new(name);
             if let Some(m) = model {
                 p = p.with_model(m);
             }
@@ -695,5 +696,9 @@ fn make_game_player(model_spec: &str, name: &str) -> LlmPlayer {
             eprintln!("Unknown model provider '{}', defaulting to claude", provider);
             LlmPlayer::new(name)
         }
+    };
+    if let Some(level) = thinking_level {
+        p = p.with_thinking_level(level);
     }
+    p
 }

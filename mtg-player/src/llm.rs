@@ -213,6 +213,8 @@ pub struct LlmPlayer {
     model: String,
     provider: Provider,
     log_file: Option<String>,
+    /// Gemini thinking level (e.g., "low", "medium", "high").
+    thinking_level: Option<String>,
     /// System prompt (rules + decklists). Set by init_conversation.
     system_prompt: String,
     /// Multi-turn conversation history for Anthropic API.
@@ -234,6 +236,7 @@ impl LlmPlayer {
             model: "claude-sonnet-4-6".to_string(),
             provider: Provider::Anthropic,
             log_file: None,
+            thinking_level: None,
             system_prompt: SYSTEM_PROMPT.to_string(),
             conversation: Vec::new(),
             last_log_index: 0,
@@ -251,6 +254,7 @@ impl LlmPlayer {
             model: "gemini-2.5-flash".to_string(),
             provider: Provider::Gemini,
             log_file: None,
+            thinking_level: None,
             system_prompt: SYSTEM_PROMPT.to_string(),
             conversation: Vec::new(),
             last_log_index: 0,
@@ -259,6 +263,11 @@ impl LlmPlayer {
 
     pub fn with_model(mut self, model: &str) -> Self {
         self.model = model.to_string();
+        self
+    }
+
+    pub fn with_thinking_level(mut self, level: &str) -> Self {
+        self.thinking_level = Some(level.to_string());
         self
     }
 
@@ -992,7 +1001,11 @@ impl LlmPlayer {
                     },
                     "required": ["action"]
                 },
-                "thinkingConfig": {"includeThoughts": true}
+                "thinkingConfig": if let Some(ref level) = self.thinking_level {
+                    serde_json::json!({"includeThoughts": true, "thinkingLevel": level})
+                } else {
+                    serde_json::json!({"includeThoughts": true})
+                }
             }
         });
 
