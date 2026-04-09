@@ -61,6 +61,8 @@ pub enum Action {
 pub enum ResolvedChoice {
     /// Pay or don't pay (Frightful Delusion).
     PayDecision(bool),
+    /// Yes or no for "you may" abilities (Cloistered Youth transform, etc.).
+    YesNoDecision(bool),
     /// Choose a target, or None if optional and declined.
     ChosenTarget(Option<Target>),
     /// Choose a card from a revealed set.

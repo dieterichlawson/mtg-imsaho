@@ -692,7 +692,7 @@ fn bug_bitterheart_witch_hexproof_not_filtered() {
         choice: mtg_engine::state::ResolutionChoiceKind::YesNo { .. }, ..
     }) = &state.awaiting_action {
         let action = Action::ResolveChoice {
-            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+            choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
         };
         state = engine::submit_action(&state, &action, &registry);
     }

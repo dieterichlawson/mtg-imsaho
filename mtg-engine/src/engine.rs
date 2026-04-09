@@ -328,8 +328,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     }
                     ResolutionChoiceKind::YesNo { .. } => {
                         vec![
-                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
-                            Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+                            Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+                            Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
                         ]
                     }
                     ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => {
@@ -2415,7 +2415,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.move_spell_after_resolve(*source_spell_id, registry);
                     }
                     (ResolutionChoiceKind::YesNo { source_card, .. },
-                     ResolvedChoice::PayDecision(yes)) => {
+                     ResolvedChoice::YesNoDecision(yes)) => {
                         // Dispatch to the card's on_yes_no_choice hook.
                         let source_card_id = new_state.get_object(*source_card).map(|o| o.card_id);
                         if let Some(behavior) = source_card_id.and_then(|cid| registry.get(cid)) {

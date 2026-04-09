@@ -94,7 +94,7 @@ fn mentor_of_the_meek_draws_when_small_creature_enters() {
     // Player chooses yes (pay {1} and draw).
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -203,7 +203,7 @@ fn bitterheart_witch_finds_curse_on_death() {
     // Player chooses yes to search.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -241,7 +241,7 @@ fn bitterheart_witch_can_attach_curse_to_self() {
     behavior.on_dies(&mut state, witch, &reg);
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -279,7 +279,7 @@ fn bitterheart_witch_decline_search() {
     // Player declines to search.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
         &reg,
     );
 
@@ -971,7 +971,7 @@ fn delver_transforms_when_player_reveals_instant() {
     // Player chooses to reveal.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1006,7 +1006,7 @@ fn delver_does_not_transform_when_player_declines_reveal() {
     // Player declines to reveal.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
         &reg,
     );
 
@@ -1041,7 +1041,7 @@ fn delver_does_not_transform_when_top_card_is_creature() {
     // Player chooses to reveal.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1069,7 +1069,7 @@ fn cloistered_youth_presents_transform_choice_at_upkeep() {
     // Player chooses yes to transform.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1095,7 +1095,7 @@ fn cloistered_youth_can_decline_transform() {
     // Player declines to transform.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
         &reg,
     );
 
@@ -1169,7 +1169,7 @@ fn screeching_bat_transforms_at_upkeep_when_player_pays() {
     // Player chooses to pay.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1202,7 +1202,7 @@ fn screeching_bat_does_not_transform_when_player_declines() {
     // Player declines to pay.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(false) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(false) },
         &reg,
     );
 
@@ -1255,7 +1255,7 @@ fn stalking_vampire_transforms_back_when_player_pays() {
     // Player chooses to pay.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1287,7 +1287,7 @@ fn stalking_vampire_does_not_have_flying() {
     behavior.on_upkeep(&mut state, bat, &reg);
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1330,7 +1330,7 @@ fn screeching_bat_regains_flying_on_transform_back() {
     behavior.on_upkeep(&mut state, bat, &reg);
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1367,7 +1367,7 @@ fn screeching_bat_transform_updates_subtypes() {
     behavior.on_upkeep(&mut state, bat, &reg);
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 
@@ -1432,7 +1432,7 @@ fn thraben_sentry_transforms_when_creature_dies() {
     // Player chooses yes.
     state = engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) },
+        &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
         &reg,
     );
 

@@ -203,7 +203,7 @@ fn caravan_vigil_morbid_choose_battlefield() {
     if new_state.awaiting_action.is_some() {
         // Accept the morbid choice (put on battlefield).
         new_state = mtg_engine::engine::submit_action(
-            &new_state, &Action::ResolveChoice { choice: ResolvedChoice::PayDecision(true) }, &reg,
+            &new_state, &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) }, &reg,
         );
     }
 

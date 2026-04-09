@@ -389,7 +389,7 @@ fn curiosity_draw_on_enchanted_creature_combat_damage() {
     state = mtg_engine::engine::submit_action(
         &state,
         &mtg_engine::actions::Action::ResolveChoice {
-            choice: mtg_engine::actions::ResolvedChoice::PayDecision(true),
+            choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(true),
         },
         &reg,
     );
@@ -437,7 +437,7 @@ fn curiosity_decline_draw() {
     state = mtg_engine::engine::submit_action(
         &state,
         &mtg_engine::actions::Action::ResolveChoice {
-            choice: mtg_engine::actions::ResolvedChoice::PayDecision(false),
+            choice: mtg_engine::actions::ResolvedChoice::YesNoDecision(false),
         },
         &reg,
     );
