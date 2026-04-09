@@ -448,7 +448,12 @@ impl GeminiDraftBackend {
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
-                    if code == 429 || code == 503 { continue; }
+                    if code == 429 || code == 503 {
+                        if let Ok(err_text) = resp.text() {
+                            eprintln!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
+                        }
+                        continue;
+                    }
                     let text = resp.text().unwrap_or_default();
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {

@@ -462,6 +462,9 @@ impl GeminiBackend {
 
                     let code = resp.status().as_u16();
                     if code == 429 || code == 503 || code == 529 {
+                        if let Ok(err_text) = resp.text() {
+                            eprintln!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
+                        }
                         continue;
                     }
                     let text = resp.text().unwrap_or_default();
