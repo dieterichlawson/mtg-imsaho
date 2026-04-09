@@ -47,15 +47,14 @@ fn record_anthropic_llm_usage(model: &str, json: &serde_json::Value) {
     );
 }
 
-fn record_gemini_llm_usage(model: &str, json: &serde_json::Value) {
-    let usage = &json["usageMetadata"];
-    let prompt_tokens = usage["promptTokenCount"].as_u64().unwrap_or(0);
-    let cached_tokens = usage["cachedContentInputTokenCount"].as_u64().unwrap_or(0);
-    let uncached_input = prompt_tokens.saturating_sub(cached_tokens);
+fn record_gemini_llm_usage(model: &str, usage: &serde_json::Value) {
+    let input_tokens = usage["total_input_tokens"].as_u64().unwrap_or(0);
+    let cached_tokens = usage["total_cached_tokens"].as_u64().unwrap_or(0);
+    let uncached_input = input_tokens.saturating_sub(cached_tokens);
     record_llm_usage(
         model,
         uncached_input,
-        usage["candidatesTokenCount"].as_u64().unwrap_or(0),
+        usage["total_output_tokens"].as_u64().unwrap_or(0),
         cached_tokens,
         0,
     );
@@ -66,30 +65,8 @@ pub fn get_llm_model_usage() -> HashMap<String, LlmModelUsage> {
     LLM_MODEL_USAGE.lock().unwrap().clone()
 }
 
-const SYSTEM_PROMPT: &str = r#"You are playing Magic: The Gathering. Respond with ONLY your choice. No explanation, no reasoning, just the answer.
-
-## Response format
-- Action selection: a single number (e.g. "3")
-- Choosing attackers: space-separated numbers, "all", or "none"
-- Choosing blockers: "blocker:attacker" pairs (e.g. "0:0 1:2"), or "none"
-
-You may briefly reason about your decision. Your FINAL LINE must be ONLY your answer — a single number, space-separated numbers, "all", or "none". Nothing else on that line.
-
-Example response for action selection:
-I should tap my Forest to build toward casting Kalonian Tusker next action.
-ANSWER: 1
-
-Example response for attackers:
-I have two 3/3s and opponent has no blockers. Attack with everything.
-ANSWER: all
-
-Example response for blockers:
-Block the 3/3 with my 2/1 to prevent damage.
-ANSWER: 0:0
-
-The system parses ONLY the last line. If the last line isn't a valid number/format, you default to passing.
-
-## Key rules
+/// Shared game rules and strategy — used by all backends.
+const GAME_RULES: &str = r#"## Key rules
 - AUTO-TAP: When you choose "Cast [spell]", the engine automatically taps the right lands for you. Just pick the Cast option directly — no need to tap lands first.
 - The Cast option shows which lands will be tapped, e.g. "Cast Doom Blade (tap Swamp, Swamp)".
 - MANUAL TAPPING: Rarely needed, but useful when you want to: float mana before combat (to bluff an instant or have mana open), use a mana ability with a side effect (e.g. Deranged Assistant mills a card), or override the auto-tap plan to keep a specific land untapped (e.g. preserving Gavony Township for its activated ability). In most cases, just use the Cast option.
@@ -200,79 +177,396 @@ Answer: 0:0 1:1
 IMPORTANT: For blocking, the format is BLOCKER_NUMBER:ATTACKER_NUMBER (e.g. "0:0" NOT "0:" or "0>0"). Both numbers are required.
 "#;
 
-#[derive(Clone)]
-pub enum Provider {
-    Anthropic,
-    Gemini,
+/// Backend trait for LLM API communication.
+/// Separates provider-specific API mechanics from shared game logic.
+trait LlmBackend {
+    /// Send a message and get a response. Manages conversation state internally.
+    fn send(&mut self, message: &str) -> String;
+    /// Initialize with a system prompt (rules + decklists).
+    fn init(&mut self, system_prompt: &str);
+    /// Resume from a game log recap.
+    fn resume(&mut self, recap: &str);
+    /// Set thinking level (Gemini only, no-op for others).
+    fn set_thinking_level(&mut self, _level: &str) {}
+    /// Get the conversation length (for tests).
+    fn conversation_len(&self) -> usize { 0 }
+    /// Get the system prompt (for tests).
+    fn system_prompt(&self) -> &str;
+}
+
+const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering. Respond with ONLY your choice. No explanation, no reasoning, just the answer.
+
+## Response format
+- Action selection: a single number (e.g. "3")
+- Choosing attackers: space-separated numbers, "all", or "none"
+- Choosing blockers: "blocker:attacker" pairs (e.g. "0:0 1:2"), or "none"
+
+You may briefly reason about your decision. Your FINAL LINE must be ONLY your answer — a single number, space-separated numbers, "all", or "none". Nothing else on that line.
+
+Example response for action selection:
+I should tap my Forest to build toward casting Kalonian Tusker next action.
+ANSWER: 1
+
+Example response for attackers:
+I have two 3/3s and opponent has no blockers. Attack with everything.
+ANSWER: all
+
+Example response for blockers:
+Block the 3/3 with my 2/1 to prevent damage.
+ANSWER: 0:0
+
+The system parses ONLY the last line. If the last line isn't a valid number/format, you default to passing.
+
+"#;
+
+const GEMINI_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering.
+
+You will respond with structured JSON. Use the "thoughts" field to briefly explain your reasoning, and the "action" field for the 0-indexed action number you choose.
+
+For combat decisions (attackers/blockers), the response format will be different — follow the instructions in each prompt.
+
+"#;
+
+/// Anthropic Claude backend using the Messages API with prompt caching.
+struct AnthropicBackend {
+    client: Client,
+    api_key: String,
+    model: String,
+    system_prompt: String,
+    conversation: Vec<serde_json::Value>,
+}
+
+impl AnthropicBackend {
+    fn new(model: &str) -> Self {
+        let api_key = env::var("ANTHROPIC_API_KEY")
+            .expect("ANTHROPIC_API_KEY environment variable must be set");
+        Self {
+            client: Client::new(),
+            api_key,
+            model: model.to_string(),
+            system_prompt: format!("{}{}", ANTHROPIC_RESPONSE_FORMAT, GAME_RULES),
+            conversation: Vec::new(),
+        }
+    }
+
+    fn call_with_messages(&self, messages: &[serde_json::Value]) -> String {
+        let system = serde_json::json!([{
+            "type": "text",
+            "text": self.system_prompt,
+            "cache_control": {"type": "ephemeral"}
+        }]);
+
+        let mut msgs = messages.to_vec();
+        if msgs.len() >= 2 {
+            let idx = msgs.len() - 2;
+            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(|s| s.to_string()) {
+                msgs[idx] = serde_json::json!({
+                    "role": msgs[idx]["role"],
+                    "content": [{
+                        "type": "text",
+                        "text": content,
+                        "cache_control": {"type": "ephemeral"}
+                    }]
+                });
+            }
+        }
+
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": 4096,
+            "system": system,
+            "messages": msgs
+        });
+
+        for attempt in 0..3 {
+            if attempt > 0 {
+                let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
+                std::thread::sleep(delay);
+            }
+
+            let response = self.client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&body)
+                .send();
+
+            match response {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        let json: serde_json::Value = resp.json().unwrap_or_default();
+                        record_anthropic_llm_usage(&self.model, &json);
+                        return json["content"][0]["text"]
+                            .as_str()
+                            .unwrap_or("0")
+                            .trim()
+                            .to_string();
+                    }
+                    let code = resp.status().as_u16();
+                    if code == 529 || code == 429 {
+                        continue;
+                    }
+                    let text = resp.text().unwrap_or_default();
+                    eprintln!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
+                    return "0".to_string();
+                }
+                Err(e) => {
+                    eprintln!("Request failed: {}", e);
+                    continue;
+                }
+            }
+        }
+        "0".to_string()
+    }
+}
+
+impl LlmBackend for AnthropicBackend {
+    fn send(&mut self, message: &str) -> String {
+        self.conversation.push(serde_json::json!({"role": "user", "content": message}));
+        let result = self.call_with_messages(&self.conversation.clone());
+        self.conversation.push(serde_json::json!({"role": "assistant", "content": result}));
+        result
+    }
+
+    fn init(&mut self, deck_info: &str) {
+        self.system_prompt = format!("{}{}{}", ANTHROPIC_RESPONSE_FORMAT, GAME_RULES, deck_info);
+        self.conversation.clear();
+    }
+
+    fn resume(&mut self, recap: &str) {
+        self.conversation.push(serde_json::json!({"role": "user", "content": recap}));
+        self.conversation.push(serde_json::json!({
+            "role": "assistant",
+            "content": "Understood. I've reviewed the game history and I'm ready to continue playing."
+        }));
+    }
+
+    fn conversation_len(&self) -> usize {
+        self.conversation.len()
+    }
+
+    fn system_prompt(&self) -> &str {
+        &self.system_prompt
+    }
+}
+
+/// Gemini backend using the Interactions API with server-managed conversation state.
+struct GeminiBackend {
+    client: Client,
+    api_key: String,
+    model: String,
+    thinking_level: Option<String>,
+    system_prompt: String,
+    interaction_id: Option<String>,
+}
+
+impl GeminiBackend {
+    fn new(model: &str) -> Self {
+        let api_key = env::var("GEMINI_API_KEY")
+            .expect("GEMINI_API_KEY environment variable must be set");
+        Self {
+            client: Client::new(),
+            api_key,
+            model: model.to_string(),
+            thinking_level: None,
+            system_prompt: format!("{}{}", GEMINI_RESPONSE_FORMAT, GAME_RULES),
+            interaction_id: None,
+        }
+    }
+
+    fn call_interactions(&mut self, user_message: &str) -> String {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Brief reasoning for this action"},
+                "action": {"type": "integer", "minimum": 0}
+            },
+            "required": ["thoughts", "action"]
+        });
+
+        let mut body = serde_json::json!({
+            "model": &self.model,
+            "input": user_message,
+            "response_mime_type": "application/json",
+            "response_format": schema,
+        });
+
+        if let Some(ref level) = self.thinking_level {
+            body["generation_config"] = serde_json::json!({"thinking_level": level});
+        }
+
+        // Only chain if we have a non-empty previous interaction ID.
+        if let Some(ref prev_id) = self.interaction_id.as_ref().filter(|s| !s.is_empty()) {
+            body["previous_interaction_id"] = serde_json::json!(prev_id);
+        } else {
+            body["system_instruction"] = serde_json::json!(&self.system_prompt);
+        }
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/interactions?key={}",
+            self.api_key
+        );
+
+        let mut fresh_retry = false;
+        for attempt in 0..6 {
+            if attempt > 0 {
+                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4) as u32));
+                std::thread::sleep(delay);
+            }
+
+            let response = self.client
+                .post(&url)
+                .header("content-type", "application/json")
+                .json(&body)
+                .send();
+
+            match response {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        let json: serde_json::Value = resp.json().unwrap_or_default();
+                        record_gemini_llm_usage(&self.model, &json["usage"]);
+
+                        self.interaction_id = json["id"].as_str()
+                            .filter(|s| !s.is_empty())
+                            .map(|s| s.to_string());
+
+                        let mut output_text = String::new();
+                        if let Some(outputs) = json["outputs"].as_array() {
+                            for out in outputs {
+                                if out["type"].as_str() == Some("text") {
+                                    if let Some(t) = out["text"].as_str() {
+                                        output_text = t.trim().to_string();
+                                    }
+                                }
+                            }
+                        }
+
+                        // Parse structured output: {"thoughts": "...", "action": N}
+                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
+                            if let Some(thoughts) = parsed["thoughts"].as_str() {
+                                crate::game_log::write(file!(), line!(), "GEMINI_THOUGHT", thoughts);
+                            }
+                            if let Some(action) = parsed["action"].as_u64() {
+                                return action.to_string();
+                            }
+                        }
+
+                        // Fallback: if model returned a bare number instead of JSON, use it
+                        // but warn so we can detect structured output failures.
+                        if !output_text.is_empty() {
+                            eprintln!("WARN: Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
+                        }
+                        return if output_text.is_empty() { "0".to_string() } else { output_text };
+                    }
+
+                    let code = resp.status().as_u16();
+                    if code == 429 || code == 503 || code == 529 {
+                        continue;
+                    }
+                    let text = resp.text().unwrap_or_default();
+                    // If the interaction ID is invalid, fall back to a fresh conversation.
+                    if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
+                        eprintln!("WARN: Invalid interaction ID, falling back to fresh conversation");
+                        body.as_object_mut().unwrap().remove("previous_interaction_id");
+                        body["system_instruction"] = serde_json::json!(&self.system_prompt);
+                        self.interaction_id = None;
+                        fresh_retry = true;
+                        continue;
+                    }
+                    // Fatal config errors — abort loudly so we don't silently produce garbage.
+                    if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
+                        eprintln!("FATAL: Gemini config error: {}", &text[..text.len().min(300)]);
+                        std::process::exit(1);
+                    }
+                    eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
+                    return "0".to_string();
+                }
+                Err(e) => {
+                    eprintln!("Request failed: {}", e);
+                    continue;
+                }
+            }
+        }
+        eprintln!("WARN: Gemini API exhausted all retries");
+        "0".to_string()
+    }
+}
+
+impl LlmBackend for GeminiBackend {
+    fn send(&mut self, message: &str) -> String {
+        self.call_interactions(message)
+    }
+
+    fn init(&mut self, deck_info: &str) {
+        self.system_prompt = format!("{}{}{}", GEMINI_RESPONSE_FORMAT, GAME_RULES, deck_info);
+        self.interaction_id = None;
+    }
+
+    fn resume(&mut self, recap: &str) {
+        self.call_interactions(recap);
+    }
+
+    fn set_thinking_level(&mut self, level: &str) {
+        self.thinking_level = Some(level.to_string());
+    }
+
+    fn system_prompt(&self) -> &str {
+        &self.system_prompt
+    }
 }
 
 pub struct LlmPlayer {
     name: String,
-    client: Client,
-    api_key: String,
-    model: String,
-    provider: Provider,
     log_file: Option<String>,
-    /// Gemini thinking level (e.g., "low", "medium", "high").
-    thinking_level: Option<String>,
-    /// System prompt (rules + decklists). Set by init_conversation.
-    system_prompt: String,
-    /// Multi-turn conversation history for Anthropic API.
-    /// Each entry is a {"role": "user"|"assistant", "content": "..."} JSON object.
-    conversation: Vec<serde_json::Value>,
     /// Index into the game log — tracks which log entries have been sent.
     last_log_index: usize,
+    /// Provider-specific API backend.
+    backend: Box<dyn LlmBackend>,
 }
 
 impl LlmPlayer {
     pub fn new(name: &str) -> Self {
-        let api_key = env::var("ANTHROPIC_API_KEY")
-            .expect("ANTHROPIC_API_KEY environment variable must be set");
-
         Self {
             name: name.to_string(),
-            client: Client::new(),
-            api_key,
-            model: "claude-sonnet-4-6".to_string(),
-            provider: Provider::Anthropic,
             log_file: None,
-            thinking_level: None,
-            system_prompt: SYSTEM_PROMPT.to_string(),
-            conversation: Vec::new(),
             last_log_index: 0,
+            backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
         }
     }
 
     pub fn new_gemini(name: &str) -> Self {
-        let api_key = env::var("GEMINI_API_KEY")
-            .expect("GEMINI_API_KEY environment variable must be set");
-
         Self {
             name: name.to_string(),
-            client: Client::new(),
-            api_key,
-            model: "gemini-2.5-flash".to_string(),
-            provider: Provider::Gemini,
             log_file: None,
-            thinking_level: None,
-            system_prompt: SYSTEM_PROMPT.to_string(),
-            conversation: Vec::new(),
             last_log_index: 0,
+            backend: Box::new(GeminiBackend::new("gemini-2.5-flash")),
         }
     }
 
     pub fn with_model(mut self, model: &str) -> Self {
-        self.model = model.to_string();
+        // Recreate the backend with the new model name.
+        // We check the current backend type by trying to downcast.
+        if model.contains("gemini") {
+            self.backend = Box::new(GeminiBackend::new(model));
+        } else {
+            self.backend = Box::new(AnthropicBackend::new(model));
+        }
         self
     }
 
     pub fn with_thinking_level(mut self, level: &str) -> Self {
-        self.thinking_level = Some(level.to_string());
+        // Only affects Gemini — set on the backend if it's a GeminiBackend.
+        // We need to recreate since we can't downcast through Box<dyn>.
+        // Store it and apply when we have access.
+        // For now, we use a workaround: GeminiBackend stores thinking_level.
+        // Since with_model already creates the right backend type, we just
+        // need to set thinking level on it.
+        self.backend.set_thinking_level(level);
         self
     }
 
     pub fn with_log(mut self, path: &str) -> Self {
-        // Truncate the file at start.
         let _ = std::fs::write(path, "");
         self.log_file = Some(path.to_string());
         self
@@ -291,10 +585,9 @@ impl LlmPlayer {
         deck_info.push_str(&Self::format_decklist(your_deck, registry));
         deck_info.push_str("\n\n## Opponent's decklist\n\n");
         deck_info.push_str(&Self::format_decklist(opp_deck, registry));
-        self.system_prompt = format!("{}{}", SYSTEM_PROMPT, deck_info);
-        self.conversation.clear();
+        self.backend.init(&deck_info);
         self.last_log_index = 0;
-        self.log("SYSTEM", &self.system_prompt);
+        self.log("SYSTEM", self.backend.system_prompt());
     }
 
     /// Resume conversation from an existing game state.
@@ -312,15 +605,7 @@ impl LlmPlayer {
         }
         recap.push_str("\nThe game continues from this point. You will be prompted for your next action.");
 
-        // Add as a user message with a synthetic assistant acknowledgment.
-        self.conversation.push(serde_json::json!({
-            "role": "user",
-            "content": recap,
-        }));
-        self.conversation.push(serde_json::json!({
-            "role": "assistant",
-            "content": "Understood. I've reviewed the game history and I'm ready to continue playing.",
-        }));
+        self.backend.resume(&recap);
         // Set log index to current length so we don't re-send these entries.
         self.last_log_index = game_log.len();
         self.log("RESUME", &format!("Resumed with {} log entries", game_log.len()));
@@ -371,12 +656,12 @@ impl LlmPlayer {
 
     /// Expose system prompt for testing.
     pub fn system_prompt_for_test(&self) -> &str {
-        &self.system_prompt
+        self.backend.system_prompt()
     }
 
     /// Expose conversation length for testing.
     pub fn conversation_len_for_test(&self) -> usize {
-        self.conversation.len()
+        self.backend.conversation_len()
     }
 
     /// Expose last_log_index for testing.
@@ -812,28 +1097,12 @@ impl LlmPlayer {
             .unwrap_or_else(|| format!("{}", id))
     }
 
-    /// Build a user message with log delta + board state + prompt, append to
-    /// conversation, send to API, append assistant response, return the text.
+    /// Build a user message with log delta + board state + prompt, send to
+    /// backend, return the text.
     fn send_message(&mut self, user_message: &str) -> String {
         self.log("PROMPT", user_message);
-
-        // Append user message to conversation.
-        self.conversation.push(serde_json::json!({
-            "role": "user",
-            "content": user_message,
-        }));
-
-        let result = match self.provider {
-            Provider::Anthropic => self.call_anthropic_conv(),
-            Provider::Gemini => self.call_gemini_conv(),
-        };
-
-        // Append assistant response.
-        self.conversation.push(serde_json::json!({
-            "role": "assistant",
-            "content": result,
-        }));
-
+        let result = self.backend.send(user_message);
+        self.log("RESPONSE", &result);
         result
     }
 
@@ -860,230 +1129,15 @@ impl LlmPlayer {
         prompt
     }
 
-    /// Legacy one-shot API call (for sub-prompts like target selection within a turn).
-    fn call_api(&self, user_message: &str) -> String {
+    /// Sub-prompt API call (for target selection, etc.).
+    /// Sends through the same backend conversation.
+    fn call_api(&mut self, user_message: &str) -> String {
         self.log("PROMPT", user_message);
-
-        match self.provider {
-            Provider::Anthropic => {
-                // Use conversation context for sub-prompts too.
-                let mut messages = self.conversation.clone();
-                messages.push(serde_json::json!({"role": "user", "content": user_message}));
-                self.call_anthropic_with_messages(&messages)
-            }
-            Provider::Gemini => self.call_gemini_oneshot(user_message),
-        }
+        let result = self.backend.send(user_message);
+        self.log("RESPONSE", &result);
+        result
     }
 
-    fn call_anthropic_conv(&self) -> String {
-        self.call_anthropic_with_messages(&self.conversation)
-    }
-
-    fn call_anthropic_with_messages(&self, messages: &[serde_json::Value]) -> String {
-        // Set cache_control on the system prompt (always cached) and on
-        // the second-to-last message (conversation prefix cached).
-        let system = serde_json::json!([{
-            "type": "text",
-            "text": self.system_prompt,
-            "cache_control": {"type": "ephemeral"}
-        }]);
-
-        let mut msgs = messages.to_vec();
-        // Set cache_control on the second-to-last message if there are at least 2.
-        if msgs.len() >= 2 {
-            let idx = msgs.len() - 2;
-            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(|s| s.to_string()) {
-                msgs[idx] = serde_json::json!({
-                    "role": msgs[idx]["role"],
-                    "content": [{
-                        "type": "text",
-                        "text": content,
-                        "cache_control": {"type": "ephemeral"}
-                    }]
-                });
-            }
-        }
-
-        let body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": 4096,
-            "system": system,
-            "messages": msgs
-        });
-
-        for attempt in 0..3 {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
-                self.log("RETRY", &format!("Retrying in {}s...", delay.as_secs()));
-                std::thread::sleep(delay);
-            }
-
-            let response = self.client
-                .post("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", &self.api_key)
-                .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json")
-                .json(&body)
-                .send();
-
-            match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_anthropic_llm_usage(&self.model, &json);
-                        let result = json["content"][0]["text"]
-                            .as_str()
-                            .unwrap_or("0")
-                            .trim()
-                            .to_string();
-                        self.log("RESPONSE", &result);
-                        return result;
-                    }
-
-                    let status = resp.status();
-                    let text = resp.text().unwrap_or_default();
-                    self.log("API-ERROR", &format!("{}: {}", status, text));
-                    self.log("ERROR", &format!("API {} - {}", status, text));
-
-                    // Retry on overload (529) or rate limit (429).
-                    let code = status.as_u16();
-                    if code == 529 || code == 429 {
-                        continue;
-                    }
-                    // Non-retryable error.
-                    return "0".to_string();
-                }
-                Err(e) => {
-                    self.log("REQUEST-FAILED", &format!("{}", e));
-                    self.log("ERROR", &format!("Request failed: {}", e));
-                    continue;
-                }
-            }
-        }
-
-        self.log("ERROR", "All retries exhausted, defaulting to 0");
-        "0".to_string()
-    }
-
-    fn call_gemini_conv(&self) -> String {
-        // Convert conversation to Gemini format.
-        let contents: Vec<serde_json::Value> = self.conversation.iter().map(|msg| {
-            let role = msg["role"].as_str().unwrap_or("user");
-            let gemini_role = if role == "assistant" { "model" } else { "user" };
-            serde_json::json!({"role": gemini_role, "parts": [{"text": msg["content"].as_str().unwrap_or("")}]})
-        }).collect();
-        self.call_gemini_with_contents(&contents)
-    }
-
-    fn call_gemini_oneshot(&self, user_message: &str) -> String {
-        let mut contents: Vec<serde_json::Value> = self.conversation.iter().map(|msg| {
-            let role = msg["role"].as_str().unwrap_or("user");
-            let gemini_role = if role == "assistant" { "model" } else { "user" };
-            serde_json::json!({"role": gemini_role, "parts": [{"text": msg["content"].as_str().unwrap_or("")}]})
-        }).collect();
-        contents.push(serde_json::json!({"role": "user", "parts": [{"text": user_message}]}));
-        self.call_gemini_with_contents(&contents)
-    }
-
-    fn call_gemini_with_contents(&self, contents: &[serde_json::Value]) -> String {
-        // Use structured output to constrain Gemini to valid JSON with an action number.
-        // This prevents degenerate repetition loops (e.g., _ov_ov_ov).
-        let body = serde_json::json!({
-            "contents": contents,
-            "systemInstruction": {"parts": [{"text": self.system_prompt}]},
-            "generationConfig": {
-                "maxOutputTokens": 4096,
-                "responseMimeType": "application/json",
-                "responseSchema": {
-                    "type": "object",
-                    "properties": {
-                        "action": {"type": "integer", "minimum": 0}
-                    },
-                    "required": ["action"]
-                },
-                "thinkingConfig": if let Some(ref level) = self.thinking_level {
-                    serde_json::json!({"includeThoughts": true, "thinkingLevel": level})
-                } else {
-                    serde_json::json!({"includeThoughts": true})
-                }
-            }
-        });
-
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            self.model, self.api_key
-        );
-
-        for attempt in 0..3 {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
-                self.log("RETRY", &format!("Retrying in {}s...", delay.as_secs()));
-                std::thread::sleep(delay);
-            }
-
-            let response = self.client
-                .post(&url)
-                .header("content-type", "application/json")
-                .json(&body)
-                .send();
-
-            match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_gemini_llm_usage(&self.model, &json);
-
-                        // Extract output, skipping thought parts. Log thoughts.
-                        let parts = &json["candidates"][0]["content"]["parts"];
-                        let mut output_text = String::new();
-                        if let Some(parts_arr) = parts.as_array() {
-                            for part in parts_arr {
-                                if part["thought"].as_bool() == Some(true) {
-                                    if let Some(t) = part["text"].as_str() {
-                                        self.log("THOUGHT", t);
-                                    }
-                                } else if let Some(t) = part["text"].as_str() {
-                                    output_text = t.trim().to_string();
-                                }
-                            }
-                        }
-
-                        // Parse JSON structured output: {"action": N}
-                        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
-                            if let Some(action) = parsed["action"].as_u64() {
-                                let result = action.to_string();
-                                self.log("RESPONSE", &result);
-                                return result;
-                            }
-                        }
-
-                        // Fallback: try parsing as plain text (last line)
-                        self.log("RESPONSE", &output_text);
-                        return if output_text.is_empty() { "0".to_string() } else { output_text };
-                    }
-
-                    let status = resp.status();
-                    let text = resp.text().unwrap_or_default();
-                    self.log("API-ERROR", &format!("{}: {}", status, text));
-                    self.log("ERROR", &format!("API {} - {}", status, text));
-
-                    let code = status.as_u16();
-                    if code == 429 || code == 503 || code == 529 {
-                        continue;
-                    }
-                    return "0".to_string();
-                }
-                Err(e) => {
-                    self.log("REQUEST-FAILED", &format!("{}", e));
-                    self.log("ERROR", &format!("Request failed: {}", e));
-                    continue;
-                }
-            }
-        }
-
-        self.log("ERROR", "All retries exhausted, defaulting to 0");
-        "0".to_string()
-    }
 
     fn parse_action_index(&self, response: &str, max: usize) -> Option<usize> {
         // Check the last non-empty line first (where the model puts its final answer).
@@ -1150,7 +1204,7 @@ impl LlmPlayer {
     }
 
     /// Call the API with a retry on malformed response (legacy one-shot).
-    fn choose_with_retry(&self, prompt: &str, max: usize, actions: &[Action]) -> usize {
+    fn choose_with_retry(&mut self, prompt: &str, max: usize, actions: &[Action]) -> usize {
         for attempt in 0..2 {
             let response = self.call_api(prompt);
             if let Some(idx) = self.parse_action_index(&response, max) {

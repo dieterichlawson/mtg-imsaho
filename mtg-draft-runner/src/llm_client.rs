@@ -41,19 +41,17 @@ pub fn record_anthropic_usage(model: &str, usage: &serde_json::Value) {
     );
 }
 
-/// Record token usage from a Gemini API response.
-pub fn record_gemini_usage(model: &str, usage_metadata: &serde_json::Value) {
-    let prompt_tokens = usage_metadata["promptTokenCount"].as_u64().unwrap_or(0);
-    let cached_tokens = usage_metadata["cachedContentInputTokenCount"].as_u64().unwrap_or(0);
-    // Gemini reports promptTokenCount as total input (including cached).
-    // Uncached input = total prompt - cached.
-    let uncached_input = prompt_tokens.saturating_sub(cached_tokens);
+/// Record token usage from a Gemini Interactions API response.
+pub fn record_gemini_usage(model: &str, usage: &serde_json::Value) {
+    let input_tokens = usage["total_input_tokens"].as_u64().unwrap_or(0);
+    let cached_tokens = usage["total_cached_tokens"].as_u64().unwrap_or(0);
+    let uncached_input = input_tokens.saturating_sub(cached_tokens);
     record_model_usage(
         model,
         uncached_input,
-        usage_metadata["candidatesTokenCount"].as_u64().unwrap_or(0),
+        usage["total_output_tokens"].as_u64().unwrap_or(0),
         cached_tokens,
-        0, // Gemini has no separate cache write cost — implicit caching is free to create
+        0, // Gemini interactions API manages caching server-side
     );
 }
 
@@ -177,74 +175,21 @@ pub fn print_usage_summary(total_games: usize) {
 
 /// LLM client for draft picks and deck building.
 /// Maintains a multi-turn conversation for the draft process.
-pub struct DraftLlmClient {
-    client: Client,
-    api_key: String,
-    model: String,
-    provider: Provider,
-    /// Gemini thinking level for draft picks. None for Anthropic.
-    draft_thinking: Option<String>,
-    /// Gemini thinking level for game play. None for Anthropic.
-    game_thinking: Option<String>,
-    system_prompt: String,
-    /// Draft conversation history (picks).
-    conversation: Vec<serde_json::Value>,
-    /// Separate conversation for deck building.
-    deck_conversation: Vec<serde_json::Value>,
+/// Backend trait for draft LLM communication.
+trait DraftBackend: Send {
+    /// Send a draft pick message. Returns "PICK: N" format text.
+    fn send_pick(&mut self, message: &str) -> String;
+    /// Send a deck building message. Returns "MAINDECK:\n...\nLANDS:\n..." format text.
+    fn send_deck_building(&mut self, message: &str) -> String;
 }
 
-enum Provider {
-    Anthropic,
-    Gemini,
-}
-
-impl DraftLlmClient {
-    /// Create a new DraftLlmClient.
-    /// Model spec format: "provider:model:draft_thinking:game_thinking"
-    /// Examples:
-    ///   "claude" — Claude Sonnet (default)
-    ///   "gemini:gemini-3-flash-preview" — Gemini 3 Flash, high thinking (default)
-    ///   "gemini:gemini-3-flash-preview:medium" — medium thinking for both phases
-    ///   "gemini:gemini-3-flash-preview:high:low" — high for draft, low for games
-    pub fn new(model_spec: &str, set_name: &str, guide: Option<&str>) -> Self {
-        let parts: Vec<&str> = model_spec.split(':').collect();
-        let provider_name = parts[0];
-        let model_override = parts.get(1).copied();
-        let draft_thinking_override = parts.get(2).map(|s| s.to_string());
-        let game_thinking_override = parts.get(3).map(|s| s.to_string());
-
-        let (provider, api_key, default_model) = match provider_name {
-            "gemini" => (
-                Provider::Gemini,
-                env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set"),
-                "gemini-2.5-flash",
-            ),
-            _ => (
-                Provider::Anthropic,
-                env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set"),
-                "claude-sonnet-4-6",
-            ),
-        };
-
-        let model = model_override
-            .unwrap_or(default_model)
-            .to_string();
-
-        let (draft_thinking, game_thinking) = match &provider {
-            Provider::Gemini => {
-                let draft = draft_thinking_override.clone().unwrap_or_else(|| "high".to_string());
-                let game = game_thinking_override.unwrap_or_else(|| draft.clone());
-                (Some(draft), Some(game))
-            }
-            Provider::Anthropic => (None, None),
-        };
-
-        let guide_section = guide
-            .map(|g| format!("\n## Draft Guide\n\n{}\n", g))
-            .unwrap_or_default();
-
-        let system_prompt = format!(
-            r#"You are drafting Magic: The Gathering cards from {set_name}.
+/// Shared draft rules (used by all backends).
+fn build_draft_rules(set_name: &str, guide: Option<&str>, card_reference: &str) -> String {
+    let guide_section = guide
+        .map(|g| format!("\n## Draft Guide\n\n{}\n", g))
+        .unwrap_or_default();
+    format!(
+        r#"You are drafting Magic: The Gathering cards from {set_name}.
 {guide_section}
 ## How drafting works
 - You'll open 3 packs of ~14 cards each
@@ -258,24 +203,392 @@ impl DraftLlmClient {
 - Read signals: if strong cards of a color keep coming, that color is open
 - Cards with "//" are double-faced cards; evaluate the front face for drafting
 
-## Response format
-Think through your pick, then on your final line write ONLY:
-PICK: <number>
-where <number> is the 0-indexed number of the card you want."#,
-            set_name = set_name,
-            guide_section = guide_section,
-        );
+## Card reference
 
+{card_reference}"#,
+        set_name = set_name,
+        guide_section = guide_section,
+        card_reference = card_reference,
+    )
+}
+
+/// Build a card reference string with oracle text for all cards in the set.
+pub fn build_card_reference(
+    card_names: &[String],
+    registry: &mtg_engine::cards::CardRegistry,
+) -> String {
+    use mtg_engine::types::CardType;
+
+    let mut s = String::new();
+    for name in card_names {
+        let lookup = name.split(" // ").next().unwrap_or(name);
+        let Some(id) = registry.get_id_by_name(lookup) else { continue };
+        let Some(data) = registry.card_data(id) else { continue };
+
+        let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+        let types: Vec<&str> = data.card_types.iter().map(|t| match t {
+            CardType::Creature => "Creature",
+            CardType::Instant => "Instant",
+            CardType::Sorcery => "Sorcery",
+            CardType::Enchantment => "Enchantment",
+            CardType::Artifact => "Artifact",
+            CardType::Land => "Land",
+            CardType::Planeswalker => "Planeswalker",
+        }).collect();
+        let subtypes = if data.subtypes.is_empty() { String::new() }
+            else { format!(" — {}", data.subtypes.join(" ")) };
+        let pt = match (data.power, data.toughness) {
+            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+            _ => String::new(),
+        };
+        s.push_str(&format!("{}{} | {}{}{}\n", name, cost, types.join(" "), subtypes, pt));
+        if !data.oracle_text.is_empty() {
+            s.push_str(&format!("  {}\n", data.oracle_text.replace('\n', "\n  ")));
+        }
+    }
+    s
+}
+
+/// Anthropic draft backend.
+struct AnthropicDraftBackend {
+    client: Client,
+    api_key: String,
+    model: String,
+    system_prompt: String,
+    conversation: Vec<serde_json::Value>,
+    deck_conversation: Vec<serde_json::Value>,
+}
+
+impl AnthropicDraftBackend {
+    fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
+        let api_key = env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
+        let system_prompt = format!(
+            "{}\n\n## Response format\nThink through your pick, then on your final line write ONLY:\nPICK: <number>\nwhere <number> is the 0-indexed number of the card you want.",
+            build_draft_rules(set_name, guide, card_reference)
+        );
         Self {
             client: Client::new(),
             api_key,
-            model,
-            provider,
-            draft_thinking,
-            game_thinking,
+            model: model.to_string(),
             system_prompt,
             conversation: Vec::new(),
             deck_conversation: Vec::new(),
+        }
+    }
+
+    fn call_api(&self, messages: &[serde_json::Value]) -> String {
+        let system = serde_json::json!([{
+            "type": "text",
+            "text": &self.system_prompt,
+            "cache_control": {"type": "ephemeral"}
+        }]);
+
+        let mut msgs = messages.to_vec();
+        if msgs.len() >= 2 {
+            let idx = msgs.len() - 2;
+            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(|s| s.to_string()) {
+                msgs[idx] = serde_json::json!({
+                    "role": msgs[idx]["role"],
+                    "content": [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
+                });
+            }
+        }
+
+        let body = serde_json::json!({
+            "model": &self.model,
+            "max_tokens": 4096,
+            "system": system,
+            "messages": msgs
+        });
+
+        for attempt in 0..3 {
+            if attempt > 0 {
+                std::thread::sleep(std::time::Duration::from_secs(2u64.pow(attempt as u32)));
+            }
+            let response = self.client
+                .post("https://api.anthropic.com/v1/messages")
+                .header("x-api-key", &self.api_key)
+                .header("anthropic-version", "2023-06-01")
+                .header("content-type", "application/json")
+                .json(&body)
+                .send();
+
+            match response {
+                Ok(resp) if resp.status().is_success() => {
+                    let json: serde_json::Value = resp.json().unwrap_or_default();
+                    record_anthropic_usage(&self.model, &json["usage"]);
+                    return json["content"][0]["text"].as_str().unwrap_or("PICK: 0").trim().to_string();
+                }
+                Ok(resp) => {
+                    let code = resp.status().as_u16();
+                    if code == 529 || code == 429 { continue; }
+                    let text = resp.text().unwrap_or_default();
+                    eprintln!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
+                    return "PICK: 0".to_string();
+                }
+                Err(e) => { eprintln!("Request failed: {}", e); continue; }
+            }
+        }
+        "PICK: 0".to_string()
+    }
+
+    fn send_conv(&mut self, conv: &mut Vec<serde_json::Value>, message: &str) -> String {
+        conv.push(serde_json::json!({"role": "user", "content": message}));
+        let resp = self.call_api(conv);
+        conv.push(serde_json::json!({"role": "assistant", "content": &resp}));
+        resp
+    }
+}
+
+impl DraftBackend for AnthropicDraftBackend {
+    fn send_pick(&mut self, message: &str) -> String {
+        let mut conv = std::mem::take(&mut self.conversation);
+        let result = self.send_conv(&mut conv, message);
+        self.conversation = conv;
+        result
+    }
+
+    fn send_deck_building(&mut self, message: &str) -> String {
+        let mut conv = std::mem::take(&mut self.deck_conversation);
+        let result = self.send_conv(&mut conv, message);
+        self.deck_conversation = conv;
+        result
+    }
+}
+
+/// Gemini draft backend using the Interactions API.
+struct GeminiDraftBackend {
+    client: Client,
+    api_key: String,
+    model: String,
+    draft_thinking: Option<String>,
+    system_prompt: String,
+    pick_interaction_id: Option<String>,
+    deck_interaction_id: Option<String>,
+}
+
+impl GeminiDraftBackend {
+    fn new(model: &str, set_name: &str, guide: Option<&str>, draft_thinking: Option<String>, card_reference: &str) -> Self {
+        let api_key = env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
+        let system_prompt = format!(
+            "{}\n\nYou will respond with structured JSON. Use the \"thoughts\" field for your reasoning.",
+            build_draft_rules(set_name, guide, card_reference)
+        );
+        Self {
+            client: Client::new(),
+            api_key,
+            model: model.to_string(),
+            draft_thinking,
+            system_prompt,
+            pick_interaction_id: None,
+            deck_interaction_id: None,
+        }
+    }
+
+    fn call_interactions(
+        &self,
+        message: &str,
+        schema: &serde_json::Value,
+        prev_id: Option<&str>,
+    ) -> (String, Option<String>) {
+        let mut body = serde_json::json!({
+            "model": &self.model,
+            "input": message,
+            "response_mime_type": "application/json",
+            "response_format": schema,
+        });
+
+        if let Some(ref level) = self.draft_thinking {
+            body["generation_config"] = serde_json::json!({"thinking_level": level});
+        }
+
+        // Only chain if we have a non-empty previous interaction ID.
+        if let Some(prev) = prev_id.filter(|s| !s.is_empty()) {
+            body["previous_interaction_id"] = serde_json::json!(prev);
+        } else {
+            body["system_instruction"] = serde_json::json!(&self.system_prompt);
+        }
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/interactions?key={}",
+            self.api_key
+        );
+
+        let mut fresh_retry = false;
+        for attempt in 0..6 {
+            if attempt > 0 {
+                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4) as u32));
+                std::thread::sleep(delay);
+            }
+            let response = self.client
+                .post(&url)
+                .header("content-type", "application/json")
+                .json(&body)
+                .send();
+
+            match response {
+                Ok(resp) if resp.status().is_success() => {
+                    let json: serde_json::Value = resp.json().unwrap_or_default();
+                    record_gemini_usage(&self.model, &json["usage"]);
+                    let id = json["id"].as_str()
+                        .filter(|s| !s.is_empty())
+                        .map(|s| s.to_string());
+                    let mut text = String::new();
+                    if let Some(outputs) = json["outputs"].as_array() {
+                        for out in outputs {
+                            if out["type"].as_str() == Some("text") {
+                                if let Some(t) = out["text"].as_str() {
+                                    text = t.trim().to_string();
+                                }
+                            }
+                        }
+                    }
+                    if text.is_empty() { text = r#"{"pick": 0}"#.to_string(); }
+                    return (text, id);
+                }
+                Ok(resp) => {
+                    let code = resp.status().as_u16();
+                    if code == 429 || code == 503 { continue; }
+                    let text = resp.text().unwrap_or_default();
+                    // If the interaction ID is invalid, fall back to a fresh conversation.
+                    if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
+                        eprintln!("WARN: Invalid interaction ID, falling back to fresh conversation");
+                        body.as_object_mut().unwrap().remove("previous_interaction_id");
+                        body["system_instruction"] = serde_json::json!(&self.system_prompt);
+                        fresh_retry = true;
+                        continue;
+                    }
+                    // Fatal config errors — abort loudly so we don't silently produce garbage.
+                    if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
+                        eprintln!("FATAL: Gemini config error: {}", &text[..text.len().min(300)]);
+                        std::process::exit(1);
+                    }
+                    eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
+                    return (r#"{"pick": 0}"#.to_string(), None);
+                }
+                Err(e) => { eprintln!("Request failed: {}", e); continue; }
+            }
+        }
+        eprintln!("WARN: Gemini API exhausted all retries");
+        (r#"{"pick": 0}"#.to_string(), None)
+    }
+
+    fn pick_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Brief reasoning for this pick"},
+                "pick": {"type": "integer", "minimum": 0, "description": "0-indexed number of the card to pick"}
+            },
+            "required": ["thoughts", "pick"]
+        })
+    }
+
+    fn deck_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Brief reasoning for deck construction choices"},
+                "maindeck": {"type": "array", "items": {"type": "string"}, "description": "Card names for the maindeck"},
+                "lands": {"type": "object", "properties": {
+                    "Plains": {"type": "integer"},
+                    "Island": {"type": "integer"},
+                    "Swamp": {"type": "integer"},
+                    "Mountain": {"type": "integer"},
+                    "Forest": {"type": "integer"}
+                }, "description": "Basic land counts"}
+            },
+            "required": ["thoughts", "maindeck", "lands"]
+        })
+    }
+
+    fn parse_pick_response(raw: &str) -> String {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
+            if let Some(thoughts) = parsed["thoughts"].as_str() {
+                mtg_player::game_log::write(file!(), line!(), "GEMINI_THOUGHT", thoughts);
+            }
+            let pick = parsed["pick"].as_u64().unwrap_or(0);
+            format!("PICK: {}", pick)
+        } else {
+            raw.to_string()
+        }
+    }
+
+    fn parse_deck_response(raw: &str) -> String {
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
+            if let Some(thoughts) = parsed["thoughts"].as_str() {
+                mtg_player::game_log::write(file!(), line!(), "GEMINI_THOUGHT", thoughts);
+            }
+            let mut text = String::from("MAINDECK:\n");
+            if let Some(cards) = parsed["maindeck"].as_array() {
+                for card in cards {
+                    if let Some(name) = card.as_str() {
+                        text.push_str(&format!("{}\n", name));
+                    }
+                }
+            }
+            text.push_str("\nLANDS:\n");
+            if let Some(lands) = parsed["lands"].as_object() {
+                for (name, count) in lands {
+                    if let Some(n) = count.as_u64() {
+                        if n > 0 {
+                            text.push_str(&format!("{} {}\n", n, name));
+                        }
+                    }
+                }
+            }
+            text
+        } else {
+            raw.to_string()
+        }
+    }
+}
+
+impl DraftBackend for GeminiDraftBackend {
+    fn send_pick(&mut self, message: &str) -> String {
+        let prev = self.pick_interaction_id.take();
+        let (raw, new_id) = self.call_interactions(message, &Self::pick_schema(), prev.as_deref());
+        self.pick_interaction_id = new_id;
+        Self::parse_pick_response(&raw)
+    }
+
+    fn send_deck_building(&mut self, message: &str) -> String {
+        let prev = self.deck_interaction_id.take();
+        let (raw, new_id) = self.call_interactions(message, &Self::deck_schema(), prev.as_deref());
+        self.deck_interaction_id = new_id;
+        Self::parse_deck_response(&raw)
+    }
+}
+
+/// LLM client for draft picks and deck building.
+pub struct DraftLlmClient {
+    backend: Box<dyn DraftBackend>,
+}
+
+impl DraftLlmClient {
+    /// Create a new DraftLlmClient.
+    /// Model spec format: "provider:model:draft_thinking:game_thinking"
+    pub fn new(model_spec: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
+        let parts: Vec<&str> = model_spec.split(':').collect();
+        let provider_name = parts[0];
+        let model_override = parts.get(1).copied();
+        let draft_thinking_override = parts.get(2).map(|s| s.to_string());
+        let _game_thinking_override = parts.get(3).map(|s| s.to_string());
+
+        match provider_name {
+            "gemini" => {
+                let model = model_override.unwrap_or("gemini-2.5-flash");
+                let draft_thinking = draft_thinking_override.unwrap_or_else(|| "high".to_string());
+                Self {
+                    backend: Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference)),
+                }
+            }
+            _ => {
+                let model = model_override.unwrap_or("claude-sonnet-4-6");
+                Self {
+                    backend: Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference)),
+                }
+            }
         }
     }
 
@@ -291,18 +604,12 @@ where <number> is the 0-indexed number of the card you want."#,
         let direction = if pack_number % 2 == 1 { "LEFT" } else { "RIGHT" };
         let mut prompt = format!(
             "Pack {}, Pick {} ({} cards). Passing {}.\n\nAvailable:\n",
-            pack_number,
-            pick_number,
-            available.len(),
-            direction,
+            pack_number, pick_number, available.len(), direction,
         );
-
         for (i, card) in available.iter().enumerate() {
             let name = card.split(" // ").next().unwrap_or(card);
             prompt.push_str(&format!("{}: {}\n", i, name));
         }
-
-        // Show pool summary at the start of each pack
         if pick_number == 1 && !pool.is_empty() {
             prompt.push_str(&format!("\nYour pool so far ({} cards):\n", pool.len()));
             for card in pool {
@@ -310,305 +617,17 @@ where <number> is the 0-indexed number of the card you want."#,
                 prompt.push_str(&format!("- {}\n", name));
             }
         }
-
-        prompt.push_str(&format!(
-            "\nPick a card (0-{}):",
-            available.len().saturating_sub(1)
-        ));
+        prompt.push_str(&format!("\nPick a card (0-{}):", available.len().saturating_sub(1)));
         prompt
     }
 
-    /// JSON schema for draft pick responses (Gemini structured output).
-    fn pick_schema() -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "pick": {"type": "integer", "minimum": 0, "description": "0-indexed number of the card to pick"}
-            },
-            "required": ["pick"]
-        })
-    }
-
-    /// JSON schema for deck building responses (Gemini structured output).
-    fn deck_schema() -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "maindeck": {"type": "array", "items": {"type": "string"}, "description": "Card names for the maindeck"},
-                "lands": {"type": "object", "properties": {
-                    "Plains": {"type": "integer"},
-                    "Island": {"type": "integer"},
-                    "Swamp": {"type": "integer"},
-                    "Mountain": {"type": "integer"},
-                    "Forest": {"type": "integer"}
-                }, "description": "Basic land counts"}
-            },
-            "required": ["maindeck", "lands"]
-        })
-    }
-
-    /// Send a draft pick message. Returns the raw response text.
-    /// For Gemini, uses structured output and converts back to text format.
     pub fn send_message(&mut self, user_message: &str) -> String {
-        self.conversation.push(serde_json::json!({
-            "role": "user",
-            "content": user_message
-        }));
-
-        let response = match self.provider {
-            Provider::Anthropic => self.call_anthropic(&self.conversation.clone()),
-            Provider::Gemini => {
-                let raw = self.call_gemini(&self.conversation.clone(), Some(&Self::pick_schema()), true);
-                // Parse JSON and convert to text format that parse_pick_response expects
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                    let pick = parsed["pick"].as_u64().unwrap_or(0);
-                    format!("PICK: {}", pick)
-                } else {
-                    raw
-                }
-            }
-        };
-
-        self.conversation.push(serde_json::json!({
-            "role": "assistant",
-            "content": &response
-        }));
-
-        response
+        self.backend.send_pick(user_message)
     }
 
-    /// Record a pick in the conversation (abbreviated to save tokens).
-    pub fn record_pick(&mut self, _chosen: &str) {
-        // The pick is already recorded via the send_message/response cycle.
-        // No additional recording needed.
-    }
+    pub fn record_pick(&mut self, _chosen: &str) {}
 
-    /// Send a deck building message. Returns the raw response text.
-    /// For Gemini, uses structured output and converts back to text format.
     pub fn send_deck_building_message(&mut self, user_message: &str) -> String {
-        self.deck_conversation.push(serde_json::json!({
-            "role": "user",
-            "content": user_message
-        }));
-
-        let response = match self.provider {
-            Provider::Anthropic => self.call_anthropic(&self.deck_conversation.clone()),
-            Provider::Gemini => {
-                let raw = self.call_gemini(&self.deck_conversation.clone(), Some(&Self::deck_schema()), true);
-                // Parse JSON and convert to text format that parse_deck_response expects
-                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&raw) {
-                    let mut text = String::from("MAINDECK:\n");
-                    if let Some(cards) = parsed["maindeck"].as_array() {
-                        for card in cards {
-                            if let Some(name) = card.as_str() {
-                                text.push_str(&format!("{}\n", name));
-                            }
-                        }
-                    }
-                    text.push_str("\nLANDS:\n");
-                    if let Some(lands) = parsed["lands"].as_object() {
-                        for (name, count) in lands {
-                            if let Some(n) = count.as_u64() {
-                                if n > 0 {
-                                    text.push_str(&format!("{} {}\n", n, name));
-                                }
-                            }
-                        }
-                    }
-                    text
-                } else {
-                    raw
-                }
-            }
-        };
-
-        self.deck_conversation.push(serde_json::json!({
-            "role": "assistant",
-            "content": &response
-        }));
-
-        response
-    }
-
-    fn call_anthropic(&self, messages: &[serde_json::Value]) -> String {
-        let system = serde_json::json!([{
-            "type": "text",
-            "text": &self.system_prompt,
-            "cache_control": {"type": "ephemeral"}
-        }]);
-
-        let mut msgs = messages.to_vec();
-        // Set cache_control on second-to-last message for prompt caching
-        if msgs.len() >= 2 {
-            let idx = msgs.len() - 2;
-            if let Some(content) = msgs[idx]
-                .get("content")
-                .and_then(|c| c.as_str())
-                .map(|s| s.to_string())
-            {
-                msgs[idx] = serde_json::json!({
-                    "role": msgs[idx]["role"],
-                    "content": [{
-                        "type": "text",
-                        "text": content,
-                        "cache_control": {"type": "ephemeral"}
-                    }]
-                });
-            }
-        }
-
-        let body = serde_json::json!({
-            "model": &self.model,
-            "max_tokens": 4096,
-            "system": system,
-            "messages": msgs
-        });
-
-        for attempt in 0..3 {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
-                std::thread::sleep(delay);
-            }
-
-            let response = self
-                .client
-                .post("https://api.anthropic.com/v1/messages")
-                .header("x-api-key", &self.api_key)
-                .header("anthropic-version", "2023-06-01")
-                .header("content-type", "application/json")
-                .json(&body)
-                .send();
-
-            match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_anthropic_usage(&self.model, &json["usage"]);
-                        return json["content"][0]["text"]
-                            .as_str()
-                            .unwrap_or("PICK: 0")
-                            .trim()
-                            .to_string();
-                    }
-
-                    let code = resp.status().as_u16();
-                    if code == 529 || code == 429 {
-                        continue;
-                    }
-                    let text = resp.text().unwrap_or_default();
-                    eprintln!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
-                    return "PICK: 0".to_string();
-                }
-                Err(e) => {
-                    eprintln!("Request failed: {}", e);
-                    continue;
-                }
-            }
-        }
-
-        "PICK: 0".to_string()
-    }
-
-    fn call_gemini(&self, messages: &[serde_json::Value], schema: Option<&serde_json::Value>, is_draft: bool) -> String {
-        let contents: Vec<serde_json::Value> = messages
-            .iter()
-            .map(|msg| {
-                let role = msg["role"].as_str().unwrap_or("user");
-                let gemini_role = if role == "assistant" { "model" } else { "user" };
-                serde_json::json!({
-                    "role": gemini_role,
-                    "parts": [{"text": msg["content"].as_str().unwrap_or("")}]
-                })
-            })
-            .collect();
-
-        let thinking_level = if is_draft { &self.draft_thinking } else { &self.game_thinking };
-        let thinking_config = if let Some(ref level) = thinking_level {
-            serde_json::json!({"includeThoughts": true, "thinkingLevel": level})
-        } else {
-            serde_json::json!({"includeThoughts": true})
-        };
-
-        let gen_config = if let Some(s) = schema {
-            serde_json::json!({
-                "maxOutputTokens": 4096,
-                "responseMimeType": "application/json",
-                "responseSchema": s,
-                "thinkingConfig": thinking_config
-            })
-        } else {
-            serde_json::json!({
-                "maxOutputTokens": 4096,
-                "thinkingConfig": thinking_config
-            })
-        };
-
-        let body = serde_json::json!({
-            "contents": contents,
-            "systemInstruction": {"parts": [{"text": &self.system_prompt}]},
-            "generationConfig": gen_config
-        });
-
-        let url = format!(
-            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
-            self.model, self.api_key
-        );
-
-        for attempt in 0..3 {
-            if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
-                std::thread::sleep(delay);
-            }
-
-            let response = self
-                .client
-                .post(&url)
-                .header("content-type", "application/json")
-                .json(&body)
-                .send();
-
-            match response {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        let json: serde_json::Value = resp.json().unwrap_or_default();
-                        record_gemini_usage(&self.model, &json["usageMetadata"]);
-
-                        // Extract text from parts, skipping thought parts.
-                        // Log thoughts if present.
-                        let parts = &json["candidates"][0]["content"]["parts"];
-                        let mut output_text = String::new();
-                        if let Some(parts_arr) = parts.as_array() {
-                            for part in parts_arr {
-                                if part["thought"].as_bool() == Some(true) {
-                                    if let Some(t) = part["text"].as_str() {
-                                        mtg_player::game_log::write(file!(), line!(), "GEMINI_THOUGHT", t);
-                                    }
-                                } else if let Some(t) = part["text"].as_str() {
-                                    output_text = t.trim().to_string();
-                                }
-                            }
-                        }
-                        if output_text.is_empty() {
-                            output_text = "PICK: 0".to_string();
-                        }
-                        return output_text;
-                    }
-
-                    let code = resp.status().as_u16();
-                    if code == 429 || code == 503 {
-                        continue;
-                    }
-                    let text = resp.text().unwrap_or_default();
-                    eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
-                    return "PICK: 0".to_string();
-                }
-                Err(e) => {
-                    eprintln!("Request failed: {}", e);
-                    continue;
-                }
-            }
-        }
-
-        "PICK: 0".to_string()
+        self.backend.send_deck_building(user_message)
     }
 }
