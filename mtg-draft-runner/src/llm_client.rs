@@ -258,7 +258,7 @@ where <number> is the 0-indexed number of the card you want."#,
         pick_number: usize,
         available: &[String],
         pool: &[String],
-        history: &[DraftPick],
+        _history: &[DraftPick],
     ) -> String {
         let direction = if pack_number % 2 == 1 { "LEFT" } else { "RIGHT" };
         let mut prompt = format!(
@@ -274,25 +274,12 @@ where <number> is the 0-indexed number of the card you want."#,
             prompt.push_str(&format!("{}: {}\n", i, name));
         }
 
-        if !pool.is_empty() {
-            prompt.push_str(&format!("\nYour pool ({} cards):\n", pool.len()));
+        // Show pool summary at the start of each pack
+        if pick_number == 1 && !pool.is_empty() {
+            prompt.push_str(&format!("\nYour pool so far ({} cards):\n", pool.len()));
             for card in pool {
                 let name = card.split(" // ").next().unwrap_or(card);
                 prompt.push_str(&format!("- {}\n", name));
-            }
-        }
-
-        if !history.is_empty() {
-            prompt.push_str("\nPick history:\n");
-            for pick in history {
-                let chosen_name = pick.chosen.split(" // ").next().unwrap_or(&pick.chosen);
-                prompt.push_str(&format!(
-                    "P{}P{}: {} (from {} cards)\n",
-                    pick.pack_number,
-                    pick.pick_number,
-                    chosen_name,
-                    pick.available.len(),
-                ));
             }
         }
 
