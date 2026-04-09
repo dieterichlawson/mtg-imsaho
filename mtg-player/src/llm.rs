@@ -881,6 +881,8 @@ impl LlmPlayer {
         for c in &creatures {
             let power = c.effective_power.or(c.power).unwrap_or(0);
             let toughness = c.effective_toughness.or(c.toughness).unwrap_or(0);
+            let kw = Self::format_keywords(&c.keywords);
+            let kw_str = if kw.is_empty() { String::new() } else { format!(" {}", kw) };
             let t = if c.tapped { "T" } else { "" };
             let s = if c.summoning_sick { "S" } else { "" };
             let d = if c.damage_marked > 0 { format!("{}dmg", c.damage_marked) } else { String::new() };
@@ -889,7 +891,7 @@ impl LlmPlayer {
             let auras = aura_map.get(&c.object_id)
                 .map(|names| format!(" ({})", names.join(", ")))
                 .unwrap_or_default();
-            parts.push(format!("{} {}/{}{}{}", c.name, power, toughness, flags_str, auras));
+            parts.push(format!("{} {}/{}{}{}{}", c.name, power, toughness, kw_str, flags_str, auras));
         }
 
         // Show non-aura other permanents.
@@ -1388,12 +1390,39 @@ impl Player for LlmPlayer {
 }
 
 impl LlmPlayer {
-    /// Format a permanent for combat display: "Name P/T" using effective values.
+    /// Format keyword abilities as a comma-separated lowercase string.
+    fn format_keywords(keywords: &[mtg_engine::types::Keyword]) -> String {
+        use mtg_engine::types::Keyword;
+        keywords.iter().map(|kw| match kw {
+            Keyword::Flying => "flying",
+            Keyword::FirstStrike => "first strike",
+            Keyword::DoubleStrike => "double strike",
+            Keyword::Trample => "trample",
+            Keyword::Deathtouch => "deathtouch",
+            Keyword::Lifelink => "lifelink",
+            Keyword::Vigilance => "vigilance",
+            Keyword::Flash => "flash",
+            Keyword::Reach => "reach",
+            Keyword::Haste => "haste",
+            Keyword::Defender => "defender",
+            Keyword::Hexproof => "hexproof",
+            Keyword::Intimidate => "intimidate",
+            Keyword::Menace => "menace",
+            Keyword::Indestructible => "indestructible",
+        }).collect::<Vec<_>>().join(", ")
+    }
+
+    /// Format a permanent for combat display: "Name P/T keywords" using effective values.
     fn format_combat_creature(view: &GameView, id: ObjectId) -> String {
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
             let power = p.effective_power.or(p.power).unwrap_or(0);
             let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
-            format!("{} {}/{}", p.name, power, toughness)
+            let kw = Self::format_keywords(&p.keywords);
+            if kw.is_empty() {
+                format!("{} {}/{}", p.name, power, toughness)
+            } else {
+                format!("{} {}/{} {}", p.name, power, toughness, kw)
+            }
         } else {
             Self::obj_name(view, id)
         }

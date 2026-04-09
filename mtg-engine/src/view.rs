@@ -62,6 +62,7 @@ pub struct PermanentView {
     pub damage_marked: u32,
     pub summoning_sick: bool,
     pub attached_to: Option<ObjectId>,
+    pub keywords: Vec<Keyword>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,27 +113,41 @@ impl GameView {
             .collect();
 
         // Battlefield: all permanents are visible.
+        let all_keywords = [
+            Keyword::Flying, Keyword::FirstStrike, Keyword::DoubleStrike,
+            Keyword::Trample, Keyword::Deathtouch, Keyword::Lifelink,
+            Keyword::Vigilance, Keyword::Flash, Keyword::Reach,
+            Keyword::Haste, Keyword::Defender, Keyword::Hexproof,
+            Keyword::Intimidate, Keyword::Menace, Keyword::Indestructible,
+        ];
         let battlefield = state.all_objects_in_zone(Zone::Battlefield)
             .iter()
-            .map(|obj| PermanentView {
-                object_id: obj.id,
-                card_id: obj.card_id,
-                name: registry.card_data(obj.card_id)
-                    .map(|d| d.name)
-                    .unwrap_or_else(|| obj.name.clone()),
-                card_types: registry.card_data(obj.card_id)
-                    .map(|d| d.card_types)
-                    .unwrap_or_else(|| obj.card_types.clone()),
-                controller: obj.controller,
-                owner: obj.owner,
-                tapped: obj.tapped,
-                power: obj.power,
-                toughness: obj.toughness,
-                effective_power: state.effective_power(obj.id, registry),
-                effective_toughness: state.effective_toughness(obj.id, registry),
-                damage_marked: obj.damage_marked,
-                summoning_sick: obj.summoning_sick,
-                attached_to: obj.attached_to,
+            .map(|obj| {
+                let keywords: Vec<Keyword> = all_keywords.iter()
+                    .filter(|kw| state.has_keyword(obj.id, **kw, registry))
+                    .cloned()
+                    .collect();
+                PermanentView {
+                    object_id: obj.id,
+                    card_id: obj.card_id,
+                    name: registry.card_data(obj.card_id)
+                        .map(|d| d.name)
+                        .unwrap_or_else(|| obj.name.clone()),
+                    card_types: registry.card_data(obj.card_id)
+                        .map(|d| d.card_types)
+                        .unwrap_or_else(|| obj.card_types.clone()),
+                    controller: obj.controller,
+                    owner: obj.owner,
+                    tapped: obj.tapped,
+                    power: obj.power,
+                    toughness: obj.toughness,
+                    effective_power: state.effective_power(obj.id, registry),
+                    effective_toughness: state.effective_toughness(obj.id, registry),
+                    damage_marked: obj.damage_marked,
+                    summoning_sick: obj.summoning_sick,
+                    attached_to: obj.attached_to,
+                    keywords,
+                }
             })
             .collect();
 
