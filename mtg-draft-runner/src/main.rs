@@ -413,8 +413,14 @@ fn main() {
         }
     }
 
+    // Count total games played
+    let total_games: usize = tournament.rounds.iter()
+        .flat_map(|r| r.results.iter())
+        .map(|m| m.games.len())
+        .sum();
+
     // Print token usage summary (draft client + game player combined)
-    llm_client::print_usage_summary();
+    llm_client::print_usage_summary(total_games);
 
     if !args.quiet {
         eprintln!("\nDone. Log written to {}", args.log);

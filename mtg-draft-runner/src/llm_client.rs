@@ -69,31 +69,66 @@ impl Clone for ModelUsage {
 }
 
 /// Known model pricing ($/MTok). (input, output, cache_read, cache_write)
-/// Anthropic: platform.claude.com/docs/en/about-claude/pricing
-/// Gemini: ai.google.dev/pricing
+/// Anthropic: platform.claude.com/docs/en/about-claude/pricing (verified 2026-04-08)
+/// Gemini: ai.google.dev/pricing (verified 2026-04-08)
 fn model_pricing(model: &str) -> (f64, f64, f64, f64) {
     match model {
-        // Anthropic models (cache_write = 1.25x input for 5-min TTL)
+        // Anthropic models (cache_read = 0.1x input, cache_write = 1.25x input for 5-min TTL)
         m if m.contains("opus-4-6") => (5.00, 25.00, 0.50, 6.25),
+        m if m.contains("opus-4-5") => (5.00, 25.00, 0.50, 6.25),
+        m if m.contains("opus-4-1") => (15.00, 75.00, 1.50, 18.75),
         m if m.contains("sonnet-4-6") => (3.00, 15.00, 0.30, 3.75),
+        m if m.contains("sonnet-4-5") => (3.00, 15.00, 0.30, 3.75),
+        m if m.contains("sonnet-4-0") | m.contains("sonnet-4-2") => (3.00, 15.00, 0.30, 3.75),
         m if m.contains("haiku-4-5") => (1.00, 5.00, 0.10, 1.25),
-        // Gemini models (cache_read = 10% of input, implicit caching has no write cost)
+        m if m.contains("haiku-3-5") => (0.80, 4.00, 0.08, 1.00),
+        // Gemini models (cache_read = 0.1x input, implicit caching has no write cost)
         m if m.contains("gemini-2.5-flash-lite") => (0.10, 0.40, 0.01, 0.0),
-        m if m.contains("gemini-2.5-flash") => (0.30, 2.50, 0.03, 0.0),
-        m if m.contains("gemini-3.1-flash-lite") => (0.25, 1.50, 0.025, 0.0),
-        m if m.contains("gemini-3-flash") || m.contains("gemini-3.0-flash") => (0.50, 3.00, 0.05, 0.0),
+        m if m.contains("gemini-2.5-flash") && !m.contains("lite") => (0.30, 2.50, 0.03, 0.0),
         m if m.contains("gemini-2.5-pro") => (1.25, 10.00, 0.125, 0.0),
-        m if m.contains("gemini") => (0.30, 2.50, 0.03, 0.0), // default gemini
-        _ => (3.00, 15.00, 0.30, 3.75), // default to sonnet pricing
+        m if m.contains("gemini-3.1-flash-lite") => (0.25, 1.50, 0.025, 0.0),
+        m if m.contains("gemini-3.1-pro") => (2.00, 12.00, 0.20, 0.0),
+        m if m.contains("gemini-3-flash") || m.contains("gemini-3.0-flash") => (0.50, 3.00, 0.05, 0.0),
+        m if m.contains("gemini-3-pro") || m.contains("gemini-3.0-pro") => (2.00, 12.00, 0.20, 0.0),
+        m if m.contains("gemini") => (0.30, 2.50, 0.03, 0.0), // default gemini → 2.5 flash pricing
+        _ => (3.00, 15.00, 0.30, 3.75), // unknown model → sonnet pricing
     }
 }
 
-/// Print a summary of all token usage and estimated cost, broken down by model.
-pub fn print_usage_summary() {
-    // Merge draft client usage and LlmPlayer game usage
+fn usage_cost(u: &ModelUsage, model: &str) -> f64 {
+    let (in_p, out_p, cache_r_p, cache_w_p) = model_pricing(model);
+    (u.input as f64) * in_p / 1_000_000.0
+        + (u.output as f64) * out_p / 1_000_000.0
+        + (u.cache_read as f64) * cache_r_p / 1_000_000.0
+        + (u.cache_create as f64) * cache_w_p / 1_000_000.0
+}
+
+/// Print a summary of all token usage and estimated cost, broken down by model and phase.
+pub fn print_usage_summary(total_games: usize) {
     let draft_usage = get_model_usage();
     let game_usage = mtg_player::llm::get_llm_model_usage();
 
+    // Draft phase cost
+    let mut draft_cost = 0.0;
+    let mut draft_calls = 0u64;
+    for (model, u) in &draft_usage {
+        draft_cost += usage_cost(u, model);
+        draft_calls += u.calls;
+    }
+
+    // Game phase cost
+    let mut game_cost = 0.0;
+    let mut game_calls = 0u64;
+    for (model, u) in &game_usage {
+        let (in_p, out_p, cache_r_p, cache_w_p) = model_pricing(model);
+        game_cost += (u.input as f64) * in_p / 1_000_000.0
+            + (u.output as f64) * out_p / 1_000_000.0
+            + (u.cache_read as f64) * cache_r_p / 1_000_000.0
+            + (u.cache_create as f64) * cache_w_p / 1_000_000.0;
+        game_calls += u.calls;
+    }
+
+    // Combined per-model
     let mut combined: HashMap<String, ModelUsage> = HashMap::new();
     for (model, u) in &draft_usage {
         let entry = combined.entry(model.clone()).or_default();
@@ -112,29 +147,28 @@ pub fn print_usage_summary() {
         entry.cache_create += u.cache_create;
     }
 
-    eprintln!("\n=== Token Usage by Model ===");
-    let mut total_cost = 0.0;
-    let mut total_calls = 0u64;
+    eprintln!("\n=== Token Usage ===");
 
+    // Phase breakdown
+    eprintln!("  Draft:  {} calls, ${:.4}", draft_calls, draft_cost);
+    eprintln!("  Games:  {} calls, ${:.4}{}", game_calls, game_cost,
+        if total_games > 0 { format!(" ({} games, ${:.4}/game avg)", total_games, game_cost / total_games as f64) } else { String::new() });
+    eprintln!();
+
+    // Per-model breakdown
     let mut models: Vec<_> = combined.iter().collect();
     models.sort_by_key(|(name, _)| (*name).clone());
+    let total_cost = draft_cost + game_cost;
 
     for (model, u) in &models {
-        let (in_p, out_p, cache_r_p, cache_w_p) = model_pricing(model);
-        let cost = (u.input as f64) * in_p / 1_000_000.0
-            + (u.output as f64) * out_p / 1_000_000.0
-            + (u.cache_read as f64) * cache_r_p / 1_000_000.0
-            + (u.cache_create as f64) * cache_w_p / 1_000_000.0;
-        total_cost += cost;
-        total_calls += u.calls;
-
+        let cost = usage_cost(u, model);
         eprintln!(
-            "  {}: {} calls, {}in + {}out + {}cache_rd + {}cache_wr = ${:.4}",
-            model, u.calls, u.input, u.output, u.cache_read, u.cache_create, cost
+            "  {}: {} calls, {}in/{}out/{}cached = ${:.4}",
+            model, u.calls, u.input, u.output, u.cache_read, cost
         );
     }
     eprintln!("  ---");
-    eprintln!("  Total: {} calls, ${:.2}", total_calls, total_cost);
+    eprintln!("  Total: {} calls, ${:.2}", draft_calls + game_calls, total_cost);
 }
 
 /// LLM client for draft picks and deck building.
