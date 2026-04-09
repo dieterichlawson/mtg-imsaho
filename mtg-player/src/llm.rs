@@ -92,7 +92,7 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 ## Key rules
 - AUTO-TAP: When you choose "Cast [spell]", the engine automatically taps the right lands for you. Just pick the Cast option directly — no need to tap lands first.
 - The Cast option shows which lands will be tapped, e.g. "Cast Doom Blade (tap Swamp, Swamp)".
-- MANUAL TAPPING: Rarely needed. You might manually tap a land if you want to float mana before combat (e.g. to bluff an instant), or to use a mana ability with a side effect (e.g. Deranged Assistant mills a card). In most cases, just use the Cast option.
+- MANUAL TAPPING: Rarely needed, but useful when you want to: float mana before combat (to bluff an instant or have mana open), use a mana ability with a side effect (e.g. Deranged Assistant mills a card), or override the auto-tap plan to keep a specific land untapped (e.g. preserving Gavony Township for its activated ability). In most cases, just use the Cast option.
 - Spells go on the stack and resolve when both players pass priority.
 - Creatures have summoning sickness — can't attack the turn they enter. [S] means sick.
 - Play one land per turn, only during your main phase.
