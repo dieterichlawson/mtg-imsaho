@@ -1120,6 +1120,13 @@ impl LlmPlayer {
                 .flat_map(|(_, cards)| cards.iter())
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
+            .or_else(|| view.exile.iter()
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
+            .or_else(|| view.your_library_cards.iter()
+                .find(|c| c.object_id == id)
+                .map(|c| c.name.clone()))
+            .or_else(|| view.revealed_names.get(&id).cloned())
             .unwrap_or_else(|| format!("{}", id))
     }
 

@@ -30,6 +30,10 @@ pub struct GameView {
     pub display_log: Vec<String>,
     /// Full detailed log (all levels).
     pub full_log: Vec<String>,
+
+    /// Names of objects referenced in pending choices (revealed cards, opponent's
+    /// hand from Night Terrors, etc.) that aren't otherwise visible in the view.
+    pub revealed_names: std::collections::HashMap<ObjectId, String>,
 }
 
 #[derive(Debug, Clone)]
@@ -198,6 +202,38 @@ impl GameView {
             .map(|obj| card_view(obj, registry))
             .collect();
 
+        // Collect names of objects referenced in pending resolution choices
+        // that might not be in any visible zone (e.g. opponent's hand, library).
+        let mut revealed_names = std::collections::HashMap::new();
+        if let Some(ref awaiting) = state.awaiting_action {
+            let ids_to_resolve: Vec<ObjectId> = match awaiting {
+                crate::state::AwaitingAction::ResolutionChoice { choice, .. } => {
+                    use crate::state::ResolutionChoiceKind;
+                    match choice {
+                        ResolutionChoiceKind::ChooseTarget { options, .. } => {
+                            options.iter().filter_map(|t| match t {
+                                crate::actions::Target::Object(id) => Some(*id),
+                                _ => None,
+                            }).collect()
+                        }
+                        ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => cards.clone(),
+                        ResolutionChoiceKind::ChooseFromRevealed { revealed, .. } => revealed.clone(),
+                        ResolutionChoiceKind::ChooseFromLibrary { options, .. } => options.clone(),
+                        _ => vec![],
+                    }
+                }
+                _ => vec![],
+            };
+            for id in ids_to_resolve {
+                if let Some(obj) = state.get_object(id) {
+                    let name = registry.card_data(obj.card_id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| obj.name.clone());
+                    revealed_names.insert(id, name);
+                }
+            }
+        }
+
         GameView {
             you: player,
             your_hand,
@@ -221,6 +257,7 @@ impl GameView {
             full_log: state.game_log.iter()
                 .map(|e| e.message.clone())
                 .collect(),
+            revealed_names,
         }
     }
 }
