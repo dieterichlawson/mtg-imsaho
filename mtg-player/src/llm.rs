@@ -49,11 +49,14 @@ fn record_anthropic_llm_usage(model: &str, json: &serde_json::Value) {
 
 fn record_gemini_llm_usage(model: &str, json: &serde_json::Value) {
     let usage = &json["usageMetadata"];
+    let prompt_tokens = usage["promptTokenCount"].as_u64().unwrap_or(0);
+    let cached_tokens = usage["cachedContentInputTokenCount"].as_u64().unwrap_or(0);
+    let uncached_input = prompt_tokens.saturating_sub(cached_tokens);
     record_llm_usage(
         model,
-        usage["promptTokenCount"].as_u64().unwrap_or(0),
+        uncached_input,
         usage["candidatesTokenCount"].as_u64().unwrap_or(0),
-        usage["cachedContentTokenCount"].as_u64().unwrap_or(0),
+        cached_tokens,
         0,
     );
 }

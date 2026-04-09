@@ -43,12 +43,17 @@ pub fn record_anthropic_usage(model: &str, usage: &serde_json::Value) {
 
 /// Record token usage from a Gemini API response.
 pub fn record_gemini_usage(model: &str, usage_metadata: &serde_json::Value) {
+    let prompt_tokens = usage_metadata["promptTokenCount"].as_u64().unwrap_or(0);
+    let cached_tokens = usage_metadata["cachedContentInputTokenCount"].as_u64().unwrap_or(0);
+    // Gemini reports promptTokenCount as total input (including cached).
+    // Uncached input = total prompt - cached.
+    let uncached_input = prompt_tokens.saturating_sub(cached_tokens);
     record_model_usage(
         model,
-        usage_metadata["promptTokenCount"].as_u64().unwrap_or(0),
+        uncached_input,
         usage_metadata["candidatesTokenCount"].as_u64().unwrap_or(0),
-        usage_metadata["cachedContentTokenCount"].as_u64().unwrap_or(0),
-        0,
+        cached_tokens,
+        0, // Gemini has no separate cache write cost — implicit caching is free to create
     );
 }
 
@@ -64,16 +69,21 @@ impl Clone for ModelUsage {
 }
 
 /// Known model pricing ($/MTok). (input, output, cache_read, cache_write)
+/// Anthropic: platform.claude.com/docs/en/about-claude/pricing
+/// Gemini: ai.google.dev/pricing
 fn model_pricing(model: &str) -> (f64, f64, f64, f64) {
     match model {
+        // Anthropic models (cache_write = 1.25x input for 5-min TTL)
         m if m.contains("opus-4-6") => (5.00, 25.00, 0.50, 6.25),
         m if m.contains("sonnet-4-6") => (3.00, 15.00, 0.30, 3.75),
         m if m.contains("haiku-4-5") => (1.00, 5.00, 0.10, 1.25),
-        m if m.contains("gemini-2.5-flash-lite") => (0.10, 0.40, 0.025, 0.0),
-        m if m.contains("gemini-2.5-flash") => (0.30, 2.50, 0.075, 0.0),
-        m if m.contains("gemini-3.1-flash-lite") => (0.25, 1.50, 0.0625, 0.0),
-        m if m.contains("gemini-3-flash") || m.contains("gemini-3.0-flash") => (0.50, 3.00, 0.125, 0.0),
-        m if m.contains("gemini") => (0.30, 2.50, 0.075, 0.0), // default gemini
+        // Gemini models (cache_read = 10% of input, implicit caching has no write cost)
+        m if m.contains("gemini-2.5-flash-lite") => (0.10, 0.40, 0.01, 0.0),
+        m if m.contains("gemini-2.5-flash") => (0.30, 2.50, 0.03, 0.0),
+        m if m.contains("gemini-3.1-flash-lite") => (0.25, 1.50, 0.025, 0.0),
+        m if m.contains("gemini-3-flash") || m.contains("gemini-3.0-flash") => (0.50, 3.00, 0.05, 0.0),
+        m if m.contains("gemini-2.5-pro") => (1.25, 10.00, 0.125, 0.0),
+        m if m.contains("gemini") => (0.30, 2.50, 0.03, 0.0), // default gemini
         _ => (3.00, 15.00, 0.30, 3.75), // default to sonnet pricing
     }
 }
