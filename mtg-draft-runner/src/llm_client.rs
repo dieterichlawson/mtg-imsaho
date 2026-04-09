@@ -147,28 +147,32 @@ pub fn print_usage_summary(total_games: usize) {
         entry.cache_create += u.cache_create;
     }
 
-    eprintln!("\n=== Token Usage ===");
+    // Build summary string for both stderr and log file
+    let mut summary = String::from("=== Token Usage ===\n");
 
-    // Phase breakdown
-    eprintln!("  Draft:  {} calls, ${:.4}", draft_calls, draft_cost);
-    eprintln!("  Games:  {} calls, ${:.4}{}", game_calls, game_cost,
-        if total_games > 0 { format!(" ({} games, ${:.4}/game avg)", total_games, game_cost / total_games as f64) } else { String::new() });
-    eprintln!();
+    summary.push_str(&format!("  Draft:  {} calls, ${:.4}\n", draft_calls, draft_cost));
+    summary.push_str(&format!("  Games:  {} calls, ${:.4}{}\n", game_calls, game_cost,
+        if total_games > 0 { format!(" ({} games, ${:.4}/game avg)", total_games, game_cost / total_games as f64) } else { String::new() }));
+    summary.push('\n');
 
-    // Per-model breakdown
     let mut models: Vec<_> = combined.iter().collect();
     models.sort_by_key(|(name, _)| (*name).clone());
     let total_cost = draft_cost + game_cost;
 
     for (model, u) in &models {
         let cost = usage_cost(u, model);
-        eprintln!(
-            "  {}: {} calls, {}in/{}out/{}cached = ${:.4}",
+        summary.push_str(&format!(
+            "  {}: {} calls, {}in/{}out/{}cached = ${:.4}\n",
             model, u.calls, u.input, u.output, u.cache_read, cost
-        );
+        ));
     }
-    eprintln!("  ---");
-    eprintln!("  Total: {} calls, ${:.2}", draft_calls + game_calls, total_cost);
+    summary.push_str(&format!("  ---\n  Total: {} calls, ${:.2}\n", draft_calls + game_calls, total_cost));
+
+    // Write to stderr
+    eprint!("\n{}", summary);
+
+    // Write to log file
+    mtg_player::game_log::write(file!(), line!(), "TOKEN USAGE", &summary);
 }
 
 /// LLM client for draft picks and deck building.
