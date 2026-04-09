@@ -70,7 +70,7 @@ const GAME_RULES: &str = r#"## Key rules
 - AUTO-TAP: When you choose "Cast [spell]", the engine automatically taps the right lands for you. Just pick the Cast option directly — no need to tap lands first.
 - The Cast option shows which lands will be tapped, e.g. "Cast Doom Blade (tap Swamp, Swamp)".
 - MANUAL TAPPING: Rarely needed, but useful when you want to: float mana before combat (to bluff an instant or have mana open), use a mana ability with a side effect (e.g. Deranged Assistant mills a card), or override the auto-tap plan to keep a specific land untapped (e.g. preserving Gavony Township for its activated ability). In most cases, just use the Cast option.
-- Spells go on the stack and resolve when both players pass priority.
+- Spells go on the stack and resolve when both players pass priority. The stack display shows what each spell targets (e.g. "Dead Weight targeting Falkenrath Noble (opp's)").
 - Creatures have summoning sickness — can't attack the turn they enter. [S] means sick.
 - Play one land per turn, only during your main phase.
 - Instants can be cast anytime you have priority (including during combat or opponent's turn).
@@ -78,6 +78,25 @@ const GAME_RULES: &str = r#"## Key rules
 - Targeted spells show their target in the action (e.g. "Cast Lightning Bolt → Goblin Piker 2/1").
 - For spells or abilities with multiple possible targets, you'll be asked to choose a target after selecting the action.
 - Attack to win! Creatures deal damage to the opponent when unblocked.
+
+## Keyword abilities
+Creatures display their keyword abilities after P/T (e.g. "Abbey Griffin 2/2 flying, vigilance"). The P/T shown is always the creature's CURRENT effective stats including bonuses from auras, counters, and anthem effects.
+
+Key keywords and their combat implications:
+- **flying**: Can only be blocked by creatures with flying or reach. Very important for combat!
+- **reach**: Can block creatures with flying (but doesn't grant flying).
+- **deathtouch**: Any damage it deals to a creature destroys it. A 1/1 deathtouch kills a 10/10.
+- **first strike**: Deals combat damage before creatures without first/double strike. Can kill a blocker before it hits back.
+- **double strike**: Deals first strike AND normal combat damage.
+- **lifelink**: Damage dealt also gains that much life for the controller. Affects race calculations.
+- **trample**: Excess combat damage carries over to the defending player when blocked.
+- **vigilance**: Doesn't tap when attacking — can still block next turn.
+- **hexproof**: Can't be targeted by opponent's spells or abilities. Don't waste removal on it!
+- **defender**: Can't attack.
+- **intimidate**: Can only be blocked by artifact creatures or creatures sharing a color.
+- **menace**: Must be blocked by two or more creatures.
+- **haste**: Can attack the turn it enters (no summoning sickness).
+- **indestructible**: Can't be destroyed by damage or destroy effects.
 
 ## Flashback
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. The engine auto-taps for flashback too.
@@ -157,9 +176,9 @@ T5 DeclareAttackers You:20hp Opp:20hp,5cards
 Your board: 3xForest(tapped), Kalonian Tusker 3/3, Kalonian Tusker 3/3
 Opp board: 2xMountain, Goblin Piker 2/1
 Choose attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
-Numbers, 'all', or 'none'
+Respond with attacker_indices (list of numbers 0-1), or empty list for none.
 ```
-Answer: all
+attacker_indices: [0, 1] (attack with both 3/3s — opponent's 2/1 can only block one)
 
 ## Correct example: Declare blockers
 
@@ -168,13 +187,11 @@ T6 DeclareBlockers You:17hp Opp:20hp,5cards
 Your board: 3xMountain, Goblin Piker 2/1, Goblin Piker 2/1
 Opp board: 3xForest(tapped), Kalonian Tusker 3/3[T], Kalonian Tusker 3/3[T]
 Attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
-Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
-Format: 'blocker:attacker' pairs, or 'none'
+Your blockers: 0:Goblin Piker 2/1 (your) 1:Goblin Piker 2/1 (your)
+Respond with blocker_assignments: list of {"blocker": N, "attacker": N} pairs, or empty list for no blocks.
 ```
-Answer: 0:0 1:1
+blocker_assignments: [{"blocker": 0, "attacker": 0}, {"blocker": 1, "attacker": 1}]
 (Block both. Your 2/1s die but prevent 6 damage.)
-
-IMPORTANT: For blocking, the format is BLOCKER_NUMBER:ATTACKER_NUMBER (e.g. "0:0" NOT "0:" or "0>0"). Both numbers are required.
 "#;
 
 /// Backend trait for LLM API communication.
@@ -227,9 +244,13 @@ The system parses ONLY the last line. If the last line isn't a valid number/form
 
 const GEMINI_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering.
 
-You will respond with structured JSON. Use the "thoughts" field to briefly explain your reasoning, and the "action" field for the 0-indexed action number you choose.
+You will respond with structured JSON. The schema changes depending on the prompt:
 
-For combat decisions (attackers/blockers), the response format will be different — follow the instructions in each prompt.
+1. **Action selection**: {"thoughts": "...", "action": N} — pick the 0-indexed action number.
+2. **Declare attackers**: {"thoughts": "...", "attacker_indices": [0, 1, 2]} — list of creature indices to attack with (empty for none).
+3. **Declare blockers**: {"thoughts": "...", "blocker_assignments": [{"blocker": 0, "attacker": 0}]} — list of blocker-attacker pairs (empty for no blocks).
+4. **Choose targets**: {"thoughts": "...", "target_indices": [0]} — list of target indices to select.
+5. **Confirm concede**: {"thoughts": "...", "confirm": true/false} — confirm or cancel concession.
 
 "#;
 
