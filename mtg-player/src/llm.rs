@@ -781,7 +781,20 @@ impl LlmPlayer {
             let items: Vec<String> = view.stack.iter()
                 .map(|i| {
                     let who = if i.controller == view.you { "your" } else { "opp's" };
-                    format!("{} ({})", i.name, who)
+                    let targets_str = if i.targets.is_empty() {
+                        String::new()
+                    } else {
+                        let target_names: Vec<String> = i.targets.iter()
+                            .map(|t| match t {
+                                mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
+                                mtg_engine::actions::Target::Player(pid) => {
+                                    if *pid == view.you { "you".into() } else { "opponent".into() }
+                                }
+                            })
+                            .collect();
+                        format!(" targeting {}", target_names.join(", "))
+                    };
+                    format!("{}{} ({})", i.name, targets_str, who)
                 })
                 .collect();
             s.push_str(&items.join(", "));
