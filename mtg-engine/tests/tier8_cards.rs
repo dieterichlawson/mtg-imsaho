@@ -726,3 +726,136 @@ fn harvest_pyre_only_exiles_own_graveyard() {
     let target_obj = new_state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, 3, "Target should have 3 damage");
 }
+
+// ── Bug H: CastableSpell.exile_x_from_gy_max ─────────────────────────
+//
+// Regression tests for BUG_REPORT_8SEAT.md Bug H. The LLM player was
+// always casting Harvest Pyre with exile_count: None (→ X=0) because
+// `choose_cast_targets` constructed a fresh CastSpell action instead
+// of looking up one of the engine's pre-enumerated expanded variants,
+// and the action label gave no hint at the effective X. The fix plumbs
+// `exile_x_from_gy_max` through CastableSpell so the LLM UI can both
+// display the damage in the label and find the matching expanded
+// action. These tests pin the engine side of that contract.
+
+#[test]
+fn castable_spell_exposes_exile_x_from_gy_max_for_harvest_pyre() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    // Put 5 cards in P0's graveyard. exile_x_from_gy_max should report 5.
+    for _ in 0..5 {
+        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+    // P1 graveyard cards must NOT count — exile_count is "your graveyard".
+    for _ in 0..3 {
+        let c = state.create_object(CardId(9999), P1, Zone::Battlefield, Some(1), Some(1));
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+
+    let _target = ready_creature(&mut state, P1, 6, 6);
+    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == spell)
+        .expect("Harvest Pyre should be castable");
+
+    assert_eq!(cs.exile_x_from_gy_max, Some(5),
+        "exile_x_from_gy_max should equal the caster's own graveyard size");
+}
+
+#[test]
+fn castable_spell_exile_x_from_gy_max_is_none_for_non_exile_x_spell() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let _target = ready_creature(&mut state, P1, 2, 2);
+    let spell = castable_spell(&mut state, &reg, "Lightning Bolt", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == spell)
+        .expect("Lightning Bolt should be castable");
+
+    assert!(cs.exile_x_from_gy_max.is_none(),
+        "Spells without ExileXFromGraveyard must report None, got {:?}",
+        cs.exile_x_from_gy_max);
+}
+
+#[test]
+fn castable_spell_exile_x_from_gy_max_reports_zero_when_graveyard_empty() {
+    // Empty graveyard → max X is zero, NOT None. Distinguishes "no exile
+    // cost" from "exile cost with nothing to pay". The LLM label then
+    // renders "X=0 (0 damage)" so the model doesn't waste the card.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    let _target = ready_creature(&mut state, P1, 2, 2);
+    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == spell)
+        .expect("Harvest Pyre is castable even with an empty graveyard");
+
+    assert_eq!(cs.exile_x_from_gy_max, Some(0),
+        "empty graveyard must surface as Some(0), not None");
+}
+
+#[test]
+fn harvest_pyre_max_x_cast_action_matches_graveyard_size() {
+    // Integration check for the llm.rs expanded-action lookup path: for
+    // each graveyard size, the set of legal CastSpell actions for
+    // Harvest Pyre must include an entry with exile_count equal to the
+    // reported exile_x_from_gy_max. If this breaks, `pick_expanded` in
+    // llm.rs would fail to find a matching action and fall back to the
+    // old X=None behavior that caused Bug H.
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    state.priority_player = Some(P0);
+
+    for _ in 0..3 {
+        let c = state.create_object(CardId(9999), P0, Zone::Battlefield, Some(1), Some(1));
+        state.move_object(c, Zone::Graveyard, &reg);
+    }
+
+    let target = ready_creature(&mut state, P1, 4, 4);
+    let spell = castable_spell(&mut state, &reg, "Harvest Pyre", P0);
+
+    let legal = engine::legal_actions(&state, &reg);
+    let cs = legal.castable_spells.iter()
+        .find(|cs| cs.object_id == spell)
+        .expect("Harvest Pyre castable");
+    let max_x = cs.exile_x_from_gy_max.expect("max X should be Some(3)");
+    assert_eq!(max_x, 3);
+
+    // Find the cast action with exile_count == Some(max_x) targeting the creature.
+    let matching: Vec<&Action> = legal.actions.iter()
+        .filter(|a| matches!(a, Action::CastSpell {
+            object_id,
+            targets,
+            exile_count: Some(x),
+            ..
+        } if *object_id == spell
+             && targets.as_slice() == [Target::Object(target)]
+             && *x == max_x))
+        .collect();
+
+    assert!(!matching.is_empty(),
+        "engine must enumerate a CastSpell action with exile_count=max_x so \
+         llm.rs::choose_cast_targets can find it; otherwise Bug H regresses");
+
+    // Submit that action and verify the full damage lands.
+    let action = matching[0].clone();
+    let mut new_state = engine::submit_action(&state, &action, &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
+
+    let target_obj = new_state.get_object(target).unwrap();
+    assert_eq!(target_obj.damage_marked, max_x,
+        "casting the max-X variant must deal max_x damage (={})", max_x);
+}
