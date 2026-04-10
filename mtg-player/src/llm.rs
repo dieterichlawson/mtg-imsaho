@@ -258,9 +258,9 @@ Opp: 14hp, 5cards, 29lib, 1gy, 0exile
 Your board: 3x Forest, Kalonian Tusker 3/3, Kalonian Tusker 3/3
 Opp board: 2x Mountain, Goblin Piker 2/1
 Choose attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
-Respond with attacker_indices (list of numbers 0-1), or empty list for none.
+Respond with {"thoughts": "...", "attacker_indices": [..]} — each index in 0-1, empty list for no attacks.
 ```
-**Respond `{"attacker_indices": [0, 1]}`** — attack with both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
+**Respond `{"thoughts": "Both Tuskers attack — opp can only block one, blocked Tusker survives 3v2.", "attacker_indices": [0, 1]}`** — attack with both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
 
 ### Example: declare blockers
 
@@ -275,9 +275,9 @@ Your board: 3x Mountain, Goblin Piker 2/1, Goblin Piker 2/1
 Opp board: 3x Forest (tapped), Kalonian Tusker 3/3 [T], Kalonian Tusker 3/3 [T]
 Attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
 Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
-For each blocker, respond with the attacker index to block, or -1 for no block.
+Respond with {"thoughts": "...", "0": <attacker_idx>, "1": <attacker_idx>, ...} — one key per blocker (0..1), value is the 0-indexed attacker to block or -1 for no block.
 ```
-**Respond `{"0": 0, "1": 1}`** — chump-block both Tuskers. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
+**Respond `{"thoughts": "Chump-block both Tuskers — lose 2 Pikers but prevent 6 damage; can't take 6 at 17.", "0": 0, "1": 1}`** — chump-block both Tuskers. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
 "#;
 
 /// Backend trait for LLM API communication.
@@ -1638,7 +1638,7 @@ impl LlmPlayer {
         });
 
         let response = self.send_message_structured(
-            "You chose to CONCEDE the game. Are you sure? Respond with confirm: true to concede, or false to cancel.",
+            "You chose to CONCEDE the game. Are you sure? Respond with {\"thoughts\": \"...\", \"confirm\": true|false} — true to concede, false to cancel.",
             &schema
         );
         let confirmed = response["confirm"].as_bool().unwrap_or(false);
@@ -2056,7 +2056,7 @@ impl LlmPlayer {
                     combat_text.push_str(&format!("{}:{}{} ", i, Self::format_combat_creature(view, id), forced));
                 }
                 combat_text.push_str(&format!(
-                    "\nRespond with attacker_indices (list of numbers 0-{}), or empty list for none. Forced attackers are auto-included.",
+                    "\nRespond with {{\"thoughts\": \"...\", \"attacker_indices\": [..]}} — each index in 0-{}, empty list for no attacks. Forced attackers are auto-included.",
                     eligible.len() - 1
                 ));
 
@@ -2204,7 +2204,10 @@ impl LlmPlayer {
         for (i, &id) in eligible_blockers.iter().enumerate() {
             combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
         }
-        combat_text.push_str("\nFor each blocker, respond with the attacker index to block, or -1 for no block.");
+        combat_text.push_str(&format!(
+            "\nRespond with {{\"thoughts\": \"...\", \"0\": <attacker_idx>, \"1\": <attacker_idx>, ...}} — one key per blocker (0..{}), value is the 0-indexed attacker to block or -1 for no block.",
+            eligible_blockers.len().saturating_sub(1)
+        ));
 
         let base_prompt = self.build_prompt(view, &combat_text);
 
