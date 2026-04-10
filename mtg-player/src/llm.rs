@@ -131,14 +131,7 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Creature
 - `[OPPONENT'S TURN: <step>]` — it's the opponent's turn and you have priority. You can cast instants and activate abilities.
 - `[RESPOND TO <controller>'s <spell>]` — something is on the stack waiting to resolve. You can pass to let it resolve, or respond with an instant/ability (e.g. Counterspell).
 
-**Action list** (final line): numbered options separated by spaces, like `0:Pass 1:Tap Forest 2:Cast Kalonian Tusker (tap 2x Forest) 3:Concede`. Pick one by its index.
-
-## London mulligan
-
-At the start of the game you'll be asked two kinds of decisions before turn 1:
-
-1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand (numbered with mana costs and P/T). Respond with `{"thoughts": "...", "mull": true|false}` — `true` to mulligan (shuffle and redraw seven), `false` to keep. This is the London mulligan: you always draw exactly seven, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. House rule: capped at mull-to-4, so after three mulligans you are forced to keep. Tips: mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
-2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`. You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Respond with `{"thoughts": "...", "bottom_indices": [0, 3, 5]}`. Bottom your weakest cards (extra lands if flooded, expensive bombs you can't cast yet, dead cards vs the matchup). Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
+**Action list** (final line): numbered options separated by spaces, like `0:Pass 1:Tap Forest 2:Cast Kalonian Tusker (tap 2x Forest) 3:Concede`. Pick one by its index. Targeted spells show their chosen target inline (e.g. `Cast Lightning Bolt → Goblin Piker 2/1`); for spells with multiple choices you'll get a follow-up "Choose targets" prompt.
 
 ## Key rules
 
@@ -150,8 +143,6 @@ At the start of the game you'll be asked two kinds of decisions before turn 1:
 - **Sorcery speed**: Sorceries, creatures, enchantments, artifacts can only be cast during YOUR main phase with an empty stack.
 - **Instant speed**: Instants can be cast anytime you have priority — your turn, opponent's turn, during combat, in response to spells.
 - **Summoning sickness**: Creatures with `[S]` can't attack or use tap-abilities the turn they enter. Goes away on your next untap.
-- **Targeting**: Targeted spells show their chosen target inline (e.g. `Cast Lightning Bolt → Goblin Piker 2/1`). For spells with choices, you'll get a follow-up target prompt.
-- **Win condition**: Reduce opponent to 0 life. Combat damage from unblocked creatures is the main path.
 
 ## Keyword abilities
 
@@ -176,15 +167,12 @@ Creatures display their keywords after P/T (e.g. `Abbey Griffin 2/2 flying, vigi
 
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving they're exiled. Look for `Flashback <card>` in the action list. The engine auto-taps for flashback costs.
 
-## Strategy tips
+## London mulligan
 
-- **Save instants for combat**: Giant Growth on a blocked attacker during `[AFTER ATTACKERS DECLARED]` or `[AFTER BLOCKERS DECLARED]` swings combat math. Lightning Bolt on a would-be blocker right before blockers are declared can clear the way.
-- **Giant Growth in main phase is usually a waste**: It's a temporary +3/+3 that wears off at end of turn. Cast it during combat where it actually does work.
-- **Removal targets**: Spend removal (Doom Blade, Swords, Lightning Bolt) on the opponent's biggest threats, ideally before they attack you. Don't bolt face when there's a 4/4 threatening lethal next turn.
-- **Main phase order**: Play lands and cast creatures during `[MAIN PHASE 1]`. Use `[MAIN PHASE 2]` for spells you want to cast after seeing combat (e.g. casting a creature you held back as a blocker).
-- **Don't tap lands you can't use**: Tapping 1 land when you need 2 wastes it. Tapping during a step where you have nothing to cast also wastes it.
-- **Tap the right colors**: If a spell needs `{G}{G}`, tap Forests not Mountains. The action list often shows separate `Tap Forest` vs `Tap Mountain` options — match the colored requirements first.
-- **Counterspell timing**: Hold counter mana up on your opponent's turn so you can react to their threats. Don't tap out before they get a chance to play.
+At the start of the game, before turn 1, you'll be asked two pre-game decisions:
+
+1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Respond with `{"thoughts": "...", "mull": true|false}` — `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. House rule: capped at mull-to-4, so after three mulligans you are forced to keep. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
+2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`. You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Respond with `{"thoughts": "...", "bottom_indices": [0, 3, 5]}`. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
 
 ## Examples
 
@@ -319,21 +307,54 @@ trait LlmBackend {
     fn take_thinking(&mut self) -> Option<String> { None }
 }
 
-const ANTHROPIC_RESPONSE_FORMAT: &str = "You are playing Magic: The Gathering. You will respond with structured JSON.\n\n";
+/// Shared response-format intro that comes before GAME_RULES in every system
+/// prompt. Sets the role, summarises what the model will see and be asked,
+/// and documents every JSON schema it might be expected to return.
+const RESPONSE_FORMAT_INTRO: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
+Limited (draft) match — each player has a 40-card deck built from a draft pool.
+The goal is to reduce your opponent's life total from 20 to 0 by attacking with
+creatures and casting damaging spells, while protecting your own life total.
 
-const GEMINI_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering.
+## What you'll be asked
 
-You will respond with structured JSON. The schema changes depending on the prompt. Every response includes a "thoughts" field — use it to summarize your private reasoning about the game state and why you chose this action.
+For every decision the game requires, you'll receive a prompt describing the
+current game state — recent events, turn and step, both players' life and
+hand/library/graveyard counts, the contents of each battlefield, the stack,
+your mana pool, your hand, and a context tag (main phase, combat, response
+window, mulligan, etc.). The "Prompt format" section below documents every
+field in detail. Depending on the context, you'll be asked to:
 
-1. **Action selection**: {"thoughts": "...", "action": N} — pick the 0-indexed action number.
-2. **Declare attackers**: {"thoughts": "...", "attacker_indices": [0, 1, 2]} — list of creature indices to attack with (empty for none).
-3. **Declare blockers**: {"thoughts": "...", "0": 1, "1": -1} — for each blocker index, the attacker index to block (-1 for no block).
-4. **Choose targets**: {"thoughts": "...", "target_indices": [0]} — list of target indices to select.
-5. **Confirm concede**: {"thoughts": "...", "confirm": true/false} — confirm or cancel concession.
-6. **Mulligan decision**: {"thoughts": "...", "mull": true|false} — London mulligan keep/mull on your opening hand.
-7. **Bottom cards after mulligan**: {"thoughts": "...", "bottom_indices": [0, 3, 5]} — exactly N distinct 0-indexed hand positions to bottom.
+- Pick one of N legal actions during a turn step (play a land, cast a spell,
+  tap mana, pass priority, etc.)
+- Declare which of your creatures attack
+- Assign blockers to incoming attackers
+- Pick targets for a spell or ability
+- Decide whether to mulligan, and if so which cards to put on the bottom
+- Confirm a concession
+
+## How you respond
+
+You always respond with structured JSON. The exact schema depends on what was
+asked, and every schema includes a "thoughts" field — use it to think through
+the game state, weigh alternatives, and explain your choice. Thoughts are
+private (your opponent does not see them), so be candid about your plan.
+
+The possible schemas are:
+
+1. **Action selection**: `{"thoughts": "...", "action": N}` — pick the 0-indexed action number from the action list.
+2. **Declare attackers**: `{"thoughts": "...", "attacker_indices": [0, 1, 2]}` — list of creature indices to attack with (empty list = no attacks).
+3. **Declare blockers**: `{"thoughts": "...", "0": 1, "1": -1}` — for each of your blockers (by index), the attacker index it blocks, or -1 for no block.
+4. **Choose targets**: `{"thoughts": "...", "target_indices": [0]}` — list of target indices to select for a spell or ability.
+5. **Confirm concede**: `{"thoughts": "...", "confirm": true|false}` — confirm or cancel a concession.
+6. **Mulligan decision**: `{"thoughts": "...", "mull": true|false}` — London mulligan: keep your opening hand or shuffle and redraw.
+7. **Bottom cards after mulligan**: `{"thoughts": "...", "bottom_indices": [0, 3, 5]}` — exactly N distinct 0-indexed hand positions to bottom.
+
+The detailed game rules and prompt format follow.
 
 "#;
+
+const ANTHROPIC_RESPONSE_FORMAT: &str = RESPONSE_FORMAT_INTRO;
+const GEMINI_RESPONSE_FORMAT: &str = RESPONSE_FORMAT_INTRO;
 
 /// Anthropic Claude backend using the Messages API with prompt caching.
 struct AnthropicBackend {
