@@ -1200,7 +1200,10 @@ impl LlmPlayer {
             Action::ActivateManaAbility { object_id, .. } => format!("Tap {}", Self::obj_name(view, *object_id)),
             Action::ActivateAbility { object_id, .. } => format!("Activate {}", Self::obj_name(view, *object_id)),
             Action::Concede => "Concede".into(),
-            Action::DiscardCards { cards } => format!("Discard {} cards", cards.len()),
+            Action::DiscardCards { cards } => {
+                let names: Vec<String> = cards.iter().map(|id| Self::obj_name(view, *id)).collect();
+                format!("Discard {}", names.join(", "))
+            }
             Action::ResolveChoice { choice } => {
                 use mtg_engine::actions::ResolvedChoice;
                 match choice {

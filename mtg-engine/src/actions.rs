@@ -171,7 +171,8 @@ impl std::fmt::Display for Action {
             Action::DeclareBlockers { assignments } =>
                 write!(f, "Declare {} blockers", assignments.len()),
             Action::DiscardCards { cards } =>
-                write!(f, "Discard {} cards", cards.len()),
+                write!(f, "Discard {} card{}", cards.len(),
+                    if cards.len() == 1 { "" } else { "s" }),
             Action::MulliganKeep => write!(f, "Keep opening hand"),
             Action::MulliganMull => write!(f, "Mulligan"),
             Action::BottomCards { cards } =>
