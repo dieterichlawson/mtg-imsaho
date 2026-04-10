@@ -1420,8 +1420,8 @@ impl LlmPlayer {
                     .collect::<Vec<_>>()
                     .join(" ");
                 let prompt = format!(
-                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with target_indices (list of numbers 0-{}).",
-                    spell.name, max, target_list, options.len() - 1
+                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with {{\"thoughts\": \"...\", \"target_indices\": [..]}} — each index in 0-{}, up to {} entries, empty list to choose no targets.",
+                    spell.name, max, target_list, options.len() - 1, max
                 );
                 self.log("TARGETS", &prompt);
 
