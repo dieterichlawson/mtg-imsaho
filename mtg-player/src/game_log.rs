@@ -54,11 +54,12 @@ pub fn write(file: &str, line: u32, label: &str, content: &str) {
 
     // Single-line content goes on the header line with no trailing blank.
     // Multi-line content stays indented with a blank line separator after.
+    // All emitted lines are trimmed of trailing whitespace.
     if !content.is_empty() && !content.contains('\n') {
         let _ = writeln!(
             state.file,
             "[{:02}:{:02}:{:02}.{:03} {:?}] [{}:{}] {} {}",
-            hrs, mins, secs, millis, tid, filename, line, label, content
+            hrs, mins, secs, millis, tid, filename, line, label, content.trim_end()
         );
     } else {
         let _ = writeln!(
@@ -68,7 +69,12 @@ pub fn write(file: &str, line: u32, label: &str, content: &str) {
         );
         if !content.is_empty() {
             for ln in content.lines() {
-                let _ = writeln!(state.file, "  {}", ln);
+                let trimmed = ln.trim_end();
+                if trimmed.is_empty() {
+                    let _ = writeln!(state.file);
+                } else {
+                    let _ = writeln!(state.file, "  {}", trimmed);
+                }
             }
         }
         let _ = writeln!(state.file);
