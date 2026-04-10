@@ -2473,12 +2473,11 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 lib.retain(|&id| id != card_id);
                 lib.push(card_id);
             }
-            let names: Vec<String> = cards.iter()
-                .map(|&id| card_name(&new_state, registry, id))
-                .collect();
+            // Bottoming is a hidden action — the opponent must not see which
+            // specific cards were sent to the bottom. Log only the count.
             new_state.log(LogLevel::Event,
-                format!("p{} bottomed {} card{}: {}", player.0, count,
-                    if count == 1 { "" } else { "s" }, names.join(", ")));
+                format!("p{} bottomed {} card{}", player.0, count,
+                    if count == 1 { "" } else { "s" }));
             new_state.awaiting_action = None;
             advance_mulligan_phase(&mut new_state, registry);
             new_state.consecutive_passes = 0;
