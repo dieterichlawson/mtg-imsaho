@@ -74,6 +74,9 @@ pub struct PermanentView {
     /// Oracle text of the card (from the registry). Used by display code to
     /// surface short effect summaries for attached auras/equipment.
     pub oracle_text: String,
+    /// Counters on the permanent (+1/+1, -1/-1, loyalty, etc). Exposed so
+    /// the LLM prompt can render counter state alongside effective P/T.
+    pub counters: std::collections::HashMap<CounterType, u32>,
 }
 
 #[derive(Debug, Clone)]
@@ -170,6 +173,7 @@ impl GameView {
                     oracle_text: face_data.as_ref()
                         .map(|d| d.oracle_text.clone())
                         .unwrap_or_default(),
+                    counters: obj.counters.clone(),
                 }
             })
             .collect();
