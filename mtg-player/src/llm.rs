@@ -1007,26 +1007,33 @@ impl LlmPlayer {
     }
 
     /// Compact game state — much shorter than the CLI version.
-    fn format_state_compact(view: &GameView) -> String {
+    fn format_state_compact(view: &GameView, header_override: Option<&str>) -> String {
         let mut s = String::new();
 
-        // Turn, phase, whose turn
-        let step_name = match view.step {
-            Step::PrecombatMain => "Main 1",
-            Step::PostcombatMain => "Main 2",
-            Step::BeginCombat => "Begin Combat",
-            Step::DeclareAttackers => "Declare Attackers",
-            Step::DeclareBlockers => "Declare Blockers",
-            Step::CombatDamage => "Combat Damage",
-            Step::EndCombat => "End Combat",
-            Step::Upkeep => "Upkeep",
-            Step::Draw => "Draw",
-            Step::EndStep => "End Step",
-            Step::Untap => "Untap",
-            Step::Cleanup => "Cleanup",
-        };
-        let whose_turn = if view.active_player == view.you { "your turn" } else { "opp's turn" };
-        s.push_str(&format!("Turn {} - {} ({})\n", view.turn_number, step_name, whose_turn));
+        // Header line. During pre-game phases (mulligan / bottoming) the
+        // engine still reports turn=1 step=Untap, which is misleading; the
+        // caller passes a phase label override in that case.
+        if let Some(h) = header_override {
+            s.push_str(h);
+            s.push('\n');
+        } else {
+            let step_name = match view.step {
+                Step::PrecombatMain => "Main 1",
+                Step::PostcombatMain => "Main 2",
+                Step::BeginCombat => "Begin Combat",
+                Step::DeclareAttackers => "Declare Attackers",
+                Step::DeclareBlockers => "Declare Blockers",
+                Step::CombatDamage => "Combat Damage",
+                Step::EndCombat => "End Combat",
+                Step::Upkeep => "Upkeep",
+                Step::Draw => "Draw",
+                Step::EndStep => "End Step",
+                Step::Untap => "Untap",
+                Step::Cleanup => "Cleanup",
+            };
+            let whose_turn = if view.active_player == view.you { "your turn" } else { "opp's turn" };
+            s.push_str(&format!("Turn {} - {} ({})\n", view.turn_number, step_name, whose_turn));
+        }
 
         // Zone counts
         let your_gy_count: usize = view.graveyards.iter()
@@ -1586,6 +1593,15 @@ impl LlmPlayer {
 
     /// Build a prompt that includes new log entries + board state + the action prompt.
     fn build_prompt(&mut self, view: &GameView, action_prompt: &str) -> String {
+        self.build_prompt_with_header(view, action_prompt, None)
+    }
+
+    fn build_prompt_with_header(
+        &mut self,
+        view: &GameView,
+        action_prompt: &str,
+        header_override: Option<&str>,
+    ) -> String {
         // Use display_log (Info level and above) to skip debug noise like
         // "passes priority" and "Step: Draw" entries that add no information.
         let new_logs: Vec<String> = view.display_log.iter()
@@ -1603,7 +1619,7 @@ impl LlmPlayer {
             }
             prompt.push('\n');
         }
-        prompt.push_str(&Self::format_state_compact(view));
+        prompt.push_str(&Self::format_state_compact(view, header_override));
         prompt.push_str(action_prompt);
         prompt
     }
@@ -1827,25 +1843,16 @@ impl LlmPlayer {
             numbered.join("\n")
         };
 
-        let mut action_prompt = String::new();
-        action_prompt.push_str("[MULLIGAN DECISION]\n");
         let mulls_taken = view.your_mulligan_count;
         let keep_size = (7_i32 - mulls_taken as i32).max(0);
-        let mull_size = (7_i32 - (mulls_taken as i32 + 1)).max(0);
+        let mut action_prompt = String::new();
+        action_prompt.push_str("[MULLIGAN DECISION]\n");
         action_prompt.push_str(&format!(
-            "London mulligan. You have already taken {} mulligan{}. \
-             If you KEEP now, you will bottom {} card{} and play with {} card{} in hand. \
-             If you MULLIGAN, you will redraw a fresh seven and — if you then keep — \
-             bottom {} card{} to play with {} in hand.\n",
+            "Mulligans taken so far: {}. If you keep now you will bottom {} card{} and play with {} in hand.\n",
             mulls_taken,
-            if mulls_taken == 1 { "" } else { "s" },
             mulls_taken,
             if mulls_taken == 1 { "" } else { "s" },
             keep_size,
-            if keep_size == 1 { "" } else { "s" },
-            mulls_taken + 1,
-            if mulls_taken + 1 == 1 { "" } else { "s" },
-            mull_size,
         ));
         action_prompt.push_str("Your opening hand:\n");
         action_prompt.push_str(&hand_text);
@@ -1866,7 +1873,11 @@ impl LlmPlayer {
             "required": ["thoughts", "mull"]
         });
 
-        let full_prompt = self.build_prompt(view, &action_prompt);
+        let full_prompt = self.build_prompt_with_header(
+            view,
+            &action_prompt,
+            Some("Pre-game — London mulligan phase"),
+        );
         let response = self.send_message_structured(&full_prompt, &schema);
         let choice = response["mull"].as_bool();
         match choice {
@@ -1942,7 +1953,11 @@ impl LlmPlayer {
             "required": ["thoughts", "bottom_indices"]
         });
 
-        let full_prompt = self.build_prompt(view, &action_prompt);
+        let full_prompt = self.build_prompt_with_header(
+            view,
+            &action_prompt,
+            Some("Pre-game — Bottoming after mulligan"),
+        );
         let response = self.send_message_structured(&full_prompt, &schema);
 
         // Parse and validate bottom_indices.
