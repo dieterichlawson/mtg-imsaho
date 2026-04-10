@@ -376,3 +376,68 @@ No issues found.
 - Reveal choice for non-instant/sorcery top card per ruling: NOT TESTED (would expose issue #3)
 - Transform when top card is sorcery: NOT TESTED
 - Empty library: NOT TESTED
+
+## Audit — 2026-04-10 18:30
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: At the beginning of your upkeep, look at the top card of your library. You may reveal that card. If an instant or sorcery card is revealed this way, transform this creature.
+**Type line**: Creature — Human Wizard
+**Back face — Name**: Insectile Aberration
+**Back face — Type line**: Creature — Human Insect
+**Back face — Oracle text**: Flying
+**Back face — P/T**: 3/2
+**Ruling**: [2011-09-22] You may reveal the card even if it's not an instant or sorcery. Whether or not you reveal it, the card stays on top of your library.
+**Status**: ISSUE
+
+### Code issues
+
+- `mtg-engine/src/cards/isd/delver_of_secrets.rs:146-149` — Manual transform bypasses `helpers::apply_transform`, leaving `obj.subtypes` and `obj.keywords` out of sync with the back face. After transform, `obj.subtypes` still reads `["Human", "Wizard"]` instead of `["Human", "Insect"]`, and `obj.keywords` stays empty instead of `[Flying]`.
+  - Oracle says: back face type line is `Creature — Human Insect`, with keyword `Flying`.
+  - Code does:
+    ```rust
+    if let Some(obj) = state.get_object_mut(self_id) {
+        obj.is_transformed = true;
+        obj.name = "Insectile Aberration".into();
+    }
+    ```
+    versus the canonical helper (`mtg-engine/src/cards/helpers.rs:256-263`) which also copies `back.keywords` and `back.subtypes` onto the object.
+  - Impact: `state.matches_filter` at `mtg-engine/src/state.rs:683` falls through to `creature.subtypes.iter().any(|s| s == subtype)` after the transformed-branch lookup, so a transformed Delver incorrectly matches the `Wizard` subtype (via stale `obj.subtypes`) even though Insectile Aberration is not a Wizard. Similarly `combat.rs:405` collects `obj.subtypes` directly, and the engine has numerous other sites (e.g. `engine.rs:1593`, `engine.rs:1728`, `state.rs:1200`, `state.rs:1247`, ISD cards such as `bitterheart_witch`, `dearly_departed`, `elder_cathar`, `hamlet_captain`, `full_moons_rise`, `bloodline_keeper`, `woodland_cemetery`, etc.) that query `obj.subtypes` / `obj.keywords` directly rather than going through `has_keyword`/`matches_filter`, so the stale values can leak. The fix is to call `helpers::apply_transform(state, self_id, registry)` (like `cloistered_youth.rs:99` does) instead of flipping the flag by hand.
+
+- `mtg-engine/src/cards/isd/delver_of_secrets.rs:106-116` — The YesNo description leaks information about the top card identity and whether it will cause a transform before the player commits to revealing. Oracle text models "look at" (private to controller), not a public announcement. Because `state.log` and the `AwaitingAction` description are part of the shared game state, an opponent observer can see the top card's name and whether it's an instant/sorcery. Minor correctness/information-hygiene concern; the controller already legally knows the info, but it should not be propagated to the description/log visible to opponents.
+  - Oracle says: "look at the top card of your library"
+  - Code does:
+    ```rust
+    let description = if top_is_instant_or_sorcery {
+        format!("Delver of Secrets: reveal {} from the top of your library to transform?", top_card_name)
+    } else {
+        format!("Delver of Secrets: reveal {} from the top of your library? (not an instant or sorcery — no transform)", top_card_name)
+    };
+    ```
+  - Also logs the top card name unconditionally at `LogLevel::Debug` on line 101-102.
+
+### Tricky interactions checked
+
+- Triggered ability source leaves battlefield between trigger put-on-stack and resolution: PASS — `triggers.rs:983` re-checks `zone == Battlefield` before calling `on_upkeep`.
+- Upkeep trigger only on controller's upkeep (not each upkeep): PASS — `on_upkeep` bails if `state.active_player != controller` (line 90).
+- Front-face-only trigger (Insectile Aberration back face has no upkeep trigger): PASS — `on_upkeep` bails on `is_transformed` (line 90); back face `triggered_abilities` is empty.
+- "You may reveal" is presented even when top card is non-instant/sorcery (per 2011-09-22 ruling): PASS — `on_upkeep` always presents the choice regardless of the top card's type (lines 117-124).
+- Top card stays on library after reveal/non-reveal (per ruling): PASS — code never moves the card; only looks at `library_order.first()`.
+- Declining to reveal does not transform: PASS — `on_yes_no_choice` returns early on `!yes` (line 128).
+- Revealing a non-instant/sorcery does not transform: PASS — `top_is_instant_or_sorcery` branches in `on_yes_no_choice` (line 143-150).
+- Dynamic P/T returns (3,2) only after transform: PASS — `dynamic_pt` keys off `is_transformed` (lines 76-82).
+- Flying on back face: effectively PASS via `has_keyword`'s back_face_data lookup (`state.rs:1018-1027`), even though `obj.keywords` is not synced (see issue above). This is fragile and the issue above is the root cause.
+- Empty library when trigger resolves: PASS — `top_card_is_instant_or_sorcery` returns false and `on_upkeep` still presents the "reveal?" choice, which is harmless.
+
+### Test coverage
+
+- Upkeep trigger transforms when revealed top card is an instant: `mtg-engine/tests/tier15_cards.rs:950` (`delver_transforms_when_player_reveals_instant`).
+- Upkeep trigger does not transform when player declines to reveal: `mtg-engine/tests/tier15_cards.rs:989` (`delver_does_not_transform_when_player_declines_reveal`).
+- Upkeep trigger does not transform when revealed top card is a creature (per 2011-09-22 ruling, choice is still presented): `mtg-engine/tests/tier15_cards.rs:1022` (`delver_does_not_transform_when_top_card_is_creature`).
+- Reveal leaves the top card on the library: asserted inside `delver_transforms_when_player_reveals_instant` (line 985) and `delver_does_not_transform_when_player_declines_reveal` (line 1018).
+- Bug-regression test that choice is presented for non-instant/sorcery top cards: `mtg-engine/tests/audit_bugs.rs:637` (`bug_delver_reveal_suppressed_for_non_instant_sorcery`).
+- Transformed subtype correctness (e.g., Delver no longer matches "Wizard" but matches "Insect" + "Human"): NOT TESTED.
+- Transformed keyword correctness (`has_keyword` returns Flying; `obj.keywords` sync): NOT TESTED.
+- Combat: transformed Delver attacks as 3/2 flier: NOT TESTED (only `dynamic_pt` numeric assertion).
+- Transform happens outside of the Werewolf rules (no day/night dependency): NOT TESTED.
+- Interaction with Humans-matters cards (Champion of the Parish, Hamlet Captain, etc.) after transform (should no longer count as Human Wizard — still a Human per back face, but no longer a Wizard): NOT TESTED.
+- Back face does not retrigger upkeep ability: NOT TESTED.
