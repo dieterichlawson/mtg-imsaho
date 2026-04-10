@@ -1751,7 +1751,7 @@ impl LlmPlayer {
 
         let mut action_prompt = String::new();
         action_prompt.push_str(&format!("[BOTTOM {} CARD{} AFTER MULLIGAN]\n", n,
-            if n == 1 { "" } else { "s" }));
+            if n == 1 { "" } else { "S" }));
         action_prompt.push_str("Your opening hand:\n");
         action_prompt.push_str(&hand_text);
         action_prompt.push('\n');
