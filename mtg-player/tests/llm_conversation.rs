@@ -139,6 +139,52 @@ fn resume_from_empty_log_does_nothing() {
 }
 
 #[test]
+fn short_effect_summary_drops_enchant_line_and_reminder_text() {
+    use mtg_player::llm::LlmPlayer;
+
+    // Ghostly Possession — should drop "Enchant creature" and surface both
+    // the flying line and the prevent-damage clause.
+    let ghostly = "Enchant creature\n\
+                   Enchanted creature has flying.\n\
+                   Prevent all combat damage that would be dealt to and dealt by enchanted creature.";
+    let summary = LlmPlayer::short_effect_summary_for_test(ghostly);
+    assert!(!summary.to_lowercase().starts_with("enchant creature"),
+        "Should drop leading 'Enchant creature' line: {}", summary);
+    assert!(summary.contains("flying"), "Should include flying: {}", summary);
+    assert!(summary.contains("Prevent all combat damage"),
+        "Should mention combat damage prevention: {}", summary);
+
+    // Bonds of Faith — ensure the conditional gets through.
+    let bonds = "Enchant creature\n\
+                 Enchanted creature gets +2/+2 as long as it's a Human. \
+                 Otherwise, it can't attack or block.";
+    let summary = LlmPlayer::short_effect_summary_for_test(bonds);
+    assert!(summary.contains("+2/+2"), "Should include the bonus: {}", summary);
+    assert!(summary.contains("can't attack or block"),
+        "Should include the penalty clause: {}", summary);
+
+    // Butcher's Cleaver — equipment, should include the equip cost and bonus.
+    let cleaver = "Equipped creature gets +3/+0.\n\
+                   As long as equipped creature is a Human, it has lifelink.\n\
+                   Equip {3}";
+    let summary = LlmPlayer::short_effect_summary_for_test(cleaver);
+    assert!(summary.contains("+3/+0"), "Should include bonus: {}", summary);
+    assert!(summary.contains("Equip {3}"), "Should include equip cost: {}", summary);
+
+    // Reminder text in parentheses should be stripped.
+    let with_reminder = "Equipped creature gets +1/+2 and has hexproof. \
+                         (It can't be the target of spells or abilities your opponents control.)\n\
+                         Equip {3}";
+    let summary = LlmPlayer::short_effect_summary_for_test(with_reminder);
+    assert!(!summary.contains("It can't be the target"),
+        "Should strip parenthesized reminder text: {}", summary);
+    assert!(summary.contains("hexproof"), "Should keep main text: {}", summary);
+
+    // Empty input stays empty.
+    assert_eq!(LlmPlayer::short_effect_summary_for_test(""), "");
+}
+
+#[test]
 fn resume_preserves_system_prompt() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::new("test");

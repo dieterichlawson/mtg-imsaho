@@ -942,6 +942,11 @@ impl LlmPlayer {
         Self::format_decklist(entries, registry)
     }
 
+    /// Expose short_effect_summary for testing.
+    pub fn short_effect_summary_for_test(oracle_text: &str) -> String {
+        Self::short_effect_summary(oracle_text)
+    }
+
     /// Expose system prompt for testing.
     pub fn system_prompt_for_test(&self) -> &str {
         self.backend.system_prompt()
@@ -1122,6 +1127,50 @@ impl LlmPlayer {
         s
     }
 
+    /// Compact a card's oracle_text into a short inline effect summary for the
+    /// board display. Drops the leading "Enchant <type>" targeting line (not
+    /// useful once the aura is attached), strips reminder text in parentheses,
+    /// collapses whitespace, and joins remaining lines with "; ". Returns an
+    /// empty string for cards with no oracle text.
+    fn short_effect_summary(oracle_text: &str) -> String {
+        if oracle_text.is_empty() {
+            return String::new();
+        }
+        // Strip parenthesized reminder text: "(You can't ...)".
+        let mut stripped = String::with_capacity(oracle_text.len());
+        let mut depth = 0i32;
+        for ch in oracle_text.chars() {
+            match ch {
+                '(' => depth += 1,
+                ')' => { if depth > 0 { depth -= 1; } }
+                _ => { if depth == 0 { stripped.push(ch); } }
+            }
+        }
+
+        let lines: Vec<String> = stripped
+            .split('\n')
+            .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+            .filter(|l| !l.is_empty())
+            .filter(|l| {
+                // Drop the "Enchant <something>" targeting line — once attached,
+                // what it enchants is implicit from the display grouping.
+                let lower = l.to_lowercase();
+                !lower.starts_with("enchant ")
+            })
+            .collect();
+
+        let joined = lines.join("; ");
+        // Hard cap so a single permanent can't blow up the board line.
+        const MAX: usize = 200;
+        if joined.chars().count() > MAX {
+            let mut out: String = joined.chars().take(MAX - 3).collect();
+            out.push_str("...");
+            out
+        } else {
+            joined
+        }
+    }
+
     fn format_perms_compact(perms: &[&mtg_engine::view::PermanentView], all_perms: &[&mtg_engine::view::PermanentView]) -> String {
         // Group lands by name with tapped count.
         let lands: Vec<_> = perms.iter().filter(|p| p.card_types.contains(&CardType::Land)).collect();
@@ -1154,14 +1203,20 @@ impl LlmPlayer {
             }
         }
 
-        // Collect aura names by what they're attached to — search ALL permanents
-        // so we find auras that cross controller boundaries (e.g., opponent's
-        // Pacifism on your creature).
+        // Collect attached aura/equipment descriptions by what they're attached to
+        // — search ALL permanents so we find attachments that cross controller
+        // boundaries (e.g., opponent's Pacifism on your creature).
         let mut aura_map: std::collections::HashMap<mtg_engine::ids::ObjectId, Vec<String>> = std::collections::HashMap::new();
         for o in all_perms {
             if o.attached_to.is_some() && !o.card_types.contains(&CardType::Land) && !o.card_types.contains(&CardType::Creature) {
                 if let Some(target_id) = o.attached_to {
-                    aura_map.entry(target_id).or_default().push(o.name.clone());
+                    let desc = Self::short_effect_summary(&o.oracle_text);
+                    let entry = if desc.is_empty() {
+                        o.name.clone()
+                    } else {
+                        format!("{}: {}", o.name, desc)
+                    };
+                    aura_map.entry(target_id).or_default().push(entry);
                 }
             }
         }
@@ -1177,16 +1232,22 @@ impl LlmPlayer {
             let flags = format!("{}{}{}", t, s, d);
             let flags_str = if flags.is_empty() { String::new() } else { format!(" [{}]", flags) };
             let auras = aura_map.get(&c.object_id)
-                .map(|names| format!(" ({})", names.join(", ")))
+                .map(|entries| format!(" ({})", entries.join("; ")))
                 .unwrap_or_default();
             parts.push(format!("{} {}/{}{}{}{}", c.name, power, toughness, kw_str, flags_str, auras));
         }
 
-        // Show non-aura other permanents.
+        // Show non-aura other permanents. For unattached equipment, include
+        // a short ability summary so the LLM knows what the equip does.
         for o in &other {
             if o.attached_to.is_some() { continue; } // skip auras, shown with creature
             let t = if o.tapped { "[T]" } else { "" };
-            parts.push(format!("{}{}", o.name, t));
+            let desc = Self::short_effect_summary(&o.oracle_text);
+            if desc.is_empty() {
+                parts.push(format!("{}{}", o.name, t));
+            } else {
+                parts.push(format!("{}{} ({})", o.name, t, desc));
+            }
         }
 
         parts.join(", ")
