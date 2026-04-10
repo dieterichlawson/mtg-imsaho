@@ -131,14 +131,23 @@ impl GameView {
                     .filter(|kw| state.has_keyword(obj.id, **kw, registry))
                     .cloned()
                     .collect();
+                // For transformed DFCs, show the back-face name and card types
+                // so the display matches the active face. Without this, a
+                // transformed Villagers of Estwald shows as "Villagers of
+                // Estwald 4/6" (front name, back P/T), misleading the LLM.
+                let face_data = if obj.is_transformed {
+                    registry.get(obj.card_id).and_then(|b| b.back_face_data())
+                } else {
+                    registry.card_data(obj.card_id)
+                };
                 PermanentView {
                     object_id: obj.id,
                     card_id: obj.card_id,
-                    name: registry.card_data(obj.card_id)
-                        .map(|d| d.name)
+                    name: face_data.as_ref()
+                        .map(|d| d.name.clone())
                         .unwrap_or_else(|| obj.name.clone()),
-                    card_types: registry.card_data(obj.card_id)
-                        .map(|d| d.card_types)
+                    card_types: face_data.as_ref()
+                        .map(|d| d.card_types.clone())
                         .unwrap_or_else(|| obj.card_types.clone()),
                     controller: obj.controller,
                     owner: obj.owner,
