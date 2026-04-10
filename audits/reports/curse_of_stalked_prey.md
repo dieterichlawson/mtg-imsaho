@@ -109,3 +109,42 @@ None found.
 
 ### Test coverage
 - `mtg-engine/tests/tier15_cards.rs::curse_of_stalked_prey_gives_counter_on_combat_damage` -- Attaches curse to P1, simulates a creature dealing 2 combat damage to P1, asserts attacker receives exactly 1 +1/+1 counter. Test passes.
+
+## Audit — 2026-04-10 00:00
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**:
+Enchant player
+Whenever a creature deals combat damage to enchanted player, put a +1/+1 counter on that creature.
+**Type line**: Enchantment — Aura Curse
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Verification:
+- Mana cost `{1}{R}`: matches (`ManaSymbol::Generic(1)`, `ManaSymbol::Colored(Color::Red)`).
+- Card types: `Enchantment`; subtypes `Aura`, `Curse`. Matches type line "Enchantment — Aura Curse".
+- Oracle text field: matches fetched text verbatim.
+- Target requirement: `TargetRequirement::PlayerOnly` — matches "Enchant player".
+- `on_resolve` delegates to `resolve_curse` helper, which attaches the curse to the chosen player and moves it to the battlefield. Correct for an Aura Curse.
+- Trigger: declared with `TriggerKind::AnyCombatDamageToPlayer`. The triggers dispatcher (mtg-engine/src/triggers.rs:551) fires `CombatDamageWatch` for every permanent on the battlefield when a creature deals combat damage to a player, calling `on_any_combat_damage_to_player` (triggers.rs:964).
+- `on_any_combat_damage_to_player` filter: `cursed_player != Some(damaged_player)` — correctly fires only when the enchanted player is damaged, regardless of who controls the source creature (matches the 2011-09-22 ruling: "any creature ... including one controlled by another opponent or even by the enchanted player").
+- Counter placement guarded by checking the source is still on the battlefield. Uses `state.add_counters(source_id, CounterType::PlusOnePlusOne, 1)` which is the correct pipeline.
+- Triggered-ability declaration matches the implemented hook (`AnyCombatDamageToPlayer` ↔ `on_any_combat_damage_to_player`).
+
+### Tricky interactions checked
+- Damage dealt by opponent's creature (not owner of curse): handled correctly — code does not restrict on controller of source. PASS.
+- Damage dealt by a creature controlled by the enchanted player (e.g., via combat damage redirection): also handled — code only checks `damaged_player`. PASS.
+- Source creature dies to lethal combat damage before trigger resolution: counter placement guarded by battlefield check on `source_id`. PASS (no counter placed, consistent with "on that creature" having no valid target).
+- Curse source itself removed before trigger resolves: `self_id`/`attached_to_player` lookup returns None/non-battlefield, early return. PASS.
+- Enchanted player leaves the game (SBA): handled in mtg-engine/src/sba.rs (player-attached curses are exempt from aura-falls-off check that would apply; curse is dealt with elsewhere). Not a card-level concern.
+- Non-combat damage: ignored correctly — only `CombatDamageDealt` dispatches `AnyCombatDamageToPlayer`. PASS.
+
+### Test coverage
+- Core ability (counter placed on creature that dealt combat damage to enchanted player): `mtg-engine/tests/tier15_cards.rs:23` (`curse_of_stalked_prey_gives_counter_on_combat_damage`). This test calls the hook directly and verifies a +1/+1 counter appears.
+- Ruling — damage from creature controlled by another opponent (or enchanted player): NOT TESTED explicitly (only tests damage from curse controller's creature).
+- Trigger dispatched through the full trigger pipeline (not direct hook call): NOT TESTED.
+- Does not trigger when non-enchanted player takes combat damage: NOT TESTED.
+- Source creature no longer on battlefield when trigger resolves: NOT TESTED.
+- Non-combat damage does not trigger: NOT TESTED.

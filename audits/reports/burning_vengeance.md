@@ -517,3 +517,45 @@ Sources:
 - [Burning Vengeance question - MTG Salvation Forums](https://www.mtgsalvation.com/forums/magic-fundamentals/magic-rulings/magic-rulings-archives/300611-burning-vengeance-question)
 - [Burning Vengeance + Increasing Vengeance - MTG Salvation Forums](https://www.mtgsalvation.com/forums/magic-fundamentals/magic-rulings/magic-rulings-archives/307845-burning-vengeance-increasing-vengenace)
 - [Burning Vengeance rulings - MTG Assist](https://www.mtgassist.com/cards/Innistrad/Burning-Vengeance/rulings/)
+## Audit — 2026-04-10 18:23
+
+**Oracle text source**: Oracle cache (Scryfall API, cached 2026-04-01)
+**Oracle text**: Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.
+**Type line**: Enchantment
+**Status**: ISSUE
+
+### Code issues
+
+- **`mtg-engine/src/cards/isd/burning_vengeance.rs:48-53`** — Trigger condition only fires for flashback casts, missing other "cast from graveyard" mechanisms.
+  - Oracle text says: `Whenever you cast a spell from your graveyard, this enchantment deals 2 damage to any target.`
+  - Code does: `let cast_from_gy = state.get_object(spell_id).map(|o| o.cast_with_flashback).unwrap_or(false); if !cast_from_gy { return; }`
+  - The variable is misleadingly named `cast_from_gy` but reads the `cast_with_flashback` field. The engine sets `cast_with_flashback = true` only in `engine.rs:1977-1979` when `is_flashback` is true, and `is_flashback` is explicitly false when the card uses `can_cast_from_graveyard()` (engine.rs:1825-1826: `let is_cast_from_graveyard = in_graveyard && behavior.can_cast_from_graveyard(); let is_flashback = in_graveyard && !is_cast_from_graveyard;`). Skaab Ruinator (which implements `fn can_cast_from_graveyard(&self) -> bool { true }` in `skaab_ruinator.rs:35`) is cast from the graveyard via its own ability, not flashback, so it does NOT set `cast_with_flashback` — and therefore does NOT trigger Burning Vengeance. Oracle text says "a spell from your graveyard" with no restriction to flashback; any cast-from-graveyard mechanism (Skaab Ruinator's native ability, and by extension anything else that might cast spells from the graveyard) should trigger. The comment on line 47 (`// Only trigger on spells cast from graveyard (flashback).`) itself betrays the conflation of the two concepts.
+
+- **`mtg-engine/src/cards/isd/burning_vengeance.rs:67-68`** — Log message is inaccurate and hardcodes "opponent" before the target is chosen.
+  - Oracle text says: `deals 2 damage to any target`
+  - Code does: `state.log(crate::state::LogLevel::Event, format!("Burning Vengeance deals 2 damage to opponent (flashback spell cast)"));`
+  - The log is emitted immediately after the trigger sets up a target choice, before any target is selected. It claims the damage is "to opponent" even though the player may target their own creature, their own face, another creature, or a planeswalker. It also reiterates "flashback" which is not in the oracle text. This is cosmetic but misleads log readers and LLM players about the state of the game.
+
+### Tricky interactions checked
+
+- Burning Vengeance leaves the battlefield before the trigger resolves: PASS — line 39-42 re-checks `o.zone == Zone::Battlefield`, and `triggers.rs:997` also re-checks before dispatch.
+- "You cast" restriction (controller-only): PASS — line 44-46 returns if `caster != controller`.
+- Rulings — "triggers on cast, not on activating abilities from graveyard (e.g., unearth, Reassembling Skeleton)": PASS — handler hooks `on_spell_cast` which is only dispatched from `GameEvent::SpellCast`, not from activated ability events.
+- Rulings — "Burning Vengeance's triggered ability resolves before the spell cast from graveyard": PASS — this is handled by the generic trigger stack order (triggers go on the stack above the spell that triggered them).
+- Copies of spells: PASS — copies are put on the stack but not "cast", so no SpellCast event is fired.
+- Multiple Burning Vengeances: PASS — each battlefield instance has its own SpellCastWatch pending trigger (triggers.rs:670-698 iterates all battlefield objects with the SpellCast trigger kind).
+- Cast-from-graveyard without flashback (Skaab Ruinator): FAIL — Burning Vengeance will NOT trigger. See primary code issue above.
+- "Any target" includes planeswalkers (post-2018): LATENT ISSUE in helper — `helpers.rs:182-188` `any_targets` only returns creatures and players, not planeswalkers. Planeswalker cards exist in the codebase (`garruk_relentless.rs`, `liliana_of_the_veil.rs`). This is a helper-wide issue rather than a per-card fix, but it does affect Burning Vengeance's target list.
+
+### Test coverage
+
+- Main effect (deals 2 damage on flashback cast): `mtg-engine/tests/tier12_cards.rs:282` (`burning_vengeance_triggers_on_flashback`).
+- Does not trigger on normal spells: `mtg-engine/tests/tier12_cards.rs:329` (`burning_vengeance_ignores_non_flashback`).
+- Does not trigger on spells cast from graveyard via `can_cast_from_graveyard()` (Skaab Ruinator): NOT TESTED. This is the exact scenario that would catch the primary bug.
+- Does not trigger on activated abilities from graveyard (unearth/Reassembling Skeleton): NOT TESTED (though no such card exists in the current set, so not currently reachable).
+- Does not trigger on opponent's flashback casts: NOT TESTED.
+- Does not trigger when Burning Vengeance has left the battlefield between cast and trigger resolution: NOT TESTED.
+- Targets a creature (rather than a player): NOT TESTED — existing test only targets P1.
+- Fires once per spell for each Burning Vengeance on the battlefield (multiple instances): NOT TESTED.
+- The existing test `burning_vengeance_triggers_on_flashback` is a synthetic test that hand-sets `cast_with_flashback = true` and fires a SpellCast event — it does not exercise the actual cast-from-graveyard code path in `engine.rs`, so it enshrines the `cast_with_flashback` check rather than testing behavior against the oracle text ("cast a spell from your graveyard").
+

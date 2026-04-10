@@ -115,3 +115,32 @@ Minor: unused `CardId` import on line 2 (cosmetic only, no behavioral impact).
 ### Test coverage
 - `mtg-engine/tests/tier7_cards.rs::endless_ranks_creates_zombie_tokens` -- 5 Zombies -> 2 tokens (5/2=2 rounded down), final count 7. PASSES.
 - Missing: edge case tests for 0 or 1 Zombies, opponent's upkeep non-trigger.
+
+## Audit — 2026-04-10 18:26
+
+**Oracle text source**: Oracle cache (Scryfall API)
+**Oracle text**: At the beginning of your upkeep, create X 2/2 black Zombie creature tokens, where X is half the number of Zombies you control, rounded down.
+**Type line**: Enchantment
+**Status**: ISSUE
+
+### Code issues
+- `mtg-engine/src/cards/isd/endless_ranks_of_the_dead.rs:50` — Zombie counting filters to creatures only, but Oracle text counts "Zombies you control" (any permanent with the Zombie subtype), not just Zombie creatures.
+  - Oracle text says: `half the number of Zombies you control`
+  - Code does: `.filter(|o| o.power.is_some()) // creatures only` before checking the Zombie subtype, so a non-creature permanent with the Zombie subtype (e.g., a Zombie that has lost its creature type or a non-creature Zombie permanent) would be excluded. Per CR 109.2 and the ruling "If you control fewer than two Zombies, you won't get any tokens", the count is all Zombies, not restricted to creatures.
+
+### Tricky interactions checked
+- "Your upkeep" gating (only triggers on the controller's upkeep): pass — explicit `state.active_player != controller` guard at line 44.
+- Rounding down (X = floor(zombies/2)): pass — integer division `zombie_count / 2` at line 58.
+- Zero Zombies produces 0 tokens (ruling: "If you control fewer than two Zombies, you won't get any tokens"): pass — `0/2 = 0` and `1/2 = 0`.
+- Counting includes this enchantment's own previously created tokens when multiple copies exist (ruling 2): pass — count is taken at resolution via current battlefield state, which will include any tokens created by earlier-resolved copies in the same upkeep step.
+- Token has Zombie subtype (so future triggers count the new tokens): pass — `create_token_with_subtypes` is passed `vec!["Zombie".into()]`.
+- Parallel Lives / token doublers: pass — uses `create_token_with_subtypes`, which applies DoubleTokens replacement effects.
+- Card leaves battlefield before trigger resolves: pass — `on_upkeep` checks `zone == Zone::Battlefield` and returns early if moved (though per rules the ability should still resolve if already on the stack; this is consistent with how other cards in the codebase handle it).
+
+### Test coverage
+- Creates floor(zombies/2) Zombie tokens on upkeep: `mtg-engine/tests/tier7_cards.rs:104` (`endless_ranks_creates_zombie_tokens` — 5 zombies -> 2 tokens created).
+- Zero/one Zombie produces no tokens (ruling 1): NOT TESTED.
+- Newly created tokens count for subsequent copies of Endless Ranks in the same upkeep (ruling 2): NOT TESTED.
+- Does not trigger on opponent's upkeep: NOT TESTED.
+- Interaction with Parallel Lives / other token doublers: NOT TESTED.
+- Non-creature Zombies counted: NOT TESTED (and would currently fail due to the `power.is_some()` shortcut).

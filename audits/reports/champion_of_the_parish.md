@@ -97,3 +97,48 @@ None. All card data fields (name, cost, types, subtypes, P/T, oracle text) match
 - `champion_of_the_parish_no_counter_on_non_human` — does not trigger on non-Human creature. PASS
 - `champion_of_the_parish_no_counter_on_opponent_human` — does not trigger on opponent's Human. PASS
 - Also used as a Human fixture in tests for: Butcher's Cleaver, Silver-Inlaid Dagger, Sharpened Pitchfork, Hamlet Captain, Night Revelers, Angelic Overseer, Dearly Departed.
+
+## Audit — 2026-04-10 12:00
+
+**Oracle text source**: Oracle cache (Scryfall API, cached 2026-04-01, URL https://scryfall.com/card/isd/6/champion-of-the-parish)
+**Oracle text**: Whenever another Human you control enters, put a +1/+1 counter on this creature.
+**Type line**: Creature — Human Soldier
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Card data verification (`mtg-engine/src/cards/isd/champion_of_the_parish.rs`):
+- Mana cost `{W}` matches.
+- Card types `[Creature]` matches.
+- Supertypes `[]` matches (not legendary).
+- Subtypes `[Human, Soldier]` matches.
+- Power/toughness `1/1` matches.
+- Oracle text field matches verbatim.
+- Keywords empty — no keyword abilities on the card.
+- Triggered ability declared as `TriggerKind::AnyCreatureEnters` and implemented via `on_any_creature_enters`.
+
+Behavior verification:
+- "Another" semantics: trigger collection in `mtg-engine/src/triggers.rs:376` filters watchers with `o.id != *object`, so Champion will not self-trigger when it itself enters. Correct.
+- "You control" semantics: the hook checks `entered_controller != controller` and bails out if mismatched (line 42-44).
+- "Human" check: looks at both registry card data subtypes and the live object subtypes (line 47-53), correctly covering tokens and any instance overrides.
+- "enters": uses the standard EnterWatch trigger path; `trigger_zones` defaults to Battlefield only, so a graveyard-zone Champion won't create a phantom trigger.
+- `+1/+1` counter applied via `state.add_counters(self_id, CounterType::PlusOnePlusOne, 1)`.
+
+### Tricky interactions checked
+- Self-ETB (Champion's own ETB should not count): PASS — excluded at trigger collection via `o.id != *object`.
+- Opponent's Human entering: PASS — explicit `entered_controller != controller` check.
+- Non-Human creature entering: PASS — `is_human` gated.
+- Champion in graveyard while Human enters: PASS — `trigger_zones` defaults to Battlefield, and hook also double-checks `zone == Battlefield`.
+- Token Human (e.g., produced by another spell) entering: PASS — subtype check falls back to live object subtypes when registry data has no Human.
+- Multiple Humans entering simultaneously (e.g., Mass ETB): trigger system collects one trigger per ETB event, so each qualifying entrant adds one counter. Not tested directly for Champion but consistent with generic trigger pipeline.
+
+### Test coverage
+- Human enters under our control -> counter: `mtg-engine/tests/tier6_cards.rs:87` (`champion_of_the_parish_counter_on_human_etb`).
+- Non-Human entering does not trigger: `mtg-engine/tests/tier6_cards.rs:108` (`champion_of_the_parish_no_counter_on_non_human`).
+- Opponent's Human does not trigger: `mtg-engine/tests/tier6_cards.rs:129` (`champion_of_the_parish_no_counter_on_opponent_human`).
+- Champion in graveyard does not trigger: `mtg-engine/tests/phantom_triggers.rs:74` (`champion_in_graveyard_does_not_trigger`).
+- Champion on battlefield does trigger: `mtg-engine/tests/phantom_triggers.rs:104` (`champion_on_battlefield_does_trigger`).
+- Self-ETB exclusion (Champion does not counter itself on its own ETB): NOT TESTED directly, though the engine-level behavior is covered by the `o.id != *object` filter in `triggers.rs:376`.
+- Simultaneous multi-Human ETB: NOT TESTED for Champion specifically.
+- Token Human entering (e.g., Doomed Traveler's Spirit token is not a Human, but Mausoleum Guard etc. — token subtype path): NOT TESTED.

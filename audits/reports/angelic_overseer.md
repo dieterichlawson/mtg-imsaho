@@ -151,3 +151,51 @@ All card data fields verified against oracle:
 - Survives destroy effect when indestructible: `tier12_cards.rs:605` (`angelic_overseer_survives_destroy_with_human`)
 - Ruling 1 (simultaneous destruction with Humans): NOT TESTED (but engine behavior verified via code inspection)
 - Ruling 2 (marked damage persists, then Human removed): NOT TESTED (but engine behavior verified via code inspection)
+
+## Audit — 2026-04-10 18:24
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**:
+```
+Flying
+As long as you control a Human, this creature has hexproof and indestructible.
+```
+**Type line**: Creature — Angel
+**Mana cost**: {3}{W}{W}
+**P/T**: 5/3
+**Keywords**: Flying
+**Status**: PASS
+
+### Code issues
+No issues found.
+
+Verified against `/home/user/mtg-imsaho/mtg-engine/src/cards/isd/angelic_overseer.rs`:
+- name "Angelic Overseer" matches
+- cost `{3}{W}{W}` matches (Generic(3) + White + White)
+- card_types: `[Creature]` matches
+- supertypes: `[]` matches (type line has no Legendary supertype per Scryfall)
+- subtypes: `["Angel"]` matches
+- power 5, toughness 3 matches
+- oracle_text field is verbatim match
+- keywords: `[Flying]` matches
+- Two `ContinuousEffect::ConditionalKeyword` entries (Hexproof, Indestructible), both with `EffectCondition::YouControlSubtype("Human")` and `EffectScope::OnSelf`, correctly implementing "As long as you control a Human, this creature has hexproof and indestructible."
+- No triggered abilities or on_resolve needed (vanilla static ability creature).
+
+### Tricky interactions checked
+- Ruling #1 (simultaneous destroy-all-Humans + Overseer e.g. Wrath): The card itself is declared correctly. Preservation during simultaneous destruction must be handled by the destroy pipeline / caller; the card correctly declares the conditional Indestructible. Not a card-file issue.
+- Ruling #2 (lethal damage marked + Human dies later in turn → Overseer dies): PASS. SBA lethal-damage path correctly re-evaluates indestructible; `src/sba.rs:97-100` snapshots indestructible BEFORE processing deaths in a single SBA pass, so within one SBA pass the Overseer survives alongside a dying Human; on a later SBA pass (after the Human is in the graveyard) the Overseer loses indestructible and dies. Matches the ruling.
+- Human token recognition: PASS. `state.rs:1197-1206` `YouControlSubtype` check inspects both `o.subtypes` (populated for tokens) and `registry.card_data(o.card_id).subtypes` (for printed cards), so Human tokens granted by effects like Mayor of Avabruck / Midnight Haunting are recognized.
+- Opponent's Humans do NOT grant the ability: PASS. Controller check `o.controller == controller` uses Overseer's controller.
+- "You control a Human" vs. "another Human": oracle does not say "another," and since Angelic Overseer is an Angel (not a Human), self-exclusion is moot regardless.
+- Losing the Human removes hexproof/indestructible: PASS, exercised by `tier12_cards.rs:599-604`.
+- Hexproof prevents being targeted by opponent spells while a Human is controlled: relies on engine's generic hexproof enforcement (not card-specific).
+
+### Test coverage
+- Flying always present: `mtg-engine/tests/tier12_cards.rs:567` (`angelic_overseer_has_flying`)
+- Hexproof + indestructible gained with Human, lost when Human leaves: `mtg-engine/tests/tier12_cards.rs:578` (`angelic_overseer_hexproof_indestructible_with_human`)
+- try_destroy respects indestructible while controlling Human: `mtg-engine/tests/tier12_cards.rs:609` (`angelic_overseer_survives_destroy_with_human`)
+- SBA ordering — lethal damage to both Human and Overseer (ruling #2 spirit): `mtg-engine/tests/audit_bugs2.rs:467` (`bug_angelic_overseer_sba_ordering`)
+- Simultaneous destroy effect (Wrath/Divine Reckoning) preserving Overseer via ruling #1: NOT TESTED (this is an engine-wide mass-destroy semantics concern, not card-specific)
+- Hexproof preventing an opponent's targeted removal: NOT TESTED directly for Angelic Overseer (relies on engine hexproof tests)
+- Opponent-controlled Human does not grant the ability: NOT TESTED
+- Human token (e.g., Midnight Haunting / Mayor of Avabruck transformed) granting the ability: NOT TESTED

@@ -176,3 +176,68 @@ No issues found.
 - Equipment detaches when creature dies: `tier9_equipment.rs:398` (equipment_detaches_when_creature_dies) -- general equipment test
 - Re-equip to different creature: `tier9_equipment.rs:421` (equipment_can_be_moved_to_different_creature) -- general equipment test
 - Runtime subtype change after equip: NOT TESTED (engine-level limitation, not Butcher's Cleaver specific)
+
+## Audit — 2026-04-10 (Opus 4.6)
+
+**Oracle text source**: Oracle cache (Scryfall API), cached 2026-04-01
+**Oracle text**:
+Equipped creature gets +3/+0.
+As long as equipped creature is a Human, it has lifelink.
+Equip {3}
+**Type line**: Artifact — Equipment
+**Mana cost**: {3}
+**Status**: ISSUE
+
+### Code issues
+
+- `mtg-engine/src/cards/isd/butchers_cleaver.rs:14-34` — Conditional lifelink is evaluated statically at equip time, not continuously.
+  - Oracle text says: `As long as equipped creature is a Human, it has lifelink.`
+  - Code does: `update_effects` is called only from `on_activate_ability` (line 90). It checks `is_human` at that moment and writes a fixed `instance_continuous_effects` vector either with or without `GrantKeyword { Lifelink }`. Nothing re-evaluates the Human check afterwards, so if the equipped creature later gains or loses the Human type (e.g., via a type-changing effect such as Conspiracy/Xenograft, or via a loss-of-subtype effect), lifelink will not follow the current state of the permanent. The correct pattern used elsewhere in the codebase (see `mtg-engine/src/cards/isd/bonds_of_faith.rs:33` and the `check_condition` handler for `EffectCondition::AttachedHasSubtype` in `mtg-engine/src/state.rs:1238`) is `ContinuousEffect::ConditionalKeyword { keyword: Keyword::Lifelink, condition: EffectCondition::AttachedHasSubtype("Human".into()), scope: EffectScope::Attached }` placed on the card's static `continuous_effects`, which is re-evaluated dynamically through `has_conditional_keyword`.
+
+- `mtg-engine/src/cards/isd/butchers_cleaver.rs:15-18` — Human check consults registry subtypes only, ignoring `obj.subtypes`.
+  - Oracle text says: `As long as equipped creature is a Human, it has lifelink.`
+  - Code does:
+    ```
+    let is_human = state.get_object(creature_id)
+        .and_then(|o| registry.card_data(o.card_id))
+        .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+        .unwrap_or(false);
+    ```
+    This reads only `registry.card_data(o.card_id).subtypes` and never `o.subtypes`. Token creatures (which have no registry `card_data` populated with meaningful subtypes and rely on `obj.subtypes`) and type-modified objects whose instance subtypes differ from registry subtypes will be missed. Compare with the reference pattern in `mtg-engine/src/cards/isd/champion_of_the_parish.rs:49-52`, `mtg-engine/src/cards/isd/avacynian_priest.rs:58-60`, `mtg-engine/src/cards/isd/elder_cathar.rs:52-54`, and `mtg-engine/src/cards/isd/dearly_departed.rs:61-64`, all of which check both `d.subtypes` AND `o.subtypes`. (This is also listed as a known anti-pattern in the audit procedure: "Human/subtype check only via registry, not also checking `obj.subtypes` (misses tokens)".) Note: switching to `ConditionalKeyword` + `AttachedHasSubtype` as recommended above would automatically resolve this issue, because `check_condition` in `state.rs:1238-1249` already consults `target_obj.subtypes` first before falling back to registry.
+
+### Card data checks
+
+- Name: `"Butcher's Cleaver"` matches Scryfall. PASS
+- Mana cost: `{3}` matches. PASS
+- Card types: `[Artifact]` matches. PASS
+- Supertypes: none needed. PASS
+- Subtypes: `["Equipment"]` matches. PASS
+- Power/toughness: `None`/`None` (not a creature). PASS
+- `oracle_text` field: matches the fetched oracle text verbatim. PASS
+- `keywords`: empty. PASS (the `Equip` ability is modeled via `activated_abilities`, and `Keyword::Equip` does not exist in the engine's `Keyword` enum — consistent with every other equipment card in the codebase).
+- `continuous_effects` base set: `[ModifyPT { +3/+0, Attached }]`. The `+3/+0` is always on — PASS for that part — but the conditional lifelink is missing from this static list, which is what underpins issue 1.
+- Equip cost: `{3}` matches Oracle. PASS
+- Targeting: `TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)` with `sorcery_speed_only: true`. Matches CR 702.6c. PASS
+- `is_valid_target` verifies `zone == Battlefield`, `power.is_some()` (creature), and `controller == caster`. Correct for "target creature you control". PASS
+- `on_resolve` moves to battlefield and sets `is_equipment = true`. Matches the pattern used by every other ISD equipment card. PASS
+
+### Tricky interactions checked
+
+- Equip to non-Human: +3/+0 applies, no lifelink. PASS (tested).
+- Equip to Human: +3/+0 applies, lifelink granted. PASS (tested).
+- Equip to non-Human, then that creature becomes Human via a type-changing effect: lifelink should turn on. FAIL — lifelink is a static snapshot. (Not tested.)
+- Equip to Human, then that creature loses the Human type: lifelink should turn off. FAIL — lifelink would persist. (Not tested.)
+- Equip to a Human token (a creature whose Human subtype lives in `obj.subtypes`, not registry `card_data`): lifelink should apply. FAIL — the is_human check ignores `obj.subtypes`. (Not tested. No Human token creators are present in ISD, but the issue is still a correctness bug because the engine's policy, as evidenced by other cards, is to check both sources.)
+- Re-equipping from Human to non-Human (or vice versa) via a second activation: lifelink updates because `update_effects` is re-run on each activation. PASS.
+- Equipment stays on battlefield when equipped creature dies: handled by the generic equipment detach logic, not this card. PASS.
+- Equip at sorcery speed only: `sorcery_speed_only: true`. PASS.
+
+### Test coverage
+
+- `butchers_cleaver_has_correct_data` at `mtg-engine/tests/tier9_equipment.rs:253` — checks name, types, subtype, mana cost.
+- `butchers_cleaver_non_human_gets_power_no_lifelink` at `mtg-engine/tests/tier9_equipment.rs:264` — covers the +3/+0 + no-lifelink case on a Bear.
+- `butchers_cleaver_human_gets_power_and_lifelink` at `mtg-engine/tests/tier9_equipment.rs:281` — covers the +3/+0 + lifelink case on Champion of the Parish.
+- Dynamic Human-ness change after equip: NOT TESTED.
+- Human token case: NOT TESTED.
+- Declining to pay equip (sorcery speed / priority) behavior: NOT TESTED for this card (generic equip flow tested elsewhere).
+- Re-equip switching Human status: NOT TESTED.
