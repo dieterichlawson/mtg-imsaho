@@ -18,7 +18,12 @@ pub enum GameEvent {
     ManaAdded { player: PlayerId, mana_type: ManaType, amount: u32 },
     ManaPoolEmptied { player: PlayerId },
     EnteredBattlefield { object: ObjectId, controller: PlayerId },
-    LeftBattlefield { object: ObjectId, to: Zone },
+    /// A permanent left the battlefield. `last_controller` captures the
+    /// controlling player immediately before the zone change, since the
+    /// controller on the object itself may be cleared/stale once the move
+    /// completes. Required for CR 603.10c (LTB triggers are controlled by
+    /// the player who controlled the permanent before it left).
+    LeftBattlefield { object: ObjectId, to: Zone, last_controller: PlayerId },
     ObjectMoved { object: ObjectId, from: Zone, to: Zone },
     Tapped { object: ObjectId },
     Untapped { object: ObjectId },

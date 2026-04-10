@@ -103,10 +103,13 @@ pub enum PendingTrigger {
         controller: PlayerId,
         description: String,
     },
-    /// A permanent leaving the battlefield trigger.
+    /// A permanent leaving the battlefield trigger. Per CR 603.10c, the
+    /// controller is the player who controlled the permanent immediately
+    /// before it left the battlefield.
     LeftBattlefield {
         object_id: ObjectId,
         card_id: CardId,
+        controller: PlayerId,
         description: String,
     },
     /// A creature's "when this attacks" trigger.
@@ -176,7 +179,7 @@ impl PendingTrigger {
             PendingTrigger::EndCombatTrigger { controller, .. } => *controller,
             PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
             PendingTrigger::EndStepTrigger { controller, .. } => *controller,
-            PendingTrigger::LeftBattlefield { .. } => PlayerId(255),
+            PendingTrigger::LeftBattlefield { controller, .. } => *controller,
             PendingTrigger::AttacksTrigger { controller, .. } => *controller,
             PendingTrigger::BlocksTrigger { controller, .. } => *controller,
             PendingTrigger::AttackWatch { controller, .. } => *controller,
@@ -486,7 +489,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     }
                 }
             }
-            GameEvent::LeftBattlefield { object, .. } => {
+            GameEvent::LeftBattlefield { object, last_controller, .. } => {
                 let (card_id,) = match state.get_object(*object) {
                     Some(o) => (o.card_id,),
                     None => continue,
@@ -500,10 +503,14 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     let trigger = PendingTrigger::LeftBattlefield {
                         object_id: *object,
                         card_id,
+                        controller: *last_controller,
                         description: desc,
                     };
-                    // LTB triggers go on AP side (they're usually self-referential).
-                    ap_triggers.push(trigger);
+                    if *last_controller == active_player {
+                        ap_triggers.push(trigger);
+                    } else {
+                        nap_triggers.push(trigger);
+                    }
                 }
             }
             GameEvent::CombatDamageDealt { source, target, amount } => {

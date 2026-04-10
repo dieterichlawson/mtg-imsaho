@@ -469,6 +469,10 @@ impl GameState {
         }
 
         let from = self.objects.get(&id).map(|o| o.zone);
+        // Capture controller before any mutation: CR 603.10c requires LTB
+        // triggers to be controlled by whoever controlled the permanent
+        // immediately before it left the battlefield.
+        let pre_move_controller = self.objects.get(&id).map(|o| o.controller);
 
         if let Some(obj) = self.objects.get_mut(&id) {
             let from = obj.zone;
@@ -504,6 +508,7 @@ impl GameState {
                 self.events.push(crate::events::GameEvent::LeftBattlefield {
                     object: id,
                     to,
+                    last_controller: pre_move_controller.unwrap_or(PlayerId(0)),
                 });
             }
             if to == Zone::Battlefield && from_zone != Zone::Battlefield {
