@@ -1277,14 +1277,18 @@ impl LlmPlayer {
                 );
                 self.log("TARGETS", &prompt);
 
+                let valid_indices: Vec<serde_json::Value> = (0..options.len())
+                    .map(|i| serde_json::json!(i))
+                    .collect();
                 let schema = serde_json::json!({
                     "type": "object",
                     "properties": {
                         "thoughts": {"type": "string", "description": "Brief reasoning about target selection"},
                         "target_indices": {
                             "type": "array",
-                            "items": {"type": "integer", "minimum": 0},
-                            "description": "Indices of chosen targets"
+                            "items": {"type": "integer", "enum": valid_indices},
+                            "maxItems": *max,
+                            "description": format!("Indices of chosen targets (each in 0..{}, up to {} entries)", options.len() - 1, max)
                         }
                     },
                     "required": ["thoughts", "target_indices"]
@@ -1361,7 +1365,7 @@ impl LlmPlayer {
             .join(" ");
         let prompt = format!("{}:\n{}", spell_name, target_list);
         self.log("TARGETS", &prompt);
-        let idx = self.choose_with_retry(&prompt, options.len(), &[]);
+        let idx = self.pick_action_index(&prompt, options.len(), &[]);
         options[idx.min(options.len() - 1)].clone()
     }
 
@@ -1439,16 +1443,6 @@ impl LlmPlayer {
         result
     }
 
-    /// Build a user message with log delta + board state + prompt, send to
-    /// backend, return the text.
-    fn send_message(&mut self, user_message: &str) -> String {
-        self.log("PROMPT", user_message);
-        let result = self.backend.send(user_message);
-        self.log_thinking();
-        self.log("RESPONSE", &result);
-        result
-    }
-
     /// Build a prompt that includes new log entries + board state + the action prompt.
     fn build_prompt(&mut self, view: &GameView, action_prompt: &str) -> String {
         // Use display_log (Info level and above) to skip debug noise like
@@ -1471,48 +1465,6 @@ impl LlmPlayer {
         prompt.push_str(&Self::format_state_compact(view));
         prompt.push_str(action_prompt);
         prompt
-    }
-
-    /// Sub-prompt API call (for target selection, etc.).
-    /// Sends through the same backend conversation.
-    fn call_api(&mut self, user_message: &str) -> String {
-        self.log("PROMPT", user_message);
-        let result = self.backend.send(user_message);
-        self.log_thinking();
-        self.log("RESPONSE", &result);
-        result
-    }
-
-
-    fn parse_action_index(&self, response: &str, max: usize) -> Option<usize> {
-        // Check the last non-empty line first (where the model puts its final answer).
-        let last_line = response.lines().rev()
-            .find(|l| !l.trim().is_empty())
-            .unwrap_or(response)
-            .trim();
-
-        // Strip "ANSWER:" prefix if present.
-        let answer = last_line.strip_prefix("ANSWER:").or_else(|| last_line.strip_prefix("Answer:"))
-            .unwrap_or(last_line)
-            .trim();
-
-        for word in answer.split_whitespace() {
-            if let Ok(n) = word.parse::<usize>() {
-                if n < max {
-                    return Some(n);
-                }
-            }
-        }
-
-        // Fallback: scan the entire response for any valid number.
-        for word in response.split_whitespace() {
-            if let Ok(n) = word.parse::<usize>() {
-                if n < max {
-                    return Some(n);
-                }
-            }
-        }
-        None
     }
 
     /// Confirm concede via structured output. Returns true if the AI confirms.
@@ -1541,48 +1493,48 @@ impl LlmPlayer {
         confirmed
     }
 
-    /// Send a message via conversation and parse the action index.
-    fn choose_with_retry_conv(&mut self, prompt: &str, max: usize, actions: &[Action]) -> usize {
-        for attempt in 0..2 {
-            let response = self.send_message(prompt);
-            if let Some(idx) = self.parse_action_index(&response, max) {
-                if matches!(actions.get(idx), Some(Action::Concede)) {
-                    if !self.confirm_concede() {
-                        return 0;
-                    }
+    /// Build a JSON schema that constrains a single integer "action" field
+    /// to one of `0..count`. The model can only return a valid index.
+    /// Used for action-pick and target-pick prompts.
+    fn enum_action_schema(count: usize, key: &str, description: &str) -> serde_json::Value {
+        let valid: Vec<serde_json::Value> = (0..count).map(|i| serde_json::json!(i)).collect();
+        serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Brief reasoning for this choice"},
+                key: {
+                    "type": "integer",
+                    "enum": valid,
+                    "description": description,
                 }
-                self.log("CHOSE", &format!("action {}", idx));
-                return idx;
-            }
-            if attempt == 0 {
-                self.log("MALFORMED", &format!("'{}', retrying...", response));
-            } else {
-                self.log("MALFORMED", &format!("Retry also malformed '{}', defaulting to 0", response));
-            }
-        }
-        0
+            },
+            "required": ["thoughts", key]
+        })
     }
 
-    /// Call the API with a retry on malformed response (legacy one-shot).
-    fn choose_with_retry(&mut self, prompt: &str, max: usize, actions: &[Action]) -> usize {
-        for attempt in 0..2 {
-            let response = self.call_api(prompt);
-            if let Some(idx) = self.parse_action_index(&response, max) {
-                if matches!(actions.get(idx), Some(Action::Concede)) {
-                    if !self.confirm_concede() {
-                        return 0;
-                    }
-                }
-                self.log("CHOSE", &format!("action {}", idx));
-                return idx;
-            }
-            if attempt == 0 {
-                self.log("MALFORMED", &format!("'{}', retrying...", response));
-            } else {
-                self.log("MALFORMED", &format!("Retry also malformed '{}', defaulting to 0", response));
+    /// Pick an action index from a bounded set using structured output.
+    /// The schema constrains the response to a valid integer in `0..max`,
+    /// so the model cannot return an out-of-range index. Falls back to 0
+    /// only if the response is somehow missing the field entirely.
+    /// If the chosen action is Concede, runs the confirmation dialog
+    /// before returning.
+    fn pick_action_index(&mut self, prompt: &str, max: usize, actions: &[Action]) -> usize {
+        assert!(max > 0, "pick_action_index requires at least one option");
+        let schema = Self::enum_action_schema(max, "action", "Index of the chosen action");
+        let response = self.send_message_structured(prompt, &schema);
+        let idx = response["action"].as_u64().map(|n| n as usize)
+            .filter(|n| *n < max)
+            .unwrap_or_else(|| {
+                self.log("MALFORMED", &format!("response missing valid 'action' field ({}), defaulting to 0", response));
+                0
+            });
+        if matches!(actions.get(idx), Some(Action::Concede)) {
+            if !self.confirm_concede() {
+                return 0;
             }
         }
-        0
+        self.log("CHOSE", &format!("action {}", idx));
+        idx
     }
 }
 
@@ -1679,7 +1631,7 @@ impl Player for LlmPlayer {
         if display_labels.len() != legal_actions.len() {
             self.log("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_labels.len()));
         }
-        let idx = self.choose_with_retry_conv(&prompt, display_labels.len(), legal_actions);
+        let idx = self.pick_action_index(&prompt, display_labels.len(), legal_actions);
 
         if idx >= display_entries.len() {
             return Action::PassPriority;
@@ -1807,13 +1759,18 @@ impl LlmPlayer {
             "Respond with {{\"thoughts\": \"...\", \"bottom_indices\": [..]}} — exactly {} distinct index(es) from 0 to {}.\n",
             n, view.your_hand.len().saturating_sub(1)));
 
+        let valid_indices: Vec<serde_json::Value> = (0..view.your_hand.len())
+            .map(|i| serde_json::json!(i))
+            .collect();
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
                 "thoughts": {"type": "string", "description": "Private reasoning about which cards to bottom"},
                 "bottom_indices": {
                     "type": "array",
-                    "items": {"type": "integer"},
+                    "items": {"type": "integer", "enum": valid_indices},
+                    "minItems": n,
+                    "maxItems": n,
                     "description": format!("Exactly {} distinct 0-indexed positions in your hand to put on the bottom of your library", n)
                 }
             },
