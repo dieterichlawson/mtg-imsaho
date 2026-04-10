@@ -67,6 +67,9 @@ pub struct PermanentView {
     pub summoning_sick: bool,
     pub attached_to: Option<ObjectId>,
     pub keywords: Vec<Keyword>,
+    /// Oracle text of the card (from the registry). Used by display code to
+    /// surface short effect summaries for attached auras/equipment.
+    pub oracle_text: String,
 }
 
 #[derive(Debug, Clone)]
@@ -160,6 +163,9 @@ impl GameView {
                     summoning_sick: obj.summoning_sick,
                     attached_to: obj.attached_to,
                     keywords,
+                    oracle_text: face_data.as_ref()
+                        .map(|d| d.oracle_text.clone())
+                        .unwrap_or_default(),
                 }
             })
             .collect();
