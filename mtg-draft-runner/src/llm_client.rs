@@ -509,11 +509,13 @@ impl GeminiDraftBackend {
 
     fn parse_pick_response(raw: &str) -> String {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
-            if let Some(thoughts) = parsed["thoughts"].as_str() {
-                mtg_player::game_log::write(file!(), line!(), "GEMINI_THOUGHT", thoughts);
-            }
             let pick = parsed["pick"].as_u64().unwrap_or(0);
-            format!("PICK: {}", pick)
+            let thoughts = parsed["thoughts"].as_str().unwrap_or("");
+            if thoughts.is_empty() {
+                format!("PICK: {}", pick)
+            } else {
+                format!("Thoughts: {}\n\nPICK: {}", thoughts, pick)
+            }
         } else {
             raw.to_string()
         }
@@ -521,10 +523,12 @@ impl GeminiDraftBackend {
 
     fn parse_deck_response(raw: &str) -> String {
         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
-            if let Some(thoughts) = parsed["thoughts"].as_str() {
-                mtg_player::game_log::write(file!(), line!(), "GEMINI_THOUGHT", thoughts);
+            let thoughts = parsed["thoughts"].as_str().unwrap_or("");
+            let mut text = String::new();
+            if !thoughts.is_empty() {
+                text.push_str(&format!("Thoughts: {}\n\n", thoughts));
             }
-            let mut text = String::from("MAINDECK:\n");
+            text.push_str("MAINDECK:\n");
             if let Some(cards) = parsed["maindeck"].as_array() {
                 for card in cards {
                     if let Some(name) = card.as_str() {
