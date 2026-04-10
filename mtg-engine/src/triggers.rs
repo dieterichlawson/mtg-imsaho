@@ -326,6 +326,26 @@ fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::c
     String::new()
 }
 
+/// True if this card has a TriggeredAbilityDef for `kind` on either face.
+/// Used to gate empty trigger creation — only cards with a declared ability of
+/// this kind should put a trigger on the stack. Checks both front and back
+/// face because (a) by the time SelfDies/LeftBattlefield is collected the
+/// creature may have already been reset to front face by move_object, and
+/// (b) either face having the ability means the card legitimately cares about
+/// the event.
+fn card_has_trigger(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind) -> bool {
+    let Some(behavior) = registry.get(card_id) else { return false };
+    if behavior.card_data().triggered_abilities.iter().any(|t| &t.kind == kind) {
+        return true;
+    }
+    if let Some(back) = behavior.back_face_data() {
+        if back.triggered_abilities.iter().any(|t| &t.kind == kind) {
+            return true;
+        }
+    }
+    false
+}
+
 /// Collect triggered abilities from events and add them to the stack
 /// in APNAP order (active player first on bottom, non-active player on top).
 ///
@@ -405,8 +425,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 let dead_damaged_by = damaged_by.clone();
                 let dead_toughness = *last_known_toughness;
 
-                // 1. Self-dies trigger.
-                if registry.get(dead_card_id).is_some() {
+                // 1. Self-dies trigger. Only fire if the card actually has a
+                // SelfDies TriggeredAbilityDef — vanilla creatures and creatures
+                // with only watcher/ETB/activated abilities must not pollute the
+                // stack with empty triggers.
+                if card_has_trigger(registry, dead_card_id, &crate::cards::TriggerKind::SelfDies) {
                     let desc = trigger_description(registry, dead_card_id, &crate::cards::TriggerKind::SelfDies, false);
                     let trigger = PendingTrigger::SelfDies {
                         dead_id,
@@ -468,7 +491,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     Some(o) => (o.card_id,),
                     None => continue,
                 };
-                if registry.get(card_id).is_some() {
+                // Only fire LTB triggers for cards that actually have a
+                // LeavesBattlefield TriggeredAbilityDef. Vanilla creatures,
+                // auras without LTB clauses (Bonds of Faith, Dead Weight),
+                // and other non-LTB permanents must not pollute the stack.
+                if card_has_trigger(registry, card_id, &crate::cards::TriggerKind::LeavesBattlefield) {
                     let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::LeavesBattlefield, false);
                     let trigger = PendingTrigger::LeftBattlefield {
                         object_id: *object,
