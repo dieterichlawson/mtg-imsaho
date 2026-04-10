@@ -62,7 +62,12 @@ impl CardBehavior for HanweirWatchkeep {
                 ContinuousEffect::ForceAttack { scope: EffectScope::OnSelf },
             ],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "transform back if 2+ spells cast".into(),
+                },
+            ],
         })
     }
 

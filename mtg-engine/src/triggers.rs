@@ -349,6 +349,24 @@ fn card_has_trigger(registry: &CardRegistry, card_id: CardId, kind: &crate::card
     false
 }
 
+/// Look up a trigger description from the currently visible face only.
+/// Unlike `trigger_description`, this does not fall back to the back face
+/// for transformed cards — it reads the face that matches `is_transformed`.
+/// Used where a per-face ability (e.g. Homicidal Brute's end-step trigger)
+/// must not fire when the card is on the other face.
+fn face_trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
+    let Some(behavior) = registry.get(card_id) else { return String::new() };
+    let abilities = if is_transformed {
+        behavior.back_face_data().map(|d| d.triggered_abilities).unwrap_or_default()
+    } else {
+        behavior.card_data().triggered_abilities
+    };
+    abilities.iter()
+        .find(|t| &t.kind == kind)
+        .map(|t| t.description.clone())
+        .unwrap_or_default()
+}
+
 /// Collect triggered abilities from events and add them to the stack
 /// in APNAP order (active player first on bottom, non-active player on top).
 ///
@@ -665,7 +683,10 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         .collect();
                     for (obj_id, card_id, controller, is_transformed) in permanents {
                         if registry.get(card_id).is_some() {
-                            let desc = trigger_description(registry, card_id, &kind, is_transformed);
+                            // Use face-aware lookup: only fire if the currently visible
+                            // face has this step trigger. A front-face card must not
+                            // fire a trigger defined only on the back face (Bug E).
+                            let desc = face_trigger_description(registry, card_id, &kind, is_transformed);
                             if !desc.is_empty() {
                                 let trigger = match kind {
                                     crate::cards::TriggerKind::Upkeep => PendingTrigger::UpkeepTrigger {

@@ -35,14 +35,16 @@ impl CardBehavior for CivilizedScholar {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
+            // Front face: Attacks trigger is only here for internal state tracking
+            // (marking that the creature attacked this turn so Homicidal Brute's
+            // end-step check can see it). Per Scryfall ruling [2011-09-22] attacks
+            // count regardless of face, so we keep the Attacks trigger on the front
+            // face too. The real oracle trigger (EndStep transform-back) lives on
+            // the back face (Homicidal Brute) where it belongs.
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "mark as attacked this turn".into(),
-                },
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EndStep,
-                    description: "transform back if didn't attack".into(),
                 },
             ],
         }
@@ -62,7 +64,18 @@ impl CardBehavior for CivilizedScholar {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                // Also track attacks on the back face so Homicidal Brute's own
+                // attacks count toward the "didn't attack" check.
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Attacks,
+                    description: "mark as attacked this turn".into(),
+                },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EndStep,
+                    description: "transform back if didn't attack".into(),
+                },
+            ],
         })
     }
 

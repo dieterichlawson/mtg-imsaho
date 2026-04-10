@@ -64,7 +64,12 @@ impl CardBehavior for UlvenwaldMystics {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "transform back if 2+ spells cast".into(),
+                },
+            ],
         })
     }
 
