@@ -1770,12 +1770,29 @@ impl LlmPlayer {
 
         let mut action_prompt = String::new();
         action_prompt.push_str("[MULLIGAN DECISION]\n");
-        action_prompt.push_str("London mulligan opening hand:\n");
+        let mulls_taken = view.your_mulligan_count;
+        let keep_size = (7_i32 - mulls_taken as i32).max(0);
+        let mull_size = (7_i32 - (mulls_taken as i32 + 1)).max(0);
+        action_prompt.push_str(&format!(
+            "London mulligan. You have already taken {} mulligan{}. \
+             If you KEEP now, you will bottom {} card{} and play with {} card{} in hand. \
+             If you MULLIGAN, you will redraw a fresh seven and — if you then keep — \
+             bottom {} card{} to play with {} in hand.\n",
+            mulls_taken,
+            if mulls_taken == 1 { "" } else { "s" },
+            mulls_taken,
+            if mulls_taken == 1 { "" } else { "s" },
+            keep_size,
+            if keep_size == 1 { "" } else { "s" },
+            mulls_taken + 1,
+            if mulls_taken + 1 == 1 { "" } else { "s" },
+            mull_size,
+        ));
+        action_prompt.push_str("Your opening hand:\n");
         action_prompt.push_str(&hand_text);
         action_prompt.push('\n');
         if mull_allowed {
-            action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": true|false}. ");
-            action_prompt.push_str("If you mulligan, you draw a fresh seven but will have to put one more card on the bottom when you finally keep.\n");
+            action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": true|false}.\n");
         } else {
             action_prompt.push_str("You have reached the mulligan cap (mull-to-4). You must keep. ");
             action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": false}.\n");

@@ -13,6 +13,10 @@ pub struct GameView {
     pub your_library_size: usize,
     /// Card names in your library (you know your decklist, just not the order).
     pub your_library_cards: Vec<CardView>,
+    /// Number of mulligans this player has already taken this game (London
+    /// mulligan). Used by the LLM mulligan prompt so it can reason about the
+    /// resulting hand size on keep vs. mull.
+    pub your_mulligan_count: u32,
 
     pub opponents: Vec<OpponentView>,
 
@@ -256,6 +260,7 @@ impl GameView {
             your_mana_pool: player_state.mana_pool.clone(),
             your_library_size: player_state.library_order.len(),
             your_library_cards,
+            your_mulligan_count: player_state.mulligan_count,
             opponents,
             battlefield,
             graveyards,

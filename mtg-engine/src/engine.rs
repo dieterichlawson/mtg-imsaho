@@ -2437,8 +2437,8 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.get_player_mut(player).mulligan_count += 1;
             let mull_count = new_state.get_player(player).mulligan_count;
             new_state.log(LogLevel::Event,
-                format!("p{} mulligans to 7 (mulligan #{} — will bottom {} on keep)",
-                    player.0, mull_count, mull_count));
+                format!("p{} mulligans to {} (mulligan #{} — will bottom {} on keep)",
+                    player.0, 7 - mull_count as i32, mull_count, mull_count));
             // Mark that this round had a mulligan, then advance past this
             // player. The next player in turn order (who hasn't already kept)
             // will be asked. The mulled player will be re-asked next round.
