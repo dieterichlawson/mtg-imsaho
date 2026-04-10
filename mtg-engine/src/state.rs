@@ -125,6 +125,19 @@ pub struct GameState {
     /// decision. Drained by `advance_mulligan_phase`.
     #[serde(default)]
     pub pending_mulligan_bottoms: Vec<(PlayerId, usize)>,
+
+    /// Position within the current London-mulligan round, indexed from
+    /// the active player. Within a round each non-kept player makes one
+    /// keep/mull decision in turn order. When `mulligan_round_position`
+    /// reaches the player count, the round ends.
+    #[serde(default)]
+    pub mulligan_round_position: u8,
+
+    /// Whether any player has chosen `MulliganMull` in the current
+    /// London-mulligan round. Used at end-of-round to decide whether to
+    /// start a new round or transition to bottoming.
+    #[serde(default)]
+    pub mulligan_round_mulled: bool,
 }
 
 /// Log level for game log entries.
@@ -201,6 +214,8 @@ impl GameState {
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
             pending_mulligan_bottoms: Vec::new(),
+            mulligan_round_position: 0,
+            mulligan_round_mulled: false,
         }
     }
 
@@ -1438,6 +1453,11 @@ pub struct PlayerState {
     /// Used to determine how many cards must be bottomed after keeping.
     #[serde(default)]
     pub mulligan_count: u32,
+    /// True once this player has chosen `MulliganKeep` (or hit the cap).
+    /// Players with `mulligan_kept = true` are skipped in subsequent
+    /// mulligan rounds.
+    #[serde(default)]
+    pub mulligan_kept: bool,
 }
 
 impl PlayerState {
@@ -1451,6 +1471,7 @@ impl PlayerState {
             has_drawn_from_empty: false,
             library_order: Vec::new(),
             mulligan_count: 0,
+            mulligan_kept: false,
         }
     }
 

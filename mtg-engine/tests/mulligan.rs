@@ -80,13 +80,12 @@ fn both_players_keep_first_hand_no_bottoming() {
     let p0_lib_before = library_len(&state, P0);
     let p1_lib_before = library_len(&state, P1);
 
-    engine::run_game_loop(&mut state, &reg, |_, _, legal| {
-        // Only mulligan-phase actions should appear before turn 1.
-        // Pick MulliganKeep whenever available, otherwise Concede to stop.
+    engine::run_mulligan_phase(&mut state, &reg, |_, _, legal| {
+        // Pick MulliganKeep whenever available.
         for a in &legal.actions {
             if matches!(a, Action::MulliganKeep) { return a.clone(); }
         }
-        Action::Concede
+        unreachable!("MulliganKeep should always be a legal action in this test");
     });
 
     // Mulligan phase should be over.
@@ -111,7 +110,7 @@ fn mull_once_then_bottom_one() {
     let (mut state, reg) = fresh_game();
     let mut p0_mull_done = false;
 
-    engine::run_game_loop(&mut state, &reg, |gs, player, legal| {
+    engine::run_mulligan_phase(&mut state, &reg, |gs, player, _legal| {
         if player == P0 {
             match &gs.awaiting_action {
                 Some(AwaitingAction::MulliganDecision { .. }) => {
@@ -123,18 +122,14 @@ fn mull_once_then_bottom_one() {
                 }
                 Some(AwaitingAction::BottomAfterMulligan { count, .. }) => {
                     assert_eq!(*count, 1);
-                    // Bottom the first card in hand.
                     let hand = hand_ids(gs, P0);
                     return Action::BottomCards { cards: vec![hand[0]] };
                 }
                 _ => {}
             }
         }
-        // P1 keeps; everyone else: stop via Concede as a safety net.
-        for a in &legal.actions {
-            if matches!(a, Action::MulliganKeep) { return a.clone(); }
-        }
-        Action::Concede
+        // P1 keeps unconditionally.
+        Action::MulliganKeep
     });
 
     assert!(!engine::in_mulligan_phase(&state));
@@ -160,7 +155,7 @@ fn mull_to_cap_forces_keep_and_bottoms_three() {
     let mut p0_mulls_taken = 0;
     let mut p0_saw_forced_keep = false;
 
-    engine::run_game_loop(&mut state, &reg, |gs, player, legal| {
+    engine::run_mulligan_phase(&mut state, &reg, |gs, player, legal| {
         if player == P0 {
             match &gs.awaiting_action {
                 Some(AwaitingAction::MulliganDecision { .. }) => {
@@ -186,10 +181,8 @@ fn mull_to_cap_forces_keep_and_bottoms_three() {
                 _ => {}
             }
         }
-        for a in &legal.actions {
-            if matches!(a, Action::MulliganKeep) { return a.clone(); }
-        }
-        Action::Concede
+        // P1 keeps unconditionally.
+        Action::MulliganKeep
     });
 
     assert!(p0_saw_forced_keep, "P0 should have seen the forced-keep prompt");
@@ -209,7 +202,7 @@ fn per_player_mulligan_counts_are_independent() {
     let mut p0_mulls = 0;
     let mut p1_mulls = 0;
 
-    engine::run_game_loop(&mut state, &reg, |gs, player, legal| {
+    engine::run_mulligan_phase(&mut state, &reg, |gs, player, _legal| {
         match &gs.awaiting_action {
             Some(AwaitingAction::MulliganDecision { .. }) => {
                 if player == P0 && p0_mulls < 2 {
@@ -220,20 +213,16 @@ fn per_player_mulligan_counts_are_independent() {
                     p1_mulls += 1;
                     return Action::MulliganMull;
                 }
-                return Action::MulliganKeep;
+                Action::MulliganKeep
             }
             Some(AwaitingAction::BottomAfterMulligan { count, .. }) => {
                 let hand = hand_ids(gs, player);
-                return Action::BottomCards {
+                Action::BottomCards {
                     cards: hand.iter().take(*count).copied().collect(),
-                };
+                }
             }
-            _ => {}
+            _ => unreachable!("run_mulligan_phase only invokes the callback for mulligan/bottom decisions"),
         }
-        for a in &legal.actions {
-            if matches!(a, Action::MulliganKeep) { return a.clone(); }
-        }
-        Action::Concede
     });
 
     assert_eq!(state.get_player(P0).mulligan_count, 2);
@@ -246,6 +235,64 @@ fn per_player_mulligan_counts_are_independent() {
     assert_eq!(library_len(&state, P1), 34);
 }
 
+// ── Round alternation ──────────────────────────────────────────────
+
+/// Verify the keep/mull sub-phase alternates between players within a
+/// round rather than draining one player's decisions before moving to
+/// the next. The active player decides first within each round; the
+/// non-active player decides next, with knowledge of the active
+/// player's current-round decision; then any player who mulled gets
+/// asked again in the next round.
+#[test]
+fn keep_mull_decisions_alternate_round_by_round() {
+    let (mut state, reg) = fresh_game();
+    // Record the (round, player) sequence in the order asked.
+    let mut decisions: Vec<(u32, mtg_engine::ids::PlayerId)> = Vec::new();
+    let mut p0_mulls = 0;
+    let mut p1_mulls = 0;
+
+    engine::run_mulligan_phase(&mut state, &reg, |gs, player, _legal| {
+        match &gs.awaiting_action {
+            Some(AwaitingAction::MulliganDecision { .. }) => {
+                let round = decisions.iter().filter(|(_, p)| *p == player).count() as u32 + 1;
+                decisions.push((round, player));
+                // P0: mull rounds 1 and 2, keep round 3.
+                // P1: mull round 1, keep round 2.
+                if player == P0 && p0_mulls < 2 {
+                    p0_mulls += 1;
+                    return Action::MulliganMull;
+                }
+                if player == P1 && p1_mulls < 1 {
+                    p1_mulls += 1;
+                    return Action::MulliganMull;
+                }
+                Action::MulliganKeep
+            }
+            Some(AwaitingAction::BottomAfterMulligan { count, .. }) => {
+                let hand = hand_ids(gs, player);
+                Action::BottomCards {
+                    cards: hand.iter().take(*count).copied().collect(),
+                }
+            }
+            _ => unreachable!(),
+        }
+    });
+
+    // Expected interleaving (active player P0 decides first per round):
+    //   Round 1: P0 (mull), P1 (mull)
+    //   Round 2: P0 (mull), P1 (keep)
+    //   Round 3: P0 (keep)            ← P1 already kept, skipped
+    let expected = vec![
+        (1, P0), (1, P1),
+        (2, P0), (2, P1),
+        (3, P0),
+    ];
+    assert_eq!(decisions, expected,
+        "decisions should alternate between players within each round, not drain one player at a time");
+    assert_eq!(state.get_player(P0).mulligan_count, 2);
+    assert_eq!(state.get_player(P1).mulligan_count, 1);
+}
+
 // ── Library integrity ──────────────────────────────────────────────
 
 /// After mulligans and bottoming, every card the player owns should still
@@ -254,7 +301,7 @@ fn per_player_mulligan_counts_are_independent() {
 fn library_and_hand_contain_all_dealt_cards() {
     let (mut state, reg) = fresh_game();
 
-    engine::run_game_loop(&mut state, &reg, |gs, player, _legal| {
+    engine::run_mulligan_phase(&mut state, &reg, |gs, player, _legal| {
         match &gs.awaiting_action {
             Some(AwaitingAction::MulliganDecision { .. }) => {
                 // P0: mull once. P1: keep immediately.
@@ -270,7 +317,7 @@ fn library_and_hand_contain_all_dealt_cards() {
                     cards: hand.iter().take(*count).copied().collect(),
                 }
             }
-            _ => Action::Concede, // stop the game as soon as we reach turn 1
+            _ => unreachable!("run_mulligan_phase only invokes the callback for mulligan/bottom decisions"),
         }
     });
 

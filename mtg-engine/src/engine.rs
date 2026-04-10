@@ -2385,6 +2385,12 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.log(LogLevel::Event,
                 format!("p{} keeps ({} mulligan{})", player.0, mull_count,
                     if mull_count == 1 { "" } else { "s" }));
+            new_state.get_player_mut(player).mulligan_kept = true;
+            // Record this player's bottom obligation now so it'll be drained
+            // once every player has finished the keep/mull sub-phase.
+            new_state.pending_mulligan_bottoms.push((player, mull_count as usize));
+            // Advance the within-round position past this player.
+            new_state.mulligan_round_position += 1;
             advance_mulligan_phase(&mut new_state, registry);
             new_state.consecutive_passes = 0;
         }
@@ -2419,8 +2425,12 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.log(LogLevel::Event,
                 format!("p{} mulligans to 7 (mulligan #{} — will bottom {} on keep)",
                     player.0, mull_count, mull_count));
-            // Same player decides again on the new hand.
-            new_state.awaiting_action = Some(AwaitingAction::MulliganDecision { player });
+            // Mark that this round had a mulligan, then advance past this
+            // player. The next player in turn order (who hasn't already kept)
+            // will be asked. The mulled player will be re-asked next round.
+            new_state.mulligan_round_mulled = true;
+            new_state.mulligan_round_position += 1;
+            advance_mulligan_phase(&mut new_state, registry);
             new_state.consecutive_passes = 0;
         }
 
@@ -3317,67 +3327,58 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 }
 
 /// Drive the London mulligan phase forward after a decision or bottom is
-/// resolved. Walks through players in turn order, asking keep/mull, then
-/// switches to the bottom-cards sub-phase, then clears the mulligan state
-/// (which signals run_game_loop to begin turn 1).
+/// resolved.
+///
+/// The keep/mull sub-phase runs in *rounds*. Within each round, every
+/// not-yet-kept player makes one keep/mull decision in turn order
+/// starting from the active player. After the round completes, if any
+/// player mulled this round we start a new round (giving any still-
+/// undecided player another chance). Once every player has kept, we
+/// drain the bottoming queue.
+///
+/// This matches real London mulligan info flow: the non-active player
+/// sees the active player's *current-round* decision before deciding
+/// (because the active player decides first within a round), but
+/// neither player ever sees the other's *future-round* decisions.
+///
+/// The caller is expected to have already advanced
+/// `state.mulligan_round_position` past the player whose decision was
+/// just processed (or to have set `state.awaiting_action = None` for
+/// post-bottoming transitions).
 fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
-    // Sub-phase 1: each player answers keep/mull in turn order starting with
-    // the active player. When every player has arrived at a kept hand,
-    // proceed to bottoming. A player has "kept" when:
-    //   (a) they chose MulliganKeep, OR
-    //   (b) they reached the cap and the cap-forced keep was applied.
-    //
-    // We encode "decided to keep" by clearing the MulliganDecision for them
-    // and advancing to the next player. This function is invoked by the
-    // engine when such a transition should happen (after a Keep or a Bottom).
-    //
-    // Algorithm: find the next player (in turn order starting from the
-    // active player) who has mulligan_count set but has not yet been asked
-    // the keep/mull question. We track "asked" via the phase progression
-    // itself: once every player's MulliganDecision has been processed, we
-    // move on.
     let num_players = state.players.len() as u8;
 
-    // Determine which player (if any) still needs to make a keep/mull
-    // decision. We walk through players in turn order, starting from the
-    // active player. For each one, if their awaiting state is already cleared
-    // AND they have no bottom obligation recorded, we look at whether they've
-    // been offered yet.
-    //
-    // Rather than track per-player "offered" state, we use a simple marker:
-    // `pending_bottoms` — a list of (player, count) pairs queued for the
-    // bottoming sub-phase. Once every player in turn order has been asked
-    // keep/mull, we enter the bottoming sub-phase.
-    //
-    // Practical implementation: stash per-phase progress in
-    // `state.pending_mulligan_bottoms`. Each time we finish a keep/mull
-    // decision, we append the player if they mulled. When all players have
-    // been asked, we transition.
-
-    // Walk forward from the current player in turn order, skipping those
-    // already past the decision stage.
-    let current = match &state.awaiting_action {
-        Some(AwaitingAction::MulliganDecision { player }) => Some(*player),
-        _ => None,
-    };
-
-    if let Some(p) = current {
-        // A decision for `p` was just resolved (Keep, since Mull re-sets the
-        // awaiting to the same player). Record their bottom obligation and
-        // move on.
-        state.pending_mulligan_bottoms.push((p, state.get_player(p).mulligan_count as usize));
-        let next = PlayerId((p.0 + 1) % num_players);
-        if next != state.active_player {
-            state.awaiting_action = Some(AwaitingAction::MulliganDecision { player: next });
-            return;
+    // Sub-phase 1: keep/mull. Find the next not-yet-kept player in this
+    // round (skipping over players who have already kept). If no such
+    // player exists in this round, check end-of-round.
+    while state.mulligan_round_position < num_players {
+        let pos = state.mulligan_round_position;
+        let player = PlayerId((state.active_player.0 + pos) % num_players);
+        if state.get_player(player).mulligan_kept {
+            // Already kept (in a previous round). Skip and try the next
+            // position.
+            state.mulligan_round_position += 1;
+            continue;
         }
-        // Wrapped around: no more keep/mull decisions needed.
-        state.awaiting_action = None;
+        // Ask this player.
+        state.awaiting_action = Some(AwaitingAction::MulliganDecision { player });
+        return;
     }
 
-    // Sub-phase 2: drain the pending_mulligan_bottoms queue. For each
-    // player with count > 0, set BottomAfterMulligan. Players with count 0
-    // are skipped.
+    // End of round. If anyone mulled this round, start a new round and
+    // reset the within-round flags. Otherwise (everyone in this round
+    // chose to keep — or there was nobody left to ask) every player is
+    // now kept and we proceed to bottoming.
+    if state.mulligan_round_mulled {
+        state.mulligan_round_position = 0;
+        state.mulligan_round_mulled = false;
+        return advance_mulligan_phase(state, _registry);
+    }
+
+    // Sub-phase 2: bottoming. Drain pending_mulligan_bottoms in turn
+    // order. Players with count 0 are skipped. The pending list was
+    // populated as each player chose to keep, so iterating it preserves
+    // turn order.
     while let Some((player, count)) = state.pending_mulligan_bottoms.first().cloned() {
         if count == 0 {
             state.pending_mulligan_bottoms.remove(0);
@@ -3805,8 +3806,22 @@ pub fn run_game_loop<F>(
 }
 
 /// Drive the opening-hand London mulligan phase to completion, asking each
-/// player for keep/mull and bottom decisions via `choose_action`.
-fn run_mulligan_phase<F>(
+/// player for keep/mull and bottom decisions via `choose_action`. Returns
+/// when `in_mulligan_phase` becomes false. Useful for tests that want to
+/// exercise the mulligan phase in isolation without driving into turn 1
+/// (which would invoke turn-based actions, draws, and auto-pass logic that
+/// can mask the post-mulligan state).
+pub fn run_mulligan_phase<F>(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    mut choose_action: F,
+) where
+    F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
+{
+    run_mulligan_phase_inner(state, registry, &mut choose_action);
+}
+
+fn run_mulligan_phase_inner<F>(
     state: &mut GameState,
     registry: &CardRegistry,
     choose_action: &mut F,
@@ -3870,7 +3885,7 @@ fn run_game_loop_inner<F>(
     // clear itself by setting awaiting_action = None and draining the
     // pending bottom queue.
     if in_mulligan_phase(state) {
-        run_mulligan_phase(state, registry, choose_action);
+        run_mulligan_phase_inner(state, registry, choose_action);
         if state.is_game_over() {
             return;
         }
