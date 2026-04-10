@@ -1247,31 +1247,69 @@ impl LlmPlayer {
             let toughness = c.effective_toughness.or(c.toughness).unwrap_or(0);
             let kw = Self::format_keywords(&c.keywords);
             let kw_str = if kw.is_empty() { String::new() } else { format!(" {}", kw) };
-            let t = if c.tapped { "T" } else { "" };
-            let s = if c.summoning_sick { "S" } else { "" };
-            let d = if c.damage_marked > 0 { format!("{}dmg", c.damage_marked) } else { String::new() };
-            let flags = format!("{}{}{}", t, s, d);
-            let flags_str = if flags.is_empty() { String::new() } else { format!(" [{}]", flags) };
+            let mut flag_parts: Vec<String> = Vec::new();
+            if c.tapped { flag_parts.push("T".into()); }
+            if c.summoning_sick { flag_parts.push("S".into()); }
+            if c.damage_marked > 0 { flag_parts.push(format!("{}dmg", c.damage_marked)); }
+            if let Some(suffix) = Self::format_counters(&c.counters) {
+                flag_parts.push(suffix);
+            }
+            let flags_str = if flag_parts.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", flag_parts.join(","))
+            };
             let auras = aura_map.get(&c.object_id)
                 .map(|entries| format!(" ({})", entries.join("; ")))
                 .unwrap_or_default();
             parts.push(format!("{} {}/{}{}{}{}", c.name, power, toughness, kw_str, flags_str, auras));
         }
 
-        // Show non-aura other permanents. For unattached equipment, include
-        // a short ability summary so the LLM knows what the equip does.
+        // Show non-aura other permanents. For unattached equipment include
+        // the short effect summary; planeswalkers surface their loyalty
+        // counter count via format_counters.
         for o in &other {
             if o.attached_to.is_some() { continue; } // skip auras, shown with creature
-            let t = if o.tapped { "[T]" } else { "" };
+            let mut flag_parts: Vec<String> = Vec::new();
+            if o.tapped { flag_parts.push("T".into()); }
+            if let Some(suffix) = Self::format_counters(&o.counters) {
+                flag_parts.push(suffix);
+            }
+            let flags_str = if flag_parts.is_empty() {
+                String::new()
+            } else {
+                format!(" [{}]", flag_parts.join(","))
+            };
             let desc = Self::short_effect_summary(&o.oracle_text);
             if desc.is_empty() {
-                parts.push(format!("{}{}", o.name, t));
+                parts.push(format!("{}{}", o.name, flags_str));
             } else {
-                parts.push(format!("{}{} ({})", o.name, t, desc));
+                parts.push(format!("{}{} ({})", o.name, flags_str, desc));
             }
         }
 
         parts.join(", ")
+    }
+
+    /// Format any +1/+1, -1/-1, or loyalty counters on a permanent into a
+    /// compact suffix like `+1+1x2` or `LOYx3`. Returns `None` when the
+    /// permanent has none of these counter types (so the caller can omit
+    /// the flag entirely).
+    fn format_counters(
+        counters: &std::collections::HashMap<mtg_engine::types::CounterType, u32>,
+    ) -> Option<String> {
+        use mtg_engine::types::CounterType;
+        let mut bits: Vec<String> = Vec::new();
+        if let Some(&n) = counters.get(&CounterType::PlusOnePlusOne) {
+            if n > 0 { bits.push(format!("+1+1x{}", n)); }
+        }
+        if let Some(&n) = counters.get(&CounterType::MinusOneMinusOne) {
+            if n > 0 { bits.push(format!("-1-1x{}", n)); }
+        }
+        if let Some(&n) = counters.get(&CounterType::Loyalty) {
+            if n > 0 { bits.push(format!("LOYx{}", n)); }
+        }
+        if bits.is_empty() { None } else { Some(bits.join(",")) }
     }
 
     /// Format a single non-CastSpell action for the collapsed display.
@@ -2187,5 +2225,78 @@ impl LlmPlayer {
         // Exhausted retries — return no blocks as safe fallback.
         self.log("BLOCKER_VALIDATION", "exhausted retries, defaulting to no blocks");
         Action::DeclareBlockers { assignments: vec![] }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mtg_engine::types::CounterType;
+    use std::collections::HashMap;
+
+    #[test]
+    fn format_counters_none_returns_none() {
+        let counters: HashMap<CounterType, u32> = HashMap::new();
+        assert_eq!(LlmPlayer::format_counters(&counters), None);
+    }
+
+    #[test]
+    fn format_counters_zero_count_returns_none() {
+        let mut counters = HashMap::new();
+        counters.insert(CounterType::PlusOnePlusOne, 0);
+        assert_eq!(LlmPlayer::format_counters(&counters), None);
+    }
+
+    #[test]
+    fn format_counters_plus_one_plus_one() {
+        let mut counters = HashMap::new();
+        counters.insert(CounterType::PlusOnePlusOne, 2);
+        assert_eq!(
+            LlmPlayer::format_counters(&counters).as_deref(),
+            Some("+1+1x2"),
+        );
+    }
+
+    #[test]
+    fn format_counters_minus_one_minus_one() {
+        let mut counters = HashMap::new();
+        counters.insert(CounterType::MinusOneMinusOne, 1);
+        assert_eq!(
+            LlmPlayer::format_counters(&counters).as_deref(),
+            Some("-1-1x1"),
+        );
+    }
+
+    #[test]
+    fn format_counters_loyalty() {
+        let mut counters = HashMap::new();
+        counters.insert(CounterType::Loyalty, 4);
+        assert_eq!(
+            LlmPlayer::format_counters(&counters).as_deref(),
+            Some("LOYx4"),
+        );
+    }
+
+    #[test]
+    fn format_counters_mixed_stable_order() {
+        // +1/+1 and -1/-1 together (weird, but a valid transient state
+        // before SBAs annihilate). Confirms ordering is plus-then-minus.
+        let mut counters = HashMap::new();
+        counters.insert(CounterType::PlusOnePlusOne, 3);
+        counters.insert(CounterType::MinusOneMinusOne, 1);
+        assert_eq!(
+            LlmPlayer::format_counters(&counters).as_deref(),
+            Some("+1+1x3,-1-1x1"),
+        );
+    }
+
+    #[test]
+    fn format_counters_ignores_slime_and_study() {
+        // Non-P/T, non-loyalty counters should not appear in the suffix
+        // (they're not the point of this display flag).
+        let mut counters = HashMap::new();
+        counters.insert(CounterType::Slime, 5);
+        counters.insert(CounterType::Study, 2);
+        assert_eq!(LlmPlayer::format_counters(&counters), None);
     }
 }
