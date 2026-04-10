@@ -12,7 +12,7 @@ use mtg_engine::actions::{Action, CombatPrompt, Target};
 use mtg_engine::types::Step;
 use mtg_engine::ids::ObjectId;
 use mtg_engine::types::CardType;
-use mtg_engine::view::{GameView, CardView, PermanentView};
+use mtg_engine::view::{GameView, PermanentView};
 
 use crate::Player;
 
@@ -1224,6 +1224,13 @@ impl CliPlayer {
                     .map(|id| Self::perm_name(view, *id)).collect();
                 format!("Discard {}", names.join(", "))
             }
+            Action::MulliganKeep => "Keep opening hand".into(),
+            Action::MulliganMull => "Mulligan".into(),
+            Action::BottomCards { cards } => {
+                let names: Vec<String> = cards.iter()
+                    .map(|id| Self::perm_name(view, *id)).collect();
+                format!("Bottom {}", names.join(", "))
+            }
             Action::Concede => "Concede".into(),
             Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
                 format!("Activate loyalty ability {} on {}", ability_index, Self::perm_name(view, *object_id)),
@@ -1714,7 +1721,7 @@ impl CliPlayer {
 
     fn choose_blockers(&self, view: &GameView, prompt: &CombatPrompt) -> Action {
         let (eligible_blockers, attacker_ids) = match prompt {
-            CombatPrompt::ChooseBlockers { eligible_blockers, attackers } => (eligible_blockers, attackers),
+            CombatPrompt::ChooseBlockers { eligible_blockers, attackers, .. } => (eligible_blockers, attackers),
             _ => unreachable!(),
         };
 
@@ -2215,27 +2222,6 @@ impl Player for CliPlayer {
         }
     }
 
-    fn choose_cards_to_bottom(
-        &mut self,
-        view: &GameView,
-        hand: &[CardView],
-        count: usize,
-    ) -> Vec<ObjectId> {
-        let labels: Vec<String> = hand.iter().map(|c| c.name.clone()).collect();
-        let title = format!("Choose {} card(s) to put on bottom", count);
-
-        loop {
-            Self::render(view, Some(&labels), Some(&title), &view.display_log, "", None);
-            let input = Self::read_line("");
-            let tokens: Vec<&str> = input.split(|c: char| c.is_whitespace() || c == ',')
-                .map(|s| s.trim()).filter(|s| !s.is_empty()).collect();
-            let indices: Vec<usize> = tokens.iter().filter_map(|s| s.parse().ok()).collect();
-            if indices.len() == count && indices.len() == tokens.len()
-                && indices.iter().all(|&i| i < hand.len()) {
-                return indices.iter().map(|&i| hand[i].object_id).collect();
-            }
-        }
-    }
 }
 
 impl CliPlayer {

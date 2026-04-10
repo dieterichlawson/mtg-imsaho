@@ -109,8 +109,25 @@ fn main() {
         (player_names, state)
     };
 
-    let mut p1 = make_player(p1_spec, "P1", log_file);
-    let mut p2 = make_player(p2_spec, "P2", log_file);
+    // Initialize the global game log if --log was given.
+    if let Some(path) = log_file {
+        mtg_player::game_log::init(path);
+    }
+
+    let mut p1 = make_player(p1_spec, "P1");
+    let mut p2 = make_player(p2_spec, "P2");
+
+    // Log game metadata.
+    {
+        let p1_model = if let PlayerKind::Llm(ref llm) = p1 { llm.model_name().to_string() } else { p1_spec.to_string() };
+        let p2_model = if let PlayerKind::Llm(ref llm) = p2 { llm.model_name().to_string() } else { p2_spec.to_string() };
+        let meta = format!(
+            "P1: {} (deck: {})\nP2: {} (deck: {})",
+            p1_model, deck_display_name(deck1_spec),
+            p2_model, deck_display_name(deck2_spec),
+        );
+        mtg_player::game_log::write(file!(), line!(), "GAME_START", &meta);
+    }
 
     // Initialize LLM player conversations with decklists.
     let deck1_entries = load_deck(deck1_spec, &registry).entries;
@@ -254,24 +271,38 @@ fn main() {
     }
     let _ = fs::remove_file(&hot_reload_path);
 
-    match &state.result {
+    let result_msg = match &state.result {
         Some(mtg_engine::state::GameResult::Winner(id)) => {
             let name = &player_names[id.0 as usize];
-            println!("\nGame over! {} wins!", name);
+            format!("Game over! {} wins!", name)
         }
         Some(mtg_engine::state::GameResult::Draw) => {
-            println!("\nGame over! It's a draw!");
+            "Game over! It's a draw!".to_string()
         }
         None => {
-            println!("\nGame ended without a result.");
+            "Game ended without a result.".to_string()
         }
-    }
+    };
+    let summary = format!("{}\nTotal actions: {}\nFinal turn: {}", result_msg, action_count, state.turn_number);
+    println!("\n{}", summary);
+    mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
-    println!("Total actions: {}", action_count);
-    println!("Final turn: {}", state.turn_number);
+    // Log token usage per model.
+    let usage = mtg_player::llm::get_llm_model_usage();
+    if !usage.is_empty() {
+        let mut usage_lines = String::new();
+        for (model, stats) in &usage {
+            usage_lines.push_str(&format!(
+                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create\n",
+                model, stats.calls, stats.input, stats.output, stats.cache_read, stats.cache_create
+            ));
+        }
+        println!("{}", usage_lines.trim());
+        mtg_player::game_log::write(file!(), line!(), "TOKEN_USAGE", usage_lines.trim());
+    }
 }
 
-fn make_player(spec: &str, name: &str, log_file: Option<&str>) -> PlayerKind {
+fn make_player(spec: &str, name: &str) -> PlayerKind {
     let (kind, model) = match spec.split_once(':') {
         Some((k, m)) => (k, Some(m)),
         None => (spec, None),
@@ -284,18 +315,12 @@ fn make_player(spec: &str, name: &str, log_file: Option<&str>) -> PlayerKind {
             if let Some(m) = model {
                 player = player.with_model(m);
             }
-            if let Some(path) = log_file {
-                player = player.with_log(path);
-            }
             PlayerKind::Llm(player)
         }
         "gemini" => {
             let mut player = LlmPlayer::new_gemini(name);
             if let Some(m) = model {
                 player = player.with_model(m);
-            }
-            if let Some(path) = log_file {
-                player = player.with_log(path);
             }
             PlayerKind::Llm(player)
         }

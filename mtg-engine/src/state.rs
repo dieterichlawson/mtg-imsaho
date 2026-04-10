@@ -119,6 +119,12 @@ pub struct GameState {
     /// non-active player's at the back (top). Resolved LIFO from the back.
     #[serde(default)]
     pub pending_triggers: Vec<crate::triggers::PendingTrigger>,
+
+    /// Queue of (player, bottom_count) pairs waiting for the London-mulligan
+    /// bottoming sub-phase. Populated as each player finishes their keep/mull
+    /// decision. Drained by `advance_mulligan_phase`.
+    #[serde(default)]
+    pub pending_mulligan_bottoms: Vec<(PlayerId, usize)>,
 }
 
 /// Log level for game log entries.
@@ -194,6 +200,7 @@ impl GameState {
             last_activated_x_value: None,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
+            pending_mulligan_bottoms: Vec::new(),
         }
     }
 
@@ -1427,6 +1434,10 @@ pub struct PlayerState {
     pub has_drawn_from_empty: bool,
     /// Order of cards in library (first element is top of library).
     pub library_order: Vec<ObjectId>,
+    /// Number of mulligans this player has taken during the opening-hand phase.
+    /// Used to determine how many cards must be bottomed after keeping.
+    #[serde(default)]
+    pub mulligan_count: u32,
 }
 
 impl PlayerState {
@@ -1439,6 +1450,7 @@ impl PlayerState {
             lost: false,
             has_drawn_from_empty: false,
             library_order: Vec::new(),
+            mulligan_count: 0,
         }
     }
 
@@ -1493,7 +1505,16 @@ pub enum AwaitingAction {
         source: ObjectId,
         choice: ResolutionChoiceKind,
     },
+    /// London mulligan: `player` must decide keep or mull.
+    MulliganDecision { player: PlayerId },
+    /// London mulligan: `player` must put `count` cards on the bottom of
+    /// their library (one per mulligan taken).
+    BottomAfterMulligan { player: PlayerId, count: usize },
 }
+
+/// London mulligan cap: house rule, stop offering mulligans once a player
+/// has taken this many. (Mull-to-4: after 3 mulligans you must keep.)
+pub const LONDON_MULLIGAN_CAP: u32 = 3;
 
 /// Describes what kind of mid-resolution choice is needed.
 #[derive(Debug, Clone, Serialize, Deserialize)]

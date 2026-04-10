@@ -702,7 +702,6 @@ dependencies = [
  "mtg-player",
  "rand",
  "reqwest",
- "serde",
  "serde_json",
 ]
 

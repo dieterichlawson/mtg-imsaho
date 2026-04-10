@@ -1,7 +1,4 @@
 use std::env;
-use std::fs::OpenOptions;
-use std::io::Write;
-
 use mtg_engine::actions::{Action, CombatPrompt};
 use mtg_engine::ids::ObjectId;
 use mtg_engine::types::{CardType, Step};
@@ -65,133 +62,234 @@ pub fn get_llm_model_usage() -> HashMap<String, LlmModelUsage> {
     LLM_MODEL_USAGE.lock().unwrap().clone()
 }
 
+/// Format a reqwest::Error with kind tags and the underlying source chain.
+/// Produces something like: "[timeout,connect] error sending request: ... → Connection refused"
+fn format_reqwest_error(e: &reqwest::Error) -> String {
+    let mut tags = Vec::new();
+    if e.is_timeout() { tags.push("timeout"); }
+    if e.is_connect() { tags.push("connect"); }
+    if e.is_request() { tags.push("request"); }
+    if e.is_body() { tags.push("body"); }
+    if e.is_decode() { tags.push("decode"); }
+    if e.is_redirect() { tags.push("redirect"); }
+    if e.is_status() { tags.push("status"); }
+
+    let tag_str = if tags.is_empty() { String::new() } else { format!("[{}] ", tags.join(",")) };
+
+    // Walk the source chain to get the underlying cause.
+    let mut chain = vec![e.to_string()];
+    let mut src: Option<&dyn std::error::Error> = std::error::Error::source(e);
+    while let Some(s) = src {
+        chain.push(s.to_string());
+        src = s.source();
+    }
+    format!("{}{}", tag_str, chain.join(" → "))
+}
+
 /// Shared game rules and strategy — used by all backends.
-const GAME_RULES: &str = r#"## Key rules
-- AUTO-TAP: When you choose "Cast [spell]", the engine automatically taps the right lands for you. Just pick the Cast option directly — no need to tap lands first.
-- The Cast option shows which lands will be tapped, e.g. "Cast Doom Blade (tap Swamp, Swamp)".
-- MANUAL TAPPING: Rarely needed, but useful when you want to: float mana before combat (to bluff an instant or have mana open), use a mana ability with a side effect (e.g. Deranged Assistant mills a card), or override the auto-tap plan to keep a specific land untapped (e.g. preserving Gavony Township for its activated ability). In most cases, just use the Cast option.
-- Spells go on the stack and resolve when both players pass priority. The stack display shows what each spell targets (e.g. "Dead Weight targeting Falkenrath Noble (opp's)").
-- Creatures have summoning sickness — can't attack the turn they enter. [S] means sick.
-- Play one land per turn, only during your main phase.
-- Instants can be cast anytime you have priority (including during combat or opponent's turn).
-- Sorceries, creatures, enchantments, and artifacts can only be cast during your main phase with an empty stack.
-- Targeted spells show their target in the action (e.g. "Cast Lightning Bolt → Goblin Piker 2/1").
-- For spells or abilities with multiple possible targets, you'll be asked to choose a target after selecting the action.
-- Attack to win! Creatures deal damage to the opponent when unblocked.
+const GAME_RULES: &str = r#"## Prompt format
+
+Each prompt you receive has these sections (in order):
+
+**Recent events** (top): a delta log of game events since your last decision — lands played, spells cast, triggers, damage, draws, etc. Use this to understand what changed. Includes both your actions and your opponent's.
+
+**Header line**: `Turn N - <step> (your turn|opp's turn)`. The step is one of: Untap, Upkeep, Draw, Main 1, Begin Combat, Declare Attackers, Declare Blockers, Combat Damage, End Combat, Main 2, End Step, Cleanup.
+
+**Player status**:
+```
+You: 20hp, 7cards, 33lib, 0gy, 0exile
+Opp: 20hp, 7cards, 33lib, 0gy, 0exile
+```
+Fields: hp=life total, cards=hand size, lib=library size, gy=graveyard count, exile=exile zone count.
+
+**Mana pool** (only if non-empty): `Mana pool: Green:1, Red:2`
+
+**Boards** (only if non-empty):
+```
+Your board: 2x Forest, 1x Mountain (tapped), Grizzly Bears 2/2
+Opp board: 1x Plains, Savannah Lions 2/1 [S]
+```
+Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures:
+- `[T]` = tapped
+- `[S]` = summoning sick (entered this turn, can't attack)
+- `[Ndmg]` = N damage marked on it
+
+**Stack** (only if non-empty): `Stack: Lightning Bolt targeting Goblin Piker (opp's)` — shows pending spells/abilities with controller tag and targets.
+
+**Hand**: `Hand: Forest, Grizzly Bears {1}{G} 2/2, Lightning Bolt {R}` — your hand with mana costs and (for creatures) base P/T.
+
+**Graveyards** (only if non-empty): one line per player listing the cards.
+
+**Flashback available** (only if relevant): cards in your graveyard you can cast for their flashback cost.
+
+**Context line**: a `[CONTEXT]` marker showing the current game state:
+- `[MAIN PHASE 1]` / `[MAIN PHASE 2]` — your main phases. Cast sorceries, creatures, enchantments, artifacts here. Also play lands here.
+- `[BEGIN COMBAT]` — just before declaring attackers. Last chance for instants before combat.
+- `[AFTER ATTACKERS DECLARED]` — attackers are declared, blockers haven't been chosen yet. Instant window — cast pump spells on attackers, removal on blockers.
+- `[AFTER BLOCKERS DECLARED]` — blockers chosen, before damage. Instant window — cast pump spells, removal, etc.
+- `[UPKEEP]`, `[DRAW]`, `[END STEP]` — utility steps. Usually pass unless you have a specific instant to cast (e.g. removing a creature at end of turn so you don't expose your own removal).
+- `[OPPONENT'S TURN: <step>]` — it's the opponent's turn and you have priority. You can cast instants and activate abilities.
+- `[RESPOND TO <controller>'s <spell>]` — something is on the stack waiting to resolve. You can pass to let it resolve, or respond with an instant/ability (e.g. Counterspell).
+
+**Action list** (final line): numbered options separated by spaces, like `0:Pass 1:Tap Forest 2:Cast Kalonian Tusker (tap 2x Forest) 3:Concede`. Pick one by its index.
+
+## London mulligan
+
+At the start of the game you'll be asked two kinds of decisions before turn 1:
+
+1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand (numbered with mana costs and P/T). Respond with `{"thoughts": "...", "mull": true|false}` — `true` to mulligan (shuffle and redraw seven), `false` to keep. This is the London mulligan: you always draw exactly seven, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. House rule: capped at mull-to-4, so after three mulligans you are forced to keep. Tips: mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
+2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`. You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Respond with `{"thoughts": "...", "bottom_indices": [0, 3, 5]}`. Bottom your weakest cards (extra lands if flooded, expensive bombs you can't cast yet, dead cards vs the matchup). Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
+
+## Key rules
+
+- **Auto-tap**: When you pick a `Cast [spell]` option, the engine taps the right lands for you automatically. The action label shows which lands will be tapped, e.g. `Cast Doom Blade (tap Swamp, Swamp)`. You almost never need to tap lands manually before casting.
+- **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
+- **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
+- **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
+- **Land drops**: One land per turn, only during your main phase.
+- **Sorcery speed**: Sorceries, creatures, enchantments, artifacts can only be cast during YOUR main phase with an empty stack.
+- **Instant speed**: Instants can be cast anytime you have priority — your turn, opponent's turn, during combat, in response to spells.
+- **Summoning sickness**: Creatures with `[S]` can't attack or use tap-abilities the turn they enter. Goes away on your next untap.
+- **Targeting**: Targeted spells show their chosen target inline (e.g. `Cast Lightning Bolt → Goblin Piker 2/1`). For spells with choices, you'll get a follow-up target prompt.
+- **Win condition**: Reduce opponent to 0 life. Combat damage from unblocked creatures is the main path.
 
 ## Keyword abilities
-Creatures display their keyword abilities after P/T (e.g. "Abbey Griffin 2/2 flying, vigilance"). The P/T shown is always the creature's CURRENT effective stats including bonuses from auras, counters, and anthem effects.
 
-Key keywords and their combat implications:
-- **flying**: Can only be blocked by creatures with flying or reach. Very important for combat!
-- **reach**: Can block creatures with flying (but doesn't grant flying).
+Creatures display their keywords after P/T (e.g. `Abbey Griffin 2/2 flying, vigilance`). Combat-relevant keywords:
+
+- **flying**: Only blocked by flying or reach. Huge in combat.
+- **reach**: Can block flying (doesn't grant flying).
 - **deathtouch**: Any damage it deals to a creature destroys it. A 1/1 deathtouch kills a 10/10.
-- **first strike**: Deals combat damage before creatures without first/double strike. Can kill a blocker before it hits back.
-- **double strike**: Deals first strike AND normal combat damage.
-- **lifelink**: Damage dealt also gains that much life for the controller. Affects race calculations.
-- **trample**: Excess combat damage carries over to the defending player when blocked.
-- **vigilance**: Doesn't tap when attacking — can still block next turn.
-- **hexproof**: Can't be targeted by opponent's spells or abilities. Don't waste removal on it!
+- **first strike**: Deals damage before non-first-strike creatures. Can kill a blocker before it hits back.
+- **double strike**: Deals first strike AND normal damage.
+- **lifelink**: Damage dealt = life gained. Changes race math.
+- **trample**: Excess damage hits the defending player.
+- **vigilance**: Doesn't tap when attacking — can still block.
+- **hexproof**: Can't be targeted by opponent's spells/abilities. Don't waste removal on it.
 - **defender**: Can't attack.
-- **intimidate**: Can only be blocked by artifact creatures or creatures sharing a color.
-- **menace**: Must be blocked by two or more creatures.
-- **haste**: Can attack the turn it enters (no summoning sickness).
+- **intimidate**: Only blocked by artifact creatures or creatures sharing a color.
+- **menace**: Must be blocked by 2+ creatures.
+- **haste**: Can attack the turn it enters (ignores summoning sickness).
 - **indestructible**: Can't be destroyed by damage or destroy effects.
 
 ## Flashback
-Cards with flashback can be cast from your graveyard for their flashback cost. After resolving, they are exiled (not returned to graveyard). Look for "Flashback" in the action list — these are graveyard casts. The engine auto-taps for flashback too.
+
+Cards with flashback can be cast from your graveyard for their flashback cost. After resolving they're exiled. Look for `Flashback <card>` in the action list. The engine auto-taps for flashback costs.
 
 ## Strategy tips
-- Save instants for combat! Giant Growth during DeclareBlockers makes your 2/2 into a 5/5. Lightning Bolt during DeclareAttackers can kill a would-be blocker.
-- Don't cast Giant Growth during your main phase — it wears off at end of turn and wastes it if there's no combat.
-- Use removal (Doom Blade, Swords, Lightning Bolt) on your opponent's biggest creatures, especially before they attack you.
-- Cast creatures and play lands during PrecombatMain. Use PostcombatMain for spells you want to cast after seeing how combat went.
-- Don't tap lands unless you have something to cast with the mana. Tapping 1 land when you need 2 for a spell just wastes it.
-- TAP THE RIGHT COLORS! Look at the costs of cards in your hand. If you need {G}{G}, tap Forests not Mountains. If you need {1}{R}, tap one Mountain and one of anything. The action list shows "Tap Forest" vs "Tap Mountain" — pick the ones matching your spell's colored requirements first.
 
-## CRITICAL RULE: Only tap lands during PrecombatMain or PostcombatMain
+- **Save instants for combat**: Giant Growth on a blocked attacker during `[AFTER ATTACKERS DECLARED]` or `[AFTER BLOCKERS DECLARED]` swings combat math. Lightning Bolt on a would-be blocker right before blockers are declared can clear the way.
+- **Giant Growth in main phase is usually a waste**: It's a temporary +3/+3 that wears off at end of turn. Cast it during combat where it actually does work.
+- **Removal targets**: Spend removal (Doom Blade, Swords, Lightning Bolt) on the opponent's biggest threats, ideally before they attack you. Don't bolt face when there's a 4/4 threatening lethal next turn.
+- **Main phase order**: Play lands and cast creatures during `[MAIN PHASE 1]`. Use `[MAIN PHASE 2]` for spells you want to cast after seeing combat (e.g. casting a creature you held back as a blocker).
+- **Don't tap lands you can't use**: Tapping 1 land when you need 2 wastes it. Tapping during a step where you have nothing to cast also wastes it.
+- **Tap the right colors**: If a spell needs `{G}{G}`, tap Forests not Mountains. The action list often shows separate `Tap Forest` vs `Tap Mountain` options — match the colored requirements first.
+- **Counterspell timing**: Hold counter mana up on your opponent's turn so you can react to their threats. Don't tap out before they get a chance to play.
 
-The step name is shown at the top of every prompt (e.g. "T3 PrecombatMain", "T3 Upkeep", "T3 Draw").
-Mana pools empty between EVERY step. If you tap during Upkeep, Draw, BeginCombat, EndStep, or any non-main step, the mana disappears before you can use it and your lands are tapped for nothing.
+## Examples
 
-EXCEPTION: You MAY tap lands during combat steps (DeclareAttackers, DeclareBlockers) to cast instants like Lightning Bolt or Giant Growth. This is useful for removing blockers or pumping attackers.
-
-## Mistake example: Tapping during Upkeep or Draw
+### Example: main phase, build mana and cast a creature
 
 ```
-T3 Upkeep You:20hp Opp:20hp,6cards
-Your board: 2xForest
-0:Pass 1:Tap Forest 2:Tap Forest 3:Concede
-```
-If you answer 1 here (tap Forest), you get {G} in your pool. But when Upkeep ends and Draw begins, YOUR MANA POOL EMPTIES. By the time you reach PrecombatMain, the mana is gone and your lands are tapped for nothing.
-Answer: 0
+Recent events:
+p0 drew a card
 
-Same applies to Draw step — don't tap unless you have an instant to cast RIGHT NOW.
+Turn 3 - Main 1 (your turn)
+You: 20hp, 6cards, 31lib, 0gy, 0exile
+Opp: 20hp, 6cards, 32lib, 0gy, 0exile
+Your board: 2x Forest
+Hand: Forest, Kalonian Tusker {G}{G} 3/3, Kalonian Tusker {G}{G} 3/3, Lightning Bolt {R}
+[MAIN PHASE 1]
 
-## Correct example: Full main phase sequence
+0:Pass 1:Tap Forest 2:Tap Forest 3:Play Forest 4:Cast Kalonian Tusker (tap 2x Forest) 5:Concede
+```
+**Pick 4** — auto-tap handles mana, just cast directly. Don't bother with Tap Forest manually.
 
-```
-T3 PrecombatMain You:20hp Opp:20hp,6cards
-Your board: 2xForest
-Hand: Kalonian Tusker{G}{G} 3/3, Forest, Forest
-0:Pass 1:Tap Forest 2:Tap Forest 3:Play Forest 4:Play Forest 5:Concede
-```
-Answer: 1 (tap Forest → {G})
+### Example: utility step, nothing to do
 
 ```
-T3 PrecombatMain You:20hp Opp:20hp,6cards
-Pool: {Green: 1}
-Your board: 2xForest(1tapped)
-Hand: Kalonian Tusker{G}{G} 3/3, Forest, Forest
-0:Pass 1:Tap Forest 2:Play Forest 3:Play Forest 4:Concede
+Recent events:
+Step: Upkeep
+
+Turn 4 - Upkeep (your turn)
+You: 20hp, 5cards, 30lib, 0gy, 0exile
+Opp: 20hp, 6cards, 32lib, 0gy, 0exile
+Your board: 3x Forest, Kalonian Tusker 3/3
+Hand: Forest, Lightning Bolt {R}
+[UPKEEP]
+
+0:Pass 1:Tap Forest 2:Tap Forest 3:Tap Forest 4:Concede
 ```
-Answer: 1 (tap Forest → {G}{G})
+**Pick 0** — no instants you want to cast right now. Tapping a Forest in Upkeep just wastes it (mana pool empties when Upkeep ends).
+
+### Example: combat trick after attackers are declared
 
 ```
-T3 PrecombatMain You:20hp Opp:20hp,6cards
-Pool: {Green: 2}
-Your board: 2xForest(tapped)
-Hand: Kalonian Tusker{G}{G} 3/3, Forest, Forest
-0:Pass 1:Cast Kalonian Tusker 2:Play Forest 3:Play Forest 4:Concede
-```
-Answer: 1 (cast!)
+Recent events:
+p0 declared attackers: Grizzly Bears (#27)
 
-## Correct example: Using an instant during combat
+Turn 5 - Declare Attackers (your turn)
+You: 20hp, 4cards, 28lib, 1gy, 0exile
+Opp: 18hp, 5cards, 29lib, 0gy, 0exile
+Your board: 2x Forest, Grizzly Bears 2/2 [T]
+Opp board: 2x Plains, Savannah Lions 2/1
+Hand: Giant Growth {G}
+[AFTER ATTACKERS DECLARED]
 
+0:Pass 1:Tap Forest 2:Cast Giant Growth (tap Forest) 3:Concede
 ```
-T5 DeclareBlockers You:20hp Opp:18hp,4cards
-Pool: {Green: 1}
-Your board: 2xForest(1tapped), Grizzly Bears 2/2[T]
-Opp board: 2xPlains, Savannah Lions 2/1
-Hand: Giant Growth{G}
-Attackers: 0:Grizzly Bears 2/2
-0:Pass 1:Cast Giant Growth → Grizzly Bears 2/2 2:Concede
-```
-Answer: 1 (pump your attacking creature to 5/5 before blockers deal damage!)
+**Pick 2** — cast Giant Growth on your attacking Bears. After it resolves they're 5/5, so even if Savannah Lions blocks, the Bears survive (5 toughness vs 2 power) and trade up.
 
-## Correct example: Declare attackers
+### Example: respond to opponent's spell
 
 ```
-T5 DeclareAttackers You:20hp Opp:20hp,5cards
-Your board: 3xForest(tapped), Kalonian Tusker 3/3, Kalonian Tusker 3/3
-Opp board: 2xMountain, Goblin Piker 2/1
+Recent events:
+p1 cast Lightning Bolt (#41) targeting Kalonian Tusker (#30)
+
+Turn 5 - Main 1 (opp's turn)
+You: 20hp, 5cards, 28lib, 1gy, 0exile
+Opp: 18hp, 4cards, 29lib, 1gy, 0exile
+Your board: 3x Island, Kalonian Tusker 3/3
+Stack: Lightning Bolt targeting Kalonian Tusker (your) (opp's)
+Hand: Counterspell {U}{U}, Island
+[RESPOND TO p1's Lightning Bolt]
+
+0:Pass 1:Tap Island 2:Tap Island 3:Tap Island 4:Cast Counterspell (tap 2x Island) 5:Concede
+```
+**Pick 4** — counter the Bolt to save your 3/3. The Tusker would die to 3 damage.
+
+### Example: declare attackers
+
+```
+Recent events:
+Step: Declare Attackers
+
+Turn 6 - Declare Attackers (your turn)
+You: 20hp, 5cards, 28lib, 0gy, 0exile
+Opp: 14hp, 5cards, 29lib, 1gy, 0exile
+Your board: 3x Forest, Kalonian Tusker 3/3, Kalonian Tusker 3/3
+Opp board: 2x Mountain, Goblin Piker 2/1
 Choose attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
 Respond with attacker_indices (list of numbers 0-1), or empty list for none.
 ```
-attacker_indices: [0, 1] (attack with both 3/3s — opponent's 2/1 can only block one)
+**Respond `{"attacker_indices": [0, 1]}`** — attack with both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
 
-## Correct example: Declare blockers
+### Example: declare blockers
 
 ```
-T6 DeclareBlockers You:17hp Opp:20hp,5cards
-Your board: 3xMountain, Goblin Piker 2/1, Goblin Piker 2/1
-Opp board: 3xForest(tapped), Kalonian Tusker 3/3[T], Kalonian Tusker 3/3[T]
+Recent events:
+p0 declared attackers: Kalonian Tusker (#30), Kalonian Tusker (#31)
+
+Turn 6 - Declare Blockers (opp's turn)
+You: 17hp, 5cards, 27lib, 0gy, 0exile
+Opp: 14hp, 4cards, 28lib, 0gy, 0exile
+Your board: 3x Mountain, Goblin Piker 2/1, Goblin Piker 2/1
+Opp board: 3x Forest (tapped), Kalonian Tusker 3/3 [T], Kalonian Tusker 3/3 [T]
 Attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
-Your blockers: 0:Goblin Piker 2/1 (your) 1:Goblin Piker 2/1 (your)
-Respond with blocker_assignments: list of {"blocker": N, "attacker": N} pairs, or empty list for no blocks.
+Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
+For each blocker, respond with the attacker index to block, or -1 for no block.
 ```
-blocker_assignments: [{"blocker": 0, "attacker": 0}, {"blocker": 1, "attacker": 1}]
-(Block both. Your 2/1s die but prevent 6 damage.)
+**Respond `{"0": 0, "1": 1}`** — chump-block both Tuskers. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
 "#;
 
 /// Backend trait for LLM API communication.
@@ -215,42 +313,25 @@ trait LlmBackend {
     fn conversation_len(&self) -> usize { 0 }
     /// Get the system prompt (for tests).
     fn system_prompt(&self) -> &str;
+    /// Get the model identifier.
+    fn model_name(&self) -> &str;
+    /// Return and clear the thinking text from the last API call, if any.
+    fn take_thinking(&mut self) -> Option<String> { None }
 }
 
-const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering. Respond with ONLY your choice. No explanation, no reasoning, just the answer.
-
-## Response format
-- Action selection: a single number (e.g. "3")
-- Choosing attackers: space-separated numbers, "all", or "none"
-- Choosing blockers: "blocker:attacker" pairs (e.g. "0:0 1:2"), or "none"
-
-You may briefly reason about your decision. Your FINAL LINE must be ONLY your answer — a single number, space-separated numbers, "all", or "none". Nothing else on that line.
-
-Example response for action selection:
-I should tap my Forest to build toward casting Kalonian Tusker next action.
-ANSWER: 1
-
-Example response for attackers:
-I have two 3/3s and opponent has no blockers. Attack with everything.
-ANSWER: all
-
-Example response for blockers:
-Block the 3/3 with my 2/1 to prevent damage.
-ANSWER: 0:0
-
-The system parses ONLY the last line. If the last line isn't a valid number/format, you default to passing.
-
-"#;
+const ANTHROPIC_RESPONSE_FORMAT: &str = "You are playing Magic: The Gathering. You will respond with structured JSON.\n\n";
 
 const GEMINI_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering.
 
-You will respond with structured JSON. The schema changes depending on the prompt:
+You will respond with structured JSON. The schema changes depending on the prompt. Every response includes a "thoughts" field — use it to summarize your private reasoning about the game state and why you chose this action.
 
 1. **Action selection**: {"thoughts": "...", "action": N} — pick the 0-indexed action number.
 2. **Declare attackers**: {"thoughts": "...", "attacker_indices": [0, 1, 2]} — list of creature indices to attack with (empty for none).
-3. **Declare blockers**: {"thoughts": "...", "blocker_assignments": [{"blocker": 0, "attacker": 0}]} — list of blocker-attacker pairs (empty for no blocks).
+3. **Declare blockers**: {"thoughts": "...", "0": 1, "1": -1} — for each blocker index, the attacker index to block (-1 for no block).
 4. **Choose targets**: {"thoughts": "...", "target_indices": [0]} — list of target indices to select.
 5. **Confirm concede**: {"thoughts": "...", "confirm": true/false} — confirm or cancel concession.
+6. **Mulligan decision**: {"thoughts": "...", "mull": true|false} — London mulligan keep/mull on your opening hand.
+7. **Bottom cards after mulligan**: {"thoughts": "...", "bottom_indices": [0, 3, 5]} — exactly N distinct 0-indexed hand positions to bottom.
 
 "#;
 
@@ -261,6 +342,7 @@ struct AnthropicBackend {
     model: String,
     system_prompt: String,
     conversation: Vec<serde_json::Value>,
+    last_thinking: Option<String>,
 }
 
 impl AnthropicBackend {
@@ -273,10 +355,12 @@ impl AnthropicBackend {
             model: model.to_string(),
             system_prompt: format!("{}{}", ANTHROPIC_RESPONSE_FORMAT, GAME_RULES),
             conversation: Vec::new(),
+            last_thinking: None,
         }
     }
 
-    fn call_with_messages(&self, messages: &[serde_json::Value]) -> String {
+    /// Build the system prompt and messages with cache control breakpoints.
+    fn prepare_request(&self, messages: &[serde_json::Value]) -> (serde_json::Value, Vec<serde_json::Value>) {
         let system = serde_json::json!([{
             "type": "text",
             "text": self.system_prompt,
@@ -298,53 +382,175 @@ impl AnthropicBackend {
             }
         }
 
-        let body = serde_json::json!({
-            "model": self.model,
-            "max_tokens": 4096,
-            "system": system,
-            "messages": msgs
-        });
+        (system, msgs)
+    }
 
-        for attempt in 0..3 {
+    /// Send a request to the Anthropic API and return the text content.
+    /// Scans content blocks for thinking (logged) and text (returned).
+    fn call_api(&mut self, body: &serde_json::Value) -> String {
+        const MAX_ATTEMPTS: u32 = 3;
+        for attempt in 0..MAX_ATTEMPTS {
             if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt as u32));
+                let delay = std::time::Duration::from_secs(2u64.pow(attempt));
                 std::thread::sleep(delay);
             }
 
+            let started = std::time::Instant::now();
             let response = self.client
                 .post("https://api.anthropic.com/v1/messages")
                 .header("x-api-key", &self.api_key)
                 .header("anthropic-version", "2023-06-01")
                 .header("content-type", "application/json")
-                .json(&body)
+                .timeout(std::time::Duration::from_secs(120))
+                .json(body)
                 .send();
+            let elapsed_ms = started.elapsed().as_millis();
 
             match response {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         let json: serde_json::Value = resp.json().unwrap_or_default();
                         record_anthropic_llm_usage(&self.model, &json);
-                        return json["content"][0]["text"]
-                            .as_str()
-                            .unwrap_or("0")
-                            .trim()
-                            .to_string();
+                        self.last_thinking = None;
+                        let mut text_content = String::from("0");
+                        if let Some(content) = json["content"].as_array() {
+                            for block in content {
+                                match block["type"].as_str() {
+                                    Some("thinking") => {
+                                        if let Some(thinking) = block["thinking"].as_str() {
+                                            self.last_thinking = Some(thinking.to_string());
+                                        }
+                                    }
+                                    Some("text") => {
+                                        if let Some(text) = block["text"].as_str() {
+                                            text_content = text.trim().to_string();
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        return text_content;
                     }
                     let code = resp.status().as_u16();
+                    let text = resp.text().unwrap_or_default();
+                    let snippet = &text[..text.len().min(200)];
                     if code == 529 || code == 429 {
+                        let msg = format!(
+                            "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
+                            code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
+                        );
+                        eprintln!("{}", msg);
+                        crate::game_log::write(file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
-                    let text = resp.text().unwrap_or_default();
-                    eprintln!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
+                    let msg = format!(
+                        "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
+                        code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
+                    );
+                    eprintln!("{}", msg);
+                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                     return "0".to_string();
                 }
                 Err(e) => {
-                    eprintln!("Request failed: {}", e);
+                    let msg = format!(
+                        "Anthropic request failed (attempt {}/{}, {}ms): {}",
+                        attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
+                    );
+                    eprintln!("{}", msg);
+                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                     continue;
                 }
             }
         }
         "0".to_string()
+    }
+
+    fn call_with_messages(&mut self, messages: &[serde_json::Value]) -> String {
+        let (system, msgs) = self.prepare_request(messages);
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": 8192,
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 4096
+            },
+            "system": system,
+            "messages": msgs,
+            "output_config": {
+                "format": {
+                    "type": "json_schema",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "action": {"type": "integer"}
+                        },
+                        "required": ["action"],
+                        "additionalProperties": false
+                    }
+                }
+            }
+        });
+        self.call_api(&body)
+    }
+
+    /// Transform a JSON schema to be Anthropic-compatible:
+    /// - Add "additionalProperties": false to all objects
+    /// - Strip unsupported numeric constraints (minimum, maximum, multipleOf)
+    /// - Strip "thoughts" field — reasoning happens in thinking blocks
+    fn sanitize_schema(value: &serde_json::Value) -> serde_json::Value {
+        match value {
+            serde_json::Value::Object(map) => {
+                let mut new_map = serde_json::Map::new();
+                for (key, val) in map {
+                    // Strip unsupported numeric constraints.
+                    if key == "minimum" || key == "maximum" || key == "multipleOf" {
+                        continue;
+                    }
+                    new_map.insert(key.clone(), Self::sanitize_schema(val));
+                }
+                // Add additionalProperties: false to object types.
+                if new_map.get("type").and_then(|t| t.as_str()) == Some("object") {
+                    new_map.entry("additionalProperties".to_string())
+                        .or_insert(serde_json::Value::Bool(false));
+                    // Strip "thoughts" — thinking blocks provide reasoning.
+                    if let Some(props) = new_map.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                        props.remove("thoughts");
+                    }
+                    if let Some(req) = new_map.get_mut("required").and_then(|r| r.as_array_mut()) {
+                        req.retain(|v| v.as_str() != Some("thoughts"));
+                    }
+                }
+                serde_json::Value::Object(new_map)
+            }
+            serde_json::Value::Array(arr) => {
+                serde_json::Value::Array(arr.iter().map(Self::sanitize_schema).collect())
+            }
+            other => other.clone(),
+        }
+    }
+
+    fn call_with_messages_structured(&mut self, messages: &[serde_json::Value], schema: &serde_json::Value) -> serde_json::Value {
+        let (system, msgs) = self.prepare_request(messages);
+        let sanitized = Self::sanitize_schema(schema);
+        let body = serde_json::json!({
+            "model": self.model,
+            "max_tokens": 8192,
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 4096
+            },
+            "system": system,
+            "messages": msgs,
+            "output_config": {
+                "format": {
+                    "type": "json_schema",
+                    "schema": sanitized
+                }
+            }
+        });
+        let text = self.call_api(&body);
+        serde_json::from_str(&text).unwrap_or_else(|_| serde_json::json!({}))
     }
 }
 
@@ -352,7 +558,21 @@ impl LlmBackend for AnthropicBackend {
     fn send(&mut self, message: &str) -> String {
         self.conversation.push(serde_json::json!({"role": "user", "content": message}));
         let result = self.call_with_messages(&self.conversation.clone());
-        self.conversation.push(serde_json::json!({"role": "assistant", "content": result}));
+        self.conversation.push(serde_json::json!({"role": "assistant", "content": &result}));
+        // Extract action number from JSON response (e.g. {"action":1} → "1").
+        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&result) {
+            if let Some(action) = parsed["action"].as_u64() {
+                return action.to_string();
+            }
+        }
+        result
+    }
+
+    fn send_with_schema(&mut self, message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        self.conversation.push(serde_json::json!({"role": "user", "content": message}));
+        let result = self.call_with_messages_structured(&self.conversation.clone(), schema);
+        let result_str = serde_json::to_string(&result).unwrap_or_default();
+        self.conversation.push(serde_json::json!({"role": "assistant", "content": result_str}));
         result
     }
 
@@ -376,6 +596,14 @@ impl LlmBackend for AnthropicBackend {
     fn system_prompt(&self) -> &str {
         &self.system_prompt
     }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn take_thinking(&mut self) -> Option<String> {
+        self.last_thinking.take()
+    }
 }
 
 /// Gemini backend using the Interactions API with server-managed conversation state.
@@ -386,6 +614,7 @@ struct GeminiBackend {
     thinking_level: Option<String>,
     system_prompt: String,
     interaction_id: Option<String>,
+    last_thinking: Option<String>,
 }
 
 impl GeminiBackend {
@@ -399,6 +628,7 @@ impl GeminiBackend {
             thinking_level: None,
             system_prompt: format!("{}{}", GEMINI_RESPONSE_FORMAT, GAME_RULES),
             interaction_id: None,
+            last_thinking: None,
         }
     }
 
@@ -428,18 +658,22 @@ impl GeminiBackend {
             self.api_key
         );
 
+        const MAX_ATTEMPTS: u32 = 6;
         let mut fresh_retry = false;
-        for attempt in 0..6 {
+        for attempt in 0..MAX_ATTEMPTS {
             if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4) as u32));
+                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4)));
                 std::thread::sleep(delay);
             }
 
+            let started = std::time::Instant::now();
             let response = self.client
                 .post(&url)
                 .header("content-type", "application/json")
+                .timeout(std::time::Duration::from_secs(120))
                 .json(&body)
                 .send();
+            let elapsed_ms = started.elapsed().as_millis();
 
             match response {
                 Ok(resp) => {
@@ -463,27 +697,33 @@ impl GeminiBackend {
                         }
 
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
-                            if let Some(thoughts) = parsed["thoughts"].as_str() {
-                                crate::game_log::write(file!(), line!(), "GEMINI_THOUGHT", thoughts);
-                            }
+                            self.last_thinking = parsed["thoughts"].as_str().map(|s| s.to_string());
                             return parsed;
                         }
 
-                        eprintln!("WARN: Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
+                        let msg = format!("Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
+                        eprintln!("WARN: {}", msg);
+                        crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                         return serde_json::json!({});
                     }
 
                     let code = resp.status().as_u16();
+                    let text = resp.text().unwrap_or_default();
+                    let snippet = &text[..text.len().min(200)];
                     if code == 429 || code == 503 || code == 529 {
-                        if let Ok(err_text) = resp.text() {
-                            eprintln!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
-                        }
+                        let msg = format!(
+                            "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
+                            code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
+                        );
+                        eprintln!("{}", msg);
+                        crate::game_log::write(file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
-                    let text = resp.text().unwrap_or_default();
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
-                        eprintln!("WARN: Invalid interaction ID, falling back to fresh conversation");
+                        let msg = "Invalid interaction ID, falling back to fresh conversation";
+                        eprintln!("WARN: {}", msg);
+                        crate::game_log::write(file!(), line!(), "API_WARN", msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
                         self.interaction_id = None;
@@ -492,19 +732,33 @@ impl GeminiBackend {
                     }
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
-                        eprintln!("FATAL: Gemini config error: {}", &text[..text.len().min(300)]);
+                        let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
+                        eprintln!("FATAL: {}", msg);
+                        crate::game_log::write(file!(), line!(), "API_FATAL", &msg);
                         std::process::exit(1);
                     }
-                    eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
+                    let msg = format!(
+                        "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
+                        code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
+                    );
+                    eprintln!("{}", msg);
+                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                     return serde_json::json!({});
                 }
                 Err(e) => {
-                    eprintln!("Request failed: {}", e);
+                    let msg = format!(
+                        "Gemini request failed (attempt {}/{}, {}ms): {}",
+                        attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
+                    );
+                    eprintln!("{}", msg);
+                    crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                     continue;
                 }
             }
         }
-        eprintln!("WARN: Gemini API exhausted all retries");
+        let msg = format!("Gemini API exhausted all {} retries", MAX_ATTEMPTS);
+        eprintln!("WARN: {}", msg);
+        crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
         serde_json::json!({})
     }
 
@@ -549,11 +803,18 @@ impl LlmBackend for GeminiBackend {
     fn system_prompt(&self) -> &str {
         &self.system_prompt
     }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    fn take_thinking(&mut self) -> Option<String> {
+        self.last_thinking.take()
+    }
 }
 
 pub struct LlmPlayer {
     name: String,
-    log_file: Option<String>,
     /// Index into the game log — tracks which log entries have been sent.
     last_log_index: usize,
     /// Provider-specific API backend.
@@ -564,7 +825,6 @@ impl LlmPlayer {
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            log_file: None,
             last_log_index: 0,
             backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
         }
@@ -573,7 +833,6 @@ impl LlmPlayer {
     pub fn new_gemini(name: &str) -> Self {
         Self {
             name: name.to_string(),
-            log_file: None,
             last_log_index: 0,
             backend: Box::new(GeminiBackend::new("gemini-2.5-flash")),
         }
@@ -598,12 +857,6 @@ impl LlmPlayer {
         // Since with_model already creates the right backend type, we just
         // need to set thinking level on it.
         self.backend.set_thinking_level(level);
-        self
-    }
-
-    pub fn with_log(mut self, path: &str) -> Self {
-        let _ = std::fs::write(path, "");
-        self.log_file = Some(path.to_string());
         self
     }
 
@@ -704,18 +957,14 @@ impl LlmPlayer {
         self.last_log_index
     }
 
+    /// Get the model identifier (e.g. "claude-sonnet-4-6", "gemini-2.5-flash").
+    pub fn model_name(&self) -> &str {
+        self.backend.model_name()
+    }
+
     fn log(&self, label: &str, content: &str) {
         let full_label = format!("{} [{}]", label, self.name);
         crate::game_log::write(file!(), line!(), &full_label, content);
-
-        // Also write to per-player log file if configured (for mtg-runner backward compat)
-        if let Some(path) = &self.log_file {
-            if let Ok(mut f) = OpenOptions::new().append(true).create(true).open(path) {
-                let _ = writeln!(f, "=== {} [{}] ===", label, self.name);
-                let _ = writeln!(f, "{}", content);
-                let _ = writeln!(f);
-            }
-        }
     }
 
     /// Check if the AI should auto-pass (nothing interesting to do).
@@ -1171,10 +1420,18 @@ impl LlmPlayer {
             .unwrap_or_else(|| format!("{}", id))
     }
 
+    /// Log thinking from the last backend call, if any.
+    fn log_thinking(&mut self) {
+        if let Some(thinking) = self.backend.take_thinking() {
+            self.log("THOUGHT", &thinking);
+        }
+    }
+
     /// Send a message with a custom JSON response schema, returning parsed JSON.
     fn send_message_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
         self.log("PROMPT", user_message);
         let result = self.backend.send_with_schema(user_message, schema);
+        self.log_thinking();
         self.log("RESPONSE", &result.to_string());
         result
     }
@@ -1184,6 +1441,7 @@ impl LlmPlayer {
     fn send_message(&mut self, user_message: &str) -> String {
         self.log("PROMPT", user_message);
         let result = self.backend.send(user_message);
+        self.log_thinking();
         self.log("RESPONSE", &result);
         result
     }
@@ -1217,6 +1475,7 @@ impl LlmPlayer {
     fn call_api(&mut self, user_message: &str) -> String {
         self.log("PROMPT", user_message);
         let result = self.backend.send(user_message);
+        self.log_thinking();
         self.log("RESPONSE", &result);
         result
     }
@@ -1331,6 +1590,16 @@ impl Player for LlmPlayer {
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
+
+        // London mulligan keep/mull decision.
+        if legal_actions.iter().any(|a| matches!(a, Action::MulliganKeep)) {
+            return self.choose_mulligan(view, legal_actions);
+        }
+        // London mulligan bottoming decision.
+        if matches!(legal_actions.first(), Some(Action::BottomCards { .. })) {
+            return self.choose_mulligan_bottom(view, legal_actions);
+        }
+
         // Auto-pass when there's nothing interesting to do.
         if Self::should_auto_pass(view, legal_actions) {
             self.log("AUTO-PASS", &format!("Step: {:?}, active: p#{}", view.step, view.active_player.0));
@@ -1427,18 +1696,161 @@ impl Player for LlmPlayer {
             }
         }
     }
-
-    fn choose_cards_to_bottom(
-        &mut self,
-        _view: &GameView,
-        hand: &[mtg_engine::view::CardView],
-        count: usize,
-    ) -> Vec<ObjectId> {
-        hand.iter().take(count).map(|c| c.object_id).collect()
-    }
 }
 
 impl LlmPlayer {
+    /// Format a card for the mulligan prompt: `Name {cost}[ P/T]`.
+    fn format_hand_card(c: &mtg_engine::view::CardView) -> String {
+        let cost = c.cost.as_ref().map(|co| format!(" {}", co)).unwrap_or_default();
+        let pt = match (c.power, c.toughness) {
+            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+            _ => String::new(),
+        };
+        format!("{}{}{}", c.name, cost, pt)
+    }
+
+    /// Decide keep or mulligan for the London opening-hand phase.
+    /// Sends a structured-JSON prompt with the current hand and the
+    /// mulligan count. Falls back to MulliganKeep on malformed responses.
+    fn choose_mulligan(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
+        let mull_allowed = legal_actions.iter().any(|a| matches!(a, Action::MulliganMull));
+
+        let numbered: Vec<String> = view.your_hand.iter().enumerate()
+            .map(|(i, c)| format!("  {}: {}", i, Self::format_hand_card(c)))
+            .collect();
+        let hand_text = if numbered.is_empty() {
+            "<empty>".to_string()
+        } else {
+            numbered.join("\n")
+        };
+
+        let mut action_prompt = String::new();
+        action_prompt.push_str("[MULLIGAN DECISION]\n");
+        action_prompt.push_str("London mulligan opening hand:\n");
+        action_prompt.push_str(&hand_text);
+        action_prompt.push('\n');
+        if mull_allowed {
+            action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": true|false}. ");
+            action_prompt.push_str("If you mulligan, you draw a fresh seven but will have to put one more card on the bottom when you finally keep.\n");
+        } else {
+            action_prompt.push_str("You have reached the mulligan cap (mull-to-4). You must keep. ");
+            action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": false}.\n");
+        }
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Private reasoning about whether to keep or mulligan"},
+                "mull": {"type": "boolean", "description": "true = mulligan, false = keep"}
+            },
+            "required": ["thoughts", "mull"]
+        });
+
+        let full_prompt = self.build_prompt(view, &action_prompt);
+        let response = self.send_message_structured(&full_prompt, &schema);
+        let choice = response["mull"].as_bool();
+        match choice {
+            Some(true) if mull_allowed => {
+                self.log("CHOSE", "mulligan");
+                Action::MulliganMull
+            }
+            Some(true) => {
+                // Requested to mulligan past the cap — log and force keep.
+                self.log("MALFORMED", "Requested mulligan past cap — forcing keep");
+                Action::MulliganKeep
+            }
+            Some(false) => {
+                self.log("CHOSE", "keep");
+                Action::MulliganKeep
+            }
+            None => {
+                self.log("MALFORMED", &format!("Mulligan response missing 'mull' bool ({}), defaulting to keep", response));
+                Action::MulliganKeep
+            }
+        }
+    }
+
+    /// Decide which cards to put on the bottom after all mulligans.
+    /// Sends a structured-JSON prompt with the numbered hand and expected
+    /// count. Falls back to the first enumerated legal BottomCards option
+    /// if the response is malformed.
+    fn choose_mulligan_bottom(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
+        // Determine N from the legal actions (every option has the same
+        // length — enumerated combinations).
+        let n = match legal_actions.iter().find_map(|a| match a {
+            Action::BottomCards { cards } => Some(cards.len()),
+            _ => None,
+        }) {
+            Some(n) => n,
+            None => return legal_actions[0].clone(),
+        };
+
+        let numbered: Vec<String> = view.your_hand.iter().enumerate()
+            .map(|(i, c)| format!("  {}: {}", i, Self::format_hand_card(c)))
+            .collect();
+        let hand_text = if numbered.is_empty() {
+            "<empty>".to_string()
+        } else {
+            numbered.join("\n")
+        };
+
+        let mut action_prompt = String::new();
+        action_prompt.push_str(&format!("[BOTTOM {} CARD{} AFTER MULLIGAN]\n", n,
+            if n == 1 { "" } else { "s" }));
+        action_prompt.push_str("Your opening hand:\n");
+        action_prompt.push_str(&hand_text);
+        action_prompt.push('\n');
+        action_prompt.push_str(&format!(
+            "Respond with {{\"thoughts\": \"...\", \"bottom_indices\": [..]}} — exactly {} distinct index(es) from 0 to {}.\n",
+            n, view.your_hand.len().saturating_sub(1)));
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Private reasoning about which cards to bottom"},
+                "bottom_indices": {
+                    "type": "array",
+                    "items": {"type": "integer"},
+                    "description": format!("Exactly {} distinct 0-indexed positions in your hand to put on the bottom of your library", n)
+                }
+            },
+            "required": ["thoughts", "bottom_indices"]
+        });
+
+        let full_prompt = self.build_prompt(view, &action_prompt);
+        let response = self.send_message_structured(&full_prompt, &schema);
+
+        // Parse and validate bottom_indices.
+        let indices: Option<Vec<usize>> = response["bottom_indices"].as_array().map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_i64())
+                .filter(|i| *i >= 0)
+                .map(|i| i as usize)
+                .collect()
+        });
+        let fallback = || -> Action {
+            self.log("MALFORMED", "Invalid bottom_indices — defaulting to first legal bottom option");
+            legal_actions[0].clone()
+        };
+
+        let indices = match indices {
+            Some(v) if v.len() == n => v,
+            _ => return fallback(),
+        };
+        // Check distinct and in range.
+        let mut seen = std::collections::HashSet::new();
+        for &i in &indices {
+            if i >= view.your_hand.len() || !seen.insert(i) {
+                return fallback();
+            }
+        }
+        let cards: Vec<ObjectId> = indices.iter()
+            .map(|&i| view.your_hand[i].object_id)
+            .collect();
+        self.log("CHOSE", &format!("bottom indices {:?}", indices));
+        Action::BottomCards { cards }
+    }
+
     /// Format keyword abilities as a comma-separated lowercase string.
     fn format_keywords(keywords: &[mtg_engine::types::Keyword]) -> String {
         use mtg_engine::types::Keyword;
@@ -1504,7 +1916,6 @@ impl LlmPlayer {
                     eligible.len() - 1
                 ));
 
-                self.log("THINKING", "attackers...");
                 let full_prompt = self.build_prompt(view, &combat_text);
 
                 let schema = serde_json::json!({
@@ -1521,7 +1932,6 @@ impl LlmPlayer {
                 });
 
                 let response = self.send_message_structured(&full_prompt, &schema);
-                self.log("ATTACKERS", &response.to_string());
 
                 let mut indices: Vec<usize> = response["attacker_indices"]
                     .as_array()
@@ -1550,68 +1960,145 @@ impl LlmPlayer {
                 Action::DeclareAttackers { attackers }
             }
 
-            CombatPrompt::ChooseBlockers { eligible_blockers, attackers } => {
-                if eligible_blockers.is_empty() || attackers.is_empty() {
-                    return Action::DeclareBlockers { assignments: vec![] };
-                }
-
-                let mut combat_text = String::from("Attackers: ");
-                for (i, &id) in attackers.iter().enumerate() {
-                    combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
-                }
-                combat_text.push_str("\nYour blockers: ");
-                for (i, &id) in eligible_blockers.iter().enumerate() {
-                    let owner = if view.battlefield.iter().any(|p| p.object_id == id && p.controller == view.you) {
-                        "your"
-                    } else {
-                        "opponent's"
-                    };
-                    combat_text.push_str(&format!("{}:{} ({}) ", i, Self::format_combat_creature(view, id), owner));
-                }
-                combat_text.push_str("\nRespond with blocker_assignments: list of {\"blocker\": N, \"attacker\": N} pairs, or empty list for no blocks.");
-
-                self.log("THINKING", "blockers...");
-                let full_prompt = self.build_prompt(view, &combat_text);
-
-                let schema = serde_json::json!({
-                    "type": "object",
-                    "properties": {
-                        "thoughts": {"type": "string", "description": "Brief reasoning about blocking decisions"},
-                        "blocker_assignments": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "blocker": {"type": "integer", "minimum": 0, "description": "Index of your blocking creature"},
-                                    "attacker": {"type": "integer", "minimum": 0, "description": "Index of the attacking creature to block"}
-                                },
-                                "required": ["blocker", "attacker"]
-                            },
-                            "description": "List of blocker-attacker pairs (empty for no blocks)"
-                        }
-                    },
-                    "required": ["thoughts", "blocker_assignments"]
-                });
-
-                let response = self.send_message_structured(&full_prompt, &schema);
-                self.log("BLOCKERS", &response.to_string());
-
-                let assignments = response["blocker_assignments"]
-                    .as_array()
-                    .map(|arr| arr.iter()
-                        .filter_map(|pair| {
-                            let b = pair["blocker"].as_u64()? as usize;
-                            let a = pair["attacker"].as_u64()? as usize;
-                            if b < eligible_blockers.len() && a < attackers.len() {
-                                Some((eligible_blockers[b], attackers[a]))
-                            } else {
-                                None
-                            }
-                        })
-                        .collect())
-                    .unwrap_or_default();
-                Action::DeclareBlockers { assignments }
+            CombatPrompt::ChooseBlockers { eligible_blockers, attackers, legal_blocks } => {
+                self.choose_blockers_structured(view, eligible_blockers, attackers, legal_blocks)
             }
         }
+    }
+
+    /// Validate blocker assignments and return a list of error messages.
+    /// Returns an empty vec if assignments are valid.
+    fn validate_blocker_assignments(
+        view: &GameView,
+        assignments: &[(ObjectId, ObjectId)],
+        attackers: &[ObjectId],
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
+
+        // Menace: if an attacker with menace is blocked, it must have 2+ blockers.
+        use mtg_engine::types::Keyword;
+        let mut blocker_counts: std::collections::HashMap<ObjectId, Vec<ObjectId>> = std::collections::HashMap::new();
+        for &(blocker, attacker) in assignments {
+            blocker_counts.entry(attacker).or_default().push(blocker);
+        }
+        for (att_idx, &attacker_id) in attackers.iter().enumerate() {
+            if let Some(attacker) = view.battlefield.iter().find(|p| p.object_id == attacker_id) {
+                if attacker.keywords.contains(&Keyword::Menace) {
+                    if let Some(blockers) = blocker_counts.get(&attacker_id) {
+                        if blockers.len() == 1 {
+                            errors.push(format!(
+                                "Attacker {} ({}) has MENACE and must be blocked by at least 2 creatures, but you only assigned 1 blocker. Either assign more blockers to it or set all blockers to -1 (don't block it at all).",
+                                att_idx, Self::format_combat_creature(view, attacker_id)
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        errors
+    }
+
+    /// Declare blockers using structured output with per-blocker integer enum
+    /// constraints and a validation retry loop.
+    fn choose_blockers_structured(
+        &mut self,
+        view: &GameView,
+        eligible_blockers: &[ObjectId],
+        attackers: &[ObjectId],
+        legal_blocks: &std::collections::HashMap<ObjectId, Vec<ObjectId>>,
+    ) -> Action {
+        if eligible_blockers.is_empty() || attackers.is_empty() {
+            return Action::DeclareBlockers { assignments: vec![] };
+        }
+
+        // Build per-blocker integer enum of legal attacker indices.
+        // -1 means "don't block".
+        let mut schema_properties = serde_json::json!({
+            "thoughts": {"type": "string", "description": "Brief reasoning about blocking decisions"}
+        });
+        let mut required_fields = vec!["thoughts".to_string()];
+
+        for (i, &blocker_id) in eligible_blockers.iter().enumerate() {
+            let blocker_legal = legal_blocks.get(&blocker_id);
+            let mut legal_indices: Vec<serde_json::Value> = attackers.iter()
+                .enumerate()
+                .filter(|(_, &att_id)| {
+                    blocker_legal.map_or(false, |legal| legal.contains(&att_id))
+                })
+                .map(|(idx, _)| serde_json::json!(idx))
+                .collect();
+            legal_indices.push(serde_json::json!(-1));
+
+            let key = i.to_string();
+            schema_properties[&key] = serde_json::json!({
+                "type": "integer",
+                "enum": legal_indices,
+                "description": format!("Attacker index for blocker {} to block, or -1 for no block", i)
+            });
+            required_fields.push(key);
+        }
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": schema_properties,
+            "required": required_fields
+        });
+
+        // Build combat text for the prompt.
+        let mut combat_text = String::from("Attackers: ");
+        for (i, &id) in attackers.iter().enumerate() {
+            let perm = view.battlefield.iter().find(|p| p.object_id == id);
+            let menace = perm.map_or(false, |p| p.keywords.contains(&mtg_engine::types::Keyword::Menace));
+            if menace {
+                combat_text.push_str(&format!("{}:{} (MENACE) ", i, Self::format_combat_creature(view, id)));
+            } else {
+                combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
+            }
+        }
+        combat_text.push_str("\nYour blockers: ");
+        for (i, &id) in eligible_blockers.iter().enumerate() {
+            combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
+        }
+        combat_text.push_str("\nFor each blocker, respond with the attacker index to block, or -1 for no block.");
+
+        let base_prompt = self.build_prompt(view, &combat_text);
+
+        // Retry loop with validation.
+        let max_retries = 20;
+        let mut retry_message: Option<String> = None;
+        for attempt in 0..max_retries {
+            let prompt = if let Some(ref msg) = retry_message {
+                format!("{}\n\nPREVIOUS RESPONSE WAS INVALID:\n{}\nPlease try again.", base_prompt, msg)
+            } else {
+                base_prompt.clone()
+            };
+
+            let response = self.send_message_structured(&prompt, &schema);
+
+            // Parse response into assignments.
+            let mut assignments: Vec<(ObjectId, ObjectId)> = Vec::new();
+            for (i, &blocker_id) in eligible_blockers.iter().enumerate() {
+                let key = i.to_string();
+                if let Some(att_idx) = response[&key].as_i64() {
+                    if att_idx >= 0 && (att_idx as usize) < attackers.len() {
+                        assignments.push((blocker_id, attackers[att_idx as usize]));
+                    }
+                }
+            }
+
+            // Validate.
+            let errors = Self::validate_blocker_assignments(view, &assignments, attackers);
+            if errors.is_empty() {
+                return Action::DeclareBlockers { assignments };
+            }
+
+            self.log("BLOCKER_VALIDATION", &format!("attempt {} errors: {:?}", attempt + 1, errors));
+            retry_message = Some(errors.join("\n"));
+        }
+
+        // Exhausted retries — return no blocks as safe fallback.
+        self.log("BLOCKER_VALIDATION", "exhausted retries, defaulting to no blocks");
+        Action::DeclareBlockers { assignments: vec![] }
     }
 }

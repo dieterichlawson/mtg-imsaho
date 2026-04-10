@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
 use mtg_engine::actions::{Action, CombatPrompt};
-use mtg_engine::ids::ObjectId;
 use mtg_engine::view::GameView;
 
 use crate::Player;
@@ -14,7 +13,6 @@ use crate::Player;
 pub struct ScriptedPlayer {
     name: String,
     actions: VecDeque<Action>,
-    mulligan_bottoms: Vec<Vec<ObjectId>>,
 }
 
 impl ScriptedPlayer {
@@ -23,14 +21,7 @@ impl ScriptedPlayer {
         Self {
             name: name.to_string(),
             actions: VecDeque::from(actions),
-            mulligan_bottoms: Vec::new(),
         }
-    }
-
-    /// Add a mulligan decision (which cards to put on bottom).
-    pub fn with_mulligan_bottoms(mut self, bottoms: Vec<Vec<ObjectId>>) -> Self {
-        self.mulligan_bottoms = bottoms;
-        self
     }
 
     /// Push additional actions onto the back of the queue.
@@ -68,22 +59,6 @@ impl Player for ScriptedPlayer {
                 self.name
             )
         })
-    }
-
-    fn choose_cards_to_bottom(
-        &mut self,
-        _view: &GameView,
-        hand: &[mtg_engine::view::CardView],
-        count: usize,
-    ) -> Vec<ObjectId> {
-        if let Some(bottoms) = self.mulligan_bottoms.first() {
-            let result = bottoms.clone();
-            self.mulligan_bottoms.remove(0);
-            result
-        } else {
-            // Default: bottom the first `count` cards.
-            hand.iter().take(count).map(|c| c.object_id).collect()
-        }
     }
 }
 

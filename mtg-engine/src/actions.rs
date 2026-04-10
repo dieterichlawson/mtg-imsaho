@@ -49,6 +49,19 @@ pub enum Action {
     /// Discard cards to reach hand size limit.
     DiscardCards { cards: Vec<ObjectId> },
 
+    /// London mulligan: keep the current opening hand.
+    MulliganKeep,
+
+    /// London mulligan: shuffle hand back and draw seven again.
+    /// Only legal if the player has taken fewer than the cap (3) mulligans.
+    MulliganMull,
+
+    /// Put the chosen cards from hand on the bottom of the library in
+    /// the order given (first element becomes the bottom-most card).
+    /// Used after London mulligans are resolved: the player must bottom
+    /// one card per mulligan taken.
+    BottomCards { cards: Vec<ObjectId> },
+
     /// Concede the game.
     Concede,
 
@@ -87,6 +100,9 @@ pub enum CombatPrompt {
     ChooseBlockers {
         eligible_blockers: Vec<ObjectId>,
         attackers: Vec<ObjectId>,
+        /// For each blocker, the set of attackers it can legally block.
+        /// Accounts for flying/reach, intimidate, protection, CanOnlyBeBlockedBy, etc.
+        legal_blocks: std::collections::HashMap<ObjectId, Vec<ObjectId>>,
     },
 }
 
@@ -156,6 +172,10 @@ impl std::fmt::Display for Action {
                 write!(f, "Declare {} blockers", assignments.len()),
             Action::DiscardCards { cards } =>
                 write!(f, "Discard {} cards", cards.len()),
+            Action::MulliganKeep => write!(f, "Keep opening hand"),
+            Action::MulliganMull => write!(f, "Mulligan"),
+            Action::BottomCards { cards } =>
+                write!(f, "Bottom {} card(s)", cards.len()),
             Action::Concede => write!(f, "Concede"),
             Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
                 write!(f, "Activate loyalty ability {} on {}", ability_index, object_id),

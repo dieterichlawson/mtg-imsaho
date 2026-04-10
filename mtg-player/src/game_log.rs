@@ -52,17 +52,27 @@ pub fn write(file: &str, line: u32, label: &str, content: &str) {
     let tid = std::thread::current().id();
     let filename = file.rsplit('/').next().unwrap_or(file);
 
-    let _ = writeln!(
-        state.file,
-        "[{:02}:{:02}:{:02}.{:03} {:?}] [{}:{}] {}",
-        hrs, mins, secs, millis, tid, filename, line, label
-    );
-    if !content.is_empty() {
-        for ln in content.lines() {
-            let _ = writeln!(state.file, "  {}", ln);
+    // Single-line content goes on the header line with no trailing blank.
+    // Multi-line content stays indented with a blank line separator after.
+    if !content.is_empty() && !content.contains('\n') {
+        let _ = writeln!(
+            state.file,
+            "[{:02}:{:02}:{:02}.{:03} {:?}] [{}:{}] {} {}",
+            hrs, mins, secs, millis, tid, filename, line, label, content
+        );
+    } else {
+        let _ = writeln!(
+            state.file,
+            "[{:02}:{:02}:{:02}.{:03} {:?}] [{}:{}] {}",
+            hrs, mins, secs, millis, tid, filename, line, label
+        );
+        if !content.is_empty() {
+            for ln in content.lines() {
+                let _ = writeln!(state.file, "  {}", ln);
+            }
         }
+        let _ = writeln!(state.file);
     }
-    let _ = writeln!(state.file);
     let _ = state.file.flush();
 }
 

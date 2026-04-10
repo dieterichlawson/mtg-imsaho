@@ -1,6 +1,5 @@
 use rand::Rng;
 use mtg_engine::actions::{Action, CombatPrompt};
-use mtg_engine::ids::ObjectId;
 use mtg_engine::view::GameView;
 
 use crate::Player;
@@ -23,6 +22,20 @@ impl Player for RandomPlayer {
 
     fn choose_action(&mut self, _view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
+
+        // Deterministic mulligan policy: always keep the first hand, never
+        // mulligan. For the bottom sub-phase (only reached via a forced keep
+        // at the cap or if this player had previously mulliganed), pick the
+        // first enumerated combination. This avoids introducing opening-hand
+        // RNG beyond the deal itself — desirable for experiments that want
+        // to measure deck quality and piloting, not mulligan variance.
+        if let Some(keep_idx) = legal_actions.iter().position(|a| matches!(a, Action::MulliganKeep)) {
+            return legal_actions[keep_idx].clone();
+        }
+        if matches!(legal_actions.first(), Some(Action::BottomCards { .. })) {
+            return legal_actions[0].clone();
+        }
+
         // Filter out Concede.
         let non_concede: Vec<usize> = legal_actions.iter().enumerate()
             .filter(|(_, a)| !matches!(a, Action::Concede))
@@ -41,15 +54,6 @@ impl Player for RandomPlayer {
         let mut rng = rand::thread_rng();
         legal_actions[candidates[rng.gen_range(0..candidates.len())]].clone()
     }
-
-    fn choose_cards_to_bottom(
-        &mut self,
-        _view: &GameView,
-        hand: &[mtg_engine::view::CardView],
-        count: usize,
-    ) -> Vec<ObjectId> {
-        hand.iter().take(count).map(|c| c.object_id).collect()
-    }
 }
 
 impl RandomPlayer {
@@ -65,7 +69,7 @@ impl RandomPlayer {
                     .collect();
                 Action::DeclareAttackers { attackers }
             }
-            CombatPrompt::ChooseBlockers { eligible_blockers, attackers } => {
+            CombatPrompt::ChooseBlockers { eligible_blockers, attackers, .. } => {
                 if attackers.is_empty() {
                     return Action::DeclareBlockers { assignments: vec![] };
                 }

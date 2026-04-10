@@ -282,14 +282,23 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
             AwaitingAction::DeclareBlockers { defending_player } => {
                 let eligible_blockers = combat::eligible_blockers(state, *defending_player, registry);
-                let attacker_ids = state.combat.as_ref()
+                let attacker_ids: Vec<_> = state.combat.as_ref()
                     .map(|c| c.attackers.keys().copied().collect())
                     .unwrap_or_default();
+                let mut legal_blocks = std::collections::HashMap::new();
+                for &blocker_id in &eligible_blockers {
+                    let can_block: Vec<_> = attacker_ids.iter()
+                        .filter(|&&att_id| combat::can_block_attacker(state, blocker_id, att_id, registry))
+                        .copied()
+                        .collect();
+                    legal_blocks.insert(blocker_id, can_block);
+                }
                 LegalActions {
                     actions: vec![],
                     combat_prompt: Some(crate::actions::CombatPrompt::ChooseBlockers {
                         eligible_blockers,
                         attackers: attacker_ids,
+                        legal_blocks,
                     }),
                     castable_spells: vec![],
                     activatable_abilities: vec![],
@@ -304,6 +313,43 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     activatable_abilities: vec![],
                     context: Some(format!("DISCARD {} CARD{}", discard_count,
                         if *discard_count == 1 { "" } else { "S" })),
+                }
+            }
+            AwaitingAction::MulliganDecision { player } => {
+                let mull_count = state.get_player(*player).mulligan_count;
+                let mut actions = vec![Action::MulliganKeep];
+                if mull_count < crate::state::LONDON_MULLIGAN_CAP {
+                    actions.push(Action::MulliganMull);
+                }
+                LegalActions {
+                    actions,
+                    combat_prompt: None,
+                    castable_spells: vec![],
+                    activatable_abilities: vec![],
+                    context: Some(format!(
+                        "MULLIGAN DECISION (mulligans taken: {}/{})",
+                        mull_count, crate::state::LONDON_MULLIGAN_CAP)),
+                }
+            }
+            AwaitingAction::BottomAfterMulligan { player, count } => {
+                // Enumerate combinations of `count` cards from hand so the
+                // action list is self-contained for simple players. Rich
+                // players (LLM/CLI) can bypass this and construct a
+                // BottomCards action directly — submit_action validates that
+                // the chosen cards are in hand and distinct.
+                let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *player)
+                    .iter().map(|o| o.id).collect();
+                let combos = combinations(&hand, *count);
+                let actions: Vec<Action> = combos.into_iter()
+                    .map(|cards| Action::BottomCards { cards })
+                    .collect();
+                LegalActions {
+                    actions,
+                    combat_prompt: None,
+                    castable_spells: vec![],
+                    activatable_abilities: vec![],
+                    context: Some(format!("BOTTOM {} CARD{} AFTER MULLIGAN",
+                        count, if *count == 1 { "" } else { "s" })),
                 }
             }
             AwaitingAction::ResolutionChoice { choice, source, .. } => {
@@ -2330,6 +2376,90 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.awaiting_action = None;
         }
 
+        Action::MulliganKeep => {
+            let player = match &new_state.awaiting_action {
+                Some(AwaitingAction::MulliganDecision { player }) => *player,
+                _ => panic!("MulliganKeep without MulliganDecision awaiting"),
+            };
+            let mull_count = new_state.get_player(player).mulligan_count;
+            new_state.log(LogLevel::Event,
+                format!("p{} keeps ({} mulligan{})", player.0, mull_count,
+                    if mull_count == 1 { "" } else { "s" }));
+            advance_mulligan_phase(&mut new_state, registry);
+            new_state.consecutive_passes = 0;
+        }
+
+        Action::MulliganMull => {
+            let player = match &new_state.awaiting_action {
+                Some(AwaitingAction::MulliganDecision { player }) => *player,
+                _ => panic!("MulliganMull without MulliganDecision awaiting"),
+            };
+            if new_state.get_player(player).mulligan_count >= crate::state::LONDON_MULLIGAN_CAP {
+                panic!("MulliganMull attempted after reaching the mulligan cap");
+            }
+            // Put the entire hand on the bottom of the library (temporarily;
+            // it will be shuffled immediately) and draw seven fresh cards.
+            let hand_ids: Vec<ObjectId> = new_state.objects_in_zone(Zone::Hand, player)
+                .iter().map(|o| o.id).collect();
+            for id in &hand_ids {
+                new_state.move_object(*id, Zone::Library, registry);
+                // Append to the end of the library_order (bottom).
+                let lib = &mut new_state.get_player_mut(player).library_order;
+                if !lib.contains(id) {
+                    lib.push(*id);
+                }
+            }
+            // Shuffle.
+            let mut rng = rand::thread_rng();
+            new_state.get_player_mut(player).library_order.shuffle(&mut rng);
+            // Redraw seven.
+            draw_cards(&mut new_state, player, 7, registry);
+            new_state.get_player_mut(player).mulligan_count += 1;
+            let mull_count = new_state.get_player(player).mulligan_count;
+            new_state.log(LogLevel::Event,
+                format!("p{} mulligans to 7 (mulligan #{} — will bottom {} on keep)",
+                    player.0, mull_count, mull_count));
+            // Same player decides again on the new hand.
+            new_state.awaiting_action = Some(AwaitingAction::MulliganDecision { player });
+            new_state.consecutive_passes = 0;
+        }
+
+        Action::BottomCards { cards } => {
+            let (player, count) = match &new_state.awaiting_action {
+                Some(AwaitingAction::BottomAfterMulligan { player, count }) => (*player, *count),
+                _ => panic!("BottomCards without BottomAfterMulligan awaiting"),
+            };
+            assert_eq!(cards.len(), count,
+                "BottomCards: expected {} cards, got {}", count, cards.len());
+            // Validate the chosen cards are all in this player's hand and distinct.
+            let hand_ids: Vec<ObjectId> = new_state.objects_in_zone(Zone::Hand, player)
+                .iter().map(|o| o.id).collect();
+            let mut seen = std::collections::HashSet::new();
+            for id in cards {
+                assert!(hand_ids.contains(id),
+                    "BottomCards: card {:?} not in p{}'s hand", id, player.0);
+                assert!(seen.insert(*id),
+                    "BottomCards: duplicate card {:?}", id);
+            }
+            // Move each card from hand to library and append to the bottom, in
+            // the order given (so `cards[0]` ends up bottom-most of the group).
+            for &card_id in cards {
+                new_state.move_object(card_id, Zone::Library, registry);
+                let lib = &mut new_state.get_player_mut(player).library_order;
+                lib.retain(|&id| id != card_id);
+                lib.push(card_id);
+            }
+            let names: Vec<String> = cards.iter()
+                .map(|&id| card_name(&new_state, registry, id))
+                .collect();
+            new_state.log(LogLevel::Event,
+                format!("p{} bottomed {} card{}: {}", player.0, count,
+                    if count == 1 { "" } else { "s" }, names.join(", ")));
+            new_state.awaiting_action = None;
+            advance_mulligan_phase(&mut new_state, registry);
+            new_state.consecutive_passes = 0;
+        }
+
         Action::Concede => {
             if let Some(player) = new_state.priority_player {
                 new_state.log(LogLevel::Milestone, format!("p{} concedes", player.0));
@@ -3176,8 +3306,99 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     }
 
     state.events.push(GameEvent::GameStarted);
-    state.log(LogLevel::Milestone, format!("── Turn 1 (p0) ──"));
+
+    // Enter the London mulligan phase. The first turn banner is logged once
+    // the mulligan phase completes (see advance_mulligan_phase).
+    state.log(LogLevel::Milestone, "Mulligan phase".into());
+    state.awaiting_action = Some(AwaitingAction::MulliganDecision {
+        player: state.active_player,
+    });
     state
+}
+
+/// Drive the London mulligan phase forward after a decision or bottom is
+/// resolved. Walks through players in turn order, asking keep/mull, then
+/// switches to the bottom-cards sub-phase, then clears the mulligan state
+/// (which signals run_game_loop to begin turn 1).
+fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
+    // Sub-phase 1: each player answers keep/mull in turn order starting with
+    // the active player. When every player has arrived at a kept hand,
+    // proceed to bottoming. A player has "kept" when:
+    //   (a) they chose MulliganKeep, OR
+    //   (b) they reached the cap and the cap-forced keep was applied.
+    //
+    // We encode "decided to keep" by clearing the MulliganDecision for them
+    // and advancing to the next player. This function is invoked by the
+    // engine when such a transition should happen (after a Keep or a Bottom).
+    //
+    // Algorithm: find the next player (in turn order starting from the
+    // active player) who has mulligan_count set but has not yet been asked
+    // the keep/mull question. We track "asked" via the phase progression
+    // itself: once every player's MulliganDecision has been processed, we
+    // move on.
+    let num_players = state.players.len() as u8;
+
+    // Determine which player (if any) still needs to make a keep/mull
+    // decision. We walk through players in turn order, starting from the
+    // active player. For each one, if their awaiting state is already cleared
+    // AND they have no bottom obligation recorded, we look at whether they've
+    // been offered yet.
+    //
+    // Rather than track per-player "offered" state, we use a simple marker:
+    // `pending_bottoms` — a list of (player, count) pairs queued for the
+    // bottoming sub-phase. Once every player in turn order has been asked
+    // keep/mull, we enter the bottoming sub-phase.
+    //
+    // Practical implementation: stash per-phase progress in
+    // `state.pending_mulligan_bottoms`. Each time we finish a keep/mull
+    // decision, we append the player if they mulled. When all players have
+    // been asked, we transition.
+
+    // Walk forward from the current player in turn order, skipping those
+    // already past the decision stage.
+    let current = match &state.awaiting_action {
+        Some(AwaitingAction::MulliganDecision { player }) => Some(*player),
+        _ => None,
+    };
+
+    if let Some(p) = current {
+        // A decision for `p` was just resolved (Keep, since Mull re-sets the
+        // awaiting to the same player). Record their bottom obligation and
+        // move on.
+        state.pending_mulligan_bottoms.push((p, state.get_player(p).mulligan_count as usize));
+        let next = PlayerId((p.0 + 1) % num_players);
+        if next != state.active_player {
+            state.awaiting_action = Some(AwaitingAction::MulliganDecision { player: next });
+            return;
+        }
+        // Wrapped around: no more keep/mull decisions needed.
+        state.awaiting_action = None;
+    }
+
+    // Sub-phase 2: drain the pending_mulligan_bottoms queue. For each
+    // player with count > 0, set BottomAfterMulligan. Players with count 0
+    // are skipped.
+    while let Some((player, count)) = state.pending_mulligan_bottoms.first().cloned() {
+        if count == 0 {
+            state.pending_mulligan_bottoms.remove(0);
+            continue;
+        }
+        state.pending_mulligan_bottoms.remove(0);
+        state.awaiting_action = Some(AwaitingAction::BottomAfterMulligan { player, count });
+        return;
+    }
+
+    // Mulligan phase fully complete.
+    state.awaiting_action = None;
+    state.log(LogLevel::Milestone, "── Turn 1 (p0) ──".into());
+}
+
+/// True if the state is in the opening-hand mulligan phase.
+pub fn in_mulligan_phase(state: &GameState) -> bool {
+    matches!(state.awaiting_action,
+        Some(AwaitingAction::MulliganDecision { .. })
+            | Some(AwaitingAction::BottomAfterMulligan { .. }))
+        || !state.pending_mulligan_bottoms.is_empty()
 }
 
 /// Draw N cards for a player. Logs a single summary entry.
@@ -3578,14 +3799,48 @@ pub fn run_game_loop<F>(
 ) where
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
-    // Start with the first turn's turn-based actions.
-    state.events.push(GameEvent::TurnStarted {
-        player: state.active_player,
-        turn: state.turn_number,
-    });
-    perform_turn_based_actions(state, registry);
-
+    // If we're still in the opening-hand mulligan phase, run it first.
+    // The phase clears itself when done and we fall through to turn 1.
     run_game_loop_inner(state, registry, &mut choose_action);
+}
+
+/// Drive the opening-hand London mulligan phase to completion, asking each
+/// player for keep/mull and bottom decisions via `choose_action`.
+fn run_mulligan_phase<F>(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    choose_action: &mut F,
+) where
+    F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
+{
+    loop {
+        if !in_mulligan_phase(state) {
+            break;
+        }
+        // If awaiting_action is None but there are queued bottoms, advance.
+        if state.awaiting_action.is_none() {
+            advance_mulligan_phase(state, registry);
+            continue;
+        }
+
+        let acting_player = match &state.awaiting_action {
+            Some(AwaitingAction::MulliganDecision { player }) => *player,
+            Some(AwaitingAction::BottomAfterMulligan { player, .. }) => *player,
+            _ => unreachable!("in_mulligan_phase guaranteed a mulligan awaiting_action"),
+        };
+
+        let legal = legal_actions(state, registry);
+        if legal.actions.is_empty() {
+            // Safety: if somehow no action is legal (e.g. zero cards to
+            // bottom), just clear and continue.
+            state.awaiting_action = None;
+            advance_mulligan_phase(state, registry);
+            continue;
+        }
+
+        let action = choose_action(state, acting_player, &legal);
+        *state = submit_action(state, &action, registry);
+    }
 }
 
 /// Resume a game loop from a previously saved state. Unlike `run_game_loop`,
@@ -3610,6 +3865,34 @@ fn run_game_loop_inner<F>(
     let num_players = state.players.len() as u32;
     let mut auto_pass_count = 0u32;
     const MAX_AUTO_PASSES: u32 = 100;
+
+    // Opening-hand mulligan phase. When present, drive it first; it will
+    // clear itself by setting awaiting_action = None and draining the
+    // pending bottom queue.
+    if in_mulligan_phase(state) {
+        run_mulligan_phase(state, registry, choose_action);
+        if state.is_game_over() {
+            return;
+        }
+    }
+
+    // Start of turn 1 (or continuation from a resumed game). If we're at
+    // the very start of the game (no prior turn-based actions applied), do
+    // them now. We detect "fresh first turn" by checking that step is Untap
+    // and there are no priority/awaiting markers yet — a resumed game will
+    // already have priority_player set from a saved state.
+    if state.is_first_turn
+        && state.turn_number == 1
+        && state.step == Step::Untap
+        && state.priority_player.is_none()
+        && state.awaiting_action.is_none()
+    {
+        state.events.push(GameEvent::TurnStarted {
+            player: state.active_player,
+            turn: state.turn_number,
+        });
+        perform_turn_based_actions(state, registry);
+    }
 
     loop {
         if state.is_game_over() {
@@ -3742,6 +4025,12 @@ fn run_game_loop_inner<F>(
             Action::DiscardCards { .. } => {
                 // After discarding, cleanup continues (no priority).
                 state.priority_player = None;
+            }
+
+            Action::MulliganKeep | Action::MulliganMull | Action::BottomCards { .. } => {
+                // Mulligan-phase actions: don't touch priority. The mulligan
+                // phase advances by updating awaiting_action; once all mulligan
+                // state is cleared, the loop will fall through to start turn 1.
             }
 
             Action::ActivateManaAbility { .. } | Action::ActivateAbility { .. } | Action::ActivateLoyaltyAbility { .. } => {
