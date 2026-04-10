@@ -1,3 +1,4 @@
+use crate::cards::helpers;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -96,17 +97,11 @@ impl CardBehavior for KruinOutlaw {
             return;
         }
         if self.should_transform(state, self_id, registry) {
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = !obj.is_transformed;
-                let (old_name, new_name) = if obj.is_transformed {
-                    ("Kruin Outlaw", "Terror of Kruin Pass")
-                } else {
-                    ("Terror of Kruin Pass", "Kruin Outlaw")
-                };
-                obj.name = new_name.into();
-                state.log(crate::state::LogLevel::Event,
-                    format!("{} transforms into {}", old_name, new_name));
-            }
+            let old_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
+            helpers::apply_transform(state, self_id, registry);
+            let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event,
+                format!("{} transforms into {}", old_name, new_name));
         }
     }
 }

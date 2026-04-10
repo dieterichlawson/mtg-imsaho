@@ -1,4 +1,5 @@
 use crate::actions::Target;
+use crate::cards::helpers;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
                    TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
@@ -167,17 +168,11 @@ impl CardBehavior for DaybreakRanger {
             return;
         }
         if self.should_transform(state, self_id, registry) {
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = !obj.is_transformed;
-                let (old_name, new_name) = if obj.is_transformed {
-                    ("Daybreak Ranger", "Nightfall Predator")
-                } else {
-                    ("Nightfall Predator", "Daybreak Ranger")
-                };
-                obj.name = new_name.into();
-                state.log(crate::state::LogLevel::Event,
-                    format!("{} transforms into {}", old_name, new_name));
-            }
+            let old_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
+            helpers::apply_transform(state, self_id, registry);
+            let new_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
+            state.log(crate::state::LogLevel::Event,
+                format!("{} transforms into {}", old_name, new_name));
         }
     }
 }
