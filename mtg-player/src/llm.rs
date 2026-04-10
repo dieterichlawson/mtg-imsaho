@@ -1831,8 +1831,17 @@ impl LlmPlayer {
     /// Decide keep or mulligan for the London opening-hand phase.
     /// Sends a structured-JSON prompt with the current hand and the
     /// mulligan count. Falls back to MulliganKeep on malformed responses.
+    /// When the mulligan cap has been reached and keep is the only legal
+    /// action, returns MulliganKeep directly without round-tripping the LLM.
     fn choose_mulligan(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
         let mull_allowed = legal_actions.iter().any(|a| matches!(a, Action::MulliganMull));
+        if !mull_allowed {
+            // Forced keep at the mull-to-4 cap. No decision to make — skip
+            // the LLM call. The model will see the resulting "p<n> keeps"
+            // line in the next prompt's recent-events section.
+            self.log("AUTO-KEEP", "mulligan cap reached, forced to keep");
+            return Action::MulliganKeep;
+        }
 
         let numbered: Vec<String> = view.your_hand.iter().enumerate()
             .map(|(i, c)| format!("  {}: {}", i, Self::format_hand_card(c)))
@@ -1857,12 +1866,7 @@ impl LlmPlayer {
         action_prompt.push_str("Your opening hand:\n");
         action_prompt.push_str(&hand_text);
         action_prompt.push('\n');
-        if mull_allowed {
-            action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": true|false}.\n");
-        } else {
-            action_prompt.push_str("You have reached the mulligan cap (mull-to-4). You must keep. ");
-            action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": false}.\n");
-        }
+        action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": true|false}.\n");
 
         let schema = serde_json::json!({
             "type": "object",
