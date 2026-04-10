@@ -38,6 +38,8 @@ impl CardBehavior for Ghoulraiser {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,

@@ -35,6 +35,8 @@ impl CardBehavior for HollowhengeScavenger {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         if state.creature_died_this_turn {
             let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));

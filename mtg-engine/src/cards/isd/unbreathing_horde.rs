@@ -84,6 +84,8 @@ impl CardBehavior for UnbreathingHorde {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         // Skip if counters were already added via on_resolve (cast path).
         let already_has_counters = state.get_object(object_id)

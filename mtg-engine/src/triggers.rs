@@ -348,20 +348,24 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     Some(o) => (o.card_id, o.controller),
                     _ => continue,
                 };
-                // Only collect if the card has an on_enter_battlefield handler.
-                // Self ETB trigger.
-                if registry.get(card_id).is_some() {
-                    let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield, false);
-                    let trigger = PendingTrigger::EnteredBattlefield {
-                        object_id: *object,
-                        card_id,
-                        controller,
-                        description: desc,
-                    };
-                    if controller == active_player {
-                        ap_triggers.push(trigger);
-                    } else {
-                        nap_triggers.push(trigger);
+                // Only collect if the card actually has an ETB handler.
+                // Cards without one (basic lands, vanilla creatures) shouldn't put a
+                // trigger on the stack — per MTG rules, only declared triggered abilities
+                // create stack entries.
+                if let Some(behavior) = registry.get(card_id) {
+                    if behavior.has_etb_handler() {
+                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield, false);
+                        let trigger = PendingTrigger::EnteredBattlefield {
+                            object_id: *object,
+                            card_id,
+                            controller,
+                            description: desc,
+                        };
+                        if controller == active_player {
+                            ap_triggers.push(trigger);
+                        } else {
+                            nap_triggers.push(trigger);
+                        }
                     }
                 }
 

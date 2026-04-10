@@ -40,6 +40,8 @@ impl CardBehavior for SulfurFalls {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         if !Self::controller_has_matching_land(state, object_id) {
             if let Some(obj) = state.get_object_mut(object_id) {

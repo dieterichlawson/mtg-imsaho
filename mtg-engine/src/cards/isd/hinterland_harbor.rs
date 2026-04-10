@@ -46,6 +46,8 @@ impl CardBehavior for HinterlandHarbor {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         if !Self::controller_has_matching_land(state, object_id, registry) {
             if let Some(obj) = state.get_object_mut(object_id) {

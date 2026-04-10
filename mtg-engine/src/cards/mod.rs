@@ -314,6 +314,12 @@ pub trait CardBehavior: Send + Sync {
     /// Called when this permanent enters the battlefield (ETB trigger).
     fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 
+    /// Whether this card has any ETB behavior (handler or replacement-style "enters with" effect).
+    /// Cards that override `on_enter_battlefield` MUST also override this to return true,
+    /// otherwise the engine won't put their ETB trigger on the stack.
+    /// Default false — applies to vanilla creatures, basic lands, etc. that have no ETB effects.
+    fn has_etb_handler(&self) -> bool { false }
+
     /// Called when this creature dies (moves from battlefield to graveyard).
     fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 

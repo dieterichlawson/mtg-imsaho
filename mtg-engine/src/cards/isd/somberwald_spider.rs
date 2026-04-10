@@ -32,6 +32,8 @@ impl CardBehavior for SomberwaldSpider {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         if state.creature_died_this_turn {
             state.add_counters(object_id, CounterType::PlusOnePlusOne, 2);

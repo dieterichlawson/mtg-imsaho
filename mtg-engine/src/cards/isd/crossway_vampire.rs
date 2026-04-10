@@ -33,6 +33,8 @@ impl CardBehavior for CrosswayVampire {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Target creature" — any creature, including self (Oracle doesn't say "another").

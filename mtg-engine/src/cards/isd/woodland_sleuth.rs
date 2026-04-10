@@ -37,6 +37,8 @@ impl CardBehavior for WoodlandSleuth {
         }
     }
 
+    fn has_etb_handler(&self) -> bool { true }
+
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         if !state.creature_died_this_turn {
             return;
