@@ -87,10 +87,17 @@ fn parse_args() -> Args {
     }
 }
 
+/// One round-trip with the model during deck building.
+struct DeckAttempt {
+    prompt: String,
+    response: String,
+    error: Option<String>,
+}
+
 /// Return type for deck building LLM interaction.
 struct DeckBuildResult {
     deck: deckbuilding::DraftDeck,
-    response: String,
+    attempts: Vec<DeckAttempt>,
     retries: usize,
 }
 
@@ -321,12 +328,17 @@ fn main() {
     let mut decklists: Vec<Decklist> = Vec::new();
 
     for (seat, result) in deck_results.iter().enumerate() {
-        log_deck_building!(log, 
+        let attempts: Vec<(&str, &str, Option<&str>)> = result
+            .attempts
+            .iter()
+            .map(|a| (a.prompt.as_str(), a.response.as_str(), a.error.as_deref()))
+            .collect();
+        log_deck_building!(log,
             seat,
             &result.deck.maindeck,
             &result.deck.lands,
             &result.deck.sideboard,
-            &result.response,
+            &attempts,
             result.retries,
         );
         decklists.push(Decklist {
@@ -505,8 +517,8 @@ fn build_deck_with_llm(
     pool: &[String],
 ) -> DeckBuildResult {
     let prompt = build_deck_prompt(pool);
-    let mut last_response = String::new();
-    let mut retries = 0;
+    let mut last_error = String::new();
+    let mut attempts: Vec<DeckAttempt> = Vec::new();
     let max_retries = 10;
 
     for attempt in 0..max_retries {
@@ -520,7 +532,7 @@ fn build_deck_with_llm(
         } else {
             format!(
                 "Your previous deck was invalid: {}. Please try again.\n\n{}",
-                last_response, prompt
+                last_error, prompt
             )
         };
 
@@ -529,16 +541,18 @@ fn build_deck_with_llm(
         match deckbuilding::parse_deck_response(&response) {
             Ok((maindeck, lands)) => match deckbuilding::validate_deck(pool, &maindeck, &lands) {
                 Ok(deck) => {
-                    return DeckBuildResult { deck, response, retries };
+                    attempts.push(DeckAttempt { prompt: msg, response, error: None });
+                    let retries = attempts.len() - 1;
+                    return DeckBuildResult { deck, attempts, retries };
                 }
                 Err(e) => {
-                    last_response = e;
-                    retries += 1;
+                    attempts.push(DeckAttempt { prompt: msg, response, error: Some(e.clone()) });
+                    last_error = e;
                 }
             },
             Err(e) => {
-                last_response = e;
-                retries += 1;
+                attempts.push(DeckAttempt { prompt: msg, response, error: Some(e.clone()) });
+                last_error = e;
             }
         }
     }
@@ -549,13 +563,14 @@ fn build_deck_with_llm(
     lands.insert("Island".to_string(), 9);
     lands.insert("Swamp".to_string(), 8);
 
+    let retries = attempts.len();
     DeckBuildResult {
         deck: deckbuilding::DraftDeck {
             maindeck: pool.to_vec(),
             lands,
             sideboard: Vec::new(),
         },
-        response: format!("FALLBACK (all attempts failed: {})", last_response),
+        attempts,
         retries,
     }
 }

@@ -142,13 +142,30 @@ impl DraftLogger {
         maindeck: &[String],
         lands: &std::collections::HashMap<String, u32>,
         sideboard: &[String],
-        response: &str,
+        attempts: &[(&str, &str, Option<&str>)],
         retries: usize,
         file: &str,
         line: u32,
     ) {
         let tag = format!("[Seat {}]", seat);
         let total = maindeck.len() + lands.values().sum::<u32>() as usize;
+
+        // Log every prompt → response round-trip in order. The first
+        // attempt's prompt is the full deckbuilding ask; later attempts
+        // include the validation error and re-ask.
+        let n = attempts.len();
+        for (i, (prompt, response, error)) in attempts.iter().enumerate() {
+            let label_prompt = format!("{} DECK_PROMPT attempt {}/{}", tag, i + 1, n);
+            mtg_player::game_log::write(file, line, &label_prompt, &prefix_lines(&tag, prompt));
+
+            let response_label = match error {
+                Some(e) => format!("{} DECK_RESPONSE attempt {}/{} (invalid: {})", tag, i + 1, n, e),
+                None => format!("{} DECK_RESPONSE attempt {}/{} (accepted)", tag, i + 1, n),
+            };
+            mtg_player::game_log::write(file, line, &response_label, &prefix_lines(&tag, response));
+        }
+
+        // Final structured deck summary.
         let mut content = String::from("Maindeck:\n");
         for card in maindeck {
             content.push_str(&format!("  {}\n", card));
@@ -168,12 +185,7 @@ impl DraftLogger {
         }
         mtg_player::game_log::write(
             file, line,
-            &format!("{} DECK_RESPONSE ({} retries)", tag, retries),
-            &prefix_lines(&tag, response),
-        );
-        mtg_player::game_log::write(
-            file, line,
-            &format!("{} DECK ({} cards)", tag, total),
+            &format!("{} DECK ({} cards, {} retries)", tag, total, retries),
             &prefix_lines(&tag, &content),
         );
     }
