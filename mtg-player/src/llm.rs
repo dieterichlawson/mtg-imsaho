@@ -258,9 +258,9 @@ Opp: 14hp, 5cards, 29lib, 1gy, 0exile
 Your board: 3x Forest, Kalonian Tusker 3/3, Kalonian Tusker 3/3
 Opp board: 2x Mountain, Goblin Piker 2/1
 Choose attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
-Respond with {"thoughts": "...", "attacker_indices": [..]} — each index in 0-1, empty list for no attacks.
+Respond with the attacker_indices schema described in the response format above.
 ```
-**Respond `{"thoughts": "Both Tuskers attack — opp can only block one, blocked Tusker survives 3v2.", "attacker_indices": [0, 1]}`** — attack with both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
+**Respond `{"attacker_indices": [0, 1]}`** (plus the "thoughts" field if your backend uses one) — attack with both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
 
 ### Example: declare blockers
 
@@ -275,9 +275,9 @@ Your board: 3x Mountain, Goblin Piker 2/1, Goblin Piker 2/1
 Opp board: 3x Forest (tapped), Kalonian Tusker 3/3 [T], Kalonian Tusker 3/3 [T]
 Attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
 Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
-Respond with {"thoughts": "...", "0": <attacker_idx>, "1": <attacker_idx>, ...} — one key per blocker (0..1), value is the 0-indexed attacker to block or -1 for no block.
+Respond with the per-blocker keyed schema described in the response format above.
 ```
-**Respond `{"thoughts": "Chump-block both Tuskers — lose 2 Pikers but prevent 6 damage; can't take 6 at 17.", "0": 0, "1": 1}`** — chump-block both Tuskers. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
+**Respond `{"0": 0, "1": 1}`** (plus the "thoughts" field if your backend uses one) — chump-block both Tuskers. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
 "#;
 
 /// Backend trait for LLM API communication.
@@ -291,6 +291,11 @@ trait LlmBackend {
         let text = self.send(message);
         serde_json::Value::String(text)
     }
+    /// Whether this backend expects the model to put its private reasoning
+    /// in a "thoughts" field in the JSON response. Backends that surface
+    /// reasoning through a separate channel (e.g. Anthropic extended thinking)
+    /// return false; their schemas have "thoughts" stripped automatically.
+    fn uses_thoughts_in_json(&self) -> bool { true }
     /// Initialize with a system prompt (rules + decklists).
     fn init(&mut self, system_prompt: &str);
     /// Resume from a game log recap.
@@ -307,10 +312,8 @@ trait LlmBackend {
     fn take_thinking(&mut self) -> Option<String> { None }
 }
 
-/// Shared response-format intro that comes before GAME_RULES in every system
-/// prompt. Sets the role, summarises what the model will see and be asked,
-/// and documents every JSON schema it might be expected to return.
-const RESPONSE_FORMAT_INTRO: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
+/// Gemini-flavoured response intro: thoughts ride along inside the JSON.
+const GEMINI_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
 Limited (draft) match — each player has a 40-card deck built from a draft pool.
 The goal is to reduce your opponent's life total from 20 to 0 by attacking with
 creatures and casting damaging spells, while protecting your own life total.
@@ -353,8 +356,52 @@ The detailed game rules and prompt format follow.
 
 "#;
 
-const ANTHROPIC_RESPONSE_FORMAT: &str = RESPONSE_FORMAT_INTRO;
-const GEMINI_RESPONSE_FORMAT: &str = RESPONSE_FORMAT_INTRO;
+/// Anthropic-flavoured response intro: reasoning is delivered through the
+/// model's extended-thinking channel, NOT inside the JSON payload. Schemas
+/// listed here intentionally omit the "thoughts" field — including it will
+/// be rejected by the schema validator.
+const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
+Limited (draft) match — each player has a 40-card deck built from a draft pool.
+The goal is to reduce your opponent's life total from 20 to 0 by attacking with
+creatures and casting damaging spells, while protecting your own life total.
+
+## What you'll be asked
+
+For every decision the game requires, you'll receive a prompt describing the
+current game state — recent events, turn and step, both players' life and
+hand/library/graveyard counts, the contents of each battlefield, the stack,
+your mana pool, your hand, and a context tag (main phase, combat, response
+window, mulligan, etc.). The "Prompt format" section below documents every
+field in detail. Depending on the context, you'll be asked to:
+
+- Pick one of N legal actions during a turn step (play a land, cast a spell,
+  tap mana, pass priority, etc.)
+- Declare which of your creatures attack
+- Assign blockers to incoming attackers
+- Pick targets for a spell or ability
+- Decide whether to mulligan, and if so which cards to put on the bottom
+- Confirm a concession
+
+## How you respond
+
+Your private reasoning happens in the model's extended-thinking channel —
+think through the situation there before producing the JSON. The JSON payload
+itself should contain ONLY the response fields below; do NOT add a "thoughts"
+key, it will be rejected by the schema validator.
+
+The possible schemas are:
+
+1. **Action selection**: `{"action": N}` — pick the 0-indexed action number from the action list.
+2. **Declare attackers**: `{"attacker_indices": [0, 1, 2]}` — list of creature indices to attack with (empty list = no attacks).
+3. **Declare blockers**: `{"0": 1, "1": -1}` — for each of your blockers (by index), the attacker index it blocks, or -1 for no block.
+4. **Choose targets**: `{"target_indices": [0]}` — list of target indices to select for a spell or ability.
+5. **Confirm concede**: `{"confirm": true|false}` — confirm or cancel a concession.
+6. **Mulligan decision**: `{"mull": true|false}` — London mulligan: keep your opening hand or shuffle and redraw.
+7. **Bottom cards after mulligan**: `{"bottom_indices": [0, 3, 5]}` — exactly N distinct 0-indexed hand positions to bottom.
+
+The detailed game rules and prompt format follow.
+
+"#;
 
 /// Anthropic Claude backend using the Messages API with prompt caching.
 struct AnthropicBackend {
@@ -595,6 +642,13 @@ impl LlmBackend for AnthropicBackend {
         let result_str = serde_json::to_string(&result).unwrap_or_default();
         self.conversation.push(serde_json::json!({"role": "assistant", "content": result_str}));
         result
+    }
+
+    fn uses_thoughts_in_json(&self) -> bool {
+        // Reasoning is delivered via Anthropic's thinking blocks, not in
+        // the JSON payload. The schema sanitizer strips "thoughts" from
+        // every schema and prompts must not ask for it either.
+        false
     }
 
     fn init(&mut self, deck_info: &str) {
@@ -971,6 +1025,18 @@ impl LlmPlayer {
     /// Expose system prompt for testing.
     pub fn system_prompt_for_test(&self) -> &str {
         self.backend.system_prompt()
+    }
+
+    /// Returns the prefix to embed at the start of a JSON response template
+    /// shown to the model — `"thoughts": "...", ` for backends that use a
+    /// JSON thoughts field, empty string for backends that surface
+    /// reasoning through a separate thinking channel.
+    fn thoughts_field_prefix(&self) -> &'static str {
+        if self.backend.uses_thoughts_in_json() {
+            "\"thoughts\": \"...\", "
+        } else {
+            ""
+        }
     }
 
     /// Expose conversation length for testing.
@@ -1420,8 +1486,8 @@ impl LlmPlayer {
                     .collect::<Vec<_>>()
                     .join(" ");
                 let prompt = format!(
-                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with {{\"thoughts\": \"...\", \"target_indices\": [..]}} — each index in 0-{}, up to {} entries, empty list to choose no targets.",
-                    spell.name, max, target_list, options.len() - 1, max
+                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with {{{}\"target_indices\": [..]}} — each index in 0-{}, up to {} entries, empty list to choose no targets.",
+                    spell.name, max, target_list, self.thoughts_field_prefix(), options.len() - 1, max
                 );
                 self.log("TARGETS", &prompt);
 
@@ -1637,10 +1703,12 @@ impl LlmPlayer {
             "required": ["thoughts", "confirm"]
         });
 
-        let response = self.send_message_structured(
-            "You chose to CONCEDE the game. Are you sure? Respond with {\"thoughts\": \"...\", \"confirm\": true|false} — true to concede, false to cancel.",
-            &schema
+        let prefix = self.thoughts_field_prefix();
+        let prompt = format!(
+            "You chose to CONCEDE the game. Are you sure? Respond with {{{}\"confirm\": true|false}} — true to concede, false to cancel.",
+            prefix
         );
+        let response = self.send_message_structured(&prompt, &schema);
         let confirmed = response["confirm"].as_bool().unwrap_or(false);
         if !confirmed {
             self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
@@ -1866,7 +1934,10 @@ impl LlmPlayer {
         action_prompt.push_str("Your opening hand:\n");
         action_prompt.push_str(&hand_text);
         action_prompt.push('\n');
-        action_prompt.push_str("Respond with {\"thoughts\": \"...\", \"mull\": true|false}.\n");
+        action_prompt.push_str(&format!(
+            "Respond with {{{}\"mull\": true|false}}.\n",
+            self.thoughts_field_prefix()
+        ));
 
         let schema = serde_json::json!({
             "type": "object",
@@ -1936,8 +2007,8 @@ impl LlmPlayer {
         action_prompt.push_str(&hand_text);
         action_prompt.push('\n');
         action_prompt.push_str(&format!(
-            "Respond with {{\"thoughts\": \"...\", \"bottom_indices\": [..]}} — exactly {} distinct index(es) from 0 to {}.\n",
-            n, view.your_hand.len().saturating_sub(1)));
+            "Respond with {{{}\"bottom_indices\": [..]}} — exactly {} distinct index(es) from 0 to {}.\n",
+            self.thoughts_field_prefix(), n, view.your_hand.len().saturating_sub(1)));
 
         let valid_indices: Vec<serde_json::Value> = (0..view.your_hand.len())
             .map(|i| serde_json::json!(i))
@@ -2056,7 +2127,8 @@ impl LlmPlayer {
                     combat_text.push_str(&format!("{}:{}{} ", i, Self::format_combat_creature(view, id), forced));
                 }
                 combat_text.push_str(&format!(
-                    "\nRespond with {{\"thoughts\": \"...\", \"attacker_indices\": [..]}} — each index in 0-{}, empty list for no attacks. Forced attackers are auto-included.",
+                    "\nRespond with {{{}\"attacker_indices\": [..]}} — each index in 0-{}, empty list for no attacks. Forced attackers are auto-included.",
+                    self.thoughts_field_prefix(),
                     eligible.len() - 1
                 ));
 
@@ -2205,7 +2277,8 @@ impl LlmPlayer {
             combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
         }
         combat_text.push_str(&format!(
-            "\nRespond with {{\"thoughts\": \"...\", \"0\": <attacker_idx>, \"1\": <attacker_idx>, ...}} — one key per blocker (0..{}), value is the 0-indexed attacker to block or -1 for no block.",
+            "\nRespond with {{{}\"0\": <attacker_idx>, \"1\": <attacker_idx>, ...}} — one key per blocker (0..{}), value is the 0-indexed attacker to block or -1 for no block.",
+            self.thoughts_field_prefix(),
             eligible_blockers.len().saturating_sub(1)
         ));
 
