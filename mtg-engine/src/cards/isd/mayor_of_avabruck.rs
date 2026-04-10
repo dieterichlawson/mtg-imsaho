@@ -113,10 +113,14 @@ impl CardBehavior for MayorOfAvabruck {
         if self.should_transform(state, self_id, registry) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.is_transformed = !obj.is_transformed;
-                let name = if obj.is_transformed { "Howlpack Alpha" } else { "Mayor of Avabruck" };
-                obj.name = name.into();
+                let (old_name, new_name) = if obj.is_transformed {
+                    ("Mayor of Avabruck", "Howlpack Alpha")
+                } else {
+                    ("Howlpack Alpha", "Mayor of Avabruck")
+                };
+                obj.name = new_name.into();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Mayor of Avabruck transforms into {}", name));
+                    format!("{} transforms into {}", old_name, new_name));
             }
         }
     }

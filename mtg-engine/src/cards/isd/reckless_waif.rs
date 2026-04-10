@@ -81,10 +81,14 @@ impl CardBehavior for RecklessWaif {
         if self.should_transform(state, self_id, registry) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.is_transformed = !obj.is_transformed;
-                let name = if obj.is_transformed { "Merciless Predator" } else { "Reckless Waif" };
-                obj.name = name.into();
+                let (old_name, new_name) = if obj.is_transformed {
+                    ("Reckless Waif", "Merciless Predator")
+                } else {
+                    ("Merciless Predator", "Reckless Waif")
+                };
+                obj.name = new_name.into();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Reckless Waif transforms into {}", name));
+                    format!("{} transforms into {}", old_name, new_name));
             }
         }
     }

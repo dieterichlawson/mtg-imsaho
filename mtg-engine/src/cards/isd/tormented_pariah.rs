@@ -82,10 +82,14 @@ impl CardBehavior for TormentedPariah {
         if self.should_transform(state, self_id, registry) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.is_transformed = !obj.is_transformed;
-                let name = if obj.is_transformed { "Rampaging Werewolf" } else { "Tormented Pariah" };
-                obj.name = name.into();
+                let (old_name, new_name) = if obj.is_transformed {
+                    ("Tormented Pariah", "Rampaging Werewolf")
+                } else {
+                    ("Rampaging Werewolf", "Tormented Pariah")
+                };
+                obj.name = new_name.into();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Tormented Pariah transforms into {}", name));
+                    format!("{} transforms into {}", old_name, new_name));
             }
         }
     }

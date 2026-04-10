@@ -111,10 +111,14 @@ impl CardBehavior for UlvenwaldMystics {
         if self.should_transform(state, self_id, registry) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.is_transformed = !obj.is_transformed;
-                let name = if obj.is_transformed { "Ulvenwald Primordials" } else { "Ulvenwald Mystics" };
-                obj.name = name.into();
+                let (old_name, new_name) = if obj.is_transformed {
+                    ("Ulvenwald Mystics", "Ulvenwald Primordials")
+                } else {
+                    ("Ulvenwald Primordials", "Ulvenwald Mystics")
+                };
+                obj.name = new_name.into();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Ulvenwald Mystics transforms into {}", name));
+                    format!("{} transforms into {}", old_name, new_name));
             }
         }
     }

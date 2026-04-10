@@ -82,10 +82,14 @@ impl CardBehavior for GatstafShepherd {
         if self.should_transform(state, self_id, registry) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.is_transformed = !obj.is_transformed;
-                let name = if obj.is_transformed { "Gatstaf Howler" } else { "Gatstaf Shepherd" };
-                obj.name = name.into();
+                let (old_name, new_name) = if obj.is_transformed {
+                    ("Gatstaf Shepherd", "Gatstaf Howler")
+                } else {
+                    ("Gatstaf Howler", "Gatstaf Shepherd")
+                };
+                obj.name = new_name.into();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Gatstaf Shepherd transforms into {}", name));
+                    format!("{} transforms into {}", old_name, new_name));
             }
         }
     }

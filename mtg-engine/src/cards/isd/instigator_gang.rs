@@ -116,9 +116,13 @@ impl CardBehavior for InstigatorGang {
         if self.should_transform(state, self_id, registry) {
             let was_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
             helpers::apply_transform(state, self_id, registry);
-            let name = if was_transformed { "Instigator Gang" } else { "Wildblood Pack" };
+            let (old_name, new_name) = if was_transformed {
+                ("Wildblood Pack", "Instigator Gang")
+            } else {
+                ("Instigator Gang", "Wildblood Pack")
+            };
             state.log(crate::state::LogLevel::Event,
-                format!("Instigator Gang transforms into {}", name));
+                format!("{} transforms into {}", old_name, new_name));
         }
     }
 }

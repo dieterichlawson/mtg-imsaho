@@ -98,10 +98,14 @@ impl CardBehavior for KruinOutlaw {
         if self.should_transform(state, self_id, registry) {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.is_transformed = !obj.is_transformed;
-                let name = if obj.is_transformed { "Terror of Kruin Pass" } else { "Kruin Outlaw" };
-                obj.name = name.into();
+                let (old_name, new_name) = if obj.is_transformed {
+                    ("Kruin Outlaw", "Terror of Kruin Pass")
+                } else {
+                    ("Terror of Kruin Pass", "Kruin Outlaw")
+                };
+                obj.name = new_name.into();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Kruin Outlaw transforms into {}", name));
+                    format!("{} transforms into {}", old_name, new_name));
             }
         }
     }
