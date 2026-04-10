@@ -165,12 +165,7 @@ fn main() {
 
     // Create streaming log file
     let log = draft_log::DraftLogger::new(std::path::Path::new(&args.log));
-    let models_desc = if args.models.iter().all(|m| m == &args.models[0]) {
-        args.models[0].clone()
-    } else {
-        args.models.iter().enumerate().map(|(i, m)| format!("S{}:{}", i, m)).collect::<Vec<_>>().join(", ")
-    };
-    log_header!(log, &set_data.set_name, args.players, args.best_of, &models_desc);
+    log_header!(log, &set_data.set_name, args.players, args.best_of, args.models.as_slice());
 
     if !args.quiet {
         eprintln!(

@@ -13,13 +13,32 @@ impl DraftLogger {
         Self
     }
 
-    pub fn header(&self, set_name: &str, players: usize, best_of: usize, model: &str, file: &str, line: u32) {
-        let content = format!(
-            "╔══════════════════════════════════════════════════════════╗\n\
-             ║  {} Draft — {} players, best-of-{}, model: {}\n\
-             ╚══════════════════════════════════════════════════════════╝",
-            set_name, players, best_of, model
-        );
+    pub fn header(&self, set_name: &str, players: usize, best_of: usize, models: &[String], file: &str, line: u32) {
+        let all_same = models.iter().all(|m| m == &models[0]);
+
+        let mut lines: Vec<String> = Vec::new();
+        lines.push(format!("{} Draft", set_name));
+        lines.push(format!("{} players", players));
+        lines.push(format!("best-of-{}", best_of));
+        if all_same {
+            lines.push(format!("model: {}", models[0]));
+        } else {
+            for (seat, model) in models.iter().enumerate() {
+                lines.push(format!("Seat {}: {}", seat, model));
+            }
+        }
+
+        // Border at least as long as the longest content line (chars, not bytes).
+        let inner_width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) + 4;
+        let bar = "═".repeat(inner_width);
+
+        let mut content = format!("╔{}╗\n", bar);
+        for line_text in &lines {
+            let pad = inner_width - line_text.chars().count() - 4;
+            content.push_str(&format!("║  {}{}  ║\n", line_text, " ".repeat(pad)));
+        }
+        content.push_str(&format!("╚{}╝", bar));
+
         mtg_player::game_log::write(file, line, "HEADER", &content);
     }
 
