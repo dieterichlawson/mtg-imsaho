@@ -109,10 +109,11 @@ Fields: hp=life total, cards=hand size, lib=library size, gy=graveyard count, ex
 Your board: 2x Forest, 1x Mountain (tapped), Grizzly Bears 2/2
 Opp board: 1x Plains, Savannah Lions 2/1 [S]
 ```
-Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures:
-- `[T]` = tapped
-- `[S]` = summoning sick (entered this turn, can't attack)
-- `[Ndmg]` = N damage marked on it
+Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
+- `T` = tapped
+- `S` = summoning sick (entered this turn, can't attack)
+- `Ndmg` = N damage marked on it
+- `+1/+1:N`, `-1/-1:N`, `loyalty:N` etc. = counter counts
 
 **Stack** (only if non-empty): `Stack: Lightning Bolt targeting Goblin Piker (opp's)` — shows pending spells/abilities with controller tag and targets.
 
@@ -1489,7 +1490,6 @@ impl LlmPlayer {
                     "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with {{{}\"target_indices\": [..]}} — each index in 0-{}, up to {} entries, empty list to choose no targets.",
                     spell.name, max, target_list, self.thoughts_field_prefix(), options.len() - 1, max
                 );
-                self.log("TARGETS", &prompt);
 
                 let valid_indices: Vec<serde_json::Value> = (0..options.len())
                     .map(|i| serde_json::json!(i))
@@ -1578,7 +1578,6 @@ impl LlmPlayer {
             .collect::<Vec<_>>()
             .join(" ");
         let prompt = format!("{}:\n{}", spell_name, target_list);
-        self.log("TARGETS", &prompt);
         let idx = self.pick_action_index(&prompt, options.len(), &[]);
         options[idx.min(options.len() - 1)].clone()
     }
@@ -1641,10 +1640,15 @@ impl LlmPlayer {
             .unwrap_or_else(|| format!("{}", id))
     }
 
-    /// Log thinking from the last backend call, if any.
-    fn log_thinking(&mut self) {
+    /// Log thinking from the last backend call, if any. Returns whether a
+    /// THOUGHT line was emitted, so the caller can strip the duplicate
+    /// "thoughts" field from the response JSON before logging RESPONSE.
+    fn log_thinking(&mut self) -> bool {
         if let Some(thinking) = self.backend.take_thinking() {
             self.log("THOUGHT", &thinking);
+            true
+        } else {
+            false
         }
     }
 
@@ -1652,8 +1656,19 @@ impl LlmPlayer {
     fn send_message_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
         self.log("PROMPT", user_message);
         let result = self.backend.send_with_schema(user_message, schema);
-        self.log_thinking();
-        self.log("RESPONSE", &result.to_string());
+        let thought_logged = self.log_thinking();
+        // Avoid double-logging the thoughts field: if we already emitted a
+        // THOUGHT line, drop the field from the JSON we log as RESPONSE.
+        let log_value = if thought_logged {
+            let mut clone = result.clone();
+            if let Some(obj) = clone.as_object_mut() {
+                obj.remove("thoughts");
+            }
+            clone
+        } else {
+            result.clone()
+        };
+        self.log("RESPONSE", &log_value.to_string());
         result
     }
 
@@ -1780,9 +1795,10 @@ impl Player for LlmPlayer {
             return self.choose_mulligan_bottom(view, legal_actions);
         }
 
-        // Auto-pass when there's nothing interesting to do.
+        // Auto-pass when there's nothing interesting to do. We deliberately
+        // don't log this — it can fire many steps in a row and adds no
+        // information beyond what the next prompt's recent_events shows.
         if Self::should_auto_pass(view, legal_actions) {
-            self.log("AUTO-PASS", &format!("Step: {:?}, active: p#{}", view.step, view.active_player.0));
             return Action::PassPriority;
         }
 
@@ -1860,9 +1876,6 @@ impl Player for LlmPlayer {
         let action_prompt = format!("{}\n{}", context_str, actions_str);
         let prompt = self.build_prompt(view, &action_prompt);
 
-        if display_labels.len() != legal_actions.len() {
-            self.log("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_labels.len()));
-        }
         let idx = self.pick_action_index(&prompt, display_labels.len(), legal_actions);
 
         if idx >= display_entries.len() {
