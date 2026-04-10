@@ -70,6 +70,10 @@ impl DraftLogger {
         mtg_player::game_log::write(file, line, &format!("--- {} ---", title), "");
     }
 
+    pub fn system_prompt(&self, prompt: &str, file: &str, line: u32) {
+        mtg_player::game_log::write(file, line, "DRAFT SYSTEM PROMPT", prompt);
+    }
+
     pub fn pack_contents(&self, seat: usize, pack_num: usize, cards: &[String], file: &str, line: u32) {
         let tag = format!("[Seat {}]", seat);
         let mut content = String::new();
@@ -238,6 +242,10 @@ macro_rules! log_section {
 #[macro_export]
 macro_rules! log_subsection {
     ($log:expr, $($args:expr),+ $(,)?) => { $log.subsection($($args),+, file!(), line!()) }
+}
+#[macro_export]
+macro_rules! log_system_prompt {
+    ($log:expr, $($args:expr),+ $(,)?) => { $log.system_prompt($($args),+, file!(), line!()) }
 }
 #[macro_export]
 macro_rules! log_pack_contents {

@@ -211,6 +211,11 @@ fn main() {
         })
         .collect();
 
+    // Log the system prompt once. The shared draft rules / card reference
+    // are identical across seats; only the per-backend response-format
+    // suffix may differ. Logging seat 0's prompt is representative.
+    log_system_prompt!(log, clients[0].system_prompt());
+
     // Run the draft — all players pick in parallel each round
     for round in 0..3 {
         if round > 0 {

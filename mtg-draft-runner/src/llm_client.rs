@@ -181,6 +181,8 @@ trait DraftBackend: Send {
     fn send_pick(&mut self, message: &str) -> String;
     /// Send a deck building message. Returns "MAINDECK:\n...\nLANDS:\n..." format text.
     fn send_deck_building(&mut self, message: &str) -> String;
+    /// The full system prompt this backend will send to the model.
+    fn system_prompt(&self) -> &str;
 }
 
 /// Shared draft rules (used by all backends).
@@ -353,6 +355,10 @@ impl DraftBackend for AnthropicDraftBackend {
         let result = self.send_conv(&mut conv, message);
         self.deck_conversation = conv;
         result
+    }
+
+    fn system_prompt(&self) -> &str {
+        &self.system_prompt
     }
 }
 
@@ -567,6 +573,10 @@ impl DraftBackend for GeminiDraftBackend {
         self.deck_interaction_id = new_id;
         Self::parse_deck_response(&raw)
     }
+
+    fn system_prompt(&self) -> &str {
+        &self.system_prompt
+    }
 }
 
 /// LLM client for draft picks and deck building.
@@ -638,5 +648,10 @@ impl DraftLlmClient {
 
     pub fn send_deck_building_message(&mut self, user_message: &str) -> String {
         self.backend.send_deck_building(user_message)
+    }
+
+    /// The full system prompt this client will send to the model.
+    pub fn system_prompt(&self) -> &str {
+        self.backend.system_prompt()
     }
 }
