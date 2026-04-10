@@ -49,5 +49,7 @@ impl CardBehavior for GeistHonoredMonk {
         for _ in 0..2 {
             state.create_token_with_subtypes("Spirit", controller, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], vec!["Spirit".into()], registry);
         }
+        state.log(crate::state::LogLevel::Event,
+            "Geist-Honored Monk: created two 1/1 white Spirit tokens with flying".into());
     }
 }
