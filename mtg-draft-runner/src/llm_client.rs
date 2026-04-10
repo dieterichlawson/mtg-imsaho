@@ -258,7 +258,6 @@ struct AnthropicDraftBackend {
     model: String,
     system_prompt: String,
     conversation: Vec<serde_json::Value>,
-    deck_conversation: Vec<serde_json::Value>,
 }
 
 impl AnthropicDraftBackend {
@@ -274,7 +273,6 @@ impl AnthropicDraftBackend {
             model: model.to_string(),
             system_prompt,
             conversation: Vec::new(),
-            deck_conversation: Vec::new(),
         }
     }
 
@@ -350,11 +348,10 @@ impl DraftBackend for AnthropicDraftBackend {
         result
     }
 
+    // Deckbuilding shares the same conversation as pick selection so the model
+    // can look back at every pack it saw and every pick it made.
     fn send_deck_building(&mut self, message: &str) -> String {
-        let mut conv = std::mem::take(&mut self.deck_conversation);
-        let result = self.send_conv(&mut conv, message);
-        self.deck_conversation = conv;
-        result
+        self.send_pick(message)
     }
 
     fn system_prompt(&self) -> &str {
@@ -369,8 +366,9 @@ struct GeminiDraftBackend {
     model: String,
     draft_thinking: Option<String>,
     system_prompt: String,
-    pick_interaction_id: Option<String>,
-    deck_interaction_id: Option<String>,
+    /// Single interaction chain shared by both pick and deckbuilding turns,
+    /// so deckbuilding inherits the full draft history.
+    interaction_id: Option<String>,
 }
 
 impl GeminiDraftBackend {
@@ -386,8 +384,7 @@ impl GeminiDraftBackend {
             model: model.to_string(),
             draft_thinking,
             system_prompt,
-            pick_interaction_id: None,
-            deck_interaction_id: None,
+            interaction_id: None,
         }
     }
 
@@ -561,16 +558,19 @@ impl GeminiDraftBackend {
 
 impl DraftBackend for GeminiDraftBackend {
     fn send_pick(&mut self, message: &str) -> String {
-        let prev = self.pick_interaction_id.take();
+        let prev = self.interaction_id.take();
         let (raw, new_id) = self.call_interactions(message, &Self::pick_schema(), prev.as_deref());
-        self.pick_interaction_id = new_id;
+        self.interaction_id = new_id;
         Self::parse_pick_response(&raw)
     }
 
+    // Deckbuilding chains off the same interaction id as pick selection so
+    // the model has the full draft history (packs, picks, prior reasoning)
+    // in context when building its deck.
     fn send_deck_building(&mut self, message: &str) -> String {
-        let prev = self.deck_interaction_id.take();
+        let prev = self.interaction_id.take();
         let (raw, new_id) = self.call_interactions(message, &Self::deck_schema(), prev.as_deref());
-        self.deck_interaction_id = new_id;
+        self.interaction_id = new_id;
         Self::parse_deck_response(&raw)
     }
 
