@@ -965,6 +965,18 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 let spell_tap_plan = cast_actions.iter().find_map(|a| {
                     if let Action::CastSpell { tap_plan, .. } = a { Some(tap_plan.clone()) } else { None }
                 }).unwrap_or_default();
+                // Expose max X for ExileXFromGraveyard spells so the player
+                // UI can show the effective damage in the label.
+                let exile_x_from_gy_max = if matches!(&data.additional_cost,
+                    Some(AdditionalCost::ExileXFromGraveyard)
+                ) {
+                    let n = state.objects.values()
+                        .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id)
+                        .count() as u32;
+                    Some(n)
+                } else {
+                    None
+                };
                 actions.extend(cast_actions);
                 let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
                 castable_spells.push(crate::actions::CastableSpell {
@@ -973,6 +985,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     is_flashback: false,
                     target_spec: spec,
                     tap_plan: spell_tap_plan,
+                    exile_x_from_gy_max,
                 });
             }
         }
@@ -1076,6 +1089,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     is_flashback: !cast_from_gy,
                     target_spec: spec,
                     tap_plan: fb_tap_plan,
+                    exile_x_from_gy_max: None,
                 });
             }
         }

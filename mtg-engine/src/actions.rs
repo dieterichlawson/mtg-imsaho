@@ -116,6 +116,13 @@ pub struct CastableSpell {
     pub target_spec: CastTargetSpec,
     /// Pre-computed mana sources to tap when casting this spell.
     pub tap_plan: Vec<(ObjectId, usize)>,
+    /// For spells with an "exile X cards from your graveyard" additional
+    /// cost (Harvest Pyre), the maximum X the caster can pay right now —
+    /// i.e. the number of exilable cards in their graveyard. `None` for
+    /// spells without this cost. Player implementations use this to
+    /// display the effective X (and resulting damage) in the action
+    /// label and to fill in `exile_count` / `exile_ids` when casting.
+    pub exile_x_from_gy_max: Option<u32>,
 }
 
 /// An activated ability that can be activated, with its valid target options.

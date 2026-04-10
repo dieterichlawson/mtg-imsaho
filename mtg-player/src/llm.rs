@@ -1238,15 +1238,36 @@ impl LlmPlayer {
     fn choose_cast_targets(&mut self, view: &GameView, spell: &mtg_engine::actions::CastableSpell, legal_actions: &[Action]) -> Action {
         use mtg_engine::actions::{CastTargetSpec, Target};
 
+        // For ExileXFromGraveyard spells (Harvest Pyre), find the expanded
+        // CastSpell action in legal_actions that exiles the maximum number of
+        // cards (matching `spell.exile_x_from_gy_max`). choose_cast_targets
+        // only picks the target here — exile_count and exile_ids come from
+        // the pre-enumerated expanded action so the LLM gets the damage it
+        // was promised in the label.
+        let pick_expanded = |targets: &[Target]| -> Option<Action> {
+            let target_max = spell.exile_x_from_gy_max?;
+            legal_actions.iter().find_map(|a| {
+                if let Action::CastSpell { object_id, targets: t, exile_count, .. } = a {
+                    if *object_id == spell.object_id && *exile_count == Some(target_max) && t.as_slice() == targets {
+                        return Some(a.clone());
+                    }
+                }
+                None
+            })
+        };
+
         match &spell.target_spec {
             CastTargetSpec::NoTargets => {
+                if let Some(a) = pick_expanded(&[]) { return a; }
                 Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
             }
             CastTargetSpec::SingleTarget(options) => {
                 if options.len() == 1 {
+                    if let Some(a) = pick_expanded(std::slice::from_ref(&options[0])) { return a; }
                     return Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() };
                 }
                 let target = self.prompt_target_selection(view, &format!("{}: select a target", spell.name), options);
+                if let Some(a) = pick_expanded(std::slice::from_ref(&target)) { return a; }
                 Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
@@ -1585,10 +1606,17 @@ impl Player for LlmPlayer {
                             let cs = &legal.castable_spells[cs_idx];
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
                             let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
+                            // For ExileXFromGraveyard spells (Harvest Pyre), show the
+                            // effective X derived from the current graveyard size and
+                            // the resulting damage, so the LLM doesn't waste the spell
+                            // on an empty graveyard.
+                            let x_suffix = cs.exile_x_from_gy_max
+                                .map(|n| format!(" X={} ({} damage)", n, n))
+                                .unwrap_or_default();
                             let label = if tap_str.is_empty() {
-                                format!("{} {}", verb, cs.name)
+                                format!("{} {}{}", verb, cs.name, x_suffix)
                             } else {
-                                format!("{} {} (tap {})", verb, cs.name, tap_str)
+                                format!("{} {}{} (tap {})", verb, cs.name, x_suffix, tap_str)
                             };
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             if seen_cast_labels.contains(&label) { continue; }
