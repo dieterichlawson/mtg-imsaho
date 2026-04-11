@@ -3617,3 +3617,159 @@ current behavior.
 Bug BF (Traveler's Amulet doesn't shuffle — different symptom on the
 same card).
 
+---
+
+### 🟡 Engine Bug 4D-001: `create_token_with_subtypes` discards post-creation mutations on doubled tokens (Parallel Lives breaks Army of the Damned, Kessig Cagebreakers, and Gutter Grime)
+**Severity:** medium — latent (Parallel Lives was in one drafter's pool but never paired with a post-mutating token source in the sampled games)
+**File:** `mtg-engine/src/state.rs:295-338` and callers that post-mutate the returned `ObjectId`
+
+The doubling path in `create_token_with_subtypes` creates the
+extra Parallel-Lives copies *inside* the helper but returns only
+the primary token's id:
+
+```rust
+pub fn create_token_with_subtypes(...) -> ObjectId {
+    let doubler_count = self.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.controller == owner)
+        .filter(|o| registry.get(o.card_id)
+            .map(|b| b.replacement_effects().contains(&ReplacementEffect::DoubleTokens))
+            .unwrap_or(false))
+        .count();
+    let extra_copies = if doubler_count > 0 { (1u32 << doubler_count) - 1 } else { 0 };
+
+    let id = self.create_token_internal(name, owner, power, toughness, …);
+    for _ in 0..extra_copies {
+        self.create_token_internal(name, owner, power, toughness, …);
+    }
+    id  // <-- primary only
+}
+```
+
+Callers that post-mutate `token_id` (tap it, add a `card_state`
+linkage, insert into `combat.attackers`, etc.) silently miss the
+doubled copies. The extras enter with whatever defaults
+`create_token_internal` hands back — not with the post-mutations
+the oracle expects to apply to each token the effect creates.
+
+**Three ISD cards post-mutate and therefore break under Parallel
+Lives:**
+
+1. **`army_of_the_damned.rs:41-56`** — "Create thirteen *tapped*
+   2/2 black Zombie creature tokens":
+   ```rust
+   for _ in 0..13 {
+       let token_id = state.create_token_with_subtypes(...);
+       if let Some(obj) = state.get_object_mut(token_id) {
+           obj.tapped = true;
+       }
+   }
+   ```
+   With Parallel Lives in play, you should get 26 **tapped**
+   zombies. You actually get 13 tapped + 13 *untapped* zombies
+   — the extras bypass "tapped" entirely. Strictly helpful for
+   the caster (the untapped copies can attack next turn after
+   the untap step), but still diverges from the oracle and from
+   the Parallel-Lives replacement ruling that the full "create
+   N tapped tokens" characteristic gets doubled.
+
+2. **`kessig_cagebreakers.rs:60-77`** — "Create a 2/2 green Wolf
+   creature token that's *tapped and attacking* for each creature
+   card in your graveyard":
+   ```rust
+   for _ in 0..creature_count {
+       let token_id = state.create_token_with_subtypes(...);
+       if let Some(obj) = state.get_object_mut(token_id) {
+           obj.tapped = true;
+           obj.summoning_sick = false;
+       }
+       if let Some(combat) = &mut state.combat {
+           combat.attackers.insert(token_id, defending_player);
+       }
+   }
+   ```
+   With Parallel Lives, the extras are NOT inserted into
+   `combat.attackers`. They enter as idle 2/2 Wolves — no combat
+   damage contribution this turn. The caster loses half the
+   expected burst. Per oracle ALL tokens created by the ability
+   should enter tapped and attacking. This is the most
+   game-affecting of the three.
+
+3. **`gutter_grime.rs:63-77`** — Ooze tokens with dynamic P/T
+   pinned to Gutter Grime's slime counters:
+   ```rust
+   let token_id = state.create_token_with_subtypes(
+       "Ooze", controller, 0, 0, ...);
+   if let Some(token) = state.get_object_mut(token_id) {
+       token.card_state.insert("pt_source_counter".into(), self_id);
+       token.card_state.insert("pt_source_counter_type".into(), ObjectId(1));
+   }
+   ```
+   The P/T linkage lives in the PRIMARY's `card_state` only. The
+   extra Parallel-Lives Ooze has `power = Some(0)`,
+   `toughness = Some(0)`, and no `pt_source_counter` entry, so
+   `effective_toughness` at `state.rs:949-969` skips the
+   `pt_source_counter` branch and falls through to the base 0.
+   SBA 704.5f then destroys it for having 0 toughness. **Parallel
+   Lives + Gutter Grime actively doesn't double: the "second"
+   Ooze is a stillborn 0/0 that dies on the same SBA pass.** Same
+   family as Bug AV (Cackling Counterpart / Back from the Brink
+   dynamic P/T loss) — "post-creation state is not a first-class
+   part of the create_token plumbing" — but at a different call
+   site.
+
+Also post-mutating but non-buggy (the mutation is a no-op on the
+doubled copies, not something the oracle requires): Stitcher's
+Apprentice (`stitchers_apprentice.rs:54`) uses `let _token_id`
+and never mutates. Cellar Door, Mausoleum Guard, Moan of the
+Unhallowed, Spider Spawning, Midnight Haunting, Moorland Haunt,
+Bloodline Keeper, Doomed Traveler, Geist-Honored Monk, Mayor of
+Avabruck, Undead Alchemist, Garruk Relentless, and Geist of
+Saint Traft all call `create_token_with_subtypes` without
+post-mutating, so Parallel Lives works correctly for those.
+
+**Did NOT fire** in `verify-draft-8seat-high-v5.log`. Parallel
+Lives appeared in the drafted-card listing but wasn't cast in
+any sampled game with Army of the Damned, Kessig Cagebreakers,
+or Gutter Grime simultaneously on the battlefield. Strict latent
+bug, but all three affected cards were in drafters' pools.
+
+**Proposed fix:** change the signature of
+`create_token_with_subtypes` (and its sibling `create_token`)
+to return *all* created object ids, not just the primary:
+
+```rust
+pub fn create_token_with_subtypes(...) -> Vec<ObjectId> {
+    ...
+    let mut ids = vec![self.create_token_internal(...)];
+    for _ in 0..extra_copies {
+        ids.push(self.create_token_internal(...));
+    }
+    ids
+}
+```
+
+Each caller then iterates the returned vec and applies its
+post-mutation to every token. No-mutation callers can just
+ignore the vec or grab the first element.
+
+Alternative: keep the single-id signature and add a higher-level
+helper that takes a `FnMut(&mut GameState, ObjectId)` closure so
+the helper runs the post-mutation against every created token
+(primary + doubled). Less invasive per call site but slightly
+more boilerplate on the helper side.
+
+**Cross-references:** Bug 0F-001 is a very close sibling — same
+helper (`create_token_with_subtypes` indirectly, via
+`create_token_copy`), same root cause ("only the primary token's
+id is returned so the extras are invisible to the caller"), but
+different symptom (0F-001 loses `card_id` patching on the extras
+and therefore their `CardBehavior`; 4D-001 loses in-line
+post-creation mutations like `tapped`, `combat.attackers`, and
+`card_state` entries). The two bugs collapse into a single fix
+if `create_token_with_subtypes` is changed to return
+`Vec<ObjectId>` — both problems disappear because callers can
+apply whatever patching loop they need. Bug AV
+(`create_token_copy` loses dynamic P/T on the primary) is the
+third leg of this tripod; all three collapse into a single fix
+at the helper level.
+
