@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -36,7 +36,13 @@ impl CardBehavior for IsolatedChapel {
             toughness: None,
             oracle_text: "This land enters tapped unless you control a Plains or a Swamp.\n{T}: Add {W} or {B}.".into(),
             keywords: vec![],
-            flashback_cost: None, continuous_effects: vec![], additional_cost: None, triggered_abilities: vec![],
+            flashback_cost: None, continuous_effects: vec![], additional_cost: None,
+            triggered_abilities: vec![
+                TriggeredAbilityDef {
+                    kind: TriggerKind::EntersBattlefield,
+                    description: "enters tapped unless you control a Plains or a Swamp".into(),
+                },
+            ],
         }
     }
 

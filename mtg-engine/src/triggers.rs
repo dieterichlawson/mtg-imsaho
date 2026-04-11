@@ -411,16 +411,20 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 }
 
                 // ETB-watch: notify other permanents (and graveyard cards like Dearly Departed)
-                // that a creature entered.
+                // that a creature entered. Only collect if the watcher's zone matches
+                // the trigger's allowed zones (via CardBehavior::trigger_zones).
                 if state.get_object(*object).map(|o| o.power.is_some()).unwrap_or(false) {
-                    let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                    let watchers: Vec<(ObjectId, CardId, PlayerId, Zone)> = state.objects.values()
                         .filter(|o| (o.zone == Zone::Battlefield || o.zone == Zone::Graveyard) && o.id != *object)
-                        .map(|o| (o.id, o.card_id, o.controller))
+                        .map(|o| (o.id, o.card_id, o.controller, o.zone))
                         .collect();
-                    for (watcher_id, watcher_card_id, watcher_controller) in watchers {
-                        if registry.get(watcher_card_id).is_some() {
-                            let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureEnters, false);
-                            if !desc.is_empty() {
+                    let trigger_kind = crate::cards::TriggerKind::AnyCreatureEnters;
+                    for (watcher_id, watcher_card_id, watcher_controller, watcher_zone) in watchers {
+                        if let Some(behavior) = registry.get(watcher_card_id) {
+                            let has_trigger = behavior.card_data().triggered_abilities.iter()
+                                .any(|t| t.kind == trigger_kind);
+                            if has_trigger && behavior.trigger_zones(&trigger_kind).contains(&watcher_zone) {
+                                let desc = trigger_description(registry, watcher_card_id, &trigger_kind, false);
                                 let trigger = PendingTrigger::EnterWatch {
                                     watcher_id,
                                     watcher_card_id,

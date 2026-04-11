@@ -36,6 +36,13 @@ impl CardBehavior for DearlyDeparted {
         }
     }
 
+    fn trigger_zones(&self, kind: &TriggerKind) -> Vec<Zone> {
+        match kind {
+            TriggerKind::AnyCreatureEnters => vec![Zone::Graveyard],
+            _ => vec![Zone::Battlefield],
+        }
+    }
+
     fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
         // Dearly Departed must be in OUR graveyard.
         let self_obj = match state.get_object(self_id) {
