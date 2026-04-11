@@ -42,6 +42,10 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug Y (X-cost / mana) — `mtg-engine/tests/audit_xcost_mana_family.rs::bug_y_screeching_bat_transform_offered_with_untapped_lands` — status: failing-as-expected
 - Bug 99-003 (Transform / DFC) — `mtg-engine/tests/audit_transform_dfc_family.rs::bug_99_003_daybreak_ranger_no_cross_contamination` — status: failing-as-expected (runs 30 trials to defeat HashMap-iteration nondeterminism)
 - Bug BE (Transform / DFC) — `mtg-engine/tests/audit_transform_dfc_family.rs::bug_be_garruk_transforms_before_zero_loyalty_death` — status: failing-as-expected
+- Bug BU (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_bu_burning_vengeance_no_stale_opponent_log` — status: failing-as-expected
+- Bug K (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_k_selfless_cathar_autotaps_sacrifice_this` — status: failing-as-expected
+- Bug 17-002 (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_17_002_undead_alchemist_exiles_milled_opponent_creatures` — status: failing-as-expected
+- Bug AE (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_ae_undead_alchemist_replaces_damage_not_restores_life` — status: failing-as-expected
 - Bug 17-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature` — status: failing-as-expected
 - Bug E1-001 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature` — status: failing-as-expected
 - Bug 0F-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb` — status: failing-as-expected
