@@ -676,13 +676,22 @@ cast in any reanimation scenario.
 
 ---
 
-### 🟡 Engine Bug AJ: Equipment equip-ability appears twice in legal_actions and the wrong one misroutes attach
+### ✅ Engine Bug AJ: Equipment equip-ability appears twice in legal_actions and the wrong one misroutes attach
+**Commit:** `136de64` — "Fix Bug AJ: gate equipment activated_abilities on power.is_none()"
 **Severity:** medium — fires only after Bug A's autotap fix (so latent in old audit)
-**Files:** Most equipment in `mtg-engine/src/cards/isd/*.rs` (Cobbled Wings,
-Mask of Avacyn, Silver-Inlaid Dagger, Butcher's Cleaver, Sharpened Pitchfork,
-Wooden Stake — all missing the `power.is_none()` filter that Inquisitor's
-Flail, Trepanation Blade, Runechanter's Pike, Blazing Torch, Demonmail
-Hauberk *do* have)
+**Files fixed:** Cobbled Wings, Mask of Avacyn, Silver-Inlaid Dagger,
+Butcher's Cleaver, Sharpened Pitchfork, Wooden Stake (all in
+`mtg-engine/src/cards/isd/*.rs`). Inquisitor's Flail, Trepanation Blade,
+Runechanter's Pike, Blazing Torch, Demonmail Hauberk already had the
+correct `power.is_none()` gating.
+
+**Confirmed empirically** by writing a regression test that found the
+duplicate before the fix:
+```
+equip-to-b count: 2
+  ActivateAbility { object_id: ObjectId(1), ability_index: 0, targets: [Object(ObjectId(2))], ... }  // bears_a (wrong)
+  ActivateAbility { object_id: ObjectId(3), ability_index: 0, targets: [Object(ObjectId(2))], ... }  // wings (correct)
+```
 
 The engine collects activated abilities for a permanent in two passes
 (`mtg-engine/src/engine.rs:528-559`):
