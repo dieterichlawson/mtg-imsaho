@@ -174,6 +174,21 @@ Artifacts with an `Equip {N}` ability can be attached to a creature you control 
 
 Look for `Activate <equipment> (Equip {N})` in the action list. Equipment sitting idle on the battlefield is wasted resources — find a creature to equip it to, especially when you're behind on board or life.
 
+## Combat math
+
+Combat resolves in this order: declare attackers → declare blockers → first-strike damage step (only if a first/double striker is involved) → normal damage step. Anything that died in an earlier step doesn't deal damage in a later step.
+
+**Multi-blocker damage assignment.** When a single attacker is blocked by two or more creatures, the **attacking player** assigns its damage among the blockers. The attacker MUST assign at least lethal damage to the first blocker before any damage spills to the second, and at least lethal to the second before any spills to the third, etc. (Lethal = blocker's toughness minus damage already marked.) Combined blocker toughness is NOT a shared pool — you can't "absorb" 4 damage across a 1/4 and a 2/2 and have them both survive.
+
+Worked example. A 4/2 trample attacker is double-blocked by your 1/4 Bell-Ringer and your 2/2 Walking Corpse. The attacker has 4 damage to assign:
+- It can lethal-first the Walking Corpse (assign 2 → kills it), then assign the remaining 2 to Bell-Ringer (Bell-Ringer survives at 1/2). Walking Corpse dies, Bell-Ringer survives. With trample, no damage tramples through (4 was used up assigning lethal to one and partial to the other).
+- Or it can lethal-first the Bell-Ringer (assign 4 → kills it), then 0 left over. Bell-Ringer dies, Walking Corpse survives untouched.
+The attacking player picks the worse-for-you option. Either way, exactly one of your two blockers dies; the trade is *one* attacker for *one* blocker, not "both blockers absorb the damage and live."
+
+**Chump-blocking with one creature against several attackers.** When you have one blocker and multiple attackers will get through, you usually want to chump the *highest-power* attacker, not the smallest one — that minimises the damage you take. Trading your 1/1 for the opponent's 2/1 token "to remove a creature from the board" is rarely worth taking 1 extra life loss; chumping the 3/3 instead saves you a life.
+
+**First strike vs trample double-blocks.** First strike damage happens before normal damage. If a first-striking attacker double-blocked by two non-first-strike creatures kills one of the blockers in the first-strike step, the attacker then deals its damage to *just the survivor* in the normal step. Trample only matters if the attacker has trample AND the surviving blocker still has fewer hit points than the attacker has power; only excess damage tramples through.
+
 ## When you're behind
 
 If you're low on life and the board is unfavourable but stable, look for a way to *change* the situation — equipping a creature, casting an aura or buff, or forcing a race with combat tricks — before defaulting to "pass and hope to topdeck". Repeated passing rarely wins from behind; a desperate line that sometimes works beats a safe line that loses for sure.
@@ -246,6 +261,36 @@ Hand: Giant Growth {G}
 0:Pass 1:Tap Forest 2:Cast Giant Growth (tap Forest) 3:Concede
 ```
 **Pick 2** — cast Giant Growth on your attacking Bears. After it resolves they're 5/5, so even if Savannah Lions blocks, the Bears survive (5 toughness vs 2 power) and trade up.
+
+### Example: timing morbid (a "creature died this turn" effect)
+
+Some spells care about whether a creature died THIS turn — Brimstone Volley
+deals 3 damage normally but 5 if a creature died this turn ("morbid"). That
+means you usually want to **let combat damage resolve before casting the
+spell** so a creature actually dies, then cast the spell after the damage
+step with the morbid bonus already active.
+
+```
+Recent events:
+You declared attackers: Tormented Pariah (#5), Elder of Laurels (#4), Villagers of Estwald (#9)
+Opp declared blockers: Ghoulraiser (#60) blocks Elder of Laurels (#4), Rakish Heir (#58) blocks Villagers of Estwald (#9)
+
+Turn 15 - Declare Blockers (your turn)
+You: 14hp, 1cards, 28lib, 4gy, 0exile
+Opp: 7hp, 3cards, 27lib, 3gy, 1exile
+Your board: 2x Forest, 3x Mountain, Tormented Pariah 3/2 [T], Elder of Laurels 2/3 [T], Villagers of Estwald 2/3 [T]
+Opp board: 2x Swamp (tapped), 2x Mountain (1 tapped), Rakish Heir 2/2 [S], Ghoulraiser 2/2
+Hand: Brimstone Volley {2}{R}
+[AFTER BLOCKERS DECLARED]
+
+0:Pass 1:Tap Forest 2:Tap Mountain 3:Cast Brimstone Volley → Opp (tap Mountain, 2x Forest) 4:Concede
+```
+
+**Pick 0** — pass first. Combat damage will resolve: Elder of Laurels (2 power) trades with Ghoulraiser (2 toughness), Villagers of Estwald (2 power) trades with Rakish Heir (2 toughness), Tormented Pariah (3 power) gets through unblocked → opp goes from 7 to 4. Several creatures die in combat → morbid is active. THEN, after combat damage, cast Brimstone Volley targeting the opponent for 5 (morbid). 4 → -1 = lethal.
+
+If you cast Brimstone Volley *before* combat damage (i.e. now, during Declare Blockers), nothing has died yet, so it deals only 3 — opp would go to 7 - 3 = 4 from the spell, then 4 - 3 = 1 from Pariah's combat damage, and you'd lose your shot at lethal this turn.
+
+The general rule: when you have a "creature died this turn" effect and you have favourable combat lined up, let combat damage resolve first, then cast the effect.
 
 ### Example: respond to opponent's spell
 
@@ -360,6 +405,17 @@ Ground every claim in your thoughts in the actual prompt text. Only reference
 creatures, cards, and zones that are explicitly listed in the current state —
 do not invent details, board positions, or cards that aren't there.
 
+When you cite a keyword (trample, first strike, deathtouch, lifelink, flying,
+vigilance, etc.), the keyword MUST appear after the creature's P/T in the
+prompt — e.g. `Rampaging Werewolf 8/4 trample`. If the keyword isn't printed
+there, the creature does not have it. Do not assume a creature has a keyword
+because of its flavour, name, or what a similar creature usually has, and do
+not credit a creature with a keyword that comes from an aura or anthem unless
+that aura is currently attached and listed inline. Common slips: thinking
+"Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
+to a Vampire after the spell has worn off, thinking a Spirit token has flying
+when the prompt printed it without the keyword.
+
 A typical action-selection response looks like:
 
     {"thoughts": "Grizzly Bears gets me a 2/2 on curve.", "action": 3}
@@ -401,6 +457,17 @@ itself should contain ONLY the response fields in the schema; do NOT add a
 Ground your reasoning in the actual prompt text. Only reference creatures,
 cards, and zones that are explicitly listed in the current state — do not
 invent details, board positions, or cards that aren't there.
+
+When you cite a keyword (trample, first strike, deathtouch, lifelink, flying,
+vigilance, etc.), the keyword MUST appear after the creature's P/T in the
+prompt — e.g. `Rampaging Werewolf 8/4 trample`. If the keyword isn't printed
+there, the creature does not have it. Do not assume a creature has a keyword
+because of its flavour, name, or what a similar creature usually has, and do
+not credit a creature with a keyword that comes from an aura or anthem unless
+that aura is currently attached and listed inline. Common slips: thinking
+"Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
+to a Vampire after the spell has worn off, thinking a Spirit token has flying
+when the prompt printed it without the keyword.
 
 A typical action-selection response looks like:
 
@@ -2317,6 +2384,48 @@ impl LlmPlayer {
         }
     }
 
+    /// Build labels for a list of permanent IDs in a combat prompt, disambiguating
+    /// any that would otherwise share an identical "Name P/T keywords" rendering.
+    /// When two or more entries collapse to the same label, we append `#1`, `#2`,
+    /// ... in their list order so the model can pick the right one. Also appends
+    /// any attached aura/equipment context inline so the model can see *which*
+    /// copy is locked down by Bonds of Faith etc.
+    ///
+    /// Returns a Vec<String> of the same length as `ids`, in the same order.
+    fn format_combat_creature_list(view: &GameView, ids: &[ObjectId]) -> Vec<String> {
+        // Pre-compute the base label and the attached context for each ID.
+        let base: Vec<String> = ids.iter().map(|&id| Self::format_combat_creature(view, id)).collect();
+        let attached: Vec<String> = ids.iter().map(|&id| {
+            let bits: Vec<String> = view.battlefield.iter()
+                .filter(|p| p.attached_to == Some(id))
+                .map(|p| p.name.clone())
+                .collect();
+            if bits.is_empty() { String::new() } else { format!(" [+{}]", bits.join(", ")) }
+        }).collect();
+
+        // Count base-label collisions.
+        let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for label in &base {
+            *counts.entry(label.as_str()).or_insert(0) += 1;
+        }
+
+        // Walk again, assigning #1, #2, ... within each colliding group.
+        let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        let mut out = Vec::with_capacity(ids.len());
+        for (i, label) in base.iter().enumerate() {
+            let collides = counts.get(label.as_str()).copied().unwrap_or(0) > 1;
+            let suffix = if collides {
+                let n = seen.entry(label.as_str()).or_insert(0);
+                *n += 1;
+                format!(" #{}", *n)
+            } else {
+                String::new()
+            };
+            out.push(format!("{}{}{}", label, suffix, attached[i]));
+        }
+        out
+    }
+
     pub fn choose_combat(&mut self, view: &GameView, prompt: &CombatPrompt) -> Action {
         match prompt {
             CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player } => {
@@ -2324,12 +2433,16 @@ impl LlmPlayer {
                     return Action::DeclareAttackers { attackers: vec![] };
                 }
 
+                // Build disambiguated labels so the model can tell apart two
+                // creatures that would otherwise render with identical text.
+                let labels = Self::format_combat_creature_list(view, eligible);
+
                 let mut combat_text = String::new();
                 if !must_attack.is_empty() {
                     combat_text.push_str("MUST ATTACK: ");
                     for &id in must_attack.iter() {
                         if let Some(idx) = eligible.iter().position(|&e| e == id) {
-                            combat_text.push_str(&format!("{}:{} ", idx, Self::format_combat_creature(view, id)));
+                            combat_text.push_str(&format!("{}:{} ", idx, labels[idx]));
                         }
                     }
                     combat_text.push('\n');
@@ -2337,7 +2450,7 @@ impl LlmPlayer {
                 combat_text.push_str("Choose attackers: ");
                 for (i, &id) in eligible.iter().enumerate() {
                     let forced = if must_attack.contains(&id) { " [MUST]" } else { "" };
-                    combat_text.push_str(&format!("{}:{}{} ", i, Self::format_combat_creature(view, id), forced));
+                    combat_text.push_str(&format!("{}:{}{} ", i, labels[i], forced));
                 }
                 combat_text.push_str(&format!(
                     "\nRespond with {{{}\"attacker_indices\": [..]}} — each index in 0-{}, empty list for no attacks. Forced attackers are auto-included.",
@@ -2474,20 +2587,24 @@ impl LlmPlayer {
             "required": required_fields
         });
 
-        // Build combat text for the prompt.
+        // Build combat text for the prompt with disambiguated labels so the
+        // model can tell apart two attackers/blockers that share a name.
+        let attacker_labels = Self::format_combat_creature_list(view, attackers);
+        let blocker_labels = Self::format_combat_creature_list(view, eligible_blockers);
+
         let mut combat_text = String::from("Attackers: ");
         for (i, &id) in attackers.iter().enumerate() {
             let perm = view.battlefield.iter().find(|p| p.object_id == id);
             let menace = perm.map_or(false, |p| p.keywords.contains(&mtg_engine::types::Keyword::Menace));
             if menace {
-                combat_text.push_str(&format!("{}:{} (MENACE) ", i, Self::format_combat_creature(view, id)));
+                combat_text.push_str(&format!("{}:{} (MENACE) ", i, attacker_labels[i]));
             } else {
-                combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
+                combat_text.push_str(&format!("{}:{} ", i, attacker_labels[i]));
             }
         }
         combat_text.push_str("\nYour blockers: ");
-        for (i, &id) in eligible_blockers.iter().enumerate() {
-            combat_text.push_str(&format!("{}:{} ", i, Self::format_combat_creature(view, id)));
+        for (i, _id) in eligible_blockers.iter().enumerate() {
+            combat_text.push_str(&format!("{}:{} ", i, blocker_labels[i]));
         }
         combat_text.push_str(&format!(
             "\nRespond with {{{}\"0\": <attacker_idx>, \"1\": <attacker_idx>, ...}} — one key per blocker (0..{}), value is the 0-indexed attacker to block or -1 for no block.",
@@ -2606,5 +2723,154 @@ mod tests {
         counters.insert(CounterType::Slime, 5);
         counters.insert(CounterType::Study, 2);
         assert_eq!(LlmPlayer::format_counters(&counters), None);
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // format_combat_creature_list — disambiguation regression tests
+    // ─────────────────────────────────────────────────────────────────
+
+    use mtg_engine::ids::{CardId, ObjectId, PlayerId};
+    use mtg_engine::types::{CardType, Step, ManaPool};
+    use mtg_engine::view::{GameView, PermanentView};
+
+    fn empty_view() -> GameView {
+        GameView {
+            you: PlayerId(0),
+            your_hand: vec![],
+            your_life: 20,
+            your_mana_pool: ManaPool::default(),
+            your_library_size: 30,
+            your_library_cards: vec![],
+            your_mulligan_count: 0,
+            opponents: vec![],
+            battlefield: vec![],
+            graveyards: vec![],
+            stack: vec![],
+            exile: vec![],
+            step: Step::PrecombatMain,
+            active_player: PlayerId(0),
+            priority_player: Some(PlayerId(0)),
+            turn_number: 1,
+            display_log: vec![],
+            full_log: vec![],
+            revealed_names: HashMap::new(),
+        }
+    }
+
+    fn perm(id: u64, name: &str, power: i32, toughness: i32, controller: PlayerId) -> PermanentView {
+        PermanentView {
+            object_id: ObjectId(id),
+            card_id: CardId(0),
+            name: name.into(),
+            card_types: vec![CardType::Creature],
+            controller,
+            owner: controller,
+            tapped: false,
+            power: Some(power),
+            toughness: Some(toughness),
+            effective_power: Some(power),
+            effective_toughness: Some(toughness),
+            damage_marked: 0,
+            summoning_sick: false,
+            attached_to: None,
+            keywords: vec![],
+            oracle_text: String::new(),
+            counters: HashMap::new(),
+        }
+    }
+
+    fn aura(id: u64, name: &str, attached_to: u64, controller: PlayerId) -> PermanentView {
+        PermanentView {
+            object_id: ObjectId(id),
+            card_id: CardId(0),
+            name: name.into(),
+            card_types: vec![CardType::Enchantment],
+            controller,
+            owner: controller,
+            tapped: false,
+            power: None,
+            toughness: None,
+            effective_power: None,
+            effective_toughness: None,
+            damage_marked: 0,
+            summoning_sick: false,
+            attached_to: Some(ObjectId(attached_to)),
+            keywords: vec![],
+            oracle_text: String::new(),
+            counters: HashMap::new(),
+        }
+    }
+
+    #[test]
+    fn disambiguate_unique_names_unchanged() {
+        let mut view = empty_view();
+        view.battlefield.push(perm(1, "Grizzly Bears", 2, 2, PlayerId(0)));
+        view.battlefield.push(perm(2, "Llanowar Elves", 1, 1, PlayerId(0)));
+        let labels = LlmPlayer::format_combat_creature_list(&view, &[ObjectId(1), ObjectId(2)]);
+        assert_eq!(labels[0], "Grizzly Bears 2/2");
+        assert_eq!(labels[1], "Llanowar Elves 1/1");
+    }
+
+    #[test]
+    fn disambiguate_identical_names_get_numeric_suffixes() {
+        let mut view = empty_view();
+        view.battlefield.push(perm(10, "Rakish Heir", 4, 2, PlayerId(0)));
+        view.battlefield.push(perm(11, "Rakish Heir", 4, 2, PlayerId(0)));
+        view.battlefield.push(perm(12, "Rakish Heir", 4, 2, PlayerId(0)));
+        let labels = LlmPlayer::format_combat_creature_list(
+            &view,
+            &[ObjectId(10), ObjectId(11), ObjectId(12)],
+        );
+        assert_eq!(labels[0], "Rakish Heir 4/2 #1");
+        assert_eq!(labels[1], "Rakish Heir 4/2 #2");
+        assert_eq!(labels[2], "Rakish Heir 4/2 #3");
+    }
+
+    #[test]
+    fn disambiguate_attached_aura_shown_inline_for_collisions() {
+        // The audit case: two Rakish Heirs, one wearing Bonds of Faith.
+        // The action label must show the aura inline so the model can match
+        // the index to the right physical creature.
+        let mut view = empty_view();
+        view.battlefield.push(perm(20, "Rakish Heir", 4, 2, PlayerId(0)));
+        view.battlefield.push(perm(21, "Rakish Heir", 4, 2, PlayerId(0)));
+        view.battlefield.push(aura(22, "Bonds of Faith", 21, PlayerId(0)));
+
+        let labels = LlmPlayer::format_combat_creature_list(
+            &view,
+            &[ObjectId(20), ObjectId(21)],
+        );
+        assert_eq!(labels[0], "Rakish Heir 4/2 #1");
+        assert_eq!(labels[1], "Rakish Heir 4/2 #2 [+Bonds of Faith]");
+    }
+
+    #[test]
+    fn disambiguate_partial_collision_only_marks_collisions() {
+        let mut view = empty_view();
+        view.battlefield.push(perm(30, "Grizzly Bears", 2, 2, PlayerId(0)));
+        view.battlefield.push(perm(31, "Grizzly Bears", 2, 2, PlayerId(0)));
+        view.battlefield.push(perm(32, "Llanowar Elves", 1, 1, PlayerId(0)));
+        let labels = LlmPlayer::format_combat_creature_list(
+            &view,
+            &[ObjectId(30), ObjectId(31), ObjectId(32)],
+        );
+        assert_eq!(labels[0], "Grizzly Bears 2/2 #1");
+        assert_eq!(labels[1], "Grizzly Bears 2/2 #2");
+        assert_eq!(labels[2], "Llanowar Elves 1/1"); // unique → no suffix
+    }
+
+    #[test]
+    fn disambiguate_different_pt_does_not_collide() {
+        // Two creatures with the same name but different effective P/T already
+        // render differently and don't need disambiguation.
+        let mut view = empty_view();
+        view.battlefield.push(perm(40, "Howlpack of Estwald", 4, 6, PlayerId(0)));
+        view.battlefield.push(perm(41, "Howlpack of Estwald", 5, 7, PlayerId(0)));
+        let labels = LlmPlayer::format_combat_creature_list(
+            &view,
+            &[ObjectId(40), ObjectId(41)],
+        );
+        assert_eq!(labels[0], "Howlpack of Estwald 4/6");
+        assert_eq!(labels[1], "Howlpack of Estwald 5/7");
     }
 }
