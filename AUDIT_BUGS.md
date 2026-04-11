@@ -676,6 +676,94 @@ cast in any reanimation scenario.
 
 ---
 
+### 🟡 Engine Bug AJ: Equipment equip-ability appears twice in legal_actions and the wrong one misroutes attach
+**Severity:** medium — fires only after Bug A's autotap fix (so latent in old audit)
+**Files:** Most equipment in `mtg-engine/src/cards/isd/*.rs` (Cobbled Wings,
+Mask of Avacyn, Silver-Inlaid Dagger, Butcher's Cleaver, Sharpened Pitchfork,
+Wooden Stake — all missing the `power.is_none()` filter that Inquisitor's
+Flail, Trepanation Blade, Runechanter's Pike, Blazing Torch, Demonmail
+Hauberk *do* have)
+
+The engine collects activated abilities for a permanent in two passes
+(`mtg-engine/src/engine.rs:528-559`):
+1. The permanent's own behavior — `behavior.activated_abilities(state, obj_id, registry)`
+2. Behaviors of objects attached TO the permanent (auras and equipment),
+   passing the same `obj_id` as the call site
+
+For aura-granted abilities (like Skeletal Grimace's `{B}: Regenerate`)
+this is correct: the aura's ability_index applies to the enchanted
+creature. But for equipment, the "equip {N}" ability belongs to the
+equipment itself, not the attached creature. When the engine iterates
+the attached creature and asks the equipment "what activated abilities
+do you have?", a buggy equipment card returns its equip ability anyway,
+so the engine produces an `Action::ActivateAbility { object_id: creature_id, ... }`
+in addition to the correct `{ object_id: equipment_id, ... }`.
+
+Cards that DO filter (Inquisitor's Flail, etc.):
+```rust
+if obj.zone == Zone::Battlefield && obj.power.is_none() {
+    vec![ActivatedAbilityDef { ... }]
+```
+Cards that DON'T filter:
+```rust
+if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+    vec![ActivatedAbilityDef { ... }]
+```
+
+Worse, the second variant gets routed to
+`on_activate_ability(object_id = creature_id)`, and the handler does
+`state.get_object_mut(object_id).attached_to = Some(*target_id)`, which
+mutates the **creature's** `attached_to` field, not the equipment's.
+
+**Did NOT fire** in the audit log because Bug A meant equipment
+activations never appeared. After the Bug A fix landed, the LLM player
+will see two near-identical "Activate <name> (Equip {N})" entries in
+equipment-heavy positions and may pick the wrong one.
+
+**Proposed fix:** add `&& obj.power.is_none()` to the activated_abilities
+gating check in Cobbled Wings, Mask of Avacyn, Silver-Inlaid Dagger,
+Butcher's Cleaver, Sharpened Pitchfork, and Wooden Stake. (Or, more
+robustly, fix the engine's attached-iteration loop to skip equipment
+since equip abilities are never granted to the attached creature.)
+
+---
+
+### 🟡 Engine Bug AE: Undead Alchemist "instead" damage replacement implemented as a trigger
+**Severity:** medium — wrong order of operations vs other on-damage triggers
+**File:** `mtg-engine/src/cards/isd/undead_alchemist.rs:45-106`
+
+Oracle: "If a Zombie you control would deal combat damage to a player,
+**instead** that player mills that many cards." This is a damage
+replacement effect (CR 614), not a triggered ability. The Zombie should
+mill the player INSTEAD of dealing damage; the player should never take
+the damage.
+
+The current implementation triggers on `AnyCombatDamageToPlayer` (a
+post-damage trigger), then restores the lost life and mills:
+```rust
+state.get_player_mut(damaged_player).life = current_life + amount as i32;
+// Mill that many cards.
+```
+
+Functional problems:
+1. **Other on-damage triggers fire first.** Curse of Stalked Prey,
+   Falkenrath Noble drain, Curiosity, Sturmgeist's "draw on combat damage"
+   all fire on the actual damage event before Undead Alchemist's "trigger"
+   undoes it. They shouldn't have triggered at all.
+2. **Lethal damage** kills the player before the restoration runs. SBA
+   704.5a fires when life ≤ 0; Undead Alchemist's trigger is too late
+   to save them.
+
+**Did NOT fire in audit** — Undead Alchemist was drafted exactly once
+and never made it to the battlefield in a damage-dealing context.
+
+**Proposed fix:** introduce a `ReplacementEffect::ReplaceCombatDamageWithMill`
+that the engine consults during the combat damage step, producing a mill
+event instead of a damage event when the source matches. Same shape as
+`DoubleCombatDamage` for Inquisitor's Flail.
+
+---
+
 ### 🟡 Engine Bug Y: pay-mana-during-resolution checks the mana pool only — never offered when pool is empty
 **Severity:** medium — multiple cards affected
 **Files:**
