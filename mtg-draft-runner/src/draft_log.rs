@@ -1,23 +1,5 @@
 use std::path::Path;
 
-/// Prefix every line of `text` with `tag` followed by a space, so that the
-/// resulting multi-line content is greppable by `tag`. Empty lines remain
-/// blank (no trailing tag).
-fn prefix_lines(tag: &str, text: &str) -> String {
-    let mut out = String::with_capacity(text.len() + text.lines().count() * (tag.len() + 1));
-    for line in text.lines() {
-        if line.is_empty() {
-            out.push('\n');
-        } else {
-            out.push_str(tag);
-            out.push(' ');
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    out
-}
-
 /// A streaming log writer that writes through the global game_log.
 /// Thread-safe because game_log uses a single Mutex internally.
 ///
@@ -75,7 +57,6 @@ impl DraftLogger {
     }
 
     pub fn pack_contents(&self, seat: usize, pack_num: usize, cards: &[String], file: &str, line: u32) {
-        let tag = format!("[Seat {}]", seat);
         let mut content = String::new();
         for (i, card) in cards.iter().enumerate() {
             let name = card.split(" // ").next().unwrap_or(card);
@@ -83,8 +64,8 @@ impl DraftLogger {
         }
         mtg_player::game_log::write(
             file, line,
-            &format!("{} PACK Pack {} ({} cards)", tag, pack_num, cards.len()),
-            &prefix_lines(&tag, &content),
+            &format!("[Seat {}] PACK Pack {} ({} cards)", seat, pack_num, cards.len()),
+            &content,
         );
     }
 
@@ -101,29 +82,28 @@ impl DraftLogger {
         line: u32,
     ) {
         let chosen_name = chosen.split(" // ").next().unwrap_or(chosen);
-        let tag = format!("[Seat {}]", seat);
-        // Order: prompt → response → pick summary, all tagged with the seat
-        // so `grep "Seat 7"` shows every line that pertains to seat 7.
+        // Order: prompt → response → pick summary. The seat tag lives in
+        // each entry's label field; body lines are raw content with no
+        // per-line prefix.
         mtg_player::game_log::write(
             file, line,
-            &format!("{} PROMPT Pack {} Pick {}", tag, pack, pick),
-            &prefix_lines(&tag, prompt),
+            &format!("[Seat {}] PROMPT Pack {} Pick {}", seat, pack, pick),
+            prompt,
         );
         mtg_player::game_log::write(
             file, line,
-            &format!("{} RESPONSE Pack {} Pick {}", tag, pack, pick),
-            &prefix_lines(&tag, response),
+            &format!("[Seat {}] RESPONSE Pack {} Pick {}", seat, pack, pick),
+            response,
         );
         mtg_player::game_log::write(
             file, line,
-            &format!("{} PICK Pack {} Pick {} | Chose: {} (from {} cards)",
-                tag, pack, pick, chosen_name, available.len()),
+            &format!("[Seat {}] PICK Pack {} Pick {} | Chose: {} (from {} cards)",
+                seat, pack, pick, chosen_name, available.len()),
             "",
         );
     }
 
     pub fn pool_summary(&self, seat: usize, pool: &[String], file: &str, line: u32) {
-        let tag = format!("[Seat {}]", seat);
         let mut content = String::new();
         for card in pool {
             let name = card.split(" // ").next().unwrap_or(card);
@@ -131,8 +111,8 @@ impl DraftLogger {
         }
         mtg_player::game_log::write(
             file, line,
-            &format!("{} POOL ({} cards)", tag, pool.len()),
-            &prefix_lines(&tag, &content),
+            &format!("[Seat {}] POOL ({} cards)", seat, pool.len()),
+            &content,
         );
     }
 
@@ -147,7 +127,6 @@ impl DraftLogger {
         file: &str,
         line: u32,
     ) {
-        let tag = format!("[Seat {}]", seat);
         let total = maindeck.len() + lands.values().sum::<u32>() as usize;
 
         // Log every prompt → response round-trip in order. The first
@@ -155,14 +134,14 @@ impl DraftLogger {
         // include the validation error and re-ask.
         let n = attempts.len();
         for (i, (prompt, response, error)) in attempts.iter().enumerate() {
-            let label_prompt = format!("{} DECK_PROMPT attempt {}/{}", tag, i + 1, n);
-            mtg_player::game_log::write(file, line, &label_prompt, &prefix_lines(&tag, prompt));
+            let label_prompt = format!("[Seat {}] DECK_PROMPT attempt {}/{}", seat, i + 1, n);
+            mtg_player::game_log::write(file, line, &label_prompt, prompt);
 
             let response_label = match error {
-                Some(e) => format!("{} DECK_RESPONSE attempt {}/{} (invalid: {})", tag, i + 1, n, e),
-                None => format!("{} DECK_RESPONSE attempt {}/{} (accepted)", tag, i + 1, n),
+                Some(e) => format!("[Seat {}] DECK_RESPONSE attempt {}/{} (invalid: {})", seat, i + 1, n, e),
+                None => format!("[Seat {}] DECK_RESPONSE attempt {}/{} (accepted)", seat, i + 1, n),
             };
-            mtg_player::game_log::write(file, line, &response_label, &prefix_lines(&tag, response));
+            mtg_player::game_log::write(file, line, &response_label, response);
         }
 
         // Final structured deck summary.
@@ -185,8 +164,8 @@ impl DraftLogger {
         }
         mtg_player::game_log::write(
             file, line,
-            &format!("{} DECK ({} cards, {} retries)", tag, total, retries),
-            &prefix_lines(&tag, &content),
+            &format!("[Seat {}] DECK ({} cards, {} retries)", seat, total, retries),
+            &content,
         );
     }
 
