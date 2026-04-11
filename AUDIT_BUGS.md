@@ -3978,3 +3978,104 @@ effective power even if the picking UX stays auto-pick-only.
   uses the same base-power-less filter but only checks that there
   are enough eligible cards; it doesn't need the power value. Not
   affected, but note for anyone reworking these call sites.
+
+---
+
+### 🟡 Engine Bug 0F-003: Triggered abilities that "target player" enumerate `state.players` directly, ignoring Witchbane Orb's player-hexproof check
+**Severity:** medium — four ISD cards bypass the player-hexproof gate; latent unless an opponent controls Witchbane Orb
+**Files:**
+- `mtg-engine/src/cards/isd/falkenrath_noble.rs:62`
+- `mtg-engine/src/cards/isd/bloodgift_demon.rs:48-51`
+- `mtg-engine/src/cards/isd/selhoff_occultist.rs:57-59`
+- `mtg-engine/src/cards/isd/rage_thrower.rs:44-47`
+
+**Audit evidence:** did NOT fire — no Witchbane Orb was cast in the
+sampled game logs. Pure latent bug.
+
+The engine has a `state.player_has_hexproof(player, registry)` helper
+(`state.rs:1304`) that checks whether a player controls a permanent
+with the `grants_player_hexproof()` trait — currently only
+Witchbane Orb (`cards/isd/witchbane_orb.rs:37`). The legal-actions
+side correctly funnels every spell-targeting through
+`engine::can_target_player` (`engine.rs:1314`), which respects this
+helper for the caster ≠ target case.
+
+But the trigger-resolution side doesn't go through `can_target_player`.
+Several ISD triggered abilities that target players build their
+target list by walking `state.players.iter()` directly and handing
+the unfiltered list to `present_target_choice`:
+
+```rust
+// falkenrath_noble.rs:62 — drain on creature death
+let targets: Vec<Target> = state.players.iter()
+    .map(|p| Target::Player(p.id))
+    .collect();
+```
+
+```rust
+// bloodgift_demon.rs:48 — upkeep "target player draws and loses 1 life"
+let targets: Vec<Target> = state.players.iter()
+    .filter(|p| !p.lost)
+    .map(|p| Target::Player(p.id))
+    .collect();
+```
+
+```rust
+// selhoff_occultist.rs:57 (in present_mill_choice)
+let options: Vec<Target> = state.players.iter()
+    .map(|p| Target::Player(p.id))
+    .collect();
+```
+
+```rust
+// rage_thrower.rs:44 — "deal 2 damage to target player or planeswalker"
+let mut targets: Vec<Target> = state.players.iter()
+    .filter(|p| !p.lost)
+    .map(|p| Target::Player(p.id))
+    .collect();
+```
+
+None of these filter on `state.player_has_hexproof(p.id, registry)`
+versus the trigger's controller. So Falkenrath Noble's drain trigger
+will happily let an opponent be chosen as the drain target even if
+that opponent has hexproof from Witchbane Orb. Same for Bloodgift
+Demon's upkeep, Selhoff Occultist's death-mill, and Rage Thrower's
+death-shock.
+
+Bitterheart Witch (`bitterheart_witch.rs:14-17`) DOES do the right
+thing — it filters with
+`!state.player_has_hexproof(pid, registry) || pid == controller`
+which respects the "you can target yourself even with hexproof" rule.
+Bitterheart Witch shows the shape of the fix every other card needs.
+
+Per Witchbane Orb's oracle text ("You have hexproof. You can't be
+the target of spells or abilities your opponents control") this is
+a CR 702.11 hexproof violation: the ability is controlled by Noble's
+controller, the targeted player is an opponent of Noble's controller,
+the opponent has hexproof, so the opponent can't be a legal target.
+
+```rust
+// proposed shape (mirrors bitterheart_witch.rs):
+let targets: Vec<Target> = state.players.iter()
+    .filter(|p| !p.lost)
+    .filter(|p| !state.player_has_hexproof(p.id, registry) || p.id == controller)
+    .map(|p| Target::Player(p.id))
+    .collect();
+```
+
+A cleaner long-term fix is a helper in `cards/helpers.rs` —
+`pub fn legal_player_targets(state, controller, registry) -> Vec<Target>` —
+and migrate every call site to use it. Same shape as the
+"any_targets" / "creature_targets" helpers but for the target-player
+case. That way the next card someone implements gets the hexproof
+check by default.
+
+**Cross-references:** Bug BR / Bug 9F-002 (damage-helper bypass
+meta-bug) — these triggered-ability target-enumeration bugs are the
+"target side" of the same broad pattern: card-level effect code
+duplicates work that the central engine helper already does.
+
+**Proposed fix:** add the `player_has_hexproof` filter to all four
+listed call sites, and ideally extract a shared helper as described
+above. The fix is mechanical and trivially testable with a Witchbane
+Orb + Falkenrath Noble integration test.
