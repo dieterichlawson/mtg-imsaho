@@ -891,6 +891,62 @@ subtype-checking code.
 
 ---
 
+### 🟡 Engine Bug AW: Prey Upon's TwoTargets ignores YouControl/YouDontControl filters
+**Severity:** medium — model could target two of its own creatures (or two of opp's)
+**File:** `mtg-engine/src/cards/isd/prey_upon.rs:28-33` and `mtg-engine/src/engine.rs:1408-1424` (TwoTargets path)
+
+Prey Upon's `target_requirement`:
+```rust
+TargetRequirement::TwoTargets(
+    Box::new(TargetRequirement::CreatureWithFilter(TargetFilter::YouControl)),
+    Box::new(TargetRequirement::CreatureWithFilter(TargetFilter::YouDontControl)),
+)
+```
+
+The engine's `valid_targets_for_req` for `Creature | CreatureWithFilter(_)`
+ignores the inner filter (line 1408-1424) — it returns ALL battlefield
+creatures, then defers to `behavior.is_valid_target` for refinement.
+Prey Upon doesn't override `is_valid_target`, so the default (always
+true) applies. Result: the legal_actions list contains every (any
+creature, any other creature) pair, including:
+- (your creature, your creature)
+- (opp's creature, opp's creature)
+- (opp's creature, your creature) — wrong order
+
+The on_resolve does a swap based on which target is the caster's:
+```rust
+let a_mine = caster.and_then(|c| state.get_object(*a).map(|o| o.controller == c)).unwrap_or(false);
+let (my_creature, their_creature) = if a_mine { (*a, *b) } else { (*b, *a) };
+crate::combat::fight(state, my_creature, their_creature, registry);
+```
+But this doesn't enforce the constraint that one target is yours and
+one is opp's. If both are yours, `a_mine = true`, my=a, their=b, and
+combat::fight is called with two creatures you control. They fight
+each other.
+
+Same shape of bug as Bug H (Maw of Hell PermanentWithFilter dropped).
+Different code path: this is the `CreatureWithFilter` path in
+`valid_targets_for_req`, not `PermanentWithFilter`.
+
+**Did NOT fire** in audit — Prey Upon was cast with sensible targeting
+in every observed instance because the model's combat logic naturally
+picked one of each.
+
+Affected cards: Prey Upon. Daybreak Ranger and Skirsdag Cultist use
+single targets so they're fine. Cackling Counterpart's `YouControl`
+filter for the single-target path (`CreatureWithFilter(YouControl)`)
+is ALSO not enforced — but the LLM would never accidentally make a
+token copy of an opponent's creature, so latent.
+
+**Proposed fix:** in the `Creature | CreatureWithFilter(_)` arm of
+`valid_targets_for_req`, destructure the inner filter and apply
+`matches_target_filter` (the same helper that activated abilities use
+at line 1907-1913). This requires `matches_target_filter` to handle
+`YouControl` and `YouDontControl` filters, which it currently doesn't
+(line 1945 falls through to `_ => true`).
+
+---
+
 ### 🟡 Engine Bug AV: create_token_copy doesn't preserve dynamic P/T (Cackling Counterpart breaks for */* creatures)
 **Severity:** medium — Cackling Counterpart is the only ISD trigger; affects 5 creatures
 **File:** `mtg-engine/src/state.rs:404-440` (create_token_copy)
