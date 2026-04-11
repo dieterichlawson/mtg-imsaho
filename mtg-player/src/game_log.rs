@@ -15,7 +15,8 @@
 use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::sync::Mutex;
-use std::time::Instant;
+
+use chrono::Local;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
@@ -42,7 +43,6 @@ impl LogLevel {
 
 struct LogState {
     file: File,
-    start: Instant,
 }
 
 static LOG: Mutex<Option<LogState>> = Mutex::new(None);
@@ -57,10 +57,7 @@ pub fn init(path: &str) {
         .open(path)
         .unwrap_or_else(|e| panic!("Failed to create log file {}: {}", path, e));
     let mut guard = LOG.lock().unwrap();
-    *guard = Some(LogState {
-        file,
-        start: Instant::now(),
-    });
+    *guard = Some(LogState { file });
 }
 
 /// Write an info-level log entry. Equivalent to `write_at(LogLevel::Info, ..)`.
@@ -82,15 +79,12 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
         None => return,
     };
 
-    let elapsed = state.start.elapsed();
-    let total_secs = elapsed.as_secs();
-    let millis = elapsed.subsec_millis();
-    let hrs = total_secs / 3600;
-    let mins = (total_secs % 3600) / 60;
-    let secs = total_secs % 60;
     let tid = std::thread::current().id();
     let filename = file.rsplit('/').next().unwrap_or(file);
-    let ts = format!("{:02}:{:02}:{:02}.{:03}", hrs, mins, secs, millis);
+    // Wall-clock timestamp in the local timezone, ISO-8601-ish with
+    // millisecond precision. Use a space between date and time so the
+    // line parses cleanly under `cut -f` / `awk -F'\t'`.
+    let ts = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
     let loc = format!("{}:{}", filename, line);
     let level_name = level.name();
     // Thread id renders like `ThreadId(12)` from the Debug impl — strip the
