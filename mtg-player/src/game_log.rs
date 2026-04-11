@@ -104,7 +104,11 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
 
     // Single-line content: everything on one tab-delimited header line.
     // Multi-line content: header line with no content field, followed by
-    // indented continuation lines and a trailing blank separator.
+    // flush-left continuation lines (no indent) and a trailing blank line
+    // as a soft record separator. Continuation lines carry their own
+    // per-seat tag at the LlmPlayer layer, so no leading whitespace is
+    // needed to visually distinguish them from header rows (headers start
+    // with a timestamp digit, bodies start with `[`).
     if !content.is_empty() && !content.contains('\n') {
         let _ = writeln!(
             state.file,
@@ -120,11 +124,7 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
         if !content.is_empty() {
             for ln in content.lines() {
                 let trimmed = ln.trim_end();
-                if trimmed.is_empty() {
-                    let _ = writeln!(state.file);
-                } else {
-                    let _ = writeln!(state.file, "  {}", trimmed);
-                }
+                let _ = writeln!(state.file, "{}", trimmed);
             }
         }
         let _ = writeln!(state.file);
