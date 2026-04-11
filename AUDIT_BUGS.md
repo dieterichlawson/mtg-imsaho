@@ -947,6 +947,48 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
+### 🟡 Engine Bug AX: Four ISD dual lands always enter tapped (Woodland Cemetery, Sulfur Falls, Clifftop Retreat, Isolated Chapel)
+**Severity:** HIGH (mana fixing fundamentally broken) — but latent in audit (no dual lands drafted)
+**Files:**
+- `mtg-engine/src/cards/isd/woodland_cemetery.rs:21-22`
+- `mtg-engine/src/cards/isd/sulfur_falls.rs:21-22`
+- `mtg-engine/src/cards/isd/clifftop_retreat.rs:21-22`
+- `mtg-engine/src/cards/isd/isolated_chapel.rs:21-22`
+
+Each of these lands says "this land enters tapped unless you control a
+{basic1} or a {basic2}". They check by iterating other permanents and
+testing instance subtypes:
+```rust
+o.subtypes.iter().any(|s| s == "Swamp")
+    || o.subtypes.iter().any(|s| s == "Forest")
+```
+Basic lands are created via `state.create_object` which initializes
+`subtypes: Vec::new()` (state.rs:255). The basic Swamp's subtype lives
+in `registry.card_data(card_id).subtypes`, NOT on the instance. The
+check therefore always returns false, and these dual lands always
+enter tapped — completely defeating their purpose as fixers.
+
+`Hinterland Harbor` (Forest/Island) has the correct pattern (checks
+both instance and registry via a closure), so it's the model for the
+fix:
+```rust
+let has_subtype = |name: &str| {
+    o.subtypes.iter().any(|s| s == name)
+        || registry.card_data(o.card_id)
+            .map_or(false, |d| d.subtypes.iter().any(|s| s == name))
+};
+has_subtype("Forest") || has_subtype("Island")
+```
+
+**Did NOT fire** in audit — none of the dual lands were drafted past
+the initial pool listing. But if they were, the model would have spent
+mana fixing on lands that always enter tapped.
+
+**Proposed fix:** apply the Hinterland Harbor pattern to all four
+broken duals.
+
+---
+
 ### 🟡 Engine Bug AV: create_token_copy doesn't preserve dynamic P/T (Cackling Counterpart and Back from the Brink break for */* creatures)
 **Severity:** medium — affects Cackling Counterpart and Back from the Brink
 **File:** `mtg-engine/src/state.rs:404-440` (create_token_copy)
