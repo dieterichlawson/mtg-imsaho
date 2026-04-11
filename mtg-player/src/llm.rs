@@ -324,43 +324,32 @@ creatures and casting damaging spells, while protecting your own life total.
 For every decision the game requires, you'll receive a prompt describing the
 current game state — recent events, turn and step, both players' life and
 hand/library/graveyard counts, the contents of each battlefield, the stack,
-your mana pool, your hand, and a context tag (main phase, combat, response
-window, mulligan, etc.). The "Prompt format" section below documents every
-field in detail. Depending on the context, you'll be asked to:
-
-- Pick one of N legal actions during a turn step (play a land, cast a spell,
-  tap mana, pass priority, etc.)
-- Declare which of your creatures attack
-- Assign blockers to incoming attackers
-- Pick targets for a spell or ability
-- Decide whether to mulligan, and if so which cards to put on the bottom
-- Confirm a concession
+your mana pool, and your hand. The "Prompt format" section below documents
+every field in detail. Depending on the context, you'll be asked to pick an
+action, declare attackers, assign blockers, choose targets, decide whether to
+mulligan, or confirm a concession.
 
 ## How you respond
 
-You always respond with structured JSON. The exact schema depends on what was
-asked, and every schema includes a "thoughts" field — use it to think through
-the game state, weigh alternatives, and explain your choice. Thoughts are
-private (your opponent does not see them), so be candid about your plan.
+You always respond with structured JSON. Every prompt ends with an explicit
+"Respond with JSON formatted as ..." line that tells you the exact schema for
+that decision, so you don't need to memorize them. Every schema includes a
+"thoughts" field — use it to think through the game state, weigh
+alternatives, and explain your choice. Thoughts are private (your opponent
+does not see them), so be candid about your plan.
 
-The possible schemas are:
+A typical action-selection response looks like:
 
-1. **Action selection**: `{"thoughts": "...", "action": N}` — pick the 0-indexed action number from the action list.
-2. **Declare attackers**: `{"thoughts": "...", "attacker_indices": [0, 1, 2]}` — list of creature indices to attack with (empty list = no attacks).
-3. **Declare blockers**: `{"thoughts": "...", "0": 1, "1": -1}` — for each of your blockers (by index), the attacker index it blocks, or -1 for no block.
-4. **Choose targets**: `{"thoughts": "...", "target_indices": [0]}` — list of target indices to select for a spell or ability.
-5. **Confirm concede**: `{"thoughts": "...", "confirm": true|false}` — confirm or cancel a concession.
-6. **Mulligan decision**: `{"thoughts": "...", "mull": true|false}` — London mulligan: keep your opening hand or shuffle and redraw.
-7. **Bottom cards after mulligan**: `{"thoughts": "...", "bottom_indices": [0, 3, 5]}` — exactly N distinct 0-indexed hand positions to bottom.
+    {"thoughts": "Grizzly Bears gets me a 2/2 on curve.", "action": 3}
 
 The detailed game rules and prompt format follow.
 
 "#;
 
 /// Anthropic-flavoured response intro: reasoning is delivered through the
-/// model's extended-thinking channel, NOT inside the JSON payload. Schemas
-/// listed here intentionally omit the "thoughts" field — including it will
-/// be rejected by the schema validator.
+/// model's extended-thinking channel, NOT inside the JSON payload. Every
+/// schema shown to the model intentionally omits the "thoughts" field —
+/// including it would be rejected by the schema validator.
 const ANTHROPIC_RESPONSE_FORMAT: &str = r#"You are playing Magic: The Gathering against an opponent in a one-on-one
 Limited (draft) match — each player has a 40-card deck built from a draft pool.
 The goal is to reduce your opponent's life total from 20 to 0 by attacking with
@@ -371,34 +360,25 @@ creatures and casting damaging spells, while protecting your own life total.
 For every decision the game requires, you'll receive a prompt describing the
 current game state — recent events, turn and step, both players' life and
 hand/library/graveyard counts, the contents of each battlefield, the stack,
-your mana pool, your hand, and a context tag (main phase, combat, response
-window, mulligan, etc.). The "Prompt format" section below documents every
-field in detail. Depending on the context, you'll be asked to:
-
-- Pick one of N legal actions during a turn step (play a land, cast a spell,
-  tap mana, pass priority, etc.)
-- Declare which of your creatures attack
-- Assign blockers to incoming attackers
-- Pick targets for a spell or ability
-- Decide whether to mulligan, and if so which cards to put on the bottom
-- Confirm a concession
+your mana pool, and your hand. The "Prompt format" section below documents
+every field in detail. Depending on the context, you'll be asked to pick an
+action, declare attackers, assign blockers, choose targets, decide whether to
+mulligan, or confirm a concession.
 
 ## How you respond
 
+You always respond with structured JSON. Every prompt ends with an explicit
+"Respond with JSON formatted as ..." line that tells you the exact schema for
+that decision, so you don't need to memorize them.
+
 Your private reasoning happens in the model's extended-thinking channel —
 think through the situation there before producing the JSON. The JSON payload
-itself should contain ONLY the response fields below; do NOT add a "thoughts"
-key, it will be rejected by the schema validator.
+itself should contain ONLY the response fields in the schema; do NOT add a
+"thoughts" key, it will be rejected by the schema validator.
 
-The possible schemas are:
+A typical action-selection response looks like:
 
-1. **Action selection**: `{"action": N}` — pick the 0-indexed action number from the action list.
-2. **Declare attackers**: `{"attacker_indices": [0, 1, 2]}` — list of creature indices to attack with (empty list = no attacks).
-3. **Declare blockers**: `{"0": 1, "1": -1}` — for each of your blockers (by index), the attacker index it blocks, or -1 for no block.
-4. **Choose targets**: `{"target_indices": [0]}` — list of target indices to select for a spell or ability.
-5. **Confirm concede**: `{"confirm": true|false}` — confirm or cancel a concession.
-6. **Mulligan decision**: `{"mull": true|false}` — London mulligan: keep your opening hand or shuffle and redraw.
-7. **Bottom cards after mulligan**: `{"bottom_indices": [0, 3, 5]}` — exactly N distinct 0-indexed hand positions to bottom.
+    {"action": 3}
 
 The detailed game rules and prompt format follow.
 
@@ -1094,34 +1074,35 @@ impl LlmPlayer {
         ))
     }
 
-    /// Compact game state — much shorter than the CLI version.
-    fn format_state_compact(view: &GameView, header_override: Option<&str>) -> String {
-        let mut s = String::new();
-
-        // Header line. During pre-game phases (mulligan / bottoming) the
-        // engine still reports turn=1 step=Untap, which is misleading; the
-        // caller passes a phase label override in that case.
+    /// Turn/step header line for the top of every prompt. When a pre-game
+    /// phase override is given (mulligan/bottoming), it's used verbatim.
+    fn format_turn_header(view: &GameView, header_override: Option<&str>) -> String {
         if let Some(h) = header_override {
-            s.push_str(h);
-            s.push('\n');
-        } else {
-            let step_name = match view.step {
-                Step::PrecombatMain => "Main 1",
-                Step::PostcombatMain => "Main 2",
-                Step::BeginCombat => "Begin Combat",
-                Step::DeclareAttackers => "Declare Attackers",
-                Step::DeclareBlockers => "Declare Blockers",
-                Step::CombatDamage => "Combat Damage",
-                Step::EndCombat => "End Combat",
-                Step::Upkeep => "Upkeep",
-                Step::Draw => "Draw",
-                Step::EndStep => "End Step",
-                Step::Untap => "Untap",
-                Step::Cleanup => "Cleanup",
-            };
-            let whose_turn = if view.active_player == view.you { "your turn" } else { "opp's turn" };
-            s.push_str(&format!("Turn {} - {} ({})\n", view.turn_number, step_name, whose_turn));
+            return format!("{}\n", h);
         }
+        let step_name = match view.step {
+            Step::PrecombatMain => "Main Phase 1",
+            Step::PostcombatMain => "Main Phase 2",
+            Step::BeginCombat => "Begin Combat",
+            Step::DeclareAttackers => "Declare Attackers",
+            Step::DeclareBlockers => "Declare Blockers",
+            Step::CombatDamage => "Combat Damage",
+            Step::EndCombat => "End Combat",
+            Step::Upkeep => "Upkeep",
+            Step::Draw => "Draw",
+            Step::EndStep => "End Step",
+            Step::Untap => "Untap",
+            Step::Cleanup => "Cleanup",
+        };
+        let whose_turn = if view.active_player == view.you { "your turn" } else { "opp's turn" };
+        format!("Turn {} - {} ({})\n", view.turn_number, step_name, whose_turn)
+    }
+
+    /// Rest of the game-state body below the turn header and "Recent events"
+    /// section: life totals, mana pool, boards, stack, hand, graveyards,
+    /// flashback. Does NOT include the turn header itself.
+    fn format_state_body(view: &GameView) -> String {
+        let mut s = String::new();
 
         // Zone counts
         let your_gy_count: usize = view.graveyards.iter()
@@ -1593,11 +1574,16 @@ impl LlmPlayer {
                     mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
                     mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
                 };
-                format!("{}:{}", i, desc)
+                format!("{}: {}", i, desc)
             })
             .collect::<Vec<_>>()
-            .join(" ");
-        let prompt = format!("{}:\n{}", spell_name, target_list);
+            .join(", ");
+        let prompt = format!(
+            "{}:\n{}\n\nRespond with JSON formatted as {{{}\"action\": N}} where N is the 0-indexed target number.",
+            spell_name,
+            target_list,
+            self.thoughts_field_prefix(),
+        );
         let idx = self.pick_action_index(&prompt, options.len(), &[]);
         options[idx.min(options.len() - 1)].clone()
     }
@@ -1698,6 +1684,11 @@ impl LlmPlayer {
         self.last_log_index = view.display_log.len();
 
         let mut prompt = String::new();
+        // Turn/phase header comes first so the model immediately knows
+        // what decision it's being asked to make.
+        prompt.push_str(&Self::format_turn_header(view, header_override));
+        prompt.push('\n');
+
         if !new_logs.is_empty() {
             prompt.push_str("Recent events:\n");
             for entry in &new_logs {
@@ -1706,7 +1697,10 @@ impl LlmPlayer {
             }
             prompt.push('\n');
         }
-        prompt.push_str(&Self::format_state_compact(view, header_override));
+
+        prompt.push_str(&Self::format_state_body(view));
+        prompt.push('\n');
+
         prompt.push_str(action_prompt);
         prompt
     }
@@ -1873,13 +1867,15 @@ impl Player for LlmPlayer {
             }
         }
 
-        let context_str = legal.context.as_ref()
-            .map(|c| format!("[{}]\n", c))
-            .unwrap_or_default();
         let actions_str: String = display_labels.iter().enumerate()
-            .map(|(i, label)| format!("{}:{} ", i, label))
-            .collect();
-        let action_prompt = format!("{}\n{}", context_str, actions_str);
+            .map(|(i, label)| format!("{}: {}", i, label))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let action_prompt = format!(
+            "Available actions:\n{}\n\nRespond with JSON formatted as {{{}\"action\": N}} where N is the 0-indexed action number.\n",
+            actions_str,
+            self.thoughts_field_prefix(),
+        );
         let prompt = self.build_prompt(view, &action_prompt);
 
         if display_labels.len() != legal_actions.len() {
