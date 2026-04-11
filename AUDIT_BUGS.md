@@ -773,6 +773,104 @@ event instead of a damage event when the source matches. Same shape as
 
 ---
 
+### 🟡 Engine Bug AP: Global "creatures get +N/+N until end of turn" effects snapshot at resolution
+**Severity:** medium — affects every global anthem/debuff in ISD
+**Files:**
+- `mtg-engine/src/cards/isd/rally_the_peasants.rs:30-51`
+- `mtg-engine/src/cards/isd/vampiric_fury.rs:29-65`
+- `mtg-engine/src/cards/isd/hysterical_blindness.rs:29-50`
+- (Likely also moment_of_heroism.rs and similar — they all use the same pattern)
+
+These cards say "Creatures you control get +N/+N until end of turn" or
+"Creatures your opponents control get -N/-N until end of turn" — an
+anthem effect that applies to ALL relevant creatures at any point during
+the turn, including ones cast/created AFTER the anthem resolves.
+
+The current implementation:
+```rust
+let creature_ids: Vec<ObjectId> = state.objects.values()
+    .filter(|obj| obj.zone == Zone::Battlefield && obj.controller == controller && obj.power.is_some())
+    .map(|o| o.id)
+    .collect();
+for id in creature_ids {
+    state.until_end_of_turn.push(TemporaryEffect::ModifyPT { target: id, ... });
+}
+```
+iterates the creatures at the moment of resolution and pushes one
+per-target ModifyPT effect. New creatures that come into play later in
+the turn (Bloodline Keeper's vampire token activation after Vampiric
+Fury, a Civilized Scholar transformed into Homicidal Brute after Rally
+the Peasants, a Mausoleum Guard death-trigger spirit after Hysterical
+Blindness) won't get the bonus.
+
+**Did NOT fire in audit** — these spells are typically cast immediately
+before a combat phase and the model rarely creates more creatures
+between casting and combat. But the bug is structurally present.
+
+**Proposed fix:** add a `TemporaryEffect::GlobalAnthem { filter: CreatureFilter, power_mod, toughness_mod }`
+variant that the effective_power/effective_toughness machinery walks
+when computing P/T. The filter would let Vampiric Fury target
+"creatures you control with subtype Vampire", Hysterical Blindness target
+"creatures your opponents control", etc. Same architecture as the
+existing `ContinuousEffect::ModifyPT { scope: EffectScope::Global(...) }`
+pattern but with an until-end-of-turn duration.
+
+---
+
+### 🟡 Engine Bug AO: combat::get_subtypes is not face-aware for transformed DFCs
+**Severity:** low — no in-set repro, fortuitous because all ISD werewolf back faces are also Werewolves
+**File:** `mtg-engine/src/combat.rs:402-415`
+
+```rust
+fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
+    let mut subtypes = Vec::new();
+    if let Some(obj) = state.get_object(creature_id) {
+        subtypes.extend(obj.subtypes.iter().cloned());
+        if let Some(data) = registry.card_data(obj.card_id) {
+            for s in &data.subtypes {
+                if !subtypes.contains(s) {
+                    subtypes.push(s.clone());
+                }
+            }
+        }
+    }
+    subtypes
+}
+```
+For a transformed creature, this combines the back-face subtypes (from
+`obj.subtypes`) with the FRONT-face subtypes (from
+`registry.card_data(obj.card_id).subtypes`). The combined list is the
+union of both faces. For a DFC where the back face DROPS a subtype,
+this falsely reports the dropped subtype as still active.
+
+For ISD this happens to be safe — Tormented Pariah, Mayor of Avabruck,
+Hanweir Watchkeep, Daybreak Ranger, Villagers of Estwald all keep the
+"Werewolf" subtype on both faces — but Civilized Scholar → Homicidal
+Brute drops "Advisor" and Cloistered Youth → Unholy Fiend drops "Human".
+
+The function is consulted by `is_non_wolf_damage_prevented` (Moonmist's
+combat-damage prevention) and possibly elsewhere. For Moonmist's check
+this means a transformed Cloistered Youth (Unholy Fiend) could be
+treated as still having Human, etc., but Moonmist only cares about
+Werewolf/Wolf so it doesn't manifest.
+
+**Proposed fix:** check `obj.is_transformed` and use back-face data
+when transformed:
+```rust
+if obj.is_transformed {
+    if let Some(behavior) = registry.get(obj.card_id) {
+        if let Some(back) = behavior.back_face_data() {
+            return back.subtypes.clone();
+        }
+    }
+}
+```
+And mirror this fix in any other "subtype lookup" helper in `combat.rs`
+or `state.rs` that doesn't already use the face-aware pattern from
+`matches_filter::HasSubtype` (state.rs:692).
+
+---
+
 ### 🟡 Engine Bug Y: pay-mana-during-resolution checks the mana pool only — never offered when pool is empty
 **Severity:** medium — multiple cards affected
 **Files:**
