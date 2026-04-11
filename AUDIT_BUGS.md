@@ -4187,3 +4187,110 @@ current `mill_cards` just does
 `library_order.remove(0)` + `move_object(card_id, Zone::Graveyard)`,
 which pushes a `LeftZone`/`EnteredZone` event pair via
 `move_object` but no dedicated mill event.
+
+---
+
+### 🟡 Harness Bug 31-001: Stack display shows front-face card name for triggered abilities on transformed DFCs, creating a name/description mismatch
+**Severity:** medium — display-only but actively confusing (the model has to reconcile "Tormented Pariah" on the stack with "Rampaging Werewolf" on the battlefield)
+**File:** `mtg-engine/src/triggers.rs:193-260` (`PendingTrigger::display_name`)
+**Audit evidence:** fired repeatedly in verify-draft-8seat-high-v5.log; see lines 21634, 22974, 30826, 33600, 34637, 35399, and more
+
+Bug B (already fixed, commit `f22ed7f`) made `PermanentView` return
+the back-face name for transformed DFCs, so the battlefield display
+correctly shows "Rampaging Werewolf" instead of "Tormented Pariah"
+after a transform. **That fix did not reach the stack display for
+triggered abilities.**
+
+`PendingTrigger::display_name` at `triggers.rs:193-260` builds all
+trigger labels via a helper closure:
+
+```rust
+let card_name = |card_id: CardId| {
+    registry.card_data(card_id)
+        .map(|d| d.name)
+        .unwrap_or_else(|| "Unknown".into())
+};
+```
+
+`registry.card_data(card_id)` always returns the **front-face**
+`CardData` — there is no `is_transformed` branch. Every match arm
+(`SelfDies`, `DeathWatch`, `EnteredBattlefield`, `EnterWatch`,
+`CombatDamageToPlayer`, `CombatDamageWatch`, `DamageToPlayerWatch`,
+`SpellCastWatch`, `EndCombatTrigger`, `AttacksTrigger`, …) uses that
+closure, so every label inherits the front-face name.
+
+Meanwhile the `description` string embedded in the label IS
+face-aware: it's generated via `face_trigger_description`
+(`triggers.rs:357-370`) which respects `is_transformed` and returns
+the back-face trigger text when the creature is transformed.
+
+**Result:** the label reads `<front-face-name>'s <kind> trigger
+(<back-face-description>)`. For a transformed Tormented Pariah's
+upkeep trigger, the LLM sees:
+
+```
+Stack: Tormented Pariah's upkeep trigger (transform back if 2+ spells cast) (your)
+```
+
+But there is no "Tormented Pariah" on the battlefield — the card is
+"Rampaging Werewolf 6/4". The model has to guess which creature the
+trigger belongs to. Luckily the description ("transform back")
+disambiguates here, but for non-transform triggers (e.g.
+Hanweir Watchkeep → Bane of Hanweir's "attacks each combat" which
+isn't a trigger but the same pattern would show up if a transformed
+werewolf had an upkeep trigger of its own) it would not.
+
+**Audit evidence:**
+
+At log line 21632, Seat 0 has "Rampaging Werewolf 6/4" on the
+battlefield. At line 21634 the stack shows:
+```
+Stack: Tormented Pariah's upkeep trigger (transform back if 2+ spells cast) (your)
+```
+
+The model's thought at line 23045 says "The upkeep trigger is
+checking the spell count from the previous turn. Since the opponent
+cast Dearly Departed, the condition to transform back is not met." —
+the model parsed the back-face description and correctly ignored the
+(misleading) front-face name prefix. A less-careful model could
+easily pick the wrong creature to associate with the trigger.
+
+The mismatch fires every time a werewolf-style DFC trigger is on the
+stack. I count the stack description matching "Pariah's upkeep
+trigger (transform back" at log lines 21634, 22974; the Villagers of
+Estwald / Gatstaf Shepherd / Kruin Outlaw / Howlpack of Estwald /
+Gatstaf Howler / Terror of Kruin Pass variants all have the same
+shape and appear multiple times at lines 30826+, 33600, 34637, 35399.
+
+**Proposed fix:** thread `is_transformed` into the display helper by
+looking up the live object. Since `PendingTrigger` variants already
+carry the object ID (`dead_id`, `watcher_id`, `object_id`,
+`creature_id`), the display helper can read
+`state.get_object(id).is_transformed` and switch to back-face name
+when set. That requires `display_name` to take a `&GameState` in
+addition to the registry. The caller at `view.rs:218` is the only
+consumer and already has `state` in scope, so it's a two-argument
+change. Alternatively, store the `is_transformed` flag directly on
+each `PendingTrigger` variant at trigger-collection time.
+
+Pseudocode for the first approach:
+
+```rust
+pub fn display_name(&self, state: &GameState, registry: &CardRegistry) -> String {
+    let card_name_for = |card_id: CardId, obj_id: Option<ObjectId>| -> String {
+        let transformed = obj_id
+            .and_then(|id| state.get_object(id))
+            .map(|o| o.is_transformed)
+            .unwrap_or(false);
+        if transformed {
+            if let Some(back) = registry.get(card_id).and_then(|b| b.back_face_data()) {
+                return back.name;
+            }
+        }
+        registry.card_data(card_id).map(|d| d.name).unwrap_or_else(|| "Unknown".into())
+    };
+    // ... use card_name_for(card_id, Some(obj_id)) in each arm
+}
+```
+
+This is a pure display fix; no engine-behavior change.
