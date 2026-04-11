@@ -1943,3 +1943,210 @@ protection", filter = "what they're protected from"), consulted by the
 same code path that handles `TemporaryEffect::GrantProtection` today.
 Spare from Evil uses scope=ControlledByYou, filter=Not(HasSubtype(Human)).
 This mirrors the proposed fix shape for Bug AP.
+
+<!-- Reserving letters BJ-BN for this branch (5 letters past BE on master). -->
+
+---
+
+### 🟡 Engine Bug BJ: Evil Twin enters as a 0/0 and dies to SBA before its ETB copy trigger resolves
+**Severity:** HIGH (card is non-functional when cast) — latent (Evil Twin not drafted in audit)
+**File:** `mtg-engine/src/cards/isd/evil_twin.rs:43-61` and `mtg-engine/src/engine.rs:3146-3180` (CopyCreature PendingEffect)
+
+Oracle: "You may have Evil Twin enter the battlefield as a copy of any
+creature on the battlefield, except it has '{U}{B}, {T}: Destroy target
+creature with the same name as this creature.'" This is a *replacement
+effect* (CR 614.1d / "enters the battlefield as..."), not an ETB trigger
+— the copy decision happens *as* Evil Twin enters, and Evil Twin never
+exists on the battlefield in its 0/0 native form.
+
+The current implementation models it as an ETB *triggered* ability with
+`power: Some(0), toughness: Some(0)` and an EntersBattlefield trigger
+that calls `present_optional_target_choice(... PendingEffect::CopyCreature ...)`.
+
+**But state-based actions fire before the ETB trigger resolves.** The
+priority loop at `engine.rs:4085-4096` runs:
+```rust
+loop {
+    let sba = check_state_based_actions(state, registry);
+    if !sba { break; }
+    any_work = true;
+}
+if triggers::collect_triggers(state, registry) {
+    any_work = true;
+}
+```
+SBAs run *first*, and CR 704.5f destroys creatures with 0 toughness
+directly to the graveyard (`mtg-engine/src/sba.rs:53-92`). Evil Twin
+enters with the card_data-declared `power: 0, toughness: 0`, its
+`effective_toughness` is 0 (Evil Twin has no `dynamic_pt` override),
+and SBA 704.5f kills it *before* `collect_triggers` ever puts the ETB
+copy trigger on the stack.
+
+By the time the ETB trigger does resolve, Evil Twin is already in the
+graveyard. The `CopyCreature` PendingEffect handler at
+`engine.rs:3161-3177` still mutates `obj.name / power / toughness /
+card_id / subtypes / keywords / colors` via
+`state.get_object_mut(source_id)` — but the source is now a graveyard
+object, not a battlefield permanent. The mutation silently writes the
+copied creature's characteristics onto a dead Evil Twin sitting in the
+graveyard. The "copy" never actually enters the battlefield.
+
+Compare with Geist-Honored Monk (also declared 0/0 in card_data): it
+has a `dynamic_pt` override that returns `(creature_count,
+creature_count)`, so when SBA calls `effective_toughness` the CDA
+kicks in and Monk survives (it counts itself, so ≥1 even when it's
+the only creature). Evil Twin has no CDA and no similar escape valve.
+
+**Did NOT fire** in audit — Evil Twin was not drafted in
+verify-draft-8seat-high-v5.log. Any draft where the model picks Evil
+Twin would be unable to cast it productively.
+
+**Proposed fix (cleanest):** implement Evil Twin's copy as a
+replacement effect alongside `ReplacementEffect::EnterAsCopy` (Essence
+of the Wild, already implemented in `state.rs:530-560` via
+`apply_entering_copy_replacement`). Evil Twin needs a *choice-driven*
+variant — the player picks the copy target — which requires stopping
+the entry to run a choice prompt, applying the chosen copy to the
+entering object, then continuing entry. This would also correctly
+prevent Evil Twin from being visible as a 0/0 on the battlefield.
+
+**Workaround fix (simpler):** give Evil Twin a `dynamic_pt` override
+that returns `Some((0, 1))` while Evil Twin's `card_state` lacks the
+`is_evil_twin` marker. This lets Evil Twin survive the first SBA pass
+so its ETB trigger can go on the stack, resolve, and apply
+`CopyCreature`. Once `CopyCreature` applies, the marker is set and
+the override no-ops, letting the copied creature's base P/T take
+over. Not quite correct rules-wise — opponents see a 0/1 Evil Twin
+on the battlefield during the window between entry and trigger
+resolution, and can respond to the ETB trigger knowing Evil Twin
+exists as itself — but it makes the card playable without a full
+replacement-effect rewrite. Related to Bug AV (create_token_copy
+doesn't preserve dynamic P/T): Evil Twin is the non-token counterpart,
+using `CopyCreature` / direct-mutation rather than
+`create_token_copy`.
+
+---
+
+### 🟡 Engine Bug BK: Instigator Gang's static "attacking creatures you control get +1/+0" anthem is implemented as a per-attack snapshot trigger
+**Severity:** medium — latent in audit (Instigator Gang drafted but not cast into a matching scenario)
+**File:** `mtg-engine/src/cards/isd/instigator_gang.rs:40-50, 89-110`
+
+Oracle (verified via `scripts/oracle_lookup.py lookup "Instigator Gang"`):
+- Instigator Gang front face: "Attacking creatures you control get +1/+0."
+- Wildblood Pack back face: "Attacking creatures you control get +3/+0."
+
+Both are **static continuous abilities** per CR 611 / 604.1 — they
+are in effect continuously as long as Instigator Gang / Wildblood
+Pack is on the battlefield, and they modify P/T of any creature that
+is *currently* attacking.
+
+The current implementation declares the buff as a triggered ability
+on `TriggerKind::AnyCreatureAttacks` and resolves it by pushing an
+until-end-of-turn `TemporaryEffect::ModifyPT` per attacker:
+```rust
+triggered_abilities: vec![
+    TriggeredAbilityDef {
+        kind: TriggerKind::Upkeep, // transform
+        description: "transform".into(),
+    },
+    TriggeredAbilityDef {
+        kind: TriggerKind::AnyCreatureAttacks,
+        description: "attacking creatures you control get +1/+0".into(),
+    },
+],
+...
+fn on_any_creature_attacks(&self, state: &mut GameState, self_id: ObjectId,
+                           attacker_id: ObjectId, attacker_controller: PlayerId, ...) {
+    let (controller, is_transformed) = ...;
+    if attacker_controller != controller { return; }
+    let bonus = if is_transformed { 3 } else { 1 };
+    state.until_end_of_turn.push(
+        crate::state::TemporaryEffect::ModifyPT {
+            target: attacker_id,
+            power_mod: bonus,
+            toughness_mod: 0,
+        }
+    );
+}
+```
+
+This snapshots the buff once per attacker at the declare-attackers
+step. The buff then sits in `state.until_end_of_turn` until end of
+turn. Wrong in several ways:
+
+1. **Buff persists after Instigator Gang leaves the battlefield.**
+   If Instigator Gang is destroyed by first-strike damage before the
+   normal combat damage step, the attackers keep their +1/+0 through
+   normal damage. Per oracle, the buff should turn off the moment
+   Instigator Gang dies — it's a static ability depending on its
+   source being on the battlefield. Same problem if Instigator Gang
+   is removed mid-combat by Silent Departure, Blasphemous Act
+   resolving post-attack-declaration, a targeted removal instant, etc.
+   — attackers keep the bonus instead of losing it. This is a direct
+   parallel to Bug B (Human bonus is a snapshot) at a different scope:
+   Bug B is an attached-equipment static effect; this is a global
+   static effect emitted by a permanent-on-the-battlefield.
+2. **Creatures entering combat after the trigger fired don't get the
+   buff.** No in-set way for creatures to enter attacking after the
+   `DeclareAttackers` step in ISD. But Cackling Counterpart (which
+   was in the audit pool) producing a token copy of an attacking
+   creature mid-combat would NOT trigger this handler for the token
+   — the token didn't go through `DeclareAttackers` — so the copy
+   wouldn't get the +1/+0 even though it's "a creature you control
+   that is attacking" per oracle.
+3. **Instigator Gang entering the battlefield mid-combat** (via any
+   flash or surprise effect) doesn't retroactively buff already-declared
+   attackers. Latent in ISD (no flash enchant/creature that does this).
+
+Compare with **Full Moon's Rise** (`cards/isd/full_moons_rise.rs:28-44`),
+which correctly implements its static "Werewolf creatures you control
+get +1/+0 and have trample" via `continuous_effects` +
+`ContinuousEffect::ModifyPT` with `EffectScope::Global(CreatureFilter::And([
+ControlledByYou, HasSubtype("Werewolf")]))`. Full Moon's Rise's buff
+is continuous — it correctly turns off the moment the enchantment
+leaves, and correctly applies to creatures entering mid-turn.
+Instigator Gang should follow the same shape with a different filter.
+
+Note: the current implementation gives the bonus to Instigator Gang /
+Wildblood Pack *itself* when it attacks (`on_any_creature_attacks`
+fires with `attacker_id == self_id` without being excluded). Oracle
+agrees with this ("attacking creatures you control" includes
+Instigator Gang when it's attacking), so the value is correct, but
+for the wrong reason (the trigger fires on self-attack rather than
+the continuous filter evaluating "self is currently attacking").
+
+**Did NOT fire** in audit — Instigator Gang appeared in a drafter's
+pool but I did not find a game sample where the snapshot-vs-continuous
+distinction changed a combat outcome. Latent but structurally present.
+
+**Proposed fix:** delete the `AnyCreatureAttacks` triggered ability
+and the `on_any_creature_attacks` handler. Replace with a continuous
+effect in `card_data()`:
+```rust
+continuous_effects: vec![
+    ContinuousEffect::ModifyPT {
+        power: 1, toughness: 0,
+        scope: EffectScope::Global(CreatureFilter::And(vec![
+            CreatureFilter::ControlledByYou,
+            CreatureFilter::Attacking,
+        ])),
+    },
+],
+```
+and override the back-face's `continuous_effects` in `back_face_data`
+to use `power: 3`. The face-aware continuous-effect machinery would
+need to pick up the back-face's `continuous_effects` when
+`obj.is_transformed` — check whether that already works for DFC
+back-face continuous effects (a separate machinery question from
+this card).
+
+This requires a new `CreatureFilter::Attacking` variant in
+`matches_filter` (`state.rs:689-790`). Implementation:
+`state.combat_state.as_ref().map(|c| c.attacker_ids.contains(&obj.id))`
+or the equivalent — there's already an attackers list on the combat
+state that tracks live attackers.
+
+Instigator Gang is the only card in ISD with a "creatures you control
+that are attacking get +X/+X" static anthem. Adding
+`CreatureFilter::Attacking` would unblock this card alone for the ISD
+set; other sets would reuse the predicate.
