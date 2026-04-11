@@ -366,6 +366,219 @@ the logs. Worth a glance from whoever knows the priority loop.
 
 ---
 
+### 🟡 Engine Bug L: Charmbreaker Devils triggers on every spell cast, not just instants/sorceries
+**Severity:** medium — gives the model phantom +4/+0 turns
+**File:** `mtg-engine/src/cards/isd/charmbreaker_devils.rs:75-92`
+
+Oracle: "Whenever you cast an instant or sorcery spell, this creature gets
++4/+0 until end of turn." The handler filters by `caster == controller` but
+**not** by spell type:
+```rust
+fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId,
+                 caster: PlayerId, _spell_id: ObjectId, ...) {
+    ...
+    if caster != controller { return; }
+    state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
+        target: self_id, power_mod: 4, toughness_mod: 0,
+    });
+}
+```
+The dispatcher (`triggers.rs:727`) explicitly says
+"Dispatch SpellCast triggers for ALL spell types... Individual card handlers
+can filter by spell type if needed" — Charmbreaker Devils doesn't.
+
+The audit only triggered Charmbreaker on actual sorceries (Devil's Play)
+because Seat 7 was on a burn deck and didn't cast creatures while Charmbreaker
+was on the battlefield. Latent bug — would manifest in any game where the
+controller casts a creature spell while Charmbreaker is in play.
+
+**Proposed fix:** look up the spell's card type via `state.get_object(spell_id)`
++ registry, gate the +4/+0 push behind
+`is_instant_or_sorcery(spell_id)`. Compare with Burning Vengeance which DOES
+filter (`cast_with_flashback`).
+
+---
+
+### 🟡 Engine Bug O: Memory's Journey accepts targets from any graveyard, not just the targeted player's
+**Severity:** medium — latent (Memory's Journey was drafted but not cast in audit)
+**File:** `mtg-engine/src/cards/isd/memorys_journey.rs:37-41`
+
+Oracle: "Target player shuffles up to three target cards from **their**
+graveyard into their library." The implementation uses
+`TargetRequirement::TwoTargets(PlayerOnly, UpToTargets(3, GraveyardCard))` —
+but `GraveyardCard` returns cards from ALL graveyards (any owner), not just
+the targeted player's graveyard. So the model can target opponent and then
+shuffle cards from its own graveyard.
+
+In addition, the resolution loop puts each card back into ITS OWNER's library
+(not the targeted player's), so even if you target opponent and pick your own
+cards, the cards return to your library and only opponent's library gets
+shuffled. Net: you can use Memory's Journey to shuffle just your own graveyard
+back into your library while still triggering opponent's mandatory library
+shuffle. Probably not exploitable but it's wrong.
+
+**Proposed fix:** introduce `TargetRequirement::GraveyardCardOf(target_index)`
+that filters to a graveyard owned by the player named in another target
+slot. Or, simpler, validate at resolve time: filter the
+graveyard-card targets to only those whose `owner == target_player`.
+
+---
+
+### 🟡 Engine Bug N: APNAP simultaneous-trigger ordering choice is missing
+**Severity:** low (most ordering choices don't matter)
+**File:** `mtg-engine/src/triggers.rs:946-951`
+
+CR 603.3b: "If multiple triggered abilities triggered at the same time, the
+active player puts all of theirs on the stack in any order, then each other
+player in turn order does the same."
+
+Current code:
+```rust
+for t in ap_triggers {
+    state.stack.push(StackEntry::Trigger(t));
+}
+for t in nap_triggers {
+    state.stack.push(StackEntry::Trigger(t));
+}
+```
+This pushes triggers in collection order (essentially arbitrary), without
+ever asking the player. There is NO ordering prompt anywhere in the engine.
+For most ISD interactions this is fine, but the order of e.g. multiple
+Falkenrath Noble drain triggers vs Reaper from the Abyss vs Bloodgift Demon
+upkeep triggers could matter for race math.
+
+(My earlier H7 description mentioned a "trigger ordering prompt" — that was
+inaccurate; the engine simply doesn't have one. The ACTUAL bug is just
+opaque trigger-resolution target prompts, which is what H7 documents.)
+
+**Proposed fix:** when there is more than one ap_trigger, present the
+controller of the active player with an ordering choice (a permutation
+selection). Same for nap_triggers. Skip the prompt when there's only one
+or when the order is provably equivalent (e.g. multiple identical triggers
+from the same source — they're functionally interchangeable).
+
+---
+
+### 🟡 Engine Bug P: Caravan Vigil auto-picks the first basic land in library order
+**Severity:** low — affects splash decks
+**File:** `mtg-engine/src/cards/isd/caravan_vigil.rs:38-50`
+
+Oracle: "Search your library for a basic land card, reveal it, put it into
+your hand". Implementation uses `library_order.iter().find(...)` which returns
+the first basic land in library order — no choice given to the player. If
+the deck contains multiple basic land types (a 2-color deck splashing a third
+for one card), the player can never specifically tutor the splash color.
+
+Same shape as Bug C/D (cost-time auto-pick) but for a search effect instead
+of a sacrifice. The fix is the same family of changes: enumerate the
+possible choices and present them to the player via
+`AwaitingAction::ResolutionChoice`.
+
+**Did NOT fire** — Caravan Vigil wasn't cast in the audit log.
+
+---
+
+### 🟡 Engine Bug T: Skirsdag Cultist and Rolling Temblor don't push damage source to `damaged_by`
+**Severity:** low (no in-set deathtouch interaction)
+**Files:**
+- `mtg-engine/src/cards/isd/skirsdag_cultist.rs:56-58`
+- `mtg-engine/src/cards/isd/rolling_temblor.rs:38-39`
+
+Most damage sources in `mtg-engine/src/cards/isd/*.rs` push the damage source
+into the target's `damaged_by` vector when they apply damage. These two skip
+that step. The `damaged_by` data is consulted by SBA 704.5h (deathtouch
+destruction) and by death-watch triggers that care about who killed what
+(none in ISD use this, but the data hygiene is worth fixing).
+
+Compare to Daybreak Ranger, Olivia Voldaren, Heretic's Punishment, Garruk
+Relentless, Blasphemous Act, Into the Maw of Hell, etc. — they all do
+push to `damaged_by`.
+
+**Proposed fix:** add `obj.damaged_by.push(self_id);` (or equivalent) next
+to the `obj.damage_marked += amount;` line in both files.
+
+---
+
+### 🟡 Engine Bug U: X-cost activated abilities use whatever's in the mana pool, with no choice of X
+**Severity:** low — only affects Kessig Wolf Run; can be worked around by manual tapping
+**File:** `mtg-engine/src/engine.rs:588-599` (legal_actions) and 2288-2305 (apply)
+
+Kessig Wolf Run's `{X}{R}{G}, {T}` ability is offered as a single legal
+action whose effective X is determined at apply time by emptying the mana
+pool. The player can manually pre-tap to control the X value, but there's
+no way to express "I want X=2 not X=4" inline in the action label, and
+there's no enumeration of possible X values the way there is for spells.
+
+This is the activated-ability variant of Bug I (X-cost flashback) and Bug
+H8 (X-cost spell labels). Same fix family: either enumerate one action per
+plausible X, or set up a follow-on prompt for X selection. Wolf Run is the
+only ISD card affected.
+
+**Did NOT obviously fire** in the audit — Wolf Run was drafted but the
+single Wolf Run activation I sampled used max-X via auto-tap, which was
+the right choice.
+
+---
+
+### 🟡 Engine Bug Q: Dearly Departed implemented as a triggered ability instead of a static replacement
+**Severity:** low — affects ETB-trigger ordering with Champion of the Parish
+**File:** `mtg-engine/src/cards/isd/dearly_departed.rs:30-69`
+
+Oracle: "As long as Dearly Departed is in your graveyard, each Human creature
+you control enters with an additional +1/+1 counter on it." This is a static
+replacement effect (CR 614.1c, "enters with X counters"). The current
+implementation uses `TriggerKind::AnyCreatureEnters` and adds the counter
+in `on_any_creature_enters`, AFTER the creature has entered.
+
+Functional differences:
+- ETB triggers from the entering creature (e.g. Champion of the Parish's
+  "+1/+1 counter when a Human enters" trigger) and Dearly Departed's
+  trigger are simultaneous. Resolution order matters but the current code
+  doesn't enforce one.
+- Effects that examine the creature *as it enters* (via replacement
+  effects of other permanents) won't see the +1/+1 counter.
+- Festerhide Boar's analogous "enters with two counters" is correctly
+  implemented as on_resolve placement (in
+  `mtg-engine/src/cards/isd/festerhide_boar.rs:34-43`); Dearly Departed
+  should follow that pattern, just dispatched from the OWNER of the
+  graveyard rather than from the entering card.
+
+**Proposed fix:** instead of a triggered ability, have the engine consult
+"enters-with-counters" replacement effects when a creature enters the
+battlefield. Walk all graveyards/battlefield permanents that could grant
+counters to the entering creature and apply them as part of the entry
+event. Same-shape change for Mayor of Avabruck's continuous +1/+1 to
+Humans (which IS implemented correctly via ContinuousEffect, but uses a
+DIFFERENT mechanism).
+
+**Did NOT fire** — no Dearly Departed + Champion-of-the-Parish interaction
+sampled in the audit.
+
+---
+
+### 🟡 Engine Bug M (rules-shortcut): Snapcaster Mage chooses target on resolve, not on cast
+**Severity:** low — opponents can't respond to the Snapcaster choice
+**File:** `mtg-engine/src/cards/isd/snapcaster_mage.rs:43-87`
+
+Snapcaster's ETB trigger says "When this creature enters, target instant or
+sorcery card in your graveyard gains flashback...". Per CR, the target must
+be chosen WHEN THE TRIGGER GOES ON THE STACK — opponents then have priority
+to respond before the trigger resolves. The current implementation defers the
+target choice to ETB resolution (`on_enter_battlefield` builds the
+choice list and calls `present_target_choice`), so:
+- The opponent never gets a window to respond *between* "Snapcaster trigger
+  goes on stack" and "trigger resolves" with the target locked in.
+- A spell that exiles the targeted card in response (Purify the Grave,
+  Surgical Extraction) can't fizzle the trigger.
+
+This is a general engine pattern (many ETB triggers in this codebase pick
+targets at resolve time). Not specific to Snapcaster but worth noting since
+Snapcaster is one of the highest-profile cards affected.
+
+**Did NOT fire** — Snapcaster wasn't drafted in the audit log.
+
+---
+
 ## Harness / display bugs
 
 ### ✅ Harness Bug H1: combat-prompt labels don't disambiguate identical permanents
