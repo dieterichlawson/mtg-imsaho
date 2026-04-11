@@ -801,9 +801,22 @@ types render the same way:
 
 - Falkenrath Noble's "target player loses 1 life, you gain 1 life" target
   choice renders as `0: Opponent, 1: You`.
-- Trigger ordering when the controller has multiple same-time triggers
-  (e.g. Unruly Mob's "+1/+1 counter" trigger and Falkenrath Noble's drain
-  trigger from the same death event) renders as `0: <option>, 1: <option>`.
+- (Earlier write-up referenced "trigger ordering" prompts here. After
+  further investigation: the engine doesn't actually have ordering prompts
+  — see Bug N. The model's confusion came from cases where the choice
+  prompt had no source label and the model conflated it with the stack
+  state shown in the prompt header.)
+- **Confirmed in audit at line 116530-116531** (Bitterheart Witch curse-search
+  YesNo prompt): the prompt is literally just
+  ```
+  Available actions:
+  0: Yes, 1: No
+  ```
+  with no header. The engine HAS the description string in
+  `ResolutionChoiceKind::YesNo::description` ("Bitterheart Witch: search
+  your library for a Curse card?") but the LLM player's `format_action`
+  for `Action::ResolveChoice` only formats individual actions ("Yes",
+  "No") and never surfaces the description.
 
 In the audit (Seat 2, multiple games), the model received a Falkenrath
 Noble target prompt while there were ALSO Unruly Mob triggers waiting on
@@ -962,28 +975,52 @@ many versions" — it's always board-wide). The action was still correct
 
 ## Coverage
 
-Decisions sampled in passes 1-2: ~50 of ~3,766 thoughts (~1.3%).
-Cards/interactions checked in depth: equipment, sacrifice abilities,
-Forbidden Alchemy choice resolution, Spider Spawning, Endless Ranks of the
-Dead, Curse of Death's Hold, Stitched Drake / Makeshift Mauler exile cost,
-APNAP trigger ordering (3 cases sampled, all correct), Bonds of Faith
-behavior, transform triggers (Villagers ↔ Howlpack), Rally the Peasants math,
-Tribute to Hunger sacrifice direction, Moonmist usage, lethal/race math.
+**Audit-log decisions sampled (Passes 1-3):** ~80 of ~3,766 model thoughts.
 
-Not yet checked in depth:
-- Most of round 2 / round 3 decisions
-- Death triggers (Doomed Traveler, Mausoleum Guard) — verify the spirit tokens
-  are created with the right keywords
-- Werewolf transform timing edge cases (Moonmist resolution interactions
-  with attack restrictions)
-- Triggered ability ordering on more complex stacks (Selhoff Occultist mill
-  triggers, Falkenrath Noble drain triggers)
-- Deck-building decisions and how they constrained later play
-- Mulligan bottoming decisions (only checked the keep/mull side)
-- Decisions where the model had a long thought (~hundreds of long-thought
-  candidates I haven't sampled)
-- Seat 6 deeply (Mirror-Mad Phantasm controller's seat, only sampled twice)
-- Activated abilities of creatures I haven't spotted yet (Daybreak Ranger,
+**Cards inspected by reading source code (Pass 3):** equipment (Silver-Inlaid
+Dagger, Butcher's Cleaver, Cobbled Wings, Trepanation Blade, Inquisitor's
+Flail, Mask of Avacyn, Demonmail Hauberk, Wooden Stake, Sharpened Pitchfork,
+Blazing Torch); transform creatures (Daybreak Ranger, Cloistered Youth,
+Civilized Scholar, Mayor of Avabruck, Tormented Pariah, Ulvenwald Mystics,
+Villagers of Estwald, Screeching Bat, Bloodline Keeper, Mikaeus the Lunarch,
+Garruk Relentless); sacrifice abilities (Skirsdag Cultist, Disciple of
+Griselbrand, Stitcher's Apprentice, Brain Weevil, Demonmail Hauberk);
+target-choice spells (Sever the Bloodline, Memory's Journey, Bramblecrush,
+Naturalize, Curse of Death's Hold, Curse of the Pierced Heart, Curse of
+Stalked Prey, Brimstone Volley, Geistflame, Heretic's Punishment); morbid
+(Caravan Vigil, Festerhide Boar, Somberwald Spider, Reaper from the Abyss,
+Morkrut Banshee, Skirsdag High Priest, Hollowhenge Scavenger); ETB+choice
+(Snapcaster Mage, Mentor of the Meek, Bitterheart Witch, Olivia Voldaren);
+graveyard care (Spider Spawning, Endless Ranks of the Dead, Splinterfright,
+Boneyard Wurm, Wreath of Geists, Mulch, Mirror-Mad Phantasm, Back from the
+Brink); auras (Bonds of Faith, Skeletal Grimace, Curiosity, Spectral Flight,
+Dead Weight, Dearly Departed); flashback (Forbidden Alchemy, Cackling
+Counterpart, Burning Vengeance, Devil's Play, Travel Preparations); lands
+(Stensia Bloodhall, Kessig Wolf Run, Cellar Door); planeswalker (Garruk
+Relentless); legendary handling (Geist of Saint Traft, Olivia, Mikaeus);
+counterspells (Frightful Delusion); damage tracking (Abattoir Ghoul, Falkenrath
+Noble, Lumberknot, Charmbreaker Devils); state-tracking (creature_died_this_turn,
+num_spells_cast_last_turn, legend rule, autotap, X-cost handling).
+
+**Audit decisions checked:** Pass 1 covered ~50 random samples; Pass 2 added
+hypothesis-driven sweeps for Bug A (equipment activation), Bug C (sacrifice
+fizzle), Bug H7 (opaque target prompts), Bug H5 (Yes/No prompts), Bug H
+(Maw of Hell two-target filter), Bug I (X-cost flashback compute_autotap);
+Pass 3 sampled Devil's Play / Bitterheart Witch / Bonds of Faith / Skeletal
+Grimace prompt formats and trigger-target prompts. All confirmed.
+
+**Status of bug families found:**
+- ✅ Fixed: A (autotap), B (Human snapshot), C (sacrifice choice), H1 (combat
+  disambiguation), P1-P5 (model prompt fixes).
+- 🟡 Documented but not fixed: D, E, F, G, H, I, J, K, L, M, N, O, P, Q, T,
+  U, W, X, Y, plus harness bugs H2, H3, H5, H6, H7, H8.
+
+**Areas not yet checked:**
+- Most round 2 / round 3 audit decisions
+- Werewolf transform timing edge cases with Moonmist mid-resolution
+- Mulligan bottoming decisions (only the keep/mull side checked)
+- Long-thought decisions (~hundreds of candidates)
+- Activated abilities of creatures I haven't spotted yet (Geistcatcher's Rig,
   Cellar Door, etc.)
 
 Mining will continue.
