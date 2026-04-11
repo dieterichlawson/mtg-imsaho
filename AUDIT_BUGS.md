@@ -556,6 +556,89 @@ sampled in the audit.
 
 ---
 
+### 🟡 Engine Bug W: Legend rule keeps a nondeterministic permanent and never asks the player
+**Severity:** medium — wrong rules behavior, fortunately latent
+**File:** `mtg-engine/src/sba.rs:251-270`
+
+CR 704.5j (current legend rule, since M14): "If a player controls two or
+more legendary permanents with the same name, that player chooses one of
+them, and the rest are put into their owners' graveyards."
+
+The current SBA code:
+```rust
+let mut legend_groups: Map<(PlayerId, String), Vec<ObjectId>> = Map::new();
+for obj in state.objects.values() { ... }
+for (_, ids) in legend_groups {
+    if ids.len() > 1 {
+        // Keep the first (oldest), remove the rest.
+        for &id in &ids[1..] {
+            state.move_object(id, Zone::Graveyard, registry);
+            took_action = true;
+        }
+    }
+}
+```
+Two problems:
+1. **No player choice** — the rule says the player chooses; the code picks
+   automatically.
+2. **Nondeterministic order** — `ids` comes from iterating
+   `state.objects.values()` which is a HashMap iteration. The "kept"
+   permanent is whichever the HashMap happens to surface first. Comment
+   even says "keep the newest" but code keeps `ids[0]`.
+
+The only legendary permanents in ISD are Geist of Saint Traft, Olivia
+Voldaren, Bloodline Keeper (no, not legendary), Mikaeus the Lunarch, and
+the planeswalker Garruk Relentless. None of them showed up twice in any
+audit-log game, so the bug is latent.
+
+**Proposed fix:**
+1. Stable iteration order — sort `legend_groups` by `(controller, name)`
+   and the inner Vec by ObjectId.
+2. Present a `ResolutionChoice::ChooseTarget` listing the legend group
+   members so the controller picks which one to keep. Skip the prompt
+   when there's only one (the common case).
+
+---
+
+### 🟡 Engine Bug X (suspected): aura-granted activated abilities collide with creature-native ability_index
+**Severity:** low — only Skeletal Grimace in ISD grants an activated ability via aura
+**File:** `mtg-engine/src/engine.rs:2257-2284` (apply path)
+
+Skeletal Grimace's `{B}: Regenerate` is implemented in
+`mtg-engine/src/cards/isd/skeletal_grimace.rs` as an `activated_abilities`
+method that returns the granted ability with `ability_index: 0`. The
+engine collects activated abilities by walking the creature's own behavior
+and ALL attached auras, then bundles them into `Action::ActivateAbility`
+entries that carry only `(object_id, ability_index)`.
+
+The apply path then uses this lookup chain to find the ability:
+1. Try the creature's own `activated_abilities` first.
+2. If not found, try Evil Twin override.
+3. If not found, try attached auras.
+
+Step 1 short-circuits — if the creature itself has an activated ability at
+`ability_index: 0`, the lookup returns *that* one and never reaches the
+aura. For example, if Skeletal Grimace is attached to Daybreak Ranger
+(which has `{T}: Deal 2 damage to flying` at index 0), the engine thinks
+"Activate <Ranger> ability 0" means the Ranger's tap-damage ability, not
+the regenerate. The action label might also be wrong.
+
+Even when there's no native ability at index 0, the LLM-player display
+collapses by `(object_id, ability_index)` (`mtg-player/src/llm.rs:2086`),
+so two distinct abilities sharing the same index would appear as one.
+
+**Did NOT fire confirmed in audit** — Skeletal Grimace was attached to
+Spectral Rider in Seat 2's deck, and Spectral Rider has no activated
+abilities, so the lookup correctly fell through to the aura. But the
+broken case is reachable.
+
+**Proposed fix:** add a `source_card_id: Option<CardId>` field to
+`Action::ActivateAbility` that records WHICH card the ability is granted
+by, so apply can disambiguate without scanning. Same for the LLM player's
+`seen_ability_keys` tuple — make it `(object_id, source_card_id, ability_index)`.
+
+---
+
 ### 🟡 Engine Bug M (rules-shortcut): Snapcaster Mage chooses target on resolve, not on cast
 **Severity:** low — opponents can't respond to the Snapcaster choice
 **File:** `mtg-engine/src/cards/isd/snapcaster_mage.rs:43-87`
