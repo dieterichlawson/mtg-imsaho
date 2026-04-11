@@ -2433,3 +2433,148 @@ Related to Bug BQ (damage helper needs planeswalker branch) — the
 fix for Olivia is blocked on BQ being resolved first for the
 non-Olivia cards, but Olivia's own bite should still route through
 the unified helper regardless.
+
+---
+
+### 🟡 Engine Bug BT: `on_any_creature_dies` handlers zone-gate on Battlefield, silently dropping triggers when the watcher dies simultaneously with its target
+**Severity:** medium — *confirmed fired in audit* (Abattoir Ghoul in mutual-first-strike trades at log lines 17678-17681 and 18086-18089, both with no life gain logged)
+**Files:**
+- `mtg-engine/src/cards/isd/abattoir_ghoul.rs:38-43`
+- `mtg-engine/src/cards/isd/murder_of_crows.rs:38-43`
+- `mtg-engine/src/cards/isd/rage_thrower.rs:38-43`
+- `mtg-engine/src/cards/isd/selhoff_occultist.rs:47-54`
+
+Four `AnyCreatureDies` watcher handlers begin with:
+```rust
+fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, ...) {
+    let controller = match state.get_object(self_id) {
+        Some(o) if o.zone == Zone::Battlefield => o.controller,
+        _ => return,
+    };
+    ...
+}
+```
+This pattern early-returns (silently) whenever the watcher is no
+longer on the battlefield at trigger-resolution time. For effects
+whose payload operates on the CONTROLLER (gain life, draw/discard,
+mill a player, deal damage to a target) rather than on the source
+itself, the zone gate is **wrong**: per CR 603.6d / 603.10c, a
+triggered ability that was already queued continues to resolve even
+if the source has since left the battlefield.
+
+Collected triggers in `triggers.rs:472-512` explicitly include
+"simultaneously dead" watchers (`state.objects.values().filter(|o|
+o.id != dead_id && (o.zone == Zone::Battlefield ||
+simultaneously_dead.contains(&o.id)))`). So the dispatcher correctly
+queues the DeathWatch trigger even for a watcher that is
+dying-at-the-same-time. But the handler at resolution kills itself
+off because of the zone gate, dropping the effect.
+
+**Confirmed firing in audit (log lines 17670-17690 and 18080-18106):**
+Seat 0's Voiceless Spirit (2/1 **first strike**) blocks opp's
+Abattoir Ghoul (3/2 **first strike**) on turn 10. Both have first
+strike, so the first-strike damage step kills both simultaneously.
+Oracle semantics:
+
+1. First-strike damage resolves. Abattoir Ghoul deals 3 to
+   Voiceless Spirit. Voiceless Spirit deals 2 to Abattoir Ghoul.
+2. Abattoir Ghoul gets appended to Voiceless Spirit's `damaged_by`.
+   SBA check: both die (Voiceless Spirit's 1 toughness vs 3 damage,
+   Abattoir Ghoul's 2 toughness vs 2 damage).
+3. Trigger: "a creature Abattoir Ghoul dealt damage to this turn
+   died" → Voiceless Spirit just died, Abattoir Ghoul had damaged it.
+4. DeathWatch trigger queued via the `simultaneously_dead` branch
+   in `triggers.rs:482-485`.
+5. Trigger resolves — Abattoir Ghoul's controller should gain 1
+   life (Voiceless Spirit's toughness).
+6. Handler checks zone → Ghoul is in graveyard → returns early.
+7. Opp's life is unchanged.
+
+Log excerpt from line 18086-18089:
+```
+Abattoir Ghoul died
+Voiceless Spirit died
+Typhoid Rats died
+Selfless Cathar died
+```
+No "Abattoir Ghoul: gained N life from creature death" message
+follows, even though the same message IS logged at lines 81072,
+81379, 95374 when Abattoir Ghoul is alive at trigger-resolution
+time (i.e., when the dying creature was blocked/attacked by Ghoul
+without Ghoul itself dying).
+
+**Other affected cards (patterns, latent in audit):**
+
+- **Murder of Crows** ({3}{U}{U}, "Whenever another creature dies,
+  you may draw a card. If you do, discard a card."). If Murder of
+  Crows dies in the same combat as another creature (unblocked
+  attacker trading with a 4-power blocker), the trigger is
+  collected but the zone-gated handler returns early. The
+  controller never gets the "may draw" prompt — no YesNo
+  awaiting_action is set, so the game just proceeds. Not drafted
+  into a relevant scenario in this audit.
+- **Rage Thrower** ({5}{R}, "Whenever another creature dies, this
+  creature deals 2 damage to target player or planeswalker."). If
+  Rage Thrower is blocked and dies to the blocker, the blocker's
+  death also triggers Rage Thrower's ability. Under current code,
+  the handler early-returns because Rage Thrower is in graveyard.
+  Per rules the 2 damage should still be dealt — the damage source
+  is Rage Thrower-as-last-known-object (graveyard-object
+  characteristics are preserved for damage attribution per CR 112.7a).
+  Not cast in audit.
+- **Selhoff Occultist** ({2}{U}, "Whenever this creature or another
+  creature dies, target player mills a card."). Selhoff has two
+  separate handlers: `on_dies` (correct, does not zone-gate) and
+  `on_any_creature_dies` (zone-gated, BUGGY). If Selhoff dies at
+  the same time as another creature, the SelfDies branch fires
+  correctly via `on_dies` → 1 mill. The AnyCreatureDies branch
+  (from the other creature's death) fires separately and the
+  zone-gated handler drops it → missing 1 mill. Per rules, BOTH
+  triggers should resolve (they're two separate triggered
+  abilities, both firing on simultaneous deaths). Not drafted in a
+  relevant scenario.
+
+**Counter-example (correct implementation):** Falkenrath Noble's
+`on_any_creature_dies` at `falkenrath_noble.rs:47-54` does NOT
+zone-gate — it reads `o.controller` unconditionally and calls
+`drain()`. This is the correct pattern for effects whose payload
+operates on the controller.
+
+**Counter-examples where zone-gating IS correct:** Lumberknot
+(+1/+1 counter on self), Gutter Grime (slime counter on self),
+Galvanic Juggernaut (untap self), Unruly Mob (+1/+1 counter on
+self), Thraben Sentry (transform trigger), Village Cannibals
+(+1/+1 counter on self). All of these either mutate `self_id`
+directly or need the source on the battlefield for the effect to
+mean anything — early-returning is fine (and often necessary to
+avoid no-op counter adds to graveyard objects).
+
+**Not a bug in the trigger dispatcher** — the dispatcher's
+`simultaneously_dead` logic is correct per CR 603.6c. The bug lives
+entirely in the card-level handlers.
+
+**Proposed fix:** drop the `if o.zone == Zone::Battlefield` gate
+in the four affected handlers, mirroring Falkenrath Noble:
+```rust
+fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, ...) {
+    let controller = match state.get_object(self_id) {
+        Some(o) => o.controller,
+        None => return,
+    };
+    ...
+}
+```
+For Abattoir Ghoul specifically, the effect also needs to check
+`dead_damaged_by.contains(&self_id)` (which it already does) — the
+"dealt damage by this creature" check uses the pre-captured
+damaged_by list, not the current battlefield state, so it's safe
+even when Ghoul is in the graveyard.
+
+No trigger-dispatcher or engine-level changes needed — just
+per-card handler tweaks.
+
+**Audit impact:** Bug BT fired at least twice in the audit log
+(lines 17678-17681 and 18086-18089, both Abattoir Ghoul mutual
+first-strike trades). Each instance cost opp 1 missed life gain.
+Small enough to not have swung the games, but it's a silent
+correctness bug the model cannot see.
