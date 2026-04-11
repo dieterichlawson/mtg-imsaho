@@ -947,7 +947,10 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
-### 🟡 Engine Bug BT: Burning Vengeance logs "deals 2 damage to opponent" before the target is chosen
+### 🟡 Engine Bug BU: Burning Vengeance logs "deals 2 damage to opponent" before the target is chosen
+**Note:** originally numbered BT; renamed to BU to deconflict with Agent A's
+Bug BT (zone-gated on_any_creature_dies handlers drop simultaneous-death triggers)
+which landed concurrently.
 **Severity:** very low — log message accuracy only
 **File:** `mtg-engine/src/cards/isd/burning_vengeance.rs:55-69`
 
