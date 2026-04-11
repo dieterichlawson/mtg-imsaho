@@ -1914,6 +1914,37 @@ impl LlmPlayer {
         format!("{}{}{}", c.name, cost, pt)
     }
 
+    /// Render the player's hand as a numbered list for the mulligan /
+    /// bottom prompts.
+    fn format_numbered_hand(view: &GameView) -> String {
+        if view.your_hand.is_empty() {
+            return "  <empty>".to_string();
+        }
+        view.your_hand.iter().enumerate()
+            .map(|(i, c)| format!("  {}: {}", i, Self::format_hand_card(c)))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// One-line summary of each opponent's mulligan count, for the
+    /// pre-game mulligan prompts.
+    fn format_opponent_mulls(view: &GameView) -> String {
+        match view.opponents.len() {
+            0 => String::new(),
+            1 => {
+                let n = view.opponents[0].mulligan_count;
+                format!("Opponent has taken {} mulligan{} so far.",
+                    n, if n == 1 { "" } else { "s" })
+            }
+            _ => {
+                let parts: Vec<String> = view.opponents.iter().enumerate()
+                    .map(|(i, o)| format!("opp{}: {}", i, o.mulligan_count))
+                    .collect();
+                format!("Opponents' mulligans so far — {}.", parts.join(", "))
+            }
+        }
+    }
+
     /// Decide keep or mulligan for the London opening-hand phase.
     /// Sends a structured-JSON prompt with the current hand and the
     /// mulligan count. Falls back to MulliganKeep on malformed responses.
@@ -1929,33 +1960,36 @@ impl LlmPlayer {
             return Action::MulliganKeep;
         }
 
-        let numbered: Vec<String> = view.your_hand.iter().enumerate()
-            .map(|(i, c)| format!("  {}: {}", i, Self::format_hand_card(c)))
-            .collect();
-        let hand_text = if numbered.is_empty() {
-            "<empty>".to_string()
-        } else {
-            numbered.join("\n")
-        };
-
+        let hand_text = Self::format_numbered_hand(view);
         let mulls_taken = view.your_mulligan_count;
         let keep_size = (7_i32 - mulls_taken as i32).max(0);
-        let mut action_prompt = String::new();
-        action_prompt.push_str("[MULLIGAN DECISION]\n");
-        action_prompt.push_str(&format!(
-            "Mulligans taken so far: {}. If you keep now you will bottom {} card{} and play with {} in hand.\n",
+        let opp_mulls_text = Self::format_opponent_mulls(view);
+        let play_draw = if view.active_player == view.you {
+            "You are on the play"
+        } else {
+            "You are on the draw"
+        };
+
+        let full_prompt = format!(
+            "London mulligan decision — keep or mulligan?\n\
+             \n\
+             {}. You have taken {} mulligan{} so far. If you keep now you will bottom {} card{} and play with {} in hand.\n\
+             {}\n\
+             \n\
+             Your opening hand:\n\
+             {}\n\
+             \n\
+             Respond with JSON formatted as {{{}\"mull\": true|false}} — true to mulligan, false to keep.",
+            play_draw,
             mulls_taken,
+            if mulls_taken == 1 { "" } else { "s" },
             mulls_taken,
             if mulls_taken == 1 { "" } else { "s" },
             keep_size,
-        ));
-        action_prompt.push_str("Your opening hand:\n");
-        action_prompt.push_str(&hand_text);
-        action_prompt.push('\n');
-        action_prompt.push_str(&format!(
-            "Respond with {{{}\"mull\": true|false}}.\n",
-            self.thoughts_field_prefix()
-        ));
+            opp_mulls_text,
+            hand_text,
+            self.thoughts_field_prefix(),
+        );
 
         let schema = serde_json::json!({
             "type": "object",
@@ -1966,11 +2000,6 @@ impl LlmPlayer {
             "required": ["thoughts", "mull"]
         });
 
-        let full_prompt = self.build_prompt_with_header(
-            view,
-            &action_prompt,
-            Some("Pre-game — London mulligan phase"),
-        );
         let response = self.send_message_structured(&full_prompt, &schema);
         let choice = response["mull"].as_bool();
         match choice {
@@ -2009,24 +2038,37 @@ impl LlmPlayer {
             None => return legal_actions[0].clone(),
         };
 
-        let numbered: Vec<String> = view.your_hand.iter().enumerate()
-            .map(|(i, c)| format!("  {}: {}", i, Self::format_hand_card(c)))
-            .collect();
-        let hand_text = if numbered.is_empty() {
-            "<empty>".to_string()
+        let hand_text = Self::format_numbered_hand(view);
+        let opp_mulls_text = Self::format_opponent_mulls(view);
+        let play_draw = if view.active_player == view.you {
+            "You are on the play"
         } else {
-            numbered.join("\n")
+            "You are on the draw"
         };
 
-        let mut action_prompt = String::new();
-        action_prompt.push_str(&format!("[BOTTOM {} CARD{} AFTER MULLIGAN]\n", n,
-            if n == 1 { "" } else { "S" }));
-        action_prompt.push_str("Your opening hand:\n");
-        action_prompt.push_str(&hand_text);
-        action_prompt.push('\n');
-        action_prompt.push_str(&format!(
-            "Respond with {{{}\"bottom_indices\": [..]}} — exactly {} distinct index(es) from 0 to {}.\n",
-            self.thoughts_field_prefix(), n, view.your_hand.len().saturating_sub(1)));
+        let full_prompt = format!(
+            "Bottom {} card{} after mulligan.\n\
+             \n\
+             {}. You took {} mulligan{} and have kept — pick {} card{} from your hand to put on the bottom of your library.\n\
+             {}\n\
+             \n\
+             Your opening hand:\n\
+             {}\n\
+             \n\
+             Respond with JSON formatted as {{{}\"bottom_indices\": [..]}} — exactly {} distinct index(es) from 0 to {}.",
+            n,
+            if n == 1 { "" } else { "s" },
+            play_draw,
+            n,
+            if n == 1 { "" } else { "s" },
+            n,
+            if n == 1 { "" } else { "s" },
+            opp_mulls_text,
+            hand_text,
+            self.thoughts_field_prefix(),
+            n,
+            view.your_hand.len().saturating_sub(1),
+        );
 
         let valid_indices: Vec<serde_json::Value> = (0..view.your_hand.len())
             .map(|i| serde_json::json!(i))
@@ -2046,11 +2088,6 @@ impl LlmPlayer {
             "required": ["thoughts", "bottom_indices"]
         });
 
-        let full_prompt = self.build_prompt_with_header(
-            view,
-            &action_prompt,
-            Some("Pre-game — Bottoming after mulligan"),
-        );
         let response = self.send_message_structured(&full_prompt, &schema);
 
         // Parse and validate bottom_indices.
