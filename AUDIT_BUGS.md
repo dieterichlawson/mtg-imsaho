@@ -600,6 +600,42 @@ audit-log game, so the bug is latent.
 
 ---
 
+### 🟡 Engine Bug Y: pay-mana-during-resolution checks the mana pool only — never offered when pool is empty
+**Severity:** medium — multiple cards affected
+**Files:**
+- `mtg-engine/src/cards/isd/screeching_bat.rs:89-93` (upkeep transform `{2}{B}{B}`)
+- `mtg-engine/src/cards/isd/mentor_of_the_meek.rs:73-88` (ETB pay `{1}` to draw)
+- `mtg-engine/src/cards/isd/frightful_delusion.rs:50` (target may pay `{1}`)
+
+These cards present "you may pay {N}" choices during trigger/spell
+resolution. Each one checks `state.get_player(controller).mana_pool.get(...)`
+or `mana_pool.total() >= 1` — i.e. it only succeeds if the player has
+already floated mana into the pool.
+
+The problem: mana pools empty between phases and steps (CR 106.4). For
+upkeep triggers (Screeching Bat) the pool is GUARANTEED to be empty when
+the trigger resolves, so the prompt never appears. For ETB triggers
+(Mentor of the Meek) the pool depends on whatever the player floated
+before casting. For instant resolution (Frightful Delusion) the targeted
+player has a priority window to manually float mana — but the engine
+doesn't surface this as part of the choice, the player has to know to
+tap lands defensively.
+
+Mentor and Screeching Bat additionally don't even check `can_pay` before
+presenting the Yes/No prompt — Screeching Bat does (line 91) and skips
+the prompt when it can't pay, so the upkeep transform option is just
+silently never offered in any plausible game state.
+
+**Did NOT fire** in audit — Screeching Bat was sideboard-only,
+Mentor of the Meek was a single draft-pick, Frightful Delusion never cast.
+
+**Proposed fix:** present the Yes/No choice with an autotap-resolved tap
+plan attached. When the player picks "Yes", the engine taps the lands in
+the plan and pays. Same shape as Bug A's autotap-for-activated-abilities
+fix, except for ResolutionChoice rather than legal_actions.
+
+---
+
 ### 🟡 Engine Bug X (suspected): aura-granted activated abilities collide with creature-native ability_index
 **Severity:** low — only Skeletal Grimace in ISD grants an activated ability via aura
 **File:** `mtg-engine/src/engine.rs:2257-2284` (apply path)
