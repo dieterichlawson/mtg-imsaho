@@ -3434,3 +3434,71 @@ ID must be patched, not just the first.
 **Cross-references:** Bug AV (P/T snapshot in same helper), Bug BJ
 (Evil Twin enters as 0/0, related family of token-copy issues).
 
+---
+
+### 🟡 Harness Bug 76-001: Skirsdag High Priest's activation labels use Rust `{:?}` debug format for ObjectIds
+**Severity:** medium (harness/display) — model can't identify which creatures it would tap
+**File:** `mtg-engine/src/cards/isd/skirsdag_high_priest.rs:65-68`
+**Audit evidence:** not fired (Skirsdag drafted but never activated in sampled games)
+**Note:** this is the bug dangling-referenced as "Bug BB" in legacy
+text elsewhere; an earlier branch committed the content as "Bug BB"
+but the commit never made it to master. Recorded here with the new
+`NN-XXX` prefix.
+
+Skirsdag High Priest (`{1}{B}` 1/2 morbid `{T}, Tap two untapped
+creatures you control: Create a 5/5 Demon`) correctly enumerates one
+`ActivatedAbilityDef` per C(n, 2) pair of tappable creatures — the
+combinatorial approach mirrors Bug C's sacrifice-choice fix. But the
+description string formats the candidate IDs with Rust's `{:?}` debug
+format:
+
+```rust
+abilities.push(ActivatedAbilityDef {
+    ability_index: combo_index,
+    description: format!(
+        "Morbid — {{T}}, Tap two creatures: Create a 5/5 Demon with flying (tap {:?} & {:?})",
+        candidates[i], candidates[j]
+    ),
+    ...
+});
+```
+
+So the LLM player sees entries shaped like:
+
+```
+Morbid — {T}, Tap two creatures: Create a 5/5 Demon with flying (tap ObjectId(5) & ObjectId(12))
+```
+
+ObjectIds never appear anywhere else in the prompt — the player has
+no way to map `ObjectId(5)` back to a creature name. On a board with
+several creatures, picking the right pair becomes guessing. This
+turns a correctly-enumerated choice prompt into an effectively-opaque
+one (same flavor of model harm as Harness Bug H7's target-prompt
+opaqueness, though Skirsdag's is worse because the action list is
+enumerated and the labels are the only disambiguator).
+
+Compare with how other multi-choice cards surface creature names —
+e.g. `format_combat_creature_list` appends creature names + P/T +
+keywords so labels are self-explanatory. Skirsdag should do the same.
+
+**Proposed fix:** format with creature names (adding `#1`/`#2`
+suffixes on name collision à la Bug H1's
+`format_combat_creature_list`):
+
+```rust
+let name_i = state.get_object(candidates[i])
+    .map(|o| o.name.clone())
+    .unwrap_or_default();
+let name_j = state.get_object(candidates[j])
+    .map(|o| o.name.clone())
+    .unwrap_or_default();
+description: format!(
+    "Morbid — {{T}}, Tap two creatures: Create a 5/5 Demon with flying (tap {} & {})",
+    name_i, name_j
+),
+```
+
+This is a pure display fix — the engine's combinatorial encoding and
+`ability_index` decoding (lines 100-117) are already correct and
+don't need to change.
+
