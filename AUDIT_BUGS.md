@@ -2816,3 +2816,273 @@ last-controller on `PendingTrigger::LeftBattlefield` events via
 it — and Moldgraf's handler has its own independent way of reading
 "who was the controller" that hard-codes `o.owner`.
 
+<!-- Agent 99 (branch audit-bugs-998C95FE). Bugs below use Bug 99-NNN. -->
+
+---
+
+### 🟡 Engine Bug 99-001: Gutter Grime's `is_token` check reads a cleaned-up token, so slime counters grow on token deaths
+**Severity:** medium — latent (Gutter Grime not drafted in audit)
+**Files:**
+- `mtg-engine/src/cards/isd/gutter_grime.rs:43-81`
+- `mtg-engine/src/sba.rs:272-280` (704.5d token cleanup ordering)
+- `mtg-engine/src/events.rs:36` (`GameEvent::CreatureDied` payload)
+- `mtg-engine/src/triggers.rs:446-510` (`DeathWatch` dispatch)
+
+Oracle: "Whenever a **nontoken** creature you control dies, put a
+slime counter on this enchantment, then create a green Ooze
+creature token…"
+
+Gutter Grime's handler filters `is_token` by reading the dead
+creature from `state.objects` at trigger-resolution time:
+
+```rust
+let was_token = state.get_object(dead_id).map(|o| o.is_token).unwrap_or(false);
+if was_token { return; }
+// Put a slime counter on Gutter Grime.
+state.add_counters(self_id, CounterType::Slime, 1);
+```
+
+By the time this handler runs, **the dead token has already been
+removed from `state.objects`**. CR 704.5d cleanup at
+`sba.rs:272-280` runs in the same SBA loop iteration that moves
+zero-toughness creatures to the graveyard (704.5f):
+
+```rust
+// Rule 704.5d: A token not on the battlefield ceases to exist.
+let dead_tokens: Vec<_> = state.objects.values()
+    .filter(|o| o.is_token && o.zone != Zone::Battlefield)
+    .map(|o| o.id)
+    .collect();
+for id in dead_tokens {
+    state.objects.remove(&id);
+    took_action = true;
+}
+```
+
+The priority-loop driver runs `check_state_based_actions` to a
+fixed point before calling `collect_triggers`, so when trigger
+collection processes the `CreatureDied` event pushed by the
+704.5f branch, the token has already been deleted. The DeathWatch
+trigger IS queued correctly (trigger collection reads the dead
+creature's identity from the event payload, not from
+`state.objects`), but when it resolves and Gutter Grime's handler
+calls `state.get_object(dead_id)`, it gets `None` →
+`.unwrap_or(false)` → **`was_token = false`** → the handler
+proceeds to add a slime counter and create an Ooze, as if a
+*nontoken* creature had died.
+
+Net effect: every creature token dying under Gutter Grime's
+controller (Zombie tokens from Cellar Door, Moan of the Unhallowed,
+Endless Ranks of the Dead; Spirit tokens from Doomed Traveler /
+Mausoleum Guard; Wolf tokens from Kessig Cagebreakers and Garruk;
+Gutter Grime's own Ooze tokens when Gutter Grime leaves and their
+P/T drops to 0/0) wrongly grows the slime-counter pile and spawns
+an extra Ooze. In a G/B Zombie deck with Moan of the Unhallowed +
+Endless Ranks, Gutter Grime effectively becomes "whenever **any**
+creature you control dies, add a slime counter and create an
+Ooze" — strictly stronger than the printed card.
+
+`GameEvent::CreatureDied` is defined (events.rs:36) as
+`{ object, card_id, controller, damaged_by, last_known_toughness }`
+— no `is_token` field. `on_any_creature_dies` also receives no
+`is_token`. There is no reliable way for the handler to recover
+the ground-truth token-ness of the dead creature once SBA cleanup
+has run.
+
+**Did NOT fire** in audit — Gutter Grime is not drafted in
+`verify-draft-8seat-high-v5.log` (appears only in the card listing
+at line 682). The bug fires the first time any G/B deck drafts
+Gutter Grime into a board with a dying token.
+
+**Workaround fix (no new field):** token instance rows have
+`card_id == CardId(0)` per `state.rs:356`. The `CreatureDied`
+event already carries `card_id`, so the `DeathWatch` trigger can
+be threaded with `dead_card_id`, and Gutter Grime can check
+`dead_card_id == CardId(0)` as a token proxy. Requires extending
+`PendingTrigger::DeathWatch` and `on_any_creature_dies` with one
+new `CardId` parameter.
+
+**Cleaner fix:** add `is_token: bool` to `GameEvent::CreatureDied`,
+`PendingTrigger::DeathWatch`, and `on_any_creature_dies`. Capture
+the token-ness at event-push time in `sba.rs:86` (zero-toughness
+death, where `state.get_object(id).is_token` is still live) and
+`destruction.rs:99` (destruction death). Existing death-watch
+handlers ignore the new field; only Gutter Grime (and any future
+"nontoken watcher" cards) needs to read it.
+
+**Distinct from Bug BT / BU** (reletter in progress), which is
+about death-watch handlers early-returning when the *watcher* dies
+simultaneously with the target (failed `self_id` lookup). Bug
+99-001 is about handlers reading from a cleaned-up *target*
+object (failed `dead_id` lookup). BT/BU's fix (drop the zone gate
+on `self_id`) does not fix 99-001's `state.get_object(dead_id)`
+read, and vice versa. Bug BT/BU even lists Gutter Grime as a
+*counter-example* — Gutter Grime's `self_id` zone gate is indeed
+correct for BT/BU's concern (mutating a counter on a graveyard
+enchantment would no-op anyway). The separate `dead_id` reader
+bug is specific to 99-001.
+
+---
+
+### 🟡 Engine Bug 99-002: Civilized Scholar and Delver of Secrets hand-roll their DFC transforms without `apply_transform`, leaving `obj.subtypes` stale once Bug BD lands
+**Severity:** medium — surfaces in ISD once Bug BD is landed; latent before
+**Files:**
+- `mtg-engine/src/cards/isd/civilized_scholar.rs:136-140, 162-166`
+- `mtg-engine/src/cards/isd/delver_of_secrets.rs:146-149`
+- Compare `mtg-engine/src/cards/helpers.rs:231-265` (`apply_transform`)
+
+Two non-werewolf DFCs hand-roll their transform without going
+through the `helpers::apply_transform` helper that the werewolves
+were migrated to in Bug D:
+
+```rust
+// civilized_scholar.rs:136-140 and 162-166
+if let Some(obj) = state.get_object_mut(object_id) {
+    obj.tapped = false;
+    obj.is_transformed = true;
+    obj.name = "Homicidal Brute".into();
+}
+
+// delver_of_secrets.rs:146-149
+if let Some(obj) = state.get_object_mut(self_id) {
+    obj.is_transformed = true;
+    obj.name = "Insectile Aberration".into();
+}
+```
+
+Both flip `is_transformed` and update `name` but leave
+`obj.subtypes`, `obj.keywords`, and `obj.card_types` untouched.
+The front- vs back-face subtypes differ for both:
+
+- **Civilized Scholar** (Human Advisor 0/1) → **Homicidal Brute**
+  (Human Mutant 5/1): `Advisor` dropped, `Mutant` added.
+- **Delver of Secrets** (Human Wizard 1/1) → **Insectile Aberration**
+  (Insect 3/2 flying): both `Human` and `Wizard` dropped, `Insect`
+  added, `Flying` keyword gained.
+
+Bug D (already fixed) documented this exact pattern for the
+werewolf family and migrated them to `apply_transform`, which
+re-copies `subtypes / keywords / name` from the appropriate face.
+Civilized Scholar and Delver were missed because neither is a
+werewolf.
+
+**Why this only becomes observable after Bug BD lands:** pre-Bug-BD,
+`obj.subtypes` is empty for every non-token object (setup_game
+copies `card_types / keywords` from registry but NOT `subtypes`).
+Every subtype query code path falls through to the registry when
+instance subtypes are empty, so "stale instance subtypes" is a
+no-op. Post-Bug-BD
+(`obj.subtypes = card_data.subtypes.clone()` in setup_game),
+Delver's `obj.subtypes` starts as `["Human", "Wizard"]`. When
+Delver transforms via direct mutation, the instance still reports
+`["Human", "Wizard"]` — but Delver is now "Insectile Aberration"
+(Insect) per CR.
+
+**What breaks:** `CreatureFilter::HasSubtype` in
+`state.rs:692-711` explicitly falls through to `creature.subtypes`
+after its `is_transformed` branch checks back-face data:
+
+```rust
+CreatureFilter::HasSubtype(subtype) => {
+    if creature.is_transformed {
+        if let Some(behavior) = registry.get(creature.card_id) {
+            if let Some(back) = behavior.back_face_data() {
+                if back.subtypes.iter().any(|s| s == subtype) {
+                    return true;
+                }
+            }
+        }
+    } else { … }
+    creature.subtypes.iter().any(|s| s == subtype)  // <-- stale
+}
+```
+
+Post-Bug-BD, a transformed Delver of Secrets with stale
+`obj.subtypes = ["Human", "Wizard"]` reports `HasSubtype("Human")
+== true` via the fall-through, despite the active face being
+Insect. **Hamlet Captain's** attack/block trigger buffs "other
+Humans you control +1/+1 until end of turn", filtered by
+`subtypes.any("Human")` OR
+`registry.card_data(o.card_id).subtypes.any("Human")`. Both
+branches return true: the registry branch reads front-face data
+(`Human Wizard`) via `o.card_id`, which still points to Delver's
+card id; the instance branch returns the stale `["Human",
+"Wizard"]`. So Hamlet Captain buffs a transformed Delver as if it
+were still a Human, contrary to Insectile Aberration's printed
+types.
+
+**Village Cannibals'** "nontoken Human creature dying" trigger also
+fires when a transformed Delver dies. (This path is already
+reachable today via Village Cannibals' direct registry lookup — so
+this particular wrong behavior is not unique to 99-002 — but it
+survives the proposed Bug AT fix that moves Village Cannibals to
+instance-or-registry subtype checks, because the stale instance
+subtypes still say "Human".)
+
+Civilized Scholar's front face is Human Advisor; back face is
+Human Mutant. Checking "Human" post-transform is accidentally
+correct (both faces have Human), but checking "Advisor" on a
+Homicidal Brute returns `true` incorrectly. No ISD card checks for
+Advisor, so Civilized Scholar's bug is latent; Delver's is the
+one that matters.
+
+Direct-mutation transforms in ISD (grepped via
+`obj\.is_transformed = true` on `cards/isd/*.rs`):
+
+- **Bloodline Keeper** → Lord of Lineage: both Legendary Creature —
+  Vampire. No subtype change. Latent.
+- **Garruk Relentless** → Garruk, the Veil-Cursed: both Legendary
+  Planeswalker — Garruk. No subtype change. Latent.
+- **Civilized Scholar** → Homicidal Brute: Advisor dropped, Mutant
+  added. **Buggy but latent** (no Advisor/Mutant consumers in ISD).
+- **Delver of Secrets** → Insectile Aberration: Human Wizard
+  dropped, Insect added, Flying gained. **Buggy and live** once
+  Bug BD lands.
+
+Werewolves already migrated to `apply_transform` by Bug D's fix
+commit: Tormented Pariah, Mayor of Avabruck, Hanweir Watchkeep,
+Daybreak Ranger, Villagers of Estwald, Instigator Gang, Gatstaf
+Shepherd, Ludevic's Test Subject, Kruin Outlaw, Reckless Waif,
+Screeching Bat, Thraben Sentry, Village Ironsmith, Ulvenwald
+Mystics, Grizzled Outcasts. Civilized Scholar and Delver of
+Secrets *should* have been included in that migration and weren't
+(neither is a werewolf, so a `werewolf_should_transform` grep
+would have missed them).
+
+**Did partially fire** — Delver of Secrets was drafted and
+transformed multiple times in the audit (log lines 49004, 107849,
+125095 show Delver's upkeep reveal trigger firing and the
+transform log line). None of the sampled post-transform states
+had a Hamlet Captain / Village Cannibals interaction, so the
+stale subtypes never mattered in the specific games observed, but
+Delver *does* transform under the bug conditions. Running a
+future audit with Bug BD landed against a deck that pairs Delver
+with Hamlet Captain would fire 99-002.
+
+**Proposed fix:** replace the direct mutations with calls to
+`crate::cards::helpers::apply_transform`:
+
+```rust
+// civilized_scholar.rs transform spot:
+crate::cards::helpers::apply_transform(state, object_id, registry);
+if let Some(obj) = state.get_object_mut(object_id) {
+    obj.tapped = false; // Scholar untaps on transform per oracle
+}
+
+// delver_of_secrets.rs transform spot:
+crate::cards::helpers::apply_transform(state, self_id, registry);
+```
+
+`apply_transform` calls `behavior.back_face_data()`, copies
+`subtypes / keywords / name` from the back face onto the instance,
+and flips `is_transformed`. Same fix shape that Bug D applied to
+the werewolf family.
+
+Consider also migrating Bloodline Keeper
+(`bloodline_keeper.rs:155-158`) and Garruk Relentless
+(`garruk_relentless.rs:305-313`) even though their subtypes don't
+change today — both fragments are drift-prone, and the helper is
+idempotent. A Bloodline Keeper or Garruk that ever gained an
+instance subtype via Olivia Voldaren's bite (see Bug AU) before
+transforming would hit the same stale-instance bug.
+
