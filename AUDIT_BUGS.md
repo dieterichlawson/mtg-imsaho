@@ -947,11 +947,12 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
-### 🟡 Engine Bug BB: Garruk Relentless dies before transforming when damage takes him from 3+ loyalty straight to 0
+### 🟡 Engine Bug BE: Garruk Relentless dies before transforming when damage takes him from 3+ loyalty straight to 0
 **Severity:** medium — only affects Garruk, latent in audit (not drafted)
 **File:** `mtg-engine/src/sba.rs:184-244` (planeswalker zero-loyalty SBA + state trigger)
-**Note:** originally numbered Bug AZ; renamed to BB to deconflict with Agent A's
-Bug AZ (Spare from Evil snapshot protection) which landed concurrently.
+**Note:** originally numbered Bug AZ → renamed to BB → renamed to BE to deconflict
+with Agent A's Bug BB (Ludevic hatchling counters) which landed concurrently
+on top of the AZ→BB rename.
 
 The SBA loop processes planeswalker zero-loyalty BEFORE the Garruk
 state trigger. If Garruk takes damage that drops his loyalty from 3+
@@ -982,12 +983,13 @@ triggers between SBA passes.
 
 ---
 
-### 🟡 Engine Bug BA: setup_game doesn't initialize obj.subtypes from registry data
+### 🟡 Engine Bug BD: setup_game doesn't initialize obj.subtypes from registry data
 **Severity:** HIGH — root cause of Bug AX, contributes to Bug AT/AU/AY family
 **File:** `mtg-engine/src/engine.rs:3450-3462` (setup_game)
-**Note:** originally numbered Bug AY; renamed to BA to deconflict with Agent A's
-Bug AY (HasSubtype filter) which landed concurrently. Both bugs share the same
-root cause: `obj.subtypes` is empty for normal cards. Fixing BA would let
+**Note:** originally numbered Bug AY → renamed to BA to deconflict with Agent A's
+Bug AY (HasSubtype filter) → renamed to BD to deconflict with Agent A's Bug BA
+(Skirsdag {:?} label) which landed concurrently. The two AY entries share the
+same root cause: `obj.subtypes` is empty for normal cards. Fixing BD would let
 Agent A's AY become a no-op.
 
 When setting up a game, each card object is created with empty
