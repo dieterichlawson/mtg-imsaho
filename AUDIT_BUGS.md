@@ -947,6 +947,51 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
+### 🟡 Engine Bug AY: setup_game doesn't initialize obj.subtypes from registry data
+**Severity:** HIGH — root cause of Bug AX, contributes to Bug AT/AU family
+**File:** `mtg-engine/src/engine.rs:3450-3462` (setup_game)
+
+When setting up a game, each card object is created with empty
+`obj.subtypes`:
+```rust
+let obj_id = state.create_object(card_id, player_id, Zone::Library, card_data.power, card_data.toughness);
+let obj = state.get_object_mut(obj_id).expect("...");
+obj.colors = colors.clone();
+obj.name = card_name.clone();
+obj.keywords = card_data.keywords.clone();
+obj.card_types = card_data.card_types.clone();
+// obj.subtypes is NEVER initialized — stays Vec::new() from create_object
+```
+`obj.colors`, `obj.name`, `obj.keywords`, and `obj.card_types` are all
+copied from registry data, but `obj.subtypes` is not. So every normal
+card object starts the game with `obj.subtypes = []`.
+
+This is the **root cause of Bug AX**: dual lands check
+`o.subtypes.iter().any(|s| s == "Swamp")` against an empty vector and
+always return false. It also makes Bug AT (registry-only filters miss
+tokens) more pervasive than it needs to be — many of those filters
+would have been correct if `obj.subtypes` were populated up front.
+
+**Proposed fix:** add `obj.subtypes = card_data.subtypes.clone();` to
+setup_game alongside the other field initializations. This makes
+`obj.subtypes` the authoritative subtype list for non-token objects
+and matches the contract that token creation already follows
+(`create_token_internal` sets `subtypes` directly on the new object).
+
+After this fix, every "instance subtypes only" check (Woodland
+Cemetery et al, Moonmist's first branch) would work correctly. Cards
+that check both registry and instance still work — they just become
+mildly redundant.
+
+Note: this would interact with Olivia Voldaren's "becomes a Vampire"
+ability differently. Currently Olivia pushes "Vampire" onto an empty
+vector. After the fix, Olivia would push onto a vector that already
+contains the original subtypes ("Vampire" gets appended), which is
+the correct behavior per CR 205.3 ("becomes a Vampire **in addition
+to its other types**"). Bug AU goes away as a free side effect.
+
+---
+
 ### 🟡 Engine Bug AX: Four ISD dual lands always enter tapped (Woodland Cemetery, Sulfur Falls, Clifftop Retreat, Isolated Chapel)
 **Severity:** HIGH (mana fixing fundamentally broken) — but latent in audit (no dual lands drafted)
 **Files:**
