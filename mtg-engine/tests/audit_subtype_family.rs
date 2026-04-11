@@ -14,6 +14,8 @@
 //! - Bug AT: registry-only subtype filters miss tokens (Slayer of the Wicked)
 //! - Bug AY: TargetFilter::HasSubtype is instance-only (Olivia Voldaren's
 //!   {3}{B}{B}: Gain control of target Vampire can't see cast-from-hand Vampires)
+//! - Bug AU: Moonmist's "instance subtypes non-empty" branch ignores the
+//!   registry, so Olivia-bitten Humans can't be transformed by Moonmist
 
 mod common;
 use common::*;
@@ -289,5 +291,85 @@ fn bug_ay_olivia_vampire_steal_can_target_registry_vampire() {
         "Olivia Voldaren's {{3}}{{B}}{{B}} should be able to target Stromkirk \
          Noble (a registry-subtype Vampire). Bug AY: TargetFilter::HasSubtype \
          only reads obj.subtypes, which is [] for cast-from-hand creatures."
+    );
+}
+
+/// Bug AU (audits/AUDIT_BUGS.md): Moonmist's Human filter takes the
+/// "instance subtypes non-empty" branch when a creature's `obj.subtypes`
+/// has been mutated (e.g. Olivia bit it) and then ignores the registry
+/// completely — so a Gatstaf Shepherd that Olivia turned into a Vampire
+/// fails to transform under Moonmist even though it's still a Human.
+///
+/// Oracle (Moonmist): "Transform all Humans. ..."
+/// Oracle (Olivia Voldaren, first ability): "{1}{R}: Olivia Voldaren
+/// deals 1 damage to another target creature. That creature becomes a
+/// Vampire **in addition to its other types**. ..."
+/// Oracle (Gatstaf Shepherd front face): "Human Werewolf".
+///
+/// Failure mode: `moonmist.rs:43-56` does
+/// `if !o.subtypes.is_empty() { o.subtypes.iter().any(|s| s == "Human") }`
+/// — when the instance vector is populated (e.g. by Olivia's bite, which
+/// only pushes "Vampire") it stops looking at the registry. Olivia's
+/// hook (`olivia_voldaren.rs:107-110`) `obj.subtypes.push("Vampire")`
+/// onto an empty vector, so a bitten Gatstaf Shepherd has
+/// `obj.subtypes = ["Vampire"]`. Moonmist sees no "Human", concludes
+/// it isn't a Human, and skips the transform — even though oracle text
+/// for both cards says the creature is still a Human in addition to
+/// being a Vampire.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug AU is fixed.
+#[test]
+fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Gatstaf Shepherd is Human Werewolf on its front face — exactly
+    // the kind of creature Moonmist should transform.
+    let shepherd = named_creature(&mut state, &registry, "Gatstaf Shepherd", P1);
+    assert!(
+        !state.get_object(shepherd).unwrap().is_transformed,
+        "Test setup: Gatstaf Shepherd should start on its front (Human) face"
+    );
+
+    // Simulate the Olivia bite: push "Vampire" onto the empty
+    // obj.subtypes vector. This is exactly what Olivia's
+    // `on_activate_ability` does at olivia_voldaren.rs:108-110.
+    state
+        .get_object_mut(shepherd)
+        .unwrap()
+        .subtypes
+        .push("Vampire".into());
+
+    // Sanity: the Shepherd is still a Human per oracle text — its
+    // registry subtypes still contain "Human". Moonmist's filter must
+    // see this even though obj.subtypes is now non-empty.
+    let shepherd_card_id = state.get_object(shepherd).unwrap().card_id;
+    assert!(
+        registry
+            .card_data(shepherd_card_id)
+            .unwrap()
+            .subtypes
+            .iter()
+            .any(|s| s == "Human"),
+        "Test setup: Gatstaf Shepherd's registry data should include Human"
+    );
+
+    // Resolve Moonmist directly. We don't need to put it on the stack;
+    // calling on_resolve mirrors what stack resolution does.
+    let moonmist_card_id = registry.get_id_by_name("Moonmist").unwrap();
+    let moonmist = state.create_object(moonmist_card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(moonmist).unwrap().name = "Moonmist".into();
+    let behavior = registry.get(moonmist_card_id).unwrap();
+    behavior.on_resolve(&mut state, moonmist, &[], &registry);
+
+    let transformed = state.get_object(shepherd).unwrap().is_transformed;
+    assert!(
+        transformed,
+        "Moonmist should transform an Olivia-bitten Gatstaf Shepherd \
+         (still a Human per the 'in addition to its other types' clause). \
+         Bug AU: Moonmist's filter takes the 'instance subtypes non-empty' \
+         branch and only sees ['Vampire'], so it ignores the registry's \
+         Human subtype."
     );
 }
