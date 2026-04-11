@@ -2618,3 +2618,111 @@ per-card handler tweaks.
 first-strike trades). Each instance cost opp 1 missed life gain.
 Small enough to not have swung the games, but it's a silent
 correctness bug the model cannot see.
+
+<!-- Reserving letters BY-CC for this branch. -->
+
+---
+
+### 🟡 Engine Bug BY: Geist of Saint Traft's Angel token ignores Geist's actual combat defender
+**Severity:** low — manifests only with planeswalkers or multiplayer
+**File:** `mtg-engine/src/cards/isd/geist_of_saint_traft.rs:74-78`
+
+Oracle: "Whenever Geist of Saint Traft attacks, create a 4/4 white
+Angel creature token with flying that's tapped and attacking. Exile
+that token at end of combat."
+
+Per the Scryfall ruling: "The Angel token will be attacking the same
+player or planeswalker that Geist of Saint Traft is attacking."
+
+Current impl:
+```rust
+// Add the token to combat as an attacker.
+let defender = state.opponent(controller);
+if let Some(ref mut combat) = state.combat {
+    combat.attackers.insert(token_id, defender);
+}
+```
+
+`state.opponent(controller)` returns the single opponent. It happens
+to equal Geist's actual defender whenever Geist is attacking the
+(only) opponent with no planeswalker combat — so in ISD-style 1v1
+this is functionally correct. But:
+
+1. **Planeswalker combat.** If Geist declared an attack against an
+   opposing planeswalker, the Angel should also attack that
+   planeswalker. The current code sends the Angel at the player
+   directly. ISD has two planeswalkers (Garruk Relentless and
+   Liliana of the Veil); neither was drafted in the v5 audit, but
+   the bug is latent.
+2. **Multiplayer (future-proof).** `state.opponent(controller)`
+   returns a single arbitrary opponent; in a multiplayer game the
+   Angel could end up attacking a different opponent than Geist.
+
+Contrast with Kessig Cagebreakers' correct pattern
+(`cards/isd/kessig_cagebreakers.rs:56-58`):
+```rust
+let defending_player = state.combat.as_ref()
+    .and_then(|c| c.attackers.get(&self_id).copied())
+    .unwrap_or_else(|| state.opponent(controller));
+```
+That reads Geist's own entry in `combat.attackers` to derive the
+defender. Geist should follow the same shape.
+
+**Did NOT fire meaningfully** in audit — Geist was drafted and cast
+(see log lines ~115000+), but always with a single opponent and no
+planeswalkers. The hard-coded `state.opponent(controller)` coincided
+with the correct defender in every observed instance.
+
+**Proposed fix:** one-line change in `geist_of_saint_traft.rs:74-78`
+to read the defender from `state.combat.attackers.get(&self_id)`
+instead of computing it from `state.opponent(controller)`. Copy the
+Kessig Cagebreakers expression verbatim.
+
+---
+
+### 🟡 Engine Bug BZ: `cards/helpers.rs::any_targets` omits planeswalkers — Bug BQ sibling for on-resolve enumeration
+**Severity:** low — Bug BQ is the primary; this is the on-resolve helper variant
+**File:** `mtg-engine/src/cards/helpers.rs:182-197` (`any_targets` / `any_targets_except`)
+
+Bug BQ flagged `TargetRequirement::AnyTarget` in
+`engine.rs::valid_targets_for_req` as unable to offer planeswalkers
+as legal targets at spell-cast time. The same failure exists in a
+second code path — `cards/helpers.rs::any_targets`, a helper used by
+cards that build an "any target" option list at **effect resolution
+time** (`on_dies`, `on_upkeep`, etc.) rather than at cast time.
+
+```rust
+pub fn any_targets(state: &GameState) -> Vec<Target> {
+    let mut targets = creature_targets(state);
+    for player in &state.players {
+        targets.push(Target::Player(player.id));
+    }
+    targets
+}
+```
+
+`creature_targets` filters to `o.power.is_some()`, which excludes
+planeswalkers. So the returned target list is creatures + players
+only.
+
+**ISD callers:** `cards/isd/pitchburn_devils.rs:37` uses
+`helpers::any_targets(state)` for its death trigger ("deals 3 damage
+to any target"). Per oracle, Garruk Relentless and Liliana of the
+Veil should both be legal targets. The current helper does not
+enumerate them. A grep for `any_targets` in `cards/isd/` will enumerate
+additional callers at fix time.
+
+**Did NOT fire** — neither planeswalker was drafted in the v5 audit.
+
+**Proposed fix:** extend `any_targets` to also iterate planeswalker
+permanents (same filter shape as Bug BQ's proposed fix for
+`valid_targets_for_req`). Include an `o.card_types.contains(Planeswalker)
+|| registry.card_data(o.card_id)...` check.
+
+This bug is a direct sibling of Bug BQ — same root cause, different
+call site. Bug BQ's proposed fix text names `valid_targets_for_req`
+and `resolve_damage` but not `cards/helpers.rs::any_targets`, so
+without this note the helper would be missed when landing BQ. Both
+fixes are required for Pitchburn Devils' on-death damage to be able
+to reach a planeswalker: BZ makes the target enumerable, BQ's
+resolve_damage fix makes the damage actually decrement loyalty.
