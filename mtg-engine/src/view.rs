@@ -95,6 +95,10 @@ pub struct OpponentView {
     pub hand_size: usize,
     pub library_size: usize,
     pub mana_pool: ManaPool,
+    /// Number of London mulligans this opponent has taken so far. Used by
+    /// the pre-game mulligan prompt so the deciding player knows the
+    /// opponent's mull count.
+    pub mulligan_count: u32,
 }
 
 impl GameView {
@@ -123,6 +127,7 @@ impl GameView {
                 hand_size: state.objects_in_zone(Zone::Hand, p.id).len(),
                 library_size: p.library_order.len(),
                 mana_pool: p.mana_pool.clone(),
+                mulligan_count: p.mulligan_count,
             })
             .collect();
 

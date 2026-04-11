@@ -103,6 +103,7 @@ fn main() {
             player_names: vec![name1.clone(), name2.clone()],
             decklists: vec![deck1, deck2],
             starting_life: 20,
+            starting_player: None,
         };
         let player_names = config.player_names.clone();
         let state = engine::setup_game(&config, &registry);

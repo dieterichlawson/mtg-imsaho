@@ -31,6 +31,7 @@ fn fresh_game() -> (GameState, CardRegistry) {
         player_names: vec!["P0".into(), "P1".into()],
         decklists: vec![test_decklist(), test_decklist()],
         starting_life: 20,
+        starting_player: None,
     };
     let state = engine::setup_game(&config, &registry);
     (state, registry)

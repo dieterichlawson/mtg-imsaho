@@ -23,6 +23,11 @@ pub struct GameConfig {
     pub player_names: Vec<String>,
     pub decklists: Vec<Decklist>,
     pub starting_life: i32,
+    /// Which player is on the play (goes first). `None` means `setup_game`
+    /// will pick `PlayerId(0)` by default. Callers that want to honour
+    /// proper MTG rules (randomised game 1, loser-chooses for games 2+)
+    /// should set this explicitly.
+    pub starting_player: Option<PlayerId>,
 }
 
 /// Result of legal_actions: a list of actions plus an optional combat prompt.
@@ -3270,6 +3275,19 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
         p.life = config.starting_life;
     }
 
+    // Honour the caller's choice of starting player if specified. Default
+    // to PlayerId(0) (the legacy behaviour) otherwise. The caller is
+    // expected to randomise game 1 and apply loser-chooses for games 2+
+    // per MTG tournament rules.
+    if let Some(starting) = config.starting_player {
+        assert!(
+            (starting.0 as u8) < num_players,
+            "starting_player {:?} out of range for {}-player game",
+            starting, num_players,
+        );
+        state.active_player = starting;
+    }
+
     // Create card objects for each player's deck.
     let mut rng = rand::thread_rng();
     for (player_idx, decklist) in config.decklists.iter().enumerate() {
@@ -3319,7 +3337,10 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
         state.get_player_mut(player_id).library_order = library_ids;
     }
 
-    state.log(LogLevel::Milestone, "Game started".into());
+    state.log(
+        LogLevel::Milestone,
+        format!("Game started (p{} on the play)", state.active_player.0),
+    );
 
     // Draw opening hands (7 cards each).
     for player_idx in 0..num_players {
