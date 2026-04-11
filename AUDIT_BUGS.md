@@ -947,6 +947,40 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
+### 🟡 Engine Bug BF: Traveler's Amulet doesn't shuffle the library after the search
+**Severity:** low — Traveler's Amulet only, related to Bug BC's auto-pick
+**File:** `mtg-engine/src/cards/isd/travelers_amulet.rs:51-83`
+
+Oracle: "Search your library for a basic land card, reveal it, put it
+into your hand, **then shuffle**." The current implementation removes
+the searched land from `library_order` and moves it to hand, then
+returns. There is no shuffle call. The comment at line 83 says
+"Shuffle (no-op in our engine, library is treated as ordered for
+gameplay)" — but other tutors (Caravan Vigil at line 99, Ghost Quarter
+at line 100, Bitterheart Witch at line 101, Garruk -1 at lines 56,67)
+DO call `library_order.shuffle(&mut rand::thread_rng())`. Traveler's
+Amulet was missed.
+
+This isn't strictly observable through gameplay (the engine doesn't
+let the player peek at the library order), but it leaves the
+library in a non-shuffled state for any subsequent reveal effect
+(Mindshrieker, Cellar Door, Trepanation Blade, Moan of the
+Unhallowed's flashback search) and makes the game state diverge from
+a Magic Online reference.
+
+**Did NOT fire** in audit — Traveler's Amulet was drafted but the
+shuffle's absence didn't have a measurable effect on the games sampled.
+
+**Proposed fix:** add the standard shuffle call after the search,
+matching the pattern in Caravan Vigil:
+```rust
+use rand::seq::SliceRandom;
+let mut rng = rand::thread_rng();
+state.get_player_mut(controller).library_order.shuffle(&mut rng);
+```
+
+---
+
 ### 🟡 Engine Bug BE: Garruk Relentless dies before transforming when damage takes him from 3+ loyalty straight to 0
 **Severity:** medium — only affects Garruk, latent in audit (not drafted)
 **File:** `mtg-engine/src/sba.rs:184-244` (planeswalker zero-loyalty SBA + state trigger)
