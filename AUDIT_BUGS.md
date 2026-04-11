@@ -4450,3 +4450,127 @@ version available.
   `valid_targets_for_req`). Different class: engine-side filter
   dropped vs card-level filter never applied. Both leak illegal
   targets into the prompt.
+
+---
+
+### 🟡 Harness Bug 37-001: Slime and Study counters are intentionally hidden from the LLM, so the model can't see Gutter Grime's slime stockpile or Grimoire of the Dead's study progress
+**Severity:** HIGH (harness/display) — model is making decisions on Gutter Grime / Grimoire of the Dead without the counter information that drives those cards
+**File:** `mtg-player/src/llm.rs:1591-1606` (`format_counters`) and the regression test at `mtg-player/src/llm.rs:2735-2742` (`format_counters_ignores_slime_and_study`)
+**Audit evidence:** not directly fired in the sampled draft games — Grimoire of the Dead was drafted by Seat 4 once but never reached three study counters; Gutter Grime appeared multiple times but the model never activated through enough deaths to make the slime count visibly drive a decision. The bug is structurally present, and its absence from the audit is exactly the failure mode (the model can't make slime/study-aware decisions if it can't see the counters).
+
+The board-display helper that shows counters on permanents is
+`format_counters` at `llm.rs:1591`:
+
+```rust
+fn format_counters(
+    counters: &std::collections::HashMap<mtg_engine::types::CounterType, u32>,
+) -> Option<String> {
+    use mtg_engine::types::CounterType;
+    let mut bits: Vec<String> = Vec::new();
+    if let Some(&n) = counters.get(&CounterType::PlusOnePlusOne) {
+        if n > 0 { bits.push(format!("+1+1x{}", n)); }
+    }
+    if let Some(&n) = counters.get(&CounterType::MinusOneMinusOne) {
+        if n > 0 { bits.push(format!("-1-1x{}", n)); }
+    }
+    if let Some(&n) = counters.get(&CounterType::Loyalty) {
+        if n > 0 { bits.push(format!("LOYx{}", n)); }
+    }
+    if bits.is_empty() { None } else { Some(bits.join(",")) }
+}
+```
+
+It deliberately omits every counter type other than `+1/+1`, `-1/-1`,
+and `Loyalty`. The engine has two more counter types
+(`mtg-engine/src/types.rs:278-285`):
+
+```rust
+pub enum CounterType {
+    PlusOnePlusOne,
+    MinusOneMinusOne,
+    Loyalty,
+    Slime,
+    Study,
+    // extend as needed
+}
+```
+
+Both are load-bearing for ISD card decisions:
+
+- **Slime counters** drive Gutter Grime: each time a creature you
+  control dies, put a slime counter on Gutter Grime, then create a
+  green Ooze creature token whose power and toughness equal the
+  number of slime counters on Gutter Grime. The model needs to see
+  the slime count to value Gutter Grime's "next death is +N/+N
+  worth of board" — the entire combat-math calculation depends on
+  it. Currently the model sees Gutter Grime as just a vanilla
+  enchantment.
+
+- **Study counters** are Grimoire of the Dead's progress toward
+  its game-ending {T}, remove three study counters and sacrifice:
+  return all creature cards from all graveyards. The model needs
+  to see "this is at 2/3 — one more upkeep activation and I can
+  flip the entire graveyard". Currently the model sees Grimoire as
+  a static legendary artifact with no progress indication.
+
+The harness has a regression test at `llm.rs:2735-2742`
+**enshrining the bug** as deliberate behavior:
+
+```rust
+fn format_counters_ignores_slime_and_study() {
+    // Non-P/T, non-loyalty counters should not appear in the suffix
+    // (they're not the point of this display flag).
+    let mut counters = HashMap::new();
+    counters.insert(CounterType::Slime, 5);
+    counters.insert(CounterType::Study, 2);
+    assert_eq!(LlmPlayer::format_counters(&counters), None);
+}
+```
+
+The "they're not the point of this display flag" comment is wrong:
+the point of the display flag is to surface every load-bearing
+counter on a permanent so the model can plan around it.
+
+This is also adjacent to Bug 76-002 (Ludevic's Test Subject's
+hatchling counters live in `card_state` instead of as real
+counters) — the right fix is to (a) add a `Hatchling` variant to
+`CounterType`, (b) migrate Ludevic's behavior, and (c) extend
+`format_counters` to surface every variant. With those three
+changes the model can plan around all three of Gutter Grime,
+Grimoire of the Dead, and Ludevic's Test Subject correctly.
+
+```rust
+// proposed shape:
+fn format_counters(counters: &HashMap<CounterType, u32>) -> Option<String> {
+    use CounterType::*;
+    let mut bits: Vec<String> = Vec::new();
+    let order = [
+        (PlusOnePlusOne, "+1+1"),
+        (MinusOneMinusOne, "-1-1"),
+        (Loyalty, "LOY"),
+        (Slime, "SLIME"),
+        (Study, "STUDY"),
+        // (Hatchling, "HATCH"),  // when 76-002 is fixed
+    ];
+    for (kind, label) in order {
+        if let Some(&n) = counters.get(&kind) {
+            if n > 0 { bits.push(format!("{}x{}", label, n)); }
+        }
+    }
+    if bits.is_empty() { None } else { Some(bits.join(",")) }
+}
+```
+
+And the regression test at `llm.rs:2735` should be inverted to
+assert that Slime and Study DO appear.
+
+**Cross-references:** Bug 76-002 (Ludevic hatchling counters not
+real counters), Bug 99-001 (Gutter Grime cleanup-token check is
+the engine-side bug for the same card whose harness side is this
+bug). Fixing Bug 99-001 + Bug 37-001 together makes Gutter Grime
+fully usable by the LLM player.
+
+**Proposed fix:** rewrite `format_counters` to display all
+counter types with stable label ordering, invert the regression
+test, and add new tests asserting Slime and Study render with
+their labels.
