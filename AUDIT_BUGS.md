@@ -1707,3 +1707,164 @@ Grimace prompt formats and trigger-target prompts. All confirmed.
   Cellar Door, etc.)
 
 Mining will continue.
+
+---
+
+### 🟡 Engine Bug AY: `TargetFilter::HasSubtype` checks instance subtypes only — Olivia Voldaren's `{3}{B}{B}` can't target any registry-only Vampire
+**Severity:** medium — latent (Olivia was not drafted in audit) but erases one of her two activated abilities for most realistic targets
+**File:** `mtg-engine/src/engine.rs:1808-1810` (matches_ability_target_filter) and `mtg-engine/src/engine.rs:1944` (matches_target_filter)
+
+Same structural failure as Bug AT, but on the **engine-side target
+enumeration** for activated abilities rather than a card-specific filter.
+Both `HasSubtype` branches in `engine.rs` consult only `obj.subtypes`:
+
+```rust
+// engine.rs:1808 (matches_ability_target_filter, activated abilities path)
+TargetFilter::HasSubtype(subtype) => {
+    obj.subtypes.contains(subtype)
+}
+
+// engine.rs:1944 (matches_target_filter, general ability helper)
+TargetFilter::HasSubtype(subtype) => obj.subtypes.iter().any(|s| s == subtype),
+```
+
+Neither falls back to `registry.card_data(obj.card_id).subtypes`. As
+documented in Bug AU and Bug AV, `obj.subtypes` is initialised to
+`Vec::new()` in `GameObject::new` (`state.rs:255`) and is only written in
+three narrow situations:
+1. Enter-as-copy via `state.rs:593` (Evil Twin / Cackling Counterpart /
+   Essence of the Wild).
+2. `apply_transform` / Moonmist transform flips
+   (`cards/helpers.rs:253,261`, `cards/isd/moonmist.rs:80,94`).
+3. Card-specific "becomes a <subtype>" on_activate hooks (Olivia's first
+   ability pushes "Vampire", Grimoire of the Dead pushes "Zombie").
+
+**Regular creatures cast from hand enter with `obj.subtypes = Vec::new()`.**
+Their subtypes live exclusively in the registry.
+
+**In-set impact — Olivia Voldaren's `{3}{B}{B}: Gain control of target
+Vampire`:**
+
+```rust
+// cards/isd/olivia_voldaren.rs:75
+target_requirement: Some(TargetRequirement::CreatureWithFilter(
+    TargetFilter::HasSubtype("Vampire".into()))),
+```
+
+`generate_ability_targets` for a `CreatureWithFilter` applies
+`matches_ability_target_filter` (engine.rs:1855), which routes through
+the buggy `HasSubtype` arm. As a result, the only Vampires Olivia's
+second ability can target are:
+- Bloodline Keeper's 2/2 tokens (tokens get their subtypes written into
+  `obj.subtypes` at creation via `create_token_with_subtypes`).
+- Creatures that Olivia has already bitten with her first ability
+  (`obj.subtypes.push("Vampire")` at `olivia_voldaren.rs:109`).
+- Transformed back-faces that ended up Vampires (none in ISD).
+
+Regular registry-only Vampires — Crossway Vampire, Markov Patrician,
+Stromkirk Noble, Bloodcrazed Neonate, Rakish Heir, Vampire Interloper,
+Falkenrath Noble, Falkenrath Marauders, Bloodline Keeper front face —
+cannot be targeted at all. The action never even appears in the
+legal-actions list because `generate_ability_targets` returns an empty
+vector, so no `ActivateAbility` action is emitted for that (source,
+ability_index) pair.
+
+**Did NOT fire in audit** — Olivia was not drafted (only appears in the
+deck-building card knowledge dump at log line 829-832). But she's a
+mythic rare and this bug zeroes out half her text box in most realistic
+board states.
+
+**Proposed fix:** mirror the pattern Victim of Night already uses
+(`cards/isd/victim_of_night.rs:43-47`). Make both filter branches fall
+through to the registry:
+
+```rust
+TargetFilter::HasSubtype(subtype) => {
+    if obj.subtypes.iter().any(|s| s == subtype) {
+        return true;
+    }
+    registry.card_data(obj.card_id)
+        .map(|d| d.subtypes.iter().any(|s| s == subtype))
+        .unwrap_or(false)
+}
+```
+
+`matches_ability_target_filter` already has `registry` in scope
+(engine.rs:1778), so that caller is a one-line change.
+`matches_target_filter` (engine.rs:1935) doesn't currently take
+`registry` — callers need to thread it through, or inline the check at
+the call site.
+
+**Related bugs:**
+- Bug AT is the mirror failure on the card-specific-filter side
+  (registry-only, misses tokens). This bug is instance-only, misses
+  cards. The two together mean every "filter by subtype" in the engine
+  should always check both sources.
+- Bug AU's Option 2 (copy registry subtypes into `obj.subtypes` when
+  first modifying them) would partially mitigate this bug for creatures
+  that have been touched by subtype-mutation effects, but not for
+  untouched creatures freshly cast from hand.
+- The `NotSubtypes` filter at engine.rs:1798 has the same shape
+  (instance-only). Victim of Night papers over it with its own
+  `is_valid_target` override, but a generic fix on the filter side
+  would remove the need.
+
+**Proposed fix:** one-line change at each of the two HasSubtype arms
+to consult the registry on fallback.
+
+---
+
+### 🟡 Engine Bug AZ: Spare from Evil's protection anthem is snapshotted at resolution (Bug AP sibling for `GrantProtection`)
+**Severity:** low — affects Spare from Evil only, latent in audit
+**File:** `mtg-engine/src/cards/isd/spare_from_evil.rs:33-55`
+
+Same structural defect as Bug AP ("snapshot anthems"), but for a
+different `TemporaryEffect` variant. Spare from Evil's oracle:
+"Creatures you control gain protection from non-Human creatures until
+end of turn."
+
+```rust
+let creature_ids: Vec<ObjectId> = state.objects.values()
+    .filter(|obj| obj.zone == Zone::Battlefield
+        && obj.controller == controller && obj.power.is_some())
+    .map(|obj| obj.id)
+    .collect();
+let filter = CreatureFilter::Not(Box::new(
+    CreatureFilter::HasSubtype("Human".into())));
+for id in &creature_ids {
+    state.until_end_of_turn.push(
+        crate::state::TemporaryEffect::GrantProtection {
+            target: *id,
+            filter: filter.clone(),
+        }
+    );
+}
+```
+
+The creatures-you-control list is snapshotted at resolution, then one
+`GrantProtection` push per creature. Any creature entering the
+battlefield under your control AFTER Spare from Evil resolves (Mausoleum
+Guard death-trigger spirits, a Doomed Traveler's spirit token from the
+same combat, Mayor of Avabruck transforming a werewolf mid-turn, etc.)
+will NOT have the protection applied, contrary to the continuous
+wording of the anthem.
+
+Bug AP already called out rally_the_peasants / vampiric_fury /
+hysterical_blindness for the same snapshot pattern with
+`TemporaryEffect::ModifyPT`. This is the analogous case for
+`TemporaryEffect::GrantProtection`. The fix family is the same — an
+until-end-of-turn global-scoped continuous effect that the relevant
+query helpers (effective_power for ModifyPT, `has_protection` for
+GrantProtection) consult when evaluating a creature — but it needs a
+second variant (`TemporaryEffect::GlobalGrantProtection { filter }` or
+similar).
+
+**Did NOT fire** in audit — Spare from Evil was not cast in any game I
+sampled. The card is niche (fog-ish white instant) and rarely appears.
+
+**Proposed fix:** add `TemporaryEffect::GlobalProtection { scope:
+CreatureFilter, filter: CreatureFilter }` (scope = "who gets the
+protection", filter = "what they're protected from"), consulted by the
+same code path that handles `TemporaryEffect::GrantProtection` today.
+Spare from Evil uses scope=ControlledByYou, filter=Not(HasSubtype(Human)).
+This mirrors the proposed fix shape for Bug AP.
