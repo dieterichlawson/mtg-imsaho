@@ -2731,14 +2731,38 @@ mod tests {
         );
     }
 
+    /// Bug 37-001 (audits/AUDIT_BUGS.md): `format_counters` only
+    /// surfaces +1/+1, -1/-1, and Loyalty counters. Slime counters
+    /// (Gutter Grime's stockpile) and Study counters (Grimoire of the
+    /// Dead's progress) are stripped from the display, so the LLM has
+    /// no way to see how many slime counters Gutter Grime has or how
+    /// close Grimoire of the Dead is to its 3-counter activation.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it
+    /// currently fails. It will start passing as soon as Bug 37-001
+    /// is fixed.
     #[test]
-    fn format_counters_ignores_slime_and_study() {
-        // Non-P/T, non-loyalty counters should not appear in the suffix
-        // (they're not the point of this display flag).
+    fn bug_37_001_format_counters_includes_slime_and_study() {
         let mut counters = HashMap::new();
         counters.insert(CounterType::Slime, 5);
         counters.insert(CounterType::Study, 2);
-        assert_eq!(LlmPlayer::format_counters(&counters), None);
+        let formatted = LlmPlayer::format_counters(&counters);
+        let formatted_str = formatted.as_deref().unwrap_or("");
+        assert!(
+            formatted_str.contains("Slime") || formatted_str.contains("SLIME"),
+            "format_counters should surface Slime counters so the LLM can \
+             see Gutter Grime's stockpile. Bug 37-001: the helper drops \
+             every counter type other than +1/+1, -1/-1, and Loyalty. \
+             Got: {:?}",
+            formatted,
+        );
+        assert!(
+            formatted_str.contains("Study") || formatted_str.contains("STUDY"),
+            "format_counters should surface Study counters so the LLM can \
+             see Grimoire of the Dead's progress. Bug 37-001: dropped. \
+             Got: {:?}",
+            formatted,
+        );
     }
 
     // ─────────────────────────────────────────────────────────────────
