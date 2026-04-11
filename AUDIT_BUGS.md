@@ -2726,3 +2726,93 @@ without this note the helper would be missed when landing BQ. Both
 fixes are required for Pitchburn Devils' on-death damage to be able
 to reach a planeswalker: BZ makes the target enumerable, BQ's
 resolve_damage fix makes the damage actually decrement loyalty.
+
+---
+
+### 🟡 Engine Bug CA: Moldgraf Monstrosity reads `owner` instead of last-controller, returning creatures to the wrong player's graveyard when stolen
+**Severity:** low-medium — latent (Moldgraf Monstrosity was not cast in a stolen scenario in the audit, but Traitorous Blood + Moldgraf is a realistic ISD G/R deck interaction)
+**File:** `mtg-engine/src/cards/isd/moldgraf_monstrosity.rs:42-46`
+
+Oracle: "When this creature dies, exile it, then return two creature
+cards at random from **your** graveyard to the battlefield."
+
+Current implementation:
+```rust
+fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    let controller = match state.get_object(object_id) {
+        Some(o) => o.owner,
+        None => return,
+    };
+    ...
+```
+
+The handler reads `o.owner` for the "your graveyard" reference. For
+a normal Moldgraf Monstrosity (controlled by its owner), this works.
+But if Moldgraf is stolen via **Traitorous Blood** ({1}{R}{R} Sorcery,
+also in ISD: "Gain control of target creature until end of turn.
+Untap it. It gains trample and haste until end of turn.") and dies
+that turn, the SelfDies trigger fires with the wrong controller:
+
+- The correct per-rules answer: "you" = the ability's controller =
+  the player who controlled Moldgraf at the moment it died (Traitorous
+  Blood caster). CR 603.10c: "If a permanent leaves the battlefield,
+  the owner's controller and other characteristics for the duration
+  of leaving triggers are set from last known information just before
+  that event."
+- What the code does: reads `o.owner` (the ORIGINAL owner, not the
+  thief).
+
+Result: if the Traitorous Blood caster (let's call them X) uses a
+stolen Moldgraf to attack into lethal and it dies, Moldgraf's trigger
+reanimates two random creatures from **the opponent's** graveyard
+back onto the battlefield, under X's control. This is doubly wrong:
+1. The pool of cards is the opponent's graveyard, not X's.
+2. The returning creatures still end up under X's control (per the
+   loop body at line 69, `obj.controller = controller`), so X is
+   effectively stealing two random creatures out of the opponent's
+   graveyard.
+
+Depending on board state this can be either a disaster for X (they
+wanted their own creatures back) or a huge windfall (they get two
+of opp's better creatures for free). Either way, it's not what
+oracle says.
+
+Compare with **Doomed Traveler** (`doomed_traveler.rs:34`) and
+**Mausoleum Guard** (`mausoleum_guard.rs:35-36`), both of which
+correctly use `state.get_object(object_id).controller` to get the
+last-known controller for their "when this creature dies, create
+tokens" triggers. Mausoleum Guard even has an explicit comment:
+"Use controller (not owner) — if the creature was stolen, tokens
+go to the controller."
+
+Only Moldgraf Monstrosity uses `o.owner` in an `on_dies` handler
+(confirmed via
+`grep -A 3 "fn on_dies" mtg-engine/src/cards/isd/*.rs | grep "o\.owner"`).
+
+**Did NOT fire in the audit** — Moldgraf was drafted but the audit
+log doesn't contain a Traitorous Blood + stolen-Moldgraf-dies
+scenario. Latent.
+
+**Proposed fix:** replace `o.owner` with `o.controller`, mirroring
+the pattern in Doomed Traveler and Mausoleum Guard. The controller
+field is preserved across the zone change to graveyard (`move_object`
+in `state.rs:452-528` does not reset `controller`), so last-known
+info is available.
+
+```rust
+let controller = match state.get_object(object_id) {
+    Some(o) => o.controller,
+    None => return,
+};
+```
+
+No engine or helper changes needed — single-line card-level fix.
+
+Related to Bug C (SelfDies LTB trigger controller / CR 603.10c,
+already fixed for LTB triggers by `67afa29`). That fix tracked
+last-controller on `PendingTrigger::LeftBattlefield` events via
+`pre_move_controller` in `move_object`. Moldgraf uses `on_dies`
+(SelfDies path), not the LTB path, so the Bug C fix doesn't reach
+it — and Moldgraf's handler has its own independent way of reading
+"who was the controller" that hard-codes `o.owner`.
+
