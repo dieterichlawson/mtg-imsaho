@@ -947,6 +947,39 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
+### 🟡 Engine Bug AZ: Garruk Relentless dies before transforming when damage takes him from 3+ loyalty straight to 0
+**Severity:** medium — only affects Garruk, latent in audit (not drafted)
+**File:** `mtg-engine/src/sba.rs:184-244` (planeswalker zero-loyalty SBA + state trigger)
+
+The SBA loop processes planeswalker zero-loyalty BEFORE the Garruk
+state trigger. If Garruk takes damage that drops his loyalty from 3+
+straight to 0, the planeswalker-zero-loyalty SBA fires first and
+moves Garruk to the graveyard. Then the Garruk state trigger checks
+`o.zone == Battlefield && loyalty <= 2 && !is_transformed` — Garruk
+isn't on the battlefield, the trigger doesn't fire, Garruk is dead
+without transforming.
+
+Per CR 603.8 + 704.5j, the state-triggered transform should preempt
+zero-loyalty destruction: the state trigger condition was true (loyalty
+hit ≤2 the moment damage was applied), so it should have been queued
+before the zero-loyalty SBA had a chance to graveyard him.
+
+**Workaround case:** If Garruk takes damage that drops his loyalty
+to ≤2 but >0 (e.g., 3→2 from a 1-power attacker), the state trigger
+fires and Garruk transforms correctly. The bug only manifests when
+damage goes straight to 0.
+
+**Did NOT fire** in audit — Garruk Relentless wasn't drafted.
+
+**Proposed fix:** check the state trigger condition BEFORE the
+planeswalker-zero-loyalty SBA in the same pass, or run state trigger
+processing immediately after damage is applied (before SBA checks
+zero-loyalty death). Cleanest: add a "state trigger watch" pass at
+the top of the SBA loop that queues triggers, then process queued
+triggers between SBA passes.
+
+---
+
 ### 🟡 Engine Bug AY: setup_game doesn't initialize obj.subtypes from registry data
 **Severity:** HIGH — root cause of Bug AX, contributes to Bug AT/AU family
 **File:** `mtg-engine/src/engine.rs:3450-3462` (setup_game)
