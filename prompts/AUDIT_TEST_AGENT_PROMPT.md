@@ -15,57 +15,39 @@ The point of these tests is two-fold:
    to remember the test exists. The test transitions from "this bug
    exists" to "this bug is regression-protected" automatically.
 
-## Critical: multi-agent coordination via worktrees
+## Workflow
 
-Multiple agents may run this prompt in parallel. Use **git worktrees**
-so concurrent agents can't touch your HEAD or working copy mid-edit.
-The pattern is the same as `prompts/AUDIT_AGENT_PROMPT.md` — read it
-first if you haven't, then come back here.
-
-The shape of the workflow is **tight per-bug-test cycles**: every test
-round-trips through master before you start the next bug. This keeps
-all agents in sync and prevents two agents from independently writing
-tests for the same bug.
+You're the only agent working on this. Work directly on `master` in
+the main checkout at `/Users/dlaw/mtg/`. No worktrees, no UUID
+prefixes.
 
 ### One-time setup at session start
 
-1. Pick a short UUID for yourself: `MY_UUID=$(uuidgen | cut -c1-8)`.
-2. Make sure master is clean and synced:
+1. Make sure master is clean and synced:
    ```bash
    cd /Users/dlaw/mtg
+   git status                          # should be clean
    git fetch origin
-   git checkout master
-   git pull --ff-only origin master   # no-op if already synced
+   git pull --ff-only origin master    # no-op if already synced
    ```
-3. Create your worktree from current `origin/master`:
-   ```bash
-   mkdir -p /Users/dlaw/mtg/.claude/worktrees
-   git worktree add \
-     /Users/dlaw/mtg/.claude/worktrees/test-${MY_UUID} \
-     -b test-${MY_UUID} \
-     origin/master
-   cd /Users/dlaw/mtg/.claude/worktrees/test-${MY_UUID}
-   ```
-   From this point on **all reads, edits, greps, and commits happen
-   inside the worktree**. The main working tree at `/Users/dlaw/mtg/`
-   is off-limits for writes.
-4. Read `audits/AUDIT_BUGS.md` end-to-end so you have the full bug
+2. Read `audits/AUDIT_BUGS.md` end-to-end so you have the full bug
    landscape in mind. The file is organized into **17 named families**
    (Subtype filter family, Damage helper bypass, Hexproof/protection,
    Token copy, Snapshot anthems, Auto-pick, Transform/DFC, etc).
-5. Read `audits/AUDIT_TEST_PROGRESS.md` to see which bugs already
-   have a test. Don't re-do work already done. If the file doesn't
-   exist yet, you're the first agent — create it as part of your
-   first commit. Format described below.
+3. Read `audits/AUDIT_TEST_PROGRESS.md` to see which bugs already
+   have a test. Don't redo finished work. If the file doesn't exist
+   yet, you're starting fresh — create it as part of your first
+   commit. Format described below.
 
-### Per-bug-test cycle (the critical loop — run for EVERY bug)
+### Per-bug-test cycle
 
-After you write a test for one bug — BEFORE moving to the next one —
-round-trip through master. This is the same shape as the audit
-agent's per-bug cycle.
+Run this loop for every bug. **One commit per bug** so the history is
+easy to review and partial progress is recoverable.
 
 1. **Pick the next undone bug from `AUDIT_BUGS.md`**. Skip the bugs
-   listed in "Bugs you should skip" below.
+   listed in "Bugs you should skip" below. Work through the file in
+   family order — that maximizes context reuse, since many bugs in a
+   family share setup boilerplate.
 
 2. **Verify the bug is real** before writing a test:
    - Read the file/line references in the bug entry. Files have not
@@ -88,14 +70,16 @@ agent's per-bug cycle.
 
 3. **Write the test**. Conventions in this repo:
 
-   - **Engine bugs** → `mtg-engine/tests/audit_<NN>_<topic>.rs`
-     where `NN` is your two-char UUID prefix and `<topic>` is a short
-     slug like `subtype_filters`, `token_copy`, `damage_helper`. One
+   - **Engine bugs** → `mtg-engine/tests/audit_<family>_<topic>.rs`
+     where `<family>` is a short slug for the family ("subtype",
+     "damage_helper", "token_copy") and `<topic>` is optional. One
      file per family is fine; multiple files per family is also fine
      if a family is large. Look at the existing
      `mtg-engine/tests/audit_bugs.rs` and `audit_bugs2.rs` for the
-     style — both are full of failing tests written for earlier bugs,
-     and you should mirror their structure.
+     style — both are full of failing tests written for earlier
+     bugs, and you should mirror their structure. You can either
+     extend those existing files or create new ones; your call based
+     on what reads better.
    - **Harness bugs in `mtg-player/src/llm.rs`** → inline
      `#[cfg(test)] mod tests` inside `llm.rs` itself, alongside the
      existing `format_counters_*` tests. Look at the
@@ -104,7 +88,7 @@ agent's per-bug cycle.
      and needs to be inverted as part of writing the new test**.
    - **Harness integration tests** → `mtg-player/tests/llm_<topic>.rs`.
 
-   File header doc:
+   File header doc (for new files):
    ```rust
    //! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
    //! Each test is expected to FAIL until the corresponding bug is
@@ -145,8 +129,8 @@ agent's per-bug cycle.
      behavior diverges from the assertion. The test starts passing
      once the engine is fixed.
    - Use `#[test]` plain — **do not** mark with `#[ignore]`. The
-     existing `audit_bugs.rs` files use plain `#[test]`; CI is set up
-     to allow these to fail.
+     existing `audit_bugs.rs` files use plain `#[test]`; the test
+     suite is set up to allow these to fail.
    - Have a clear failure message via `assert!(condition, "...")` or
      `assert_eq!(actual, expected, "...")` so when the test eventually
      runs and fails, the error is self-explanatory and points back to
@@ -154,7 +138,7 @@ agent's per-bug cycle.
 
 4. **Confirm the test fails for the right reason** before committing:
    ```bash
-   cargo test --test audit_<NN>_<topic> bug_XX_short_descriptive_name -- --nocapture
+   cargo test --test audit_<family>_<topic> bug_XX_short_descriptive_name -- --nocapture
    ```
    The test must FAIL. Read the failure message. If it fails for an
    unrelated reason (panic, wrong setup, missing card in registry,
@@ -172,7 +156,7 @@ agent's per-bug cycle.
    in this format:
 
    ```markdown
-   - Bug XX-YYY (Family Name) — `mtg-engine/tests/audit_<NN>_<topic>.rs::bug_XX_short_descriptive_name` — status: failing-as-expected
+   - Bug XX-YYY (Family Name) — `mtg-engine/tests/audit_<family>_<topic>.rs::bug_XX_short_descriptive_name` — status: failing-as-expected
    ```
 
    Status options:
@@ -182,59 +166,17 @@ agent's per-bug cycle.
      test written. Add a one-line note explaining what you checked.
    - `skipped-judgment-call` — for harness/UI bugs where the
      "correct" behavior is subjective. Add a one-line note.
-   - `blocked` — writing the test requires infrastructure that doesn't
-     yet exist (e.g. needs a multiplayer test harness). Add a
-     one-line note describing the blocker.
+   - `blocked` — writing the test requires infrastructure that
+     doesn't yet exist. Add a one-line note describing the blocker.
 
-6. **Commit locally in the worktree**:
+6. **Commit and push**:
    ```bash
-   git add mtg-engine/tests/audit_<NN>_<topic>.rs audits/AUDIT_TEST_PROGRESS.md
+   git add mtg-engine/tests/audit_<family>_<topic>.rs audits/AUDIT_TEST_PROGRESS.md
    git commit -m "Tests: Bug XX (<one-line summary>)"
+   git push origin master
    ```
 
-7. **Fetch and rebase onto the latest master**:
-   ```bash
-   git fetch origin
-   git rebase origin/master
-   ```
-   If the rebase hits a conflict in `AUDIT_TEST_PROGRESS.md`, resolve
-   it by **keeping both sides** (their tests stay where they are in
-   the middle, your new entry goes at the bottom). Conflicts in the
-   test files themselves should be impossibly rare since each agent
-   uses its own UUID-prefixed filenames; if you see one, abort the
-   rebase and investigate.
-
-8. **Re-read `AUDIT_TEST_PROGRESS.md`** after the rebase. If another
-   agent wrote a test for the same bug while you were working, you
-   have two options:
-   - If theirs covers the same failure mode, drop your commit
-     (`git reset --hard HEAD~1`) and move on.
-   - If yours covers a different aspect of the same bug, keep your
-     commit but update its test name and progress entry to make the
-     distinction explicit (e.g. `bug_AT_token_subtype_check` vs
-     `bug_AT_registry_subtype_check`).
-
-9. **Push directly to master** as a fast-forward:
-   ```bash
-   git push origin HEAD:master
-   ```
-   If the push fails because origin/master advanced again, loop back
-   to step 7 and retry.
-
-10. **Rebuild your worktree** on the new master tip:
-    ```bash
-    cd /Users/dlaw/mtg
-    git worktree remove --force /Users/dlaw/mtg/.claude/worktrees/test-${MY_UUID}
-    git branch -D test-${MY_UUID}
-    git fetch origin
-    git worktree add \
-      /Users/dlaw/mtg/.claude/worktrees/test-${MY_UUID} \
-      -b test-${MY_UUID} \
-      origin/master
-    cd /Users/dlaw/mtg/.claude/worktrees/test-${MY_UUID}
-    ```
-
-11. **Loop back to step 1.**
+7. **Loop back to step 1.**
 
 ## Bugs you should skip
 
@@ -347,13 +289,10 @@ acts as a regression test going forward. Either way, more
 information.
 
 If you can't make progress on a bug after a reasonable attempt, mark
-it `blocked` or `not-reproduced` and move on. The next agent (or the
-next session of this agent) can pick it up.
+it `blocked` or `not-reproduced` and move on.
 
-## Per-bug-test checklist (run before pushing each commit)
+## Per-bug-test checklist (run before each commit)
 
-- [ ] Test file is named `audit_<NN>_<topic>.rs` where `<NN>` is your
-      two-char UUID prefix
 - [ ] Test name is `bug_<XX>_<descriptive_name>` and matches the bug
       ID in `AUDIT_BUGS.md`
 - [ ] Test docstring includes the bug's name, verbatim oracle text,
@@ -371,24 +310,15 @@ next session of this agent) can pick it up.
       blocks for harness bugs), or `mtg-draft/src/`
 - [ ] You did NOT modify `audits/AUDIT_BUGS.md` itself
 - [ ] You did NOT fix the bug
-- [ ] Push succeeded as a fast-forward to `master` (retry the rebase
-      loop if another agent advanced origin in the meantime)
-- [ ] Worktree destroyed and recreated on the new `origin/master`
-      tip before working on the next bug
 
 ## Session-end checklist
 
-- [ ] Last test has been pushed to master via the per-bug cycle (no
-      local-only commits left in the worktree)
+- [ ] Last test has been pushed to master
 - [ ] `audits/AUDIT_TEST_PROGRESS.md` reflects every test you wrote
       (and every bug you skipped, with reason)
-- [ ] Worktree removed:
-      `git worktree remove /Users/dlaw/mtg/.claude/worktrees/test-${MY_UUID}`
-- [ ] Local branch deleted:
-      `git branch -D test-${MY_UUID}`
-- [ ] Main working tree at `/Users/dlaw/mtg/` is still on `master`
-      and unchanged by your session (other than the test files you
-      landed)
+- [ ] `git status` is clean
+- [ ] `git rev-list --left-right --count master...origin/master` is
+      `0	0`
 
 ## Files of interest
 
