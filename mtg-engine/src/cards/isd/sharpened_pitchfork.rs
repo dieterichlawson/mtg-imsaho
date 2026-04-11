@@ -8,31 +8,14 @@ use crate::types::*;
 /// Equipped creature has first strike.
 /// As long as equipped creature is a Human, it gets +1/+1.
 /// Equip {1}.
+///
+/// Implementation notes:
+/// The Human-conditional +1/+1 is a *continuous* conditional effect, not a
+/// snapshot taken at equip time. We use ContinuousEffect::ConditionalModifyPT
+/// (the same pattern Bonds of Faith and Silver-Inlaid Dagger use) so that if
+/// the equipped creature transforms (e.g. a Human Werewolf flips into its
+/// non-Human back face via Moonmist), the +1/+1 drops in real time.
 pub struct SharpenedPitchfork;
-
-impl SharpenedPitchfork {
-    fn update_effects(&self, state: &mut GameState, object_id: ObjectId, creature_id: ObjectId, registry: &CardRegistry) {
-        let is_human = state.get_object(creature_id)
-            .and_then(|o| registry.card_data(o.card_id))
-            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-            .unwrap_or(false);
-
-        let effects = if is_human {
-            vec![
-                ContinuousEffect::GrantKeyword { keyword: Keyword::FirstStrike, scope: EffectScope::Attached },
-                ContinuousEffect::ModifyPT { power: 1, toughness: 1, scope: EffectScope::Attached },
-            ]
-        } else {
-            vec![
-                ContinuousEffect::GrantKeyword { keyword: Keyword::FirstStrike, scope: EffectScope::Attached },
-            ]
-        };
-
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.instance_continuous_effects = Some(effects);
-        }
-    }
-}
 
 impl CardBehavior for SharpenedPitchfork {
     fn card_data(&self) -> CardData {
@@ -48,7 +31,16 @@ impl CardBehavior for SharpenedPitchfork {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
+                // Unconditional first strike to the equipped creature.
                 ContinuousEffect::GrantKeyword { keyword: Keyword::FirstStrike, scope: EffectScope::Attached },
+                // Additional +1/+1 only while the equipped creature is a Human.
+                // Re-evaluated continuously so transform triggers update the bonus.
+                ContinuousEffect::ConditionalModifyPT {
+                    power: 1,
+                    toughness: 1,
+                    condition: EffectCondition::AttachedHasSubtype("Human".into()),
+                    scope: EffectScope::Attached,
+                },
             ],
             additional_cost: None,
             triggered_abilities: vec![],
@@ -82,13 +74,11 @@ impl CardBehavior for SharpenedPitchfork {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(creature_id)) = targets.first() {
-            let creature_id = *creature_id;
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.attached_to = Some(creature_id);
+                obj.attached_to = Some(*creature_id);
             }
-            self.update_effects(state, object_id, creature_id, registry);
         }
     }
 

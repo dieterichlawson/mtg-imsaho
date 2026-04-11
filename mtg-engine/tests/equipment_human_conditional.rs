@@ -261,3 +261,83 @@ fn butchers_cleaver_lifelink_follows_reattachment() {
     assert!(!state.has_keyword(zombie, Keyword::Lifelink, &reg),
         "zombie should not gain lifelink (not a Human)");
 }
+
+// ════════════════════════════════════════════════════════════════════
+// Sharpened Pitchfork — first strike, +1/+1 if Human (continuous)
+//
+// Same shape of bug as Silver-Inlaid Dagger / Butcher's Cleaver: the
+// previous implementation snapshotted `is_human` at equip time via an
+// `update_effects` helper. Fixed in commit `5294721`-ish by switching to
+// ContinuousEffect::ConditionalModifyPT.
+// ════════════════════════════════════════════════════════════════════
+
+#[test]
+fn sharpened_pitchfork_bonus_when_attached_to_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0); // Human
+    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
+    let state = equip(&state, &reg, fork, pilgrim, 1);
+    // 1/1 + 1/+1 (Human bonus) = 2/2 with first strike.
+    assert_eq!(state.effective_power(pilgrim, &reg), Some(2));
+    assert_eq!(state.effective_toughness(pilgrim, &reg), Some(2));
+    assert!(state.has_keyword(pilgrim, Keyword::FirstStrike, &reg));
+}
+
+#[test]
+fn sharpened_pitchfork_no_bonus_when_attached_to_non_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0); // Zombie
+    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
+    let state = equip(&state, &reg, fork, zombie, 1);
+    // 2/2 + 0/0 (non-Human) = 2/2 with first strike.
+    assert_eq!(state.effective_power(zombie, &reg), Some(2));
+    assert_eq!(state.effective_toughness(zombie, &reg), Some(2));
+    assert!(state.has_keyword(zombie, Keyword::FirstStrike, &reg));
+}
+
+#[test]
+fn sharpened_pitchfork_drops_human_bonus_when_creature_loses_human_subtype() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
+    let mut state = equip(&state, &reg, fork, pilgrim, 1);
+
+    assert_eq!(state.effective_power(pilgrim, &reg), Some(2));
+
+    // Strip the Human subtype.
+    {
+        let obj = state.get_object_mut(pilgrim).unwrap();
+        obj.subtypes = vec!["Werewolf".into()];
+    }
+
+    // Bonus should drop immediately.
+    assert_eq!(state.effective_power(pilgrim, &reg), Some(1));
+    assert_eq!(state.effective_toughness(pilgrim, &reg), Some(1));
+    // First strike is unconditional, should still be there.
+    assert!(state.has_keyword(pilgrim, Keyword::FirstStrike, &reg));
+}
+
+#[test]
+fn sharpened_pitchfork_gains_human_bonus_when_creature_becomes_human() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
+    let mut state = equip(&state, &reg, fork, zombie, 1);
+
+    // Sanity: no Human bonus on a non-Human.
+    assert_eq!(state.effective_power(zombie, &reg), Some(2));
+
+    // Add Human subtype.
+    {
+        let obj = state.get_object_mut(zombie).unwrap();
+        obj.subtypes = vec!["Zombie".into(), "Human".into()];
+    }
+
+    // Bonus should appear immediately.
+    assert_eq!(state.effective_power(zombie, &reg), Some(3));
+    assert_eq!(state.effective_toughness(zombie, &reg), Some(3));
+}
