@@ -4079,3 +4079,111 @@ duplicates work that the central engine helper already does.
 listed call sites, and ideally extract a shared helper as described
 above. The fix is mechanical and trivially testable with a Witchbane
 Orb + Falkenrath Noble integration test.
+
+---
+
+### 🟡 Engine Bug 17-002: Undead Alchemist's second ability (watcher for creature cards milled into opponents' graveyards from their libraries) is entirely missing
+**Severity:** medium — half of Undead Alchemist's text box does nothing when the mill comes from any source other than Undead Alchemist itself
+**File:** `mtg-engine/src/cards/isd/undead_alchemist.rs` (the file declares only *one* triggered ability)
+
+Oracle (two separate abilities):
+1. *Replacement effect:* "If a Zombie you control would deal combat
+   damage to a player, instead that player mills that many cards."
+2. *Watcher trigger:* "Whenever a creature card is put into an
+   opponent's graveyard from their library, exile that card and
+   create a 2/2 black Zombie creature token."
+
+Bug AE documents the first ability (incorrectly implemented as a
+post-damage trigger rather than a true CR 614 replacement effect).
+**This bug is about the second ability, which is not implemented at
+all as a separate trigger.** `undead_alchemist.rs` declares a single
+`TriggerKind::AnyCombatDamageToPlayer` triggered ability, whose
+handler `on_any_combat_damage_to_player` fuses both effects:
+
+```rust
+triggered_abilities: vec![
+    TriggeredAbilityDef {
+        kind: TriggerKind::AnyCombatDamageToPlayer,
+        description: "mill instead of damage, exile creatures for Zombie tokens".into(),
+    },
+],
+```
+
+Inside that single handler, it (a) does the life-restore-and-mill
+for the first ability, and (b) walks the freshly-milled cards and
+exiles any creatures while spawning Zombie tokens. But the "exile
+creatures milled into opponents' graveyards" half fires **only when
+Undead Alchemist's own mill-instead-of-damage path ran first**.
+
+Every other mill source bypasses Undead Alchemist's second ability
+entirely because there is no generic "creature card milled into
+opponent's library-to-graveyard" watcher trigger. ISD is full of
+such mill sources:
+
+- **Dream Twist** (instant: "Target player mills three cards").
+- **Nephalia Drownyard** ({1}{U}{B}, {T}: mill 3).
+- **Mindshrieker** ({2}: target player mills 1).
+- **Cellar Door** ({3}, {T}: target player bottoms-mills 1).
+- **Armored Skaab** (ETB: mill 4 — self-mill, but it's a mill
+  source).
+- **Splinterfright** upkeep (mills 2 — self-mill).
+- **Deranged Assistant** ({T}, Mill 1: add {C}) — self-mill via
+  mana ability.
+- **Dissipate** (exiles a countered spell — wrong zone, doesn't
+  fire).
+- **Moldgraf Monstrosity** on-death (exiles the creature from
+  graveyard, returns two random creatures — wrong direction,
+  doesn't fire).
+
+None of these trigger Undead Alchemist's second ability under the
+current implementation. The most impactful miss is **opponent casts
+Dream Twist targeting you while you control Undead Alchemist**: per
+oracle, each creature card in the three-mill should be exiled and
+give you a Zombie token. Current code: the cards sit in your
+graveyard, no tokens appear.
+
+Also important: **opponents milling themselves** (Splinterfright
+upkeep on an opponent, Deranged Assistant on an opponent, etc.)
+should ALSO trigger Undead Alchemist — "Whenever a creature card is
+put into an opponent's graveyard from their library" doesn't
+require a particular source. Current code doesn't cover this at
+all.
+
+A subtle wording point worth respecting: the oracle says "from
+**their library**". Creature cards entering an opponent's graveyard
+from their HAND (discard) do not trigger. Creature cards entering
+from exile or from the battlefield do not trigger. Only
+library-to-graveyard — i.e., the mill zone transition. The right
+event to watch is a `CreatureCardMilled { owner: opponent }` or
+equivalent.
+
+**Did NOT fire** in the audit log — Undead Alchemist was drafted
+exactly once and never cast into a scenario where the second
+ability would have mattered. Latent.
+
+**Proposed fix:** add a second `TriggeredAbilityDef` to
+`undead_alchemist.rs` of a new `TriggerKind::CreatureMilledFromLibrary`
+(or reuse an existing milled-card event if one already exists in
+`events.rs`), with a handler that:
+
+1. Checks that the milled card's owner is not the Undead
+   Alchemist controller.
+2. Exiles the milled card (it's now in graveyard; move it to
+   exile).
+3. Creates a 2/2 black Zombie token for the Undead Alchemist's
+   controller.
+
+The replacement-effect half (Bug AE) and this watcher half are
+independent: fixing Bug AE by routing combat damage through a
+true replacement effect would no longer mill inline, so the
+second ability's trigger must pick up the mill event regardless
+of source anyway. Fixing them together with a shared mill event
+would let the same trigger handle both (self-produced mill via
+the replacement + external mill from any other source).
+
+Note: whoever adds the `CreatureMilledFromLibrary` event should
+also verify that `mill_cards` (`engine.rs:3629`) emits it. The
+current `mill_cards` just does
+`library_order.remove(0)` + `move_object(card_id, Zone::Graveyard)`,
+which pushes a `LeftZone`/`EnteredZone` event pair via
+`move_object` but no dedicated mill event.
