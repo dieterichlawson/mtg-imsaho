@@ -3086,3 +3086,125 @@ idempotent. A Bloodline Keeper or Garruk that ever gained an
 instance subtype via Olivia Voldaren's bite (see Bug AU) before
 transforming would hit the same stale-instance bug.
 
+---
+
+### 🟡 Engine Bug 99-003: Daybreak Ranger's `is_valid_target` searches for *any* Daybreak Ranger the caster controls, so two copies with different transform states cross-contaminate
+**Severity:** low-medium — latent (requires two Daybreak Rangers on the same side with different transform states; not drafted in the audit)
+**File:** `mtg-engine/src/cards/isd/daybreak_ranger.rs:119-143`
+
+Oracle:
+- Daybreak Ranger (front face): "{T}: This creature deals 2 damage to target creature with flying."
+- Nightfall Predator (back face): "{R}, {T}: This creature fights target creature."
+
+The two activated abilities have DIFFERENT target filters — front
+face requires flying, back face requires any creature. Because the
+`CardBehavior::is_valid_target` trait method does not receive the
+activating source's `ObjectId`, Daybreak Ranger's implementation
+hand-rolls its own source lookup:
+
+```rust
+fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    match target {
+        Target::Object(id) => {
+            ...
+            let self_transformed = state.objects.values()
+                .find(|o| o.controller == caster && o.zone == Zone::Battlefield
+                    && registry.card_data(o.card_id)
+                        .map(|d| d.name == "Daybreak Ranger").unwrap_or(false))
+                .map(|o| o.is_transformed)
+                .unwrap_or(false);
+            if self_transformed {
+                true  // Nightfall Predator: any creature
+            } else {
+                state.has_keyword(*id, Keyword::Flying, registry)  // Daybreak: flying only
+            }
+        }
+        Target::Player(_) => false,
+    }
+}
+```
+
+The `.find()` grabs the FIRST object that matches "Daybreak Ranger
+under caster's control, on the battlefield". Three problems:
+
+1. **HashMap iteration order is non-deterministic.** `state.objects`
+   is a `HashMap<ObjectId, GameObject>` (see `state.rs`), so
+   `state.objects.values().find(...)` returns an arbitrary-order
+   match. For a caster controlling two Rangers — one transformed,
+   one not — the `self_transformed` flag is nondeterministic: it
+   depends on HashMap internal iteration order, which can differ
+   between runs and even between queries within the same run.
+
+2. **Wrong-source cross-contamination.** When the caster controls
+   BOTH a Daybreak Ranger (front face, wants to target a flying
+   creature) and a Nightfall Predator (back face, wants to fight
+   any creature), and the `.find()` happens to return the Nightfall
+   Predator first, `self_transformed = true`, and `is_valid_target`
+   returns `true` for any creature — even when the ACTIVE ability
+   is the front-face Daybreak Ranger's "deal 2 to creature with
+   flying" ability. The caster can now target a non-flying creature,
+   the engine calls `on_activate_ability` with `is_transformed =
+   false` (reading the ACTUAL source's flag), and the non-flying
+   creature takes 2 damage. This is a
+   target-legality-check-vs-effect mismatch: the legality check
+   consulted the wrong source, but the effect consulted the right
+   source, producing an oracle-violating damage event.
+
+   Conversely, if `.find()` returns the front-face Ranger first and
+   the caster tries to activate the Nightfall Predator's fight
+   ability, `self_transformed = false`, and the legality check
+   filters targets to flying creatures. The Nightfall Predator
+   effectively can't fight non-flying creatures. This is the more
+   visible symptom because it silently removes legal actions from
+   the prompt — the model would see "no targets for fight" and
+   pass.
+
+3. **Even in the single-Ranger case it's clunky.** The function is
+   trait-level and receives no `source_id`, so Daybreak Ranger
+   can't reliably know which of its abilities is being validated.
+   The current code tolerates this by assuming "there's only one
+   Daybreak Ranger and its `is_transformed` is authoritative", but
+   that's exactly the invariant that breaks with two copies.
+
+**Did NOT fire in audit** — Daybreak Ranger was drafted and played
+in several games, but no seat ever had two Daybreak Rangers (one
+transformed, one not) simultaneously. Latent.
+
+**Proposed fix:** extend `CardBehavior::is_valid_target` to receive
+the activating `source_id: Option<ObjectId>` (None for spell casts,
+Some for activated abilities). Callers in `engine.rs` already know
+which source is being validated — the target enumeration path
+iterates over a specific source's `activated_abilities`. Thread
+the source through:
+
+```rust
+fn is_valid_target(
+    &self,
+    state: &GameState,
+    caster: PlayerId,
+    source_id: Option<ObjectId>,
+    target: &Target,
+    registry: &CardRegistry,
+) -> bool { ... }
+```
+
+Then Daybreak Ranger can read `state.get_object(source_id?).is_transformed`
+directly, eliminating the `.find()` hack. Other cards can ignore
+the new parameter.
+
+Workaround (single-line, no trait change): in Daybreak Ranger's
+`is_valid_target`, sort the `.find()` iteration by `o.id` for
+determinism. This fixes the nondeterminism but NOT the
+cross-contamination — if the caster controls two copies, one
+transformed, the legality check is still wrong. Better than the
+current state, though.
+
+**Related:** Bug X (suspected) already notes that the trait-level
+`is_valid_target` pattern is clumsy for source-dependent decisions
+— aura-granted activated abilities collide the same way with
+ability_index when the grantee has a native ability at the same
+index. Both are symptoms of "trait methods on CardBehavior don't
+carry enough context to disambiguate per-source decisions." A
+shared fix (threading the source through) would close both bugs
+and make future card implementations more robust.
+
