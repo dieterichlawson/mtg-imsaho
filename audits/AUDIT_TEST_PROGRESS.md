@@ -66,3 +66,6 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug BT (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death` — status: failing-as-expected
 - Bug L (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_l_charmbreaker_devils_does_not_buff_on_creature_spell` — status: failing-as-expected
 - Bug CA (Misc) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_ca_moldgraf_monstrosity_uses_controller_not_owner` — status: failing-as-expected
+- Bug 76-001 (Harness — labels) — `mtg-engine/tests/audit_misc_final.rs::bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug` — status: failing-as-expected
+- Bug 76-002 (Counter display) — `mtg-engine/tests/audit_misc_final.rs::bug_76_002_ludevic_hatchling_counters_not_in_card_state` — status: failing-as-expected
+- Bug 99-001 (Counter display) — `mtg-engine/tests/audit_misc_final.rs::bug_99_001_gutter_grime_does_not_count_token_deaths` — status: failing-as-expected
