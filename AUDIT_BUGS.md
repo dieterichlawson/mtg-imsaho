@@ -600,6 +600,82 @@ audit-log game, so the bug is latent.
 
 ---
 
+### 🟡 Engine Bug AD: Unburial Rites can reanimate creatures from any graveyard (including opponent's)
+**Severity:** HIGH if it fires — completely changes the card's value
+**File:** `mtg-engine/src/cards/isd/unburial_rites.rs:30-32` and `mtg-engine/src/engine.rs:1670-1683`
+
+Oracle: "Return target creature card from **your** graveyard to the
+battlefield." Unburial Rites declares
+`TargetRequirement::GraveyardCreature` which the engine resolves as ALL
+creature cards in ALL graveyards (any owner). Unburial Rites does not
+override `is_valid_target` to filter by owner. Result: the model can
+target opp's graveyard, and the engine reanimates opp's creature under
+the spell controller's control (creature controller becomes the
+reanimating player, not the owner).
+
+**Did fire in audit at line 30188-30189:** Seat 1 cast Unburial Rites
+and the prompt offered:
+```
+Unburial Rites: select a target:
+0: Selfless Cathar, 1: Avacynian Priest
+```
+No owner labels — the model can't tell which graveyard. The model
+picked Avacynian Priest. Whether either creature was actually in
+opponent's graveyard at that moment is unclear without tracing object
+IDs back through the log, but the engine would have allowed it either
+way.
+
+Same shape applies to Memory's Journey (Bug O), and likely to other
+cards using `GraveyardCreature` / `GraveyardCard` with "your" in the
+oracle text.
+
+**Proposed fix:** Either
+1. Override `is_valid_target` in each affected card to filter by
+   `obj.owner == caster`, OR
+2. Add a `TargetRequirement::GraveyardCreatureOwnedByCaster` variant
+   parallel to the existing `GraveyardCardOwnedByCaster` (engine.rs:1703)
+   and use it in Unburial Rites and similar cards.
+
+Affected ISD cards (cast-time targeting from graveyard):
+- Unburial Rites — confirmed fired in audit
+- Memory's Journey (Bug O — already documented)
+- Skaab Ruinator's exile additional cost — need to check
+- Makeshift Mauler's exile additional cost — uses additional_cost path
+- Stitched Drake's exile additional cost — uses additional_cost path
+
+---
+
+### 🟡 Engine Bug AC: Unbreathing Horde under-counts when reanimated from graveyard
+**Severity:** low — only affects Unbreathing Horde + reanimation interaction
+**File:** `mtg-engine/src/cards/isd/unbreathing_horde.rs:94-103`
+
+Per Scryfall ruling: "If Unbreathing Horde enters the battlefield from a
+graveyard, it counts itself for its enter-with-counters ability." This is
+because "enters with X counters" is a replacement effect (CR 614.1c) and
+the Horde is technically still in the graveyard zone at the moment of
+entry timing.
+
+Current implementation runs `add_zombie_counters` from
+`on_enter_battlefield`, which fires AFTER the move to battlefield. By
+then `count_zombies_on_battlefield` excludes the Horde (via
+`exclude == object_id`) and `count_zombies_in_graveyard` doesn't include
+it either (it's no longer in graveyard). Net: reanimated Unbreathing
+Horde enters with one fewer counter than it should.
+
+The cast path (`on_resolve`) computes counts BEFORE the move and is
+correct, since the Horde is on the stack (not on battlefield, not in
+graveyard) and the count of "other Zombies you control" + "Zombie cards
+in graveyard" naturally excludes itself.
+
+**Proposed fix:** in the on_enter_battlefield path (reanimation only),
+add 1 to the total count to compensate for the Horde counting itself.
+Or, for cleanliness, special-case "if entering from graveyard, +1".
+
+**Did NOT fire** — Unbreathing Horde was drafted exactly once and not
+cast in any reanimation scenario.
+
+---
+
 ### 🟡 Engine Bug Y: pay-mana-during-resolution checks the mana pool only — never offered when pool is empty
 **Severity:** medium — multiple cards affected
 **Files:**
