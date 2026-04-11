@@ -5202,3 +5202,79 @@ from_registry || from_instance
   `obj.subtypes` from the registry, forcing every filter to
   juggle two sources. Landing Bug BD would let every one of these
   filters collapse to a single `obj.subtypes.contains(...)` check.
+
+---
+
+### 🟡 Engine Bug 31-004: Elder Cathar's "if Human, +2 counters instead" check reads front-face subtypes — transformed ex-Human creatures wrongly get the bonus
+**Severity:** low — latent, same class as Bug 31-002
+**Files:**
+- `mtg-engine/src/cards/isd/elder_cathar.rs:50-62` (single-target auto-resolve)
+- `mtg-engine/src/engine.rs:2904-2919` (`PendingEffect::AddCounters` multi-target path)
+**Audit evidence:** not fired — Seat 1 (the only deck with Elder Cathar) has no werewolves or DFC creatures, so the transformed-creature case never came up
+
+Oracle: "When this creature dies, put a +1/+1 counter on target
+creature you control. If that creature is a Human, put two +1/+1
+counters on it instead."
+
+Both the single-target auto-resolve path in
+`cards/isd/elder_cathar.rs` and the multi-target pending effect
+in `engine.rs:2904-2919` determine "is Human" the same way:
+
+```rust
+let is_human = state.get_object(id)
+    .map(|o| {
+        let obj_has = o.subtypes.iter().any(|s| s == "Human");
+        let card_has = registry.card_data(o.card_id)
+            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+            .unwrap_or(false);
+        obj_has || card_has
+    })
+    .unwrap_or(false);
+```
+
+`registry.card_data(o.card_id)` returns **front-face** data — there
+is no `is_transformed` branch. For a transformed DFC that used to
+be Human on the front face (nearly every ISD werewolf: Tormented
+Pariah, Gatstaf Shepherd, Kruin Outlaw, Villagers of Estwald,
+Ulvenwald Mystics, Daybreak Ranger, Village Ironsmith, Reckless
+Waif, Hanweir Watchkeep, Grizzled Outcasts, Mayor of Avabruck,
+Cloistered Youth, Delver of Secrets), the registry check returns
+`true` → `is_human = true` → Elder Cathar grants 2 counters
+even though the target is currently a Werewolf / Horror / Insect
+/ Predator on the back face and is NOT a Human per the rules.
+
+This is the mirror image of **Bug 31-002** (Avacynian Priest
+rejects transformed werewolves because front-face data says they're
+Human). Same root cause — front-face-only subtype lookup — on two
+different cards pointing in opposite directions.
+
+**Audit evidence:** latent. Seat 1 (B/W control, the only Elder
+Cathar player) has no werewolves or DFCs, and never controlled a
+stolen or reanimated werewolf. For the bug to fire Seat 1 would
+have to control a transformed-ex-Human creature when an Elder
+Cathar died.
+
+**Proposed fix:** replace the is_human check in both sites with a
+transform-aware lookup. Either inline the check (same shape as
+the proposed fix for 31-002) or introduce a shared helper
+`state::creature_has_subtype(obj_id, "Human", registry)` that does
+the transform-aware lookup in one place. Every card-specific
+filter that checks subtypes should call it.
+
+Sites affected:
+- `cards/isd/elder_cathar.rs:50-62` (auto-resolve)
+- `engine.rs:2904-2919` (`PendingEffect::AddCounters` handler)
+- `cards/isd/avacynian_priest.rs` (Bug 31-002)
+- plus any other card that does front-face-only `is_human`
+  reads — grep for `d.subtypes.iter().any(|s| s == "Human")`
+  across `mtg-engine/src/cards/isd/*.rs` to enumerate them.
+
+**Related bugs:**
+- Bug 31-002 — same class, opposite direction (rejecting instead
+  of falsely granting).
+- Bug AO — `combat::get_subtypes` is the canonical example of the
+  same "front-face subtype read" on a third code path.
+- Bug AT — registry-only token-miss variant.
+- Bug BD — the root-cause population issue for `obj.subtypes`
+  that would let every filter collapse to a single instance-only
+  check once fixed.
