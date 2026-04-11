@@ -5,8 +5,8 @@ use crate::state::GameState;
 use crate::types::*;
 
 /// Full Moon's Rise — {1}{G} Enchantment.
-/// Werewolf and Wolf creatures you control get +1/+0 and have trample.
-/// Sacrifice Full Moon's Rise: Regenerate all Werewolf and Wolf creatures you control.
+/// Werewolf creatures you control get +1/+0 and have trample.
+/// Sacrifice Full Moon's Rise: Regenerate all Werewolf creatures you control.
 pub struct FullMoonsRise;
 
 impl CardBehavior for FullMoonsRise {
@@ -54,7 +54,7 @@ impl CardBehavior for FullMoonsRise {
         if obj.zone == Zone::Battlefield {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
-                description: "Sacrifice: Regenerate all Wolf and Werewolf creatures you control".into(),
+                description: "Sacrifice: Regenerate all Werewolf creatures you control".into(),
                 cost: ManaCost::free(),
                 requires_tap: false,
                 sacrifice_cost: SacrificeCost::SacrificeThis,
@@ -70,8 +70,8 @@ impl CardBehavior for FullMoonsRise {
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Regenerate all Wolf and Werewolf creatures you control.
-        let wolves_and_werewolves: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
+        // Regenerate all Werewolf creatures you control.
+        let werewolves: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .filter(|o| {
                 o.power.is_some() && {
@@ -87,7 +87,7 @@ impl CardBehavior for FullMoonsRise {
             .map(|o| o.id)
             .collect();
 
-        for cid in wolves_and_werewolves {
+        for cid in werewolves {
             if let Some(obj) = state.get_object_mut(cid) {
                 obj.regeneration_shields += 1;
             }
