@@ -626,8 +626,9 @@ fn play_match(
 
     // Play/draw per MTG tournament rules, delegated to the engine helpers:
     //   Game 1: engine::random_starting_player() — fair coin flip.
-    //   Games 2+: engine::next_starting_player_after_game() — loser chooses,
-    //   drawn games keep the previous starter.
+    //   Games 2+: engine::next_starter_loser_plays() — the loser of the
+    //   previous game always elects to play first (the strategically
+    //   dominant choice in Limited); drawn games keep the previous starter.
     let mut starter = engine::random_starting_player(2);
 
     while wins_a < wins_needed && wins_b < wins_needed {
@@ -646,7 +647,7 @@ fn play_match(
         let prev_winner: Option<mtg_engine::ids::PlayerId> = outcome.winner.map(|w| {
             if w == seat_a { mtg_engine::ids::PlayerId(0) } else { mtg_engine::ids::PlayerId(1) }
         });
-        starter = engine::next_starting_player_after_game(starter, prev_winner, 2);
+        starter = engine::next_starter_loser_plays(starter, prev_winner, 2);
 
         match outcome.winner {
             Some(w) if w == seat_a => wins_a += 1,

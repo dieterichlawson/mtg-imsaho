@@ -1,6 +1,6 @@
 //! Regression tests for the MTG tournament play/draw rules exposed by
 //! `engine::random_starting_player` and
-//! `engine::next_starting_player_after_game`.
+//! `engine::next_starter_loser_plays`.
 
 use mtg_engine::engine;
 use mtg_engine::ids::PlayerId;
@@ -34,7 +34,7 @@ fn random_starting_player_single_player_game_is_deterministic() {
 fn loser_chooses_after_p0_wins() {
     // p0 was on the play and won → p1 (the loser) chooses next game →
     // loser elects to play first → next starter is p1.
-    let next = engine::next_starting_player_after_game(
+    let next = engine::next_starter_loser_plays(
         PlayerId(0),
         Some(PlayerId(0)),
         2,
@@ -46,7 +46,7 @@ fn loser_chooses_after_p0_wins() {
 fn loser_chooses_after_p1_wins() {
     // p1 was on the play and won → p0 (the loser) chooses next game →
     // next starter is p0.
-    let next = engine::next_starting_player_after_game(
+    let next = engine::next_starter_loser_plays(
         PlayerId(1),
         Some(PlayerId(1)),
         2,
@@ -57,7 +57,7 @@ fn loser_chooses_after_p1_wins() {
 #[test]
 fn loser_chooses_when_non_starter_wins() {
     // p0 was on the play but p1 won → p0 (the loser) chooses next game.
-    let next = engine::next_starting_player_after_game(
+    let next = engine::next_starter_loser_plays(
         PlayerId(0),
         Some(PlayerId(1)),
         2,
@@ -65,7 +65,7 @@ fn loser_chooses_when_non_starter_wins() {
     assert_eq!(next, PlayerId(0));
 
     // And the mirror case: p1 on the play, p0 won → p1 chooses next.
-    let next = engine::next_starting_player_after_game(
+    let next = engine::next_starter_loser_plays(
         PlayerId(1),
         Some(PlayerId(0)),
         2,
@@ -77,14 +77,14 @@ fn loser_chooses_when_non_starter_wins() {
 fn drawn_game_keeps_previous_starter() {
     // Per MTR §2.3, a drawn game has no loser and the previous pre-game
     // choice persists into the next game.
-    let next = engine::next_starting_player_after_game(
+    let next = engine::next_starter_loser_plays(
         PlayerId(0),
         None,
         2,
     );
     assert_eq!(next, PlayerId(0));
 
-    let next = engine::next_starting_player_after_game(
+    let next = engine::next_starter_loser_plays(
         PlayerId(1),
         None,
         2,
@@ -95,5 +95,5 @@ fn drawn_game_keeps_previous_starter() {
 #[test]
 #[should_panic(expected = "only supports 2-player matches")]
 fn next_starting_player_panics_for_multiplayer() {
-    engine::next_starting_player_after_game(PlayerId(0), Some(PlayerId(0)), 3);
+    engine::next_starter_loser_plays(PlayerId(0), Some(PlayerId(0)), 3);
 }

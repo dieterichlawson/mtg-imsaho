@@ -168,6 +168,14 @@ Creatures display their keywords after P/T (e.g. `Abbey Griffin 2/2 flying, vigi
 
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving they're exiled. Look for `Flashback <card>` in the action list. The engine auto-taps for flashback costs.
 
+## Play/draw
+
+Matches are best-of-three. The starting player for each game is chosen as follows:
+- **Game 1**: randomised (fair coin flip).
+- **Games 2 and 3**: the loser of the previous game chooses who goes first. In this tournament, the loser ALWAYS elects to play first — going on the draw is effectively never correct in Limited, so there is no decision to make. You will simply find yourself on the play or draw at the start of each game; the mulligan prompt will tell you which.
+
+The player on the play skips their first draw step; the player on the draw gets a normal first turn. That means after turn 1 the on-draw player has seen one more card.
+
 ## London mulligan
 
 At the start of the game, before turn 1, you'll be asked two pre-game decisions:

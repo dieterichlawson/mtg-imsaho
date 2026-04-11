@@ -3275,24 +3275,30 @@ pub fn random_starting_player(num_players: u8) -> PlayerId {
     PlayerId(rand::thread_rng().gen_range(0..num_players))
 }
 
-/// Pick the starting player for the next game of a match, given the
-/// previous game's starter and winner. Implements the MTG tournament
-/// rule that the *loser* of a game chooses who goes first in the next
-/// game; the loser is assumed to always choose to play.
+/// Pick the starting player for the next game of a match, baking in the
+/// "loser always chooses to play first" strategic default.
+///
+/// Per MTG tournament rules (MTR §2.3) the loser of the previous game is
+/// the one who *chooses* who takes the first turn of the next game. In
+/// practice the loser effectively always elects to play first — going on
+/// the draw is a legitimate but extremely rare strategic choice, and
+/// never correct in Limited. This helper bakes in that default choice
+/// and returns the loser directly; callers who want to expose play/draw
+/// as a real decision should implement their own flow.
 ///
 /// - `previous_starter`: who was on the play in the previous game
 /// - `previous_winner`: the previous game's winner, or `None` for a draw
 /// - `num_players`: currently only 2-player matches are supported
 ///
-/// On a drawn game, the previous starter stays on the play (per MTR §2.3 —
-/// drawn games have no loser, so the pre-game choice simply persists).
-pub fn next_starting_player_after_game(
+/// On a drawn game there is no loser, so the previous starter stays on
+/// the play (per MTR §2.3 — the pre-game choice simply persists).
+pub fn next_starter_loser_plays(
     previous_starter: PlayerId,
     previous_winner: Option<PlayerId>,
     num_players: u8,
 ) -> PlayerId {
     assert_eq!(num_players, 2,
-        "next_starting_player_after_game only supports 2-player matches");
+        "next_starter_loser_plays only supports 2-player matches");
     match previous_winner {
         None => previous_starter,
         Some(winner) => PlayerId(1 - winner.0),
