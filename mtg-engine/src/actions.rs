@@ -35,7 +35,10 @@ pub enum Action {
     ActivateManaAbility { object_id: ObjectId, ability_index: usize },
 
     /// Activate a non-mana ability (doesn't use the stack for now, player retains priority).
-    ActivateAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target> },
+    /// `tap_plan` lists mana sources to tap before paying the ability's mana cost,
+    /// computed by `legal_actions` via the same auto-tap logic spell casting uses.
+    /// Empty for free abilities or abilities whose cost is already in the mana pool.
+    ActivateAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target>, tap_plan: Vec<(ObjectId, usize)> },
 
     /// Activate a planeswalker loyalty ability.
     ActivateLoyaltyAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target> },
@@ -134,6 +137,9 @@ pub struct ActivatableAbility {
     pub name: String,
     pub description: String,
     pub target_options: Vec<Target>,
+    /// Pre-computed mana sources to tap when paying this ability's cost.
+    /// Empty if the cost is already in the mana pool, or if the ability has no mana cost.
+    pub tap_plan: Vec<(ObjectId, usize)>,
 }
 
 /// Describes how targets should be chosen for a castable spell.
@@ -166,7 +172,7 @@ impl std::fmt::Display for Action {
             }
             Action::ActivateManaAbility { object_id, ability_index } =>
                 write!(f, "Activate mana ability {} on {}", ability_index, object_id),
-            Action::ActivateAbility { object_id, ability_index, targets } => {
+            Action::ActivateAbility { object_id, ability_index, targets, .. } => {
                 if targets.is_empty() {
                     write!(f, "Activate ability {} on {}", ability_index, object_id)
                 } else {

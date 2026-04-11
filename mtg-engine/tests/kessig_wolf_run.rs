@@ -76,6 +76,7 @@ fn x_equals_3_gives_plus_3() {
         object_id: wolf_run,
         ability_index: 1,
         targets: vec![mtg_engine::actions::Target::Object(creature)],
+        tap_plan: vec![],
     };
 
     state = mtg_engine::engine::submit_action(&state, &action, &reg);
@@ -112,6 +113,7 @@ fn x_equals_0_gives_trample_only() {
         object_id: wolf_run,
         ability_index: 1,
         targets: vec![mtg_engine::actions::Target::Object(creature)],
+        tap_plan: vec![],
     };
 
     state = mtg_engine::engine::submit_action(&state, &action, &reg);

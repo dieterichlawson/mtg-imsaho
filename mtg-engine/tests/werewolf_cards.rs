@@ -436,6 +436,7 @@ fn nightfall_predator_can_fight_own_creature() {
             object_id: ranger,
             ability_index: 0,
             targets: vec![Target::Object(own_creature)],
+            tap_plan: vec![],
         },
         &reg,
     );

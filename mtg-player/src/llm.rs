@@ -152,7 +152,7 @@ Creatures display their keywords after P/T (e.g. `Abbey Griffin 2/2 flying, vigi
 - **flying**: Only blocked by flying or reach. Huge in combat.
 - **reach**: Can block flying (doesn't grant flying).
 - **deathtouch**: Any damage it deals to a creature destroys it. A 1/1 deathtouch kills a 10/10.
-- **first strike**: Deals damage before non-first-strike creatures. Can kill a blocker before it hits back.
+- **first strike**: Deals damage before non-first-strike creatures. A 2/2 blocking a 3/2 first strike takes 3 and dies *before* dealing its damage; the first striker survives untouched.
 - **double strike**: Deals first strike AND normal damage.
 - **lifelink**: Damage dealt = life gained. Changes race math.
 - **trample**: Excess damage hits the defending player.
@@ -167,6 +167,16 @@ Creatures display their keywords after P/T (e.g. `Abbey Griffin 2/2 flying, vigi
 ## Flashback
 
 Cards with flashback can be cast from your graveyard for their flashback cost. After resolving they're exiled. Look for `Flashback <card>` in the action list. The engine auto-taps for flashback costs.
+
+## Equipment
+
+Artifacts with an `Equip {N}` ability can be attached to a creature you control by paying the equip cost. Equip is sorcery speed (your main phase only). The equipped creature gains the listed bonuses (e.g. `+3/+0`, `lifelink`). Equipment stays in play when its creature dies and can be re-equipped to a new creature. Some equipment has alternative equip costs like `Equip—Sacrifice a creature` (e.g. Demonmail Hauberk).
+
+Look for `Activate <equipment> (Equip {N})` in the action list. Equipment sitting idle on the battlefield is wasted resources — find a creature to equip it to, especially when you're behind on board or life.
+
+## When you're behind
+
+If you're low on life and the board is unfavourable but stable, look for a way to *change* the situation — equipping a creature, casting an aura or buff, or forcing a race with combat tricks — before defaulting to "pass and hope to topdeck". Repeated passing rarely wins from behind; a desperate line that sometimes works beats a safe line that loses for sure.
 
 ## Play/draw
 
@@ -346,6 +356,10 @@ that decision, so you don't need to memorize them. Every schema includes a
 alternatives, and explain your choice. Thoughts are private (your opponent
 does not see them), so be candid about your plan.
 
+Ground every claim in your thoughts in the actual prompt text. Only reference
+creatures, cards, and zones that are explicitly listed in the current state —
+do not invent details, board positions, or cards that aren't there.
+
 A typical action-selection response looks like:
 
     {"thoughts": "Grizzly Bears gets me a 2/2 on curve.", "action": 3}
@@ -383,6 +397,10 @@ Your private reasoning happens in the model's extended-thinking channel —
 think through the situation there before producing the JSON. The JSON payload
 itself should contain ONLY the response fields in the schema; do NOT add a
 "thoughts" key, it will be rejected by the schema validator.
+
+Ground your reasoning in the actual prompt text. Only reference creatures,
+cards, and zones that are explicitly listed in the current state — do not
+invent details, board positions, or cards that aren't there.
 
 A typical action-selection response looks like:
 
@@ -1680,6 +1698,7 @@ impl LlmPlayer {
                 object_id: ab.object_id,
                 ability_index: ab.ability_index,
                 targets: vec![ab.target_options[0].clone()],
+                tap_plan: ab.tap_plan.clone(),
             };
         }
 
@@ -1693,6 +1712,7 @@ impl LlmPlayer {
             object_id: ab.object_id,
             ability_index: ab.ability_index,
             targets: vec![target],
+            tap_plan: ab.tap_plan.clone(),
         }
     }
 
@@ -1987,7 +2007,12 @@ impl Player for LlmPlayer {
                         {
                             seen_ability_keys.push(key);
                             let ab = &legal.activatable_abilities[ab_idx];
-                            let label = format!("Activate {} ({})", ab.name, ab.description);
+                            let tap_str = Self::format_tap_plan(view, &ab.tap_plan);
+                            let label = if tap_str.is_empty() {
+                                format!("Activate {} ({})", ab.name, ab.description)
+                            } else {
+                                format!("Activate {} ({}) (tap {})", ab.name, ab.description, tap_str)
+                            };
                             display_labels.push(label);
                             display_entries.push(DisplayEntry::Ability(ab_idx));
                         }

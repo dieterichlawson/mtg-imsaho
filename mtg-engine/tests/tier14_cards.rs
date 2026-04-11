@@ -360,6 +360,7 @@ fn kessig_wolf_run_grants_power_and_trample() {
             object_id: wolf_run,
             ability_index: 1,
             targets: vec![Target::Object(creature)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -485,6 +486,7 @@ fn olivia_ping_ability() {
             object_id: olivia,
             ability_index: 0,
             targets: vec![Target::Object(target_creature)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -523,6 +525,7 @@ fn olivia_gain_control_of_vampire() {
             object_id: olivia,
             ability_index: 1,
             targets: vec![Target::Object(vampire)],
+            tap_plan: vec![],
         },
         &reg,
     );

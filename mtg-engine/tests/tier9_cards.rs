@@ -56,6 +56,7 @@ fn travelers_amulet_finds_basic_land() {
             object_id: amulet,
             ability_index: 0,
             targets: vec![],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -108,6 +109,7 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
             object_id: hauberk,
             ability_index: 0,
             targets: vec![Target::Object(creature_b)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -200,6 +202,7 @@ fn runechanters_pike_equip_ability() {
             object_id: pike,
             ability_index: 0,
             targets: vec![Target::Object(creature)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -271,6 +274,7 @@ fn inquisitors_flail_equip_ability() {
             object_id: flail,
             ability_index: 0,
             targets: vec![Target::Object(creature)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -423,6 +427,7 @@ fn blazing_torch_deals_damage_to_player() {
             object_id: creature,
             ability_index: 1,
             targets: vec![Target::Player(P1)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -457,6 +462,7 @@ fn blazing_torch_deals_damage_to_creature() {
             object_id: creature,
             ability_index: 1,
             targets: vec![Target::Object(enemy)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -484,6 +490,7 @@ fn blazing_torch_damage_source_is_torch_not_creature() {
             object_id: creature,
             ability_index: 1,
             targets: vec![Target::Object(enemy)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -513,6 +520,7 @@ fn blazing_torch_equip_ability() {
             object_id: torch,
             ability_index: 0,
             targets: vec![Target::Object(creature)],
+            tap_plan: vec![],
         },
         &reg,
     );
@@ -540,7 +548,7 @@ fn blazing_torch_equip_only_own_creatures() {
     let actions = engine::legal_actions(&state, &reg);
     let equip_targets: Vec<_> = actions.actions.iter()
         .filter_map(|a| {
-            if let Action::ActivateAbility { object_id, ability_index: 0, targets } = a {
+            if let Action::ActivateAbility { object_id, ability_index: 0, targets, .. } = a {
                 if *object_id == torch { Some(targets.clone()) } else { None }
             } else { None }
         })

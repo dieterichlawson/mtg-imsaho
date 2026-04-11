@@ -502,6 +502,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         && state.stack.is_empty()
         && state.active_player == player;
 
+    // Gather mana sources up-front so both the activated-ability loop below and the
+    // spell-casting loop further down can compute auto-tap plans against them.
+    let early_mana_sources = gather_mana_sources(state, player, registry, prevent_artifact_abilities);
+
     // Non-mana activated abilities: can activate anytime you have priority (if you can pay).
     // Check attached permanents too (auras granting abilities to creatures).
     let mana_pool = &state.get_player(player).mana_pool;
@@ -556,18 +560,32 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
         for (source_card_id, ab) in abilities {
             // Check mana cost. For X-cost abilities, check that non-X portion is affordable.
+            // We use compute_autotap (mirroring spell casting) so abilities with mana costs
+            // appear as legal actions in main phase even when no mana is currently floating —
+            // the resulting tap plan is bundled into the action and executed at apply time.
             let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
-            if has_x_cost {
+            let ability_tap_plan: Vec<(ObjectId, usize)> = if has_x_cost {
                 let non_x_cost = ManaCost::new(
                     ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
                 );
-                // Need at least non-X cost + 1 extra mana for X >= 1.
-                // Actually, X can be 0, so just need the non-X portion.
-                // But X=0 is usually pointless — still allow it for correctness.
-                if !mana::can_pay(mana_pool, &non_x_cost) { continue; }
+                if mana::can_pay(mana_pool, &non_x_cost) {
+                    Vec::new()
+                } else {
+                    match mana::compute_autotap(&non_x_cost, mana_pool, &early_mana_sources, &[]) {
+                        Some(plan) => plan,
+                        None => continue,
+                    }
+                }
             } else {
-                if !mana::can_pay(mana_pool, &ab.cost) { continue; }
-            }
+                if mana::can_pay(mana_pool, &ab.cost) {
+                    Vec::new()
+                } else {
+                    match mana::compute_autotap(&ab.cost, mana_pool, &early_mana_sources, &[]) {
+                        Some(plan) => plan,
+                        None => continue,
+                    }
+                }
+            };
             // Check tap cost and summoning sickness.
             // Per MTG rules, creatures with summoning sickness cannot use
             // abilities with {T} in the cost (unless they have haste).
@@ -616,6 +634,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             object_id: obj_id,
                             ability_index: ab.ability_index,
                             targets: vec![target],
+                            tap_plan: ability_tap_plan.clone(),
                         });
                     }
                 }
@@ -625,6 +644,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     object_id: obj_id,
                     ability_index: ab.ability_index,
                     targets: vec![],
+                    tap_plan: ability_tap_plan.clone(),
                 });
             }
         }
@@ -710,7 +730,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         .collect();
 
     // Gather available mana sources for autotap.
-    let mana_sources = gather_mana_sources(state, player, registry, prevent_artifact_abilities);
+    // Reuse the set we computed earlier for activated abilities.
+    let mana_sources = early_mana_sources;
 
     // Collect costs of all castable spells in hand for hand-demand heuristic.
     // This is a quick pre-pass: gather effective costs for spells that could be cast this turn.
@@ -1149,10 +1170,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
     // Build collapsed activatable abilities from the expanded ActivateAbility actions.
     // Group by (object_id, ability_index) and collect all targets for each.
-    let mut ability_map: std::collections::HashMap<(ObjectId, usize), (String, String, Vec<crate::actions::Target>)> =
+    // We also capture the first action's tap_plan for each ability so player UIs can
+    // display "(tap Forest, Mountain)" alongside the ability label, like Cast does.
+    let mut ability_map: std::collections::HashMap<(ObjectId, usize), (String, String, Vec<crate::actions::Target>, Vec<(ObjectId, usize)>)> =
         std::collections::HashMap::new();
     for action in &actions {
-        if let Action::ActivateAbility { object_id, ability_index, targets } = action {
+        if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan } = action {
             let entry = ability_map.entry((*object_id, *ability_index)).or_insert_with(|| {
                 let name = state.obj_name(*object_id);
                 let desc = registry.get(
@@ -1163,20 +1186,21 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         .find(|a| a.ability_index == *ability_index)
                         .map(|a| a.description.clone())
                 }).unwrap_or_default();
-                (name, desc, Vec::new())
+                (name, desc, Vec::new(), tap_plan.clone())
             });
             entry.2.extend(targets.iter().cloned());
         }
     }
     let activatable_abilities: Vec<crate::actions::ActivatableAbility> = ability_map
         .into_iter()
-        .map(|((object_id, ability_index), (name, description, target_options))| {
+        .map(|((object_id, ability_index), (name, description, target_options, tap_plan))| {
             crate::actions::ActivatableAbility {
                 object_id,
                 ability_index,
                 name,
                 description,
                 target_options,
+                tap_plan,
             }
         })
         .collect();
@@ -2139,8 +2163,15 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             activate_mana_source(&mut new_state, *object_id, *ability_index, registry);
         }
 
-        Action::ActivateAbility { object_id, ability_index, targets } => {
+        Action::ActivateAbility { object_id, ability_index, targets, tap_plan } => {
             let player = new_state.priority_player.expect("ActivateAbility requires priority");
+
+            // Execute autotap plan: tap mana sources to fill the mana pool before
+            // we attempt to pay the ability's mana cost. This mirrors CastSpell.
+            for &(source_id, ma_idx) in tap_plan {
+                activate_mana_source(&mut new_state, source_id, ma_idx, registry);
+            }
+
             let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
             let card_id = obj.card_id;
 
