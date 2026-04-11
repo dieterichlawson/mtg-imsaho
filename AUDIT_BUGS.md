@@ -773,9 +773,12 @@ event instead of a damage event when the source matches. Same shape as
 
 ---
 
-### 🟡 Engine Bug AT: Slayer of the Wicked subtype filter ignores tokens
-**Severity:** medium — Slayer can't target Vampire/Zombie tokens
-**File:** `mtg-engine/src/cards/isd/slayer_of_the_wicked.rs:42-46`
+### 🟡 Engine Bug AT: registry-only subtype filters miss tokens (Slayer of the Wicked, Vampiric Fury, Village Cannibals)
+**Severity:** medium — multiple cards affected
+**Files:**
+- `mtg-engine/src/cards/isd/slayer_of_the_wicked.rs:42-46` (ETB destroy V/W/Z)
+- `mtg-engine/src/cards/isd/vampiric_fury.rs:42-47` (Vampire +2/+0 anthem)
+- `mtg-engine/src/cards/isd/village_cannibals.rs:39-42` (death-trigger Human counter)
 
 ```rust
 .filter(|o| {
@@ -806,11 +809,24 @@ pattern Avacynian Priest's "tap target non-Human" filter uses:
 })
 ```
 
-**Did NOT fire in audit** — Slayer of the Wicked was cast multiple
-times but never against a board with Vampire/Zombie tokens.
+**Did NOT fire in audit** for Slayer of the Wicked — it was cast
+multiple times but never against a board with V/W/Z tokens.
 
-This same bug shape probably affects other cards that filter by
-subtype via registry-only lookups. Worth grepping for the pattern.
+**Vampiric Fury** has the same registry-only filter for "Vampire
+creatures you control" — Bloodline Keeper's Vampire tokens would NOT
+get the +2/+0 first strike buff. (Audit log line 134244+: Vampiric
+Fury was repeatedly cast and the model said "I have no Vampires" —
+it has no Vampires anyway, so this didn't fire in practice.)
+
+**Village Cannibals** has the same registry-only filter for "Human
+creature dying" — if a Human-typed token (none in ISD) died, the
+counter wouldn't accumulate. Latent.
+
+The buggy pattern is recognizable as a registry-only subtype check
+without an `|| o.subtypes.iter().any(...)` follow-up. Counter-examples
+that already do it right: Avacynian Priest, Reaper from the Abyss,
+Endless Ranks of the Dead, Hamlet Captain, Bloodline Keeper, Wooden
+Stake, Elder Cathar.
 
 ---
 
