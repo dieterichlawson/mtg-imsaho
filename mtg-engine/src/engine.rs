@@ -3265,6 +3265,40 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
     }
 }
 
+/// Pick a starting player for game 1 of a match by a fair coin flip
+/// (uniform over `num_players`). Per MTG tournament rules, the player
+/// chosen always elects to play first in this implementation — declining
+/// to play is a legal choice but is almost never strategically correct.
+pub fn random_starting_player(num_players: u8) -> PlayerId {
+    use rand::Rng;
+    assert!(num_players >= 1, "random_starting_player needs at least 1 player");
+    PlayerId(rand::thread_rng().gen_range(0..num_players))
+}
+
+/// Pick the starting player for the next game of a match, given the
+/// previous game's starter and winner. Implements the MTG tournament
+/// rule that the *loser* of a game chooses who goes first in the next
+/// game; the loser is assumed to always choose to play.
+///
+/// - `previous_starter`: who was on the play in the previous game
+/// - `previous_winner`: the previous game's winner, or `None` for a draw
+/// - `num_players`: currently only 2-player matches are supported
+///
+/// On a drawn game, the previous starter stays on the play (per MTR §2.3 —
+/// drawn games have no loser, so the pre-game choice simply persists).
+pub fn next_starting_player_after_game(
+    previous_starter: PlayerId,
+    previous_winner: Option<PlayerId>,
+    num_players: u8,
+) -> PlayerId {
+    assert_eq!(num_players, 2,
+        "next_starting_player_after_game only supports 2-player matches");
+    match previous_winner {
+        None => previous_starter,
+        Some(winner) => PlayerId(1 - winner.0),
+    }
+}
+
 /// Set up a new game: create objects, shuffle libraries, draw opening hands.
 pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     let num_players = config.player_names.len() as u8;

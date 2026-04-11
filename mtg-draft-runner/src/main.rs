@@ -624,13 +624,11 @@ fn play_match(
     let mut p1 = make_game_player(model_spec_a, &name_a);
     let mut p2 = make_game_player(model_spec_b, &name_b);
 
-    // Play/draw per MTG tournament rules:
-    //   Game 1: randomised (coin flip). The winner of the flip chooses play
-    //           or draw — we always pick "play" which is the standard choice.
-    //   Game 2+: the loser of the previous game chooses (always picks play).
-    //           On a drawn game, the previous starter stays on the play.
-    use rand::Rng;
-    let mut on_play_is_a = rand::thread_rng().gen_bool(0.5);
+    // Play/draw per MTG tournament rules, delegated to the engine helpers:
+    //   Game 1: engine::random_starting_player() — fair coin flip.
+    //   Games 2+: engine::next_starting_player_after_game() — loser chooses,
+    //   drawn games keep the previous starter.
+    let mut starter = engine::random_starting_player(2);
 
     while wins_a < wins_needed && wins_b < wins_needed {
         let outcome = play_game(
@@ -641,22 +639,19 @@ fn play_match(
             registry,
             &mut p1,
             &mut p2,
-            on_play_is_a,
+            starter,
         );
 
+        // Engine's winner is a PlayerId (0 = seat_a, 1 = seat_b).
+        let prev_winner: Option<mtg_engine::ids::PlayerId> = outcome.winner.map(|w| {
+            if w == seat_a { mtg_engine::ids::PlayerId(0) } else { mtg_engine::ids::PlayerId(1) }
+        });
+        starter = engine::next_starting_player_after_game(starter, prev_winner, 2);
+
         match outcome.winner {
-            Some(w) if w == seat_a => {
-                wins_a += 1;
-                // seat_a won — seat_b chose (or loses it by rule) — b goes first next game.
-                on_play_is_a = false;
-            }
-            Some(_) => {
-                wins_b += 1;
-                on_play_is_a = true;
-            }
-            None => {
-                // Drawn game: previous starter keeps the play for the next game.
-            }
+            Some(w) if w == seat_a => wins_a += 1,
+            Some(_) => wins_b += 1,
+            None => {}
         }
 
         games.push(outcome);
@@ -679,13 +674,13 @@ fn play_game(
     registry: &CardRegistry,
     p1: &mut LlmPlayer,
     p2: &mut LlmPlayer,
-    on_play_is_a: bool,
+    starting_player: mtg_engine::ids::PlayerId,
 ) -> GameOutcome {
     let config = GameConfig {
         player_names: vec![p1.name().to_string(), p2.name().to_string()],
         decklists: vec![deck_a.clone(), deck_b.clone()],
         starting_life: 20,
-        starting_player: Some(mtg_engine::ids::PlayerId(if on_play_is_a { 0 } else { 1 })),
+        starting_player: Some(starting_player),
     };
 
     let mut state = engine::setup_game(&config, registry);
