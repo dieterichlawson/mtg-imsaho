@@ -312,39 +312,51 @@ fn main() {
         eprintln!("Building decks...");
     }
 
-    // Build all decks in parallel
+    // Build all decks in parallel. Each worker logs its own result as
+    // soon as it finishes so progress shows up in the log in real time
+    // rather than after the slowest worker blocks the batch.
+    // game_log::write_at serializes writes via a global Mutex, so
+    // concurrent writes from different workers are safe. Per-seat
+    // entries may interleave in wall-clock order; each entry carries a
+    // `[Seat N]` label so grep-by-seat still works.
     let pools: Vec<Vec<String>> = draft.players.iter().map(|p| p.pool.clone()).collect();
 
     let deck_results: Vec<DeckBuildResult> = std::thread::scope(|s| {
+        let log_ref = &log;
         let handles: Vec<_> = clients
             .iter_mut()
             .zip(pools.iter())
-            .map(|(client, pool)| s.spawn(move || build_deck_with_llm(client, pool)))
+            .enumerate()
+            .map(|(seat, (client, pool))| s.spawn(move || {
+                let result = build_deck_with_llm(client, pool);
+                let attempts: Vec<(&str, &str, Option<&str>)> = result
+                    .attempts
+                    .iter()
+                    .map(|a| (a.prompt.as_str(), a.response.as_str(), a.error.as_deref()))
+                    .collect();
+                log_deck_building!(log_ref,
+                    seat,
+                    &result.deck.maindeck,
+                    &result.deck.lands,
+                    &result.deck.sideboard,
+                    &attempts,
+                    result.retries,
+                );
+                result
+            }))
             .collect();
 
         handles.into_iter().map(|h| h.join().unwrap()).collect()
     });
 
-    let mut decklists: Vec<Decklist> = Vec::new();
-
-    for (seat, result) in deck_results.iter().enumerate() {
-        let attempts: Vec<(&str, &str, Option<&str>)> = result
-            .attempts
-            .iter()
-            .map(|a| (a.prompt.as_str(), a.response.as_str(), a.error.as_deref()))
-            .collect();
-        log_deck_building!(log,
-            seat,
-            &result.deck.maindeck,
-            &result.deck.lands,
-            &result.deck.sideboard,
-            &attempts,
-            result.retries,
-        );
-        decklists.push(Decklist {
+    // Build the decklist collection in seat order now that all workers
+    // have finished. No further logging — that already happened above.
+    let decklists: Vec<Decklist> = deck_results
+        .iter()
+        .map(|result| Decklist {
             entries: deckbuilding::to_decklist(&result.deck),
-        });
-    }
+        })
+        .collect();
 
     if !args.quiet {
         eprintln!("\nDecks built!");
