@@ -112,7 +112,7 @@ fn resume_from_log_seeds_conversation() {
         "p0 played Mountain".to_string(),
     ];
 
-    player.resume_from_log(&log);
+    player.resume_from_log(&log, mtg_engine::ids::PlayerId(0));
 
     // Should have 2 messages: user recap + assistant acknowledgment
     assert_eq!(player.conversation_len_for_test(), 2,
@@ -130,7 +130,7 @@ fn resume_from_empty_log_does_nothing() {
     let deck = vec![("Mountain".to_string(), 20)];
     player.init_conversation(&deck, &deck, &registry);
 
-    player.resume_from_log(&[]);
+    player.resume_from_log(&[], mtg_engine::ids::PlayerId(0));
 
     assert_eq!(player.conversation_len_for_test(), 0,
         "Empty log should not add any messages");
@@ -193,9 +193,127 @@ fn resume_preserves_system_prompt() {
 
     let system_before = player.system_prompt_for_test().to_string();
 
-    player.resume_from_log(&["p0 played Mountain".to_string()]);
+    player.resume_from_log(&["p0 played Mountain".to_string()], mtg_engine::ids::PlayerId(0));
 
     let system_after = player.system_prompt_for_test().to_string();
     assert_eq!(system_before, system_after,
         "Resume should not change the system prompt");
+}
+
+// ── Player-relative log rewriter tests ───────────────────────────────
+
+use mtg_engine::ids::PlayerId;
+use mtg_player::llm::LlmPlayer;
+
+fn rw(entry: &str, you: u8) -> String {
+    LlmPlayer::rewrite_log_entry_for_test(entry, PlayerId(you))
+}
+
+#[test]
+fn rewrite_past_tense_verbs_work_for_both_sides() {
+    // Past-tense verbs are identical in 2nd and 3rd person so no
+    // conjugation is needed.
+    assert_eq!(rw("p0 drew a card", 0),    "You drew a card");
+    assert_eq!(rw("p0 drew a card", 1),    "Opp drew a card");
+    assert_eq!(rw("p1 drew 7 cards", 0),   "Opp drew 7 cards");
+    assert_eq!(rw("p1 drew 7 cards", 1),   "You drew 7 cards");
+    assert_eq!(rw("p0 played Mountain", 0), "You played Mountain");
+    assert_eq!(rw("p0 played Mountain", 1), "Opp played Mountain");
+    assert_eq!(
+        rw("p1 cast Lightning Bolt (#5) targeting Goblin Piker (#12)", 0),
+        "Opp cast Lightning Bolt (#5) targeting Goblin Piker (#12)"
+    );
+    assert_eq!(
+        rw("p0 declared attackers: Grizzly Bears (#27), Kalonian Tusker (#30)", 0),
+        "You declared attackers: Grizzly Bears (#27), Kalonian Tusker (#30)"
+    );
+}
+
+#[test]
+fn rewrite_present_tense_verbs_conjugate_for_you() {
+    // Present-tense verbs need to be conjugated when the subject is "you".
+    assert_eq!(rw("p0 keeps (0 mulligans)", 0), "You keep (0 mulligans)");
+    assert_eq!(rw("p0 keeps (0 mulligans)", 1), "Opp keeps (0 mulligans)");
+    assert_eq!(rw("p0 mulligans to 6", 0), "You mulligan to 6");
+    assert_eq!(rw("p0 mulligans to 6", 1), "Opp mulligans to 6");
+    assert_eq!(rw("p1 concedes", 0), "Opp concedes");
+    assert_eq!(rw("p1 concedes", 1), "You concede");
+    assert_eq!(rw("p0 wins the game with Lightning Bolt!", 0), "You win the game with Lightning Bolt!");
+    assert_eq!(rw("p0 wins the game with Lightning Bolt!", 1), "Opp wins the game with Lightning Bolt!");
+}
+
+#[test]
+fn rewrite_turn_banner() {
+    assert_eq!(rw("── Turn 3 (p0) ──", 0), "── Turn 3 (your turn) ──");
+    assert_eq!(rw("── Turn 3 (p0) ──", 1), "── Turn 3 (opp's turn) ──");
+    assert_eq!(rw("── Turn 17 (p1) ──", 0), "── Turn 17 (opp's turn) ──");
+    assert_eq!(rw("── Turn 17 (p1) ──", 1), "── Turn 17 (your turn) ──");
+}
+
+#[test]
+fn rewrite_game_started_wrapper() {
+    assert_eq!(
+        rw("Game started (p0 on the play)", 0),
+        "Game started (you are on the play)"
+    );
+    assert_eq!(
+        rw("Game started (p0 on the play)", 1),
+        "Game started (opp is on the play)"
+    );
+    assert_eq!(
+        rw("Game started (p1 on the play)", 0),
+        "Game started (opp is on the play)"
+    );
+}
+
+#[test]
+fn rewrite_mana_tap_log() {
+    assert_eq!(
+        rw("p0 tapped Mountain (#31) for mana (pool: Red:1)", 0),
+        "You tapped Mountain (#31) for mana (pool: Red:1)"
+    );
+    assert_eq!(
+        rw("p0 tapped Mountain (#31) for mana (pool: Red:1)", 1),
+        "Opp tapped Mountain (#31) for mana (pool: Red:1)"
+    );
+}
+
+#[test]
+fn rewrite_leaves_unrelated_content_alone() {
+    // No p{N} tokens at all.
+    assert_eq!(
+        rw("Traitorous Blood (#10) resolved", 0),
+        "Traitorous Blood (#10) resolved"
+    );
+    assert_eq!(rw("Geistflame (#5) resolved", 0), "Geistflame (#5) resolved");
+    assert_eq!(
+        rw("Mulligan phase", 0),
+        "Mulligan phase"
+    );
+}
+
+#[test]
+fn rewrite_combat_damage_log() {
+    assert_eq!(
+        rw("p1 took 2 combat damage (18) from Grizzly Bears (#27)", 0),
+        "Opp took 2 combat damage (18) from Grizzly Bears (#27)"
+    );
+    assert_eq!(
+        rw("p1 took 2 combat damage (18) from Grizzly Bears (#27)", 1),
+        "You took 2 combat damage (18) from Grizzly Bears (#27)"
+    );
+}
+
+#[test]
+fn rewrite_does_not_touch_card_ids_or_numbers() {
+    // Object IDs are `#N` not `pN`, so they must not be rewritten.
+    assert_eq!(
+        rw("p0 cast Spell (#42) targeting creature (#13)", 0),
+        "You cast Spell (#42) targeting creature (#13)"
+    );
+    // Standalone numbers like "2 damage" mustn't pull in a phantom "p".
+    assert_eq!(
+        rw("p1 took 2 combat damage (18)", 0),
+        "Opp took 2 combat damage (18)"
+    );
 }

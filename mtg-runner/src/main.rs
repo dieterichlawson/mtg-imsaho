@@ -148,10 +148,10 @@ fn main() {
             .map(|e| e.message.clone())
             .collect();
         if let PlayerKind::Llm(ref mut llm) = p1 {
-            llm.resume_from_log(&full_log);
+            llm.resume_from_log(&full_log, mtg_engine::ids::PlayerId(0));
         }
         if let PlayerKind::Llm(ref mut llm) = p2 {
-            llm.resume_from_log(&full_log);
+            llm.resume_from_log(&full_log, mtg_engine::ids::PlayerId(1));
         }
     }
 

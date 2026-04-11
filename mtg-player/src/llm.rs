@@ -944,15 +944,18 @@ impl LlmPlayer {
 
     /// Resume conversation from an existing game state.
     /// Sends the full game log as a catch-up message so the AI has context
-    /// about what happened before the reload.
-    pub fn resume_from_log(&mut self, game_log: &[String]) {
+    /// about what happened before the reload. `you` is the viewing
+    /// player's id, used to rewrite `p0`/`p1` references into
+    /// "you"/"opp" form before the recap is sent to the model.
+    pub fn resume_from_log(&mut self, game_log: &[String], you: mtg_engine::ids::PlayerId) {
         if game_log.is_empty() {
             return;
         }
-        // Build a catch-up message with the full game history.
+        // Build a catch-up message with the full game history, rewriting
+        // engine-global player references to be player-relative.
         let mut recap = String::from("Game resumed. Here is the complete game log so far:\n\n");
         for entry in game_log {
-            recap.push_str(entry);
+            recap.push_str(&Self::rewrite_log_entry(entry, you));
             recap.push('\n');
         }
         recap.push_str("\nThe game continues from this point. You will be prompted for your next action.");
@@ -1009,6 +1012,11 @@ impl LlmPlayer {
     /// Expose short_effect_summary for testing.
     pub fn short_effect_summary_for_test(oracle_text: &str) -> String {
         Self::short_effect_summary(oracle_text)
+    }
+
+    /// Expose the player-relative log rewriter for testing.
+    pub fn rewrite_log_entry_for_test(entry: &str, you: mtg_engine::ids::PlayerId) -> String {
+        Self::rewrite_log_entry(entry, you)
     }
 
     /// Expose system prompt for testing.
@@ -1080,6 +1088,121 @@ impl LlmPlayer {
         actions.iter().all(|a| matches!(a,
             Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
         ))
+    }
+
+    /// Rewrite a single engine log entry so it reads as "you"/"opp"
+    /// relative to the viewing player, instead of the engine-global
+    /// `p0`/`p1` labels. Handles the turn banner, the game-started
+    /// wrapper, possessives (`p0's` → `your` / `opp's`), and the small
+    /// set of present-tense verbs (`keeps`, `mulligans`, `concedes`,
+    /// `passes`, `wins`) that need conjugation when the subject becomes
+    /// "you".
+    fn rewrite_log_entry(entry: &str, you: mtg_engine::ids::PlayerId) -> String {
+        if let Some(rewritten) = Self::rewrite_turn_banner(entry, you) {
+            return rewritten;
+        }
+        if let Some(rewritten) = Self::rewrite_game_started(entry, you) {
+            return rewritten;
+        }
+        Self::generic_player_rewrite(entry, you)
+    }
+
+    /// Rewrite `── Turn N (pX) ──` → `── Turn N (your turn) ──` /
+    /// `── Turn N (opp's turn) ──`. Returns None if the entry doesn't
+    /// match the banner format.
+    fn rewrite_turn_banner(entry: &str, you: mtg_engine::ids::PlayerId) -> Option<String> {
+        let stripped = entry.strip_prefix("── Turn ")?.strip_suffix(" ──")?;
+        let (num_str, rest) = stripped.split_once(' ')?;
+        let rest = rest.strip_prefix('(')?.strip_suffix(')')?;
+        let id: u8 = rest.strip_prefix('p')?.parse().ok()?;
+        let whose = if id == you.0 { "your turn" } else { "opp's turn" };
+        Some(format!("── Turn {} ({}) ──", num_str, whose))
+    }
+
+    /// Rewrite `Game started (pX on the play)` →
+    /// `Game started (you are on the play)` /
+    /// `Game started (opp is on the play)`.
+    fn rewrite_game_started(entry: &str, you: mtg_engine::ids::PlayerId) -> Option<String> {
+        let stripped = entry
+            .strip_prefix("Game started (p")?
+            .strip_suffix(" on the play)")?;
+        let id: u8 = stripped.parse().ok()?;
+        let phrase = if id == you.0 { "you are on the play" } else { "opp is on the play" };
+        Some(format!("Game started ({})", phrase))
+    }
+
+    /// Scan an entry for `p\d+` tokens (word-boundary aware) and rewrite
+    /// each to the appropriate "You"/"Opp" form, handling possessives
+    /// and verb conjugation when the subject becomes the viewing player.
+    fn generic_player_rewrite(entry: &str, you: mtg_engine::ids::PlayerId) -> String {
+        let mut out = String::with_capacity(entry.len() + 16);
+        let mut remaining = entry;
+        while !remaining.is_empty() {
+            let prev_is_word = out.as_bytes().last()
+                .map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
+            if !prev_is_word && remaining.starts_with('p') {
+                if let Some((rewritten, consumed)) = Self::try_rewrite_player_token(remaining, you) {
+                    out.push_str(&rewritten);
+                    remaining = &remaining[consumed..];
+                    continue;
+                }
+            }
+            let c = remaining.chars().next().unwrap();
+            out.push(c);
+            remaining = &remaining[c.len_utf8()..];
+        }
+        out
+    }
+
+    /// Try to match `p<digits>` at the start of `s` and return the
+    /// rewritten text plus the number of input bytes to skip. Handles
+    /// possessive (`p0's`) and five present-tense verbs that need
+    /// conjugation when the subject becomes "You".
+    fn try_rewrite_player_token(s: &str, you: mtg_engine::ids::PlayerId) -> Option<(String, usize)> {
+        let bytes = s.as_bytes();
+        if bytes.len() < 2 || bytes[0] != b'p' || !bytes[1].is_ascii_digit() {
+            return None;
+        }
+        let mut end = 1;
+        while end < bytes.len() && bytes[end].is_ascii_digit() {
+            end += 1;
+        }
+        let id: u8 = s[1..end].parse().ok()?;
+        let is_you = id == you.0;
+        let rest = &s[end..];
+
+        // Possessive: `p{N}'s` → `your` / `opp's`
+        if rest.starts_with("'s") {
+            let tag = if is_you { "your" } else { "opp's" };
+            return Some((tag.to_string(), end + 2));
+        }
+
+        // Present-tense verb conjugation when subject becomes "You".
+        if is_you {
+            const VERBS: &[(&str, &str)] = &[
+                (" keeps", " keep"),
+                (" mulligans", " mulligan"),
+                (" concedes", " concede"),
+                (" passes", " pass"),
+                (" wins", " win"),
+            ];
+            for (from, to) in VERBS {
+                if rest.starts_with(from) {
+                    let after_verb = rest.as_bytes().get(from.len()).copied();
+                    let word_end = match after_verb {
+                        None => true,
+                        Some(c) => !c.is_ascii_alphabetic(),
+                    };
+                    if word_end {
+                        return Some((format!("You{}", to), end + from.len()));
+                    }
+                }
+            }
+        }
+
+        // Default substitution.
+        let tag = if is_you { "You" } else { "Opp" };
+        Some((tag.to_string(), end))
     }
 
     /// Turn/step header line for the top of every prompt. When a pre-game
@@ -1685,9 +1808,11 @@ impl LlmPlayer {
     ) -> String {
         // Use display_log (Info level and above) to skip debug noise like
         // "passes priority" and "Step: Draw" entries that add no information.
+        // Rewrite each new entry so player references read "you"/"opp"
+        // instead of the engine-global `p0`/`p1` labels.
         let new_logs: Vec<String> = view.display_log.iter()
             .skip(self.last_log_index)
-            .cloned()
+            .map(|e| Self::rewrite_log_entry(e, view.you))
             .collect();
         self.last_log_index = view.display_log.len();
 
