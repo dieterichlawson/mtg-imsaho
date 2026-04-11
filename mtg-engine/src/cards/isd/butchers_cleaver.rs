@@ -8,31 +8,14 @@ use crate::types::*;
 /// Equipped creature gets +3/+0.
 /// As long as equipped creature is a Human, it has lifelink.
 /// Equip {3}.
+///
+/// Implementation notes:
+/// The Human-conditional lifelink is a *continuous* conditional effect, not a
+/// snapshot taken at equip time. We use ContinuousEffect::ConditionalKeyword
+/// (the same pattern Bonds of Faith uses for its conditional bonuses) so that
+/// if the equipped creature transforms (e.g. a Human Werewolf flips into its
+/// non-Human back face via Moonmist), lifelink drops in real time.
 pub struct ButchersCleaver;
-
-impl ButchersCleaver {
-    fn update_effects(&self, state: &mut GameState, object_id: ObjectId, creature_id: ObjectId, registry: &CardRegistry) {
-        let is_human = state.get_object(creature_id)
-            .and_then(|o| registry.card_data(o.card_id))
-            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-            .unwrap_or(false);
-
-        let effects = if is_human {
-            vec![
-                ContinuousEffect::ModifyPT { power: 3, toughness: 0, scope: EffectScope::Attached },
-                ContinuousEffect::GrantKeyword { keyword: Keyword::Lifelink, scope: EffectScope::Attached },
-            ]
-        } else {
-            vec![
-                ContinuousEffect::ModifyPT { power: 3, toughness: 0, scope: EffectScope::Attached },
-            ]
-        };
-
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.instance_continuous_effects = Some(effects);
-        }
-    }
-}
 
 impl CardBehavior for ButchersCleaver {
     fn card_data(&self) -> CardData {
@@ -48,7 +31,16 @@ impl CardBehavior for ButchersCleaver {
             keywords: vec![],
             flashback_cost: None,
             continuous_effects: vec![
+                // Unconditional +3/+0 to the equipped creature.
                 ContinuousEffect::ModifyPT { power: 3, toughness: 0, scope: EffectScope::Attached },
+                // Lifelink only while the equipped creature is a Human. Re-evaluated
+                // continuously so transform triggers and type-changing effects update
+                // the bonus correctly.
+                ContinuousEffect::ConditionalKeyword {
+                    keyword: Keyword::Lifelink,
+                    condition: EffectCondition::AttachedHasSubtype("Human".into()),
+                    scope: EffectScope::Attached,
+                },
             ],
             additional_cost: None,
             triggered_abilities: vec![],
@@ -81,13 +73,11 @@ impl CardBehavior for ButchersCleaver {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(creature_id)) = targets.first() {
-            let creature_id = *creature_id;
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.attached_to = Some(creature_id);
+                obj.attached_to = Some(*creature_id);
             }
-            self.update_effects(state, object_id, creature_id, registry);
         }
     }
 
