@@ -4574,3 +4574,103 @@ fully usable by the LLM player.
 counter types with stable label ordering, invert the regression
 test, and add new tests asserting Slime and Study render with
 their labels.
+
+---
+
+### 🟡 Harness Bug 37-002: target-selection prompts use `obj_name` (which doesn't disambiguate identical creatures), so the model picking among two Champions of the Parish or two Spirit tokens can't tell them apart
+**Severity:** medium (harness/display) — Bug H1's combat-prompt fix doesn't extend to spell/ability target-selection prompts
+**File:** `mtg-player/src/llm.rs:1803-1823` (`prompt_target_selection`), `mtg-player/src/llm.rs:1696-1748` (`choose_cast_targets` `UpToTargets` branch), `mtg-player/src/llm.rs:1756-1800` (`choose_ability_targets`)
+**Audit evidence:** not directly fired in the sampled games — the model always had distinguishable targets in the spots that hit these code paths. Latent but deterministic when the situation occurs.
+
+The combat-prompt path was fixed by Bug H1: `format_combat_creature_list`
+(`llm.rs:2411-2443`) appends `#1`, `#2`, … when two attacker/blocker
+labels collide, so the model can pick "Werewolf 2/2 #1" vs "Werewolf
+2/2 #2". The other prompt paths never got the same fix and still
+build their target lists from `obj_name`, which returns:
+
+```rust
+fn obj_name(view: &GameView, id: ObjectId) -> String {
+    if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
+        let is_land = p.card_types.iter().all(|t| matches!(t, CardType::Land));
+        if !is_land {
+            let owner = if p.controller == view.you { "your" } else { "opponent's" };
+            return format!("{} ({})", p.name, owner);
+        }
+        return p.name.clone();
+    }
+    // ... fallback to other zones, but only the name field, no disambiguation
+}
+```
+
+For two creatures with the same name and same controller (e.g., two
+Champions of the Parish you control, two Spirit tokens from
+Mausoleum Guard, two Werewolves from Mayor of Avabruck), `obj_name`
+returns the same string. The downstream prompt then renders e.g.
+
+```
+Sever the Bloodline: select a target:
+0: Champion of the Parish (your), 1: Champion of the Parish (your)
+```
+
+The model has no way to choose deliberately between index 0 and
+index 1 — and worse, the engine *will* dispatch to whichever index
+the model picks, so the wrong creature can be exiled, returned to
+hand, or buffed.
+
+Affected call sites (all of them in `llm.rs`):
+
+1. **`prompt_target_selection` (`llm.rs:1803-1823`)** — used by
+   `choose_cast_targets`'s `SingleTarget` (when more than one
+   option) and `TwoTargets` paths. The whole list is built from
+   `Self::obj_name(view, *id)` at line 1808.
+
+2. **`choose_cast_targets` `UpToTargets` (`llm.rs:1696-1707`)** —
+   builds the prompt's option list with `obj_name`. Used by
+   Travel Preparations, Feeling of Dread, Memory's Journey,
+   Trepanation Blade-style "up to N" cases.
+
+3. **`choose_ability_targets` (`llm.rs:1766-1781`)** — when
+   `option_combos.len() > 1`, formats each combo's targets with
+   `Self::obj_name(view, *id)` at line 1771. This is the path
+   the LLM hits for activated abilities like Olivia Voldaren's
+   bite or Skirsdag Cultist's damage.
+
+In every one of these, two same-named permanents collapse to the
+same label.
+
+Bug H1's fix is the right model. The cleanest extension is to
+extract the disambiguation logic into a helper that takes a slice
+of `ObjectId`s and returns labels with `#1`/`#2` suffixes for
+collisions, then have all four call sites (combat + the three
+above) use it. Something like:
+
+```rust
+fn format_object_labels(view: &GameView, ids: &[ObjectId]) -> Vec<String> {
+    let base: Vec<String> = ids.iter().map(|&id| Self::obj_name(view, id)).collect();
+    // (same collision logic as format_combat_creature_list lines 2422-2442)
+}
+```
+
+Then `prompt_target_selection`, `choose_cast_targets::UpToTargets`,
+`choose_ability_targets`, and `format_combat_creature_list` all
+share the same disambiguation pass.
+
+Note that `obj_name` already adds `(your)` / `(opponent's)`, so
+collisions only happen when both controller and name match. For
+the Werewolf-mirror case (Mayor of Avabruck), opponent's Werewolf
+vs your Werewolf already disambiguate via the owner suffix. The
+bug specifically bites when two same-named permanents share a
+controller.
+
+**Proposed fix:** extract a `format_object_labels` helper modeled
+on `format_combat_creature_list` and route all four target-list
+prompts through it. Cross-reference the existing `H1` regression
+tests at `llm.rs:2821+` ("disambiguate_…") and add the same
+shape of tests for the new helper.
+
+**Cross-references:** Bug H1 (already fixed for combat prompts —
+this is the same bug class for non-combat prompts), Bug H7
+(target-choice and trigger-ordering prompts use the same opaque
+format — likely overlapping fix territory).
+
+
