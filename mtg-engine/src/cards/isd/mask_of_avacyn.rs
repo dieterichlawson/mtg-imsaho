@@ -31,7 +31,8 @@ impl CardBehavior for MaskOfAvacyn {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        // Gate on power.is_none() — see Cobbled Wings for Bug AJ explanation.
+        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield && o.power.is_none()).unwrap_or(false) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "Equip {3}".into(),

@@ -478,3 +478,73 @@ fn equip_can_reattach_via_autotap() {
     assert_eq!(state.get_object(dagger).unwrap().attached_to, Some(bears_b));
     assert_ne!(state.get_object(dagger).unwrap().attached_to, Some(bears_a));
 }
+
+// ════════════════════════════════════════════════════════════════════
+// Bug AJ regression: equipment equip-ability must appear exactly once
+// in legal_actions, even when the equipment is already attached to a
+// creature. The engine's attached-iteration loop in legal_actions
+// (engine.rs:551-559) calls each attached object's `activated_abilities`
+// with the *attached creature's* object_id; equipment cards must gate
+// on `power.is_none()` or they will return their equip ability for the
+// creature query too, producing a duplicate Action::ActivateAbility
+// with `object_id = creature_id`. The duplicate then misroutes
+// on_activate_ability to mutate the creature's `attached_to` field.
+// ════════════════════════════════════════════════════════════════════
+
+fn assert_equip_ability_unique_after_attach(reg: &CardRegistry, equip_name: &str, n_lands: usize) {
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let bears_a = named_creature(&mut state, reg, "Grizzly Bears", P0);
+    let bears_b = named_creature(&mut state, reg, "Grizzly Bears", P0);
+    let eq = equipment(&mut state, reg, equip_name, P0);
+    let _forests = untapped_lands(&mut state, reg, "Forest", P0, n_lands);
+
+    // Attach to bears_a first.
+    let action_a = find_equip_action(&state, reg, eq, bears_a);
+    let state = engine::submit_action(&state, &action_a, reg);
+    assert_eq!(state.get_object(eq).unwrap().attached_to, Some(bears_a));
+
+    // Now count actions targeting bears_b. Without the Bug AJ fix there are 2:
+    // one with object_id = eq, one with object_id = bears_a.
+    let legal = engine::legal_actions(&state, reg);
+    let to_b: Vec<&Action> = legal.actions.iter().filter(|a| matches!(a,
+        Action::ActivateAbility { targets, .. }
+            if targets == &[Target::Object(bears_b)])).collect();
+    assert_eq!(to_b.len(), 1,
+        "{}: equip ability should appear exactly once per target, got {}: {:?}",
+        equip_name, to_b.len(), to_b);
+    if let Action::ActivateAbility { object_id, .. } = to_b[0] {
+        assert_eq!(*object_id, eq,
+            "{}: equip action's object_id should be the equipment, not the attached creature",
+            equip_name);
+    }
+}
+
+#[test]
+fn cobbled_wings_equip_unique_after_attach() {
+    assert_equip_ability_unique_after_attach(&registry(), "Cobbled Wings", 4);
+}
+
+#[test]
+fn silver_inlaid_dagger_equip_unique_after_attach() {
+    assert_equip_ability_unique_after_attach(&registry(), "Silver-Inlaid Dagger", 5);
+}
+
+#[test]
+fn mask_of_avacyn_equip_unique_after_attach() {
+    assert_equip_ability_unique_after_attach(&registry(), "Mask of Avacyn", 6);
+}
+
+#[test]
+fn butchers_cleaver_equip_unique_after_attach() {
+    assert_equip_ability_unique_after_attach(&registry(), "Butcher's Cleaver", 6);
+}
+
+#[test]
+fn sharpened_pitchfork_equip_unique_after_attach() {
+    assert_equip_ability_unique_after_attach(&registry(), "Sharpened Pitchfork", 4);
+}
+
+#[test]
+fn wooden_stake_equip_unique_after_attach() {
+    assert_equip_ability_unique_after_attach(&registry(), "Wooden Stake", 4);
+}
