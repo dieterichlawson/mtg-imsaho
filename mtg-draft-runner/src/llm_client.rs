@@ -224,9 +224,13 @@ fn pick_schema_for(num_cards: usize) -> serde_json::Value {
 }
 
 /// Build a deck-building schema with `maindeck` item names constrained
-/// to the cards actually in the pool via an enum. The `lands` object
-/// has fixed keys for the five basic lands. Under constrained decoding
-/// the model cannot invent card names it didn't draft.
+/// to the cards actually in the pool via an enum, and basic land
+/// counts constrained to 0..=25. The `lands` object has fixed keys
+/// for the five basic lands. Under constrained decoding the model
+/// cannot invent card names it didn't draft and cannot specify
+/// absurd land counts (a real concern under high thinking — see
+/// https://www.youtube.com/watch?v=dQw4w9WgXcQ for a 76 million
+/// Swamp incident, kidding, but really).
 fn deck_schema_for(pool: &[String]) -> serde_json::Value {
     let mut unique: Vec<String> = pool
         .iter()
@@ -238,6 +242,11 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
         .into_iter()
         .map(serde_json::Value::String)
         .collect();
+    let basic_land_count = serde_json::json!({
+        "type": "integer",
+        "minimum": 0,
+        "maximum": 25
+    });
     serde_json::json!({
         "type": "object",
         "properties": {
@@ -248,18 +257,20 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
             "maindeck": {
                 "type": "array",
                 "items": {"type": "string", "enum": valid_cards},
-                "description": "Non-land card names for the maindeck (repeat a name for multiples)"
+                "minItems": 20,
+                "maxItems": 40,
+                "description": "Non-land card names for the maindeck (repeat a name for multiples). Typically 22-24 cards for a 40-card limited deck."
             },
             "lands": {
                 "type": "object",
                 "properties": {
-                    "Plains":   {"type": "integer"},
-                    "Island":   {"type": "integer"},
-                    "Swamp":    {"type": "integer"},
-                    "Mountain": {"type": "integer"},
-                    "Forest":   {"type": "integer"}
+                    "Plains":   basic_land_count.clone(),
+                    "Island":   basic_land_count.clone(),
+                    "Swamp":    basic_land_count.clone(),
+                    "Mountain": basic_land_count.clone(),
+                    "Forest":   basic_land_count.clone()
                 },
-                "description": "Basic land counts"
+                "description": "Basic land counts (each 0-25, typically 16-18 total)"
             }
         },
         "required": ["thoughts", "maindeck", "lands"]

@@ -223,13 +223,39 @@ pub fn validate_deck(
         }
     }
 
-    // Check total deck size
+    // Check no single basic land count is absurd. Limited decks rarely
+    // have more than ~17 basic lands of a single type and never more
+    // than ~25. The model has been observed to hallucinate huge
+    // integers (e.g. 76,543,210 Swamps) under high thinking, so reject
+    // anything that's clearly not a real Magic deck.
+    const MAX_PER_BASIC: u32 = 25;
+    for (name, count) in lands {
+        if *count > MAX_PER_BASIC {
+            return Err(format!(
+                "{} count is {} — basic lands must be 0..{}. Pick a sensible number for a 40-card limited deck (most decks have 16-18 total lands).",
+                name, count, MAX_PER_BASIC
+            ));
+        }
+    }
+
+    // Check total deck size — must be at least 40, no more than 60.
+    // The 60-card cap rejects absurd outputs (e.g. 66 Swamps in a
+    // 27-card maindeck) without being so tight that it bites legitimate
+    // splash builds.
+    const MIN_TOTAL: usize = 40;
+    const MAX_TOTAL: usize = 60;
     let land_count: u32 = lands.values().sum();
     let total = maindeck.len() + land_count as usize;
-    if total < 40 {
+    if total < MIN_TOTAL {
         return Err(format!(
-            "Deck has {} cards (need at least 40). Add more cards or lands.",
-            total
+            "Deck has {} cards (need at least {}). Add more cards or basic lands.",
+            total, MIN_TOTAL
+        ));
+    }
+    if total > MAX_TOTAL {
+        return Err(format!(
+            "Deck has {} cards (must be {}..{}). Trim spells or basic lands — a typical limited deck is exactly 40 cards.",
+            total, MIN_TOTAL, MAX_TOTAL
         ));
     }
 

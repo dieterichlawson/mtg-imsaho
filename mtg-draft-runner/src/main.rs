@@ -607,9 +607,11 @@ fn build_deck_with_llm(
 
 fn build_deck_prompt(pool: &[String], thoughts_in_json: bool) -> String {
     let mut prompt = String::from(
-        "Draft complete! Build a 40-card deck from your pool.\n\n\
-         Choose your best ~22-24 non-land cards and add basic lands to reach 40+ cards total.\n\
-         You may use any number of basic lands (Plains, Island, Swamp, Mountain, Forest).\n\n\
+        "Draft complete! Build a 40-card limited deck from your pool.\n\n\
+         A standard limited deck is EXACTLY 40 cards: ~22-24 non-land spells \
+         + ~16-18 basic lands. The 17-land split for a 2-color deck is typically \
+         9/8 or 8/9 of the two colors. Anything more than 40 total is rarely \
+         correct — the validator caps at 40 minimum, 60 maximum.\n\n\
          Your pool:\n",
     );
     for (i, card) in pool.iter().enumerate() {
@@ -620,7 +622,13 @@ fn build_deck_prompt(pool: &[String], thoughts_in_json: bool) -> String {
     prompt.push_str(&format!(
         "\nRespond with JSON formatted as:\n\
          {{{}\"maindeck\": [\"Card Name\", \"Card Name\", ...], \"lands\": {{\"Plains\": 0, \"Island\": 9, \"Swamp\": 8, \"Mountain\": 0, \"Forest\": 0}}}}\n\
-         where \"maindeck\" is the list of non-land card names (repeated for multiples) and \"lands\" is the count of each basic land to add. The deck must total at least 40 cards.",
+         \n\
+         CONSTRAINTS:\n\
+         - maindeck = list of non-land card names from your pool (repeat a name for multiples). Typically 22-24 entries.\n\
+         - lands = count of each basic land to ADD (only the five basics). Each count must be 0-25; total lands typically 16-18.\n\
+         - Total deck size (len(maindeck) + sum(lands.values())) must be 40-60. Aim for exactly 40.\n\
+         - Example: 23 spells + 17 lands = 40 cards. ✓\n\
+         - Wrong: 32 cards (too small), 70 cards (too big), 66 Swamps (way too many).",
         thoughts_prefix,
     ));
     prompt
