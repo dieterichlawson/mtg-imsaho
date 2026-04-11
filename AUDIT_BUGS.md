@@ -890,6 +890,63 @@ Wired into both the attacker and blocker prompt builders. 5 unit tests in
 
 ---
 
+### 🟡 Harness Bug H9: deck-builder validator doesn't help the model converge
+**Severity:** medium — wastes API calls, occasionally gets stuck (Seat 0 had 9 attempts)
+**File:** `mtg-draft/src/deckbuilding.rs:60-73`
+**Audit evidence:** 21 deck-builder validation failures in v5 audit log lines
+8380-11200, including:
+- Seat 0: 9 attempts to build a 40-card deck, kept submitting 32-33 cards
+- Seat 6: 5 attempts, all submitting 31 cards
+- Seat 3: 1 valid deck-too-small + 2 "missing or empty lands object" errors
+- Seat 5: 2 "missing or empty lands object" errors
+- Seat 4, Seat 7: 1 attempt each at deck-too-small
+
+Two failure modes:
+
+**(a) "missing or empty lands object" with all-zero counts:**
+The parser at line 60-66 only adds entries with `count > 0`:
+```rust
+for (name, count) in lmap {
+    if let Some(n) = count.as_u64() {
+        if n > 0 {
+            lands.insert(name.clone(), n as u32);
+        }
+    }
+}
+```
+So `"lands": {"Plains": 0, "Swamp": 0}` parses to an empty `lands`
+HashMap and triggers the "missing or empty" error at line 71. The error
+message is misleading — the lands object IS present, just all values are
+0. The model interprets the message as "you forgot the lands key" and
+re-submits the same shape.
+
+**(b) deck too small + slow convergence:**
+Seat 0 went from 32→33→32→32→33→32→32→32→32 cards across 9 attempts. The
+model is reducing Plains count by 1 and adding 1 maindeck card each
+attempt — net +1 card per try. The error message just says the count
+("Deck has 32 cards (need at least 40). Add more cards or lands.") but
+doesn't show what the model gave it last time, doesn't suggest a specific
+count to add, and doesn't auto-complete with lands when the model can't
+converge. The example in the prompt template
+(`{"Plains": 0, "Island": 9, "Swamp": 8, "Mountain": 0, "Forest": 0}`)
+also confuses some seats — Seat 0 is W/R Boros but the example only
+mentions Island/Swamp non-zero, so the model omits Mountain entirely
+from its response and only adjusts Plains.
+
+**Proposed fix:**
+1. Better error message for the all-zero case: "Your `lands` object has
+   no non-zero values. Specify the count of each basic land you want
+   (e.g. `\"Mountain\": 9`)."
+2. Echo the deck composition back to the model in the retry prompt:
+   "Your previous attempt: 23 maindeck cards + 9 lands = 32 cards
+   total. You need 8 more cards. Add basic lands or include more cards
+   from your pool."
+3. After N failed attempts, auto-complete with the most-needed basic
+   lands (compute from cost symbols of the maindeck) so the game can
+   start instead of looping until the LLM gives up.
+
+---
+
 ### 🟡 Harness Bug H2: mid-resolution choice prompts have no clear marker
 **File:** `mtg-player/src/llm.rs` (prompt header generation)
 
