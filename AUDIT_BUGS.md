@@ -830,6 +830,67 @@ Stake, Elder Cathar.
 
 ---
 
+### 🟡 Engine Bug AU: Moonmist Human filter breaks for creatures Olivia bit
+**Severity:** low — requires Olivia + Moonmist interaction (Olivia not drafted in audit)
+**File:** `mtg-engine/src/cards/isd/moonmist.rs:43-56` and `mtg-engine/src/cards/isd/olivia_voldaren.rs:107-110`
+
+Moonmist's Human filter:
+```rust
+let has_human_subtype = if !o.subtypes.is_empty() {
+    o.subtypes.iter().any(|s| s == "Human")
+} else if o.is_transformed {
+    // back face data
+} else {
+    // front face data via registry
+};
+```
+The `if !o.subtypes.is_empty()` branch checks ONLY instance subtypes
+when they're populated, completely ignoring the registry. That's
+correct for transformed DFCs (which fully replace `obj.subtypes` via
+`apply_transform`) but WRONG for partial subtype additions.
+
+Olivia Voldaren's "deal 1 damage, becomes a Vampire" ability:
+```rust
+if !obj.subtypes.contains(&"Vampire".to_string()) {
+    obj.subtypes.push("Vampire".to_string());
+}
+```
+This pushes "Vampire" onto an empty `obj.subtypes` vector. Avacyn's
+Pilgrim (Human Monk per registry) bitten by Olivia ends up with
+`obj.subtypes = ["Vampire"]` — the original Human and Monk subtypes
+are NOT in the instance vector (they're in the registry).
+
+Now Moonmist runs, sees `obj.subtypes = ["Vampire"]` (non-empty), takes
+the first branch, asks "is Human in [Vampire]?", returns false. The
+Pilgrim does NOT get transformed by Moonmist even though it's still
+demonstrably a Human (the "becomes a Vampire **in addition to its
+other types**" oracle text means Human is preserved).
+
+This same shape of bug applies to ANY card that grants subtypes via
+`obj.subtypes.push` without first copying the registry's subtypes
+into the instance vector. Olivia is the only ISD source of this
+pattern.
+
+**Did NOT fire** in audit — Olivia Voldaren wasn't drafted.
+
+**Proposed fix (two options):**
+1. In Moonmist (and any other filter that has the
+   "if !o.subtypes.is_empty()" pattern): always check BOTH instance
+   subtypes AND registry subtypes, taking the union. The
+   "is_transformed" case should still use back_face_data instead of
+   front-face registry, but the union logic still applies.
+2. In Olivia (and any other "creature becomes a <subtype>" effect):
+   when first pushing the granted subtype, ALSO copy the registry
+   subtypes into `obj.subtypes` so the instance vector is the
+   complete authoritative list. This is the "instance subtypes are
+   authoritative when non-empty" contract that Moonmist's filter is
+   already assuming.
+
+Option 2 is cleaner — it makes the contract uniform across all
+subtype-checking code.
+
+---
+
 ### 🟡 Engine Bug AP: Global "creatures get +N/+N until end of turn" effects snapshot at resolution
 **Severity:** medium — affects every global anthem/debuff in ISD
 **Files:**
