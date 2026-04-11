@@ -3854,3 +3854,127 @@ any other supertype-derived flags that should be propagated when the
 token is a copy (none in ISD beyond legendary, but it's the same
 class of bug).
 
+---
+
+### 🟡 Engine Bug 17-001: `ExileCreaturesFromGraveyard` cost handler reads base `o.power` instead of `effective_power`, so Corpse Lunge deals 0 damage when fed a CDA creature
+**Severity:** medium — latent in the audit log, but affects any deck that pairs Corpse Lunge with Boneyard Wurm / Splinterfright / Sturmgeist / Geist-Honored Monk
+**File:** `mtg-engine/src/engine.rs:2119-2152` (the
+`AdditionalCost::ExileCreaturesFromGraveyard` handler inside
+`submit_action`'s `CastSpell` branch)
+
+The additional-cost handler that processes spells with
+`AdditionalCost::ExileCreaturesFromGraveyard(n)` — Corpse Lunge,
+Stitched Drake, Makeshift Mauler, Skaab Goliath, Skaab Ruinator —
+reads each candidate's raw base `power` field:
+
+```rust
+let mut exile_candidates: Vec<(ObjectId, i32)> = new_state.objects.values()
+    .filter(|o| {
+        o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
+            && (o.power.is_some() || registry.card_data(o.card_id)
+                .map(|d| d.card_types.contains(&CardType::Creature))
+                .unwrap_or(false))
+    })
+    .map(|o| (o.id, o.power.unwrap_or(0)))   // <-- BASE power, not effective
+    .collect();
+exile_candidates.sort_by(|a, b| b.1.cmp(&a.1)); // highest base power first
+let exile_candidates: Vec<_> = exile_candidates.into_iter().take(n).collect();
+
+if let Some((_, power)) = exile_candidates.first() {
+    if let Some(obj) = new_state.get_object_mut(*object_id) {
+        obj.card_state.insert("exiled_power".into(), ObjectId(*power as u64));
+    }
+}
+```
+
+For creatures with characteristic-defining P/T abilities (CR 208.2
+— a CDA "works in all zones"), this reads the wrong value. ISD has
+four CDA creatures:
+
+- **Boneyard Wurm** ({1}{G}) — "Power and toughness each equal to
+  the number of creature cards in your graveyard." Base `power =
+  Some(0)`; effective power is the creature-card count.
+- **Splinterfright** ({2}{G}) — "Power and toughness each equal to
+  the number of creature cards in your graveyard." Same base 0,
+  same effective-power story.
+- **Sturmgeist** ({3}{U}{U}) — "Power and toughness each equal to
+  the number of cards in your hand." Base 0; effective power tracks
+  the controller's hand size even while Sturmgeist is in the
+  graveyard.
+- **Geist-Honored Monk** ({3}{W}{W}) — "Power and toughness each
+  equal to the number of creatures you control." Base 0; this one
+  is the safest of the four because while the Monk is in the
+  graveyard, the count is just "creatures you control on the
+  battlefield", but the read path is still wrong in principle.
+
+The concrete symptom falls on **Corpse Lunge** ({2}{B}, "Corpse
+Lunge deals damage equal to the exiled card's power to target
+creature"), which stores `exiled_power` in `card_state` at cost
+time and reads it back on resolution. If the only creature card in
+the controller's graveyard is a Boneyard Wurm with N other creature
+cards in the graveyard, oracle + CR 208.2 say Corpse Lunge should
+deal `N+1` damage (the Wurm's effective power captured via last
+known information just before the exile). The current code deals
+`0` damage (its base power).
+
+The auto-pick sort at the same call site also sorts by base power.
+So even when the player *has* a 3-power vanilla creature alongside
+a Boneyard Wurm whose effective power would be higher (deep
+graveyard), the auto-pick will prefer the vanilla — and the player
+can't override it, because of Bug F. Bug F documents the
+"auto-pick prevents player choice" side; this bug is the other side
+of the same code path: **even the auto-pick value itself is wrong
+for CDA cards**.
+
+**Audit evidence:** The broken code path fired three times in the
+audit log (Seat 6 at log lines 105831, 106336, 137705), each time
+exiling **Geist-Honored Monk** as the additional cost for Makeshift
+Mauler. Makeshift Mauler doesn't *consume* the `exiled_power`
+value, so the wrong value didn't visibly manifest as a damage bug
+— but the power-read went through the broken path. Corpse Lunge
+specifically was never cast exiling a CDA creature in this audit;
+the damage values in its audit-log firings (2/3 damage, lines
+29179, 48588, etc.) all came from vanilla creatures with base
+power matching the damage dealt. Latent but clearly wrong.
+
+**Proposed fix:** route the power read through `state.effective_power`:
+
+```rust
+let mut exile_candidates: Vec<(ObjectId, i32)> = {
+    let ids: Vec<ObjectId> = new_state.objects.values()
+        .filter(|o| {
+            o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
+                && (o.power.is_some() || registry.card_data(o.card_id)
+                    .map(|d| d.card_types.contains(&CardType::Creature))
+                    .unwrap_or(false))
+        })
+        .map(|o| o.id)
+        .collect();
+    ids.into_iter()
+        .map(|id| (id, new_state.effective_power(id, registry).unwrap_or(0)))
+        .collect()
+};
+```
+
+`effective_power` already consults `dynamic_pt` without checking
+zone (`state.rs:899-943`), so this call does the right thing for
+graveyard objects. The sort afterwards picks the highest effective
+power, which is what Corpse Lunge wants anyway.
+
+A companion fix is that Bug F (the "auto-pick vs. player choice"
+half) also needs solving so the player can exile a lower-power
+creature to preserve a CDA creature in graveyard for Boneyard Wurm
+/ Splinterfright / Wreath of Geists synergy. This bug (17-001) is
+the pure data-accuracy half — `exile_candidates` should read the
+effective power even if the picking UX stays auto-pick-only.
+
+**Cross-references:**
+- Bug F (`ExileCreaturesFromGraveyard for spells auto-picks
+  highest power`) — the player-choice half of the same code path.
+- Bug AV (`create_token_copy` reads base `o.power`) — same pattern
+  in a different helper: reading `o.power` instead of
+  `state.effective_power` breaks for CDA creatures.
+- The *graveyard* flashback-path check at `engine.rs:1128-1140`
+  uses the same base-power-less filter but only checks that there
+  are enough eligible cards; it doesn't need the power value. Not
+  affected, but note for anyone reworking these call sites.
