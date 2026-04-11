@@ -4673,4 +4673,123 @@ this is the same bug class for non-combat prompts), Bug H7
 (target-choice and trigger-ordering prompts use the same opaque
 format — likely overlapping fix territory).
 
+---
 
+### 🟡 Engine Bug E1-001: Grimgrin, Corpse-Born's attack trigger inline-enumerates targets without a hexproof filter, letting the model destroy an opponent's hexproof creature
+**Severity:** medium — latent unless an opponent has a hexproof creature on the battlefield
+**File:** `mtg-engine/src/cards/isd/grimgrin_corpse_born.rs:87-128`
+**Audit evidence:** not fired — Grimgrin was not drafted in `verify-draft-8seat-high-v5.log`
+
+Oracle: "Whenever Grimgrin attacks, destroy *target* creature
+defending player controls, then put a +1/+1 counter on Grimgrin."
+
+This is a TARGETED triggered ability. Targets are chosen when the
+trigger goes on the stack (CR 603.3), and the choice is subject to
+hexproof (CR 702.11) and protection (CR 702.16). The current
+implementation does NOT use the shared `creature_targets` helper
+family — it builds the list inline via `state.objects_in_zone` and
+only filters protection:
+
+```rust
+// grimgrin_corpse_born.rs:100-105
+let targets: Vec<Target> = state.objects_in_zone(Zone::Battlefield, defender)
+    .iter()
+    .filter(|o| o.power.is_some())
+    .filter(|o| !state.has_protection_from(o.id, self_id, registry))
+    .map(|o| Target::Object(o.id))
+    .collect();
+```
+
+**Hexproof is never consulted.** Any hexproof creature the
+defending player controls is offered as a legal target to Grimgrin's
+controller, despite CR 702.11b explicitly forbidding opponents from
+targeting it.
+
+The engine already has `engine::can_be_targeted_by` (`engine.rs:1294-1310`)
+that checks both hexproof and protection:
+
+```rust
+pub fn can_be_targeted_by(
+    state: &GameState, target_id: ObjectId,
+    caster: PlayerId, source_id: Option<ObjectId>,
+    registry: &CardRegistry,
+) -> bool {
+    if state.has_keyword(target_id, Keyword::Hexproof, registry) {
+        let controller = state.get_object(target_id)
+            .map(|o| o.controller)
+            .unwrap_or(caster);
+        if controller != caster {
+            return false;
+        }
+    }
+    if let Some(sid) = source_id {
+        if state.has_protection_from(target_id, sid, registry) {
+            return false;
+        }
+    }
+    true
+}
+```
+
+Bug 17-003 already covers the shared-helper version of this gap
+(`creature_targets` / `any_targets` etc. in
+`cards/helpers.rs:166-197`). Grimgrin bypasses those helpers
+entirely and rolls its own enumeration, so it's outside 17-003's
+scope. The fix is the same shape — call `can_be_targeted_by` in
+the filter — but the call site is different.
+
+**ISD hexproof creatures exposed by this bug:** Lumberknot
+(`{2}{G}{G}` 1/1 Treefolk, Hexproof). Geist of Saint Traft
+(`{1}{W}{U}` 2/2 Spirit Cleric, Hexproof, Legendary, creates a 4/4
+Angel on attack). If Grimgrin's controller has Grimgrin and the
+opponent has Lumberknot on the battlefield, Grimgrin's attack
+trigger will offer Lumberknot as a destroy target. The LLM player
+can (and likely will, since Lumberknot is the biggest threat on
+the board) pick Lumberknot, and the PendingEffect::DestroyThenCounter
+handler destroys Lumberknot without any late check. Same scenario
+for Geist of Saint Traft on the opponent's side.
+
+Per-ruling confirmation: "If Grimgrin's last ability resolves, but
+the targeted creature isn't destroyed (perhaps because it
+regenerated or has indestructible), you'll still put a +1/+1 on
+Grimgrin." The ruling does NOT mention hexproof because a
+hexproof creature should never have been a valid target in the
+first place — so the trigger simply wouldn't be able to target it.
+
+**Did NOT fire** in `verify-draft-8seat-high-v5.log` — Grimgrin was
+in the card listing at line 3426 but not drafted by any seat.
+
+**Proposed fix:** add the `can_be_targeted_by` filter:
+
+```rust
+let targets: Vec<Target> = state.objects_in_zone(Zone::Battlefield, defender)
+    .iter()
+    .filter(|o| o.power.is_some())
+    .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(self_id), registry))
+    .map(|o| Target::Object(o.id))
+    .collect();
+```
+
+`can_be_targeted_by` already handles both hexproof and protection,
+so the existing `has_protection_from` line can be dropped in favor
+of the single call.
+
+Alternative fix shape: migrate Grimgrin to use the shared helper
+family from Bug 17-003's proposed fix (`creature_targets_for`
+accepting source_id + controller). That closes both Bug 17-003 and
+Bug E1-001 in one migration.
+
+**Cross-references:**
+- Bug 17-003 — same class of bug for six other cards that use the
+  shared `creature_targets` / `any_targets` helpers. Grimgrin uses
+  its own enumeration, so 17-003's proposed fix wouldn't
+  automatically reach Grimgrin — either the helper must be
+  migrated AND Grimgrin converted to call it, or Grimgrin gets its
+  own `can_be_targeted_by` call.
+- Bug 0F-003 — the player-targeting sibling (trigger-resolved
+  player targets ignoring Witchbane Orb's player-hexproof). Same
+  class: triggered-ability targeting bypasses the engine's target
+  legality helper.
+- Bug H — engine-level `PermanentWithFilter` filter dropping. Also
+  "illegal targets leak into the prompt", but on the spell side
+  rather than the trigger side.
