@@ -988,6 +988,37 @@ Wired into both the attacker and blocker prompt builders. 5 unit tests in
 
 ---
 
+### 🟡 Harness Bug H10: board display uses comma as both keyword and creature separator
+**Severity:** medium — model has to infer creature boundaries from capitalization
+**File:** `mtg-player/src/llm.rs:1488-1585` (format_perms_compact) and 2366-2385 (format_keywords)
+
+`format_keywords` joins keywords with `", "` and `format_perms_compact`
+joins creatures with `", "` — same separator. So a board with multiple
+keyworded creatures renders ambiguously:
+
+```
+Your board: 3x Forest, 2x Mountain, Terror of Kruin Pass 3/3 double strike, menace, Ashmouth Hound 2/1, Gatstaf Howler 3/3 intimidate, menace, Howlpack of Estwald 4/6 menace
+```
+(audit log line 30173)
+
+The model has to figure out which `menace` belongs to which creature by
+matching the creature-name-then-P/T pattern. For Terror of Kruin Pass
+("Werewolves you control have menace") all four werewolves on this
+board correctly have menace, but the format makes it look like the
+keyword might belong to the next creature in the list.
+
+**Did NOT cause an obvious wrong play in audit** — Gemini 3.1 Flash
+Lite seemed able to disambiguate by capitalization, but it's a fragile
+signal and the prompt costs cognitive bandwidth.
+
+**Proposed fix:** use a stronger separator between creatures, e.g.
+`" | "` instead of `", "`, or wrap each creature's keyword list in
+brackets: `Terror of Kruin Pass 3/3 [double strike, menace]`. The
+combat-creature labels in `format_combat_creature` are similarly
+affected.
+
+---
+
 ### 🟡 Harness Bug H9: deck-builder validator doesn't help the model converge
 **Severity:** medium — wastes API calls, occasionally gets stuck (Seat 0 had 9 attempts)
 **File:** `mtg-draft/src/deckbuilding.rs:60-73`
