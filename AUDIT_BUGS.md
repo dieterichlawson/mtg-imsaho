@@ -947,6 +947,43 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
+### 🟡 Engine Bug BT: Burning Vengeance logs "deals 2 damage to opponent" before the target is chosen
+**Severity:** very low — log message accuracy only
+**File:** `mtg-engine/src/cards/isd/burning_vengeance.rs:55-69`
+
+The on_spell_cast handler presents a target-choice via
+`present_target_choice` (line 57) and then immediately logs
+`"Burning Vengeance deals 2 damage to opponent (flashback spell cast)"`
+(line 67-68). The log fires BEFORE the player picks a target. The
+player might pick:
+- An opponent (the log is correct)
+- A creature (the log is wrong — it's a creature, not "opponent")
+- A planeswalker (Bug BQ blocks this anyway)
+- A creature you control (the log is wrong — it's your own creature)
+- Yourself (the log is wrong — it's "you", not "opponent")
+
+The actual damage application happens later via the `PendingEffect::DealDamage`
+that the choice resolves to. That path logs correctly. The Burning
+Vengeance log line is just stale.
+
+**Did NOT fire** in audit because Burning Vengeance was drafted but
+not put on the battlefield in any sampled game.
+
+**Proposed fix:** delete the line 67-68 `state.log(...)` call —
+present_target_choice's effect handler already logs the damage
+correctly when it resolves. (And if it doesn't, log THERE, not in
+the trigger handler.)
+
+A related but separate concern is the same one Snapcaster Mage hits
+(Bug M): the target should be chosen WHEN THE TRIGGER GOES ON THE
+STACK, not at resolution time. Burning Vengeance's
+`on_spell_cast` is called from `resolve_next_trigger` (i.e. at
+resolution), so opponents have no priority window to respond to
+"Burning Vengeance with target X" before X is locked in. Same general
+issue as Snapcaster, same proposed fix family.
+
+---
+
 ### 🟡 Engine Bug BS: `cast_with_flashback` flag persists after Runic Repetition returns the card to hand
 **Severity:** low — Runic Repetition + flashback card interaction only
 **Files:**
