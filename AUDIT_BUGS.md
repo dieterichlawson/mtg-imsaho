@@ -4294,3 +4294,159 @@ pub fn display_name(&self, state: &GameState, registry: &CardRegistry) -> String
 ```
 
 This is a pure display fix; no engine-behavior change.
+
+---
+
+### 🟡 Engine Bug 17-003: Triggered-ability target helpers (`creature_targets`, `creature_targets_except`, `any_targets`, `any_targets_except`) don't filter out hexproof or protection — six ISD cards let the controller target illegal creatures via their triggered abilities
+**Severity:** medium — latent in most matchups, but Lumberknot (hexproof Treefolk) or Geist of Saint Traft (hexproof legend) in opposing decks exposes it immediately
+**Files:**
+- `mtg-engine/src/cards/helpers.rs:166-197` (the four helpers)
+- `mtg-engine/src/cards/isd/burning_vengeance.rs:56` (`any_targets`)
+- `mtg-engine/src/cards/isd/crossway_vampire.rs:41` (`creature_targets`)
+- `mtg-engine/src/cards/isd/evil_twin.rs:47` (`creature_targets_except`)
+- `mtg-engine/src/cards/isd/fiend_hunter.rs:48` (`creature_targets_except`)
+- `mtg-engine/src/cards/isd/morkrut_banshee.rs:46` (`creature_targets`)
+- `mtg-engine/src/cards/isd/pitchburn_devils.rs:37` (`any_targets`)
+
+The shared target-collection helpers in `cards/helpers.rs` return
+every creature on the battlefield without calling
+`engine::can_be_targeted_by`:
+
+```rust
+pub fn creature_targets(state: &GameState) -> Vec<Target> {
+    state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+        .map(|o| Target::Object(o.id))
+        .collect()
+}
+
+pub fn any_targets(state: &GameState) -> Vec<Target> {
+    let mut targets = creature_targets(state);
+    for player in &state.players {
+        targets.push(Target::Player(player.id));
+    }
+    targets
+}
+```
+
+`engine::can_be_targeted_by` (engine.rs:1294-1310) exists and does
+the right thing:
+
+```rust
+pub fn can_be_targeted_by(state: &GameState, target_id: ObjectId, caster: PlayerId, source_id: Option<ObjectId>, registry: &CardRegistry) -> bool {
+    if state.has_keyword(target_id, Keyword::Hexproof, registry) {
+        let controller = state.get_object(target_id)...;
+        if controller != caster {
+            return false; // hexproof: can't be targeted by opponents
+        }
+    }
+    if let Some(sid) = source_id {
+        if state.has_protection_from(target_id, sid, registry) {
+            return false;
+        }
+    }
+    true
+}
+```
+
+…but none of the six card handlers route their target lists through
+it. Triggered-ability target enumeration happens inside the card's
+own `on_enter_battlefield` / `on_dies` / `on_spell_cast` handler,
+which calls one of the helpers and passes the result straight to
+`present_target_choice`. No filter layer sits between.
+
+Compare with the SPELL target path
+(`engine::generate_cast_actions_with_targets` → `valid_targets_for_req`),
+which does call `can_be_targeted_by`. Spell casting of, say,
+Smite the Monstrous correctly hides Lumberknot from an opponent's
+target list. But Crossway Vampire's ETB "target creature can't
+block this turn" DOES offer Lumberknot even when the controller
+is Lumberknot's opponent.
+
+**Per-card impact:**
+
+- **Crossway Vampire** — ETB "target creature can't block this
+  turn". Should offer only targetable creatures. Hexproof creatures
+  the caster doesn't control should be filtered. Latent.
+- **Morkrut Banshee** — Morbid ETB "target creature gets -4/-4
+  until end of turn". Same issue: opp's hexproof creature can be
+  targeted and killed.
+- **Fiend Hunter** — ETB "you may exile **another** target
+  creature". Same issue. Also interacts with the `attached_to`
+  restore-on-LTB path: if Fiend Hunter "exiled" an illegal target,
+  the restoration on LTB would still put it back on battlefield
+  under the original owner's control, but the exile itself would
+  have been illegal.
+- **Evil Twin** — "You may have this creature enter as a copy of
+  any creature on the battlefield". *Copy* effects are special per
+  CR 706.2: they don't technically "target" as a spell/ability
+  targeting. The oracle text doesn't include the word "target"
+  for Evil Twin's copy. But the handler still calls
+  `creature_targets_except`, and the copy is chosen via the target
+  choice UI. Since Evil Twin's copy doesn't actually target per
+  rules (CR 701.7c), hexproof is irrelevant here — this one is
+  technically fine. Worth noting because it's not *currently*
+  broken even though it uses the broken helper.
+- **Pitchburn Devils** — SelfDies "this creature deals 3 damage to
+  any target". Uses `any_targets`. Should filter hexproof creatures
+  the caster doesn't control AND players with Witchbane Orb. Bug BZ
+  already notes that `any_targets` omits planeswalkers; this bug is
+  the hexproof / protection half of the same helper's filter gap.
+- **Burning Vengeance** — SpellCast-from-graveyard "deals 2 damage
+  to any target". Same issue as Pitchburn Devils.
+
+**Did NOT fire** in the audit — Lumberknot was drafted by Seat 3
+multiple times but didn't hit the battlefield against an opponent
+with Crossway Vampire / Morkrut Banshee / Fiend Hunter in a way
+that would expose the bug. Witchbane Orb wasn't cast. Latent, but
+consistent across six cards.
+
+Also note: with Bug 0F-002 landed (legend rule + token copies),
+a token-copy of Geist of Saint Traft would correctly be a legend
+— and would also be hexproof because token-copies inherit oracle
+text from the source. So even the token-path hexproof check
+matters if Cackling Counterpart copies Geist.
+
+**Proposed fix:** extend the target-collection helpers to accept a
+`source_id` and `controller`, then call `can_be_targeted_by`:
+
+```rust
+pub fn creature_targets_for(
+    state: &GameState,
+    source_id: ObjectId,
+    controller: PlayerId,
+    registry: &CardRegistry,
+) -> Vec<Target> {
+    state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+        .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
+        .map(|o| Target::Object(o.id))
+        .collect()
+}
+```
+
+A companion `any_targets_for(state, source_id, controller, registry)`
+would also invoke `engine::can_target_player` (engine.rs:1314) for
+the player targets, closing the hexproof-player gap on top of
+Bug 0F-003 (which covers a different four cards).
+
+Migrate the six listed call sites to the new helpers. Keep the
+old helpers (without the filter) for places that genuinely want
+"every creature on the battlefield" without targeting — I don't
+know of any current such caller, but it's safe to leave the raw
+version available.
+
+**Cross-references:**
+- Bug 0F-003 — player-hexproof filter gap for triggered abilities
+  that target players directly (different call sites, same class
+  of problem).
+- Bug BZ — `any_targets` omits planeswalkers (different filter
+  gap in the same helper).
+- Bug M (suspected) — Snapcaster Mage chooses target on resolve,
+  not on cast. Related problem class: triggered abilities handling
+  targeting outside the engine's target-enumeration path.
+- Bug H — Maw of Hell's first-target filter is dropped at the
+  engine level (`PermanentWithFilter` drops the filter in
+  `valid_targets_for_req`). Different class: engine-side filter
+  dropped vs card-level filter never applied. Both leak illegal
+  targets into the prompt.
