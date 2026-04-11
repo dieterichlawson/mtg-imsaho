@@ -947,9 +947,10 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
-### 🟡 Engine Bug AV: create_token_copy doesn't preserve dynamic P/T (Cackling Counterpart breaks for */* creatures)
-**Severity:** medium — Cackling Counterpart is the only ISD trigger; affects 5 creatures
+### 🟡 Engine Bug AV: create_token_copy doesn't preserve dynamic P/T (Cackling Counterpart and Back from the Brink break for */* creatures)
+**Severity:** medium — affects Cackling Counterpart and Back from the Brink
 **File:** `mtg-engine/src/state.rs:404-440` (create_token_copy)
+**Callers:** `cards/isd/cackling_counterpart.rs` and `cards/isd/back_from_the_brink.rs`
 
 ```rust
 let (name, power, toughness, card_id) = match source {
