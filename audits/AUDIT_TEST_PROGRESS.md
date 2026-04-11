@@ -40,6 +40,8 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug I (X-cost / mana) — `mtg-engine/tests/audit_xcost_mana_family.rs::bug_i_devils_play_flashback_appears_in_legal_actions` — status: failing-as-expected
 - Bug 17-001 (X-cost / mana) — `mtg-engine/tests/audit_xcost_mana_family.rs::bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature` — status: failing-as-expected
 - Bug Y (X-cost / mana) — `mtg-engine/tests/audit_xcost_mana_family.rs::bug_y_screeching_bat_transform_offered_with_untapped_lands` — status: failing-as-expected
+- Bug 99-003 (Transform / DFC) — `mtg-engine/tests/audit_transform_dfc_family.rs::bug_99_003_daybreak_ranger_no_cross_contamination` — status: failing-as-expected (runs 30 trials to defeat HashMap-iteration nondeterminism)
+- Bug BE (Transform / DFC) — `mtg-engine/tests/audit_transform_dfc_family.rs::bug_be_garruk_transforms_before_zero_loyalty_death` — status: failing-as-expected
 - Bug 17-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature` — status: failing-as-expected
 - Bug E1-001 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature` — status: failing-as-expected
 - Bug 0F-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb` — status: failing-as-expected
