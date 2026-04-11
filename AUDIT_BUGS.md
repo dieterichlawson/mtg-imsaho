@@ -2150,3 +2150,246 @@ Instigator Gang is the only card in ISD with a "creatures you control
 that are attacking get +X/+X" static anthem. Adding
 `CreatureFilter::Attacking` would unblock this card alone for the ISD
 set; other sets would reuse the predicate.
+
+<!-- Reserving letters BP-BT for this branch (5 letters past BK on master). -->
+
+---
+
+### 🟡 Engine Bug BP: Forced-attack effects ignore "can't attack" continuous effects (Furor of the Bitten + Bonds of Faith interaction)
+**Severity:** medium — latent in audit (no overlap between forced-attack sources and PreventAttack sources in the sampled games)
+**File:** `mtg-engine/src/engine.rs:2381-2407` (forced attacker enumeration in `DeclareAttackers` handler)
+
+After attackers are declared, the engine walks the active player's
+creatures and collects any that should be "forced to attack" via a
+continuous effect with `ContinuousEffect::ForceAttack`:
+
+```rust
+for creature in new_state.objects.values() {
+    if creature.zone != Zone::Battlefield || creature.controller != active
+        || creature.power.is_none() || creature.tapped || creature.summoning_sick {
+        continue;
+    }
+    if new_state.combat.as_ref().map(|c| c.attackers.contains_key(&creature.id)).unwrap_or(false) {
+        continue; // already attacking
+    }
+    // Check for Defender — can't be forced to attack.
+    if new_state.has_keyword(creature.id, crate::types::Keyword::Defender, registry) {
+        continue;
+    }
+    // Check for forced attack effects (e.g., Furor of the Bitten).
+    let must_attack = new_state.has_continuous_effect(creature.id, ...ForceAttack...);
+    if must_attack {
+        forced.push(creature.id);
+    }
+}
+```
+
+The exclusion list is: zone≠Battlefield, not a creature, wrong
+controller, tapped, summoning sick, already attacking, has Defender.
+It does **not** call `state.can_attack(creature_id, registry)` or
+otherwise consult `PreventAttack` / `ConditionalPreventAttack`
+continuous effects. Those are the effects used by Bonds of Faith
+(`cards/isd/bonds_of_faith.rs:37-45`, `ConditionalPreventAttack` when
+attached creature is non-Human) and potentially Pacifism-shaped
+effects in other sets.
+
+**Consequence:** a creature enchanted with Bonds of Faith that is NOT
+a Human AND is ALSO the target of Furor of the Bitten, Curse of the
+Nightly Hunt, or Galvanic Juggernaut's forced-attack effect will be
+forced to attack despite Bonds of Faith's rules text saying "it can't
+attack or block." The engine inserts the creature into
+`combat.attackers` and taps it, producing a nonsense attack that the
+opponent can block freely. The "if able" clause of Furor's oracle
+text means the force should not apply when the creature can't attack.
+
+A concrete repro recipe in ISD:
+1. Opponent controls a Werewolf (non-Human, transformed).
+2. You cast Bonds of Faith on the Werewolf (it's non-Human, so Bonds
+   applies the PreventAttack clause — "it can't attack or block").
+3. You cast Furor of the Bitten on the same Werewolf (under your
+   control? No — Furor is "enchanted creature", so opponent's
+   Werewolf is enchanted by the aura you cast on it; Furor makes it
+   "attack each combat if able").
+4. On opponent's attack step, the engine's forced-attack loop skips
+   the creature's Defender check (not a defender), skips the tapped
+   check (not tapped yet), skips the summoning-sick check, and sees
+   the ForceAttack continuous effect is active. It inserts the
+   creature into `combat.attackers` even though Bonds of Faith's
+   `ConditionalPreventAttack` should lock it down.
+
+**Did NOT fire** in audit — Furor of the Bitten, Curse of the
+Nightly Hunt, and Galvanic Juggernaut appear in the v5 audit log
+only in the deck-builder card knowledge dump; none were cast. Bonds
+of Faith was cast many times but never in combination with a force-
+attack source. Pure latent bug.
+
+**Cards affected by the bug pattern (ISD):**
+- `cards/isd/furor_of_the_bitten.rs:27` (Attached)
+- `cards/isd/curse_of_the_nightly_hunt.rs:30` (Global)
+- `cards/isd/galvanic_juggernaut.rs:28` (OnSelf — Juggernaut forces
+  itself to attack; lockable by Bonds of Faith only if Juggernaut
+  were somehow enchanted, which isn't normal)
+- `cards/isd/hanweir_watchkeep.rs:62` (OnSelf — back-face Wildblood
+  Pack)
+- `cards/isd/bloodcrazed_neonate.rs:28` (OnSelf)
+
+The OnSelf cases are lower-impact — a creature forced to attack
+*itself* via OnSelf can only conflict with a PreventAttack on the
+same creature, which is rare. The broader-scope cases (Furor of the
+Bitten on Attached, Curse of the Nightly Hunt on Global) are where
+the bug most naturally manifests.
+
+**Proposed fix:** add a `state.can_attack(creature.id, registry)`
+check next to the Defender exclusion:
+```rust
+if new_state.has_keyword(creature.id, Keyword::Defender, registry)
+    || !new_state.can_attack(creature.id, registry) {
+    continue;
+}
+```
+`can_attack` already consults both `PreventAttack` and
+`ConditionalPreventAttack` (see `state.rs:989-1005`) and returns
+false when either applies. The same logic should gate the
+"legal_attackers" enumeration earlier in the declare-attackers code
+path so that manually-declared attackers respect the same "if able"
+semantics — but that path already uses `can_attack`, only the
+forced-attack path is missing it.
+
+---
+
+### 🟡 Engine Bug BQ: "Any target" damage cannot target planeswalkers — affects Brimstone Volley, Devil's Play, Geistflame, Skirsdag Cultist, Blazing Torch, Heretic's Punishment
+**Severity:** medium — latent in audit (no planeswalker drafted) but structural
+**File:** `mtg-engine/src/engine.rs:1890-1906` (valid_targets_for_req / generate_ability_targets for `TargetRequirement::AnyTarget`) and `mtg-engine/src/cards/helpers.rs:49-80` (resolve_damage)
+
+Per CR 115.4a, "any target" is the modern oracle phrasing that means
+"any creature, player, planeswalker, or battle." Every ISD damage
+card that deals "N damage to any target" should be able to point its
+damage at a planeswalker.
+
+The engine's target enumeration for `TargetRequirement::AnyTarget`:
+
+```rust
+TargetRequirement::AnyTarget => {
+    let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
+        .filter(|o| o.power.is_some())  // <-- this filter excludes planeswalkers
+        .filter(|o| can_be_targeted(state, o.id, controller, registry))
+        .map(|o| Target::Object(o.id))
+        .filter(|t| behavior.is_valid_target(state, controller, t, registry))
+        .collect();
+    for p in &state.players { ... }
+    targets
+}
+```
+
+Planeswalkers have `obj.power = None` in the registry, so `o.power.is_some()`
+filters them out. The resulting target list contains only creatures and
+players. ISD cards using `AnyTarget`:
+
+- `cards/isd/brimstone_volley.rs:31` — `Brimstone Volley` "deals 3 damage to any target" (oracle: "any target")
+- `cards/isd/devils_play.rs` — `Devil's Play` "deals X damage to any target"
+- `cards/isd/geistflame.rs` — `Geistflame` "deals 1 damage to any target"
+- `cards/isd/skirsdag_cultist.rs:40` — Cultist ability "deals 2 damage to any target"
+- `cards/isd/blazing_torch.rs` — Torch activated ability "deals 2 damage to any target"
+- `cards/isd/heretics_punishment.rs` — "deals 5 damage to any target" per discard
+
+Garruk Relentless and Liliana of the Veil are the two ISD
+planeswalkers. Neither is targetable by any of the six cards above
+in the current implementation; the "any target" prompt only lists
+creatures + players.
+
+**Related (likely deserves its own entry, tracked here as BQ-2):**
+the damage-application helpers also don't correctly handle
+planeswalker targets even if they were enumerated. `resolve_damage`
+(`cards/helpers.rs:49-80`) blindly does `obj.damage_marked += amount`
+for any `Target::Object`, and `obj.damaged_by.push(spell_id)`. For a
+planeswalker this writes to `damage_marked` instead of decrementing
+the `CounterType::Loyalty` counters. The engine DOES have a
+planeswalker-aware branch at `engine.rs:2856-2867` (used by the
+central `PendingEffect::DealDamage` path), but `resolve_damage`
+bypasses it. Skirsdag Cultist's `on_activate_ability` has its own
+inline damage path (`cards/isd/skirsdag_cultist.rs:49-81`) which
+also bypasses the central damage helper and directly writes
+`damage_marked`, with the same bug.
+
+**Did NOT fire** in audit — Garruk Relentless and Liliana were
+listed in the ISD card database (log lines ~3300, ~5000) but
+neither was drafted, so the "any target" → planeswalker path was
+never exercised.
+
+**Proposed fix (two-part):**
+1. In `valid_targets_for_req`'s `AnyTarget` arm, replace the
+   `o.power.is_some()` filter with:
+   ```rust
+   let is_damageable = o.power.is_some()  // creature
+       || o.card_types.contains(&CardType::Planeswalker)
+       || registry.card_data(o.card_id)
+           .map(|d| d.card_types.contains(&CardType::Planeswalker))
+           .unwrap_or(false);
+   ```
+   Apply the same change to the `generate_ability_targets` copy at
+   `engine.rs:1890`.
+2. In `cards/helpers.rs::resolve_damage`, gate the
+   `obj.damage_marked +=` branch on creature-vs-planeswalker:
+   ```rust
+   let is_planeswalker = registry.card_data(obj.card_id)
+       .map(|d| d.card_types.contains(&CardType::Planeswalker))
+       .unwrap_or(false) || obj.card_types.contains(&CardType::Planeswalker);
+   if is_planeswalker {
+       let loyalty = obj.counters.entry(CounterType::Loyalty).or_insert(0);
+       *loyalty = loyalty.saturating_sub(amount);
+   } else {
+       obj.damage_marked += amount;
+   }
+   ```
+3. Skirsdag Cultist's inline damage path should be refactored to
+   call `resolve_damage` / the central damage helper once the
+   helper is planeswalker-aware. Same for Olivia Voldaren's first
+   ability (Bug AJ-adjacent — inline `obj.damage_marked += 1` at
+   `olivia_voldaren.rs:104-106`), Curse of the Pierced Heart's
+   direct life-subtract (`curse_of_the_pierced_heart.rs:72-78`), and
+   anywhere else that bypasses the central helper.
+
+---
+
+### 🟡 Engine Bug BR: Olivia Voldaren's +1/+1-bite and Curse of the Pierced Heart's damage bypass the central damage helper
+**Severity:** low-medium — silently wrong vs lifelink / protection / replacement / double-damage effects
+**Files:** `mtg-engine/src/cards/isd/olivia_voldaren.rs:104-123` and `mtg-engine/src/cards/isd/curse_of_the_pierced_heart.rs:70-82`
+
+Both cards deal damage as part of an ability effect, but bypass the
+central `PendingEffect::DealDamage` path (which lives at
+`engine.rs:2854-2877` and handles protection, planeswalker
+redirection, life-subtract, and `damaged_by` bookkeeping). Instead
+they inline:
+
+- **Olivia {1}{R}**: `obj.damage_marked += 1; obj.damaged_by.push(self_id);`
+  Doesn't check protection, doesn't handle planeswalker loyalty
+  (Olivia's target-filter also doesn't exclude planeswalkers via
+  `Another`, so in theory she can "deal 1 damage" to an opposing
+  Garruk Relentless and increment `damage_marked` instead of
+  decrementing loyalty). Doesn't fire lifelink if Olivia somehow
+  has lifelink via Bonds of Faith / Mentor of the Meek / etc.
+- **Curse of the Pierced Heart**: `state.get_player_mut(cursed_player).life = old - 1;`
+  Directly subtracts life without going through the damage pipeline.
+  Missing: protection checks, prevention effects (none in ISD, but
+  structurally wrong), damage-replacement effects, and any
+  lifelink-from-source interaction.
+
+The problems are mostly latent in ISD because:
+- Nothing in ISD gives Olivia or an enchantment a temporary
+  lifelink.
+- There are no in-set damage-doubling effects that would multiply
+  the 1 damage.
+- The only planeswalkers are Garruk and Liliana, and neither is
+  likely to be on opp's side when Olivia activates.
+
+**Proposed fix:** route both cards through the central damage
+helper. Olivia's first ability should queue a `PendingEffect::DealDamage`
+with `source = olivia_id`, `target = creature_id`, `amount = 1`.
+Curse of the Pierced Heart should do the same, queuing against
+`Target::Player(cursed_player)` or the chosen planeswalker. The
+helper at `engine.rs:2854+` already handles both shapes.
+
+Related to Bug BQ (damage helper needs planeswalker branch) — the
+fix for Olivia is blocked on BQ being resolved first for the
+non-Olivia cards, but Olivia's own bite should still route through
+the unified helper regardless.
