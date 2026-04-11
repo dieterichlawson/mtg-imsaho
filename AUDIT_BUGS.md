@@ -3360,3 +3360,77 @@ done together.
 all interact with this pattern. Recommend fixing 9F-002 first as
 an enabling refactor, then the narrower bugs become trivial.
 
+---
+
+### 🟡 Engine Bug 0F-001: `create_token_copy` only fixes up the card_id of the FIRST token, so Parallel Lives copies of Cackling Counterpart / Back from the Brink lose their CardBehavior
+**Severity:** low — only fires when Parallel Lives is on the battlefield AND a token-copy effect resolves
+**File:** `mtg-engine/src/state.rs:402-448` (`create_token_copy`)
+**Audit evidence:** did NOT fire — neither Parallel Lives nor Cackling Counterpart was actually cast in the audit
+
+`create_token_copy` is the engine's helper for token-cloning effects:
+Cackling Counterpart and Back from the Brink are the only ISD callers.
+After delegating to `create_token_with_subtypes` it patches up the
+freshly-created token's `card_id` so the registry lookup returns the
+correct `CardBehavior`:
+
+```rust
+let id = self.create_token_with_subtypes(
+    &name, owner,
+    power.unwrap_or(0),
+    toughness.unwrap_or(0),
+    colors, card_types, keywords,
+    subtypes.iter().map(|s| s.to_string()).collect(),
+    registry,
+);
+// Copy the card_id so the token gets the same CardBehavior.
+if let Some(obj) = self.get_object_mut(id) {
+    obj.card_id = card_id;
+}
+id
+```
+
+The problem is what happens *inside* `create_token_with_subtypes`
+when a Parallel Lives is on the battlefield (`state.rs:298-338`):
+
+```rust
+let id = self.create_token_internal(name, owner, ...);
+// Create extra copies for token doublers.
+for _ in 0..extra_copies {
+    self.create_token_internal(name, owner, ...);
+}
+id
+```
+
+Each `create_token_internal` call sets `card_id: CardId(0)` (the
+sentinel for tokens, `state.rs:356`). Only the *first* token's id is
+returned to `create_token_copy`, so only the first token gets its
+`card_id` patched. The doubled copies stay at `CardId(0)`, which means:
+
+- The registry lookup `registry.get(CardId(0))` returns `None`, so the
+  copies have no `CardBehavior`. They miss every triggered ability,
+  activated ability, dynamic_pt, and continuous effect that lives on
+  the source card.
+- E.g., Cackling Counterpart copying Bloodgift Demon under Parallel
+  Lives produces *two* Bloodgift Demon tokens. Only the first one
+  fires the upkeep "draw a card, lose 2 life" trigger; the second one
+  is a vanilla 5/5 flier with no triggered ability.
+- For Back from the Brink (which is a flashback-style "exile from
+  graveyard, create token-copy" effect), the same loss happens.
+
+Adjacent to Bug AV (which already documents that `create_token_copy`
+loses dynamic P/T because the source's `obj.power`/`toughness` is
+read instead of `effective_power`/`effective_toughness`). Bug AV's
+fix would address the `power.unwrap_or(0)` snapshot but would NOT
+address this card-id-on-doubled-copies issue, because the doubling
+loop still constructs the extras with `CardId(0)`.
+
+**Proposed fix:** make `create_token_with_subtypes` return *all*
+created token IDs (`Vec<ObjectId>`) and have `create_token_copy`
+patch every one of them. Or, more invasively, plumb a
+`source_card_id: Option<CardId>` argument through the doubler so the
+extras get the right card_id at creation time. Either way, every
+ID must be patched, not just the first.
+
+**Cross-references:** Bug AV (P/T snapshot in same helper), Bug BJ
+(Evil Twin enters as 0/0, related family of token-copy issues).
+
