@@ -3773,3 +3773,84 @@ apply whatever patching loop they need. Bug AV
 third leg of this tripod; all three collapse into a single fix
 at the helper level.
 
+---
+
+### 🟡 Engine Bug 0F-002: `create_token_copy` doesn't propagate `is_legendary`, so a Cackling Counterpart token-copy of a legendary creature evades the legend rule
+**Severity:** medium — Cackling Counterpart of Olivia / Grimgrin / Geist of Saint Traft / Mikaeus the Lunarch all hit this
+**File:** `mtg-engine/src/state.rs:402-448` (`create_token_copy`) and `mtg-engine/src/state.rs:340-399` (`create_token_internal`)
+**Audit evidence:** did NOT fire — Cackling Counterpart was drafted but not cast in the audit log
+
+`create_token_copy` is the token-copy helper used by Cackling
+Counterpart and Back from the Brink. Per Scryfall's first ruling on
+Cackling Counterpart: "If the targeted creature is a copy of something
+else, the token enters the battlefield as whatever the target copied.
+Tokens are not affected by … the rules of the source they're a copy
+of, except for those that would be on the token itself." More
+relevantly per CR 706.2 ("a copy acquires the copiable values of the
+original object's characteristics"), a token-copy of a *legendary*
+creature is itself legendary, and the legend rule (CR 704.5j) then
+makes that player keep only one of the two same-named legends.
+
+The current code path:
+
+```rust
+// state.rs:432  create_token_copy
+let id = self.create_token_with_subtypes(
+    &name, owner, power.unwrap_or(0), toughness.unwrap_or(0),
+    colors, card_types, keywords, subtypes, registry,
+);
+if let Some(obj) = self.get_object_mut(id) {
+    obj.card_id = card_id;
+}
+id
+```
+
+`create_token_internal` (`state.rs:354-390`) initialises every fresh
+token with `is_legendary: false`. `create_token_copy` patches the
+`card_id` but **never reads `card_data.supertypes` or sets
+`is_legendary`**. So a Cackling Counterpart token of Olivia Voldaren
+ends up with `obj.is_legendary = false`, and the legend-rule SBA
+loop in `sba.rs:248-269` (which keys on `obj.is_legendary && obj.name`)
+silently lets the original Olivia and her token-copy coexist on the
+same controller's battlefield indefinitely.
+
+This is the same shape as the regular-cast `on_resolve` default in
+`cards/mod.rs:458-463`, which DOES read supertypes and set
+`is_legendary` for normal hard-cast permanents — `create_token_copy`
+is missing the equivalent step.
+
+```rust
+// proposed shape inside create_token_copy, after the card_id patch:
+let is_legendary = registry.card_data(card_id)
+    .map(|d| d.supertypes.contains(&crate::types::Supertype::Legendary))
+    .unwrap_or(false);
+if let Some(obj) = self.get_object_mut(id) {
+    obj.card_id = card_id;
+    obj.is_legendary = is_legendary;
+}
+```
+
+ISD legendary creatures that can be Cackling-Counterpart targets and
+exhibit this bug:
+- Olivia Voldaren
+- Grimgrin, Corpse-Born
+- Geist of Saint Traft
+- Mikaeus, the Lunarch
+- Bloodline Keeper (front-face is legendary? — actually no, Bloodline
+  Keeper is NOT legendary in ISD; verify before counting)
+
+Confirmed by inspection: every legendary creature in ISD goes through
+`on_resolve` → default → `is_legendary = true`, so they're correctly
+flagged when hard-cast. The only path that misses the flag is the
+token-copy helper.
+
+**Cross-references:** Bug 0F-001 (sibling problem in same helper, the
+Parallel Lives doubling case), Bug AV (`create_token_copy` doesn't
+preserve dynamic P/T either — same family).
+
+**Proposed fix:** add the `is_legendary` patch shown above to
+`create_token_copy`. While there, audit `create_token_internal` for
+any other supertype-derived flags that should be propagated when the
+token is a copy (none in ISD beyond legendary, but it's the same
+class of bug).
+
