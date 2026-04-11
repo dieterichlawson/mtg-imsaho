@@ -37,6 +37,9 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug BZ (Damage helper bypass) — `mtg-engine/tests/audit_damage_helper_family.rs::bug_bz_pitchburn_devils_offers_planeswalker_as_target` — status: failing-as-expected
 - Bug 9F-002 (Damage helper bypass) — none — status: blocked — meta refactor bug; the individual consequences are tested by Bugs T (damaged_by hygiene), BQ/BZ (planeswalker enumeration), and BR (Olivia/Curse bypass). 9F-002 itself is the umbrella refactor and has no separate observable behavior beyond its constituent bugs
 - Bug BR (Damage helper bypass) — `mtg-engine/tests/audit_damage_helper_family.rs::bug_br_olivia_damage_decrements_planeswalker_loyalty` — status: failing-as-expected
+- Bug I (X-cost / mana) — `mtg-engine/tests/audit_xcost_mana_family.rs::bug_i_devils_play_flashback_appears_in_legal_actions` — status: failing-as-expected
+- Bug 17-001 (X-cost / mana) — `mtg-engine/tests/audit_xcost_mana_family.rs::bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature` — status: failing-as-expected
+- Bug Y (X-cost / mana) — `mtg-engine/tests/audit_xcost_mana_family.rs::bug_y_screeching_bat_transform_offered_with_untapped_lands` — status: failing-as-expected
 - Bug 17-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature` — status: failing-as-expected
 - Bug E1-001 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature` — status: failing-as-expected
 - Bug 0F-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb` — status: failing-as-expected
