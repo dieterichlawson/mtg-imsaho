@@ -14,6 +14,9 @@
 //! - Bug AP: Rally the Peasants (and similar) snapshots its anthem at
 //!   resolution. A creature entering after the anthem resolves doesn't
 //!   get +2/+0.
+//! - Bug AZ: Spare from Evil's "creatures you control gain protection
+//!   from non-Human creatures" is snapshotted at resolution (Bug AP
+//!   sibling for GrantProtection).
 //! - Bug BK: Instigator Gang's static "attacking creatures you control
 //!   get +1/+0" is implemented as an AnyCreatureAttacks trigger that
 //!   pushes a per-attacker ModifyPT into `until_end_of_turn`. The buff
@@ -148,5 +151,63 @@ fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
          past Instigator Gang's death. Got effective_power = {}, \
          expected 2.",
         after_p,
+    );
+}
+
+/// Bug AZ (audits/AUDIT_BUGS.md): Spare from Evil's protection anthem
+/// is snapshotted at resolution time: the implementation iterates the
+/// controller's creatures at resolution and pushes one
+/// `TemporaryEffect::GrantProtection` per creature. Creatures that
+/// enter the battlefield after Spare from Evil resolves don't get the
+/// protection, contrary to the continuous wording.
+///
+/// Oracle (Spare from Evil): "Creatures you control gain protection
+/// from non-Human creatures until end of turn."
+///
+/// Failure mode: `spare_from_evil.rs:36-55` does the same
+/// snapshot-at-resolution shape as Rally the Peasants — collect
+/// creature ids, push one GrantProtection effect per target. A
+/// Mausoleum Guard death-trigger spirit that enters after Spare
+/// resolves has no GrantProtection entry, so `has_protection_from`
+/// returns false for a non-Human attacker targeting the spirit.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug AZ is fixed.
+#[test]
+fn bug_az_spare_from_evil_protects_creatures_entering_later() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Resolve Spare from Evil while P0 controls NO creatures.
+    let spare_card_id = registry.get_id_by_name("Spare from Evil").unwrap();
+    let spare = state.create_object(spare_card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(spare).unwrap().name = "Spare from Evil".into();
+    let behavior = registry.get(spare_card_id).unwrap();
+    behavior.on_resolve(&mut state, spare, &[], &registry);
+
+    // P0 now puts a fresh creature into play. It should inherit the
+    // "protection from non-Human" anthem.
+    let new_creature = ready_creature(&mut state, P0, 2, 2);
+    state
+        .get_object_mut(new_creature)
+        .unwrap()
+        .card_types = vec![CardType::Creature];
+
+    // A non-Human attacker from P1 — Grizzly Bears is a Bear, not a
+    // Human, so Spare from Evil should make the new P0 creature
+    // untargetable by it.
+    let bears_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+    let bears = state.create_object(bears_card_id, P1, Zone::Battlefield, Some(2), Some(2));
+    state.get_object_mut(bears).unwrap().name = "Grizzly Bears".into();
+
+    let has_protection = state.has_protection_from(new_creature, bears, &registry);
+    assert!(
+        has_protection,
+        "A creature entering the battlefield after Spare from Evil \
+         resolves should still gain protection from non-Human creatures \
+         — the wording is continuous until end of turn. Bug AZ: \
+         Spare from Evil snapshots its targets at resolution time and \
+         pushes per-creature GrantProtection effects, so newcomers are \
+         missed."
     );
 }

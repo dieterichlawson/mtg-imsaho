@@ -20,6 +20,9 @@
 //! - Bug BZ: `cards/helpers.rs::any_targets` (the on-resolve enumerator
 //!   used by Pitchburn Devils' death trigger) omits planeswalkers for
 //!   the same reason
+//! - Bug BR: Olivia Voldaren's first ability (`obj.damage_marked += 1`)
+//!   and Curse of the Pierced Heart's life-subtract bypass the central
+//!   damage helper and don't push source to `damaged_by`
 
 mod common;
 use common::*;
@@ -261,5 +264,71 @@ fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
          from creature_targets() (filtered by o.power.is_some()) plus \
          players, so planeswalkers are dropped. awaiting_action = {:?}",
         state.awaiting_action,
+    );
+}
+
+/// Bug BR (audits/AUDIT_BUGS.md): Olivia Voldaren's first ability
+/// (`obj.damage_marked += 1`) bypasses the central damage helper. If
+/// Olivia is pointed at a planeswalker, the code writes
+/// `damage_marked` instead of decrementing the planeswalker's
+/// loyalty counters. The central helper at
+/// `engine.rs:2854-2877` handles the planeswalker branch.
+///
+/// Oracle (Olivia Voldaren, first ability): "{1}{R}: This creature
+/// deals 1 damage to another target creature. That creature becomes
+/// a Vampire in addition to its other types."
+///
+/// Failure mode: `olivia_voldaren.rs:104-106` inline-writes
+/// `obj.damage_marked += 1; obj.damaged_by.push(object_id);` without
+/// checking whether the target is a planeswalker. We force the
+/// issue by manually calling `on_activate_ability` with a
+/// planeswalker target — even though `TargetFilter::Another` / the
+/// activated-ability target enumerator wouldn't ordinarily surface a
+/// planeswalker (Bug BQ), the engine has no defense-in-depth at the
+/// handler level. After firing, Garruk's `damage_marked` should be
+/// 0 and his loyalty counters should be 1 less than before.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug BR is fixed.
+#[test]
+fn bug_br_olivia_damage_decrements_planeswalker_loyalty() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let olivia = named_creature(&mut state, &registry, "Olivia Voldaren", P0);
+
+    // Garruk Relentless on P1's side with a starting loyalty of 3.
+    let garruk_card_id = registry.get_id_by_name("Garruk Relentless").unwrap();
+    let garruk = state.create_object(garruk_card_id, P1, Zone::Battlefield, None, None);
+    {
+        let obj = state.get_object_mut(garruk).unwrap();
+        obj.name = "Garruk Relentless".into();
+        obj.card_types = vec![CardType::Planeswalker];
+        obj.counters.insert(CounterType::Loyalty, 3);
+    }
+
+    // Fire Olivia's first ability targeting Garruk.
+    let olivia_card_id = registry.get_id_by_name("Olivia Voldaren").unwrap();
+    let behavior = registry.get(olivia_card_id).unwrap();
+    behavior.on_activate_ability(
+        &mut state,
+        olivia,
+        0,
+        &[Target::Object(garruk)],
+        &registry,
+    );
+
+    let garruk_obj = state.get_object(garruk).unwrap();
+    let loyalty = garruk_obj.counters.get(&CounterType::Loyalty).copied().unwrap_or(0);
+    let damage_marked = garruk_obj.damage_marked;
+
+    assert!(
+        loyalty <= 2 && damage_marked == 0,
+        "Olivia Voldaren's 1 damage to a planeswalker should decrement \
+         the planeswalker's loyalty counters, not write to damage_marked. \
+         Bug BR: the handler inline-writes obj.damage_marked without \
+         checking if the target is a planeswalker. \
+         loyalty={}, damage_marked={}",
+        loyalty, damage_marked,
     );
 }

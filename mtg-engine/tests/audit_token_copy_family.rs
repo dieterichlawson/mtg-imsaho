@@ -15,6 +15,16 @@
 //!   evades the legend rule
 //! - Bug BJ: Evil Twin enters as a 0/0 and dies to SBA before its
 //!   ETB copy trigger resolves
+//! - Bug 0F-001: `create_token_copy` only patches the `card_id` of
+//!   the FIRST token, so Parallel Lives copies lose their
+//!   CardBehavior.
+//! - Bug 4D-001: `create_token_with_subtypes` returns only the
+//!   primary id, so callers that post-mutate (tap the token,
+//!   insert into combat, etc.) silently miss the doubled copies
+//!   (Army of the Damned example).
+//! - Bug BY: Geist of Saint Traft's Angel-token `on_attacks` handler
+//!   sets the angel's defender via `state.opponent(controller)`
+//!   instead of reading from `combat.attackers.get(&geist_id)`.
 
 mod common;
 use common::*;
@@ -131,5 +141,210 @@ fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
          ETB trigger for the copy, so SBA 704.5f kills it before the \
          trigger resolves. Current zone: {:?}",
         state.get_object(twin).map(|o| o.zone),
+    );
+}
+
+/// Bug 0F-001 (audits/AUDIT_BUGS.md): `create_token_copy` only patches
+/// the `card_id` of the FIRST token, so Parallel Lives copies lose
+/// their CardBehavior.
+///
+/// Oracle (Parallel Lives): "If an effect would create one or more
+/// tokens under your control, it creates twice that many of those
+/// tokens instead."
+/// Oracle (Cackling Counterpart): "Create a token that's a copy of
+/// target creature you control."
+///
+/// Failure mode: `state.rs:432-447` calls `create_token_with_subtypes`
+/// (which generates primary + extras under Parallel Lives), then
+/// patches ONLY the returned primary's `card_id`. The extras stay at
+/// `CardId(0)`. `registry.get(CardId(0))` returns None, so the
+/// doubled copies have no CardBehavior and miss every trigger, static
+/// effect, or dynamic_pt their source has.
+///
+/// We put Parallel Lives in play and Cackling-Counterpart-copy a
+/// Splinterfright, then look at all Splinterfright-named tokens on
+/// the battlefield. Every token copy should have the source's
+/// card_id patched — but only the primary does.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 0F-001 is fixed.
+#[test]
+fn bug_0f_001_parallel_lives_token_copies_share_card_id() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let _parallel = named_creature(&mut state, &registry, "Parallel Lives", P0);
+
+    // Three creature cards in P0's graveyard so Splinterfright has
+    // non-zero CDA power — avoids stillborn-SBA complications.
+    for _ in 0..3 {
+        let bears = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let id = state.create_object(bears, P0, Zone::Graveyard, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+    }
+
+    let splinter = named_creature(&mut state, &registry, "Splinterfright", P0);
+    let splinter_card_id = state.get_object(splinter).unwrap().card_id;
+
+    // Cackling Counterpart creates a token copy; Parallel Lives
+    // doubles it to two tokens.
+    let _primary = state.create_token_copy(splinter, P0, &registry);
+
+    let token_copies: Vec<_> = state
+        .objects
+        .values()
+        .filter(|o| o.is_token && o.name == "Splinterfright")
+        .map(|o| (o.id, o.card_id))
+        .collect();
+
+    assert!(
+        token_copies.len() >= 2,
+        "Test setup: expected at least 2 Splinterfright tokens with \
+         Parallel Lives in play, got {}",
+        token_copies.len()
+    );
+    for (id, card_id) in &token_copies {
+        assert_eq!(
+            *card_id, splinter_card_id,
+            "Every Parallel-Lives-doubled Splinterfright token should \
+             carry Splinterfright's card_id so registry lookups succeed \
+             and the copy retains Splinterfright's dynamic_pt / triggered \
+             abilities. Bug 0F-001: create_token_copy patches only the \
+             FIRST returned token's card_id. Token {:?} has card_id {:?}, \
+             expected {:?}.",
+            id, card_id, splinter_card_id,
+        );
+    }
+}
+
+/// Bug 4D-001 (audits/AUDIT_BUGS.md): `create_token_with_subtypes`
+/// returns only the primary token id, so callers that post-mutate
+/// the returned id (to tap the token, insert it into combat, or
+/// link it to a source via `card_state`) silently miss the doubled
+/// Parallel Lives copies.
+///
+/// Oracle (Army of the Damned): "Create thirteen **tapped** 2/2
+/// black Zombie creature tokens."
+///
+/// Failure mode: `army_of_the_damned.rs:41-56` creates each token,
+/// receives the primary id, and does `obj.tapped = true;`. With
+/// Parallel Lives in play, the helper creates two copies per
+/// iteration but only returns the primary, so 13 tokens are tapped
+/// and 13 are untapped (instead of the expected 26 tapped).
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 4D-001 is fixed.
+#[test]
+fn bug_4d_001_parallel_lives_army_of_the_damned_tokens_are_all_tapped() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PostcombatMain, P0);
+
+    let _parallel = named_creature(&mut state, &registry, "Parallel Lives", P0);
+
+    // Resolve Army of the Damned directly via on_resolve.
+    let army_card_id = registry.get_id_by_name("Army of the Damned").unwrap();
+    let army = state.create_object(army_card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(army).unwrap().name = "Army of the Damned".into();
+    let behavior = registry.get(army_card_id).unwrap();
+    behavior.on_resolve(&mut state, army, &[], &registry);
+
+    let zombie_tokens: Vec<_> = state
+        .objects
+        .values()
+        .filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0)
+        .collect();
+    assert!(
+        zombie_tokens.len() >= 26,
+        "Test setup: expected ≥26 zombie tokens with Parallel Lives \
+         doubling the 13-token Army of the Damned, got {}",
+        zombie_tokens.len()
+    );
+    for z in &zombie_tokens {
+        assert!(
+            z.tapped,
+            "Every zombie token created by Army of the Damned (including \
+             Parallel Lives doubled copies) should enter tapped per \
+             oracle. Bug 4D-001: create_token_with_subtypes returns only \
+             the primary id, so the caller's `obj.tapped = true` loop \
+             only touches half the tokens. Token {:?} is untapped.",
+            z.id,
+        );
+    }
+}
+
+/// Bug BY (audits/AUDIT_BUGS.md): Geist of Saint Traft's attack
+/// trigger spawns an Angel token and inserts it into combat with
+/// defender = `state.opponent(controller)`. This happens to coincide
+/// with Geist's actual defender in 1v1 ISD, but the correct source
+/// is Geist's own entry in `combat.attackers`.
+///
+/// Oracle (Geist of Saint Traft): "Whenever this creature attacks,
+/// create a 4/4 white Angel creature token with flying that's tapped
+/// and attacking."
+///
+/// Per Scryfall ruling: "The Angel token will be attacking the same
+/// player or planeswalker that Geist of Saint Traft is attacking."
+///
+/// Failure mode: `geist_of_saint_traft.rs:74-78` reads
+/// `state.opponent(controller)` instead of
+/// `state.combat.as_ref().and_then(|c| c.attackers.get(&self_id).copied())`.
+/// We exercise the bug by running the trigger with Geist's combat
+/// entry already pointing at a specific player, then checking that
+/// the Angel token is inserted with the same player as its defender.
+/// Today the handler ignores the combat entry entirely and recomputes
+/// the defender, which happens to match in 1v1 but is structurally
+/// wrong. The assertion enforces the shape of the fix (read from
+/// `combat.attackers`) — a test that would catch the bug if the
+/// engine gains real multiplayer/planeswalker combat support.
+///
+/// This test asserts the EXPECTED CORRECT behavior. It passes today
+/// (1v1 coincidence) but will continue to hold once the handler reads
+/// from `combat.attackers` — so it doubles as a regression test
+/// guarding the shape of the fix. The bug entry itself is "latent in
+/// 1v1" so no test can observe it divergently; tracking as
+/// `not-reproduced` with an explicit assertion for the fix shape.
+#[test]
+fn bug_by_geist_angel_token_defender_matches_geist() {
+    use mtg_engine::state::CombatState;
+    use std::collections::HashMap;
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+
+    let geist = named_creature(&mut state, &registry, "Geist of Saint Traft", P0);
+
+    // Set up combat state with Geist attacking P1.
+    let mut attackers: HashMap<_, _> = HashMap::new();
+    attackers.insert(geist, P1);
+    state.combat = Some(CombatState {
+        attackers,
+        blocker_assignments: HashMap::new(),
+    });
+
+    let geist_card_id = state.get_object(geist).unwrap().card_id;
+    let behavior = registry.get(geist_card_id).unwrap();
+    behavior.on_attacks(&mut state, geist, &registry);
+
+    // Find the Angel token that was just created.
+    let angel = state
+        .objects
+        .values()
+        .find(|o| o.is_token && o.name.contains("Angel") && o.controller == P0)
+        .map(|o| o.id);
+    let angel = angel.expect("Geist should have spawned an Angel token");
+
+    let angel_defender = state
+        .combat
+        .as_ref()
+        .and_then(|c| c.attackers.get(&angel).copied());
+
+    assert_eq!(
+        angel_defender,
+        Some(P1),
+        "Geist of Saint Traft's Angel token should be inserted into \
+         combat.attackers with the same defender as Geist (P1). Bug BY: \
+         the handler reads state.opponent(controller) instead of \
+         consulting combat.attackers.get(&self_id). defender={:?}",
+        angel_defender,
     );
 }
