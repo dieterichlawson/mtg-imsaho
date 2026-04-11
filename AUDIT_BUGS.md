@@ -4797,6 +4797,85 @@ etc.
 
 ---
 
+### 🟡 Draft Bug 17-004: `validate_deck` has a no-op DFC fallback that silently allows the model to include more copies of a card than it drafted
+**Severity:** HIGH (silent correctness gap) — latent in the audit, but this is a pool-integrity validator that stops enforcing the pool-size constraint as soon as any copy of the card is in the pool at all
+**File:** `mtg-draft/src/deckbuilding.rs:201-224`
+
+`validate_deck` is meant to enforce "no maindeck card can appear more times than it appears in the drafted pool." The relevant code:
+
+```rust
+// Count available copies in pool (DFC names use "Front // Back", match on front)
+let mut pool_counts: HashMap<&str, u32> = HashMap::new();
+for card in pool {
+    let name = card.split(" // ").next().unwrap_or(card);
+    *pool_counts.entry(name).or_insert(0) += 1;
+}
+
+// Check maindeck against pool (strip DFC back face names)
+let mut used_counts: HashMap<&str, u32> = HashMap::new();
+for card in maindeck {
+    let name = card.split(" // ").next().unwrap_or(card.as_str());
+    *used_counts.entry(name).or_insert(0) += 1;
+
+    let available = pool_counts.get(name).copied().unwrap_or(0);
+    if used_counts[name] > available {
+        // Try matching against DFC front face
+        let front_match = pool_counts.keys().find(|&&k| k == name);
+        if front_match.is_none() {
+            return Err(format!(
+                "'{}' is not in your drafted pool.",
+                name
+            ));
+        }
+    }
+}
+```
+
+Walk through the "more copies than drafted" case:
+
+1. Seat 1 drafts exactly **one** Abattoir Ghoul. `pool_counts["Abattoir Ghoul"] = 1`.
+2. Seat 1 submits a deck containing Abattoir Ghoul **five** times. The loop processes each copy:
+   - 1st copy: `used_counts["Abattoir Ghoul"] = 1`, `available = 1`, `1 > 1` is false, no check.
+   - 2nd copy: `used_counts["Abattoir Ghoul"] = 2`, `available = 1`, `2 > 1` is true. Enter the `if` branch.
+   - `front_match = pool_counts.keys().find(|&&k| k == "Abattoir Ghoul")` — searches for a key equal to the name. The key IS in `pool_counts`, so `front_match = Some(_)`.
+   - `front_match.is_none()` is **false**, so the error branch is skipped.
+   - Loop continues to the next copy without complaint.
+   - 3rd, 4th, 5th copies: same story. All accepted.
+3. The function falls through to the total-size / basic-count / sideboard-computation steps, none of which enforce per-card pool limits.
+
+**The "DFC front face" fallback is a no-op.** It's structurally identical to the preceding lookup: `pool_counts.get(name)` and `pool_counts.keys().find(|&&k| k == name)` both answer the same question — "is `name` a key of `pool_counts`?" — because `pool_counts` was populated with the same front-face-stripping logic at line 202-205. The only case where the `find` succeeds while the initial `get` returned 0 is when the key is present with value zero, which never happens (the loop only inserts via `+= 1`).
+
+So once ANY copy of a card is in the pool, the validator silently allows arbitrarily many copies of that same card in the maindeck.
+
+The sideboard-computation loop at line 263-271 compounds the bug cosmetically: it tries to remove one pool entry per maindeck copy via `iter().position(...)`, but since the pool only has 1 entry, the first copy is removed and subsequent `position(...)` calls return `None`, so nothing happens. The sideboard ends up empty for that card but the deck still validates. No error.
+
+**Did NOT fire in audit** — I sampled Seat 1's pool (lines 9272-9313) and their submitted deck (lines 9319-9349) and the counts match (2 Elder Cathar in pool + 2 in maindeck; 2 Mausoleum Guard in pool + 2 in maindeck). None of the eight seats in the audit log exploited the bug. But a smarter model or one with higher temperature could silently inflate its deck with multiple copies of a single powerful card, and the validator would accept it.
+
+**Concrete model-exploit scenario:** model drafts 1 Dearly Departed (strong rare), realizes it wants 4 for consistency, submits a 40-card deck with 4 Dearly Departed. Per Magic rules, the deck is illegal. Per current validator, it passes. The game engine then builds a library containing 4 Dearly Departed from the submitted list — effectively letting the model print extra copies of its best cards. Same for Curse of Death's Hold, Bloodgift Demon, anything rare and impactful.
+
+**Proposed fix:** delete the no-op `front_match` fallback and just check `used_counts[name] > available` as the hard limit:
+
+```rust
+for card in maindeck {
+    let name = card.split(" // ").next().unwrap_or(card.as_str());
+    *used_counts.entry(name).or_insert(0) += 1;
+
+    let available = pool_counts.get(name).copied().unwrap_or(0);
+    if used_counts[name] > available {
+        return Err(format!(
+            "Maindeck contains {} copies of '{}' but only {} were drafted.",
+            used_counts[name], name, available
+        ));
+    }
+}
+```
+
+If the original intent was to handle a DFC whose name mismatches between pool (`"Delver of Secrets // Insectile Aberration"`) and maindeck (`"Delver of Secrets"`), that case is already handled by the `split(" // ").next()` calls on both sides at lines 203 and 210 — the keys match on front-face name. The fallback is dead code that masks the pool-size check.
+
+**Cross-references:** Bug H9 (deck-builder validator doesn't help the model converge) documents that the validator's error messages are unhelpful at the convergence-retry layer. This bug (17-004) is the *correctness* half: even when the validator does flag a problem, it has a hole that lets invalid decks through. Both bugs want the same fix file (`deckbuilding.rs`) and should probably land together.
+
+---
+
 ### 🟡 Engine Bug E1-001: Grimgrin, Corpse-Born's attack trigger inline-enumerates targets without a hexproof filter, letting the model destroy an opponent's hexproof creature
 **Severity:** medium — latent unless an opponent has a hexproof creature on the battlefield
 **File:** `mtg-engine/src/cards/isd/grimgrin_corpse_born.rs:87-128`
