@@ -3207,4 +3207,156 @@ index. Both are symptoms of "trait methods on CardBehavior don't
 carry enough context to disambiguate per-source decisions." A
 shared fix (threading the source through) would close both bugs
 and make future card implementations more robust.
+---
+
+### 🟡 Engine Bug 9F-001: Snapcaster Mage can't target graveyard cards that already have printed flashback
+**Severity:** low — Snapcaster was not drafted in v5 audit, but the filter is wrong
+**File:** `mtg-engine/src/cards/isd/snapcaster_mage.rs:49-58`
+**Agent prefix:** 9F (from branch `audit-bugs-9F37F92D-r4`)
+
+Oracle: "When Snapcaster Mage enters, target instant or sorcery card
+in your graveyard gains flashback until end of turn. The flashback
+cost is equal to its mana cost."
+
+Per Scryfall ruling: "If the targeted card already has flashback, it
+has both the old flashback cost and the new one. The card's
+controller may choose either cost to pay when casting it."
+
+The implementation excludes cards that already have flashback:
+
+```rust
+.filter(|o| {
+    registry.card_data(o.card_id)
+        .map(|d| {
+            (d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
+                && d.flashback_cost.is_none()
+        })
+        .unwrap_or(false)
+})
+```
+
+The `&& d.flashback_cost.is_none()` clause eliminates every
+flashback-printed card from the eligible target list. A player with
+Forbidden Alchemy, Silent Departure, Travel Preparations, Think Twice,
+Burning Vengeance, Devil's Play, or any other printed-flashback
+instant/sorcery in their graveyard CANNOT use Snapcaster Mage on
+them, even though the ruling above explicitly supports it.
+
+This matters in ISD because most U/B/R/G decks end up with flashback
+instants and sorceries in the graveyard by mid-game. Snapcaster's
+most common real-world use case is to re-cast one of them using
+Snapcaster's mana-cost flashback (which uses the card's printed
+mana cost — often cheaper than the printed flashback cost, e.g.
+Forbidden Alchemy is `{2}{U}` / flashback `{6}{B}`, Snapcaster
+grants flashback at the {2}{U} mana cost, much cheaper).
+
+**Did NOT fire** in v5 audit — Snapcaster Mage was not drafted.
+
+**Proposed fix:** remove the `&& d.flashback_cost.is_none()` clause.
+Allow any instant/sorcery card in graveyard to be targeted:
+```rust
+.filter(|o| {
+    registry.card_data(o.card_id)
+        .map(|d| {
+            d.card_types.contains(&CardType::Instant)
+                || d.card_types.contains(&CardType::Sorcery)
+        })
+        .unwrap_or(false)
+})
+```
+
+The secondary dedupe at line 57 (skip if a `GrantFlashback` effect
+already exists on this card) is also questionable — a player might
+want two Snapcaster-grants on the same card if for some reason that
+were possible — but it's a much narrower concern and won't matter
+in ISD.
+
+Related: Bug M (Snapcaster Mage chooses target on resolve, not on
+cast) — both Snapcaster bugs can be fixed in the same pass.
+
+---
+
+### 🟡 Engine Bug 9F-002: Meta — ten ISD damage cards bypass the central damage helper (protection checks, planeswalker loyalty, replacement effects all silently skipped)
+**Severity:** medium — broad pattern, ten-plus cards affected, latent symptoms
+**Files:**
+- `mtg-engine/src/cards/isd/into_the_maw_of_hell.rs:71`
+- `mtg-engine/src/cards/isd/harvest_pyre.rs:49`
+- `mtg-engine/src/cards/isd/corpse_lunge.rs:52`
+- `mtg-engine/src/cards/isd/blazing_torch.rs:129`
+- `mtg-engine/src/cards/isd/heretics_punishment.rs:110`
+- `mtg-engine/src/cards/isd/garruk_relentless.rs:170` (front-face ability 0)
+- `mtg-engine/src/cards/isd/rolling_temblor.rs:38`
+- `mtg-engine/src/cards/isd/ashmouth_hound.rs:56`
+- `mtg-engine/src/cards/isd/balefire_dragon.rs:54`
+- `mtg-engine/src/cards/isd/daybreak_ranger.rs:156`
+- `mtg-engine/src/cards/helpers.rs:55` (`resolve_damage` shared helper used by Brimstone Volley, Devil's Play, Geistflame)
+
+Every one of these call sites does `obj.damage_marked += N`
+(sometimes with `obj.damaged_by.push(source)`) directly, instead of
+routing through the central damage helper at `engine.rs:2854+`
+(`PendingEffect::DealDamage` handler). The central helper is the
+only code path that currently:
+1. **Checks protection** (skips damage when target has protection
+   from the source's color/subtype — see `engine.rs:2841-2853`).
+2. **Decrements planeswalker loyalty** instead of writing
+   `damage_marked` for planeswalker targets (see
+   `engine.rs:2856-2867`).
+3. Routes through `damaged_by` consistently.
+4. Pushes the correct `NonCombatDamageDealt` event shape.
+
+**Observed consequences:**
+- **Protection silently skipped.** If a creature gains protection
+  from red (none in ISD), Brimstone Volley could still deal damage
+  to it via `resolve_damage`. Spare from Evil's protection (Bug
+  legacy-AZ) has the same bypass risk.
+- **Planeswalker loyalty ignored.** Paired with Bug BQ (AnyTarget
+  enumeration missing planeswalkers): even if a planeswalker target
+  could be chosen (BQ fix), the damage helper call site would
+  write `damage_marked` on the planeswalker instead of removing
+  loyalty counters.
+- **Inconsistent `damaged_by` tracking.** Bug T flagged Skirsdag
+  Cultist and Rolling Temblor for missing
+  `obj.damaged_by.push(source)`. Auditing the broader list: most
+  sites push damaged_by, but not all. A central helper would
+  enforce it.
+- **Replacement effects unhittable.** No ISD replacement effects
+  transform damage, but future-proofing: the current split makes
+  it impossible to add a DamageReplacement effect cleanly.
+
+**Proposed fix (refactor):** introduce a
+`crate::damage::apply_noncombat_damage(state, source, target, amount, source_name, registry)`
+helper in a new `mtg-engine/src/damage.rs` module (or in
+`cards/helpers.rs`). The helper wraps:
+- Protection check (`has_protection_from_creature` or equivalent).
+- Planeswalker branch (decrement `CounterType::Loyalty`).
+- Creature branch (`obj.damage_marked += amount`).
+- `damaged_by.push(source)`.
+- `NonCombatDamageDealt` event emission.
+
+Migrate every `damage_marked += ` call site in `cards/isd/*.rs` to
+call the helper. The `PendingEffect::DealDamage` path at
+engine.rs:2854+ can also be refactored to use the same helper for
+consistency. `resolve_damage` in `cards/helpers.rs:49-80` becomes a
+thin wrapper around the new helper for the spell-resolve target
+case, or a direct call site.
+
+**Did fire** in audit — Harvest Pyre fired 3-4 times, Corpse Lunge
+fired multiple times, Into the Maw of Hell fired (the Bug H case).
+In every sampled instance the target had no protection and was not
+a planeswalker, so no wrong behavior was observed. Purely latent
+for the planeswalker-or-protection interaction, but the broader
+fix is the clean way to address the whole family of documented
+bugs in one refactor:
+- Bug T (damaged_by missing on two cards)
+- Bug BQ (AnyTarget planeswalker enumeration)
+- Bug BR (Olivia / Curse of the Pierced Heart bypass)
+- Bug BZ (any_targets helper)
+- this bug (the broad bypass pattern)
+
+All of them collapse into "add a helper, migrate call sites" if
+done together.
+
+**Cross-references:** Bug BR, Bug BQ, Bug BZ, Bug T, and Bug 9F-001
+all interact with this pattern. Recommend fixing 9F-002 first as
+an enabling refactor, then the narrower bugs become trivial.
 
