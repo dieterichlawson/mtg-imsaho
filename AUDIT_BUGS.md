@@ -234,6 +234,128 @@ this bug. Maw of Hell is the most obvious in-set offender.
 
 ---
 
+### 🟡 Engine Bug I: X-cost flashback compute_autotap fails for `{X}{R}{R}{R}` etc.
+**Severity:** HIGH — Devil's Play (the only X-cost flashback card in ISD) can never be flashbacked via auto-tap
+**File:** `mtg-engine/src/engine.rs:1121` (flashback path)
+
+The normal-cast code path for X-cost spells has special handling at
+line ~778 that strips the X symbol from the cost and taps ALL mana sources
+to maximize X. The flashback code path at line 1121 just calls
+`mana::compute_autotap(fb_cost, ...)` directly with the full X-cost — and
+`compute_autotap` doesn't know how to handle the X variable. It tries to
+match the X symbol literally, can't, returns None, and the engine
+`continue`s, dropping the flashback action entirely.
+
+**Audit log evidence:** Seat 7 wanted to flashback Devil's Play multiple
+times. The prompts say `Flashback available: Devil's Play (flashback {X}{R}{R}{R})`
+in the hint section but the action list does NOT contain a Flashback
+Devil's Play option even when the player has 8+ untapped lands. Seat 7
+worked around this by manually tapping mountains/swamps one at a time
+to prefill the mana pool, then casting (the prefilled-pool path doesn't
+need autotap). Lines 49989, 50117, 50143 show six consecutive priority
+passes to assemble {2}{R}{R}{R} for X=2 lethal damage. Inefficient but
+functional.
+
+**Proposed fix:** copy the X-cost handling from the normal-cast code path
+into the flashback code path. Strip X from `fb_cost` before computing
+autotap, then build a tap plan that taps all mana sources.
+
+This bug ALSO means the cast label doesn't show what X will be — the
+model has to mentally compute "I have N mana, the non-X part of cost is K,
+so X = N - K" for every Devil's Play cast.
+
+---
+
+### 🟡 Harness Bug H8: X-cost spell labels don't show X
+**Severity:** medium
+**File:** `mtg-player/src/llm.rs:2069` (only handles `exile_x_from_gy_max`)
+
+For Harvest Pyre (`ExileXFromGraveyard`), the cast label shows
+`Cast Harvest Pyre X=2 (2 damage)` — the LLM player computes the effective
+X from `exile_x_from_gy_max` and shows it.
+
+But for ANY OTHER X-cost spell (Devil's Play, Heretic's Punishment if drafted,
+Brimstone Volley uses fixed cost so it's fine, etc.) the label is just
+`Cast Devil's Play (tap Swamp, Mountain)` with no X value at all. The model
+has to mentally compute X based on the tap plan size. This works most of
+the time but is a constant cognitive burden and source of errors.
+
+The model also can't choose a smaller X — the engine pre-picks max X for
+spells that DO get autotapped, and there's no way to express "I want X=2
+not X=4 because I want to leave mana up". The collapsed cast option always
+goes for max X.
+
+**Proposed fix:** when the cast spell has an X-cost, compute the effective
+X (`mana_value - non_x_cost`) from the tap plan and show it in the label,
+the same way Harvest Pyre's `exile_x_from_gy_max` is shown. Optionally,
+expand into one option per X value the player might want (this gets large
+for many lands but can be capped).
+
+---
+
+### 🟡 Engine Bug J: Harvest Pyre cast options collapse to a single max-X choice
+**Severity:** low (most uses of Harvest Pyre want max X)
+**File:** `mtg-player/src/llm.rs` action collapsing
+
+The engine generates one cast action per (X, subset of graveyard cards) for
+Harvest Pyre, but the LLM player's `seen_spell_objects` deduplication
+collapses them all into a single "Cast Harvest Pyre X=N (N damage)" entry,
+showing only the maximum X. For Boneyard Wurm / Spider Spawning / Splinterfright
+graveyard-care decks the player might want to deal less damage to preserve
+graveyard creatures. Currently impossible.
+
+Related to Engine Bug F (sacrifice/exile auto-pick) and Bug H8 (X-cost
+labels). All three need a richer cast-action representation.
+
+---
+
+### 🟡 Engine Bug K: SacrificeThis abilities also got the no-autotap restriction (regression from Bug C fix)
+**Severity:** medium
+**File:** `mtg-engine/src/engine.rs:572-573` (the Bug C fix)
+
+When fixing Bug C (sacrifice-cost abilities autopicking the wrong creature),
+I added a blanket restriction:
+```rust
+let ability_has_sac_cost = !matches!(ab.sacrifice_cost, SacrificeCost::None);
+let ability_tap_plan: Vec<(ObjectId, usize)> = if ability_has_sac_cost {
+    // No auto-tap for sacrifice abilities — require mana already in the pool.
+    ...
+}
+```
+
+This is too aggressive: it includes `SacrificeCost::SacrificeThis`, where the
+source permanent sacrifices itself and there is no creature-choice conflict
+to worry about. Cards affected:
+- Selfless Cathar (`{1}{W}, sacrifice this: +1/+1 to creatures`)
+- Traveler's Amulet (`{1}, sacrifice this: search for basic land`)
+- Brain Weevil (no mana cost — unaffected)
+- Full Moon's Rise (no mana cost — unaffected)
+- Ghost Quarter (no mana cost — unaffected)
+- Selfless Cathar / Silverchase Fox (have mana costs — affected)
+- Grimoire of the Dead (`{4}, T, discard: study counter`) — has discard, not strict sacrifice
+- Skirsdag High Priest (uses tap-creature cost, different mechanism)
+
+For SacrificeThis, the autotap can't conflict with the sacrifice because the
+source is the only thing being sacrificed (it's not chosen from a list).
+The exception is if the source itself is a mana source (Cellar Door, etc.)
+but those are rare and not in this set.
+
+**Did NOT fire in the audit** because the audit log was generated before
+the fix landed. But after the fix, Selfless Cathar's ability won't appear
+in the action list unless the player has manually pre-tapped {1}{W}, which
+is a regression from how it would behave under just-the-Bug-A fix.
+
+**Proposed fix:** narrow the autotap restriction to
+`SacrificeCreature | SacrificeAnotherCreature` only:
+```rust
+let ability_has_creature_choice_sac = matches!(
+    ab.sacrifice_cost,
+    SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature
+);
+```
+
+---
+
 ### 🟡 Engine Bug G: cosmetic — duplicate `Step: Upkeep` AUTO-PASS entries
 **Severity:** cosmetic
 
