@@ -7,76 +7,155 @@ and `/Users/dlaw/mtg/mtg-engine/src/cards/isd/*.rs` for bugs in the MTG
 engine and harness, then document each bug for later fixing. **Do not fix
 bugs.** Your output is documentation only.
 
-## Critical: multi-agent coordination
+## Critical: multi-agent coordination via worktrees
 
-Multiple agents are working in this repository at the same time. **You
-must not directly edit `AUDIT_BUGS.md` on master**, because two agents
-appending to the same file will conflict and one of you will lose work.
-Coordinate via git branches:
+Multiple agents are working in this repository at the same time. Past
+rounds of this audit used shared-repo branches and ran into constant
+races: one agent's `git checkout` would bump another agent's HEAD, the
+`AUDIT_BUGS.md` file would change between an agent's Read and Edit
+calls, and "next available letter" collided when agents picked letters
+in parallel. **The fix is git worktrees.** Each agent works in a
+filesystem-isolated worktree so concurrent agents can't touch your
+HEAD or your working copy of `AUDIT_BUGS.md` mid-edit.
 
-1. **Before starting**, read `/Users/dlaw/mtg/AUDIT_BUGS.md` end-to-end on
-   master so you know which bugs are already documented and which you
-   should NOT re-discover.
-2. Run `git fetch origin && git log master..origin/master --oneline` —
-   if there are new commits from another agent, `git rebase origin/master`
-   first so you start from current state.
-3. **Create a new branch** named `audit-bugs-<short-uuid>`:
-   ```bash
-   git checkout -b audit-bugs-$(uuidgen | cut -c1-8)
-   ```
-4. Do all your work on this branch. Append your new bugs to the BOTTOM
-   of `AUDIT_BUGS.md` in your branch. **Use a per-agent letter prefix**
-   to avoid colliding with concurrent agents. Each agent gets a unique
-   2-letter prefix derived from their branch UUID (first two hex
-   characters), e.g. an agent on `audit-bugs-1AD18CAF` uses bug names
+The shape of the workflow is **tight per-bug cycles**: every single
+bug round-trips through master before you start the next one, so
+every agent sees every other agent's findings within seconds and no
+one duplicates work.
+
+### One-time setup at session start
+
+1. Pick a short UUID for yourself: `MY_UUID=$(uuidgen | cut -c1-8)`.
+   You'll use the first two hex chars (`${MY_UUID:0:2}`) as your
+   bug-name prefix — e.g. uuid `1AD18CAF` → bugs named
    `Bug 1A-001`, `Bug 1A-002`, etc. This avoids letter-collision
-   chains entirely and lets you sort bugs by agent at merge time.
-   Cross-references between bugs use the full `Bug NN-XXX` form.
+   chains entirely.
+2. Make sure master is clean and synced:
+   ```bash
+   cd /Users/dlaw/mtg
+   git fetch origin
+   git checkout master
+   git pull --ff-only origin master   # no-op if already synced
+   ```
+3. Create your worktree from the current `origin/master` commit:
+   ```bash
+   mkdir -p /Users/dlaw/mtg/.claude/worktrees
+   git worktree add \
+     /Users/dlaw/mtg/.claude/worktrees/audit-${MY_UUID} \
+     -b audit-${MY_UUID} \
+     origin/master
+   cd /Users/dlaw/mtg/.claude/worktrees/audit-${MY_UUID}
+   ```
+   From this point on, **all your reads, edits, greps, and commits
+   happen inside the worktree**. The main working tree at
+   `/Users/dlaw/mtg/` is off-limits for writes — only the worktree is
+   safe.
+4. Read `AUDIT_BUGS.md` in the worktree end-to-end so you know which
+   bugs are already documented. Note the next free `NN-XXX` number
+   for your prefix (almost always `NN-001` the first time).
 
-   Legacy bugs A through BU use the old single-letter scheme; new bugs
-   should use the per-agent scheme. The legacy scheme reached BU after
-   two reletter rounds because agents kept picking the same "next
-   available" letters in parallel.
-5. **Re-fetch and re-read the master version of `AUDIT_BUGS.md` every
-   time another agent's branch is merged to master** so you don't waste
-   effort re-discovering bugs they already documented. Check for new
-   merges with `git fetch origin && git log HEAD..origin/master --oneline`
-   before each new round of mining. If there are new commits, view the
-   updated bug list without losing your work-in-progress branch:
+### Per-bug cycle (the critical loop — run this EVERY bug)
+
+After you identify each bug — BEFORE looking for the next one — do
+the full round-trip to master. This keeps other agents in sync with
+your findings and keeps you in sync with theirs.
+
+1. **Append the bug to `AUDIT_BUGS.md` in your worktree.** Use the
+   format in "Bug entry format" below. Name it `Bug NN-XXX` where
+   `NN` is your two-char prefix and `XXX` is the next unused number
+   for that prefix.
+2. **Commit locally in the worktree:**
    ```bash
-   git fetch origin
-   git show origin/master:AUDIT_BUGS.md | less
+   git add AUDIT_BUGS.md
+   git commit -m "Audit: Bug NN-XXX (<one-line summary>)"
    ```
-   Then rebase your branch onto the new master so your eventual push
-   doesn't conflict:
-   ```bash
-   git rebase origin/master
-   ```
-6. **Commit frequently in small chunks** so your branch is easy to
-   rebase. One commit per bug or per 3-5 closely related bugs is fine.
-7. **When you finish a session, rebase onto current master and push the
-   branch**:
+3. **Fetch and rebase onto the latest master.** Other agents may have
+   landed bugs while you were mining:
    ```bash
    git fetch origin
    git rebase origin/master
-   # resolve conflicts in AUDIT_BUGS.md by keeping BOTH agents' bug entries
-   # (they're appended to the bottom, so conflicts should be rare)
-   git push -u origin audit-bugs-<your-short-uuid>
    ```
-   Do NOT merge to master yourself. The human will review your branch
-   and merge it. If `git push` fails because the branch already exists
-   (someone else picked the same uuid), pick a new one.
+   If the rebase hits a conflict in `AUDIT_BUGS.md`, resolve it by
+   **keeping both sides**: their bugs stay where they are in the
+   middle of the file, your new bug goes at the bottom. Never delete
+   another agent's bug entry. `git rebase --continue` when done.
+4. **Re-read `AUDIT_BUGS.md`** in your worktree after the rebase. If
+   another agent documented the exact same bug you just wrote, you
+   have two options:
+   - If yours is clearly a subset/duplicate, `git reset --hard HEAD~1`
+     to drop your commit and move on to the next bug.
+   - If yours has unique info (different affected cards, audit
+     evidence the other bug lacks, different proposed fix), keep
+     your commit but add a cross-reference line: "Related to Bug XX-YYY."
+5. **Push directly to master.** Since we're round-tripping per bug,
+   this is always a fast-forward:
+   ```bash
+   git push origin HEAD:master
+   ```
+   If the push fails because origin/master advanced again between
+   your rebase and your push, loop back to step 3 and retry.
+6. **Rebuild the worktree on the new master tip.** This is what keeps
+   your filesystem view of `AUDIT_BUGS.md` in sync with other agents'
+   findings going forward. Don't just `git pull` — fully destroy and
+   recreate:
+   ```bash
+   cd /Users/dlaw/mtg
+   git worktree remove --force /Users/dlaw/mtg/.claude/worktrees/audit-${MY_UUID}
+   git branch -D audit-${MY_UUID}
+   git fetch origin
+   git worktree add \
+     /Users/dlaw/mtg/.claude/worktrees/audit-${MY_UUID} \
+     -b audit-${MY_UUID} \
+     origin/master
+   cd /Users/dlaw/mtg/.claude/worktrees/audit-${MY_UUID}
+   ```
+   Rebuilding (rather than `git pull`) guarantees that every per-bug
+   cycle starts from a clean slate rooted at the latest `origin/master`,
+   with no leftover rebase state, no stale index, and no possibility
+   of the rebase/push having left the worktree in an inconsistent
+   state.
+7. **Now look for the next bug.** Go back to mining. When you find
+   one, run this cycle again from step 1.
+
+Per-bug cycles keep duplicate-work risk near zero: the worst case is
+you and another agent both commit the same bug within a few seconds
+of each other, one of you wins the race to push, the loser notices at
+step 4 and drops their commit.
+
+### Why not "several bugs per push"?
+
+Because bug discovery is the slow step, not committing. Mining a bug
+takes minutes; the rebase+push cycle takes seconds. Batching several
+bugs into one push saves almost nothing and dramatically increases
+the chance that another agent rediscovers one of the bugs you haven't
+yet pushed. Push early, push often.
+
+### Why worktrees and not branches in the main repo?
+
+- **Filesystem isolation.** Your `AUDIT_BUGS.md` won't be modified
+  mid-edit by another agent touching the shared working tree.
+- **HEAD isolation.** Another agent running `git checkout` in the
+  main repo can't accidentally land you on their branch.
+- **Rebuild-on-HEAD-change** gives a clean starting point per bug
+  with no risk of stale index state.
 
 ## Conflict resolution rules
 
-- AUDIT_BUGS.md is append-only. If you ever find yourself deleting or
-  modifying an entry that another agent wrote, stop and reconsider.
+- `AUDIT_BUGS.md` is append-only. If you ever find yourself deleting
+  or modifying an entry that another agent wrote, stop and reconsider.
 - If a bug you found is already documented (even with a different
-  letter), do NOT re-document it. Add a one-line note to your own work
-  log saying "Bug X already covered by Bug Y" and move on.
-- Bug-letter conflicts (you and another agent both used `Bug AU`) are
-  resolved at merge time by the human. Don't try to fix the letter
-  yourself.
+  prefix), do NOT re-document it. Either drop your commit (step 4 of
+  the per-bug cycle) or keep it with a cross-reference line if you
+  have genuinely unique info to add.
+- Bug-prefix collisions can't happen under the per-agent UUID scheme.
+  If you see two bugs with the same `NN-XXX` name, one of them is
+  from an older round of the audit using a different convention —
+  leave both alone.
+- If the rebase in step 3 conflicts on `AUDIT_BUGS.md`, resolve by
+  keeping BOTH sides. The file is append-only, so "both" means
+  "their changes in the middle, your bug at the bottom, nothing
+  deleted". If you are confused, `git rebase --abort` and re-read
+  the conflict instead of guessing.
 
 ## Don't ask questions
 
@@ -158,7 +237,7 @@ memory. The cache lives at `data/oracle_cache.json` and the script is
 Each bug entry in `AUDIT_BUGS.md` should follow this template:
 
 ```markdown
-### 🟡 Engine Bug AX: <one-line summary>
+### 🟡 Engine Bug NN-XXX: <one-line summary>
 **Severity:** low | medium | HIGH
 **File:** `mtg-engine/src/cards/isd/<file>.rs:<line-range>`
 **Audit evidence:** <line numbers in verify-draft-8seat-high-v5.log if it fired>
@@ -168,31 +247,54 @@ Each bug entry in `AUDIT_BUGS.md` should follow this template:
 - A code snippet showing the bug
 - A code snippet showing the proposed fix shape (don't actually fix it)
 - Whether it fired in the audit log
-- Workarounds or related bugs (cross-reference by bug letter)
+- Workarounds or related bugs (cross-reference by full `Bug NN-XXX` or legacy letter)
 
 **Proposed fix:** <one-paragraph fix summary>
 ```
 
+`NN` is your two-char per-agent prefix (first two hex chars of your
+worktree UUID). `XXX` is the next unused three-digit number for that
+prefix — start at `001` and increment.
+
+Legacy bugs `A` through `BU` and a few early `NN-XXX` entries use
+older conventions; leave them alone and cross-reference them using
+whatever form they already have (`Bug AP`, `Bug 99-001`, etc.).
+
 The status emoji is `🟡 SURVEYED` for documented-but-not-fixed bugs.
 Use `✅ FIXED` only when the bug is genuinely landed (not your job).
 
-## Final checklist before pushing your branch
+## Per-bug checklist (run before pushing each bug)
 
-- [ ] Re-read master's `AUDIT_BUGS.md` to confirm no duplicates
-- [ ] Each new bug has a unique letter that doesn't conflict with the
-      master version
+- [ ] Bug name uses your `NN-XXX` prefix and is unused on current master
+- [ ] Entry is appended to the BOTTOM of `AUDIT_BUGS.md`; no existing
+      entries deleted or reordered
+- [ ] Commit message is descriptive and prefixed `Audit: Bug NN-XXX (...)`
+- [ ] `git fetch origin && git rebase origin/master` ran cleanly (or
+      conflicts were resolved by keeping both sides of `AUDIT_BUGS.md`)
+- [ ] Re-read `AUDIT_BUGS.md` after rebase to confirm your bug isn't
+      a duplicate of one that landed while you were mining
 - [ ] `cargo check` still passes (you should only have edited
       `AUDIT_BUGS.md`)
-- [ ] Each commit message is descriptive
-- [ ] Branch is rebased onto current `origin/master`
 - [ ] You did NOT modify any source code in `mtg-engine/`,
       `mtg-player/`, or `mtg-draft/`
-- [ ] You did NOT merge to master — push the branch and stop
+- [ ] Push succeeded as a fast-forward to `master` (retry the rebase
+      loop if another agent advanced origin in the meantime)
+- [ ] Worktree destroyed and recreated on the new `origin/master` tip
+      before mining the next bug
+
+## Session-end checklist
+
+- [ ] Last bug has been pushed to master via the per-bug cycle (no
+      local-only commits left in the worktree)
+- [ ] Worktree removed: `git worktree remove /Users/dlaw/mtg/.claude/worktrees/audit-${MY_UUID}`
+- [ ] Local branch deleted: `git branch -D audit-${MY_UUID}`
+- [ ] Main working tree at `/Users/dlaw/mtg/` is still on `master` and
+      unchanged by your session (other than the bugs you landed)
 
 ## Files of interest
 
 - `verify-draft-8seat-high-v5.log` — the audit log to mine
-- `AUDIT_BUGS.md` — the bug tracker to append to (only on your branch)
+- `AUDIT_BUGS.md` — the bug tracker to append to (edit only inside your worktree)
 - `mtg-engine/src/cards/isd/*.rs` — card implementations to review
 - `mtg-engine/src/engine.rs` — legal_actions, apply, mana
 - `mtg-engine/src/state.rs` — GameState, effective P/T, has_keyword
