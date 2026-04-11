@@ -19,7 +19,16 @@ const BASIC_LANDS: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"
 
 /// Parse an LLM's deck building response.
 ///
-/// Expected format:
+/// Preferred format (JSON):
+/// ```json
+/// {
+///   "thoughts": "...",
+///   "maindeck": ["Card Name", "Card Name", ...],
+///   "lands": {"Plains": 0, "Island": 9, "Swamp": 8, "Mountain": 0, "Forest": 0}
+/// }
+/// ```
+///
+/// Legacy text format (kept as a fallback for robustness):
 /// ```text
 /// MAINDECK:
 /// Card Name
@@ -30,6 +39,42 @@ const BASIC_LANDS: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"
 /// 8 Swamp
 /// ```
 pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<String, u32>), String> {
+    // Primary path: JSON. Strip optional ```json code fences first.
+    let stripped = response
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    if let Ok(v) = serde_json::from_str::<serde_json::Value>(stripped) {
+        let maindeck: Vec<String> = v["maindeck"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|c| c.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
+            .unwrap_or_default();
+        let mut lands: HashMap<String, u32> = HashMap::new();
+        if let Some(lmap) = v["lands"].as_object() {
+            for (name, count) in lmap {
+                if let Some(n) = count.as_u64() {
+                    if n > 0 {
+                        lands.insert(name.clone(), n as u32);
+                    }
+                }
+            }
+        }
+        if maindeck.is_empty() {
+            return Err("JSON response missing or empty \"maindeck\" array.".to_string());
+        }
+        if lands.is_empty() {
+            return Err("JSON response missing or empty \"lands\" object.".to_string());
+        }
+        return Ok((maindeck, lands));
+    }
+
+    // Legacy text format fallback.
     let mut maindeck = Vec::new();
     let mut lands = HashMap::new();
 
@@ -79,10 +124,10 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
     }
 
     if maindeck.is_empty() {
-        return Err("No maindeck cards found. Expected a MAINDECK: section.".to_string());
+        return Err("No maindeck cards found. Expected JSON `maindeck` array or a MAINDECK: section.".to_string());
     }
     if lands.is_empty() {
-        return Err("No lands found. Expected a LANDS: section.".to_string());
+        return Err("No lands found. Expected JSON `lands` object or a LANDS: section.".to_string());
     }
 
     Ok((maindeck, lands))

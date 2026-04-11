@@ -265,7 +265,7 @@ fn main() {
                                     pool,
                                     history,
                                 );
-                                let response = client.send_message(&prompt);
+                                let response = client.send_pick_message(&prompt, available.len());
                                 let chosen = parse_pick_response(&response, available);
                                 client.record_pick(&chosen);
                                 (seat, chosen, prompt, response)
@@ -488,25 +488,43 @@ fn main() {
 // ─── Draft Pick Parsing ──────────────────────────────────────────────
 
 fn parse_pick_response(response: &str, available: &[String]) -> String {
-    // Look for "PICK: <number>" on the last matching line
+    // Primary path: JSON response like `{"thoughts": "...", "pick": N}`.
+    // Secondary path (legacy or stray wrappers): strip markdown code fences
+    // and retry. Last resort: fall through to a text scan for "PICK: N".
+    let try_json = |s: &str| -> Option<String> {
+        let v: serde_json::Value = serde_json::from_str(s).ok()?;
+        let idx = v["pick"].as_u64()? as usize;
+        (idx < available.len()).then(|| available[idx].clone())
+    };
+
+    if let Some(pick) = try_json(response) {
+        return pick;
+    }
+
+    // Strip optional ```json ... ``` fencing that some models still add.
+    let stripped = response
+        .trim()
+        .trim_start_matches("```json")
+        .trim_start_matches("```")
+        .trim_end_matches("```")
+        .trim();
+    if let Some(pick) = try_json(stripped) {
+        return pick;
+    }
+
+    // Legacy text scan — kept for robustness against older responses.
     for line in response.lines().rev() {
         let trimmed = line.trim().to_uppercase();
         if let Some(rest) = trimmed.strip_prefix("PICK:") {
-            if let Ok(idx) = rest.trim().parse::<usize>() {
+            if let Ok(idx) = rest.trim().trim_start_matches('"').trim_end_matches('"').trim_end_matches(',').parse::<usize>() {
                 if idx < available.len() {
                     return available[idx].clone();
                 }
             }
         }
-        // Also try just a bare number on the last line
-        if let Ok(idx) = trimmed.parse::<usize>() {
-            if idx < available.len() {
-                return available[idx].clone();
-            }
-        }
     }
 
-    // Fallback: pick the first card
+    // Fallback: pick the first card.
     available[0].clone()
 }
 
@@ -516,7 +534,7 @@ fn build_deck_with_llm(
     client: &mut llm_client::DraftLlmClient,
     pool: &[String],
 ) -> DeckBuildResult {
-    let prompt = build_deck_prompt(pool);
+    let prompt = build_deck_prompt(pool, client.uses_thoughts_in_json());
     let mut last_error = String::new();
     let mut attempts: Vec<DeckAttempt> = Vec::new();
     let max_retries = 10;
@@ -536,7 +554,7 @@ fn build_deck_with_llm(
             )
         };
 
-        let response = client.send_deck_building_message(&msg);
+        let response = client.send_deck_building_message(&msg, pool);
 
         match deckbuilding::parse_deck_response(&response) {
             Ok((maindeck, lands)) => match deckbuilding::validate_deck(pool, &maindeck, &lands) {
@@ -575,7 +593,7 @@ fn build_deck_with_llm(
     }
 }
 
-fn build_deck_prompt(pool: &[String]) -> String {
+fn build_deck_prompt(pool: &[String], thoughts_in_json: bool) -> String {
     let mut prompt = String::from(
         "Draft complete! Build a 40-card deck from your pool.\n\n\
          Choose your best ~22-24 non-land cards and add basic lands to reach 40+ cards total.\n\
@@ -586,16 +604,13 @@ fn build_deck_prompt(pool: &[String]) -> String {
         let name = card.split(" // ").next().unwrap_or(card);
         prompt.push_str(&format!("{}. {}\n", i, name));
     }
-    prompt.push_str(
-        "\nOutput your deck in this exact format:\n\n\
-         MAINDECK:\n\
-         Card Name\n\
-         Card Name\n\
-         ...\n\n\
-         LANDS:\n\
-         9 Island\n\
-         8 Swamp\n",
-    );
+    let thoughts_prefix = if thoughts_in_json { "\"thoughts\": \"...\", " } else { "" };
+    prompt.push_str(&format!(
+        "\nRespond with JSON formatted as:\n\
+         {{{}\"maindeck\": [\"Card Name\", \"Card Name\", ...], \"lands\": {{\"Plains\": 0, \"Island\": 9, \"Swamp\": 8, \"Mountain\": 0, \"Forest\": 0}}}}\n\
+         where \"maindeck\" is the list of non-land card names (repeated for multiples) and \"lands\" is the count of each basic land to add. The deck must total at least 40 cards.",
+        thoughts_prefix,
+    ));
     prompt
 }
 

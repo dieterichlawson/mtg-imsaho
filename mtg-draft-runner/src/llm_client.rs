@@ -175,14 +175,130 @@ pub fn print_usage_summary(total_games: usize) {
 
 /// LLM client for draft picks and deck building.
 /// Maintains a multi-turn conversation for the draft process.
-/// Backend trait for draft LLM communication.
+/// Backend trait for draft LLM communication. Both `send_pick` and
+/// `send_deck_building` return the raw JSON response (pretty-printed)
+/// from the model, with the schema enforced via structured output on
+/// both Gemini and Anthropic.
 trait DraftBackend: Send {
-    /// Send a draft pick message. Returns "PICK: N" format text.
-    fn send_pick(&mut self, message: &str) -> String;
-    /// Send a deck building message. Returns "MAINDECK:\n...\nLANDS:\n..." format text.
-    fn send_deck_building(&mut self, message: &str) -> String;
+    /// Send a draft pick message. `num_cards` is the number of cards in
+    /// the current pack, used to build an enum-constrained `pick` index
+    /// schema. Returns the raw JSON response text.
+    fn send_pick(&mut self, message: &str, num_cards: usize) -> String;
+    /// Send a deck building message. `pool` is the full set of card
+    /// names the model can pick from, used to build an enum-constrained
+    /// `maindeck` schema. Returns the raw JSON response text.
+    fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String;
     /// The full system prompt this backend will send to the model.
     fn system_prompt(&self) -> &str;
+    /// Whether this backend expects the model to put its private reasoning
+    /// in a "thoughts" field in the JSON response. Backends that surface
+    /// reasoning through a separate channel (Anthropic extended thinking)
+    /// return false; their schemas have "thoughts" stripped automatically
+    /// and their prompts omit the "thoughts" field from the response-format
+    /// hint.
+    fn uses_thoughts_in_json(&self) -> bool { true }
+}
+
+/// Build a pick schema with the `pick` field constrained to the valid
+/// 0..num_cards range via an enum. This means the model cannot emit an
+/// out-of-range index under constrained decoding.
+fn pick_schema_for(num_cards: usize) -> serde_json::Value {
+    let valid_indices: Vec<serde_json::Value> = (0..num_cards)
+        .map(|i| serde_json::json!(i))
+        .collect();
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "thoughts": {
+                "type": "string",
+                "description": "Brief reasoning for this pick"
+            },
+            "pick": {
+                "type": "integer",
+                "enum": valid_indices,
+                "description": "0-indexed number of the card to pick"
+            }
+        },
+        "required": ["thoughts", "pick"]
+    })
+}
+
+/// Build a deck-building schema with `maindeck` item names constrained
+/// to the cards actually in the pool via an enum. The `lands` object
+/// has fixed keys for the five basic lands. Under constrained decoding
+/// the model cannot invent card names it didn't draft.
+fn deck_schema_for(pool: &[String]) -> serde_json::Value {
+    let mut unique: Vec<String> = pool
+        .iter()
+        .map(|c| c.split(" // ").next().unwrap_or(c).to_string())
+        .collect();
+    unique.sort();
+    unique.dedup();
+    let valid_cards: Vec<serde_json::Value> = unique
+        .into_iter()
+        .map(serde_json::Value::String)
+        .collect();
+    serde_json::json!({
+        "type": "object",
+        "properties": {
+            "thoughts": {
+                "type": "string",
+                "description": "Brief reasoning for deck construction choices"
+            },
+            "maindeck": {
+                "type": "array",
+                "items": {"type": "string", "enum": valid_cards},
+                "description": "Non-land card names for the maindeck (repeat a name for multiples)"
+            },
+            "lands": {
+                "type": "object",
+                "properties": {
+                    "Plains":   {"type": "integer"},
+                    "Island":   {"type": "integer"},
+                    "Swamp":    {"type": "integer"},
+                    "Mountain": {"type": "integer"},
+                    "Forest":   {"type": "integer"}
+                },
+                "description": "Basic land counts"
+            }
+        },
+        "required": ["thoughts", "maindeck", "lands"]
+    })
+}
+
+/// Transform a JSON schema to be Anthropic-compatible:
+/// - add `additionalProperties: false` to every object
+/// - strip unsupported numeric constraints (`minimum`, `maximum`, `multipleOf`)
+/// - strip the `thoughts` field from `properties` and `required` (reasoning
+///   happens in the extended-thinking channel, not inside the JSON payload)
+fn sanitize_schema_for_anthropic(value: &serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(map) => {
+            let mut new_map = serde_json::Map::new();
+            for (key, val) in map {
+                if key == "minimum" || key == "maximum" || key == "multipleOf" {
+                    continue;
+                }
+                new_map.insert(key.clone(), sanitize_schema_for_anthropic(val));
+            }
+            if new_map.get("type").and_then(|t| t.as_str()) == Some("object") {
+                new_map
+                    .entry("additionalProperties".to_string())
+                    .or_insert(serde_json::Value::Bool(false));
+                if let Some(props) = new_map.get_mut("properties").and_then(|p| p.as_object_mut()) {
+                    props.remove("thoughts");
+                }
+                if let Some(req) = new_map.get_mut("required").and_then(|r| r.as_array_mut()) {
+                    req.retain(|v| v.as_str() != Some("thoughts"));
+                }
+            }
+            serde_json::Value::Object(new_map)
+        }
+        serde_json::Value::Array(arr) => serde_json::Value::Array(
+            arr.iter().map(sanitize_schema_for_anthropic).collect(),
+        ),
+        other => other.clone(),
+    }
 }
 
 /// Shared draft rules (used by all backends).
@@ -264,7 +380,7 @@ impl AnthropicDraftBackend {
     fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
         let api_key = env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
         let system_prompt = format!(
-            "{}\n\n## Response format\nThink through your pick, then on your final line write ONLY:\nPICK: <number>\nwhere <number> is the 0-indexed number of the card you want.",
+            "{}\n\n## Response format\nEvery prompt will end with an explicit \"Respond with JSON formatted as ...\" instruction. Always reply with exactly that JSON object and nothing else — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.",
             build_draft_rules(set_name, guide, card_reference)
         );
         Self {
@@ -276,7 +392,14 @@ impl AnthropicDraftBackend {
         }
     }
 
-    fn call_api(&self, messages: &[serde_json::Value]) -> String {
+    /// Send a message to Anthropic with the given JSON schema as
+    /// structured output. Returns the raw response text (which should
+    /// be valid JSON matching the schema).
+    fn call_api_structured(
+        &self,
+        messages: &[serde_json::Value],
+        schema: &serde_json::Value,
+    ) -> String {
         let system = serde_json::json!([{
             "type": "text",
             "text": &self.system_prompt,
@@ -294,11 +417,22 @@ impl AnthropicDraftBackend {
             }
         }
 
+        let sanitized = sanitize_schema_for_anthropic(schema);
         let body = serde_json::json!({
             "model": &self.model,
-            "max_tokens": 4096,
+            "max_tokens": 8192,
+            "thinking": {
+                "type": "enabled",
+                "budget_tokens": 4096
+            },
             "system": system,
-            "messages": msgs
+            "messages": msgs,
+            "output_config": {
+                "format": {
+                    "type": "json_schema",
+                    "schema": sanitized
+                }
+            }
         });
 
         for attempt in 0..3 {
@@ -317,45 +451,66 @@ impl AnthropicDraftBackend {
                 Ok(resp) if resp.status().is_success() => {
                     let json: serde_json::Value = resp.json().unwrap_or_default();
                     record_anthropic_usage(&self.model, &json["usage"]);
-                    return json["content"][0]["text"].as_str().unwrap_or("PICK: 0").trim().to_string();
+                    return json["content"][0]["text"]
+                        .as_str()
+                        .unwrap_or("{\"thoughts\":\"\",\"pick\":0}")
+                        .trim()
+                        .to_string();
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
                     if code == 529 || code == 429 { continue; }
                     let text = resp.text().unwrap_or_default();
                     eprintln!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
-                    return "PICK: 0".to_string();
+                    return "{\"thoughts\":\"\",\"pick\":0}".to_string();
                 }
                 Err(e) => { eprintln!("Request failed: {}", e); continue; }
             }
         }
-        "PICK: 0".to_string()
+        "{\"thoughts\":\"\",\"pick\":0}".to_string()
     }
 
-    fn send_conv(&mut self, conv: &mut Vec<serde_json::Value>, message: &str) -> String {
+    fn send_conv_structured(
+        &mut self,
+        conv: &mut Vec<serde_json::Value>,
+        message: &str,
+        schema: &serde_json::Value,
+    ) -> String {
         conv.push(serde_json::json!({"role": "user", "content": message}));
-        let resp = self.call_api(conv);
+        let resp = self.call_api_structured(conv, schema);
         conv.push(serde_json::json!({"role": "assistant", "content": &resp}));
         resp
     }
 }
 
 impl DraftBackend for AnthropicDraftBackend {
-    fn send_pick(&mut self, message: &str) -> String {
+    fn send_pick(&mut self, message: &str, num_cards: usize) -> String {
+        let schema = pick_schema_for(num_cards);
         let mut conv = std::mem::take(&mut self.conversation);
-        let result = self.send_conv(&mut conv, message);
+        let result = self.send_conv_structured(&mut conv, message, &schema);
         self.conversation = conv;
         result
     }
 
     // Deckbuilding shares the same conversation as pick selection so the model
     // can look back at every pack it saw and every pick it made.
-    fn send_deck_building(&mut self, message: &str) -> String {
-        self.send_pick(message)
+    fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
+        let schema = deck_schema_for(pool);
+        let mut conv = std::mem::take(&mut self.conversation);
+        let result = self.send_conv_structured(&mut conv, message, &schema);
+        self.conversation = conv;
+        result
     }
 
     fn system_prompt(&self) -> &str {
         &self.system_prompt
+    }
+
+    fn uses_thoughts_in_json(&self) -> bool {
+        // Reasoning is delivered via Anthropic's extended-thinking channel,
+        // not in the JSON payload. The schema sanitizer strips `thoughts`
+        // from every schema and the per-call prompt hint omits it too.
+        false
     }
 }
 
@@ -481,97 +636,34 @@ impl GeminiDraftBackend {
         (r#"{"pick": 0}"#.to_string(), None)
     }
 
-    fn pick_schema() -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "thoughts": {"type": "string", "description": "Brief reasoning for this pick"},
-                "pick": {"type": "integer", "minimum": 0, "description": "0-indexed number of the card to pick"}
-            },
-            "required": ["thoughts", "pick"]
-        })
-    }
-
-    fn deck_schema() -> serde_json::Value {
-        serde_json::json!({
-            "type": "object",
-            "properties": {
-                "thoughts": {"type": "string", "description": "Brief reasoning for deck construction choices"},
-                "maindeck": {"type": "array", "items": {"type": "string"}, "description": "Card names for the maindeck"},
-                "lands": {"type": "object", "properties": {
-                    "Plains": {"type": "integer"},
-                    "Island": {"type": "integer"},
-                    "Swamp": {"type": "integer"},
-                    "Mountain": {"type": "integer"},
-                    "Forest": {"type": "integer"}
-                }, "description": "Basic land counts"}
-            },
-            "required": ["thoughts", "maindeck", "lands"]
-        })
-    }
-
-    fn parse_pick_response(raw: &str) -> String {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
-            let pick = parsed["pick"].as_u64().unwrap_or(0);
-            let thoughts = parsed["thoughts"].as_str().unwrap_or("");
-            if thoughts.is_empty() {
-                format!("PICK: {}", pick)
-            } else {
-                format!("Thoughts: {}\n\nPICK: {}", thoughts, pick)
-            }
-        } else {
-            raw.to_string()
-        }
-    }
-
-    fn parse_deck_response(raw: &str) -> String {
-        if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
-            let thoughts = parsed["thoughts"].as_str().unwrap_or("");
-            let mut text = String::new();
-            if !thoughts.is_empty() {
-                text.push_str(&format!("Thoughts: {}\n\n", thoughts));
-            }
-            text.push_str("MAINDECK:\n");
-            if let Some(cards) = parsed["maindeck"].as_array() {
-                for card in cards {
-                    if let Some(name) = card.as_str() {
-                        text.push_str(&format!("{}\n", name));
-                    }
-                }
-            }
-            text.push_str("\nLANDS:\n");
-            if let Some(lands) = parsed["lands"].as_object() {
-                for (name, count) in lands {
-                    if let Some(n) = count.as_u64() {
-                        if n > 0 {
-                            text.push_str(&format!("{} {}\n", n, name));
-                        }
-                    }
-                }
-            }
-            text
-        } else {
-            raw.to_string()
+    /// Re-serialize the Gemini JSON response to a canonical pretty form.
+    /// Returns the raw response unchanged if it's not valid JSON.
+    fn normalize_response(raw: &str) -> String {
+        match serde_json::from_str::<serde_json::Value>(raw) {
+            Ok(v) => serde_json::to_string_pretty(&v).unwrap_or_else(|_| raw.to_string()),
+            Err(_) => raw.to_string(),
         }
     }
 }
 
 impl DraftBackend for GeminiDraftBackend {
-    fn send_pick(&mut self, message: &str) -> String {
+    fn send_pick(&mut self, message: &str, num_cards: usize) -> String {
         let prev = self.interaction_id.take();
-        let (raw, new_id) = self.call_interactions(message, &Self::pick_schema(), prev.as_deref());
+        let schema = pick_schema_for(num_cards);
+        let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
         self.interaction_id = new_id;
-        Self::parse_pick_response(&raw)
+        Self::normalize_response(&raw)
     }
 
     // Deckbuilding chains off the same interaction id as pick selection so
     // the model has the full draft history (packs, picks, prior reasoning)
     // in context when building its deck.
-    fn send_deck_building(&mut self, message: &str) -> String {
+    fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String {
         let prev = self.interaction_id.take();
-        let (raw, new_id) = self.call_interactions(message, &Self::deck_schema(), prev.as_deref());
+        let schema = deck_schema_for(pool);
+        let (raw, new_id) = self.call_interactions(message, &schema, prev.as_deref());
         self.interaction_id = new_id;
-        Self::parse_deck_response(&raw)
+        Self::normalize_response(&raw)
     }
 
     fn system_prompt(&self) -> &str {
@@ -611,6 +703,17 @@ impl DraftLlmClient {
         }
     }
 
+    /// Prefix for the `thoughts` field in the per-call response-format
+    /// hint. Empty for backends that surface reasoning through a separate
+    /// channel (Anthropic extended thinking).
+    fn thoughts_field_prefix(&self) -> &'static str {
+        if self.backend.uses_thoughts_in_json() {
+            "\"thoughts\": \"...\", "
+        } else {
+            ""
+        }
+    }
+
     /// Build the prompt for a draft pick.
     pub fn build_pick_prompt(
         &self,
@@ -636,18 +739,35 @@ impl DraftLlmClient {
                 prompt.push_str(&format!("- {}\n", name));
             }
         }
-        prompt.push_str(&format!("\nPick a card (0-{}):", available.len().saturating_sub(1)));
+        prompt.push_str(&format!(
+            "\nRespond with JSON formatted as {{{}\"pick\": N}} where N is the 0-indexed card number from the list above (0 to {}).",
+            self.thoughts_field_prefix(),
+            available.len().saturating_sub(1)
+        ));
         prompt
     }
 
-    pub fn send_message(&mut self, user_message: &str) -> String {
-        self.backend.send_pick(user_message)
+    /// Whether this client's backend expects thoughts in the JSON payload.
+    /// Exposed so the caller (main.rs::build_deck_prompt) can render the
+    /// deck-building response-format hint with or without the thoughts
+    /// prefix.
+    pub fn uses_thoughts_in_json(&self) -> bool {
+        self.backend.uses_thoughts_in_json()
+    }
+
+    /// Send a pick message with the pack size, so the backend can build
+    /// an enum-constrained pick schema for structured decoding.
+    pub fn send_pick_message(&mut self, user_message: &str, num_cards: usize) -> String {
+        self.backend.send_pick(user_message, num_cards)
     }
 
     pub fn record_pick(&mut self, _chosen: &str) {}
 
-    pub fn send_deck_building_message(&mut self, user_message: &str) -> String {
-        self.backend.send_deck_building(user_message)
+    /// Send a deck-building message with the player's full card pool, so
+    /// the backend can build an enum-constrained `maindeck` schema that
+    /// only accepts cards the model actually drafted.
+    pub fn send_deck_building_message(&mut self, user_message: &str, pool: &[String]) -> String {
+        self.backend.send_deck_building(user_message, pool)
     }
 
     /// The full system prompt this client will send to the model.
