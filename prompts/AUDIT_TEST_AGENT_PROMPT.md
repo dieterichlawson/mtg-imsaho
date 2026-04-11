@@ -251,6 +251,34 @@ The test setup needs to match the precondition exactly. If you set
 up the wrong board state and the test passes, you've "proved" a bug
 exists when it doesn't, which is worse than no test.
 
+### About the audit log file the bugs were mined from
+
+`audits/AUDIT_BUGS.md` was originally produced by mining a tournament
+log named `verify-draft-8seat-high-v5.log`. **That log file no longer
+exists** — it was an untracked run artifact at the repo root that got
+cleared during cleanup. About 7 bug entries cite specific line
+numbers in that log under "Audit evidence:" or "Did fire / not fire".
+
+Treat those citations as historical context, not actionable
+references. You don't need the log file to write the tests:
+
+- The bug entry already contains the code snippet, the oracle
+  quotation, and the failure-mode description.
+- The current source tree is the source of truth for whether the
+  bug still exists. Spot-check the file:line refs in the bug entry
+  against current code.
+- If the bug entry says "fired in log line N" and you can no longer
+  see line N, that's fine — the bug either still exists in the code
+  (write the test) or it's been fixed (mark `not-reproduced`).
+- Do NOT try to fetch, regenerate, or replay the log. It's gone and
+  it's not blocking you.
+
+The freshness of the audit pass also doesn't matter for test-writing.
+Even if the v5 log was generated weeks ago, the bugs it surfaced are
+still real if the current source tree still exhibits them — and your
+verification step (mental code trace + spot-check the file/line
+anchors) catches the cases where they don't.
+
 ## Oracle text discipline
 
 Use `scripts/oracle_lookup.py` for every card you reference. Examples:
