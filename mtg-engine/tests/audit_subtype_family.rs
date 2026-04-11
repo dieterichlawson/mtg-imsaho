@@ -22,6 +22,8 @@
 //!   registry, refuses to target transformed werewolves
 //! - Bug 31-004: Elder Cathar's Human-bonus check reads front-face
 //!   registry, wrongly grants 2 counters to transformed ex-Humans
+//! - Bug 99-002: Delver of Secrets hand-rolls its transform without
+//!   `apply_transform`, leaving `obj.subtypes` stale
 
 mod common;
 use common::*;
@@ -585,5 +587,100 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
          transformed werewolf (Rampaging Werewolf is non-Human on its live \
          face). Bug 31-004: the Human-bonus check reads the front-face \
          registry subtypes and sees Human, so it wrongly grants 2 counters."
+    );
+}
+
+/// Bug 99-002 (audits/AUDIT_BUGS.md): Delver of Secrets hand-rolls its
+/// transform without going through `crate::cards::helpers::apply_transform`,
+/// so `obj.subtypes` is stale after the transform fires.
+///
+/// Oracle (Delver of Secrets, front face): "Creature — Human Wizard. ...
+/// At the beginning of your upkeep, look at the top card of your library.
+/// You may reveal that card. If an instant or sorcery card is revealed
+/// this way, transform Delver of Secrets."
+/// Oracle (Insectile Aberration, back face): "Creature — Insect" (the
+/// front-face Human and Wizard subtypes are gone).
+///
+/// Failure mode: `delver_of_secrets.rs:146-149` does
+/// ```
+/// obj.is_transformed = true;
+/// obj.name = "Insectile Aberration".into();
+/// ```
+/// and stops there. The Bug-D fix migrated every werewolf to
+/// `apply_transform` (which copies subtypes/keywords/name from the back
+/// face onto the instance), but Delver was missed because it isn't a
+/// werewolf. Once Bug BD lands and `obj.subtypes` actually carries the
+/// front-face Human/Wizard tags, the post-transform instance keeps
+/// reporting "Human Wizard" instead of "Insect" — Hamlet Captain's
+/// Human anthem and Village Cannibals' "Human dies" trigger then both
+/// fire on a creature whose live face is an Insect.
+///
+/// We simulate the post-Bug-BD state by writing the front-face subtypes
+/// onto `obj.subtypes` directly, then driving Delver's "yes, reveal"
+/// path with an instant on top of the library so the transform fires.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 99-002 is fixed.
+#[test]
+fn bug_99_002_delver_transform_updates_obj_subtypes() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::Upkeep, P0);
+
+    // Delver of Secrets in play, with the front-face subtypes mirrored
+    // onto obj.subtypes (the post-Bug-BD initial state).
+    let delver = named_creature(&mut state, &registry, "Delver of Secrets", P0);
+    {
+        let obj = state.get_object_mut(delver).unwrap();
+        obj.subtypes = vec!["Human".into(), "Wizard".into()];
+    }
+
+    // Put an instant on top of P0's library so the reveal triggers a
+    // transform.
+    let bolt_card_id = registry.get_id_by_name("Lightning Bolt").unwrap();
+    let bolt = state.create_object(bolt_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(bolt).unwrap().name = "Lightning Bolt".into();
+    state.get_player_mut(P0).library_order.insert(0, bolt);
+
+    // Drive Delver's "yes, reveal" path. The hand-rolled transform code
+    // (delver_of_secrets.rs:146-149) flips is_transformed and renames
+    // the object, but leaves obj.subtypes alone.
+    let delver_card_id = registry.get_id_by_name("Delver of Secrets").unwrap();
+    let behavior = registry.get(delver_card_id).unwrap();
+    behavior.on_yes_no_choice(&mut state, delver, true, &registry);
+
+    let obj = state.get_object(delver).unwrap();
+    assert!(
+        obj.is_transformed,
+        "Test setup: Delver should have transformed (instant on top of library)"
+    );
+
+    // After a correct transform, obj.subtypes should reflect the back
+    // face (Insectile Aberration). The exact back-face subtype list is
+    // owned by the registry, so we look it up rather than hard-coding.
+    let back = behavior
+        .back_face_data()
+        .expect("Delver of Secrets should expose back_face_data()");
+
+    for s in &back.subtypes {
+        assert!(
+            obj.subtypes.iter().any(|x| x == s),
+            "After transforming to Insectile Aberration, obj.subtypes \
+             should contain back-face subtype {:?}, but obj.subtypes = {:?}. \
+             Bug 99-002: Delver's hand-rolled transform doesn't update \
+             obj.subtypes — only is_transformed and name.",
+            s,
+            obj.subtypes,
+        );
+    }
+    // The front-face-only subtypes should be gone. "Wizard" is on the
+    // front face but not the back face (Insectile Aberration is Human
+    // Insect, no Wizard), so it must not survive the flip.
+    assert!(
+        !obj.subtypes.iter().any(|s| s == "Wizard"),
+        "After transforming to Insectile Aberration, obj.subtypes should \
+         NOT contain front-face-only subtype 'Wizard', but obj.subtypes = \
+         {:?}. Bug 99-002: Delver's hand-rolled transform leaves the stale \
+         instance subtypes alone.",
+        obj.subtypes,
     );
 }
