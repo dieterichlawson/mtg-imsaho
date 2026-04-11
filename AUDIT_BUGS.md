@@ -5278,3 +5278,140 @@ Sites affected:
 - Bug BD — the root-cause population issue for `obj.subtypes`
   that would let every filter collapse to a single instance-only
   check once fixed.
+
+---
+
+### 🟡 Harness Bug E1-002: Graveyard / hand / library card displays show base `power`/`toughness` instead of `effective_power`/`effective_toughness`, so CDA creatures (Geist-Honored Monk, Splinterfright, Boneyard Wurm, Sturmgeist) always appear as `0/0` to the LLM
+**Severity:** medium — fired repeatedly in the audit log (Geist-Honored Monk shows up as `0/0` in every opp graveyard listing after Seat 6 mills it)
+**Files:**
+- `mtg-engine/src/view.rs:294-308` (`card_view` projects `obj.power` / `obj.toughness` directly)
+- `mtg-player/src/llm.rs:1411-1421` (graveyard display reads `c.power` / `c.toughness`)
+- `mtg-player/src/llm.rs:2149-2156` (hand display reads `c.power` / `c.toughness`)
+**Audit evidence:** `verify-draft-8seat-high-v5.log:130026`, `125042`, `107998`, `105841`, and many more — every game where a CDA creature hits the graveyard
+
+Oracle for the four ISD CDA creatures all say some variant of
+"Power and toughness each equal to [N]":
+- **Geist-Honored Monk** `{3}{W}{W}` — "Power and toughness each equal to the number of creatures you control"
+- **Splinterfright** `{2}{G}` — "Power and toughness each equal to the number of creature cards in your graveyard"
+- **Boneyard Wurm** `{1}{G}` — "Power and toughness each equal to the number of creature cards in your graveyard"
+- **Sturmgeist** `{3}{U}{U}` — "Power and toughness each equal to the number of cards in your hand"
+
+Per CR 208.2, a characteristic-defining ability "works in all
+zones." The engine respects this: `state.effective_power` and
+`state.effective_toughness` at `state.rs:899-943` and `945-984`
+both call `behavior.dynamic_pt` without zone-gating, so CDA
+creatures report the correct effective P/T regardless of which
+zone they're in. Good.
+
+But the **view projection** the LLM player consumes does NOT.
+`view.rs:294-308` constructs `CardView` objects for graveyard /
+hand / library cards by reading `obj.power` / `obj.toughness`
+directly — the BASE printed values, which are `Some(0)` for all
+four ISD CDA creatures. The LLM player's graveyard display at
+`llm.rs:1411-1421` and hand display at `llm.rs:2149-2156` then
+render those base values verbatim:
+
+```rust
+// llm.rs:1411 (graveyard)
+let names: Vec<String> = cards.iter().map(|c| {
+    match (c.power, c.toughness) {
+        (Some(p), Some(t)) => format!("{} {}/{}", c.name, p, t),  // base P/T
+        _ => c.name.clone(),
+    }
+}).collect();
+
+// llm.rs:2149 (hand)
+let pt = match (c.power, c.toughness) {
+    (Some(p), Some(t)) => format!(" {}/{}", p, t),  // base P/T
+    _ => String::new(),
+};
+```
+
+**Observed misbehavior:** across the audit log, Geist-Honored Monk
+appears in graveyard listings as `Geist-Honored Monk 0/0` every
+single time it dies. Example hits: line 130026 (Seat 6 R1 opp's
+graveyard after Seat 4 exiled it for Makeshift Mauler), 125042
+(same game different turn), 107998 (Seat 2's game), 105841 (Seat
+6 at the Bug 17-001 fire site). Every one of these shows
+`Geist-Honored Monk 0/0` to the model.
+
+The model, seeing `0/0`, treats the card as a 0/0 for
+decision-making — but that's the printed base, not what the card
+would return as when reanimated (via Unburial Rites / Back from
+the Brink / Grimoire of the Dead) or exiled (for Corpse Lunge's
+damage calculation). This silently misleads the model during:
+
+1. **Reanimation evaluation.** Should I cast Unburial Rites on
+   opp's Geist-Honored Monk? Model sees `0/0` and dismisses the
+   idea. Actually the Monk re-enters as X/X plus two 1/1 flying
+   Spirit ETB tokens — a major tempo swing the model never
+   considers.
+2. **Corpse Lunge targeting.** Model picks an exile-from-graveyard
+   target to maximize damage. Display reads Boneyard Wurm as
+   `0/0`, so model prefers a vanilla 3-power creature. Oracle
+   says Wurm's effective power is the graveyard creature count
+   (typically higher than 3 in a graveyard deck). Combined with
+   Bug F (auto-pick overrides player choice) and Bug 17-001
+   (engine-side auto-pick reads base power anyway), the wrong
+   number is baked in from both ends.
+3. **Hand evaluation.** Hand shows `Splinterfright {2}{G} 0/0`,
+   making it look unplayable. The model's cast decisions ignore
+   the scaling because the display doesn't surface dynamic P/T
+   in the hand either.
+
+**Did fire** — dozens of times in the audit log. Hard to measure
+how many model decisions the wrong number actually swayed (the
+model just sees `0/0` and reasons from there, without flagging
+the issue), but structurally unambiguous.
+
+**Proposed fix:** add `effective_power: Option<i32>` and
+`effective_toughness: Option<i32>` fields on `CardView` (mirroring
+what `PermanentView` already does at `view.rs:158-182`) and
+populate them in `card_view` via `state.effective_power` /
+`state.effective_toughness`:
+
+```rust
+fn card_view(obj: &crate::state::GameObject, state: &GameState, registry: &CardRegistry) -> CardView {
+    let data = registry.card_data(obj.card_id);
+    CardView {
+        object_id: obj.id,
+        card_id: obj.card_id,
+        name: ...,
+        cost: ...,
+        card_types: ...,
+        power: obj.power,
+        toughness: obj.toughness,
+        effective_power: state.effective_power(obj.id, registry),
+        effective_toughness: state.effective_toughness(obj.id, registry),
+        oracle_text: ...,
+        owner: obj.owner,
+        flashback_cost: ...,
+    }
+}
+```
+
+Then the LLM's graveyard and hand displays prefer the effective
+value:
+
+```rust
+let pt = match (c.effective_power.or(c.power), c.effective_toughness.or(c.toughness)) {
+    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+    _ => String::new(),
+};
+```
+
+Alternative: display BOTH — `Splinterfright 0/* (eff 5/5)` — so
+the base is visible (matters for "enters the battlefield as 0/0"
+interactions) while also surfacing the effective value.
+
+**Cross-references:**
+- Bug 17-001 — `ExileCreaturesFromGraveyard` cost handler reads
+  base `o.power` instead of `effective_power`. Same root-cause
+  family, different call site. Fix shape is identical: route
+  through `state.effective_power`.
+- Bug AV — `create_token_copy` reads base `o.power` when the
+  source is a CDA creature. Third leg of the same family.
+- Bug F — `ExileCreaturesFromGraveyard for spells auto-picks
+  highest power`. Separate issue (player-choice half), but the
+  display half of this bug is what would let the LLM *see* the
+  right tradeoff if Bug F were also fixed.
