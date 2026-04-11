@@ -3502,3 +3502,64 @@ This is a pure display fix — the engine's combinatorial encoding and
 `ability_index` decoding (lines 100-117) are already correct and
 don't need to change.
 
+---
+
+### 🟡 Engine Bug 76-002: Ludevic's Test Subject hatchling counters live in `card_state`, not as real counters
+**Severity:** low — latent (no proliferate/counter-manipulation cards in ISD)
+**File:** `mtg-engine/src/cards/isd/ludevics_test_subject.rs:85-112`
+**Audit evidence:** Ludevic drafted once (Seat 5 R1) but never cast; bug latent
+**Note:** this is the bug referenced as "Agent A's Bug BB" at
+`mtg-engine/src/cards/isd/...` — an earlier branch committed the
+content as "Bug BB" but the commit never made it to master. Recorded
+here with the new `NN-XXX` prefix.
+
+Oracle: "`{1}{U}`: Put a **hatchling counter** on this creature. Then
+if there are five or more hatchling counters on it, remove all of
+them and transform it."
+
+Per CR 122 these are real counters. The current implementation stores
+the count in `obj.card_state` as an abused `ObjectId`:
+
+```rust
+let current = state.get_object(object_id)
+    .and_then(|o| o.card_state.get("hatchling_counters"))
+    .map(|id| id.0 as u32)
+    .unwrap_or(0);
+let new_count = current + 1;
+…
+if let Some(obj) = state.get_object_mut(object_id) {
+    obj.card_state.insert("hatchling_counters".into(), ObjectId(new_count as u64));
+}
+```
+
+`state.add_counters` / `state.get_counter_count` never see these, so:
+
+1. **Proliferate effects (CR 701.24)** can't add to them. Proliferate
+   iterates `obj.counters` on the targeted permanent. A Contagion
+   Clasp / Thrummingbird / Inexorable Tide-style effect would do
+   nothing to Ludevic's. Latent in ISD (no proliferate), but any set
+   that mixes ISD with Scars-block cards would reveal it.
+2. **Counter-removal effects** (Hex Parasite, Spike weavers, Vampire
+   Hexmage) can't drain hatchling counters, so Ludevic's
+   transformation can't be interrupted by such effects. Latent in
+   ISD.
+3. **Display:** the counter count isn't surfaced in the player's
+   view or in the ability label (which just says "At 5, transform.").
+   The LLM has no way to tell whether it's on activation 2 or 4. A
+   model that dislikes uncertainty may never commit to the
+   investment.
+
+Mikaeus, the Lunarch in the same set stores its +1/+1 counters
+correctly via `CounterType::PlusOnePlusOne` — that's the model to
+follow.
+
+**Proposed fix:**
+1. Add `CounterType::Hatchling` to `mtg-engine/src/types.rs`.
+2. Use `state.add_counters(obj_id, CounterType::Hatchling, 1)` and
+   `state.get_counter_count(obj_id, CounterType::Hatchling)`
+   mirroring Mikaeus's +1/+1 counter handling.
+3. On hitting 5, remove the `Hatchling` entry from `obj.counters`
+   and call `helpers::apply_transform`.
+4. Include the current count in the ability label so the LLM can
+   see progress: `{1}{U}: hatchling counter (currently N/5)`.
+
