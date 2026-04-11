@@ -773,6 +773,47 @@ event instead of a damage event when the source matches. Same shape as
 
 ---
 
+### 🟡 Engine Bug AT: Slayer of the Wicked subtype filter ignores tokens
+**Severity:** medium — Slayer can't target Vampire/Zombie tokens
+**File:** `mtg-engine/src/cards/isd/slayer_of_the_wicked.rs:42-46`
+
+```rust
+.filter(|o| {
+    registry.card_data(o.card_id)
+        .map(|d| d.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie"))
+        .unwrap_or(false)
+})
+```
+The filter only checks `registry.card_data(o.card_id).subtypes`. Tokens
+have `card_id: CardId(0)` (sentinel — see `state.rs:341-356`), so the
+registry lookup returns None and the filter returns false. Slayer of
+the Wicked therefore CANNOT target:
+- Bloodline Keeper's 2/2 Vampire tokens
+- Endless Ranks of the Dead's 2/2 Zombie tokens
+- Cellar Door's 2/2 Zombie tokens
+- Moan of the Unhallowed's 2/2 Zombie tokens
+- Army of the Damned's thirteen 2/2 Zombie tokens
+
+**Proposed fix:** also check `o.subtypes` (instance level), the same
+pattern Avacynian Priest's "tap target non-Human" filter uses:
+```rust
+.filter(|o| {
+    let from_registry = registry.card_data(o.card_id)
+        .map(|d| d.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie"))
+        .unwrap_or(false);
+    let from_instance = o.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie");
+    from_registry || from_instance
+})
+```
+
+**Did NOT fire in audit** — Slayer of the Wicked was cast multiple
+times but never against a board with Vampire/Zombie tokens.
+
+This same bug shape probably affects other cards that filter by
+subtype via registry-only lookups. Worth grepping for the pattern.
+
+---
+
 ### 🟡 Engine Bug AP: Global "creatures get +N/+N until end of turn" effects snapshot at resolution
 **Severity:** medium — affects every global anthem/debuff in ISD
 **Files:**
