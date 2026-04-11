@@ -947,6 +947,46 @@ at line 1907-1913). This requires `matches_target_filter` to handle
 
 ---
 
+### 🟡 Engine Bug BS: `cast_with_flashback` flag persists after Runic Repetition returns the card to hand
+**Severity:** low — Runic Repetition + flashback card interaction only
+**Files:**
+- `mtg-engine/src/state.rs:485-503` (move_object — doesn't reset cast_with_flashback)
+- `mtg-engine/src/engine.rs:2188-2199` (cast handler — only sets the flag, never clears)
+- `mtg-engine/src/state.rs:1292-1300` (move_spell_after_resolve — uses the flag to choose exile vs graveyard)
+- `mtg-engine/src/cards/isd/runic_repetition.rs:50-58`
+
+The cast handler sets `obj.cast_with_flashback = true` only when `is_flashback`
+is true (line 2193); it doesn't reset the flag on a normal cast. `move_object`
+clears battlefield-related fields when leaving the battlefield but doesn't
+touch `cast_with_flashback`. Result:
+
+1. Player flashbacks Devil's Play. Spell resolves with cast_with_flashback=true,
+   goes to exile.
+2. Player casts Runic Repetition targeting Devil's Play in exile.
+3. Devil's Play returns to hand, but `obj.cast_with_flashback` is still true.
+4. Player casts Devil's Play normally (from hand). The cast handler doesn't
+   set is_flashback, so the flag is unchanged (still true).
+5. Spell resolves and `move_spell_after_resolve` checks the flag — still true —
+   sends Devil's Play to exile instead of graveyard.
+
+The card ends up in exile after a NORMAL cast just because it was previously
+cast via flashback. This means Runic Repetition can't actually "reuse" a
+flashback spell via the normal-cast path: the spell still gets exiled.
+
+Same shape applies to any flashback card returned from exile to hand by
+Runic Repetition (or future "return from exile" effects).
+
+**Did NOT fire** in audit — Runic Repetition was drafted but not cast.
+
+**Proposed fix:** in `move_object`, when transitioning from any zone to
+hand/library/stack (i.e., the card is no longer "the resolved spell"),
+reset `obj.cast_with_flashback = false`. Or, more conservatively, reset
+it specifically when the card moves from Exile to a non-resolution zone.
+Or in the cast handler, ALWAYS set `obj.cast_with_flashback = is_flashback`
+unconditionally, instead of only setting when true.
+
+---
+
 ### 🟡 Engine Bug BF: Traveler's Amulet doesn't shuffle the library after the search
 **Severity:** low — Traveler's Amulet only, related to Bug BC's auto-pick
 **File:** `mtg-engine/src/cards/isd/travelers_amulet.rs:51-83`
