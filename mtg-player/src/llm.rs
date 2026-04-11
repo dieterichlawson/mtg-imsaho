@@ -1055,9 +1055,30 @@ impl LlmPlayer {
         self.backend.model_name()
     }
 
+    #[track_caller]
     fn log(&self, label: &str, content: &str) {
+        self.log_at(crate::game_log::LogLevel::Info, label, content);
+    }
+
+    #[track_caller]
+    fn log_debug(&self, label: &str, content: &str) {
+        self.log_at(crate::game_log::LogLevel::Debug, label, content);
+    }
+
+    #[allow(dead_code)]
+    #[track_caller]
+    fn log_error(&self, label: &str, content: &str) {
+        self.log_at(crate::game_log::LogLevel::Error, label, content);
+    }
+
+    /// #[track_caller] propagates the source location from the caller of
+    /// `log`/`log_debug`/`log_error`, not from inside this function — so
+    /// `Location::caller()` reports the original call site.
+    #[track_caller]
+    fn log_at(&self, level: crate::game_log::LogLevel, label: &str, content: &str) {
+        let loc = std::panic::Location::caller();
         let full_label = format!("{} [{}]", label, self.name);
-        crate::game_log::write(file!(), line!(), &full_label, content);
+        crate::game_log::write_at(level, loc.file(), loc.line(), &full_label, content);
     }
 
     /// Check if the AI should auto-pass (nothing interesting to do).
@@ -1509,7 +1530,6 @@ impl LlmPlayer {
                 });
 
                 let response = self.send_message_structured(&prompt, &schema);
-                self.log("TARGET-RESPONSE", &response.to_string());
 
                 let chosen: Vec<Target> = response["target_indices"]
                     .as_array()
@@ -1640,15 +1660,10 @@ impl LlmPlayer {
             .unwrap_or_else(|| format!("{}", id))
     }
 
-    /// Log thinking from the last backend call, if any. Returns whether a
-    /// THOUGHT line was emitted, so the caller can strip the duplicate
-    /// "thoughts" field from the response JSON before logging RESPONSE.
-    fn log_thinking(&mut self) -> bool {
+    /// Log thinking from the last backend call, if any, at info level.
+    fn log_thinking(&mut self) {
         if let Some(thinking) = self.backend.take_thinking() {
             self.log("THOUGHT", &thinking);
-            true
-        } else {
-            false
         }
     }
 
@@ -1656,19 +1671,10 @@ impl LlmPlayer {
     fn send_message_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
         self.log("PROMPT", user_message);
         let result = self.backend.send_with_schema(user_message, schema);
-        let thought_logged = self.log_thinking();
-        // Avoid double-logging the thoughts field: if we already emitted a
-        // THOUGHT line, drop the field from the JSON we log as RESPONSE.
-        let log_value = if thought_logged {
-            let mut clone = result.clone();
-            if let Some(obj) = clone.as_object_mut() {
-                obj.remove("thoughts");
-            }
-            clone
-        } else {
-            result.clone()
-        };
-        self.log("RESPONSE", &log_value.to_string());
+        self.log_thinking();
+        // Raw backend JSON is verbose and duplicates the THOUGHT line for
+        // backends that put thoughts in the JSON — log it at debug level.
+        self.log_debug("RESPONSE", &result.to_string());
         result
     }
 
@@ -1795,10 +1801,10 @@ impl Player for LlmPlayer {
             return self.choose_mulligan_bottom(view, legal_actions);
         }
 
-        // Auto-pass when there's nothing interesting to do. We deliberately
-        // don't log this — it can fire many steps in a row and adds no
-        // information beyond what the next prompt's recent_events shows.
+        // Auto-pass when there's nothing interesting to do. Logged at
+        // debug level — it can fire many steps in a row.
         if Self::should_auto_pass(view, legal_actions) {
+            self.log_debug("AUTO-PASS", &format!("Step: {:?}, active: p#{}", view.step, view.active_player.0));
             return Action::PassPriority;
         }
 
@@ -1876,6 +1882,9 @@ impl Player for LlmPlayer {
         let action_prompt = format!("{}\n{}", context_str, actions_str);
         let prompt = self.build_prompt(view, &action_prompt);
 
+        if display_labels.len() != legal_actions.len() {
+            self.log_debug("COLLAPSED", &format!("{} actions → {} options", legal_actions.len(), display_labels.len()));
+        }
         let idx = self.pick_action_index(&prompt, display_labels.len(), legal_actions);
 
         if idx >= display_entries.len() {
