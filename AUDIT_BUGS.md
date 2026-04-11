@@ -159,6 +159,81 @@ choice subset, store the chosen IDs in the action, use them in apply.
 
 ---
 
+### 🟡 Engine Bug H: Into the Maw of Hell first-target filter is dropped — model can pick a creature as the "land" target
+**Severity:** HIGH — actively cost Seat 7 their Rakish Heir + a 6-mana spell
+**File:** `mtg-engine/src/engine.rs:1496` and `mtg-engine/src/engine.rs:1609`
+
+Into the Maw of Hell is "Destroy target land. Into the Maw of Hell deals
+13 damage to target creature." Engine target requirement:
+```rust
+TargetRequirement::TwoTargets(
+    Box::new(TargetRequirement::PermanentWithFilter(
+        TargetFilter::HasCardType(vec![CardType::Land]),
+    )),
+    Box::new(TargetRequirement::Creature),
+)
+```
+
+But `valid_targets_for_req` and the spell-side `generate_cast_actions_with_targets`
+both pattern-match `TargetRequirement::PermanentWithFilter(_)` and **discard**
+the filter:
+```rust
+TargetRequirement::PermanentWithFilter(_) => {
+    // Target any permanent on the battlefield matching a filter.
+    // Actual filtering is done by the card's is_valid_target.
+    state.all_objects_in_zone(Zone::Battlefield).iter()
+        .filter(|o| can_be_targeted_by(...))
+        .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+        .collect()
+}
+```
+The comment says "actual filtering is done by `is_valid_target`", but Maw of
+Hell's `is_valid_target` accepts BOTH lands and creatures (because the same
+function handles both target slots in `TwoTargets` and can't differentiate).
+
+**Audit log evidence (lines 46455-46630, Seat 7 Round 1):** the model cast
+Maw of Hell intending to remove opp's Makeshift Mauler. The first-target
+prompt offered:
+```
+0: Makeshift Mauler (opponent's), 1: Island, 2: Island, 3: Island,
+4: Plains, 5: Plains, 6: Plains, 7: Ashmouth Hound (your),
+8: Rakish Heir (your), 9: Ghoulraiser (your), 10: Swamp ...
+```
+The model picked `0` (Mauler) because the prompt presented Mauler as a
+valid first target. The engine then resolved the spell with `targets[0] =
+Mauler`, called `try_destroy(Mauler)` (which works on creatures), and dealt
+13 damage to `targets[1] = Rakish Heir` — Seat 7's *own* creature.
+
+Net effect: lost a Rakish Heir and a 6-mana spell to remove a single
+opponent creature. The model's THOUGHT was *"I am selecting a target as
+prompted, although this choice appears to be restricted to my own creatures
+despite the card requiring a land target"* — the model knew the engine was
+asking the wrong question but had no way to refuse.
+
+**Two underlying problems:**
+1. `PermanentWithFilter(_)` ignores the filter — should call a helper like
+   `matches_target_filter` (which already exists at line 1935 for ability
+   target enumeration) and consult the registry when `obj.card_types` is
+   empty.
+2. The first-target prompt's land options have no controller label
+   (`1: Island, 2: Island, 3: Island, 4: Plains, ...` — whose Plains?).
+   Even if the filter were correct, the model couldn't easily pick an
+   *opponent's* land for mana denial.
+
+**Proposed fix:**
+- In `valid_targets_for_req` and `generate_cast_actions_with_targets`,
+  match `PermanentWithFilter(filter)` and apply the filter via
+  `matches_target_filter` (or a registry-aware version).
+- In `format_combat_creature_list` (or wherever target labels are
+  generated), label lands with `(your)` / `(opponent's)` the same way
+  creatures are labeled.
+
+This affects every spell using `PermanentWithFilter`. Search for
+`PermanentWithFilter(TargetFilter::` to enumerate the cards that hit
+this bug. Maw of Hell is the most obvious in-set offender.
+
+---
+
 ### 🟡 Engine Bug G: cosmetic — duplicate `Step: Upkeep` AUTO-PASS entries
 **Severity:** cosmetic
 
