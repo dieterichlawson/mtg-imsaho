@@ -891,6 +891,68 @@ subtype-checking code.
 
 ---
 
+### 🟡 Engine Bug AV: create_token_copy doesn't preserve dynamic P/T (Cackling Counterpart breaks for */* creatures)
+**Severity:** medium — Cackling Counterpart is the only ISD trigger; affects 5 creatures
+**File:** `mtg-engine/src/state.rs:404-440` (create_token_copy)
+
+```rust
+let (name, power, toughness, card_id) = match source {
+    Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id),
+    None => return ObjectId(0),
+};
+let (colors, keywords, card_types, subtypes) = registry.card_data(card_id)
+    .map(|d| { ... });
+let id = self.create_token_with_subtypes(
+    &name, owner,
+    power.unwrap_or(0),
+    toughness.unwrap_or(0),
+    ...
+);
+```
+The token is created with `power` and `toughness` taken from the SOURCE
+object's stored fields. For `*/*` creatures with characteristic-defining
+abilities (CDAs):
+- Geist-Honored Monk (P/T = creatures you control)
+- Splinterfright (P/T = creature cards in graveyard)
+- Boneyard Wurm (P/T = creature cards in graveyard)
+- Sturmgeist (P/T = cards in your hand)
+- Mikaeus the Lunarch (P/T from +1/+1 counters; X-cost ETB)
+
+The source's `obj.power` is the BASE printed value (0 for Sturmgeist,
+Geist-Honored Monk, Splinterfright, Boneyard Wurm; >0 for Mikaeus
+because of the X-cost counter ETB). The token is created with that
+base value and `card_id: CardId(0)` (sentinel — see
+`state.rs:341-356`), so the registry can't look up the card's
+behavior to evaluate the CDA.
+
+Result: a Cackling Counterpart token-copy of Geist-Honored Monk (or
+Splinterfright/Boneyard Wurm/Sturmgeist) is a 0/0 instead of the
+characteristic-defining value, and dies immediately to SBA 704.5f.
+
+Per CR 706.2 the copy is "an exact copy of the original… all the
+characteristics of the original are copied," which includes the CDA
+itself. The token should compute its own dynamic P/T based on its own
+controller's state.
+
+**Did NOT fire** in audit — Cackling Counterpart was drafted but not
+cast.
+
+**Proposed fix:** store the source's `card_id` on the token (use a
+new `is_copy_of: Option<CardId>` field, or set the token's `card_id`
+to the source's), then have `effective_power` consult the registry
+when computing the token's P/T. Same trick the engine already uses
+for transformed DFCs (face-aware lookup). Or, simpler: snapshot the
+effective P/T at copy time:
+```rust
+let power = state.effective_power(source_id, registry).unwrap_or(0);
+let toughness = state.effective_toughness(source_id, registry).unwrap_or(0);
+```
+This loses the live-recomputation property — the token's P/T would
+be frozen at creation rather than tracking the controller's
+graveyard/hand/etc — but it gives a non-zero starting value.
+
+---
+
 ### 🟡 Engine Bug AP: Global "creatures get +N/+N until end of turn" effects snapshot at resolution
 **Severity:** medium — affects every global anthem/debuff in ISD
 **Files:**
