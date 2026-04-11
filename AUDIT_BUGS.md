@@ -5038,3 +5038,88 @@ pass.
   `obj.subtypes` stale. The `obj.subtypes.iter().any(|s| s == "Human")`
   early-return in the proposed fix will hit stale subtypes for
   those two cards until 99-002 lands.
+
+---
+
+### 🟡 Engine Bug 31-003: Urgent Exorcism's "Spirit or enchantment" filter is registry-only — can't target Spirit tokens (Bug AT sibling)
+**Severity:** medium — Spirit tokens are everywhere in ISD (Midnight Haunting, Doomed Traveler, Mausoleum Guard, Geist-Honored Monk), all unhittable by Urgent Exorcism
+**File:** `mtg-engine/src/cards/isd/urgent_exorcism.rs:33-49`
+**Audit evidence:** latent — Urgent Exorcism was drafted only as sideboard in Seat 0 (not main-decked, never cast) but the bug is structural
+
+Oracle: "Destroy target Spirit or enchantment."
+
+`is_valid_target` only consults `registry.card_data(obj.card_id)`:
+
+```rust
+fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    match target {
+        Target::Object(id) => {
+            let obj = match state.get_object(*id) {
+                Some(o) if o.zone == Zone::Battlefield => o,
+                _ => return false,
+            };
+            registry.card_data(obj.card_id)
+                .map(|d| {
+                    d.card_types.contains(&CardType::Enchantment)
+                        || d.subtypes.contains(&"Spirit".to_string())
+                })
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+```
+
+Tokens have `card_id: CardId(0)` (the token sentinel — see
+`state.rs:356`), so `registry.card_data(CardId(0))` returns `None`,
+the `.map()` is skipped, and the `.unwrap_or(false)` fails the filter
+for every token. Consequently Urgent Exorcism **cannot target**:
+
+- Midnight Haunting's 1/1 Spirit tokens with flying
+- Doomed Traveler's Spirit on-death token
+- Mausoleum Guard's two Spirit tokens on death
+- Geist-Honored Monk's two Spirit ETB tokens
+- Geist of Saint Traft's 4/4 Angel token (not a Spirit, but illustrates the same token-filter gap)
+
+All of these are Spirits. Per oracle Urgent Exorcism should destroy
+any of them. The current implementation refuses.
+
+Same structural shape as **Bug AT** (Slayer of the Wicked / Vampiric
+Fury / Village Cannibals registry-only filters missing tokens). Bug
+AT lists three cards; Urgent Exorcism is a fourth that slipped
+through because it uses a different filter combinator
+(`SubtypeOrCardType` vs `HasSubtype`).
+
+The `d.card_types.contains(&CardType::Enchantment)` half of the
+check also fails for enchantment tokens (none in ISD, but
+future-proofing), since enchantment tokens would have
+`card_id: CardId(0)` as well.
+
+**Proposed fix:** copy the counter-example pattern from
+`Victim of Night` (`cards/isd/victim_of_night.rs:43-47`) and check
+BOTH the registry AND the instance object:
+
+```rust
+let from_registry = registry.card_data(obj.card_id)
+    .map(|d| {
+        d.card_types.contains(&CardType::Enchantment)
+            || d.subtypes.contains(&"Spirit".to_string())
+    })
+    .unwrap_or(false);
+let from_instance = obj.card_types.contains(&CardType::Enchantment)
+    || obj.subtypes.contains(&"Spirit".to_string());
+from_registry || from_instance
+```
+
+**Related bugs:**
+- Bug AT — same class for Slayer of the Wicked, Vampiric Fury,
+  Village Cannibals. Landing the same fix on Urgent Exorcism
+  closes this corner.
+- Bug 31-002 — same class on the OTHER direction: Avacynian
+  Priest reads front-face registry for "Human" and misses
+  transformed creatures. Both are "filter consults the wrong
+  source" variants of the same family.
+- Bug BD — root cause: `setup_game` doesn't initialise
+  `obj.subtypes` from the registry, forcing every filter to
+  juggle two sources. Landing Bug BD would let every one of these
+  filters collapse to a single `obj.subtypes.contains(...)` check.
