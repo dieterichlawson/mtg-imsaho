@@ -1062,11 +1062,37 @@ impl LlmPlayer {
     /// #[track_caller] propagates the source location from the caller of
     /// `log`/`log_debug`/`log_error`, not from inside this function — so
     /// `Location::caller()` reports the original call site.
+    ///
+    /// For multi-line content, every non-empty body line is prefixed with
+    /// the seat tag (e.g. `[Seat3] `) so that `grep '\[Seat3\]' log`
+    /// reliably catches every line — header and body — that pertains to
+    /// this seat. Blank lines within the body stay blank to preserve
+    /// visual spacing; grep will skip them, which is fine.
     #[track_caller]
     fn log_at(&self, level: crate::game_log::LogLevel, label: &str, content: &str) {
         let loc = std::panic::Location::caller();
         let full_label = format!("{} [{}]", label, self.name);
-        crate::game_log::write_at(level, loc.file(), loc.line(), &full_label, content);
+
+        // Single-line content already has the seat tag in the header
+        // row — no body to prefix. For multi-line content we rebuild
+        // the body with a [SeatN] prefix on every non-empty line.
+        let tagged_owned;
+        let effective: &str = if content.contains('\n') {
+            let tag = format!("[{}]", self.name);
+            let lines: Vec<String> = content.lines()
+                .map(|line| if line.is_empty() {
+                    String::new()
+                } else {
+                    format!("{} {}", tag, line)
+                })
+                .collect();
+            tagged_owned = lines.join("\n");
+            &tagged_owned
+        } else {
+            content
+        };
+
+        crate::game_log::write_at(level, loc.file(), loc.line(), &full_label, effective);
     }
 
     /// Check if the AI should auto-pass (nothing interesting to do).
