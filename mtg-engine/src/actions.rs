@@ -38,7 +38,17 @@ pub enum Action {
     /// `tap_plan` lists mana sources to tap before paying the ability's mana cost,
     /// computed by `legal_actions` via the same auto-tap logic spell casting uses.
     /// Empty for free abilities or abilities whose cost is already in the mana pool.
-    ActivateAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target>, tap_plan: Vec<(ObjectId, usize)> },
+    /// `sacrifice` is the creature the player chose to sacrifice when paying the
+    /// `Sacrifice a creature` cost. `None` for abilities without that cost.
+    /// `legal_actions` enumerates one ActivateAbility per (target, sacrifice) combo
+    /// so the player picks both up front, mirroring how CastSpell handles it.
+    ActivateAbility {
+        object_id: ObjectId,
+        ability_index: usize,
+        targets: Vec<Target>,
+        tap_plan: Vec<(ObjectId, usize)>,
+        sacrifice: Option<ObjectId>,
+    },
 
     /// Activate a planeswalker loyalty ability.
     ActivateLoyaltyAbility { object_id: ObjectId, ability_index: usize, targets: Vec<Target> },
@@ -130,6 +140,13 @@ pub struct CastableSpell {
 
 /// An activated ability that can be activated, with its valid target options.
 /// Used by player implementations to present a collapsed ability UI.
+///
+/// `option_combos` is the canonical list of (target, sacrifice) combinations the
+/// player can pick from. Each entry corresponds to exactly one underlying
+/// `Action::ActivateAbility` in the legal action list. `target_options` is kept
+/// for backwards compatibility with simple targeted abilities (no sacrifice
+/// cost) — for those, target_options is the list of legal targets and each
+/// option_combos entry is `(vec![target], None)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivatableAbility {
     pub object_id: ObjectId,
@@ -140,6 +157,18 @@ pub struct ActivatableAbility {
     /// Pre-computed mana sources to tap when paying this ability's cost.
     /// Empty if the cost is already in the mana pool, or if the ability has no mana cost.
     pub tap_plan: Vec<(ObjectId, usize)>,
+    /// All player-chooseable (targets, sacrifice) combinations for this ability.
+    /// One entry per legal `Action::ActivateAbility` for this (object_id, ability_index).
+    /// For abilities with no sacrifice cost the sacrifice is None; for untargeted
+    /// abilities the targets vector is empty.
+    pub option_combos: Vec<ActivatableAbilityOption>,
+}
+
+/// One concrete (target, sacrifice) choice for an activated ability.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivatableAbilityOption {
+    pub targets: Vec<Target>,
+    pub sacrifice: Option<ObjectId>,
 }
 
 /// Describes how targets should be chosen for a castable spell.
@@ -172,11 +201,15 @@ impl std::fmt::Display for Action {
             }
             Action::ActivateManaAbility { object_id, ability_index } =>
                 write!(f, "Activate mana ability {} on {}", ability_index, object_id),
-            Action::ActivateAbility { object_id, ability_index, targets, .. } => {
+            Action::ActivateAbility { object_id, ability_index, targets, sacrifice, .. } => {
+                let sac_str = match sacrifice {
+                    Some(id) => format!(" (sacrificing {})", id),
+                    None => String::new(),
+                };
                 if targets.is_empty() {
-                    write!(f, "Activate ability {} on {}", ability_index, object_id)
+                    write!(f, "Activate ability {} on {}{}", ability_index, object_id, sac_str)
                 } else {
-                    write!(f, "Activate ability {} on {} targeting {:?}", ability_index, object_id, targets)
+                    write!(f, "Activate ability {} on {} targeting {:?}{}", ability_index, object_id, targets, sac_str)
                 }
             }
             Action::DeclareAttackers { attackers } =>

@@ -57,6 +57,7 @@ fn travelers_amulet_finds_basic_land() {
             ability_index: 0,
             targets: vec![],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -98,11 +99,12 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
     // Put Demonmail Hauberk on the battlefield.
     let hauberk = named_equipment(&mut state, &reg, "Demonmail Hauberk", P0);
 
-    // Two creatures: one to sacrifice, one to equip.
+    // Two creatures: one to sacrifice (creature_a), one to equip (creature_b).
     let creature_a = ready_creature(&mut state, P0, 1, 1);
     let creature_b = ready_creature(&mut state, P0, 2, 2);
 
-    // Equip costs sacrifice a creature (no mana cost).
+    // Equip costs sacrifice a creature (no mana cost). The player explicitly
+    // chooses creature_a as the sacrifice and creature_b as the equip target.
     let new_state = engine::submit_action(
         &state,
         &Action::ActivateAbility {
@@ -110,31 +112,34 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
             ability_index: 0,
             targets: vec![Target::Object(creature_b)],
             tap_plan: vec![],
+            sacrifice: Some(creature_a),
         },
         &reg,
     );
 
-    // Hauberk should be attached to creature_b.
+    // Hauberk should be attached to creature_b (the target, not the sacrifice).
     assert_eq!(
         new_state.get_object(hauberk).unwrap().attached_to,
         Some(creature_b),
-        "Demonmail Hauberk should be attached to the target creature"
+        "Demonmail Hauberk should be attached to the equip target"
     );
 
-    // Exactly one creature should have been sacrificed.
-    let a_zone = new_state.get_object(creature_a).unwrap().zone;
-    let b_zone = new_state.get_object(creature_b).unwrap().zone;
-    let sacrificed_count = [a_zone, b_zone].iter()
-        .filter(|z| **z == Zone::Graveyard)
-        .count();
-    assert_eq!(sacrificed_count, 1,
-        "Exactly one creature should be sacrificed to equip (a={:?}, b={:?})", a_zone, b_zone);
-
-    // If creature_b survived (wasn't the one sacrificed), it should have the bonus.
-    if b_zone == Zone::Battlefield {
-        assert_eq!(new_state.effective_power(creature_b, &reg), Some(6));
-        assert_eq!(new_state.effective_toughness(creature_b, &reg), Some(4));
-    }
+    // creature_a should have been sacrificed.
+    assert_eq!(
+        new_state.get_object(creature_a).unwrap().zone,
+        Zone::Graveyard,
+        "creature_a should have been sacrificed to pay the equip cost"
+    );
+    // creature_b should still be on the battlefield with the +4/+2 bonus.
+    assert_eq!(
+        new_state.get_object(creature_b).unwrap().zone,
+        Zone::Battlefield,
+        "creature_b (the target) should still be on the battlefield"
+    );
+    assert_eq!(new_state.effective_power(creature_b, &reg), Some(6),
+        "creature_b should be 2+4 = 6 power");
+    assert_eq!(new_state.effective_toughness(creature_b, &reg), Some(4),
+        "creature_b should be 2+2 = 4 toughness");
 }
 
 // ══════════════════════════════════════════════════════════════════
@@ -203,6 +208,7 @@ fn runechanters_pike_equip_ability() {
             ability_index: 0,
             targets: vec![Target::Object(creature)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -275,6 +281,7 @@ fn inquisitors_flail_equip_ability() {
             ability_index: 0,
             targets: vec![Target::Object(creature)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -428,6 +435,7 @@ fn blazing_torch_deals_damage_to_player() {
             ability_index: 1,
             targets: vec![Target::Player(P1)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -463,6 +471,7 @@ fn blazing_torch_deals_damage_to_creature() {
             ability_index: 1,
             targets: vec![Target::Object(enemy)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -491,6 +500,7 @@ fn blazing_torch_damage_source_is_torch_not_creature() {
             ability_index: 1,
             targets: vec![Target::Object(enemy)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -521,6 +531,7 @@ fn blazing_torch_equip_ability() {
             ability_index: 0,
             targets: vec![Target::Object(creature)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );

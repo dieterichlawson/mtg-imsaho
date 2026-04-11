@@ -1549,7 +1549,7 @@ fn grimgrin_sacrifice_untaps_and_counters() {
 
     let zombie = ready_creature(&mut state, P0, 2, 2);
 
-    // Activate through the engine so the sacrifice cost is paid properly.
+    // Activate through the engine, sacrificing the zombie (not Grimgrin itself).
     let new_state = engine::submit_action(
         &state,
         &Action::ActivateAbility {
@@ -1557,6 +1557,7 @@ fn grimgrin_sacrifice_untaps_and_counters() {
             ability_index: 0,
             targets: vec![],
             tap_plan: vec![],
+            sacrifice: Some(zombie),
         },
         &reg,
     );
@@ -2636,6 +2637,7 @@ fn grimoire_discard_presents_choice_and_adds_study_counter() {
         &state,
         &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
 tap_plan: vec![],
+sacrifice: None,
 },
         &reg,
     );
@@ -2678,6 +2680,7 @@ fn grimoire_single_card_in_hand_auto_discards() {
         &state,
         &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
 tap_plan: vec![],
+sacrifice: None,
 },
         &reg,
     );
@@ -2717,6 +2720,7 @@ fn grimoire_accumulates_three_study_counters() {
             &state,
             &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
 tap_plan: vec![],
+sacrifice: None,
 },
             &reg,
         );
@@ -2760,6 +2764,7 @@ fn grimoire_reanimates_all_graveyard_creatures() {
         &state,
         &Action::ActivateAbility { object_id: grimoire, ability_index: 1, targets: vec![],
 tap_plan: vec![],
+sacrifice: None,
 },
         &reg,
     );
@@ -2818,6 +2823,7 @@ fn civilized_scholar_discard_creature_transforms() {
         &state,
         &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
 tap_plan: vec![],
+sacrifice: None,
 },
         &reg,
     );
@@ -2861,6 +2867,7 @@ fn civilized_scholar_discard_noncreature_no_transform() {
         &state,
         &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
 tap_plan: vec![],
+sacrifice: None,
 },
         &reg,
     );

@@ -138,6 +138,7 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Creature
 
 - **Auto-tap**: When you pick a `Cast [spell]` option, the engine taps the right lands for you automatically. The action label shows which lands will be tapped, e.g. `Cast Doom Blade (tap Swamp, Swamp)`. You almost never need to tap lands manually before casting.
 - **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
+- **Sacrifice-cost activated abilities require manual mana**: Activated abilities whose cost includes "Sacrifice a creature" (Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) do NOT auto-tap. If the ability has a mana cost too, you must tap your lands manually first to float the mana, then activate the ability on the next priority pass. This is to prevent the engine from accidentally tapping a creature mana source and then sacrificing that same creature. If the ability you want isn't appearing in the action list and the only thing missing is mana, tap a land and try again.
 - **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
 - **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
 - **Land drops**: One land per turn, only during your main phase.
@@ -1748,38 +1749,53 @@ impl LlmPlayer {
         }
     }
 
-    /// Choose targets for an activated ability, prompting the LLM if needed.
-    fn choose_ability_targets(&mut self, view: &GameView, ab: &mtg_engine::actions::ActivatableAbility, legal_actions: &[Action]) -> Action {
-        if ab.target_options.is_empty() {
-            // Untargeted ability — find the matching action directly
-            return legal_actions.iter()
-                .find(|a| matches!(a, Action::ActivateAbility { object_id, ability_index, .. }
-                    if *object_id == ab.object_id && *ability_index == ab.ability_index))
-                .cloned()
-                .unwrap_or(Action::PassPriority);
+    /// Choose targets and sacrifice for an activated ability, prompting the LLM if needed.
+    /// `ab.option_combos` enumerates every legal (targets, sacrifice) pair from the engine.
+    /// If there's only one combo we use it directly; otherwise we present them all to the
+    /// model and let it pick by index.
+    fn choose_ability_targets(&mut self, view: &GameView, ab: &mtg_engine::actions::ActivatableAbility, _legal_actions: &[Action]) -> Action {
+        if ab.option_combos.is_empty() {
+            // Should not happen if legal_actions surfaced this ability — fall back to pass.
+            return Action::PassPriority;
         }
 
-        if ab.target_options.len() == 1 {
-            // Single valid target — no need to prompt
-            return Action::ActivateAbility {
-                object_id: ab.object_id,
-                ability_index: ab.ability_index,
-                targets: vec![ab.target_options[0].clone()],
-                tap_plan: ab.tap_plan.clone(),
-            };
-        }
+        let chosen = if ab.option_combos.len() == 1 {
+            &ab.option_combos[0]
+        } else {
+            // Present each (targets, sacrifice) combo as a labeled option and let the model pick.
+            let labels: Vec<String> = ab.option_combos.iter().map(|opt| {
+                let target_part = if opt.targets.is_empty() {
+                    String::from("(no target)")
+                } else {
+                    let names: Vec<String> = opt.targets.iter().map(|t| match t {
+                        mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
+                        mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                    }).collect();
+                    format!("target {}", names.join(", "))
+                };
+                let sac_part = match opt.sacrifice {
+                    Some(id) => format!(", sacrificing {}", Self::obj_name(view, id)),
+                    None => String::new(),
+                };
+                format!("{}{}", target_part, sac_part)
+            }).collect();
+            let prompt = format!(
+                "{}: pick a (target, sacrifice) combination for {}\n{}\n\nRespond with JSON formatted as {{{}\"action\": N}} where N is the 0-indexed option number.",
+                ab.name,
+                ab.description,
+                labels.iter().enumerate().map(|(i, l)| format!("{}: {}", i, l)).collect::<Vec<_>>().join("\n"),
+                self.thoughts_field_prefix(),
+            );
+            let idx = self.pick_action_index(&prompt, ab.option_combos.len(), &[]);
+            &ab.option_combos[idx.min(ab.option_combos.len() - 1)]
+        };
 
-        // Multiple targets — prompt for selection
-        let target = self.prompt_target_selection(
-            view,
-            &format!("{}: select target for {}", ab.name, ab.description),
-            &ab.target_options,
-        );
         Action::ActivateAbility {
             object_id: ab.object_id,
             ability_index: ab.ability_index,
-            targets: vec![target],
+            targets: chosen.targets.clone(),
             tap_plan: ab.tap_plan.clone(),
+            sacrifice: chosen.sacrifice,
         }
     }
 

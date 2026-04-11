@@ -35,6 +35,7 @@ fn selfless_cathar_pump_all_creatures() {
             ability_index: 0,
             targets: vec![],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -72,6 +73,7 @@ fn silverchase_fox_exiles_enchantment() {
             ability_index: 0,
             targets: vec![Target::Object(enchantment)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -112,6 +114,7 @@ fn brain_weevil_forces_discard() {
             ability_index: 0,
             targets: vec![Target::Player(P1)],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -143,14 +146,15 @@ fn disciple_of_griselbrand_gains_life() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let disciple = named_creature(&mut state, &reg, "Disciple of Griselbrand", P0);
-    // Create a 2/5 creature to sacrifice.
-    let _fatty = ready_creature(&mut state, P0, 2, 5);
+    // Create a 2/5 creature to sacrifice for max life.
+    let fatty = ready_creature(&mut state, P0, 2, 5);
 
     let life_before = state.get_player(P0).life;
 
     // Add mana for the ability: {1}
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
 
+    // Player explicitly chooses to sacrifice the fatty (5 toughness → 5 life).
     let new_state = mtg_engine::engine::submit_action(
         &state,
         &Action::ActivateAbility {
@@ -158,15 +162,19 @@ fn disciple_of_griselbrand_gains_life() {
             ability_index: 0,
             targets: vec![],
             tap_plan: vec![],
+            sacrifice: Some(fatty),
         },
         &reg,
     );
 
-    // The engine auto-sacrifices the first creature it finds. It may pick the disciple
-    // itself (1 toughness) or the fatty (5 toughness). Either way, we gained life.
+    // Should gain exactly 5 life (the fatty's toughness).
     let life_after = new_state.get_player(P0).life;
-    let gained = life_after - life_before;
-    assert!(gained > 0, "Should have gained life, gained {}", gained);
+    assert_eq!(life_after - life_before, 5,
+        "Should have gained 5 life from sacrificing the 2/5 fatty");
+    assert_eq!(new_state.get_object(fatty).unwrap().zone, Zone::Graveyard,
+        "fatty should have been sacrificed");
+    assert_eq!(new_state.get_object(disciple).unwrap().zone, Zone::Battlefield,
+        "disciple should still be on the battlefield");
 }
 #[test]
 
@@ -351,8 +359,8 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
-    // Need a creature to sacrifice (can sacrifice itself or another creature).
-    let _fodder = ready_creature(&mut state, P0, 1, 1);
+    // Need a creature to sacrifice (player picks the fodder, not the cultist).
+    let fodder = ready_creature(&mut state, P0, 1, 1);
     let target = ready_creature(&mut state, P1, 3, 3);
 
     // Add red mana for the activation cost.
@@ -365,6 +373,7 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
             ability_index: 0,
             targets: vec![Target::Object(target)],
             tap_plan: vec![],
+            sacrifice: Some(fodder),
         },
         &reg,
     );
@@ -372,6 +381,9 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
     // Target creature should have taken 2 damage.
     let obj = state.get_object(target).unwrap();
     assert_eq!(obj.damage_marked, 2, "Target should have 2 damage marked");
+    // Cultist should still be alive (we sacrificed the fodder).
+    assert_eq!(state.get_object(cultist).unwrap().zone, Zone::Battlefield);
+    assert_eq!(state.get_object(fodder).unwrap().zone, Zone::Graveyard);
 }
 #[test]
 
@@ -380,7 +392,7 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let cultist = named_creature(&mut state, &reg, "Skirsdag Cultist", P0);
-    let _fodder = ready_creature(&mut state, P0, 1, 1);
+    let fodder = ready_creature(&mut state, P0, 1, 1);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
 
@@ -391,11 +403,13 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
             ability_index: 0,
             targets: vec![Target::Player(P1)],
             tap_plan: vec![],
+            sacrifice: Some(fodder),
         },
         &reg,
     );
 
     assert_eq!(state.get_player(P1).life, 18, "Opponent should be at 18 life");
+    assert_eq!(state.get_object(fodder).unwrap().zone, Zone::Graveyard);
 }
 #[test]
 
@@ -439,6 +453,7 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
             ability_index: 0,
             targets: vec![],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );
@@ -488,6 +503,7 @@ fn stitchers_apprentice_token_is_2_2_homunculus() {
             ability_index: 0,
             targets: vec![],
             tap_plan: vec![],
+            sacrifice: None,
         },
         &reg,
     );

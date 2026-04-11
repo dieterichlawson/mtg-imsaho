@@ -563,8 +563,29 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // We use compute_autotap (mirroring spell casting) so abilities with mana costs
             // appear as legal actions in main phase even when no mana is currently floating —
             // the resulting tap plan is bundled into the action and executed at apply time.
+            //
+            // EXCEPTION: abilities with a sacrifice cost don't get auto-tap. The player has
+            // to manually tap their lands and float the mana before activating. Otherwise
+            // the planner can pick a creature mana source as part of the tap plan and then
+            // the player sacrifices that same creature for the cost — the orderings get
+            // weird and lead to bugs. Requiring manual mana for these abilities is rare
+            // enough (mostly Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist)
+            // that the tradeoff is acceptable.
+            use crate::cards::SacrificeCost;
+            let ability_has_sac_cost = !matches!(ab.sacrifice_cost, SacrificeCost::None);
             let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
-            let ability_tap_plan: Vec<(ObjectId, usize)> = if has_x_cost {
+            let ability_tap_plan: Vec<(ObjectId, usize)> = if ability_has_sac_cost {
+                // No auto-tap for sacrifice abilities — require mana already in the pool.
+                let cost_to_check = if has_x_cost {
+                    ManaCost::new(
+                        ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                    )
+                } else {
+                    ab.cost.clone()
+                };
+                if !mana::can_pay(mana_pool, &cost_to_check) { continue; }
+                Vec::new()
+            } else if has_x_cost {
                 let non_x_cost = ManaCost::new(
                     ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
                 );
@@ -599,53 +620,83 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             if ab.once_per_turn && activated_this_turn.contains(&ab.ability_index) { continue; }
             // Check sorcery speed.
             if ab.sorcery_speed_only && !is_sorcery_speed { continue; }
-            // Check sacrifice cost.
-            use crate::cards::SacrificeCost;
-            match &ab.sacrifice_cost {
-                SacrificeCost::None => {}
-                SacrificeCost::SacrificeThis => {
-                    // Object must be on the battlefield (it is, we're iterating battlefield).
+            // Build the list of eligible sacrifices for this ability. We
+            // enumerate one ActivateAbility per (target, sacrifice) combo so
+            // the player chooses the sacrifice up front rather than having
+            // the engine auto-pick (which could fizzle the ability by
+            // sacrificing the very creature being targeted).
+            let eligible_sacrifices: Vec<Option<ObjectId>> = match &ab.sacrifice_cost {
+                SacrificeCost::None | SacrificeCost::SacrificeThis => {
+                    // None: no choice. SacrificeThis: the source pays itself, no choice either.
+                    vec![None]
                 }
                 SacrificeCost::SacrificeCreature => {
-                    // Must control at least one creature to sacrifice.
-                    let has_creature = state.objects_in_zone(Zone::Battlefield, player)
+                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
                         .iter()
-                        .any(|o| o.power.is_some());
-                    if !has_creature { continue; }
+                        .filter(|o| o.power.is_some())
+                        .map(|o| o.id)
+                        .collect();
+                    if creatures.is_empty() { continue; }
+                    creatures.into_iter().map(Some).collect()
                 }
                 SacrificeCost::SacrificeAnotherCreature => {
-                    // Must control at least one other creature to sacrifice.
-                    let has_other_creature = state.objects_in_zone(Zone::Battlefield, player)
+                    // "Another" excludes the source permanent (the equipment / card itself).
+                    let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
                         .iter()
-                        .any(|o| o.power.is_some() && o.id != obj_id);
-                    if !has_other_creature { continue; }
+                        .filter(|o| o.power.is_some() && o.id != obj_id)
+                        .map(|o| o.id)
+                        .collect();
+                    if creatures.is_empty() { continue; }
+                    creatures.into_iter().map(Some).collect()
                 }
-            }
+            };
 
             // Generate actions based on targeting.
             if let Some(ref _target_req) = ab.target_requirement {
-                // Targeted ability: generate one action per valid target.
-                // Use the card behavior for is_valid_target filtering.
+                // Targeted ability: generate one action per valid (target, sacrifice) combo.
+                // We exclude pairs where the sacrifice IS the target — sacrificing the
+                // target makes the ability fizzle, no rational player picks that.
                 let behavior = registry.get(source_card_id);
                 if let Some(behavior) = behavior {
                     let targets = generate_ability_targets(state, obj_id, &ab, player, registry, behavior);
                     for target in targets {
-                        actions.push(Action::ActivateAbility {
-                            object_id: obj_id,
-                            ability_index: ab.ability_index,
-                            targets: vec![target],
-                            tap_plan: ability_tap_plan.clone(),
-                        });
+                        let target_obj_id = match &target {
+                            crate::actions::Target::Object(id) => Some(*id),
+                            _ => None,
+                        };
+                        let sacrifices_for_target: Vec<&Option<ObjectId>> = eligible_sacrifices.iter()
+                            .filter(|sac| match (sac, target_obj_id) {
+                                (Some(sac_id), Some(t_id)) => *sac_id != t_id,
+                                _ => true,
+                            })
+                            .collect();
+                        // If the sac filter eliminated every option (i.e. the only
+                        // creature available is also the target), don't generate this
+                        // target — the ability has no legal way to resolve.
+                        if sacrifices_for_target.is_empty() { continue; }
+                        for sac in sacrifices_for_target {
+                            actions.push(Action::ActivateAbility {
+                                object_id: obj_id,
+                                ability_index: ab.ability_index,
+                                targets: vec![target.clone()],
+                                tap_plan: ability_tap_plan.clone(),
+                                sacrifice: *sac,
+                            });
+                        }
                     }
                 }
             } else {
-                // Untargeted ability.
-                actions.push(Action::ActivateAbility {
-                    object_id: obj_id,
-                    ability_index: ab.ability_index,
-                    targets: vec![],
-                    tap_plan: ability_tap_plan.clone(),
-                });
+                // Untargeted ability — one action per eligible sacrifice (or one action
+                // with sacrifice=None if there's no sacrifice cost).
+                for sac in &eligible_sacrifices {
+                    actions.push(Action::ActivateAbility {
+                        object_id: obj_id,
+                        ability_index: ab.ability_index,
+                        targets: vec![],
+                        tap_plan: ability_tap_plan.clone(),
+                        sacrifice: *sac,
+                    });
+                }
             }
         }
     }
@@ -1169,13 +1220,22 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     };
 
     // Build collapsed activatable abilities from the expanded ActivateAbility actions.
-    // Group by (object_id, ability_index) and collect all targets for each.
-    // We also capture the first action's tap_plan for each ability so player UIs can
-    // display "(tap Forest, Mountain)" alongside the ability label, like Cast does.
-    let mut ability_map: std::collections::HashMap<(ObjectId, usize), (String, String, Vec<crate::actions::Target>, Vec<(ObjectId, usize)>)> =
+    // Group by (object_id, ability_index) and collect every (target, sacrifice) combo
+    // as well as the de-duplicated target list. We capture the tap_plan from the first
+    // action in each group so player UIs can display "(tap Forest, Mountain)" alongside
+    // the ability label, like Cast does.
+    use crate::actions::ActivatableAbilityOption;
+    struct AbilityGroup {
+        name: String,
+        description: String,
+        target_options: Vec<crate::actions::Target>,
+        tap_plan: Vec<(ObjectId, usize)>,
+        option_combos: Vec<ActivatableAbilityOption>,
+    }
+    let mut ability_map: std::collections::HashMap<(ObjectId, usize), AbilityGroup> =
         std::collections::HashMap::new();
     for action in &actions {
-        if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan } = action {
+        if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice } = action {
             let entry = ability_map.entry((*object_id, *ability_index)).or_insert_with(|| {
                 let name = state.obj_name(*object_id);
                 let desc = registry.get(
@@ -1186,21 +1246,36 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         .find(|a| a.ability_index == *ability_index)
                         .map(|a| a.description.clone())
                 }).unwrap_or_default();
-                (name, desc, Vec::new(), tap_plan.clone())
+                AbilityGroup {
+                    name,
+                    description: desc,
+                    target_options: Vec::new(),
+                    tap_plan: tap_plan.clone(),
+                    option_combos: Vec::new(),
+                }
             });
-            entry.2.extend(targets.iter().cloned());
+            for t in targets {
+                if !entry.target_options.contains(t) {
+                    entry.target_options.push(t.clone());
+                }
+            }
+            entry.option_combos.push(ActivatableAbilityOption {
+                targets: targets.clone(),
+                sacrifice: *sacrifice,
+            });
         }
     }
     let activatable_abilities: Vec<crate::actions::ActivatableAbility> = ability_map
         .into_iter()
-        .map(|((object_id, ability_index), (name, description, target_options, tap_plan))| {
+        .map(|((object_id, ability_index), g)| {
             crate::actions::ActivatableAbility {
                 object_id,
                 ability_index,
-                name,
-                description,
-                target_options,
-                tap_plan,
+                name: g.name,
+                description: g.description,
+                target_options: g.target_options,
+                tap_plan: g.tap_plan,
+                option_combos: g.option_combos,
             }
         })
         .collect();
@@ -2163,7 +2238,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             activate_mana_source(&mut new_state, *object_id, *ability_index, registry);
         }
 
-        Action::ActivateAbility { object_id, ability_index, targets, tap_plan } => {
+        Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice } => {
             let player = new_state.priority_player.expect("ActivateAbility requires priority");
 
             // Execute autotap plan: tap mana sources to fill the mana pool before
@@ -2234,35 +2309,20 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     new_state.get_object_mut(*object_id).expect("object must exist for tapping").tapped = true;
                 }
 
-                // Pay sacrifice cost.
+                // Pay sacrifice cost. The player chose which creature to sacrifice
+                // when picking the action — legal_actions enumerated one
+                // ActivateAbility per (target, sacrifice) combo, so the choice is
+                // already encoded in `sacrifice`. We just sacrifice it here.
                 use crate::cards::SacrificeCost;
                 match &ab.sacrifice_cost {
                     SacrificeCost::None => {}
                     SacrificeCost::SacrificeThis => {
                         crate::destruction::sacrifice(&mut new_state, *object_id, registry);
                     }
-                    SacrificeCost::SacrificeCreature => {
-                        // For now, auto-sacrifice the first eligible creature.
-                        // TODO: Present choice to player when there are multiple options.
-                        let creature = new_state.objects_in_zone(Zone::Battlefield, player)
-                            .iter()
-                            .find(|o| o.power.is_some())
-                            .map(|o| o.id);
-                        if let Some(cid) = creature {
-                            crate::destruction::sacrifice(&mut new_state, cid, registry);
-                        }
-                    }
-                    SacrificeCost::SacrificeAnotherCreature => {
-                        // Sacrifice another creature (not the source permanent).
-                        // For now, auto-sacrifice the first eligible creature.
-                        // TODO: Present choice to player when there are multiple options.
-                        let creature = new_state.objects_in_zone(Zone::Battlefield, player)
-                            .iter()
-                            .find(|o| o.power.is_some() && o.id != *object_id)
-                            .map(|o| o.id);
-                        if let Some(cid) = creature {
-                            crate::destruction::sacrifice(&mut new_state, cid, registry);
-                        }
+                    SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature => {
+                        let sac_id = sacrifice
+                            .expect("legal_actions must populate sacrifice for sacrifice-cost abilities");
+                        crate::destruction::sacrifice(&mut new_state, sac_id, registry);
                     }
                 }
 
