@@ -3563,3 +3563,57 @@ follow.
 4. Include the current count in the ability label so the LLM can
    see progress: `{1}{U}: hatchling counter (currently N/5)`.
 
+---
+
+### 🟡 Engine Bug 76-003: Traveler's Amulet auto-picks the first basic land in library order (Bug P sibling)
+**Severity:** low — affects splash decks (same analysis as Bug P)
+**File:** `mtg-engine/src/cards/isd/travelers_amulet.rs:55-78`
+**Audit evidence:** drafted but never activated in sampled games
+**Note:** this is the bug dangling-referenced as "Bug BC's auto-pick"
+inside Bug BF on master; the legacy "Bug BC" commit never landed.
+Recorded here with the new `NN-XXX` prefix.
+
+Oracle: "`{1}`, Sacrifice Traveler's Amulet: Search your library for
+a basic land card, reveal it, put it into your hand, then shuffle."
+
+Implementation auto-picks the first matching basic in library order:
+
+```rust
+let basic_land_id = player.library_order.iter().find(|&&lib_id| {
+    state.get_object(lib_id)
+        .and_then(|o| registry.card_data(o.card_id))
+        .map(|d| {
+            d.card_types.contains(&CardType::Land)
+                && d.supertypes.contains(&Supertype::Basic)
+        })
+        .unwrap_or(false)
+}).copied();
+```
+
+`library_order.iter().find(...)` returns the first matching basic in
+the (shuffled) library — no player choice. Exactly the same shape as
+Bug P (Caravan Vigil) with exactly the same downside: a B/R deck
+splashing one green spell cannot specifically tutor a Forest because
+the first-in-order basic might be Mountain or Swamp.
+
+Additionally, the code comment at the end claims "Shuffle (no-op in
+our engine, library is treated as ordered for gameplay)" — which is
+actually Bug BF (already on master), not this bug. The two
+Traveler's Amulet bugs (BF + 76-003) compose: a splash deck can't
+tutor the specific color AND the library isn't shuffled afterwards,
+so every subsequent draw is predictable. Bug BF should be fixed
+alongside 76-003.
+
+**Proposed fix:** same shape as Bug P's proposed fix — enumerate one
+`ResolutionChoice` per distinct basic land name in the library, let
+the player pick a land type, then tutor the first matching basic of
+that type. A shared helper (`tutor_basic_land_with_choice`) could
+cover both Caravan Vigil and Traveler's Amulet; Ghost Quarter's
+land-search path (`ghost_quarter.rs:85-100`) also looks like a
+candidate for the same helper, though I haven't re-confirmed its
+current behavior.
+
+**Cross-references:** Bug P (Caravan Vigil, same auto-pick shape),
+Bug BF (Traveler's Amulet doesn't shuffle — different symptom on the
+same card).
+
