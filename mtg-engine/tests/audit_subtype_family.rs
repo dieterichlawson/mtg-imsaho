@@ -16,6 +16,12 @@
 //!   {3}{B}{B}: Gain control of target Vampire can't see cast-from-hand Vampires)
 //! - Bug AU: Moonmist's "instance subtypes non-empty" branch ignores the
 //!   registry, so Olivia-bitten Humans can't be transformed by Moonmist
+//! - Bug 31-003: Urgent Exorcism's "Spirit or enchantment" filter is
+//!   registry-only, can't target Spirit tokens
+//! - Bug 31-002: Avacynian Priest's "non-Human" filter reads front-face
+//!   registry, refuses to target transformed werewolves
+//! - Bug 31-004: Elder Cathar's Human-bonus check reads front-face
+//!   registry, wrongly grants 2 counters to transformed ex-Humans
 
 mod common;
 use common::*;
@@ -371,5 +377,213 @@ fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
          Bug AU: Moonmist's filter takes the 'instance subtypes non-empty' \
          branch and only sees ['Vampire'], so it ignores the registry's \
          Human subtype."
+    );
+}
+
+/// Bug 31-003 (audits/AUDIT_BUGS.md): Urgent Exorcism's
+/// `is_valid_target` is registry-only, so Spirit tokens (Midnight
+/// Haunting, Doomed Traveler, Mausoleum Guard, Geist-Honored Monk) are
+/// untargetable.
+///
+/// Oracle (Urgent Exorcism): "Destroy target Spirit or enchantment."
+///
+/// Failure mode: `urgent_exorcism.rs:33-49` calls
+/// `registry.card_data(obj.card_id)` and asks the registry whether the
+/// object is a Spirit or enchantment. Tokens have `card_id: CardId(0)`,
+/// so the registry lookup returns None, and the filter rejects every
+/// token. The fix is the Bug AT pattern: also consult the instance
+/// `obj.subtypes` and `obj.card_types`.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 31-003 is fixed.
+#[test]
+fn bug_31_003_urgent_exorcism_targets_spirit_token() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Create a 1/1 Spirit token like Midnight Haunting makes.
+    let token = state.create_token_with_subtypes(
+        "Spirit",
+        P1,
+        1,
+        1,
+        vec![Color::White],
+        vec![CardType::Creature],
+        vec![],
+        vec!["Spirit".into()],
+        &registry,
+    );
+    if let Some(obj) = state.get_object_mut(token) {
+        obj.summoning_sick = false;
+    }
+    assert!(
+        state
+            .get_object(token)
+            .unwrap()
+            .subtypes
+            .iter()
+            .any(|s| s == "Spirit"),
+        "Test setup: Spirit token should have 'Spirit' in obj.subtypes"
+    );
+
+    let exorcism_card_id = registry.get_id_by_name("Urgent Exorcism").unwrap();
+    let behavior = registry.get(exorcism_card_id).unwrap();
+    let is_valid = behavior.is_valid_target(
+        &state,
+        P0,
+        &Target::Object(token),
+        &registry,
+    );
+
+    assert!(
+        is_valid,
+        "Urgent Exorcism should be able to target a Spirit TOKEN. \
+         Bug 31-003: the card-side filter only checks \
+         registry.card_data(), which returns None for tokens, so the \
+         token is wrongly rejected."
+    );
+}
+
+/// Bug 31-002 (audits/AUDIT_BUGS.md): Avacynian Priest's `is_valid_target`
+/// reads front-face registry subtypes, so it refuses to tap a transformed
+/// werewolf (which is no longer a Human on its live face).
+///
+/// Oracle (Avacynian Priest): "{1}, {T}: Tap target non-Human creature."
+/// Oracle (Tormented Pariah front face): "Human Warrior Werewolf".
+/// Oracle (Rampaging Werewolf back face): "Werewolf" (no Human subtype).
+///
+/// Failure mode: `avacynian_priest.rs:52-69` checks
+/// `registry.card_data(o.card_id).subtypes.contains("Human") || o.subtypes.contains("Human")`.
+/// For a transformed Tormented Pariah, `obj.subtypes = ["Werewolf"]`
+/// (back face — set by `apply_transform`) but `registry.card_data(...)`
+/// returns the front face, which still says Human. So `is_human = true`
+/// and the Pariah is rejected — even though its live face is non-Human.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 31-002 is fixed.
+#[test]
+fn bug_31_002_avacynian_priest_can_tap_transformed_werewolf() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Tormented Pariah is Human Warrior Werewolf on its front face.
+    // Transforming it gives the Rampaging Werewolf back face, which is
+    // a plain Werewolf (no Human).
+    let pariah = named_creature(&mut state, &registry, "Tormented Pariah", P1);
+    mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &registry);
+    assert!(
+        state.get_object(pariah).unwrap().is_transformed,
+        "Test setup: Tormented Pariah should be on its back (Rampaging Werewolf) face"
+    );
+    assert!(
+        !state
+            .get_object(pariah)
+            .unwrap()
+            .subtypes
+            .iter()
+            .any(|s| s == "Human"),
+        "Test setup: Rampaging Werewolf back face should NOT have Human in obj.subtypes"
+    );
+
+    let priest_card_id = registry.get_id_by_name("Avacynian Priest").unwrap();
+    let behavior = registry.get(priest_card_id).unwrap();
+    let is_valid = behavior.is_valid_target(
+        &state,
+        P0,
+        &Target::Object(pariah),
+        &registry,
+    );
+
+    assert!(
+        is_valid,
+        "Avacynian Priest should be able to tap a transformed werewolf \
+         (Rampaging Werewolf is non-Human on its live face). Bug 31-002: \
+         the filter consults the front-face registry data and sees Human, \
+         so it wrongly rejects every transformed ex-Human."
+    );
+}
+
+/// Bug 31-004 (audits/AUDIT_BUGS.md): Elder Cathar's "if Human, +2
+/// counters instead" check reads front-face registry subtypes, so a
+/// transformed werewolf (whose live face is non-Human) wrongly gets the
+/// Human bonus.
+///
+/// Oracle (Elder Cathar): "When this creature dies, put a +1/+1 counter
+/// on target creature you control. If that creature is a Human, put two
+/// +1/+1 counters on it instead."
+/// Oracle (Tormented Pariah / Rampaging Werewolf): see Bug 31-002 above.
+///
+/// Failure mode: `elder_cathar.rs:50-58` checks
+/// `o.subtypes.iter().any(|s| s == "Human") || registry.card_data(o.card_id).subtypes.iter().any(|s| s == "Human")`.
+/// For a transformed Tormented Pariah, `obj.subtypes = ["Werewolf"]`
+/// (no Human) but the registry returns the front face which DOES have
+/// Human, so `is_human = true` and the bonus fires. The transformed
+/// werewolf gets two counters when oracle text says it should only get
+/// one (because its live face is not a Human).
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 31-004 is fixed.
+#[test]
+fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0 has Elder Cathar (about to die) and a single transformed
+    // Tormented Pariah (their only other creature, so Elder Cathar's
+    // single-target auto-resolve path is the one that fires).
+    let cathar = named_creature(&mut state, &registry, "Elder Cathar", P0);
+    let pariah = named_creature(&mut state, &registry, "Tormented Pariah", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, pariah, &registry);
+    assert!(
+        state.get_object(pariah).unwrap().is_transformed,
+        "Test setup: Tormented Pariah should be on its back (Rampaging Werewolf) face"
+    );
+
+    // Sanity-check: nothing else of P0's is on the battlefield to make
+    // single-target the only path. (Cathar itself is excluded from the
+    // target list because of the `o.id != object_id` filter at line 41.)
+    let p0_creature_count = state
+        .objects
+        .values()
+        .filter(|o| {
+            o.zone == Zone::Battlefield
+                && o.controller == P0
+                && o.power.is_some()
+                && o.id != cathar
+        })
+        .count();
+    assert_eq!(
+        p0_creature_count, 1,
+        "Test setup: only the transformed Pariah should be eligible for Cathar's counter"
+    );
+
+    let counters_before = state
+        .get_object(pariah)
+        .unwrap()
+        .counters
+        .get(&CounterType::PlusOnePlusOne)
+        .copied()
+        .unwrap_or(0);
+
+    // Fire Elder Cathar's death trigger directly.
+    let cathar_card_id = registry.get_id_by_name("Elder Cathar").unwrap();
+    let behavior = registry.get(cathar_card_id).unwrap();
+    behavior.on_dies(&mut state, cathar, &registry);
+
+    let counters_after = state
+        .get_object(pariah)
+        .unwrap()
+        .counters
+        .get(&CounterType::PlusOnePlusOne)
+        .copied()
+        .unwrap_or(0);
+    let added = counters_after - counters_before;
+
+    assert_eq!(
+        added, 1,
+        "Elder Cathar's death should put exactly ONE +1/+1 counter on a \
+         transformed werewolf (Rampaging Werewolf is non-Human on its live \
+         face). Bug 31-004: the Human-bonus check reads the front-face \
+         registry subtypes and sees Human, so it wrongly grants 2 counters."
     );
 }
