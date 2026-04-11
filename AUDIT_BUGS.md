@@ -4793,3 +4793,126 @@ Bug E1-001 in one migration.
 - Bug H — engine-level `PermanentWithFilter` filter dropping. Also
   "illegal targets leak into the prompt", but on the spell side
   rather than the trigger side.
+
+---
+
+### 🟡 Engine Bug 31-002: Avacynian Priest's "non-Human" target filter reads front-face subtypes, so it refuses to target transformed werewolves (which are actually non-Human)
+**Severity:** medium — Avacynian Priest + werewolf opponents is a common matchup and its ability becomes no-op against every transformed werewolf that used to be Human
+**File:** `mtg-engine/src/cards/isd/avacynian_priest.rs:52-69`
+**Audit evidence:** latent in v5 (pre-Bug-A-fix, so Avacynian Priest's ability was never offered); log line 125935 shows Seat 1 *planning* to activate the ability against an opposing Rampaging Werewolf, exactly the case the bug would block
+
+Oracle: "{1}, {T}: Tap target non-Human creature."
+
+The `is_valid_target` filter reads "is Human" from
+`registry.card_data(o.card_id)`, which always returns **front-face**
+subtypes — there is no `is_transformed` branch:
+
+```rust
+fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    match target {
+        Target::Object(id) => {
+            state.get_object(*id)
+                .map(|o| {
+                    let is_human = registry.card_data(o.card_id)
+                        .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                        .unwrap_or(false)
+                        || o.subtypes.iter().any(|s| s == "Human");
+                    o.zone == Zone::Battlefield
+                        && o.power.is_some()
+                        && !is_human
+                })
+                .unwrap_or(false)
+        }
+        Target::Player(_) => false,
+    }
+}
+```
+
+For a **transformed DFC** that was Human on the front face and lost
+the Human subtype on the back face, the registry lookup returns
+the front-face subtypes (which include "Human"), so `is_human = true`
+and Avacynian Priest REFUSES to target it — even though per the
+rules the back face is the live face and is non-Human.
+
+Nearly every ISD werewolf is Human on the front face and drops the
+Human subtype on the back face: Tormented Pariah → Rampaging
+Werewolf, Gatstaf Shepherd → Gatstaf Howler, Kruin Outlaw → Terror
+of Kruin Pass, Villagers of Estwald → Howlpack of Estwald, Ulvenwald
+Mystics → Ulvenwald Primordials, Daybreak Ranger → Nightfall
+Predator, Village Ironsmith → Ironfang, Reckless Waif → Merciless
+Predator, Hanweir Watchkeep → Bane of Hanweir, Grizzled Outcasts →
+Krallenhorde Wantons, Mayor of Avabruck → Howlpack Alpha, Cloistered
+Youth → Unholy Fiend. Every one of them is a legal Avacynian Priest
+target in its transformed state per the rules, but the current
+filter blocks all of them.
+
+Contrast with `CreatureFilter::HasSubtype` at `state.rs:692-710`,
+which DOES check `is_transformed` and uses back-face data when set.
+Avacynian Priest's `is_valid_target` needs the same treatment.
+
+**Audit evidence:**
+- Avacynian Priest was drafted by Seat 1 and was on the battlefield
+  across multiple matches (see log lines 26931 cast, 126041 still
+  on battlefield at R3 turn 20).
+- Bug A (activated-ability autotap) predates the v5 audit, so
+  Avacynian Priest's tap ability was never offered in v5. The
+  "Activate Avacynian Priest" action doesn't appear in any action
+  list.
+- Log line 125935 captures the model's intent directly: Seat 1
+  states *"I use the Avacynian Priest to neutralize the Werewolf's
+  threat"* referring to the opposing Rampaging Werewolf. Seat 1
+  then has to attack with Avacynian Priest instead because the
+  tap-target ability wasn't offered. Post-Bug-A-fix, the ability
+  will appear in the action list but 31-002 means the Rampaging
+  Werewolf won't be in the target list — the player will see an
+  action they expect to work and either an empty target list or,
+  worse, a list missing exactly the creature they want to tap.
+
+**Proposed fix:** replace the front-face registry lookup with a
+transform-aware lookup that mirrors `CreatureFilter::HasSubtype`:
+
+```rust
+fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+    match target {
+        Target::Object(id) => {
+            let Some(obj) = state.get_object(*id) else { return false; };
+            if obj.zone != Zone::Battlefield || obj.power.is_none() { return false; }
+
+            // Determine the active face's subtypes: instance first,
+            // then back-face data if transformed, then front-face
+            // data from the registry.
+            let is_human = if obj.subtypes.iter().any(|s| s == "Human") {
+                true
+            } else if obj.is_transformed {
+                registry.get(obj.card_id)
+                    .and_then(|b| b.back_face_data())
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false)
+            } else {
+                registry.card_data(obj.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false)
+            };
+            !is_human
+        }
+        Target::Player(_) => false,
+    }
+}
+```
+
+The cleanest long-term fix is a shared helper
+`state::creature_has_subtype(obj_id, "Human", registry)` that does
+the transform-aware lookup in one place and have every
+card-specific filter call it. That closes the whole class of
+"transform-blind subtype filter" bugs (AO, 31-002, etc.) in one
+pass.
+
+**Related bugs:**
+- Bug AO — `combat::get_subtypes` is not face-aware for transformed
+  DFCs. Same class on a different code path.
+- Bug AT — registry-only subtype filters that miss tokens.
+- Bug 99-002 — Civilized Scholar / Delver of Secrets hand-roll
+  their DFC transforms without `apply_transform`, leaving
+  `obj.subtypes` stale. The `obj.subtypes.iter().any(|s| s == "Human")`
+  early-return in the proposed fix will hit stale subtypes for
+  those two cards until 99-002 lands.
