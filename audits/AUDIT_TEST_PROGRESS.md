@@ -70,3 +70,4 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug 76-002 (Counter display) — `mtg-engine/tests/audit_misc_final.rs::bug_76_002_ludevic_hatchling_counters_not_in_card_state` — status: failing-as-expected
 - Bug 99-001 (Counter display) — `mtg-engine/tests/audit_misc_final.rs::bug_99_001_gutter_grime_does_not_count_token_deaths` — status: failing-as-expected
 - Bug 37-001 (Harness — counter display) — `mtg-player/src/llm.rs::tests::bug_37_001_format_counters_includes_slime_and_study` — status: failing-as-expected (inverted from the prior `format_counters_ignores_slime_and_study` test that enshrined the bug)
+- Bug AC (Counter display) — `mtg-engine/tests/audit_misc_final.rs::bug_ac_unbreathing_horde_counts_itself_when_reanimated` — status: failing-as-expected
