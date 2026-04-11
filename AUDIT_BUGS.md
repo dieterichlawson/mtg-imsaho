@@ -5415,3 +5415,177 @@ interactions) while also surfacing the effective value.
   highest power`. Separate issue (player-choice half), but the
   display half of this bug is what would let the LLM *see* the
   right tradeoff if Bug F were also fixed.
+
+---
+
+### 🟡 Engine Bug 17-005: non-trample attackers blocked by multiple creatures dump all damage on the first blocker; the attacking player can't divide damage per CR 510.1c
+**Severity:** medium — affects every non-trample creature blocked by 2+ creatures
+**File:** `mtg-engine/src/combat.rs:254-300` (`deal_damage_step` blocked branch)
+**Audit evidence:** did NOT visibly fire — the sampled games all had single-block combats or the "natural" assignment happened to be the best choice for the attacker
+
+Per CR 510.1c and 702.19: when an attacking creature is blocked by
+multiple creatures, its combat damage is divided among them, and
+**the attacking player chooses how to divide it** (subject to
+trample's "assign at least lethal in order" constraint, which
+applies only to trample attackers). A 5-power non-trample attacker
+blocked by two 2/2s should be able to assign 2 to each and kill
+both, or 3+2, or 4+1, or 5+0 — the choice belongs to the
+attacker's controller.
+
+The current `deal_damage_step` for blocked attackers forces a
+single fixed assignment: **all damage goes to the first blocker
+in iteration order**, and subsequent blockers get zero.
+
+```rust
+let mut remaining_power = attacker_power;
+for &blocker_id in &blockers {
+    ...
+    if remaining_power > 0 {
+        let lethal = if has_deathtouch_attacker {
+            1
+        } else {
+            (blocker_toughness - blocker_damage as i32).max(0) as u32
+        };
+
+        let assigned = if has_trample {
+            remaining_power.min(lethal) // assign minimum lethal, save rest for trample
+        } else {
+            remaining_power             // non-trample: dump ALL remaining
+        };
+
+        if assigned > 0 {
+            deal_damage_to_creature(state, attacker_id, blocker_id, assigned, registry);
+            remaining_power -= assigned;
+        }
+    }
+}
+```
+
+For a non-trample attacker with power 5 blocked by two 2/2s:
+
+1. First blocker: `remaining_power = 5`, `assigned = 5`, deal 5
+   to blocker, `remaining_power = 0` after dealing.
+2. Second blocker: `remaining_power > 0` is false → the entire
+   "attacker deals damage to blocker" block is skipped.
+
+The first blocker takes 5 damage (3 wasted); the second blocker
+takes 0 damage and survives. The attacker's controller wanted to
+kill BOTH blockers with 2 damage each but was never given the
+option.
+
+**Two distinct sub-bugs stacked here:**
+
+1. **Blocker's damage-order choice is missing.** CR 509.2 says the
+   player DECLARING blockers picks the order blockers take damage
+   (the "damage assignment order"). The engine doesn't ask — it
+   uses declaration order as-is via
+   `combat.blocker_assignments.get(&attacker_id)`.
+2. **Attacker's damage-division choice is missing.** CR 510.1c
+   says the ATTACKING player divides damage among the blockers
+   (subject to lethal-in-order for trample). The engine hard-codes
+   "dump all on the first blocker" for non-trample, and "minimum
+   lethal per blocker in order" for trample.
+
+Both sub-bugs collapse to "no damage-division UI exists." A
+full fix needs the engine to offer the attacker's controller a
+division prompt at the combat damage step, given the list of
+blockers in the order the defender chose.
+
+**Trample's auto-assignment happens to be legal** per CR 702.19b
+(lethal-in-order plus overflow-to-player), but it's not always
+what the attacker wants. A 5-power trampler blocked by a 2/2 and
+a 4/4 currently assigns 2 → 2/2, 3 → 4/4, 0 → player. Legal. But
+the attacker's controller might prefer 2 → 2/2, 2 → 4/4, 1
+trample to player — also legal, because the 4/4 only needs
+"lethal in order" which isn't reachable with 3 damage anyway, so
+any amount short of 4 is fine and trample kicks in. The engine
+never lets the player choose.
+
+**Non-trample is the more common missed-play case in ISD.** The
+typical pattern is "N-power creature blocked by two smaller
+creatures" where the attacker wants to kill both. Elder of
+Laurels pumped to 6/6 attacking into a Walking Corpse (2/2) +
+Village Bell-Ringer (1/4) double-block: the controller wants
+2+4 or 2+3 to kill both; the engine dumps 6 on the Walking Corpse
+and leaves the Bell-Ringer alive. None of the sampled games hit
+this exact configuration (I searched for multi-block patterns
+in the log and found plenty of 1-blocker-per-attacker scenarios
+but no attacker-blocked-by-2 at the moments I spot-checked), so
+the bug is latent in this audit. But it's structurally present
+and the next draft with wider combat ranges will eventually
+expose it.
+
+Also note the non-determinism upstream: `combat.attackers` is
+`HashMap<ObjectId, PlayerId>` (see `state.rs:1508`), so the
+iteration order at `deal_damage_step`'s outer loop
+(`combat.rs:223`) is non-deterministic across game runs. This
+doesn't affect damage outcomes in normal cases (attackers don't
+damage each other), but it does mean the order combat-damage
+events get pushed to `state.events` is non-deterministic, which
+leaks into log display ordering and potentially into trigger
+collection order in edge cases.
+
+**Proposed fix (full):** add a new `CombatPrompt::AssignBlockerDamage`
+variant that fires during the combat damage step (before
+`deal_damage_step` actually applies damage). It receives the
+attacker, the ordered blocker list (after the defender's
+damage-order choice, which is a separate prompt), the attacker's
+effective power, and whether the attacker has trample. The
+controller responds with a `Vec<(ObjectId, u32)>` assigning
+damage to each blocker (and optionally to the defending player
+if trample).
+
+Validation:
+- Total assigned ≤ attacker's power.
+- For non-trample: total assigned ≤ attacker's power, with no
+  requirement that it reach lethal on anyone.
+- For trample: each blocker in the assignment order must be at
+  or above its lethal damage before any damage goes past it to
+  the player.
+
+**Proposed fix (minimum viable for most ISD play):** change the
+non-trample branch to a "kill as many blockers as possible in
+order" heuristic: assign the minimum-lethal amount to each
+blocker until power runs out, then stop. For a 5-power attacker
+vs two 2/2s this gives 2+2 (both die, 1 wasted); for 5-power vs
+two 3/3s it gives 3+2 (first dies, second survives); for 3-power
+vs two 2/2s it gives 2+1 (first dies, second survives). These
+match the "obvious best play" an LLM would pick and don't
+require any prompt UI. It's not CR-correct (the player should
+still be able to choose 5+0 or other splits), but it's strictly
+better than the current "dump on first" behavior for every
+realistic combat.
+
+```rust
+let assigned = if has_trample {
+    remaining_power.min(lethal) // unchanged
+} else {
+    // NEW: assign just enough to kill this blocker, save the
+    // rest for the next blocker. If remaining < lethal, dump
+    // what's left (non-lethal assignment to final blocker).
+    remaining_power.min(lethal.max(1))
+};
+```
+
+The `lethal.max(1)` guard ensures even a 0-power attacker
+(shouldn't happen) or a blocker with 0 toughness doesn't cause
+a divide-by-zero loop. For the 5-power vs two 2/2s case: blocker
+1 gets `min(5, 2) = 2`, remaining = 3; blocker 2 gets `min(3, 2)
+= 2`, remaining = 1; loop ends. Both blockers die, 1 damage
+wasted. Exactly the desired outcome.
+
+The minimum-viable fix is a one-line change and covers the
+common case. The full fix is the right long-term solution but
+requires new combat-prompt wiring and LLM-side response handling,
+which is a much larger diff.
+
+**Cross-references:**
+- Bug P1 (already fixed, `236572d`) is the model-side bug where
+  the LLM thought blocker toughness was a shared pool. The
+  engine-side 17-005 is the flip side: even if the model knew
+  how to assign damage correctly, the engine doesn't let it.
+- Bug BP — "forced-attack effects ignore 'can't attack' continuous
+  effects" — is about the attack-declaration step's missing
+  checks. 17-005 is about the combat-damage step's missing
+  divider UI. Both are "combat phase missing player-choice
+  prompts" bugs.
