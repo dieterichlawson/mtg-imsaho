@@ -14,13 +14,24 @@
 //!   creature in the controller's graveyard to exile
 //! - Bug P: Caravan Vigil auto-picks the first basic land in library
 //!   order, so a splash deck can't tutor the splash colour
+//! - Bug 76-003: Traveler's Amulet auto-picks the first basic land
+//!   in library order (Bug P sibling)
+//! - Bug E: Nevermore reads the opponent's hand and auto-picks a
+//!   name (should ask the controller for a string choice)
+//! - Bug F: `AdditionalCost::ExileCreaturesFromGraveyard` auto-picks
+//!   the highest-power creature instead of asking the player
+//! - Bug U: Kessig Wolf Run's `{X}{R}{G}, {T}` activated ability
+//!   has no in-engine X enumeration — a single generic entry is
+//!   offered with X determined at apply time from the mana pool
 //! - Bug W: The legend rule SBA auto-picks which legend to keep
 //!   (CR 704.5j says the player chooses)
 
 mod common;
 use common::*;
 
+use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
+use mtg_engine::engine;
 use mtg_engine::types::*;
 
 /// Bug D (audits/AUDIT_BUGS.md): Moorland Haunt's `{W}{U}, {T}, Exile
@@ -201,5 +212,312 @@ fn bug_w_legend_rule_pauses_for_player_choice() {
          to keep. Bug W: SBA auto-picks ids[0] and silently moves the \
          other to graveyard. zones: a={:?}, b={:?}",
         a_zone, b_zone,
+    );
+}
+
+/// Bug 76-003 (audits/AUDIT_BUGS.md): Traveler's Amulet's
+/// `{1}, Sacrifice: search your library for a basic land card` auto-
+/// picks the first matching basic in `library_order`, with exactly
+/// the same shape as Bug P (Caravan Vigil).
+///
+/// Oracle (Traveler's Amulet): "{1}, Sacrifice this artifact: Search
+/// your library for a basic land card, reveal it, put it into your
+/// hand, then shuffle."
+///
+/// Failure mode: `travelers_amulet.rs:57-65` does
+/// `library_order.iter().find(|&&id| <is basic land>)` and auto-
+/// picks the first match. A B/R deck splashing green cannot
+/// specifically tutor a Forest if Mountain or Swamp comes first in
+/// library order.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 76-003 is fixed.
+#[test]
+fn bug_76_003_travelers_amulet_does_not_auto_pick_basic_land() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Forest then Swamp in P0's library (in that order).
+    let forest_card_id = registry.get_id_by_name("Forest").unwrap();
+    let forest = state.create_object(forest_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(forest).unwrap().name = "Forest".into();
+    state.get_player_mut(P0).library_order.push(forest);
+
+    let swamp_card_id = registry.get_id_by_name("Swamp").unwrap();
+    let swamp = state.create_object(swamp_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(swamp).unwrap().name = "Swamp".into();
+    state.get_player_mut(P0).library_order.push(swamp);
+
+    // Traveler's Amulet on P0's battlefield.
+    let amulet = named_creature(&mut state, &registry, "Traveler's Amulet", P0);
+    let amulet_card_id = state.get_object(amulet).unwrap().card_id;
+
+    // Fire the activation handler directly — the artifact is normally
+    // already sacrificed by the engine before on_activate_ability.
+    let behavior = registry.get(amulet_card_id).unwrap();
+    behavior.on_activate_ability(&mut state, amulet, 0, &[], &registry);
+
+    let forest_zone = state.get_object(forest).map(|o| o.zone);
+    let swamp_zone = state.get_object(swamp).map(|o| o.zone);
+    let either_in_hand = forest_zone == Some(Zone::Hand) || swamp_zone == Some(Zone::Hand);
+
+    assert!(
+        !either_in_hand,
+        "Traveler's Amulet should not auto-tutor a basic land — the \
+         player chooses (Bug P sibling). Bug 76-003: the implementation \
+         walks library_order and picks the first matching basic. zones: \
+         forest={:?}, swamp={:?}",
+        forest_zone, swamp_zone,
+    );
+}
+
+/// Bug E (audits/AUDIT_BUGS.md): Nevermore auto-picks a name by
+/// reading the opponent's hand. Doubly wrong: (1) Nevermore's name
+/// choice is independent of any player's hand, and (2) the
+/// implementation leaks opponent hand information into the decision.
+///
+/// Oracle (Nevermore): "As this enchantment enters, choose a nonland
+/// card name. Spells with the chosen name can't be cast."
+///
+/// Failure mode: `nevermore.rs:42-70` iterates
+/// `state.objects.values()` filtering for `Zone::Hand` + opponent
+/// owner, extracts the first nonland name, and stores it as the
+/// blocked name. No player choice is presented.
+///
+/// We put a specific card in the opponent's hand and check that
+/// Nevermore's `PreventCastingNamed` effect matches that card's name
+/// — the bug's fingerprint. After the fix the handler should pause
+/// for a `ChooseCardName`-style choice (which doesn't exist yet, so
+/// we instead assert that the name wasn't leaked from opp's hand).
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug E is fixed.
+#[test]
+fn bug_e_nevermore_does_not_read_opponent_hand() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put a very specific card in P1's hand.
+    let bolt_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+    let leaked = state.create_object(bolt_card_id, P1, Zone::Hand, Some(2), Some(2));
+    state.get_object_mut(leaked).unwrap().name = "Grizzly Bears".into();
+
+    // Nevermore enters the battlefield for P0 and fires its ETB.
+    let nevermore_card_id = registry.get_id_by_name("Nevermore").unwrap();
+    let nevermore = state.create_object(nevermore_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(nevermore).unwrap().name = "Nevermore".into();
+    let behavior = registry.get(nevermore_card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, nevermore, &registry);
+
+    // If the bug fires, Nevermore's instance continuous effects
+    // include a `PreventCastingNamed { name: "Grizzly Bears" }` entry
+    // — the name was leaked from P1's hand. The fix should either
+    // leave it unset (pending a choice) or not equal the hand card.
+    let leaked_name_chosen = state
+        .get_object(nevermore)
+        .and_then(|o| o.instance_continuous_effects.as_ref().cloned())
+        .map(|effects| {
+            effects.iter().any(|e| matches!(
+                e,
+                ContinuousEffect::PreventCastingNamed { name } if name == "Grizzly Bears"
+            ))
+        })
+        .unwrap_or(false);
+
+    assert!(
+        !leaked_name_chosen,
+        "Nevermore must not auto-pick a name by reading the opponent's \
+         hand. Bug E: the handler iterates state.objects for \
+         Zone::Hand + opponent and picks the first nonland — both an \
+         information leak and an auto-pick."
+    );
+}
+
+/// Bug F (audits/AUDIT_BUGS.md): `AdditionalCost::ExileCreaturesFromGraveyard`
+/// auto-picks the highest-power creature at apply time. For Corpse
+/// Lunge that's accidentally fine, but for Stitched Drake / Makeshift
+/// Mauler / Skaab Goliath / Skaab Ruinator the player should choose.
+///
+/// Oracle (Stitched Drake): "As an additional cost to cast this
+/// spell, exile a creature card from your graveyard."
+///
+/// Failure mode: the additional-cost handler in
+/// `engine.rs:2119-2152` sorts candidates by base `power` and
+/// `.take(n)`s the top entries. No player choice, no enumeration of
+/// alternative exile subsets in `legal_actions`.
+///
+/// We put two distinct-power creatures in P0's graveyard and cast
+/// Stitched Drake. `legal_actions` should enumerate one CastSpell
+/// entry per exile choice (mirroring how SacrificeCost is handled
+/// post-Bug-C fix). Today there's only one entry and the exile is
+/// determined at apply time.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug F is fixed.
+#[test]
+fn bug_f_stitched_drake_enumerates_exile_choices() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two distinct creature cards in P0's graveyard: a high-power
+    // option (Grizzly Bears, power 2) and a low-power option (Doomed
+    // Traveler, power 1).
+    let bears = registry.get_id_by_name("Grizzly Bears").unwrap();
+    let bears_obj = state.create_object(bears, P0, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(bears_obj).unwrap().name = "Grizzly Bears".into();
+
+    let traveler = registry.get_id_by_name("Doomed Traveler").unwrap();
+    let traveler_obj = state.create_object(traveler, P0, Zone::Graveyard, Some(1), Some(1));
+    state.get_object_mut(traveler_obj).unwrap().name = "Doomed Traveler".into();
+
+    // Stitched Drake in hand with mana paid.
+    let drake = castable_spell(&mut state, &registry, "Stitched Drake", P0);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let distinct_drake_casts = legal
+        .actions
+        .iter()
+        .filter(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == drake))
+        .count();
+
+    assert!(
+        distinct_drake_casts >= 2,
+        "Stitched Drake should expose one CastSpell entry per distinct \
+         exile choice (exile Bears, exile Traveler) — the player \
+         chooses, not the engine. Bug F: the additional-cost handler \
+         auto-picks the highest-power candidate at apply time and emits \
+         a single CastSpell entry. Got {} entries.",
+        distinct_drake_casts,
+    );
+}
+
+/// Bug O (audits/AUDIT_BUGS.md): Memory's Journey's `GraveyardCard`
+/// enumerator returns cards from ALL graveyards — even when a
+/// specific player was chosen as the first target. Per oracle the
+/// graveyard cards must come from THAT player's graveyard.
+///
+/// Oracle (Memory's Journey): "Target player shuffles up to three
+/// target cards from **their** graveyard into their library."
+///
+/// Failure mode: `engine.rs::valid_targets_for_req`'s `GraveyardCard`
+/// arm iterates `state.objects.values().filter(zone == Graveyard)`
+/// without constraining to the chosen player. The TwoTargets
+/// Cartesian product then emits combos where the player target is
+/// P1 but the graveyard card belongs to P0, which is wrong.
+///
+/// We put one card in each player's graveyard and cast Memory's
+/// Journey as P0 targeting P1. The legal_actions list should contain
+/// no CastSpell where the player target is P1 and a graveyard card
+/// target is owned by P0.
+///
+/// We exercise the bug at resolution time: given `targets = [Player(P1),
+/// Object(p0_card)]` (which the buggy enumeration would allow), the
+/// fix should either reject the cast at legal-action time OR discard
+/// the mismatched graveyard card when resolving. The safest assertion
+/// is that after resolving Memory's Journey with the wrong-player
+/// graveyard target, the P0-owned card is NOT moved to any library —
+/// the oracle restriction must prevent it.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug O is fixed.
+#[test]
+fn bug_o_memorys_journey_only_shuffles_targeted_players_graveyard() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // A creature card in each player's graveyard.
+    let bears = registry.get_id_by_name("Grizzly Bears").unwrap();
+    let p0_card = state.create_object(bears, P0, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(p0_card).unwrap().name = "Grizzly Bears (P0)".into();
+    let p1_card = state.create_object(bears, P1, Zone::Graveyard, Some(2), Some(2));
+    state.get_object_mut(p1_card).unwrap().name = "Grizzly Bears (P1)".into();
+
+    // Resolve Memory's Journey directly with the bad target pair.
+    let journey_card_id = registry.get_id_by_name("Memory's Journey").unwrap();
+    let journey = state.create_object(journey_card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(journey).unwrap().name = "Memory's Journey".into();
+    let behavior = registry.get(journey_card_id).unwrap();
+    behavior.on_resolve(
+        &mut state,
+        journey,
+        &[Target::Player(P1), Target::Object(p0_card)],
+        &registry,
+    );
+
+    let p0_zone = state.get_object(p0_card).map(|o| o.zone);
+    assert_eq!(
+        p0_zone,
+        Some(Zone::Graveyard),
+        "Memory's Journey targeting P1 should NOT be allowed to pull a \
+         card from P0's graveyard. Bug O: the on_resolve loop shuffles \
+         every Target::Object in the target list regardless of which \
+         player owns the card. P0's Grizzly Bears ended up in zone {:?}.",
+        p0_zone,
+    );
+}
+
+/// Bug U (audits/AUDIT_BUGS.md): Kessig Wolf Run's
+/// `{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample
+/// until end of turn` is offered as a single legal-actions entry.
+/// The effective X is determined at apply time by reading whatever
+/// happens to be in the mana pool — there's no enumeration of
+/// possible X values and no separate X prompt.
+///
+/// Oracle (Kessig Wolf Run): "{X}{R}{G}, {T}: Target creature gets
+/// +X/+0 and gains trample until end of turn."
+///
+/// Failure mode: `engine.rs:588-599` (legal_actions for activated
+/// abilities) and `engine.rs:2288-2305` (apply path) treat the X-cost
+/// ability as a single entry. There's no `X` dimension in
+/// `Action::ActivateAbility`, and the only way to set X is to
+/// pre-tap lands into the pool. The player can't express "I want
+/// X=2" through the action list.
+///
+/// With multiple attainable X values (enough mana for X=0, 1, 2),
+/// there should be multiple distinct `ActivateAbility` entries (one
+/// per X) — or equivalently a follow-up X-selection prompt. Today
+/// there's only one entry.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug U is fixed.
+#[test]
+fn bug_u_kessig_wolf_run_enumerates_x_choices() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Put Kessig Wolf Run into play along with a target creature and
+    // enough mana to support at least two different X values.
+    let run_card_id = registry.get_id_by_name("Kessig Wolf Run").unwrap();
+    let run = state.create_object(run_card_id, P0, Zone::Battlefield, None, None);
+    state.get_object_mut(run).unwrap().name = "Kessig Wolf Run".into();
+    state.get_object_mut(run).unwrap().card_types = vec![CardType::Land];
+
+    let _target = ready_creature(&mut state, P0, 2, 2);
+
+    // Pre-fill the pool with {2}{R}{G} — enough to pump with X=0, 1,
+    // or 2.
+    state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
+    state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let kessig_entries = legal
+        .actions
+        .iter()
+        .filter(|a| matches!(
+            a,
+            Action::ActivateAbility { object_id, ability_index, .. }
+                if *object_id == run && *ability_index == 1
+        ))
+        .count();
+
+    assert!(
+        kessig_entries >= 2,
+        "Kessig Wolf Run's X-cost activated ability should expose one \
+         entry per attainable X value (so the player can pick X=0 vs \
+         X=1 vs X=2 on a pool with 4 generic mana). Bug U: a single \
+         generic ActivateAbility entry is emitted and X is determined \
+         at apply time from whatever's in the pool. Got {} entries.",
+        kessig_entries,
     );
 }
