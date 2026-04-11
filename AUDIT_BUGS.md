@@ -4675,6 +4675,128 @@ format — likely overlapping fix territory).
 
 ---
 
+### 🟡 Harness Bug 37-003: "Flashback available" display only walks the controller's own graveyard and only reads printed flashback costs, so the LLM can't see opponent's flashback threats or its own temporary flashback from Past in Flames / Snapcaster Mage
+**Severity:** medium (harness/display) — combat planning + responding to opponent threats both miss information
+**File:** `mtg-player/src/llm.rs:1424-1439` (`format_state_body` flashback section), `mtg-engine/src/view.rs:294-308` (`card_view` only sets `flashback_cost` from the registry)
+**Audit evidence:** did NOT directly fire — Past in Flames was drafted by Seat 7 once but never cast in the sampled games. Latent.
+
+The board-state body's "Flashback available:" line at
+`llm.rs:1424-1439`:
+
+```rust
+// Show flashback-eligible cards in your graveyard.
+let your_gy = view.graveyards.iter()
+    .find(|(pid, _)| *pid == view.you)
+    .map(|(_, cards)| cards);
+if let Some(gy_cards) = your_gy {
+    let fb_cards: Vec<String> = gy_cards.iter()
+        .filter(|c| c.flashback_cost.is_some())
+        .map(|c| {
+            let fb = c.flashback_cost.as_ref().unwrap();
+            format!("{} (flashback {})", c.name, fb)
+        })
+        .collect();
+    if !fb_cards.is_empty() {
+        s.push_str(&format!("Flashback available: {}\n", fb_cards.join(", ")));
+    }
+}
+```
+
+Two gaps:
+
+1. **Opponent's flashback options are invisible.** The summary
+   line iterates only `your_gy` (`pid == view.you`), so the model
+   never gets a tidy "Opp flashback available: …" line for the
+   opponent's graveyard. The opponent's graveyard *contents* are
+   shown earlier (`llm.rs:1411-1422`), but only as raw names; the
+   model has to mentally remember which of those cards have
+   flashback. With ~12 flashback cards in the ISD set (Burning
+   Vengeance, Devil's Play, Forbidden Alchemy, Geistflame, Gnaw
+   to the Bone, Memory's Journey, Past in Flames, Rally the
+   Peasants, Silent Departure, Spider Spawning, Think Twice,
+   Travel Preparations, Unburial Rites, etc.), this is a real
+   anticipation gap during the opponent's turn — especially for
+   the late-game-Devil's-Play-from-the-yard scenario.
+
+2. **Temporary flashback grants are completely missing.** The
+   filter is `c.flashback_cost.is_some()`, and `card_view`
+   (`view.rs:300, 306`) populates `flashback_cost` from
+   `registry.card_data(obj.card_id).flashback_cost` — purely
+   the printed value. The engine has a separate
+   `until_end_of_turn` queue containing
+   `TemporaryEffect::GrantFlashback { target, cost }` entries
+   from Past in Flames (`cards/isd/past_in_flames.rs:67`) and
+   Snapcaster Mage (`cards/isd/snapcaster_mage.rs:71`).
+
+   `view.rs` doesn't expose `until_end_of_turn` at all, so the
+   `CardView::flashback_cost` field never reflects these
+   temporary grants. After resolving Past in Flames the model
+   sees its hand and graveyard exactly the same as before
+   resolution — no indication that every instant and sorcery in
+   its graveyard is now flashback-castable. The whole point of
+   Past in Flames (turn-the-graveyard-into-mana-into-spells) is
+   invisible to the LLM player.
+
+```rust
+// proposed shape — extend the helper to walk both graveyards and
+// also surface temporary grants. Requires exposing
+// until_end_of_turn (or a derived "currently flashback-castable"
+// list) on GameView first.
+
+fn format_flashback_available(view: &GameView) -> String {
+    let mut out = String::new();
+    for (pid, cards) in &view.graveyards {
+        let whose = if *pid == view.you { "Your" } else { "Opp" };
+        let fb_cards: Vec<String> = cards.iter()
+            .filter(|c| c.flashback_cost.is_some()
+                || view.temporary_flashback_targets.contains(&c.object_id))
+            .map(|c| {
+                let cost = c.flashback_cost.as_ref()
+                    .or_else(|| view.temporary_flashback_for(c.object_id))
+                    .unwrap();
+                format!("{} (flashback {})", c.name, cost)
+            })
+            .collect();
+        if !fb_cards.is_empty() {
+            out.push_str(&format!("{} flashback available: {}\n", whose, fb_cards.join(", ")));
+        }
+    }
+    out
+}
+```
+
+The view-side change is the bigger lift: `view.rs` needs a new
+field that flattens `state.until_end_of_turn` into a structure
+the harness can consult. The simplest shape is a
+`HashMap<ObjectId, ManaCost>` for granted-flashback targets, but
+exposing the full `until_end_of_turn` slice would also fix
+the related "model can't see Crossway Vampire's can't-block-this-turn
+debuff", "model can't see Manor Gargoyle's temporary flying gain",
+etc.
+
+**Cross-references:**
+- Bug 9F-001 (Snapcaster Mage filters out cards with printed
+  flashback when granting flashback) — flip side of the same
+  blind spot: Snapcaster grants flashback that the harness can't
+  display, AND Snapcaster excludes cards that already have it.
+- Bug 31-001 (stack display for transformed DFCs) — broader
+  pattern of harness display gaps that hide game state from the
+  model.
+- Bug H7 (target-choice / trigger-ordering prompts have opaque
+  format) — also a model-information gap.
+
+**Proposed fix:** in two parts:
+1. Extend `view.rs` to expose temporary flashback grants from
+   `state.until_end_of_turn`. Either a dedicated
+   `granted_flashback: HashMap<ObjectId, ManaCost>` field, or a
+   broader `temporary_effects` slice mirroring the engine's queue.
+2. Rewrite the `format_state_body` flashback section to walk every
+   player's graveyard and consult both printed and granted
+   flashback costs, prefixing the line with "Your" / "Opp"
+   depending on whose graveyard it's iterating.
+
+---
+
 ### 🟡 Engine Bug E1-001: Grimgrin, Corpse-Born's attack trigger inline-enumerates targets without a hexproof filter, letting the model destroy an opponent's hexproof creature
 **Severity:** medium — latent unless an opponent has a hexproof creature on the battlefield
 **File:** `mtg-engine/src/cards/isd/grimgrin_corpse_born.rs:87-128`
