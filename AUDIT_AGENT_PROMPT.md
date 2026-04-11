@@ -25,9 +25,13 @@ Coordinate via git branches:
    git checkout -b audit-bugs-$(uuidgen | cut -c1-8)
    ```
 4. Do all your work on this branch. Append your new bugs to the BOTTOM
-   of `AUDIT_BUGS.md` in your branch. Use a unique bug-letter prefix
-   (e.g. start at the next available letter — currently the alphabet has
-   reached `Bug AT`, so use AU, AV, AW, etc.).
+   of `AUDIT_BUGS.md` in your branch. **Reserve a letter range up front**
+   to avoid colliding with concurrent agents — pick a starting letter
+   that's at least 5 letters past the highest currently used in master,
+   and document your reservation in your first commit message
+   ("reserving letters BX-CC for this branch"). The next agent should
+   then start from CD or later. This prevents the AY/BA/BD chain of
+   reletters that the first round of audit agents got stuck in.
 5. **Re-fetch and re-read the master version of `AUDIT_BUGS.md` every
    time another agent's branch is merged to master** so you don't waste
    effort re-discovering bugs they already documented. Check for new
