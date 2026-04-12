@@ -40,11 +40,11 @@ impl CardBehavior for EvilTwin {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Collect all creatures on the battlefield except Evil Twin itself.
-        let targets = crate::cards::helpers::creature_targets_except(state, object_id);
+        let targets = crate::cards::helpers::creature_targets_except(state, object_id, object_id, controller, registry);
 
         // "You may" — present an optional choice. If no creatures exist or the
         // player declines, Evil Twin stays as a 0/0 and dies to SBA.

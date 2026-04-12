@@ -41,11 +41,11 @@ impl CardBehavior for FiendHunter {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Another target creature" — any creature except Fiend Hunter itself.
         // Can target own creatures (Oracle doesn't restrict to opponents).
-        let targets = crate::cards::helpers::creature_targets_except(state, object_id);
+        let targets = crate::cards::helpers::creature_targets_except(state, object_id, object_id, controller, registry);
         // "You may" — always present choice, even with 1 target.
         crate::cards::helpers::present_optional_target_choice(
             state, object_id, controller, targets,

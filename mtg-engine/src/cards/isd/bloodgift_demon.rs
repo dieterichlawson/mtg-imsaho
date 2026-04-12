@@ -36,7 +36,7 @@ impl CardBehavior for BloodgiftDemon {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -47,6 +47,7 @@ impl CardBehavior for BloodgiftDemon {
         // "Target player" — present choice between all players.
         let targets: Vec<Target> = state.players.iter()
             .filter(|p| !p.lost)
+            .filter(|p| !state.player_has_hexproof(p.id, registry) || p.id == controller)
             .map(|p| Target::Player(p.id))
             .collect();
         if targets.is_empty() {

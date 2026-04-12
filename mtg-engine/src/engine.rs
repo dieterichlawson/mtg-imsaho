@@ -1591,9 +1591,18 @@ fn valid_targets_for_req(
     use crate::cards::TargetRequirement;
 
     match req {
-        TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_) => {
+        TargetRequirement::Creature => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| o.power.is_some())
+                .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
+                .map(|o| Target::Object(o.id))
+                .filter(|t| behavior.is_valid_target(state, caster, t, registry))
+                .collect()
+        }
+        TargetRequirement::CreatureWithFilter(filter) => {
+            state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| o.power.is_some())
+                .filter(|o| matches_ability_target_filter(state, o, filter, caster, spell_id, registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1608,8 +1617,9 @@ fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
-        TargetRequirement::PermanentWithFilter(_) => {
+        TargetRequirement::PermanentWithFilter(filter) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
+                .filter(|o| matches_target_filter(o, filter, registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1670,10 +1680,11 @@ fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::GraveyardCreature => {
-            // Creature cards in all graveyards. Check both object and registry data.
+            // Creature cards in caster's graveyard. Check both object and registry data.
             state.objects.values()
                 .filter(|o| {
                     o.zone == Zone::Graveyard
+                        && o.owner == caster
                         && (o.power.is_some()
                             || registry.card_data(o.card_id)
                                 .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))

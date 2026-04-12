@@ -38,23 +38,24 @@ impl CardBehavior for SelhoffOccultist {
     }
 
     /// When Selhoff Occultist itself dies, target player mills a card.
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        present_mill_choice(state, object_id, controller);
+        present_mill_choice(state, object_id, controller, registry);
     }
 
     /// When another creature dies, target player mills a card.
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
         };
-        present_mill_choice(state, self_id, controller);
+        present_mill_choice(state, self_id, controller, registry);
     }
 }
 
-fn present_mill_choice(state: &mut GameState, source_id: ObjectId, controller: PlayerId) {
+fn present_mill_choice(state: &mut GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) {
     let options: Vec<Target> = state.players.iter()
+        .filter(|p| !state.player_has_hexproof(p.id, registry) || p.id == controller)
         .map(|p| Target::Player(p.id))
         .collect();
 

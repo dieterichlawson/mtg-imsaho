@@ -37,29 +37,32 @@ impl CardBehavior for FalkenrathNoble {
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         // "This creature dies" — trigger fires even when Noble itself dies.
         // Use controller (last known information from when it was on the battlefield).
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
-        drain(state, controller, object_id);
+        drain(state, controller, object_id, registry);
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
         // "Another creature dies" — triggers on ANY creature death (any controller).
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             _ => return,
         };
-        drain(state, controller, self_id);
+        drain(state, controller, self_id, registry);
     }
 }
 
 /// Present a "target player" choice for Falkenrath Noble's drain effect.
-fn drain(state: &mut GameState, controller: PlayerId, source_id: ObjectId) {
+fn drain(state: &mut GameState, controller: PlayerId, source_id: ObjectId, registry: &CardRegistry) {
     use crate::actions::Target;
     use crate::state::PendingEffect;
 
-    let targets: Vec<Target> = state.players.iter().map(|p| Target::Player(p.id)).collect();
+    let targets: Vec<Target> = state.players.iter()
+        .filter(|p| !state.player_has_hexproof(p.id, registry) || p.id == controller)
+        .map(|p| Target::Player(p.id))
+        .collect();
     let effect = PendingEffect::DrainLife {
         controller,
         source_name: "Falkenrath Noble".into(),

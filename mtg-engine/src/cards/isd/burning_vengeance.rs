@@ -35,7 +35,7 @@ impl CardBehavior for BurningVengeance {
         }
     }
 
-    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _registry: &CardRegistry) {
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -53,7 +53,7 @@ impl CardBehavior for BurningVengeance {
         }
 
         // "Burning Vengeance deals 2 damage to any target" — present choice.
-        let targets = crate::cards::helpers::any_targets(state);
+        let targets = crate::cards::helpers::any_targets(state, self_id, controller, registry);
         crate::cards::helpers::present_target_choice(
             state, self_id, controller, targets,
             crate::state::PendingEffect::DealDamage {

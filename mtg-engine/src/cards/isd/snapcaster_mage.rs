@@ -49,8 +49,7 @@ impl CardBehavior for SnapcasterMage {
             .filter(|o| {
                 registry.card_data(o.card_id)
                     .map(|d| {
-                        (d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
-                            && d.flashback_cost.is_none()
+                        d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery)
                     })
                     .unwrap_or(false)
             })

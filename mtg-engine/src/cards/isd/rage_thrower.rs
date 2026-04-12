@@ -35,7 +35,7 @@ impl CardBehavior for RageThrower {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -43,6 +43,7 @@ impl CardBehavior for RageThrower {
         // "Target player or planeswalker" — include both players and planeswalkers.
         let mut targets: Vec<Target> = state.players.iter()
             .filter(|p| !p.lost)
+            .filter(|p| !state.player_has_hexproof(p.id, registry) || p.id == controller)
             .map(|p| Target::Player(p.id))
             .collect();
         // Add planeswalkers on the battlefield as valid targets.

@@ -100,7 +100,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
         let targets: Vec<Target> = state.objects_in_zone(Zone::Battlefield, defender)
             .iter()
             .filter(|o| o.power.is_some())
-            .filter(|o| !state.has_protection_from(o.id, self_id, registry))
+            .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(self_id), registry))
             .map(|o| Target::Object(o.id))
             .collect();
 

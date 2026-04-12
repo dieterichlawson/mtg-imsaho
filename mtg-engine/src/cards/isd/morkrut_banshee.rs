@@ -36,14 +36,14 @@ impl CardBehavior for MorkrutBanshee {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         if !state.creature_died_this_turn {
             return;
         }
 
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Target creature" — can target ANY creature including itself.
-        let targets = crate::cards::helpers::creature_targets(state);
+        let targets = crate::cards::helpers::creature_targets(state, object_id, controller, registry);
         crate::cards::helpers::present_target_choice(
             state, object_id, controller, targets,
             PendingEffect::DebuffUntilEOT { power: -4, toughness: -4, source_name: "Morkrut Banshee".into() },
