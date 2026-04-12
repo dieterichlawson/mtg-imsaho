@@ -6,9 +6,6 @@ use crate::types::*;
 /// Snapcaster Mage — {1}{U} 2/1 Human Wizard. Flash.
 /// When this creature enters, target instant or sorcery card in your graveyard
 /// gains flashback until end of turn. The flashback cost is equal to its mana cost.
-///
-/// Simplified: On ETB, finds the best instant/sorcery in the graveyard and
-/// grants it flashback until end of turn.
 pub struct SnapcasterMage;
 
 impl CardBehavior for SnapcasterMage {

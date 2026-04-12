@@ -6,7 +6,6 @@ use crate::types::*;
 
 /// Forbidden Alchemy — {2}{U} instant. Look at the top four cards of your library.
 /// Put one into your hand and the rest into your graveyard.
-/// Simplified: draw 1 card, mill 3.
 pub struct ForbiddenAlchemy;
 
 impl CardBehavior for ForbiddenAlchemy {
