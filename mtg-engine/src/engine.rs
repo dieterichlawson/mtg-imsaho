@@ -1024,6 +1024,37 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 }
             }
 
+            // For ExileCreaturesFromGraveyard(n), expand each cast action into one
+            // per combination of n creatures in the graveyard. The player picks which
+            // creatures to exile (e.g., Stitched Drake: exile Bears OR exile Traveler).
+            if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = &data.additional_cost {
+                let gy_creatures: Vec<ObjectId> = state.objects.values()
+                    .filter(|o| {
+                        o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
+                            && (o.power.is_some() || registry.card_data(o.card_id)
+                                .map(|d| d.card_types.contains(&CardType::Creature))
+                                .unwrap_or(false))
+                    })
+                    .map(|o| o.id)
+                    .collect();
+                let base_actions = std::mem::take(&mut cast_actions);
+                for action in base_actions {
+                    if let Action::CastSpell { object_id, targets, sacrifice, tap_plan, .. } = action {
+                        for combo in combinations(&gy_creatures, *n) {
+                            cast_actions.push(Action::CastSpell {
+                                object_id,
+                                targets: targets.clone(),
+                                sacrifice,
+                                exile_count: Some(*n as u32),
+                                exile_ids: combo,
+                                alternative_cost: None,
+                                tap_plan: tap_plan.clone(),
+                            });
+                        }
+                    }
+                }
+            }
+
             // Generate alternative cost actions from continuous effects (e.g. Rooftop Storm).
             // The player chooses between the normal cost and the alternative cost.
             if has_alt_cost {
@@ -2146,28 +2177,33 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = registry.get(card_id)
                     .map(|b| b.card_data().additional_cost).flatten()
                 {
-                    // Pick highest-power creatures first (better default for Corpse Lunge).
-                    let mut exile_candidates: Vec<(ObjectId, i32)> = new_state.objects.values()
-                        .filter(|o| {
-                            o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
-                                && (o.power.is_some() || registry.card_data(o.card_id)
-                                    .map(|d| d.card_types.contains(&CardType::Creature))
-                                    .unwrap_or(false))
-                        })
-                        .map(|o| (o.id, o.power.unwrap_or(0)))
-                        .collect();
-                    exile_candidates.sort_by(|a, b| b.1.cmp(&a.1)); // Highest power first
-                    let exile_candidates: Vec<_> = exile_candidates.into_iter().take(n).collect();
+                    // Use player-chosen exile_ids if provided, otherwise fall back to auto-pick.
+                    let to_exile: Vec<ObjectId> = if !exile_ids.is_empty() {
+                        exile_ids.clone()
+                    } else {
+                        let mut exile_candidates: Vec<(ObjectId, i32)> = new_state.objects.values()
+                            .filter(|o| {
+                                o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
+                                    && (o.power.is_some() || registry.card_data(o.card_id)
+                                        .map(|d| d.card_types.contains(&CardType::Creature))
+                                        .unwrap_or(false))
+                            })
+                            .map(|o| (o.id, o.power.unwrap_or(0)))
+                            .collect();
+                        exile_candidates.sort_by(|a, b| b.1.cmp(&a.1));
+                        exile_candidates.into_iter().take(n).map(|(id, _)| id).collect()
+                    };
 
                     // Store the first exiled creature's power for cards that need it
                     // (Corpse Lunge uses the power to determine damage).
-                    if let Some((_, power)) = exile_candidates.first() {
+                    if let Some(&first_exile) = to_exile.first() {
+                        let power = new_state.get_object(first_exile).and_then(|o| o.power).unwrap_or(0);
                         if let Some(obj) = new_state.get_object_mut(*object_id) {
-                            obj.card_state.insert("exiled_power".into(), ObjectId(*power as u64));
+                            obj.card_state.insert("exiled_power".into(), ObjectId(power as u64));
                         }
                     }
 
-                    for (exile_id, _) in &exile_candidates {
+                    for exile_id in &to_exile {
                         let name = card_name(&new_state, registry, *exile_id);
                         new_state.move_object(*exile_id, Zone::Exile, registry);
                         new_state.log(LogLevel::Event,
