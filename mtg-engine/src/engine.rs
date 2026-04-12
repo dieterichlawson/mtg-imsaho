@@ -601,6 +601,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // weird and lead to bugs. Requiring manual mana for these abilities is rare
             // enough (mostly Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist)
             // that the tradeoff is acceptable.
+            // NOTE: If you change this behavior, also update the "Sacrifice-cost activated
+            // abilities" bullet in GAME_RULES in mtg-player/src/llm.rs.
             use crate::cards::SacrificeCost;
             let ability_has_sac_cost = !matches!(ab.sacrifice_cost, SacrificeCost::None);
             let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
@@ -2131,6 +2133,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             };
 
             // Handle X-cost spells: pay non-X portion, then prompt the player to choose X.
+            // Flow: (1) autotap for non-X cost, (2) ChooseXValue prompt with max from
+            // pool + untapped sources, (3) on choice, autotap for X generic.
+            // NOTE: If you change this flow, also update the "X-cost spells" bullet in
+            // GAME_RULES in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
             let has_x = cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
 
             if has_x {
@@ -2941,6 +2947,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.log(LogLevel::Event,
                             format!("Nevermore names \"{}\"", chosen_name));
                     }
+                    // Step 3 of X-cost flow: player chose X, now autotap to pay it.
+                    // NOTE: If you change this, also update the "X-cost spells" bullet
+                    // in GAME_RULES in mtg-player/src/llm.rs.
                     (ResolutionChoiceKind::ChooseXValue { source_id, is_ability, .. },
                      ResolvedChoice::ChosenXValue(x)) => {
                         let player = new_state.priority_player

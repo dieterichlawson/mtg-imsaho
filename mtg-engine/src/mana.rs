@@ -10,6 +10,8 @@ pub enum ManaError {
 /// The kind of mana source, ordered by opportunity cost of tapping.
 /// Lower ordinal = lower opportunity cost = prefer tapping first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+/// NOTE: If you change these priorities, also update the "Auto-tap" bullet in
+/// GAME_RULES in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
 pub enum ManaSourceKind {
     /// Basic land or mana-only artifact (zero opportunity cost).
     BasicMana = 0,
@@ -77,7 +79,11 @@ fn hand_demand_score(source: &ManaSource, hand_demand: &std::collections::HashMa
 }
 
 /// Composite sort key for source priority: (opportunity cost tier, flexibility, hand demand).
-/// Lower = prefer tapping first.
+/// Lower = prefer tapping first. Within a tier, mono-color sources are preferred over
+/// dual/multi-color (to preserve flexibility), and sources whose colors are less demanded
+/// by other spells in hand are preferred.
+/// NOTE: If you change this logic, also update the "Auto-tap" bullet in GAME_RULES
+/// in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
 fn source_sort_key(source: &ManaSource, hand_demand: &std::collections::HashMap<Color, u32>) -> (ManaSourceKind, usize, u32) {
     (source.source_kind, source_flexibility(source), hand_demand_score(source, hand_demand))
 }
