@@ -19,161 +19,70 @@ const BASIC_LANDS: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"
 
 /// Parse an LLM's deck building response.
 ///
-/// Preferred format (JSON):
+/// Preferred format (JSON — card-name → count mapping):
 /// ```json
 /// {
 ///   "thoughts": "...",
-///   "maindeck": ["Card Name", "Card Name", ...],
-///   "lands": {"Plains": 0, "Island": 9, "Swamp": 8, "Mountain": 0, "Forest": 0}
+///   "maindeck": {"Fiend Hunter": 1, "Walking Corpse": 2, "Rebuke": 0},
+///   "lands": {"Plains": 9, "Island": 0, "Swamp": 8, "Mountain": 0, "Forest": 0}
 /// }
 /// ```
 ///
-/// Legacy text format (kept as a fallback for robustness):
-/// ```text
-/// MAINDECK:
-/// Card Name
-/// Card Name
-/// ...
-/// LANDS:
-/// 9 Island
-/// 8 Swamp
+/// Also accepts the legacy array format for backwards compatibility:
+/// ```json
+/// {"maindeck": ["Card Name", "Card Name", ...], "lands": {...}}
 /// ```
 pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<String, u32>), String> {
-    // Primary path: JSON. Strip optional ```json code fences first.
+    // Strip optional ```json code fences.
     let stripped = response
         .trim()
         .trim_start_matches("```json")
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
-    if let Ok(v) = serde_json::from_str::<serde_json::Value>(stripped) {
-        let maindeck: Vec<String> = v["maindeck"]
-            .as_array()
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|c| c.as_str().map(|s| s.to_string()))
-                    .collect()
-            })
-            .unwrap_or_default();
-        let mut lands: HashMap<String, u32> = HashMap::new();
-        if let Some(lmap) = v["lands"].as_object() {
-            for (name, count) in lmap {
-                if let Some(n) = count.as_u64() {
-                    if n > 0 {
-                        lands.insert(name.clone(), n as u32);
-                    }
-                }
+    let v: serde_json::Value = serde_json::from_str(stripped)
+        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+
+    // Parse maindeck — either object {name: count} or legacy array [name, ...]
+    let maindeck: Vec<String> = if let Some(obj) = v["maindeck"].as_object() {
+        // New format: expand {name: count} into repeated names
+        let mut cards = Vec::new();
+        for (name, count) in obj {
+            let n = count.as_u64().unwrap_or(0) as u32;
+            for _ in 0..n {
+                cards.push(name.clone());
             }
         }
-        if maindeck.is_empty() {
-            return Err("JSON response missing or empty \"maindeck\" array.".to_string());
-        }
-        if lands.is_empty() {
-            return Err("JSON response missing or empty \"lands\" object.".to_string());
-        }
-        return Ok((maindeck, lands));
-    }
+        cards
+    } else if let Some(arr) = v["maindeck"].as_array() {
+        // Legacy array format
+        arr.iter()
+            .filter_map(|c| c.as_str().map(|s| s.to_string()))
+            .collect()
+    } else {
+        return Err("JSON response missing \"maindeck\" (expected object or array).".to_string());
+    };
 
-    // Legacy text format fallback.
-    let mut maindeck = Vec::new();
-    let mut lands = HashMap::new();
-
-    #[derive(PartialEq)]
-    enum Section {
-        None,
-        Maindeck,
-        Lands,
-    }
-
-    let mut section = Section::None;
-
-    for line in response.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-
-        let upper = trimmed.to_uppercase();
-        if upper.starts_with("MAINDECK") {
-            section = Section::Maindeck;
-            continue;
-        }
-        if upper.starts_with("LAND") {
-            section = Section::Lands;
-            continue;
-        }
-
-        match section {
-            Section::Maindeck => {
-                // Accept "Card Name" or "1 Card Name" or "1x Card Name"
-                let card = parse_card_line(trimmed);
-                if !card.is_empty() {
-                    maindeck.push(card);
+    // Parse lands
+    let mut lands: HashMap<String, u32> = HashMap::new();
+    if let Some(lmap) = v["lands"].as_object() {
+        for (name, count) in lmap {
+            if let Some(n) = count.as_u64() {
+                if n > 0 {
+                    lands.insert(name.clone(), n as u32);
                 }
-            }
-            Section::Lands => {
-                // Expected: "9 Island" or "Island 9"
-                if let Some((name, count)) = parse_land_line(trimmed) {
-                    *lands.entry(name).or_insert(0) += count;
-                }
-            }
-            Section::None => {
-                // Skip lines before any section header
             }
         }
     }
 
     if maindeck.is_empty() {
-        return Err("No maindeck cards found. Expected JSON `maindeck` array or a MAINDECK: section.".to_string());
+        return Err("Maindeck is empty — include at least some cards with count > 0.".to_string());
     }
     if lands.is_empty() {
-        return Err("No lands found. Expected JSON `lands` object or a LANDS: section.".to_string());
+        return Err("Lands are empty — include at least some basic lands.".to_string());
     }
 
     Ok((maindeck, lands))
-}
-
-/// Parse a card line, stripping leading count prefixes like "1 " or "1x ".
-fn parse_card_line(line: &str) -> String {
-    let trimmed = line.trim();
-
-    // Try stripping "N " or "Nx " prefix
-    if let Some(first_space) = trimmed.find(' ') {
-        let prefix = &trimmed[..first_space];
-        let rest = trimmed[first_space..].trim();
-        // Check if prefix is a number or "Nx"
-        let is_count = prefix.parse::<u32>().is_ok()
-            || (prefix.ends_with('x')
-                && prefix[..prefix.len() - 1].parse::<u32>().is_ok());
-        if is_count && !rest.is_empty() {
-            return rest.to_string();
-        }
-    }
-
-    trimmed.to_string()
-}
-
-/// Parse a land line like "9 Island" or "Island 9".
-fn parse_land_line(line: &str) -> Option<(String, u32)> {
-    let trimmed = line.trim();
-    let parts: Vec<&str> = trimmed.splitn(2, ' ').collect();
-    if parts.len() != 2 {
-        return None;
-    }
-
-    // Try "9 Island" format
-    if let Ok(count) = parts[0].parse::<u32>() {
-        let name = parts[1].trim().to_string();
-        return Some((name, count));
-    }
-
-    // Try "Island 9" format
-    if let Ok(count) = parts[1].trim().parse::<u32>() {
-        let name = parts[0].trim().to_string();
-        return Some((name, count));
-    }
-
-    None
 }
 
 /// Validate a deck built from a draft pool.
@@ -223,39 +132,32 @@ pub fn validate_deck(
         }
     }
 
-    // Check no single basic land count is absurd. Limited decks rarely
-    // have more than ~17 basic lands of a single type and never more
-    // than ~25. The model has been observed to hallucinate huge
-    // integers (e.g. 76,543,210 Swamps) under high thinking, so reject
-    // anything that's clearly not a real Magic deck.
-    const MAX_PER_BASIC: u32 = 25;
+    // Lands must be non-negative (the schema should enforce this, but
+    // guard against negative values from malformed responses).
     for (name, count) in lands {
-        if *count > MAX_PER_BASIC {
+        if *count == 0 {
+            continue;
+        }
+        // Sanity check: reject obviously hallucinated huge numbers.
+        // There's no MTG rule capping basic lands, but a 40-card deck
+        // can't have more lands than total cards, and pool size is the
+        // real upper bound. 200 is a generous hallucination guard.
+        if *count > 200 {
             return Err(format!(
-                "{} count is {} — basic lands must be 0..{}. Pick a sensible number for a 40-card limited deck (most decks have 16-18 total lands).",
-                name, count, MAX_PER_BASIC
+                "{} count is {} — that's clearly a hallucinated number. A typical limited deck has 16-18 total lands.",
+                name, count
             ));
         }
     }
 
-    // Check total deck size — must be at least 40, no more than 60.
-    // The 60-card cap rejects absurd outputs (e.g. 66 Swamps in a
-    // 27-card maindeck) without being so tight that it bites legitimate
-    // splash builds.
-    const MIN_TOTAL: usize = 40;
-    const MAX_TOTAL: usize = 60;
+    // Check total deck size — must be at least 40 (MTG rule 100.2b).
+    // There is no maximum deck size in limited.
     let land_count: u32 = lands.values().sum();
     let total = maindeck.len() + land_count as usize;
-    if total < MIN_TOTAL {
+    if total < 40 {
         return Err(format!(
-            "Deck has {} cards (need at least {}). Add more cards or basic lands.",
-            total, MIN_TOTAL
-        ));
-    }
-    if total > MAX_TOTAL {
-        return Err(format!(
-            "Deck has {} cards (must be {}..{}). Trim spells or basic lands — a typical limited deck is exactly 40 cards.",
-            total, MIN_TOTAL, MAX_TOTAL
+            "Deck has {} cards (need at least 40). Add more cards or basic lands.",
+            total
         ));
     }
 
@@ -295,52 +197,41 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_parse_deck_response() {
-        let response = r#"
-I'll build a UB deck.
-
-MAINDECK:
-Snapcaster Mage
-Delver of Secrets
-Dead Weight
-Victim of Night
-Silent Departure
-Stitched Drake
-Makeshift Mauler
-Forbidden Alchemy
-Think Twice
-Claustrophobia
-Moon Heron
-Deranged Assistant
-Morkrut Banshee
-Abattoir Ghoul
-Diregraf Ghoul
-Walking Corpse
-Moan of the Unhallowed
-Ghoulraiser
-Typhoid Rats
-Vampire Interloper
-Screeching Bat
-Altar's Reap
-Sensory Deprivation
-
-LANDS:
-9 Island
-8 Swamp
-"#;
+    fn test_parse_deck_response_object_format() {
+        let response = r#"{
+            "thoughts": "Building UB",
+            "maindeck": {"Snapcaster Mage": 1, "Walking Corpse": 2, "Dead Weight": 1, "Rebuke": 0},
+            "lands": {"Island": 9, "Swamp": 8}
+        }"#;
 
         let (maindeck, lands) = parse_deck_response(response).unwrap();
-        assert_eq!(maindeck.len(), 23);
+        assert_eq!(maindeck.len(), 4); // 1 + 2 + 1 + 0
         assert_eq!(lands["Island"], 9);
         assert_eq!(lands["Swamp"], 8);
     }
 
     #[test]
-    fn test_parse_with_counts() {
-        let response = "MAINDECK:\n1 Snapcaster Mage\n1x Dead Weight\n\nLANDS:\n9 Island\n";
+    fn test_parse_deck_response_legacy_array() {
+        let response = r#"{
+            "maindeck": ["Snapcaster Mage", "Dead Weight"],
+            "lands": {"Island": 9}
+        }"#;
+
         let (maindeck, lands) = parse_deck_response(response).unwrap();
         assert_eq!(maindeck, vec!["Snapcaster Mage", "Dead Weight"]);
         assert_eq!(lands["Island"], 9);
+    }
+
+    #[test]
+    fn test_parse_deck_response_zero_counts_excluded() {
+        let response = r#"{
+            "maindeck": {"Card A": 1, "Card B": 0},
+            "lands": {"Island": 9, "Swamp": 0}
+        }"#;
+
+        let (maindeck, lands) = parse_deck_response(response).unwrap();
+        assert_eq!(maindeck.len(), 1);
+        assert!(!lands.contains_key("Swamp"));
     }
 
     #[test]
@@ -366,6 +257,19 @@ LANDS:
         let result = validate_deck(&pool, &maindeck, &lands);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("15 cards"));
+    }
+
+    #[test]
+    fn test_validate_no_max_deck_size() {
+        // MTG rule 100.2b: no maximum deck size in limited
+        let pool: Vec<String> = (0..80).map(|i| format!("Card {}", i)).collect();
+        let maindeck: Vec<String> = (0..80).map(|i| format!("Card {}", i)).collect();
+        let mut lands = HashMap::new();
+        lands.insert("Island".to_string(), 9);
+
+        let result = validate_deck(&pool, &maindeck, &lands);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().total_cards(), 89);
     }
 
     #[test]
