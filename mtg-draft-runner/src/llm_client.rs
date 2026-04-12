@@ -190,13 +190,6 @@ trait DraftBackend: Send {
     fn send_deck_building(&mut self, message: &str, pool: &[String]) -> String;
     /// The full system prompt this backend will send to the model.
     fn system_prompt(&self) -> &str;
-    /// Whether this backend expects the model to put its private reasoning
-    /// in a "thoughts" field in the JSON response. Backends that surface
-    /// reasoning through a separate channel (Anthropic extended thinking)
-    /// return false; their schemas have "thoughts" stripped automatically
-    /// and their prompts omit the "thoughts" field from the response-format
-    /// hint.
-    fn uses_thoughts_in_json(&self) -> bool { true }
 }
 
 /// Build a pick schema with the `pick` field constrained to the valid
@@ -211,7 +204,7 @@ fn pick_schema_for(num_cards: usize) -> serde_json::Value {
         "properties": {
             "thoughts": {
                 "type": "string",
-                "description": "Brief reasoning for this pick"
+                "description": "Concise but complete summary of your reasoning for this pick"
             },
             "pick": {
                 "type": "integer",
@@ -223,43 +216,44 @@ fn pick_schema_for(num_cards: usize) -> serde_json::Value {
     })
 }
 
-/// Build a deck-building schema with `maindeck` item names constrained
-/// to the cards actually in the pool via an enum, and basic land
-/// counts constrained to 0..=25. The `lands` object has fixed keys
-/// for the five basic lands. Under constrained decoding the model
-/// cannot invent card names it didn't draft and cannot specify
-/// absurd land counts (a real concern under high thinking — see
-/// https://www.youtube.com/watch?v=dQw4w9WgXcQ for a 76 million
-/// Swamp incident, kidding, but really).
+/// Build a deck-building schema with one property per card in the pool.
+/// Each card's value is an integer enum `[0..copies_drafted]`, so
+/// constrained decoding prevents the model from including more copies
+/// than it drafted. The `lands` object has fixed keys for the five
+/// basic lands with non-negative integer values.
 fn deck_schema_for(pool: &[String]) -> serde_json::Value {
-    let mut unique: Vec<String> = pool
-        .iter()
-        .map(|c| c.split(" // ").next().unwrap_or(c).to_string())
-        .collect();
-    unique.sort();
-    unique.dedup();
-    let valid_cards: Vec<serde_json::Value> = unique
-        .into_iter()
-        .map(serde_json::Value::String)
-        .collect();
-    let basic_land_count = serde_json::json!({
-        "type": "integer",
-        "minimum": 0,
-        "maximum": 25
-    });
+    // Count copies of each card in the pool (DFC: use front face name)
+    let mut pool_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+    for card in pool {
+        let name = card.split(" // ").next().unwrap_or(card).to_string();
+        *pool_counts.entry(name).or_insert(0) += 1;
+    }
+
+    let mut maindeck_props = serde_json::Map::new();
+    let mut sorted_cards: Vec<_> = pool_counts.into_iter().collect();
+    sorted_cards.sort_by(|a, b| a.0.cmp(&b.0));
+    for (name, count) in sorted_cards {
+        let valid_counts: Vec<serde_json::Value> = (0..=count)
+            .map(|i| serde_json::json!(i))
+            .collect();
+        maindeck_props.insert(name, serde_json::json!({
+            "type": "integer",
+            "enum": valid_counts
+        }));
+    }
+
+    let basic_land_count = serde_json::json!({ "type": "integer" });
     serde_json::json!({
         "type": "object",
         "properties": {
             "thoughts": {
                 "type": "string",
-                "description": "Brief reasoning for deck construction choices"
+                "description": "Concise but complete summary of your deck construction reasoning"
             },
             "maindeck": {
-                "type": "array",
-                "items": {"type": "string", "enum": valid_cards},
-                "minItems": 20,
-                "maxItems": 40,
-                "description": "Non-land card names for the maindeck (repeat a name for multiples). Typically 22-24 cards for a 40-card limited deck."
+                "type": "object",
+                "properties": maindeck_props,
+                "description": "How many copies of each card to include in the maindeck (0 to skip)"
             },
             "lands": {
                 "type": "object",
@@ -270,7 +264,7 @@ fn deck_schema_for(pool: &[String]) -> serde_json::Value {
                     "Mountain": basic_land_count.clone(),
                     "Forest":   basic_land_count.clone()
                 },
-                "description": "Basic land counts (each 0-25, typically 16-18 total)"
+                "description": "Number of each basic land to include (typically 16-18 total for a 40-card deck)"
             }
         },
         "required": ["thoughts", "maindeck", "lands"]
@@ -391,7 +385,7 @@ impl AnthropicDraftBackend {
     fn new(model: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
         let api_key = env::var("ANTHROPIC_API_KEY").expect("ANTHROPIC_API_KEY must be set");
         let system_prompt = format!(
-            "{}\n\n## Response format\nEvery prompt will end with an explicit \"Respond with JSON formatted as ...\" instruction. Always reply with exactly that JSON object and nothing else — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.",
+            "{}\n\n## Response format\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Always reply with exactly the JSON object matching the schema — no surrounding prose, no markdown fences.\n\nYour private reasoning happens in the model's extended-thinking channel — think through the situation there before producing the JSON. The JSON payload itself should contain ONLY the response fields in the schema; do NOT add a \"thoughts\" key, it will be rejected by the schema validator.",
             build_draft_rules(set_name, guide, card_reference)
         );
         Self {
@@ -446,9 +440,10 @@ impl AnthropicDraftBackend {
             }
         });
 
-        for attempt in 0..3 {
+        for attempt in 0..6 {
             if attempt > 0 {
-                std::thread::sleep(std::time::Duration::from_secs(2u64.pow(attempt as u32)));
+                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4) as u32));
+                std::thread::sleep(delay);
             }
             let response = self.client
                 .post("https://api.anthropic.com/v1/messages")
@@ -462,23 +457,43 @@ impl AnthropicDraftBackend {
                 Ok(resp) if resp.status().is_success() => {
                     let json: serde_json::Value = resp.json().unwrap_or_default();
                     record_anthropic_usage(&self.model, &json["usage"]);
-                    return json["content"][0]["text"]
+                    let text = json["content"][0]["text"]
                         .as_str()
-                        .unwrap_or("{\"thoughts\":\"\",\"pick\":0}")
+                        .unwrap_or("")
                         .trim()
                         .to_string();
+                    if text.is_empty() {
+                        let msg = format!("Anthropic returned empty text (attempt {}/6)", attempt + 1);
+                        eprintln!("WARN: {}", msg);
+                        mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
+                        continue;
+                    }
+                    return text;
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
-                    if code == 529 || code == 429 { continue; }
+                    if code == 529 || code == 429 {
+                        let msg = format!("Anthropic {} (attempt {}/6)", code, attempt + 1);
+                        eprintln!("{}", msg);
+                        mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
+                        continue;
+                    }
                     let text = resp.text().unwrap_or_default();
-                    eprintln!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
-                    return "{\"thoughts\":\"\",\"pick\":0}".to_string();
+                    let msg = format!("Anthropic API error {}: {}", code, &text[..text.len().min(200)]);
+                    mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
+                    panic!("{}", msg);
                 }
-                Err(e) => { eprintln!("Request failed: {}", e); continue; }
+                Err(e) => {
+                    let msg = format!("Anthropic request failed (attempt {}/6): {}", attempt + 1, e);
+                    eprintln!("{}", msg);
+                    mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    continue;
+                }
             }
         }
-        "{\"thoughts\":\"\",\"pick\":0}".to_string()
+        let msg = "Anthropic draft API exhausted all 6 retries";
+        mtg_player::game_log::write(file!(), line!(), "API_FATAL", msg);
+        panic!("{}", msg)
     }
 
     fn send_conv_structured(
@@ -517,12 +532,6 @@ impl DraftBackend for AnthropicDraftBackend {
         &self.system_prompt
     }
 
-    fn uses_thoughts_in_json(&self) -> bool {
-        // Reasoning is delivered via Anthropic's extended-thinking channel,
-        // not in the JSON payload. The schema sanitizer strips `thoughts`
-        // from every schema and the per-call prompt hint omits it too.
-        false
-    }
 }
 
 /// Gemini draft backend using the Interactions API.
@@ -541,7 +550,7 @@ impl GeminiDraftBackend {
     fn new(model: &str, set_name: &str, guide: Option<&str>, draft_thinking: Option<String>, card_reference: &str) -> Self {
         let api_key = env::var("GEMINI_API_KEY").expect("GEMINI_API_KEY must be set");
         let system_prompt = format!(
-            "{}\n\nYou will respond with structured JSON. Use the \"thoughts\" field for your reasoning.",
+            "{}\n\nYour responses are constrained by a JSON schema provided via the API's structured output mode. Use the \"thoughts\" field for a concise but complete summary of your reasoning.",
             build_draft_rules(set_name, guide, card_reference)
         );
         Self {
@@ -612,21 +621,29 @@ impl GeminiDraftBackend {
                             }
                         }
                     }
-                    if text.is_empty() { text = r#"{"pick": 0}"#.to_string(); }
+                    if text.is_empty() {
+                        let msg = format!("Gemini returned empty text (attempt {}/6, interaction_id: {:?})", attempt + 1, id);
+                        eprintln!("WARN: {}", msg);
+                        mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
+                        continue;
+                    }
                     return (text, id);
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
                     if code == 429 || code == 503 {
-                        if let Ok(err_text) = resp.text() {
-                            eprintln!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
-                        }
+                        let err_text = resp.text().unwrap_or_default();
+                        let msg = format!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
+                        eprintln!("{}", msg);
+                        mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
                     let text = resp.text().unwrap_or_default();
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
-                        eprintln!("WARN: Invalid interaction ID, falling back to fresh conversation");
+                        let msg = format!("Invalid interaction ID, falling back to fresh conversation ({})", &text[..text.len().min(150)]);
+                        eprintln!("WARN: {}", msg);
+                        mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
                         fresh_retry = true;
@@ -634,17 +651,26 @@ impl GeminiDraftBackend {
                     }
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
-                        eprintln!("FATAL: Gemini config error: {}", &text[..text.len().min(300)]);
+                        let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
+                        eprintln!("FATAL: {}", msg);
+                        mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
                         std::process::exit(1);
                     }
-                    eprintln!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
-                    return (r#"{"pick": 0}"#.to_string(), None);
+                    let msg = format!("Gemini API error {}: {}", code, &text[..text.len().min(200)]);
+                    mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
+                    panic!("{}", msg);
                 }
-                Err(e) => { eprintln!("Request failed: {}", e); continue; }
+                Err(e) => {
+                    let msg = format!("Gemini request failed (attempt {}/6): {}", attempt + 1, e);
+                    eprintln!("{}", msg);
+                    mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
+                    continue;
+                }
             }
         }
-        eprintln!("WARN: Gemini API exhausted all retries");
-        (r#"{"pick": 0}"#.to_string(), None)
+        let msg = "Gemini draft API exhausted all 6 retries";
+        mtg_player::game_log::write(file!(), line!(), "API_FATAL", msg);
+        panic!("{}", msg)
     }
 
     /// Re-serialize the Gemini JSON response to a canonical pretty form.
@@ -714,17 +740,6 @@ impl DraftLlmClient {
         }
     }
 
-    /// Prefix for the `thoughts` field in the per-call response-format
-    /// hint. Empty for backends that surface reasoning through a separate
-    /// channel (Anthropic extended thinking).
-    fn thoughts_field_prefix(&self) -> &'static str {
-        if self.backend.uses_thoughts_in_json() {
-            "\"thoughts\": \"...\", "
-        } else {
-            ""
-        }
-    }
-
     /// Build the prompt for a draft pick.
     pub fn build_pick_prompt(
         &self,
@@ -750,11 +765,6 @@ impl DraftLlmClient {
                 prompt.push_str(&format!("- {}\n", name));
             }
         }
-        prompt.push_str(&format!(
-            "\nRespond with JSON formatted as {{{}\"pick\": N}} where N is the 0-indexed card number from the list above (0 to {}).",
-            self.thoughts_field_prefix(),
-            available.len().saturating_sub(1)
-        ));
         prompt
     }
 
@@ -762,10 +772,6 @@ impl DraftLlmClient {
     /// Exposed so the caller (main.rs::build_deck_prompt) can render the
     /// deck-building response-format hint with or without the thoughts
     /// prefix.
-    pub fn uses_thoughts_in_json(&self) -> bool {
-        self.backend.uses_thoughts_in_json()
-    }
-
     /// Send a pick message with the pack size, so the backend can build
     /// an enum-constrained pick schema for structured decoding.
     pub fn send_pick_message(&mut self, user_message: &str, num_cards: usize) -> String {
