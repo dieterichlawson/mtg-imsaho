@@ -3333,7 +3333,7 @@ mod tests {
         let view = empty_view();
         let label = LlmPlayer::format_single_action(
             &view,
-            &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0) },
+            &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, None) },
         );
 
         // "Option 0" is the today-fingerprint. The fix should add a

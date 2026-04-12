@@ -121,12 +121,15 @@ pub fn validate_deck(
 
         let available = pool_counts.get(name).copied().unwrap_or(0);
         if used_counts[name] > available {
-            // Try matching against DFC front face
-            let front_match = pool_counts.keys().find(|&&k| k == name);
-            if front_match.is_none() {
+            if available == 0 {
                 return Err(format!(
                     "'{}' is not in your drafted pool.",
                     name
+                ));
+            } else {
+                return Err(format!(
+                    "'{}' appears {} time(s) in your maindeck but you only drafted {} copy/copies.",
+                    name, used_counts[name], available
                 ));
             }
         }
