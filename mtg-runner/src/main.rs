@@ -133,11 +133,13 @@ fn main() {
     // Initialize LLM player conversations with decklists.
     let deck1_entries = load_deck(deck1_spec, &registry).entries;
     let deck2_entries = load_deck(deck2_spec, &registry).entries;
+    // Build a card reference from all cards in both decks
+    let card_reference = build_card_reference(&deck1_entries, &deck2_entries, &registry);
     if let PlayerKind::Llm(ref mut llm) = p1 {
-        llm.init_conversation(&deck1_entries, &deck2_entries, &registry);
+        llm.init_conversation(&deck1_entries, &card_reference, &registry);
     }
     if let PlayerKind::Llm(ref mut llm) = p2 {
-        llm.init_conversation(&deck2_entries, &deck1_entries, &registry);
+        llm.init_conversation(&deck2_entries, &card_reference, &registry);
     }
 
     // If resuming, feed the existing game log to LLM players so they
@@ -350,6 +352,42 @@ fn choose_combat(player: &mut PlayerKind, view: &GameView, prompt: &mtg_engine::
 }
 
 /// Resolve a deck spec: either a built-in name or a file path.
+/// Build a card reference with oracle text for all unique cards across both decks.
+fn build_card_reference(
+    deck1: &[(String, u32)],
+    deck2: &[(String, u32)],
+    registry: &CardRegistry,
+) -> String {
+    use mtg_engine::types::CardType;
+    let mut names: Vec<String> = deck1.iter().chain(deck2.iter()).map(|(n, _)| n.clone()).collect();
+    names.sort();
+    names.dedup();
+    let mut s = String::new();
+    for name in &names {
+        let lookup = name.split(" // ").next().unwrap_or(name);
+        let Some(id) = registry.get_id_by_name(lookup) else { continue };
+        let Some(data) = registry.card_data(id) else { continue };
+        let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+        let types: Vec<&str> = data.card_types.iter().map(|t| match t {
+            CardType::Creature => "Creature", CardType::Instant => "Instant",
+            CardType::Sorcery => "Sorcery", CardType::Enchantment => "Enchantment",
+            CardType::Artifact => "Artifact", CardType::Land => "Land",
+            CardType::Planeswalker => "Planeswalker",
+        }).collect();
+        let subtypes = if data.subtypes.is_empty() { String::new() }
+            else { format!(" — {}", data.subtypes.join(" ")) };
+        let pt = match (data.power, data.toughness) {
+            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+            _ => String::new(),
+        };
+        s.push_str(&format!("{}{} | {}{}{}\n", name, cost, types.join(" "), subtypes, pt));
+        if !data.oracle_text.is_empty() {
+            s.push_str(&format!("  {}\n", data.oracle_text.replace('\n', "\n  ")));
+        }
+    }
+    s
+}
+
 fn load_deck(spec: &str, registry: &CardRegistry) -> Decklist {
     match builtin_deck(spec) {
         Some(deck) => deck,

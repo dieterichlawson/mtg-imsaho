@@ -42,17 +42,17 @@ fn init_conversation_sets_system_prompt_with_decklists() {
         ("Forest".to_string(), 16),
     ];
 
-    player.init_conversation(&your_deck, &opp_deck, &registry);
+    player.init_conversation(&your_deck, "Grizzly Bears {1}{G} | Creature — Bear 2/2\nForest | Land", &registry);
 
     let system = player.system_prompt_for_test();
 
-    // Should contain both decklists
+    // Should contain your decklist and card reference
     assert!(system.contains("Your decklist"), "System prompt should have your decklist section");
-    assert!(system.contains("Opponent's decklist"), "System prompt should have opponent's decklist section");
+    assert!(system.contains("Card reference"), "System prompt should have card reference section");
 
     // Should contain card details
     assert!(system.contains("Lightning Bolt"), "Should include your cards");
-    assert!(system.contains("Grizzly Bears"), "Should include opponent's cards");
+    assert!(system.contains("Grizzly Bears"), "Should include cards from reference");
 
     // Should contain game rules
     assert!(system.contains("Magic: The Gathering"), "Should contain game rules");
@@ -67,7 +67,7 @@ fn conversation_grows_with_messages() {
     let mut player = mtg_player::llm::LlmPlayer::new("test");
 
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, &deck, &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry);
 
     assert_eq!(player.conversation_len_for_test(), 0);
 
@@ -88,7 +88,7 @@ fn build_prompt_includes_board_state() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::new("test");
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, &deck, &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry);
 
     // Verify last_log_index starts at 0
     assert_eq!(player.last_log_index_for_test(), 0);
@@ -99,7 +99,7 @@ fn resume_from_log_seeds_conversation() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::new("test");
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, &deck, &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry);
 
     assert_eq!(player.conversation_len_for_test(), 0);
     assert_eq!(player.last_log_index_for_test(), 0);
@@ -128,7 +128,7 @@ fn resume_from_empty_log_does_nothing() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::new("test");
     let deck = vec![("Mountain".to_string(), 20)];
-    player.init_conversation(&deck, &deck, &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry);
 
     player.resume_from_log(&[], mtg_engine::ids::PlayerId(0));
 
@@ -189,7 +189,7 @@ fn resume_preserves_system_prompt() {
     let registry = CardRegistry::with_all_cards();
     let mut player = mtg_player::llm::LlmPlayer::new("test");
     let deck = vec![("Lightning Bolt".to_string(), 4)];
-    player.init_conversation(&deck, &deck, &registry);
+    player.init_conversation(&deck, "Mountain | Land", &registry);
 
     let system_before = player.system_prompt_for_test().to_string();
 
