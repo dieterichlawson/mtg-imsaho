@@ -19,6 +19,13 @@
 //!   counters and produce extra Ooze tokens.
 //! - Bug AC: Unbreathing Horde reanimated from graveyard under-counts
 //!   itself.
+//! - Bug BS: `cast_with_flashback` flag persists after Runic
+//!   Repetition returns an exiled flashback card to hand, so the
+//!   next normal cast wrongly routes to exile on resolution.
+//! - Bug E1-002: The `CardView` projection used by hand/graveyard/
+//!   library displays reads `obj.power` / `obj.toughness` directly
+//!   instead of `effective_power` / `effective_toughness`, so CDA
+//!   creatures like Geist-Honored Monk appear as 0/0 to the LLM.
 
 mod common;
 use common::*;
@@ -285,5 +292,123 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
          only the 2 other Zombies in the graveyard and adds 2 counters. \
          Got: {}",
         counters,
+    );
+}
+
+/// Bug BS (audits/AUDIT_BUGS.md): `cast_with_flashback` persists on
+/// the object when Runic Repetition returns an exiled flashback
+/// card to hand. The next time that card is cast normally,
+/// `move_spell_after_resolve` sees the stale flag and sends the
+/// card to exile instead of graveyard.
+///
+/// Oracle (Runic Repetition): "Return target exiled card with
+/// flashback you own to your hand."
+///
+/// Failure mode: `state.rs::move_object` clears battlefield-related
+/// fields but does not reset `cast_with_flashback`. The cast handler
+/// only SETS the flag when `is_flashback = true`; it never clears it
+/// on a normal cast.
+///
+/// We put a Devil's Play in exile with `cast_with_flashback = true`,
+/// move it back to hand via the engine's move_object (simulating
+/// Runic Repetition), and assert the flag is now false.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug BS is fixed.
+#[test]
+fn bug_bs_runic_repetition_resets_cast_with_flashback() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let devils_card_id = registry.get_id_by_name("Devil's Play").unwrap();
+    let devils = state.create_object(devils_card_id, P0, Zone::Exile, None, None);
+    {
+        let obj = state.get_object_mut(devils).unwrap();
+        obj.name = "Devil's Play".into();
+        obj.cast_with_flashback = true;
+    }
+
+    state.move_object(devils, Zone::Hand, &registry);
+
+    let still_flashback = state
+        .get_object(devils)
+        .map(|o| o.cast_with_flashback)
+        .unwrap_or(false);
+    assert!(
+        !still_flashback,
+        "After Runic Repetition returns a flashback-cast card from \
+         exile to hand, obj.cast_with_flashback should be reset. \
+         Bug BS: move_object doesn't clear the flag, so the next \
+         normal cast sends the card back to exile on resolution."
+    );
+}
+
+/// Bug E1-002 (audits/AUDIT_BUGS.md): The `CardView` projection in
+/// `mtg-engine/src/view.rs` reads `obj.power` / `obj.toughness`
+/// directly when building hand/graveyard/library views, so CDA
+/// creatures like Geist-Honored Monk render as their printed base
+/// (0/0) to the LLM.
+///
+/// Oracle (Geist-Honored Monk): "Power and toughness each equal to
+/// the number of creatures you control."
+///
+/// Per CR 208.2, a characteristic-defining ability "works in all
+/// zones." The view projection should consult `state.effective_power`
+/// / `state.effective_toughness`, not the raw `obj.power` /
+/// `obj.toughness` fields.
+///
+/// We put Geist-Honored Monk in P0's graveyard with another creature
+/// on P0's battlefield (so Monk's CDA value ≥1), then build a
+/// GameView and check the CardView for the Monk's effective P/T.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug E1-002 is fixed.
+#[test]
+fn bug_e1_002_cardview_uses_effective_pt_for_cda_creatures() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Another creature on P0's battlefield so Geist-Honored Monk's
+    // CDA count is non-zero.
+    let _bears = named_creature(&mut state, &registry, "Grizzly Bears", P0);
+
+    // Geist-Honored Monk in P0's graveyard.
+    let monk_card_id = registry.get_id_by_name("Geist-Honored Monk").unwrap();
+    let monk = state.create_object(monk_card_id, P0, Zone::Graveyard, Some(0), Some(0));
+    state.get_object_mut(monk).unwrap().name = "Geist-Honored Monk".into();
+
+    // Sanity: effective_power says the Monk is ≥1/1.
+    let eff_p = state.effective_power(monk, &registry).unwrap_or(0);
+    let eff_t = state.effective_toughness(monk, &registry).unwrap_or(0);
+    assert!(
+        eff_p >= 1 && eff_t >= 1,
+        "Test setup: Geist-Honored Monk with 1 creature on bf should \
+         have effective P/T ≥ 1/1, got {}/{}",
+        eff_p, eff_t
+    );
+
+    // Build a GameView from P0's perspective. The Monk's graveyard
+    // CardView should reflect the effective P/T, not the base 0/0.
+    let view = mtg_engine::view::GameView::for_player(&state, P0, &registry);
+    let monk_in_gy = view
+        .graveyards
+        .iter()
+        .find_map(|(pid, cards)| {
+            if *pid == P0 {
+                cards.iter().find(|c| c.object_id == monk).cloned()
+            } else {
+                None
+            }
+        });
+    let monk_view = monk_in_gy.expect("Monk should appear in P0's graveyard CardView");
+
+    let visible_power = monk_view.power.unwrap_or(0);
+    assert!(
+        visible_power >= 1,
+        "GameView's graveyard CardView for Geist-Honored Monk should \
+         reflect the effective power (≥1 with creatures on the \
+         battlefield), not the printed base 0. Bug E1-002: view.rs \
+         reads obj.power directly. CardView.power = {:?}",
+        monk_view.power,
     );
 }
