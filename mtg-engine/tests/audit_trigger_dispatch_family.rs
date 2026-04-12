@@ -513,3 +513,114 @@ fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
         life_before, life_after,
     );
 }
+
+/// Bug Q (audits/AUDIT_BUGS.md): Dearly Departed's "each Human
+/// creature you control enters with an additional +1/+1 counter" is
+/// implemented as a `TriggerKind::AnyCreatureEnters` triggered
+/// ability instead of a CR 614.1c static replacement effect. As a
+/// triggered ability, it fires AFTER the creature enters — so ETB
+/// triggers on the entering creature don't see the counter.
+///
+/// Oracle (Dearly Departed): "As long as Dearly Departed is in your
+/// graveyard, each Human creature you control enters with an
+/// additional +1/+1 counter on it."
+///
+/// Failure mode: `dearly_departed.rs:30-36` declares a
+/// `TriggeredAbilityDef { kind: TriggerKind::AnyCreatureEnters }`.
+/// The fix replaces this with a `ReplacementEffect`-style entry
+/// that's consulted during the entry event.
+///
+/// We check the card_data's triggered_abilities list is empty
+/// (i.e., the trigger has been removed) — the fingerprint of the
+/// fix.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug Q is fixed.
+#[test]
+fn bug_q_dearly_departed_is_not_a_trigger() {
+    let registry = CardRegistry::with_all_cards();
+    let dearly_card_id = registry.get_id_by_name("Dearly Departed").unwrap();
+    let behavior = registry.get(dearly_card_id).unwrap();
+    let data = behavior.card_data();
+
+    assert!(
+        data.triggered_abilities.is_empty(),
+        "Dearly Departed's 'enters with +1/+1 counter' clause is a \
+         CR 614.1c replacement effect, not a triggered ability. The \
+         fix should remove the entry from triggered_abilities and add \
+         it to replacement_effects (or similar). Bug Q: today \
+         triggered_abilities contains {:?}",
+        data.triggered_abilities,
+    );
+}
+
+/// Bug X (audits/AUDIT_BUGS.md): Aura-granted activated abilities
+/// collide with the enchanted creature's native ability_index. The
+/// engine collects activated abilities for a creature by walking
+/// its own behavior AND all attached auras, but
+/// `Action::ActivateAbility` keys on `(object_id, ability_index)`
+/// only — no `source_card_id` — so an aura-granted index-0 ability
+/// collides with a native index-0 ability. The apply path's lookup
+/// short-circuits to the creature's own `activated_abilities`, so
+/// the native ability wins and the aura-granted ability is
+/// unreachable.
+///
+/// Oracle (Daybreak Ranger, front face): "{T}: This creature deals
+/// 2 damage to target creature with flying."
+/// Oracle (Skeletal Grimace): "Enchanted creature gets +1/+1 and
+/// has '{B}: Regenerate this creature.'"
+///
+/// Failure mode: `engine.rs:528-559` collects the activated
+/// abilities for a permanent by walking the permanent's own
+/// behavior and all attached auras. The collection puts both the
+/// native `{T}: deal 2 damage` (index 0) and the aura-granted
+/// `{B}: Regenerate` (index 0) into the list — but the `(obj_id,
+/// ability_index)` key pair collides, so the LLM player's dedup
+/// loop at `llm.rs:2086` collapses them into one entry.
+///
+/// We attach Skeletal Grimace to Daybreak Ranger, call
+/// `legal_actions`, and check that the `activatable_abilities`
+/// list for the Ranger contains TWO distinct entries (one for the
+/// native tap-damage ability, one for the aura-granted
+/// regeneration). Today only one is reachable.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug X is fixed.
+#[test]
+fn bug_x_aura_granted_ability_does_not_collide_with_native_index() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let ranger = named_creature(&mut state, &registry, "Daybreak Ranger", P0);
+
+    // Skeletal Grimace attached to Daybreak Ranger.
+    let grimace_card_id = registry.get_id_by_name("Skeletal Grimace").unwrap();
+    let grimace = state.create_object(grimace_card_id, P0, Zone::Battlefield, None, None);
+    {
+        let obj = state.get_object_mut(grimace).unwrap();
+        obj.name = "Skeletal Grimace".into();
+        obj.attached_to = Some(ranger);
+    }
+
+    // Enough mana to activate both abilities (optional — the test
+    // only checks the enumeration, not actually activating).
+    state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
+
+    let legal = engine::legal_actions(&state, &registry);
+    let ranger_abilities: Vec<_> = legal
+        .activatable_abilities
+        .iter()
+        .filter(|ab| ab.object_id == ranger)
+        .collect();
+
+    assert!(
+        ranger_abilities.len() >= 2,
+        "Daybreak Ranger enchanted with Skeletal Grimace should have \
+         TWO activatable abilities — its native `{{T}}: deal 2 damage \
+         to flying` and Skeletal Grimace's granted `{{B}}: Regenerate`. \
+         Bug X: the Action::ActivateAbility key is (object_id, \
+         ability_index), so both abilities collide at index 0 and the \
+         aura-granted one is unreachable. ranger_abilities = {:?}",
+        ranger_abilities.iter().map(|ab| &ab.description).collect::<Vec<_>>(),
+    );
+}
