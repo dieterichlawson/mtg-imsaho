@@ -634,9 +634,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // Check tap cost and summoning sickness.
             // Per MTG rules, creatures with summoning sickness cannot use
             // abilities with {T} in the cost (unless they have haste).
+            // Non-creature permanents (lands, artifacts, enchantments) are not
+            // affected by summoning sickness (CR 302.6).
             if ab.requires_tap {
                 if obj_tapped { continue; }
-                if obj.summoning_sick && !state.has_keyword(obj.id, Keyword::Haste, registry) {
+                let is_creature = obj.power.is_some();
+                if is_creature && obj.summoning_sick && !state.has_keyword(obj.id, Keyword::Haste, registry) {
                     continue;
                 }
             }
@@ -705,6 +708,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 targets: vec![target.clone()],
                                 tap_plan: ability_tap_plan.clone(),
                                 sacrifice: *sac,
+                                x_value: None,
                             });
                         }
                     }
@@ -719,7 +723,48 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         targets: vec![],
                         tap_plan: ability_tap_plan.clone(),
                         sacrifice: *sac,
+                        x_value: None,
                     });
+                }
+            }
+
+            // For X-cost abilities, expand each generated action into one per
+            // attainable X value. This lets the player choose X=0, X=1, X=2, etc.
+            if has_x_cost {
+                let non_x_cost = ManaCost::new(
+                    ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                );
+                let non_x_amount = non_x_cost.mana_value();
+                let pool_total = mana_pool.total();
+                let tap_plan_total: u32 = ability_tap_plan.iter()
+                    .filter_map(|(src_id, idx)| {
+                        registry.get(state.get_object(*src_id)?.card_id)?
+                            .mana_abilities(state, *src_id)
+                            .into_iter().find(|ma| ma.ability_index == *idx)
+                            .map(|ma| ma.produced.iter().map(|(_, n)| *n).sum::<u32>())
+                    })
+                    .sum();
+                let total_available = pool_total + tap_plan_total;
+                let max_x = total_available.saturating_sub(non_x_amount);
+
+                // Find the actions we just generated for this ability and expand them.
+                let split_at = actions.len() - actions.iter().rev()
+                    .take_while(|a| matches!(a, Action::ActivateAbility { object_id: oid, ability_index: ai, .. } if *oid == obj_id && *ai == ab.ability_index))
+                    .count();
+                let base_actions: Vec<Action> = actions.drain(split_at..).collect();
+                for action in base_actions {
+                    if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, .. } = action {
+                        for x in 0..=max_x {
+                            actions.push(Action::ActivateAbility {
+                                object_id,
+                                ability_index,
+                                targets: targets.clone(),
+                                tap_plan: tap_plan.clone(),
+                                sacrifice,
+                                x_value: Some(x),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -1290,7 +1335,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     let mut ability_map: std::collections::HashMap<(ObjectId, usize), AbilityGroup> =
         std::collections::HashMap::new();
     for action in &actions {
-        if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice } = action {
+        if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, .. } = action {
             let entry = ability_map.entry((*object_id, *ability_index)).or_insert_with(|| {
                 let name = state.obj_name(*object_id);
                 let desc = registry.get(
@@ -2298,7 +2343,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             activate_mana_source(&mut new_state, *object_id, *ability_index, registry);
         }
 
-        Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice } => {
+        Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, x_value } => {
             let player = new_state.priority_player.expect("ActivateAbility requires priority");
 
             // Execute autotap plan: tap mana sources to fill the mana pool before
@@ -2350,13 +2395,22 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     let non_x_cost = ManaCost::new(
                         ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
                     );
-                    let pool = &new_state.get_player(player).mana_pool;
-                    let total_mana = pool.total();
-                    let non_x_amount = non_x_cost.mana_value();
-                    let x = total_mana.saturating_sub(non_x_amount);
+                    // Use the explicitly chosen X if provided, otherwise compute from pool.
+                    let x = if let Some(chosen_x) = x_value {
+                        *chosen_x
+                    } else {
+                        let pool = &new_state.get_player(player).mana_pool;
+                        let total_mana = pool.total();
+                        let non_x_amount = non_x_cost.mana_value();
+                        total_mana.saturating_sub(non_x_amount)
+                    };
                     mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
                         .expect("legal_actions should have verified mana availability");
-                    new_state.get_player_mut(player).mana_pool.empty();
+                    // Pay X generic mana from the pool.
+                    if x > 0 {
+                        let x_cost = ManaCost::new(vec![ManaSymbol::Generic(x)]);
+                        let _ = mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &x_cost);
+                    }
                     new_state.last_activated_x_value = Some(x);
                 } else {
                     mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)

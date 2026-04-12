@@ -1744,6 +1744,7 @@ impl LlmPlayer {
                 targets: chosen.targets.clone(),
                 tap_plan: ab.tap_plan.clone(),
                 sacrifice: chosen.sacrifice,
+                x_value: None,
             };
         }
 
@@ -1819,6 +1820,7 @@ impl LlmPlayer {
             targets: chosen_targets,
             tap_plan: ab.tap_plan.clone(),
             sacrifice: chosen_sacrifice,
+            x_value: None,
         }
     }
 

@@ -48,6 +48,9 @@ pub enum Action {
         targets: Vec<Target>,
         tap_plan: Vec<(ObjectId, usize)>,
         sacrifice: Option<ObjectId>,
+        /// For X-cost abilities, the chosen X value. When Some, the apply path
+        /// uses this instead of computing X from remaining mana in the pool.
+        x_value: Option<u32>,
     },
 
     /// Activate a planeswalker loyalty ability.
