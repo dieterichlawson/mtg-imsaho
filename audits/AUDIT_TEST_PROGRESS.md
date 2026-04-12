@@ -60,6 +60,8 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug H7 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h7_target_choice_label_is_not_bare` — status: failing-as-expected
 - Bug H8 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h8_x_cost_spell_label_shows_x` — status: failing-as-expected
 - Bug J (Harness display) — `mtg-player/src/llm.rs::tests::bug_j_harvest_pyre_exposes_x_range_not_just_max` — status: failing-as-expected
+- Bug 17-004 (Draft) — `mtg-draft/tests/audit_draft_bugs.rs::bug_17_004_validate_deck_rejects_more_copies_than_drafted` — status: failing-as-expected
+- Bug H9 (Draft) — `mtg-draft/tests/audit_draft_bugs.rs::bug_h9_deckbuilder_error_names_the_actual_problem` — status: failing-as-expected
 - Bug 17-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature` — status: failing-as-expected
 - Bug E1-001 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature` — status: failing-as-expected
 - Bug 0F-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb` — status: failing-as-expected
