@@ -429,6 +429,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(1, Some(format!("Pile 2: [{}]", fmt_pile(pile_2)))) },
                         ]
                     }
+                    ResolutionChoiceKind::ChooseCardName { options, .. } => {
+                        options.iter().enumerate()
+                            .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, Some(name.clone())) })
+                            .collect()
+                    }
                 };
                 let context = match choice {
                     ResolutionChoiceKind::ChooseTarget { description, .. } => description.clone(),
@@ -454,6 +459,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         format!("{}: choose which pile to sacrifice (0: [{}], 1: [{}])",
                             source_name, fmt_pile(pile_1), fmt_pile(pile_2))
                     }
+                    ResolutionChoiceKind::ChooseCardName { description, .. } => description.clone(),
                 };
                 LegalActions { actions, combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: Some(context) }
             }
@@ -2822,6 +2828,17 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                     format!("Liliana -6: sacrificed {}", name));
                             }
                         }
+                    }
+                    (ResolutionChoiceKind::ChooseCardName { options, source_id, .. },
+                     ResolvedChoice::ChosenIndex(index, _)) => {
+                        let chosen_name = options.get(*index).cloned().unwrap_or_default();
+                        // Store the restriction as an instance continuous effect on the source.
+                        if let Some(obj) = new_state.get_object_mut(*source_id) {
+                            let effect = ContinuousEffect::PreventCastingNamed { name: chosen_name.clone() };
+                            obj.instance_continuous_effects = Some(vec![effect]);
+                        }
+                        new_state.log(LogLevel::Event,
+                            format!("Nevermore names \"{}\"", chosen_name));
                     }
                     _ => {}
                 }

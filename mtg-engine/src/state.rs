@@ -1618,6 +1618,14 @@ pub enum ResolutionChoiceKind {
         /// The source permanent (Liliana).
         source_id: ObjectId,
     },
+    /// Choose a card name from all implemented nonland cards (Nevermore).
+    ChooseCardName {
+        description: String,
+        /// All valid card names the player can choose from.
+        options: Vec<String>,
+        /// The source permanent that needs the chosen name.
+        source_id: ObjectId,
+    },
 }
 
 /// What happens to the chosen target when a ResolutionChoice is resolved.
