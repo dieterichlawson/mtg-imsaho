@@ -1626,6 +1626,19 @@ pub enum ResolutionChoiceKind {
         /// The source permanent that needs the chosen name.
         source_id: ObjectId,
     },
+    /// Choose X for an X-cost spell or activated ability.
+    /// The player picks a value from 0..=max_x, then that much mana is
+    /// drained from the pool and stored on the spell/ability.
+    ChooseXValue {
+        description: String,
+        /// Maximum X the player can afford.
+        max_x: u32,
+        /// The spell on the stack (for spells) or the source permanent (for abilities).
+        source_id: ObjectId,
+        /// True if this is for an activated ability (uses last_activated_x_value),
+        /// false for a spell (uses obj.x_value on the stack object).
+        is_ability: bool,
+    },
 }
 
 /// What happens to the chosen target when a ResolutionChoice is resolved.

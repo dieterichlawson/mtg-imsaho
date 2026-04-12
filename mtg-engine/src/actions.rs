@@ -102,6 +102,8 @@ pub enum ResolvedChoice {
     ChosenIndex(usize, Option<String>),
     /// Choose a subset of objects (e.g., pile division — chosen objects form pile 1, rest form pile 2).
     ChosenSubset(Vec<ObjectId>),
+    /// Choose X for an X-cost spell or ability.
+    ChosenXValue(u32),
 }
 
 /// Prompt returned by legal_actions for combat.

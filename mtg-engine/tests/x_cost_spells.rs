@@ -89,6 +89,15 @@ fn test_x_cost_spell_correct_x_value() {
 
     let mut new_state = engine::submit_action(&state, cast_action, &registry);
 
+    // After casting, the engine should present a ChooseXValue prompt.
+    // Resolve it by picking the maximum X (which should be 4).
+    if new_state.awaiting_action.is_some() {
+        let x_actions = engine::legal_actions(&new_state, &registry);
+        // Pick the last action (highest X value).
+        let max_x_action = x_actions.actions.last().expect("should have X value options");
+        new_state = engine::submit_action(&new_state, max_x_action, &registry);
+    }
+
     // Check X value on the spell
     let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
     let spell_obj = stack_objs
@@ -136,7 +145,14 @@ fn test_x_cost_spell_with_mana_in_pool() {
         .expect("Devil's Play should be castable with 3R in pool");
 
     // Should not panic
-    let new_state = engine::submit_action(&state, cast_action, &registry);
+    let mut new_state = engine::submit_action(&state, cast_action, &registry);
+
+    // Resolve the ChooseXValue prompt (pick max X).
+    if new_state.awaiting_action.is_some() {
+        let x_actions = engine::legal_actions(&new_state, &registry);
+        let max_x_action = x_actions.actions.last().expect("should have X value options");
+        new_state = engine::submit_action(&new_state, max_x_action, &registry);
+    }
 
     let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
     let spell = stack_objs

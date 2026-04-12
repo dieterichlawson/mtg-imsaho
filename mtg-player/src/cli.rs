@@ -1260,6 +1260,7 @@ impl CliPlayer {
                             .collect();
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
+                    ResolvedChoice::ChosenXValue(x) => format!("X = {}", x),
                 }
             }
         }

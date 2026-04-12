@@ -500,25 +500,36 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
 
+    // The ability should appear as a single ActivateAbility entry.
     let legal = engine::legal_actions(&state, &registry);
-    let kessig_entries = legal
+    let kessig_action = legal
         .actions
         .iter()
-        .filter(|a| matches!(
+        .find(|a| matches!(
             a,
             Action::ActivateAbility { object_id, ability_index, .. }
                 if *object_id == run && *ability_index == 1
         ))
-        .count();
+        .expect("Kessig Wolf Run ability should be available");
+
+    // Activate it — the engine should present a followup ChooseXValue prompt.
+    let mut new_state = engine::submit_action(&state, kessig_action, &registry);
+
+    // After activation, a ChooseXValue prompt should be pending with max_x >= 2.
+    let has_x_prompt = match &new_state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice { choice, .. }) => {
+            matches!(choice, mtg_engine::state::ResolutionChoiceKind::ChooseXValue { max_x, .. } if *max_x >= 2)
+        }
+        _ => false,
+    };
 
     assert!(
-        kessig_entries >= 2,
-        "Kessig Wolf Run's X-cost activated ability should expose one \
-         entry per attainable X value (so the player can pick X=0 vs \
-         X=1 vs X=2 on a pool with 4 generic mana). Bug U: a single \
-         generic ActivateAbility entry is emitted and X is determined \
-         at apply time from whatever's in the pool. Got {} entries.",
-        kessig_entries,
+        has_x_prompt,
+        "Kessig Wolf Run's X-cost activated ability should present a \
+         followup ChooseXValue prompt so the player can pick X=0, X=1, \
+         or X=2. Bug U: X was auto-determined from the mana pool with \
+         no player input. awaiting_action: {:?}",
+        new_state.awaiting_action,
     );
 }
 

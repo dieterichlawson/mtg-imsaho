@@ -3704,6 +3704,17 @@
       "source": "Scryfall API",
       "source_url": "https://scryfall.com/card/mh2/301/cabal-coffers?utm_source=api",
       "cached_at": "2026-04-06"
+    },
+    "Lava Axe": {
+      "name": "Lava Axe",
+      "mana_cost": "{4}{R}",
+      "type_line": "Sorcery",
+      "oracle_text": "Lava Axe deals 5 damage to target player or planeswalker.",
+      "power": null,
+      "toughness": null,
+      "source": "Scryfall API",
+      "source_url": "https://scryfall.com/card/m19/150/lava-axe?utm_source=api",
+      "cached_at": "2026-04-12"
     }
   },
   "rulings": {
