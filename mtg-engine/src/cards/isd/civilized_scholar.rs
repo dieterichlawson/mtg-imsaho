@@ -123,7 +123,13 @@ impl CardBehavior for CivilizedScholar {
         if hand.len() == 1 {
             // Only one card — auto-discard and check creature.
             let discard_id = hand[0];
-            let is_creature = state.get_object(discard_id).map(|o| o.power.is_some()).unwrap_or(false);
+            let is_creature = state.get_object(discard_id)
+                .map(|o| {
+                    o.power.is_some() || registry.card_data(o.card_id)
+                        .map(|d| d.card_types.contains(&CardType::Creature))
+                        .unwrap_or(false)
+                })
+                .unwrap_or(false);
             state.move_object(discard_id, Zone::Graveyard, registry);
             state.events.push(crate::events::GameEvent::Discarded {
                 player: controller,
@@ -155,9 +161,15 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, _registry: &CardRegistry) {
-        // Check if the discarded card was a creature.
-        let is_creature = state.get_object(discarded_id).map(|o| o.power.is_some()).unwrap_or(false);
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, registry: &CardRegistry) {
+        // Check if the discarded card was a creature (via power or registry).
+        let is_creature = state.get_object(discarded_id)
+            .map(|o| {
+                o.power.is_some() || registry.card_data(o.card_id)
+                    .map(|d| d.card_types.contains(&CardType::Creature))
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
         if is_creature {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.tapped = false;
