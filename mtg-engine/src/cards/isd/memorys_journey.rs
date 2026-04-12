@@ -59,7 +59,8 @@ impl CardBehavior for MemorysJourney {
                     Some(o) => (o.name.clone(), o.owner, o.zone == Zone::Graveyard),
                     None => continue,
                 };
-                if in_gy {
+                // Only shuffle cards from the targeted player's graveyard.
+                if in_gy && owner == target_player {
                     state.move_object(*card_id, Zone::Library, registry);
                     state.get_player_mut(owner).library_order.push(*card_id);
                     state.log(crate::state::LogLevel::Event,
