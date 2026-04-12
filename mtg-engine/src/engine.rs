@@ -1136,6 +1136,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     target_spec: spec,
                     tap_plan: spell_tap_plan,
                     exile_x_from_gy_max,
+                    sacrifice_options: eligible_sacrifices.clone(),
                 });
             }
         }
@@ -1240,6 +1241,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     target_spec: spec,
                     tap_plan: fb_tap_plan,
                     exile_x_from_gy_max: None,
+                    sacrifice_options: vec![], // Flashback spells don't have sacrifice additional costs
                 });
             }
         }

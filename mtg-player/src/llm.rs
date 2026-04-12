@@ -139,6 +139,7 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - **Auto-tap**: When you pick a `Cast [spell]` option, the engine taps the right lands for you automatically. The action label shows which lands will be tapped, e.g. `Cast Doom Blade (tap Swamp, Swamp)`. You almost never need to tap lands manually before casting. The auto-tapper uses these priorities (lowest opportunity cost first): (1) basic lands and mana-only artifacts, (2) non-basic lands with only mana abilities, (3) permanents with utility abilities (tapping locks out the ability), (4) creature mana dorks (tapping prevents attacking/blocking), (5) sources with side effects (e.g. Deranged Assistant mills). Within a tier, it prefers mono-color sources over dual-color sources (to preserve flexibility), and considers which colors your other hand spells need.
 - **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
 - **X-cost spells and abilities**: Spells with {X} in their cost (Devil's Play, Mikaeus the Lunarch) and abilities with {X} (Kessig Wolf Run) use a two-step process: (1) you pick "Cast [spell]" or "Activate [ability]" — the engine auto-taps only the non-X portion of the cost (e.g. {R} for Devil's Play), (2) a followup prompt asks you to choose X from 0 to the maximum you can afford (remaining floating mana + untapped sources). After you pick X, the engine auto-taps additional sources to cover the X generic mana. This means you don't have to tap everything upfront — you can cast an X spell for less than maximum to hold mana back for responses.
+- **Spells with sacrifice costs**: Spells that require sacrificing a creature as an additional cost (Altar's Reap, Infernal Plunge) prompt you to choose which creature to sacrifice after you select targets. If you only control one creature, it's auto-selected. The sacrifice happens at cast time (before the spell goes on the stack), so the creature is gone even if the spell gets countered.
 - **Sacrifice-cost activated abilities require manual mana**: Activated abilities whose cost includes "Sacrifice a creature" (Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) do NOT auto-tap. If the ability has a mana cost too, you must tap your lands manually first to float the mana, then activate the ability on the next priority pass. This is to prevent the engine from accidentally tapping a creature mana source and then sacrificing that same creature. If the ability you want isn't appearing in the action list and the only thing missing is mana, tap a land and try again.
 - **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
 - **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
@@ -1655,32 +1656,32 @@ impl LlmPlayer {
             })
         };
 
-        match &spell.target_spec {
+        // Step 1: Choose targets based on target_spec.
+        let chosen_targets = match &spell.target_spec {
             CastTargetSpec::NoTargets => {
                 if let Some(a) = pick_expanded(&[]) { return a; }
-                Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
+                vec![]
             }
             CastTargetSpec::SingleTarget(options) => {
                 if options.len() == 1 {
                     if let Some(a) = pick_expanded(std::slice::from_ref(&options[0])) { return a; }
-                    return Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() };
+                    vec![options[0].clone()]
+                } else {
+                    let target = self.prompt_target_selection(view, &format!("{}: select a target", spell.name), options);
+                    if let Some(a) = pick_expanded(std::slice::from_ref(&target)) { return a; }
+                    vec![target]
                 }
-                let target = self.prompt_target_selection(view, &format!("{}: select a target", spell.name), options);
-                if let Some(a) = pick_expanded(std::slice::from_ref(&target)) { return a; }
-                Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
                 let t1 = self.prompt_target_selection(view, &format!("{}: select first of two targets", spell.name), options1);
                 let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
                 if remaining.is_empty() {
-                    // Fallback: find any matching expanded action
                     return self.fallback_to_expanded(spell.object_id, legal_actions);
                 }
                 let t2 = self.prompt_target_selection(view, &format!("{}: select second of two targets", spell.name), &remaining);
-                Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
+                vec![t1, t2]
             }
             CastTargetSpec::UpToTargets { max, options } => {
-                // For the LLM, present all options and ask to pick numbers.
                 let target_list: String = options.iter().enumerate()
                     .map(|(i, t)| {
                         let desc = match t {
@@ -1715,7 +1716,7 @@ impl LlmPlayer {
 
                 let response = self.send_message_structured(&prompt, &schema);
 
-                let chosen: Vec<Target> = response["target_indices"]
+                response["target_indices"]
                     .as_array()
                     .map(|arr| arr.iter()
                         .filter_map(|v| v.as_u64().map(|n| n as usize))
@@ -1723,11 +1724,38 @@ impl LlmPlayer {
                         .take(*max)
                         .map(|i| options[i].clone())
                         .collect())
-                    .unwrap_or_default();
-
-                // "Up to N" allows choosing 0 targets — respect the model's choice.
-                Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
+                    .unwrap_or_default()
             }
+        };
+
+        // Step 2: Choose sacrifice if the spell has a sacrifice additional cost.
+        // NOTE: If you change this, also update the "Spells with sacrifice costs"
+        // bullet in GAME_RULES so the agent's system prompt stays accurate.
+        let chosen_sacrifice = if spell.sacrifice_options.len() == 1 {
+            Some(spell.sacrifice_options[0])
+        } else if spell.sacrifice_options.len() > 1 {
+            let labels: Vec<String> = spell.sacrifice_options.iter()
+                .map(|id| Self::obj_name(view, *id))
+                .collect();
+            let prompt = format!(
+                "{}: choose a creature to sacrifice as additional cost\n{}",
+                spell.name,
+                labels.iter().enumerate().map(|(i, l)| format!("{}: {}", i, l)).collect::<Vec<_>>().join("\n"),
+            );
+            let idx = self.pick_action_index(&prompt, spell.sacrifice_options.len(), &[]);
+            Some(spell.sacrifice_options[idx.min(spell.sacrifice_options.len() - 1)])
+        } else {
+            None
+        };
+
+        Action::CastSpell {
+            object_id: spell.object_id,
+            targets: chosen_targets,
+            sacrifice: chosen_sacrifice,
+            exile_count: None,
+            exile_ids: vec![],
+            alternative_cost: None,
+            tap_plan: spell.tap_plan.clone(),
         }
     }
 
@@ -3246,6 +3274,7 @@ mod tests {
             target_spec: CastTargetSpec::NoTargets,
             tap_plan: vec![],
             exile_x_from_gy_max: None,
+            sacrifice_options: vec![],
         };
 
         // Build what format_legal_actions would render for this spell.
@@ -3295,6 +3324,7 @@ mod tests {
             target_spec: CastTargetSpec::SingleTarget(vec![]),
             tap_plan: vec![],
             exile_x_from_gy_max: None, // X-cost via ManaSymbol::X, not exile
+            sacrifice_options: vec![],
         };
 
         // Today's label generation path:
@@ -3379,6 +3409,7 @@ mod tests {
             target_spec: CastTargetSpec::SingleTarget(vec![]),
             tap_plan: vec![],
             exile_x_from_gy_max: Some(3),
+            sacrifice_options: vec![],
         };
 
         // CastableSpell has no "x_min" or "x_range" field — the only

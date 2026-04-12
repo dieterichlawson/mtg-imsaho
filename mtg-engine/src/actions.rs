@@ -143,6 +143,10 @@ pub struct CastableSpell {
     /// display the effective X (and resulting damage) in the action
     /// label and to fill in `exile_count` / `exile_ids` when casting.
     pub exile_x_from_gy_max: Option<u32>,
+    /// Creatures eligible to sacrifice as an additional cost (Altar's Reap,
+    /// Infernal Plunge). Empty if the spell has no sacrifice cost.
+    /// Player implementations should prompt the agent to choose one.
+    pub sacrifice_options: Vec<ObjectId>,
 }
 
 /// An activated ability that can be activated, with its valid target options.

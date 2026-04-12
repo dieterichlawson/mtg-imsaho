@@ -1040,26 +1040,24 @@ impl CliPlayer {
     fn choose_targets(&self, view: &GameView, spell: &mtg_engine::actions::CastableSpell) -> Option<Action> {
         use mtg_engine::actions::CastTargetSpec;
 
-        match &spell.target_spec {
-            CastTargetSpec::NoTargets => {
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() })
-            }
+        let chosen_targets = match &spell.target_spec {
+            CastTargetSpec::NoTargets => vec![],
             CastTargetSpec::SingleTarget(options) => {
                 if options.len() == 1 {
-                    // Only one valid target — skip the sub-prompt.
-                    return Some(Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() });
+                    vec![options[0].clone()]
+                } else {
+                    let target = self.prompt_target(view, options, &format!("{}: select a target", spell.name))?;
+                    vec![target]
                 }
-                let target = self.prompt_target(view, options, &format!("{}: select a target", spell.name))?;
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![target], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() })
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
                 let t1 = self.prompt_target(view, options1, &format!("{}: select first of two targets", spell.name))?;
                 let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
                 if remaining.is_empty() {
-                    return None; // no valid second target
+                    return None;
                 }
                 let t2 = self.prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
-                Some(Action::CastSpell { object_id: spell.object_id, targets: vec![t1, t2], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() })
+                vec![t1, t2]
             }
             CastTargetSpec::UpToTargets { max, options } => {
                 let mut chosen = Vec::new();
@@ -1073,15 +1071,40 @@ impl CliPlayer {
                             remaining.retain(|t| *t != target);
                             chosen.push(target);
                         }
-                        None => break, // user said done
+                        None => break,
                     }
                 }
                 if chosen.is_empty() {
-                    return None; // must pick at least one
+                    return None;
                 }
-                Some(Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() })
+                chosen
             }
-        }
+        };
+
+        // Prompt for sacrifice if the spell has a sacrifice additional cost.
+        let chosen_sacrifice = if spell.sacrifice_options.len() == 1 {
+            Some(spell.sacrifice_options[0])
+        } else if spell.sacrifice_options.len() > 1 {
+            let target = self.prompt_target(view,
+                &spell.sacrifice_options.iter().map(|&id| mtg_engine::actions::Target::Object(id)).collect::<Vec<_>>(),
+                &format!("{}: choose a creature to sacrifice", spell.name))?;
+            match target {
+                mtg_engine::actions::Target::Object(id) => Some(id),
+                _ => None,
+            }
+        } else {
+            None
+        };
+
+        Some(Action::CastSpell {
+            object_id: spell.object_id,
+            targets: chosen_targets,
+            sacrifice: chosen_sacrifice,
+            exile_count: None,
+            exile_ids: vec![],
+            alternative_cost: None,
+            tap_plan: spell.tap_plan.clone(),
+        })
     }
 
     /// Prompt the user to pick one target from a list. Returns None on cancel.
