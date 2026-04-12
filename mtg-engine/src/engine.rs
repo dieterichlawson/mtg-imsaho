@@ -441,7 +441,15 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         format!("{}: choose a card type ({})", source_name, opts)
                     }
                     ResolutionChoiceKind::DividePermanentsIntoPiles { .. } => format!("{}: divide into piles", source_name),
-                    ResolutionChoiceKind::ChoosePile { .. } => format!("{}: choose a pile", source_name),
+                    ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. } => {
+                        let fmt_pile = |ids: &[ObjectId]| -> String {
+                            if ids.is_empty() { return "empty".to_string(); }
+                            ids.iter().filter_map(|id| state.objects.get(id).map(|o| o.name.clone()))
+                                .collect::<Vec<_>>().join(", ")
+                        };
+                        format!("{}: choose which pile to sacrifice (0: [{}], 1: [{}])",
+                            source_name, fmt_pile(pile_1), fmt_pile(pile_2))
+                    }
                 };
                 LegalActions { actions, combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: Some(context) }
             }
