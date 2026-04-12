@@ -410,9 +410,12 @@ fn main() {
                     let reg = &registry;
                     let model_a = &args.models[a];
                     let model_b = &args.models[b];
+                    let guide_a = args.guides[a].as_deref();
+                    let guide_b = args.guides[b].as_deref();
+                    let card_ref = &card_reference;
                     let best_of = args.best_of;
                     let quiet = args.quiet;
-                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet))
+                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet, guide_a, guide_b, card_ref))
                 })
                 .collect();
 
@@ -546,7 +549,7 @@ fn build_deck_with_llm(
     client: &mut llm_client::DraftLlmClient,
     pool: &[String],
 ) -> DeckBuildResult {
-    let prompt = build_deck_prompt(pool, client.uses_thoughts_in_json());
+    let prompt = build_deck_prompt(pool);
     let mut last_error = String::new();
     let mut attempts: Vec<DeckAttempt> = Vec::new();
     let max_retries = 10;
@@ -605,32 +608,23 @@ fn build_deck_with_llm(
     }
 }
 
-fn build_deck_prompt(pool: &[String], thoughts_in_json: bool) -> String {
+fn build_deck_prompt(pool: &[String]) -> String {
+    // Count copies of each card
+    let mut counts: std::collections::HashMap<&str, u32> = std::collections::HashMap::new();
+    for card in pool {
+        let name = card.split(" // ").next().unwrap_or(card);
+        *counts.entry(name).or_insert(0) += 1;
+    }
+    let mut sorted: Vec<_> = counts.into_iter().collect();
+    sorted.sort_by(|a, b| a.0.cmp(b.0));
+
     let mut prompt = String::from(
-        "Draft complete! Build a 40-card limited deck from your pool.\n\n\
-         A standard limited deck is EXACTLY 40 cards: ~22-24 non-land spells \
-         + ~16-18 basic lands. The 17-land split for a 2-color deck is typically \
-         9/8 or 8/9 of the two colors. Anything more than 40 total is rarely \
-         correct — the validator caps at 40 minimum, 60 maximum.\n\n\
+        "Draft complete! Build a 40-card limited deck from your drafted pool.\n\n\
          Your pool:\n",
     );
-    for (i, card) in pool.iter().enumerate() {
-        let name = card.split(" // ").next().unwrap_or(card);
-        prompt.push_str(&format!("{}. {}\n", i, name));
+    for (name, count) in &sorted {
+        prompt.push_str(&format!("{}x {}\n", count, name));
     }
-    let thoughts_prefix = if thoughts_in_json { "\"thoughts\": \"...\", " } else { "" };
-    prompt.push_str(&format!(
-        "\nRespond with JSON formatted as:\n\
-         {{{}\"maindeck\": [\"Card Name\", \"Card Name\", ...], \"lands\": {{\"Plains\": 0, \"Island\": 9, \"Swamp\": 8, \"Mountain\": 0, \"Forest\": 0}}}}\n\
-         \n\
-         CONSTRAINTS:\n\
-         - maindeck = list of non-land card names from your pool (repeat a name for multiples). Typically 22-24 entries.\n\
-         - lands = count of each basic land to ADD (only the five basics). Each count must be 0-25; total lands typically 16-18.\n\
-         - Total deck size (len(maindeck) + sum(lands.values())) must be 40-60. Aim for exactly 40.\n\
-         - Example: 23 spells + 17 lands = 40 cards. ✓\n\
-         - Wrong: 32 cards (too small), 70 cards (too big), 66 Swamps (way too many).",
-        thoughts_prefix,
-    ));
     prompt
 }
 
@@ -646,6 +640,9 @@ fn play_match(
     model_spec_b: &str,
     best_of: usize,
     _quiet: bool,
+    guide_a: Option<&str>,
+    guide_b: Option<&str>,
+    card_reference: &str,
 ) -> MatchResult {
     let wins_needed = best_of / 2 + 1;
     let mut wins_a = 0;
@@ -656,8 +653,8 @@ fn play_match(
     // Set log file so all API prompts/responses are written to the draft log.
     let name_a = format!("Seat{}", seat_a);
     let name_b = format!("Seat{}", seat_b);
-    let mut p1 = make_game_player(model_spec_a, &name_a);
-    let mut p2 = make_game_player(model_spec_b, &name_b);
+    let mut p1 = make_game_player(model_spec_a, &name_a, guide_a);
+    let mut p2 = make_game_player(model_spec_b, &name_b, guide_b);
 
     // Play/draw per MTG tournament rules, delegated to the engine helpers:
     //   Game 1: engine::random_starting_player() — fair coin flip.
@@ -676,6 +673,7 @@ fn play_match(
             &mut p1,
             &mut p2,
             starter,
+            card_reference,
         );
 
         // Engine's winner is a PlayerId (0 = seat_a, 1 = seat_b).
@@ -711,6 +709,7 @@ fn play_game(
     p1: &mut LlmPlayer,
     p2: &mut LlmPlayer,
     starting_player: mtg_engine::ids::PlayerId,
+    card_reference: &str,
 ) -> GameOutcome {
     let config = GameConfig {
         player_names: vec![p1.name().to_string(), p2.name().to_string()],
@@ -722,8 +721,8 @@ fn play_game(
     let mut state = engine::setup_game(&config, registry);
 
     // Re-initialize conversations for this game (fresh context per game)
-    p1.init_conversation(&deck_a.entries, &deck_b.entries, registry);
-    p2.init_conversation(&deck_b.entries, &deck_a.entries, registry);
+    p1.init_conversation(&deck_a.entries, card_reference, registry);
+    p2.init_conversation(&deck_b.entries, card_reference, registry);
 
     let mut action_count: u64 = 0;
     let max_actions: u64 = 50_000;
@@ -791,7 +790,7 @@ fn play_game(
     }
 }
 
-fn make_game_player(model_spec: &str, name: &str) -> LlmPlayer {
+fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPlayer {
     // Parse "provider:model:draft_thinking:game_thinking"
     let parts: Vec<&str> = model_spec.split(':').collect();
     let provider = parts[0];
@@ -821,6 +820,9 @@ fn make_game_player(model_spec: &str, name: &str) -> LlmPlayer {
     };
     if let Some(level) = game_thinking {
         p = p.with_thinking_level(level);
+    }
+    if let Some(g) = guide {
+        p = p.with_guide(g.to_string());
     }
     p
 }
