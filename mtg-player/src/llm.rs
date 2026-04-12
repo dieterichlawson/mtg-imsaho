@@ -106,10 +106,10 @@ Fields: hp=life total, cards=hand size, lib=library size, gy=graveyard count, ex
 
 **Boards** (only if non-empty):
 ```
-Your board: 2x Forest, 1x Mountain (tapped), Grizzly Bears 2/2
-Opp board: 1x Plains, Savannah Lions 2/1 [S]
+Your board: 2x Forest, 1x Mountain (tapped), Grizzly Bears (#30) 2/2
+Opp board: 1x Plains, Savannah Lions (#45) 2/1 [S]
 ```
-Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
+Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land permanents include a unique object ID in parentheses (e.g. `(#30)`) — these IDs are stable for the lifetime of the permanent and can be used to distinguish permanents that share a name. Creatures show CURRENT effective P/T including bonuses. Status flags after creatures appear in a single bracket, comma-separated when there's more than one (e.g. `[T,1dmg]` for a tapped creature with 1 damage marked):
 - `T` = tapped
 - `S` = summoning sick (entered this turn, can't attack)
 - `Ndmg` = N damage marked on it
@@ -206,8 +206,8 @@ The player on the play skips their first draw step; the player on the draw gets 
 
 At the start of the game, before turn 1, you'll be asked two pre-game decisions:
 
-1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Respond with `{"thoughts": "...", "mull": true|false}` — `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. House rule: capped at mull-to-4, so after three mulligans you are forced to keep. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
-2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`. You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Respond with `{"thoughts": "...", "bottom_indices": [0, 3, 5]}`. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
+1. **Keep or mulligan** — context `[MULLIGAN DECISION]`. You'll see your seven-card hand numbered with mana costs and P/T. Choose `true` to mulligan, `false` to keep. This is the London mulligan: you always draw exactly seven cards, but each mulligan you take costs you one card that you'll put on the bottom of your library when you finally keep. House rule: capped at mull-to-4, so after three mulligans you are forced to keep. Mulligan a 0- or 7-lander, or a hand with no plays in the first three turns; keep if you have 2–4 lands and a reasonable curve.
+2. **Bottom N cards** — context `[BOTTOM N CARD(S) AFTER MULLIGAN]`. You'll see your seven-card hand numbered 0..6 and must pick exactly N distinct indices to put on the bottom of your library. Do not include duplicates or out-of-range indices; the response will be rejected and a fallback used.
 
 ## Examples
 
@@ -323,9 +323,8 @@ Opp: 14hp, 5cards, 29lib, 1gy, 0exile
 Your board: 3x Forest, Kalonian Tusker 3/3, Kalonian Tusker 3/3
 Opp board: 2x Mountain, Goblin Piker 2/1
 Choose attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
-Respond with the attacker_indices schema described in the response format above.
 ```
-**Respond `{"attacker_indices": [0, 1]}`** (plus the "thoughts" field if your backend uses one) — attack with both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
+**Attack with both** — both 3/3s. Opponent's 2/1 can only block one, so 3 damage gets through and the blocked Tusker survives (3 toughness vs 2 power).
 
 ### Example: declare blockers
 
@@ -340,9 +339,8 @@ Your board: 3x Mountain, Goblin Piker 2/1, Goblin Piker 2/1
 Opp board: 3x Forest (tapped), Kalonian Tusker 3/3 [T], Kalonian Tusker 3/3 [T]
 Attackers: 0:Kalonian Tusker 3/3 1:Kalonian Tusker 3/3
 Your blockers: 0:Goblin Piker 2/1 1:Goblin Piker 2/1
-Respond with the per-blocker keyed schema described in the response format above.
 ```
-**Respond `{"0": 0, "1": 1}`** (plus the "thoughts" field if your backend uses one) — chump-block both Tuskers. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
+**Block both Tuskers** — chump-block both. Your 2/1s die but you prevent 6 damage. Better than taking 6 to the face when you're at 17.
 "#;
 
 /// Backend trait for LLM API communication.
@@ -356,11 +354,6 @@ trait LlmBackend {
         let text = self.send(message);
         serde_json::Value::String(text)
     }
-    /// Whether this backend expects the model to put its private reasoning
-    /// in a "thoughts" field in the JSON response. Backends that surface
-    /// reasoning through a separate channel (e.g. Anthropic extended thinking)
-    /// return false; their schemas have "thoughts" stripped automatically.
-    fn uses_thoughts_in_json(&self) -> bool { true }
     /// Initialize with a system prompt (rules + decklists).
     fn init(&mut self, system_prompt: &str);
     /// Resume from a game log recap.
@@ -395,12 +388,12 @@ mulligan, or confirm a concession.
 
 ## How you respond
 
-You always respond with structured JSON. Every prompt ends with an explicit
-"Respond with JSON formatted as ..." line that tells you the exact schema for
-that decision, so you don't need to memorize them. Every schema includes a
-"thoughts" field — use it to think through the game state, weigh
-alternatives, and explain your choice. Thoughts are private (your opponent
-does not see them), so be candid about your plan.
+You always respond with structured JSON. The response schema for each
+decision is provided via the API's structured output mode, so you don't need
+to memorize response formats. Every schema includes a "thoughts" field — use
+it to think through the game state, weigh alternatives, and explain your
+choice. Thoughts are private (your opponent does not see them), so be candid
+about your plan.
 
 Ground every claim in your thoughts in the actual prompt text. Only reference
 creatures, cards, and zones that are explicitly listed in the current state —
@@ -416,10 +409,6 @@ that aura is currently attached and listed inline. Common slips: thinking
 "Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
 to a Vampire after the spell has worn off, thinking a Spirit token has flying
 when the prompt printed it without the keyword.
-
-A typical action-selection response looks like:
-
-    {"thoughts": "Grizzly Bears gets me a 2/2 on curve.", "action": 3}
 
 The detailed game rules and prompt format follow.
 
@@ -446,9 +435,9 @@ mulligan, or confirm a concession.
 
 ## How you respond
 
-You always respond with structured JSON. Every prompt ends with an explicit
-"Respond with JSON formatted as ..." line that tells you the exact schema for
-that decision, so you don't need to memorize them.
+You always respond with structured JSON. The response schema for each
+decision is provided via the API's structured output mode, so you don't need
+to memorize response formats.
 
 Your private reasoning happens in the model's extended-thinking channel —
 think through the situation there before producing the JSON. The JSON payload
@@ -469,10 +458,6 @@ that aura is currently attached and listed inline. Common slips: thinking
 "Werewolf" implies trample, thinking "first strike" carries from Vampiric Fury
 to a Vampire after the spell has worn off, thinking a Spirit token has flying
 when the prompt printed it without the keyword.
-
-A typical action-selection response looks like:
-
-    {"action": 3}
 
 The detailed game rules and prompt format follow.
 
@@ -606,6 +591,9 @@ impl AnthropicBackend {
                 }
             }
         }
+        let msg = format!("Anthropic game API exhausted all {} retries", MAX_ATTEMPTS);
+        crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
+        eprintln!("{}", msg);
         "0".to_string()
     }
 
@@ -717,13 +705,6 @@ impl LlmBackend for AnthropicBackend {
         let result_str = serde_json::to_string(&result).unwrap_or_default();
         self.conversation.push(serde_json::json!({"role": "assistant", "content": result_str}));
         result
-    }
-
-    fn uses_thoughts_in_json(&self) -> bool {
-        // Reasoning is delivered via Anthropic's thinking blocks, not in
-        // the JSON payload. The schema sanitizer strips "thoughts" from
-        // every schema and prompts must not ask for it either.
-        false
     }
 
     fn init(&mut self, deck_info: &str) {
@@ -918,7 +899,7 @@ impl GeminiBackend {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Brief reasoning for this action"},
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
                 "action": {"type": "integer", "minimum": 0}
             },
             "required": ["thoughts", "action"]
@@ -969,6 +950,8 @@ pub struct LlmPlayer {
     last_log_index: usize,
     /// Provider-specific API backend.
     backend: Box<dyn LlmBackend>,
+    /// Optional guide text injected into the game-play system prompt.
+    guide: Option<String>,
 }
 
 impl LlmPlayer {
@@ -977,6 +960,7 @@ impl LlmPlayer {
             name: name.to_string(),
             last_log_index: 0,
             backend: Box::new(AnthropicBackend::new("claude-sonnet-4-6")),
+            guide: None,
         }
     }
 
@@ -985,7 +969,13 @@ impl LlmPlayer {
             name: name.to_string(),
             last_log_index: 0,
             backend: Box::new(GeminiBackend::new("gemini-2.5-flash")),
+            guide: None,
         }
+    }
+
+    pub fn with_guide(mut self, guide: String) -> Self {
+        self.guide = Some(guide);
+        self
     }
 
     pub fn with_model(mut self, model: &str) -> Self {
@@ -1010,19 +1000,23 @@ impl LlmPlayer {
         self
     }
 
-    /// Initialize the conversation with decklists and oracle text.
+    /// Initialize the conversation with your decklist and a card reference.
     /// Call this once before the game starts.
     pub fn init_conversation(
         &mut self,
         your_deck: &[(String, u32)],
-        opp_deck: &[(String, u32)],
+        card_reference: &str,
         registry: &mtg_engine::cards::CardRegistry,
     ) {
         let mut deck_info = String::new();
+        if let Some(guide) = &self.guide {
+            deck_info.push_str("\n\n## Guide\n\n");
+            deck_info.push_str(guide);
+        }
         deck_info.push_str("\n\n## Your decklist\n\n");
         deck_info.push_str(&Self::format_decklist(your_deck, registry));
-        deck_info.push_str("\n\n## Opponent's decklist\n\n");
-        deck_info.push_str(&Self::format_decklist(opp_deck, registry));
+        deck_info.push_str("\n\n## Card reference\n\n");
+        deck_info.push_str(card_reference);
         self.backend.init(&deck_info);
         self.last_log_index = 0;
         self.log("SYSTEM", self.backend.system_prompt());
@@ -1108,18 +1102,6 @@ impl LlmPlayer {
     /// Expose system prompt for testing.
     pub fn system_prompt_for_test(&self) -> &str {
         self.backend.system_prompt()
-    }
-
-    /// Returns the prefix to embed at the start of a JSON response template
-    /// shown to the model — `"thoughts": "...", ` for backends that use a
-    /// JSON thoughts field, empty string for backends that surface
-    /// reasoning through a separate thinking channel.
-    fn thoughts_field_prefix(&self) -> &'static str {
-        if self.backend.uses_thoughts_in_json() {
-            "\"thoughts\": \"...\", "
-        } else {
-            ""
-        }
     }
 
     /// Expose conversation length for testing.
@@ -1555,7 +1537,7 @@ impl LlmPlayer {
             let auras = aura_map.get(&c.object_id)
                 .map(|entries| format!(" ({})", entries.join("; ")))
                 .unwrap_or_default();
-            parts.push(format!("{} {}/{}{}{}{}", c.name, power, toughness, kw_str, flags_str, auras));
+            parts.push(format!("{} (#{}) {}/{}{}{}{}", c.name, c.object_id.0, power, toughness, kw_str, flags_str, auras));
         }
 
         // Show non-aura other permanents. For unattached equipment include
@@ -1575,9 +1557,9 @@ impl LlmPlayer {
             };
             let desc = Self::short_effect_summary(&o.oracle_text);
             if desc.is_empty() {
-                parts.push(format!("{}{}", o.name, flags_str));
+                parts.push(format!("{} (#{}){}", o.name, o.object_id.0, flags_str));
             } else {
-                parts.push(format!("{}{} ({})", o.name, flags_str, desc));
+                parts.push(format!("{} (#{}){} ({})", o.name, o.object_id.0, flags_str, desc));
             }
         }
 
@@ -1706,8 +1688,8 @@ impl LlmPlayer {
                     .collect::<Vec<_>>()
                     .join(" ");
                 let prompt = format!(
-                    "{}: select up to {} targets (you may choose fewer):\n{}\nRespond with {{{}\"target_indices\": [..]}} — each index in 0-{}, up to {} entries, empty list to choose no targets.",
-                    spell.name, max, target_list, self.thoughts_field_prefix(), options.len() - 1, max
+                    "{}: select up to {} targets (you may choose fewer):\n{}\nPick indices in 0-{}, up to {} entries. Empty list to choose no targets.",
+                    spell.name, max, target_list, options.len() - 1, max
                 );
 
                 let valid_indices: Vec<serde_json::Value> = (0..options.len())
@@ -1716,7 +1698,7 @@ impl LlmPlayer {
                 let schema = serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "thoughts": {"type": "string", "description": "Brief reasoning about target selection"},
+                        "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
                         "target_indices": {
                             "type": "array",
                             "items": {"type": "integer", "enum": valid_indices},
@@ -1739,63 +1721,102 @@ impl LlmPlayer {
                         .collect())
                     .unwrap_or_default();
 
-                if chosen.is_empty() {
-                    // Pick at least one — use the first option.
-                    Action::CastSpell { object_id: spell.object_id, targets: vec![options[0].clone()], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
-                } else {
-                    Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
-                }
+                // "Up to N" allows choosing 0 targets — respect the model's choice.
+                Action::CastSpell { object_id: spell.object_id, targets: chosen, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: spell.tap_plan.clone() }
             }
         }
     }
 
-    /// Choose targets and sacrifice for an activated ability, prompting the LLM if needed.
-    /// `ab.option_combos` enumerates every legal (targets, sacrifice) pair from the engine.
-    /// If there's only one combo we use it directly; otherwise we present them all to the
-    /// model and let it pick by index.
+    /// Choose targets and sacrifice for an activated ability via sequential prompts.
+    /// Instead of presenting every (target × sacrifice) combo as a flat list,
+    /// we ask the model to pick each dimension separately.
     fn choose_ability_targets(&mut self, view: &GameView, ab: &mtg_engine::actions::ActivatableAbility, _legal_actions: &[Action]) -> Action {
         if ab.option_combos.is_empty() {
-            // Should not happen if legal_actions surfaced this ability — fall back to pass.
             return Action::PassPriority;
         }
+        if ab.option_combos.len() == 1 {
+            let chosen = &ab.option_combos[0];
+            return Action::ActivateAbility {
+                object_id: ab.object_id,
+                ability_index: ab.ability_index,
+                targets: chosen.targets.clone(),
+                tap_plan: ab.tap_plan.clone(),
+                sacrifice: chosen.sacrifice,
+            };
+        }
 
-        let chosen = if ab.option_combos.len() == 1 {
-            &ab.option_combos[0]
+        // Collect unique targets and unique sacrifices from all combos.
+        let mut unique_target_sets: Vec<&Vec<mtg_engine::actions::Target>> = Vec::new();
+        let mut unique_sacrifices: Vec<Option<ObjectId>> = Vec::new();
+        for opt in &ab.option_combos {
+            if !unique_target_sets.iter().any(|t| **t == opt.targets) {
+                unique_target_sets.push(&opt.targets);
+            }
+            if !unique_sacrifices.contains(&opt.sacrifice) {
+                unique_sacrifices.push(opt.sacrifice);
+            }
+        }
+
+        // Step 1: Pick targets (if there are multiple target options)
+        let chosen_targets = if unique_target_sets.len() <= 1 {
+            unique_target_sets.first().map(|t| (*t).clone()).unwrap_or_default()
         } else {
-            // Present each (targets, sacrifice) combo as a labeled option and let the model pick.
-            let labels: Vec<String> = ab.option_combos.iter().map(|opt| {
-                let target_part = if opt.targets.is_empty() {
-                    String::from("(no target)")
-                } else {
-                    let names: Vec<String> = opt.targets.iter().map(|t| match t {
-                        mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
-                        mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
-                    }).collect();
-                    format!("target {}", names.join(", "))
-                };
-                let sac_part = match opt.sacrifice {
-                    Some(id) => format!(", sacrificing {}", Self::obj_name(view, id)),
-                    None => String::new(),
-                };
-                format!("{}{}", target_part, sac_part)
+            let labels: Vec<String> = unique_target_sets.iter().map(|targets| {
+                if targets.is_empty() {
+                    return String::new(); // shouldn't happen if >1 unique set
+                }
+                targets.iter().map(|t| match t {
+                    mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
+                    mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
+                }).collect::<Vec<_>>().join(", ")
             }).collect();
             let prompt = format!(
-                "{}: pick a (target, sacrifice) combination for {}\n{}\n\nRespond with JSON formatted as {{{}\"action\": N}} where N is the 0-indexed option number.",
+                "{}: choose a target for {}\n{}",
                 ab.name,
                 ab.description,
                 labels.iter().enumerate().map(|(i, l)| format!("{}: {}", i, l)).collect::<Vec<_>>().join("\n"),
-                self.thoughts_field_prefix(),
             );
-            let idx = self.pick_action_index(&prompt, ab.option_combos.len(), &[]);
-            &ab.option_combos[idx.min(ab.option_combos.len() - 1)]
+            let idx = self.pick_action_index(&prompt, unique_target_sets.len(), &[]);
+            unique_target_sets[idx.min(unique_target_sets.len() - 1)].clone()
+        };
+
+        // Step 2: Pick sacrifice (if there are multiple sacrifice options)
+        // Filter to sacrifices that are valid with the chosen targets.
+        let valid_sacrifices: Vec<Option<ObjectId>> = ab.option_combos.iter()
+            .filter(|opt| opt.targets == chosen_targets)
+            .map(|opt| opt.sacrifice)
+            .collect();
+        let mut unique_valid_sacs: Vec<Option<ObjectId>> = Vec::new();
+        for s in &valid_sacrifices {
+            if !unique_valid_sacs.contains(s) {
+                unique_valid_sacs.push(*s);
+            }
+        }
+
+        let chosen_sacrifice = if unique_valid_sacs.len() <= 1 {
+            unique_valid_sacs.first().copied().flatten()
+        } else {
+            let labels: Vec<String> = unique_valid_sacs.iter().map(|s| {
+                match s {
+                    Some(id) => Self::obj_name(view, *id),
+                    None => "None".into(),
+                }
+            }).collect();
+            let prompt = format!(
+                "{}: choose a creature to sacrifice\n{}",
+                ab.name,
+                labels.iter().enumerate().map(|(i, l)| format!("{}: {}", i, l)).collect::<Vec<_>>().join("\n"),
+            );
+            let idx = self.pick_action_index(&prompt, unique_valid_sacs.len(), &[]);
+            unique_valid_sacs[idx.min(unique_valid_sacs.len() - 1)]
         };
 
         Action::ActivateAbility {
             object_id: ab.object_id,
             ability_index: ab.ability_index,
-            targets: chosen.targets.clone(),
+            targets: chosen_targets,
             tap_plan: ab.tap_plan.clone(),
-            sacrifice: chosen.sacrifice,
+            sacrifice: chosen_sacrifice,
         }
     }
 
@@ -1813,10 +1834,9 @@ impl LlmPlayer {
             .collect::<Vec<_>>()
             .join(", ");
         let prompt = format!(
-            "{}:\n{}\n\nRespond with JSON formatted as {{{}\"action\": N}} where N is the 0-indexed target number.",
+            "{}:\n{}",
             spell_name,
             target_list,
-            self.thoughts_field_prefix(),
         );
         let idx = self.pick_action_index(&prompt, options.len(), &[]);
         options[idx.min(options.len() - 1)].clone()
@@ -1941,6 +1961,110 @@ impl LlmPlayer {
         prompt
     }
 
+    /// Divide permanents into two piles via per-permanent boolean choices.
+    /// Used for effects like Liliana of the Veil -6 where a player divides
+    /// permanents and the opponent chooses which pile to sacrifice.
+    fn choose_pile_division(&mut self, view: &GameView, legal_actions: &[Action], context: Option<&str>) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+
+        // Extract the permanent IDs from the first ChosenSubset that contains
+        // all permanents (the "everything in pile 1" option). We combine all
+        // IDs seen across all subsets to get the full set.
+        let mut all_ids: Vec<mtg_engine::ids::ObjectId> = Vec::new();
+        for action in legal_actions {
+            if let Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(ids) } = action {
+                for id in ids {
+                    if !all_ids.contains(id) {
+                        all_ids.push(*id);
+                    }
+                }
+            }
+        }
+
+        if all_ids.is_empty() {
+            return legal_actions[0].clone();
+        }
+
+        // Build prompt with permanent names
+        let context_desc = context.unwrap_or("Divide permanents into two piles");
+        let mut perm_list = String::new();
+        let labels = Self::format_combat_creature_list(view, &all_ids);
+        for (i, label) in labels.iter().enumerate() {
+            perm_list.push_str(&format!("- {}\n", label));
+            let _ = i; // labels are pre-disambiguated
+        }
+
+        let action_text = format!(
+            "{}\nFor each permanent, set true to put it in pile 1 or false for pile 2.\n\n\
+             Permanents:\n{}",
+            context_desc, perm_list
+        );
+        let prompt = self.build_prompt(view, &action_text);
+
+        // Build schema: one boolean per permanent, keyed by disambiguated name
+        let mut pile_props = serde_json::Map::new();
+        for label in &labels {
+            pile_props.insert(label.clone(), serde_json::json!({
+                "type": "boolean",
+                "description": format!("true = pile 1, false = pile 2")
+            }));
+        }
+        let mut all_props = serde_json::Map::new();
+        all_props.insert("thoughts".to_string(), serde_json::json!({
+            "type": "string",
+            "description": "Concise but complete summary of your internal thoughts"
+        }));
+        all_props.insert("pile_1".to_string(), serde_json::json!({
+            "type": "object",
+            "properties": pile_props
+        }));
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": all_props,
+            "required": ["thoughts", "pile_1"]
+        });
+
+        let response = self.send_message_structured(&prompt, &schema);
+
+        // Parse response: collect IDs where the model chose true (pile 1)
+        let mut pile_1_ids: Vec<mtg_engine::ids::ObjectId> = Vec::new();
+        if let Some(pile_obj) = response["pile_1"].as_object() {
+            for (i, label) in labels.iter().enumerate() {
+                if pile_obj.get(label).and_then(|v| v.as_bool()).unwrap_or(false) {
+                    if i < all_ids.len() {
+                        pile_1_ids.push(all_ids[i]);
+                    }
+                }
+            }
+        }
+
+        self.log("CHOSE", &format!("pile division: {} in pile 1, {} in pile 2",
+            pile_1_ids.len(), all_ids.len() - pile_1_ids.len()));
+
+        // Find the matching ChosenSubset action
+        let chosen = legal_actions.iter()
+            .find(|a| {
+                if let Action::ResolveChoice { choice: ResolvedChoice::ChosenSubset(ids) } = a {
+                    let mut sorted_chosen = pile_1_ids.clone();
+                    sorted_chosen.sort();
+                    let mut sorted_ids = ids.clone();
+                    sorted_ids.sort();
+                    sorted_chosen == sorted_ids
+                } else {
+                    false
+                }
+            })
+            .cloned()
+            .unwrap_or_else(|| {
+                // Fallback: find closest match or use first action
+                self.log("WARN", "Pile division response didn't match any legal action, using fallback");
+                legal_actions[0].clone()
+            });
+
+        chosen
+    }
+
     /// Confirm concede via structured output. Returns true if the AI confirms.
     fn confirm_concede(&mut self) -> bool {
         self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
@@ -1948,17 +2072,13 @@ impl LlmPlayer {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Brief reasoning about whether to concede"},
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
                 "confirm": {"type": "boolean", "description": "true to concede, false to cancel"}
             },
             "required": ["thoughts", "confirm"]
         });
 
-        let prefix = self.thoughts_field_prefix();
-        let prompt = format!(
-            "You chose to CONCEDE the game. Are you sure? Respond with {{{}\"confirm\": true|false}} — true to concede, false to cancel.",
-            prefix
-        );
+        let prompt = "You chose to CONCEDE the game. Are you sure? Confirm true to concede, false to cancel.".to_string();
         let response = self.send_message_structured(&prompt, &schema);
         let confirmed = response["confirm"].as_bool().unwrap_or(false);
         if !confirmed {
@@ -1977,7 +2097,7 @@ impl LlmPlayer {
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Brief reasoning for this choice"},
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
                 key: {
                     "type": "integer",
                     "enum": valid,
@@ -2029,6 +2149,12 @@ impl Player for LlmPlayer {
         // London mulligan bottoming decision.
         if matches!(legal_actions.first(), Some(Action::BottomCards { .. })) {
             return self.choose_mulligan_bottom(view, legal_actions);
+        }
+
+        // Pile division (e.g. Liliana of the Veil -6): intercept and present
+        // as per-permanent boolean choices instead of 2^N flat subset options.
+        if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenSubset(_) })) && legal_actions.len() > 2 {
+            return self.choose_pile_division(view, legal_actions, legal.context.as_deref());
         }
 
         // Auto-pass when there's nothing interesting to do. Logged at
@@ -2113,9 +2239,8 @@ impl Player for LlmPlayer {
             .collect::<Vec<_>>()
             .join(", ");
         let action_prompt = format!(
-            "Available actions:\n{}\n\nRespond with JSON formatted as {{{}\"action\": N}} where N is the 0-indexed action number.\n",
+            "Available actions:\n{}\n",
             actions_str,
-            self.thoughts_field_prefix(),
         );
         let prompt = self.build_prompt(view, &action_prompt);
 
@@ -2218,9 +2343,7 @@ impl LlmPlayer {
              {}\n\
              \n\
              Your opening hand:\n\
-             {}\n\
-             \n\
-             Respond with JSON formatted as {{{}\"mull\": true|false}} — true to mulligan, false to keep.",
+             {}",
             play_draw,
             mulls_taken,
             if mulls_taken == 1 { "" } else { "s" },
@@ -2229,13 +2352,12 @@ impl LlmPlayer {
             keep_size,
             opp_mulls_text,
             hand_text,
-            self.thoughts_field_prefix(),
         );
 
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Private reasoning about whether to keep or mulligan"},
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
                 "mull": {"type": "boolean", "description": "true = mulligan, false = keep"}
             },
             "required": ["thoughts", "mull"]
@@ -2294,9 +2416,7 @@ impl LlmPlayer {
              {}\n\
              \n\
              Your opening hand:\n\
-             {}\n\
-             \n\
-             Respond with JSON formatted as {{{}\"bottom_indices\": [..]}} — exactly {} distinct index(es) from 0 to {}.",
+             {}",
             n,
             if n == 1 { "" } else { "s" },
             play_draw,
@@ -2306,9 +2426,6 @@ impl LlmPlayer {
             if n == 1 { "" } else { "s" },
             opp_mulls_text,
             hand_text,
-            self.thoughts_field_prefix(),
-            n,
-            view.your_hand.len().saturating_sub(1),
         );
 
         let valid_indices: Vec<serde_json::Value> = (0..view.your_hand.len())
@@ -2317,7 +2434,7 @@ impl LlmPlayer {
         let schema = serde_json::json!({
             "type": "object",
             "properties": {
-                "thoughts": {"type": "string", "description": "Private reasoning about which cards to bottom"},
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
                 "bottom_indices": {
                     "type": "array",
                     "items": {"type": "integer", "enum": valid_indices},
@@ -2384,32 +2501,29 @@ impl LlmPlayer {
         }).collect::<Vec<_>>().join(", ")
     }
 
-    /// Format a permanent for combat display: "Name P/T keywords" using effective values.
+    /// Format a permanent for combat/selection display: "Name (#id) P/T keywords".
+    /// Always includes the object ID for unambiguous reference.
     fn format_combat_creature(view: &GameView, id: ObjectId) -> String {
         if let Some(p) = view.battlefield.iter().find(|p| p.object_id == id) {
             let power = p.effective_power.or(p.power).unwrap_or(0);
             let toughness = p.effective_toughness.or(p.toughness).unwrap_or(0);
             let kw = Self::format_keywords(&p.keywords);
             if kw.is_empty() {
-                format!("{} {}/{}", p.name, power, toughness)
+                format!("{} (#{}) {}/{}", p.name, id.0, power, toughness)
             } else {
-                format!("{} {}/{} {}", p.name, power, toughness, kw)
+                format!("{} (#{}) {}/{} {}", p.name, id.0, power, toughness, kw)
             }
         } else {
-            Self::obj_name(view, id)
+            format!("{} (#{})", Self::obj_name(view, id), id.0)
         }
     }
 
-    /// Build labels for a list of permanent IDs in a combat prompt, disambiguating
-    /// any that would otherwise share an identical "Name P/T keywords" rendering.
-    /// When two or more entries collapse to the same label, we append `#1`, `#2`,
-    /// ... in their list order so the model can pick the right one. Also appends
-    /// any attached aura/equipment context inline so the model can see *which*
-    /// copy is locked down by Bonds of Faith etc.
+    /// Build labels for a list of permanent IDs, each with its object ID for
+    /// unambiguous reference. Also appends any attached aura/equipment context
+    /// inline so the model can see which copy has which attachments.
     ///
     /// Returns a Vec<String> of the same length as `ids`, in the same order.
     fn format_combat_creature_list(view: &GameView, ids: &[ObjectId]) -> Vec<String> {
-        // Pre-compute the base label and the attached context for each ID.
         let base: Vec<String> = ids.iter().map(|&id| Self::format_combat_creature(view, id)).collect();
         let attached: Vec<String> = ids.iter().map(|&id| {
             let bits: Vec<String> = view.battlefield.iter()
@@ -2419,25 +2533,9 @@ impl LlmPlayer {
             if bits.is_empty() { String::new() } else { format!(" [+{}]", bits.join(", ")) }
         }).collect();
 
-        // Count base-label collisions.
-        let mut counts: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-        for label in &base {
-            *counts.entry(label.as_str()).or_insert(0) += 1;
-        }
-
-        // Walk again, assigning #1, #2, ... within each colliding group.
-        let mut seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
         let mut out = Vec::with_capacity(ids.len());
         for (i, label) in base.iter().enumerate() {
-            let collides = counts.get(label.as_str()).copied().unwrap_or(0) > 1;
-            let suffix = if collides {
-                let n = seen.entry(label.as_str()).or_insert(0);
-                *n += 1;
-                format!(" #{}", *n)
-            } else {
-                String::new()
-            };
-            out.push(format!("{}{}{}", label, suffix, attached[i]));
+            out.push(format!("{}{}", label, attached[i]));
         }
         out
     }
@@ -2469,8 +2567,7 @@ impl LlmPlayer {
                     combat_text.push_str(&format!("{}:{}{} ", i, labels[i], forced));
                 }
                 combat_text.push_str(&format!(
-                    "\nRespond with {{{}\"attacker_indices\": [..]}} — each index in 0-{}, empty list for no attacks. Forced attackers are auto-included.",
-                    self.thoughts_field_prefix(),
+                    "\nPick indices in 0-{} to attack with, or empty list for no attacks. Forced attackers are auto-included.",
                     eligible.len() - 1
                 ));
 
@@ -2479,7 +2576,7 @@ impl LlmPlayer {
                 let schema = serde_json::json!({
                     "type": "object",
                     "properties": {
-                        "thoughts": {"type": "string", "description": "Brief reasoning about which creatures to attack with"},
+                        "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
                         "attacker_indices": {
                             "type": "array",
                             "items": {"type": "integer", "minimum": 0},
@@ -2573,7 +2670,7 @@ impl LlmPlayer {
         // Build per-blocker integer enum of legal attacker indices.
         // -1 means "don't block".
         let mut schema_properties = serde_json::json!({
-            "thoughts": {"type": "string", "description": "Brief reasoning about blocking decisions"}
+            "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"}
         });
         let mut required_fields = vec!["thoughts".to_string()];
 
@@ -2623,8 +2720,7 @@ impl LlmPlayer {
             combat_text.push_str(&format!("{}:{} ", i, blocker_labels[i]));
         }
         combat_text.push_str(&format!(
-            "\nRespond with {{{}\"0\": <attacker_idx>, \"1\": <attacker_idx>, ...}} — one key per blocker (0..{}), value is the 0-indexed attacker to block or -1 for no block.",
-            self.thoughts_field_prefix(),
+            "\nAssign each blocker (0..{}) to an attacker index, or -1 for no block.",
             eligible_blockers.len().saturating_sub(1)
         ));
 
