@@ -70,6 +70,7 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug AO (Subtype filter family) — none — status: blocked — no in-set card has a back face that drops a subtype Moonmist's combat-damage prevention cares about, so the latent union-of-faces bug has no observable path today
 - Bug BF (Auto-pick) — none — status: blocked — Traveler's Amulet's missing library shuffle requires deterministic/seeded RNG to assert. The engine uses `rand::thread_rng()` ubiquitously; making this testable is a larger fixture change
 - Bug 9F-002 (Damage helper bypass) — none — status: blocked — umbrella meta-refactor bug; the individual consequences are tested via Bugs T, BQ, BZ, and BR
+- Bug H6 (Harness prompts) — none — status: skipped-judgment-call — explicitly flagged in `prompts/AUDIT_TEST_AGENT_PROMPT.md` as a skip (BeginCombat/DeclareAttackers prompt clarity is a model-capability concern, not an engine bug)
 - Bug 17-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature` — status: failing-as-expected
 - Bug E1-001 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature` — status: failing-as-expected
 - Bug 0F-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb` — status: failing-as-expected
