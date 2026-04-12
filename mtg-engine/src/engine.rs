@@ -888,27 +888,29 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 .map(|c| c.symbols.iter().any(|s| matches!(s, ManaSymbol::X)))
                 .unwrap_or(false);
             let (can_pay_normal, normal_tap_plan) = if has_x {
-                // X-cost spells: tap ALL available mana sources to maximize X.
-                // The non-X cost is paid first, then remaining mana becomes X.
+                // X-cost spells: only autotap for the non-X portion. After the
+                // agent chooses X, a second autotap pass covers the X generic.
                 if let Some(cost) = &data.cost {
                     let effective_cost = effective_spell_cost(state, registry, obj.card_id, cost, player);
                     let non_x_cost = ManaCost::new(
                         effective_cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
                     );
-                    // Check if the non-X portion is payable.
-                    let can_pay = mana::can_pay(&player_state.mana_pool, &non_x_cost)
-                        || mana::compute_autotap(&non_x_cost, &player_state.mana_pool, &mana_sources, &other_hand_costs).is_some();
-                    if can_pay {
-                        // Build a tap plan that taps ALL untapped mana sources.
-                        let all_tap_plan: Vec<(ObjectId, usize)> = mana_sources
-                            .iter()
-                            .flat_map(|ms| {
-                                ms.abilities.iter().enumerate().map(move |(idx, _)| (ms.object_id, idx))
-                            })
-                            .collect();
-                        (true, all_tap_plan)
+                    if non_x_cost.symbols.is_empty() {
+                        // No non-X cost (e.g., Mikaeus {X}{W} with W already floating).
+                        if mana::can_pay(&player_state.mana_pool, &non_x_cost) {
+                            (true, vec![])
+                        } else {
+                            // Need to tap for the colored portion.
+                            match mana::compute_autotap(&non_x_cost, &player_state.mana_pool, &mana_sources, &other_hand_costs) {
+                                Some(plan) => (true, plan),
+                                None => (false, vec![]),
+                            }
+                        }
                     } else {
-                        (false, vec![])
+                        match mana::compute_autotap(&non_x_cost, &player_state.mana_pool, &mana_sources, &other_hand_costs) {
+                            Some(plan) => (true, plan),
+                            None => (false, vec![]),
+                        }
                     }
                 } else {
                     (true, vec![])
@@ -2138,15 +2140,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 );
                 mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
                     .expect("legal_actions should have verified mana availability");
-                // Remaining mana determines max X.
-                let max_x = new_state.get_player(player).mana_pool.total();
-                // If max_x is 0, auto-set X=0. Otherwise prompt the player.
+                // Max X = floating mana + total mana from untapped sources.
+                let pool_remaining = new_state.get_player(player).mana_pool.total();
+                let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
+                    .iter()
+                    .flat_map(|ms| ms.abilities.iter())
+                    .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
+                    .sum();
+                let max_x = pool_remaining + untapped_mana;
                 if max_x == 0 {
                     if let Some(obj) = new_state.get_object_mut(*object_id) {
                         obj.x_value = Some(0);
                     }
-                    // Drain pool (nothing left anyway).
-                    new_state.get_player_mut(player).mana_pool.empty();
                 }
                 // If max_x > 0, we'll set up the ChooseXValue prompt AFTER
                 // the spell is on the stack (below, after move_object).
@@ -2303,7 +2308,13 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             // For X-cost spells, prompt the player to choose X (if max_x > 0).
             if has_x {
-                let max_x = new_state.get_player(player).mana_pool.total();
+                let pool_remaining = new_state.get_player(player).mana_pool.total();
+                let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
+                    .iter()
+                    .flat_map(|ms| ms.abilities.iter())
+                    .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
+                    .sum();
+                let max_x = pool_remaining + untapped_mana;
                 if max_x > 0 {
                     let spell_name = card_name(&new_state, registry, *object_id);
                     new_state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
@@ -2378,10 +2389,15 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     );
                     mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
                         .expect("legal_actions should have verified mana availability");
-                    let max_x = new_state.get_player(player).mana_pool.total();
+                    let pool_remaining = new_state.get_player(player).mana_pool.total();
+                    let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
+                        .iter()
+                        .flat_map(|ms| ms.abilities.iter())
+                        .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
+                        .sum();
+                    let max_x = pool_remaining + untapped_mana;
                     if max_x == 0 {
                         new_state.last_activated_x_value = Some(0);
-                        new_state.get_player_mut(player).mana_pool.empty();
                     }
                     // If max_x > 0, the prompt is set up after the ability fires (below).
                 } else {
@@ -2452,7 +2468,13 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
                 // For X-cost abilities, prompt the player to choose X.
                 if has_x_cost {
-                    let max_x = new_state.get_player(player).mana_pool.total();
+                    let pool_remaining = new_state.get_player(player).mana_pool.total();
+                    let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
+                        .iter()
+                        .flat_map(|ms| ms.abilities.iter())
+                        .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
+                        .sum();
+                    let max_x = pool_remaining + untapped_mana;
                     if max_x > 0 {
                         new_state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                             player,
@@ -2924,15 +2946,29 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let player = new_state.priority_player
                             .or(Some(new_state.active_player))
                             .unwrap();
-                        // Pay X generic mana from the pool.
+                        // Pay X generic mana: first try the pool, then autotap for the remainder.
                         if *x > 0 {
                             let x_cost = ManaCost::new(vec![ManaSymbol::Generic(*x)]);
-                            let _ = mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &x_cost);
+                            let pool_total = new_state.get_player(player).mana_pool.total();
+                            if pool_total >= *x {
+                                // Pool covers it.
+                                let _ = mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &x_cost);
+                            } else {
+                                // Need to tap additional sources for the shortfall.
+                                let shortfall = *x - pool_total;
+                                let shortfall_cost = ManaCost::new(vec![ManaSymbol::Generic(shortfall)]);
+                                let sources = gather_mana_sources(&new_state, player, registry, false);
+                                if let Some(plan) = mana::compute_autotap(&shortfall_cost, &new_state.get_player(player).mana_pool, &sources, &[]) {
+                                    for &(source_id, ability_index) in &plan {
+                                        activate_mana_source(&mut new_state, source_id, ability_index, registry);
+                                    }
+                                }
+                                // Now pay from pool (which has floating + freshly tapped).
+                                let _ = mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &x_cost);
+                            }
                         }
                         if *is_ability {
                             new_state.last_activated_x_value = Some(*x);
-                            // Re-fire the ability handler so it uses the chosen X.
-                            // The ability was already activated; we just need to set the value.
                         } else {
                             // Spell: set x_value on the stack object.
                             if let Some(obj) = new_state.get_object_mut(*source_id) {
