@@ -60,7 +60,7 @@ impl CardBehavior for GutterGrime {
             .map(|o| *o.counters.get(&CounterType::Slime).unwrap_or(&0))
             .unwrap_or(1);
         // Create the Ooze token with base 0/0 and dynamic P/T linked to this Gutter Grime.
-        let token_id = state.create_token_with_subtypes(
+        let token_ids = state.create_token_with_subtypes(
             "Ooze", controller, 0, 0,
             vec![Color::Green],
             vec![CardType::Creature],
@@ -71,9 +71,11 @@ impl CardBehavior for GutterGrime {
         // Link the token's P/T to this Gutter Grime's slime counters.
         // pt_source_counter = ObjectId of the Gutter Grime
         // pt_source_counter_type = 1 means Slime counter type
-        if let Some(token) = state.get_object_mut(token_id) {
-            token.card_state.insert("pt_source_counter".into(), self_id);
-            token.card_state.insert("pt_source_counter_type".into(), ObjectId(1));
+        for token_id in token_ids {
+            if let Some(token) = state.get_object_mut(token_id) {
+                token.card_state.insert("pt_source_counter".into(), self_id);
+                token.card_state.insert("pt_source_counter_type".into(), ObjectId(1));
+            }
         }
         state.log(crate::state::LogLevel::Event,
             format!("Gutter Grime: added slime counter (now {}), created */* Ooze token (dynamic P/T)",

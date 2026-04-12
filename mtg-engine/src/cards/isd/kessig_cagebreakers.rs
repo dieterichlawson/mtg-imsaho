@@ -58,7 +58,7 @@ impl CardBehavior for KessigCagebreakers {
             .unwrap_or_else(|| state.opponent(controller));
 
         for _ in 0..creature_count {
-            let token_id = state.create_token_with_subtypes(
+            let token_ids = state.create_token_with_subtypes(
                 "Wolf", controller, 2, 2,
                 vec![Color::Green],
                 vec![CardType::Creature],
@@ -67,12 +67,14 @@ impl CardBehavior for KessigCagebreakers {
                 registry,
             );
             // Tapped and attacking.
-            if let Some(obj) = state.get_object_mut(token_id) {
-                obj.tapped = true;
-                obj.summoning_sick = false;
-            }
-            if let Some(combat) = &mut state.combat {
-                combat.attackers.insert(token_id, defending_player);
+            for token_id in token_ids {
+                if let Some(obj) = state.get_object_mut(token_id) {
+                    obj.tapped = true;
+                    obj.summoning_sick = false;
+                }
+                if let Some(combat) = &mut state.combat {
+                    combat.attackers.insert(token_id, defending_player);
+                }
             }
         }
         state.log(crate::state::LogLevel::Event,

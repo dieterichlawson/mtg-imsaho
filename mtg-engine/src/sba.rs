@@ -60,13 +60,20 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             let obj = state.get_object(id);
             let damage = obj.map(|o| o.damage_marked).unwrap_or(0);
             let deathtouch = obj.map(|o| o.dealt_deathtouch_damage).unwrap_or(false);
+            // Skip creatures with a pending copy-replacement effect (CR 614.1d)
+            // — their 0/0 base P/T will be replaced once the copy resolves.
+            let entering_copy = state.get_object(id).map(|o| o.entering_copy_source).unwrap_or(false)
+                || state.get_object(id)
+                    .and_then(|o| registry.get(o.card_id))
+                    .map(|b| b.enters_as_copy())
+                    .unwrap_or(false);
             match effective_t {
-                Some(t) if t <= 0 => {
+                Some(t) if t <= 0 && !entering_copy => {
                     // Rule 704.5f: 0 or less toughness — not destruction,
                     // indestructible and regeneration do NOT prevent this.
                     zero_toughness_ids.push(id);
                 }
-                Some(t) if (damage as i32) >= t || (deathtouch && damage > 0) => {
+                Some(t) if !entering_copy && ((damage as i32) >= t || (deathtouch && damage > 0)) => {
                     // Rules 704.5g/h: lethal damage or deathtouch — destruction,
                     // checked via try_destroy (indestructible / regeneration apply).
                     destroyed_ids.push(id);

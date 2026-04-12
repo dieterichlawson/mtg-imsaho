@@ -54,7 +54,7 @@ impl CardBehavior for GeistOfSaintTraft {
         };
 
         // Create a 4/4 Angel token with flying, tapped and attacking.
-        let token_id = state.create_token_with_subtypes(
+        let token_ids = state.create_token_with_subtypes(
             "Angel",
             controller,
             4, 4,
@@ -65,21 +65,23 @@ impl CardBehavior for GeistOfSaintTraft {
             registry,
         );
 
-        // Set the token as tapped and attacking.
-        if let Some(obj) = state.get_object_mut(token_id) {
-            obj.tapped = true;
-            obj.summoning_sick = false; // It's attacking, so summoning sickness doesn't matter.
-        }
-
-        // Add the token to combat as an attacker.
         let defender = state.opponent(controller);
-        if let Some(ref mut combat) = state.combat {
-            combat.attackers.insert(token_id, defender);
-        }
+        for token_id in token_ids {
+            // Set the token as tapped and attacking.
+            if let Some(obj) = state.get_object_mut(token_id) {
+                obj.tapped = true;
+                obj.summoning_sick = false; // It's attacking, so summoning sickness doesn't matter.
+            }
 
-        // Store the token ID for exile at end of combat.
-        // Uses game-level storage so the exile fires even if Geist leaves the battlefield.
-        state.end_of_combat_exiles.push(token_id);
+            // Add the token to combat as an attacker.
+            if let Some(ref mut combat) = state.combat {
+                combat.attackers.insert(token_id, defender);
+            }
+
+            // Store the token ID for exile at end of combat.
+            // Uses game-level storage so the exile fires even if Geist leaves the battlefield.
+            state.end_of_combat_exiles.push(token_id);
+        }
 
         state.log(crate::state::LogLevel::Event,
             "Geist of Saint Traft: created a 4/4 Angel token tapped and attacking".into());

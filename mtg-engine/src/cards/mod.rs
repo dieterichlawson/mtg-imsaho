@@ -320,6 +320,10 @@ pub trait CardBehavior: Send + Sync {
     /// Default false — applies to vanilla creatures, basic lands, etc. that have no ETB effects.
     fn has_etb_handler(&self) -> bool { false }
 
+    /// True for creatures that enter as a copy of another creature (CR 614.1d).
+    /// SBA should not kill these for 0 toughness before their copy effect resolves.
+    fn enters_as_copy(&self) -> bool { false }
+
     /// Called when this creature dies (moves from battlefield to graveyard).
     fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 
