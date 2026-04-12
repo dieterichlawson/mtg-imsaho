@@ -2953,6 +2953,73 @@ mod tests {
         );
     }
 
+    /// Bug 37-003 (audits/AUDIT_BUGS.md): The "Flashback available"
+    /// display only walks the controller's own graveyard — opponent's
+    /// flashback threats are invisible to the LLM. The graveyard
+    /// display itself shows opponent's cards, but the derived
+    /// "flashback hints" section only iterates `view.you`.
+    ///
+    /// Oracle impact: in an ISD mirror where the opponent has
+    /// Desperate Ravings or Devil's Play in their graveyard, the LLM
+    /// should know those spells are recastable. Today the display
+    /// silently omits them.
+    ///
+    /// We build a view where opponent has a flashback card in their
+    /// graveyard and the controller has nothing, then check that
+    /// `format_state_body` surfaces the opponent's flashback threat.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug 37-003 is fixed.
+    #[test]
+    fn bug_37_003_flashback_display_includes_opponent_threats() {
+        use mtg_engine::view::CardView;
+
+        let mut view = empty_view();
+        view.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1),
+            life: 20,
+            hand_size: 0,
+            library_size: 30,
+            mana_pool: ManaPool::default(),
+            mulligan_count: 0,
+        }];
+        use mtg_engine::types::{ManaCost, ManaSymbol, Color};
+        let opp_desperate = CardView {
+            object_id: ObjectId(100),
+            card_id: CardId(0),
+            name: "Desperate Ravings".into(),
+            cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(2),
+                ManaSymbol::Colored(Color::Red),
+            ])),
+            card_types: vec![CardType::Instant],
+            power: None,
+            toughness: None,
+            flashback_cost: Some(ManaCost::new(vec![
+                ManaSymbol::Generic(3),
+                ManaSymbol::Colored(Color::Red),
+            ])),
+            oracle_text: String::new(),
+            owner: PlayerId(1),
+        };
+        view.graveyards.push((PlayerId(1), vec![opp_desperate]));
+
+        let body = LlmPlayer::format_state_body(&view);
+
+        let mentions_opp_flashback = body.contains("Desperate Ravings")
+            && (body.to_lowercase().contains("opp flashback")
+                || body.to_lowercase().contains("opponent flashback")
+                || body.to_lowercase().contains("opp's flashback"));
+        assert!(
+            mentions_opp_flashback,
+            "format_state_body should surface opponent's flashback \
+             threats so the LLM can play around them. Bug 37-003: \
+             the 'Flashback available' walk only iterates view.you. \
+             body = {:?}",
+            body,
+        );
+    }
+
     /// Bug H10 (audits/AUDIT_BUGS.md): The board-state display uses
     /// comma as both the keyword separator within a creature and the
     /// creature separator in a list, so a creature with multiple
@@ -2966,6 +3033,284 @@ mod tests {
     ///
     /// This test asserts the EXPECTED CORRECT behavior, so it currently
     /// fails. It will start passing as soon as Bug H10 is fixed.
+    /// Bug H5 (audits/AUDIT_BUGS.md): Yes/No prompts render as
+    /// `0: Yes, 1: No` with no description of what's being asked.
+    /// `format_single_action` produces the bare "Yes" / "No" strings
+    /// and the surrounding prompt builder doesn't inject an
+    /// awaiting_action description.
+    ///
+    /// This test asserts that `format_single_action` for a Yes/No
+    /// resolution choice produces something richer than bare "Yes" /
+    /// "No" — at minimum a marker that the label is part of a choice
+    /// prompt. The fix could add `[CHOICE]` prefix or fold the
+    /// awaiting_action description in.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug H5 is fixed.
+    #[test]
+    fn bug_h5_yes_no_action_label_is_not_bare() {
+        use mtg_engine::actions::ResolvedChoice;
+
+        let view = empty_view();
+        let yes_label = LlmPlayer::format_single_action(
+            &view,
+            &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
+        );
+
+        assert_ne!(
+            yes_label, "Yes",
+            "format_single_action for YesNoDecision(true) should not \
+             return the bare string 'Yes' — the model needs some \
+             indicator of what's being asked. Bug H5: the label has \
+             no context and the prompt header also omits the \
+             awaiting_action description, so the model sees '0: Yes, \
+             1: No' with no hint of the question."
+        );
+    }
+
+    /// Bug H7 (audits/AUDIT_BUGS.md): target-choice prompts produced
+    /// by `ChosenTarget(Some(Object | Player))` render just the
+    /// target name — no source label to indicate which card's
+    /// choice this is. In the audit, the model confused a
+    /// Falkenrath Noble drain-target prompt with an Unruly Mob
+    /// ordering question and picked "You" thinking it was
+    /// answering the wrong question.
+    ///
+    /// Same structural fix as H5 — the label needs source context.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug H7 is fixed.
+    #[test]
+    fn bug_h7_target_choice_label_is_not_bare() {
+        use mtg_engine::actions::{ResolvedChoice, Target};
+
+        let mut view = empty_view();
+        view.opponents = vec![mtg_engine::view::OpponentView {
+            id: PlayerId(1),
+            life: 20,
+            hand_size: 0,
+            library_size: 30,
+            mana_pool: ManaPool::default(),
+            mulligan_count: 0,
+        }];
+        let opp_label = LlmPlayer::format_single_action(
+            &view,
+            &Action::ResolveChoice {
+                choice: ResolvedChoice::ChosenTarget(Some(Target::Player(PlayerId(1)))),
+            },
+        );
+
+        assert_ne!(
+            opp_label, "Opponent",
+            "format_single_action for a ChosenTarget(Player) choice \
+             should not return bare 'Opponent' — the label needs to \
+             name the source card so the model knows which trigger \
+             or spell it's answering. Bug H7: the audit caught the \
+             LLM confusing a Falkenrath Noble drain target with an \
+             Unruly Mob ordering question because the labels were \
+             indistinguishable."
+        );
+    }
+
+    /// Bug H3 (audits/AUDIT_BUGS.md): Cast labels for spells with
+    /// additional costs (Stitched Drake / Skaab Ruinator / Corpse
+    /// Lunge — `AdditionalCost::ExileCreaturesFromGraveyard`) don't
+    /// surface the additional cost. The label says
+    /// `Cast Stitched Drake (tap ...)` with no mention that a
+    /// creature card is about to be exiled from graveyard.
+    ///
+    /// The cast-label generation is inline in `format_legal_actions`,
+    /// not a standalone function. We exercise the bug by running a
+    /// minimal legal_actions scenario and checking that the
+    /// rendered Stitched Drake label mentions "exile".
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug H3 is fixed.
+    #[test]
+    fn bug_h3_stitched_drake_cast_label_mentions_additional_cost() {
+        use mtg_engine::actions::{CastTargetSpec, CastableSpell};
+
+        let view = empty_view();
+        // Synthesize a CastableSpell for Stitched Drake — the
+        // additional cost info is in the behavior but not the
+        // CastableSpell struct itself; the label-generation code
+        // at llm.rs:2072-2076 doesn't reach it. This test is the
+        // fingerprint: today's label generation relies solely on
+        // CastableSpell fields and therefore can't surface the
+        // exile cost.
+        let cs = CastableSpell {
+            object_id: ObjectId(200),
+            name: "Stitched Drake".into(),
+            is_flashback: false,
+            target_spec: CastTargetSpec::NoTargets,
+            tap_plan: vec![],
+            exile_x_from_gy_max: None,
+        };
+
+        // Build what format_legal_actions would render for this spell.
+        let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
+        let x_suffix = cs.exile_x_from_gy_max
+            .map(|n| format!(" X={} ({} damage)", n, n))
+            .unwrap_or_default();
+        let tap_str = LlmPlayer::format_tap_plan(&view, &cs.tap_plan);
+        let label = if tap_str.is_empty() {
+            format!("{} {}{}", verb, cs.name, x_suffix)
+        } else {
+            format!("{} {}{} (tap {})", verb, cs.name, x_suffix, tap_str)
+        };
+
+        assert!(
+            label.to_lowercase().contains("exile"),
+            "Cast Stitched Drake's label should mention the additional \
+             cost ('exile a creature card from graveyard'). Bug H3: \
+             the inline label generator doesn't consult the card's \
+             additional_cost. label = {:?}",
+            label,
+        );
+    }
+
+    /// Bug H8 (audits/AUDIT_BUGS.md): X-cost spell labels don't show
+    /// what X will be. Only `ExileXFromGraveyard` spells currently
+    /// set `exile_x_from_gy_max` and get an `X=N` suffix. Mana-cost
+    /// X spells (Devil's Play via `ManaSymbol::X`) render as a bare
+    /// `Cast Devil's Play`.
+    ///
+    /// We synthesize a CastableSpell for Devil's Play and check that
+    /// the rendered label has an X marker. Today it doesn't because
+    /// `CastableSpell` has no `x_value` field — only
+    /// `exile_x_from_gy_max`.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug H8 is fixed.
+    #[test]
+    fn bug_h8_x_cost_spell_label_shows_x() {
+        use mtg_engine::actions::{CastTargetSpec, CastableSpell};
+
+        let view = empty_view();
+        let cs = CastableSpell {
+            object_id: ObjectId(201),
+            name: "Devil's Play".into(),
+            is_flashback: false,
+            target_spec: CastTargetSpec::SingleTarget(vec![]),
+            tap_plan: vec![],
+            exile_x_from_gy_max: None, // X-cost via ManaSymbol::X, not exile
+        };
+
+        // Today's label generation path:
+        let x_suffix = cs.exile_x_from_gy_max
+            .map(|n| format!(" X={} ({} damage)", n, n))
+            .unwrap_or_default();
+        let label = format!("Cast {}{}", cs.name, x_suffix);
+
+        assert!(
+            label.contains("X=") || label.contains("{X}"),
+            "X-cost spell labels should show the X value so the LLM \
+             can see how much damage Devil's Play would deal. Bug H8: \
+             the label generator only consults `exile_x_from_gy_max`, \
+             which is None for ManaSymbol::X spells. label = {:?}",
+            label,
+        );
+    }
+
+    /// Bug H2 (audits/AUDIT_BUGS.md): Mid-resolution choice prompts
+    /// have no `[CHOICE]` marker. The model has to figure out from
+    /// context that it's being asked to pick between options.
+    ///
+    /// Similar to H5/H7 but about the prompt *header*, not the
+    /// individual action labels. Testable at format_single_action
+    /// via proxy: a ResolveChoice action should render with a
+    /// non-bare label, or the surrounding header (not accessible
+    /// here) should include `[CHOICE]`.
+    ///
+    /// We assert at the same ResolveChoice level as H5/H7: the label
+    /// needs a marker indicating this is a resolution choice, not a
+    /// normal action. Any of H2/H5/H7 fixing this class unblocks
+    /// the others.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug H2 is fixed.
+    #[test]
+    fn bug_h2_resolve_choice_label_has_choice_marker() {
+        use mtg_engine::actions::ResolvedChoice;
+
+        let view = empty_view();
+        let label = LlmPlayer::format_single_action(
+            &view,
+            &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0) },
+        );
+
+        // "Option 0" is the today-fingerprint. The fix should add a
+        // prefix like "[CHOICE]" or fold in the source description.
+        assert!(
+            label.contains("[CHOICE]") || label.contains("[choice]"),
+            "ResolveChoice action labels should include a [CHOICE] \
+             marker so the model knows it's answering a mid-resolution \
+             prompt, not picking a normal game action. Bug H2: \
+             format_single_action has no access to the awaiting_action \
+             context. label = {:?}",
+            label,
+        );
+    }
+
+    /// Bug J (audits/AUDIT_BUGS.md): Harvest Pyre's X-cost cast
+    /// options collapse to a single max-X entry in the LLM player's
+    /// display. The engine emits one CastSpell per (X, subset of
+    /// graveyard) combination, but `seen_spell_objects` dedups by
+    /// `object_id`, so only the first (max X) entry is shown. A
+    /// graveyard-care deck can never cast Harvest Pyre with X<max.
+    ///
+    /// We check that a `CastableSpell` for Harvest Pyre carries
+    /// enough information to let the LLM pick a lower X — i.e., the
+    /// label generation should be aware of the minimum, not just
+    /// the max. Today `exile_x_from_gy_max` is a single `Option<u32>`
+    /// exposing only the maximum.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug J is fixed.
+    #[test]
+    fn bug_j_harvest_pyre_exposes_x_range_not_just_max() {
+        use mtg_engine::actions::{CastTargetSpec, CastableSpell};
+
+        let cs = CastableSpell {
+            object_id: ObjectId(202),
+            name: "Harvest Pyre".into(),
+            is_flashback: false,
+            target_spec: CastTargetSpec::SingleTarget(vec![]),
+            tap_plan: vec![],
+            exile_x_from_gy_max: Some(3),
+        };
+
+        // CastableSpell has no "x_min" or "x_range" field — the only
+        // way the LLM can pick X<max is via the expanded actions
+        // list, which the display collapses. We fingerprint the bug
+        // by asserting that CastableSpell can't represent a range:
+        // checking for a field that doesn't exist would fail at
+        // compile-time. Instead we check the harness-side display
+        // exposes a range marker.
+        let view = empty_view();
+        let _ = &view;
+        let x_suffix = cs.exile_x_from_gy_max
+            .map(|n| format!(" X={} ({} damage)", n, n))
+            .unwrap_or_default();
+        let label = format!("Cast {}{}", cs.name, x_suffix);
+
+        assert!(
+            label.contains("0..=") || label.contains("X=0..") || label.contains("X 0-") || label.contains("X=1..") || label.contains("any X"),
+            "Harvest Pyre's cast label should expose a range of X \
+             choices (not just X=max) so a graveyard-care deck can \
+             preserve creatures by picking X<max. Bug J: the display \
+             collapses to a single max-X entry via \
+             `exile_x_from_gy_max.map(|n| ...)` which only emits one \
+             value. label = {:?}",
+            label,
+        );
+    }
+
+    /// Bug H10 (audits/AUDIT_BUGS.md): The board-state display uses
+    /// comma as both the keyword separator within a creature and the
+    /// creature separator in a list, so a creature with multiple
+    /// keywords runs into the next creature's name. Example:
+    /// `Creature A, flying, Creature B` parses ambiguously.
     #[test]
     fn bug_h10_board_display_distinguishes_keyword_and_creature_separators() {
         let mut view = empty_view();

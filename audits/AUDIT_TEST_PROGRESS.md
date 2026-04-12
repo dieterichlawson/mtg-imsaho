@@ -53,6 +53,13 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug 31-001 (Harness display) — `mtg-engine/tests/audit_harness_display_family.rs::bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc` — status: failing-as-expected
 - Bug 37-002 (Harness display) — `mtg-player/src/llm.rs::tests::bug_37_002_target_selection_disambiguates_identical_creatures` — status: failing-as-expected
 - Bug H10 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h10_board_display_distinguishes_keyword_and_creature_separators` — status: failing-as-expected
+- Bug 37-003 (Harness display) — `mtg-player/src/llm.rs::tests::bug_37_003_flashback_display_includes_opponent_threats` — status: failing-as-expected
+- Bug H2 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h2_resolve_choice_label_has_choice_marker` — status: failing-as-expected
+- Bug H3 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h3_stitched_drake_cast_label_mentions_additional_cost` — status: failing-as-expected
+- Bug H5 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h5_yes_no_action_label_is_not_bare` — status: failing-as-expected
+- Bug H7 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h7_target_choice_label_is_not_bare` — status: failing-as-expected
+- Bug H8 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h8_x_cost_spell_label_shows_x` — status: failing-as-expected
+- Bug J (Harness display) — `mtg-player/src/llm.rs::tests::bug_j_harvest_pyre_exposes_x_range_not_just_max` — status: failing-as-expected
 - Bug 17-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature` — status: failing-as-expected
 - Bug E1-001 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature` — status: failing-as-expected
 - Bug 0F-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb` — status: failing-as-expected
