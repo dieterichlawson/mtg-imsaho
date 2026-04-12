@@ -399,8 +399,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             .collect()
                     }
                     ResolutionChoiceKind::ChooseCardType { options, .. } => {
-                        (0..options.len())
-                            .map(|i| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i) })
+                        options.iter().enumerate()
+                            .map(|(i, _)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i) })
                             .collect()
                     }
                     ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, .. } => {
@@ -433,7 +433,13 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     ResolutionChoiceKind::ChooseCardFromHand { description, .. } => description.clone(),
                     ResolutionChoiceKind::ChooseFromRevealed { .. } => format!("{}: choose a card", source_name),
                     ResolutionChoiceKind::ChooseFromLibrary { .. } => format!("{}: search library", source_name),
-                    ResolutionChoiceKind::ChooseCardType { .. } => format!("{}: choose a card type", source_name),
+                    ResolutionChoiceKind::ChooseCardType { options, .. } => {
+                        let opts = options.iter().enumerate()
+                            .map(|(i, name)| format!("{}: {}", i, name))
+                            .collect::<Vec<_>>()
+                            .join(", ");
+                        format!("{}: choose a card type ({})", source_name, opts)
+                    }
                     ResolutionChoiceKind::DividePermanentsIntoPiles { .. } => format!("{}: divide into piles", source_name),
                     ResolutionChoiceKind::ChoosePile { .. } => format!("{}: choose a pile", source_name),
                 };

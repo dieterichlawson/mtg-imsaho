@@ -2238,9 +2238,12 @@ impl Player for LlmPlayer {
             .map(|(i, label)| format!("{}: {}", i, label))
             .collect::<Vec<_>>()
             .join(", ");
+        let context_line = legal.context.as_deref()
+            .map(|c| format!("[{}]\n", c))
+            .unwrap_or_default();
         let action_prompt = format!(
-            "Available actions:\n{}\n",
-            actions_str,
+            "{}Available actions:\n{}\n",
+            context_line, actions_str,
         );
         let prompt = self.build_prompt(view, &action_prompt);
 
