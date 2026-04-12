@@ -3387,6 +3387,35 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let mut rng = rand::thread_rng();
             state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
         }
+        (Target::Object(id), PendingEffect::ExileFromGraveyardAndCreateToken { controller }) => {
+            let name = state.obj_name(*id);
+            state.move_object(*id, Zone::Exile, registry);
+            state.log(LogLevel::Event, format!("Moorland Haunt exiled {} from graveyard", name));
+            state.create_token_with_subtypes(
+                "Spirit Token", *controller, 1, 1,
+                vec![crate::types::Color::White],
+                vec![crate::types::CardType::Creature],
+                vec![crate::types::Keyword::Flying],
+                vec!["Spirit".into()],
+                registry,
+            );
+            state.log(LogLevel::Event, "Moorland Haunt created a 1/1 white Spirit token with flying".into());
+        }
+        (Target::Object(keep_id), PendingEffect::LegendRuleKeep { player, legend_name }) => {
+            // Keep the chosen permanent, move all other legendaries with the same name to graveyard.
+            let to_remove: Vec<ObjectId> = state.objects.values()
+                .filter(|o| o.zone == crate::types::Zone::Battlefield
+                    && o.controller == *player
+                    && o.is_legendary
+                    && o.name == *legend_name
+                    && o.id != *keep_id)
+                .map(|o| o.id)
+                .collect();
+            for id in to_remove {
+                state.move_object(id, crate::types::Zone::Graveyard, registry);
+            }
+            state.log(LogLevel::Event, format!("Legend rule: kept {}", legend_name));
+        }
         _ => {}
     }
 }

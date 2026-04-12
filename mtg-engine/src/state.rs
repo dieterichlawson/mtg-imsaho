@@ -1701,6 +1701,11 @@ pub enum PendingEffect {
     GhostQuarterSearch { searcher: PlayerId },
     /// Exile the chosen card (from hand) and move the source spell to the graveyard (Night Terrors).
     ExileCardAndCleanup { spell_id: ObjectId, source_name: String },
+    /// Exile the chosen creature card from graveyard and create a Spirit token (Moorland Haunt).
+    ExileFromGraveyardAndCreateToken { controller: PlayerId },
+    /// The legend rule: the chosen permanent is KEPT, all others with the same name
+    /// under that player's control are sent to the graveyard.
+    LegendRuleKeep { player: PlayerId, legend_name: String },
 }
 
 /// Game result.

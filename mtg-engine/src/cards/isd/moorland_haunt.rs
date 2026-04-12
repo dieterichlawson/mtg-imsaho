@@ -82,32 +82,34 @@ impl CardBehavior for MoorlandHaunt {
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Exile a creature card from graveyard (auto-pick the first one).
-        let creature_in_gy = state.objects_in_zone(Zone::Graveyard, controller)
+        // Exile a creature card from graveyard — player chooses which one.
+        let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| o.power.is_some() && !o.is_token)
             .map(|o| o.id)
-            .next();
+            .collect();
 
-        if let Some(exile_id) = creature_in_gy {
+        if creatures_in_gy.len() == 1 {
+            let exile_id = creatures_in_gy[0];
             let name = state.get_object(exile_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(exile_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Moorland Haunt exiled {} from graveyard", name));
+            state.create_token_with_subtypes(
+                "Spirit Token", controller, 1, 1,
+                vec![Color::White], vec![CardType::Creature],
+                vec![Keyword::Flying], vec!["Spirit".into()], registry,
+            );
+            state.log(crate::state::LogLevel::Event,
+                "Moorland Haunt created a 1/1 white Spirit token with flying".into());
+        } else if creatures_in_gy.len() > 1 {
+            let targets: Vec<Target> = creatures_in_gy.iter().map(|&id| Target::Object(id)).collect();
+            crate::cards::helpers::present_target_choice(
+                state, object_id, controller, targets,
+                crate::state::PendingEffect::ExileFromGraveyardAndCreateToken { controller },
+                "Moorland Haunt: choose a creature card from your graveyard to exile",
+                false,
+            );
         }
-
-        // Create a 1/1 white Spirit creature token with flying.
-        state.create_token_with_subtypes(
-            "Spirit Token",
-            controller,
-            1, 1,
-            vec![Color::White],
-            vec![CardType::Creature],
-            vec![Keyword::Flying],
-            vec!["Spirit".into()],
-            registry,
-        );
-        state.log(crate::state::LogLevel::Event,
-            "Moorland Haunt created a 1/1 white Spirit token with flying".into());
     }
 }
