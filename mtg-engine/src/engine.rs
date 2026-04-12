@@ -1376,10 +1376,12 @@ fn generate_cast_actions_with_targets(
             vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }]
         }
         TargetRequirement::AnyTarget => {
-            // Can target any creature on the battlefield or any player.
+            // Can target any creature or planeswalker on the battlefield, or any player.
             let mut actions = Vec::new();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                if obj.power.is_some() { // is a creature
+                let is_creature = obj.power.is_some();
+                let is_planeswalker = obj.card_types.contains(&CardType::Planeswalker);
+                if is_creature || is_planeswalker {
                     if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
                     let target = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &target, registry) {
@@ -1615,7 +1617,7 @@ fn valid_targets_for_req(
         }
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some())
+                .filter(|o| o.power.is_some() || o.card_types.contains(&CardType::Planeswalker))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1892,7 +1894,7 @@ fn generate_ability_targets(
         }
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some())
+                .filter(|o| o.power.is_some() || o.card_types.contains(&CardType::Planeswalker))
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))

@@ -178,18 +178,34 @@ pub fn creature_targets_except(state: &GameState, exclude: ObjectId) -> Vec<Targ
         .collect()
 }
 
-/// All creatures + all players ("any target").
+/// All creatures + planeswalkers + all players ("any target").
 pub fn any_targets(state: &GameState) -> Vec<Target> {
     let mut targets = creature_targets(state);
+    // Add planeswalkers (which have power = None, so creature_targets misses them)
+    for o in state.objects.values() {
+        if o.zone == Zone::Battlefield && o.power.is_none()
+            && o.card_types.contains(&crate::types::CardType::Planeswalker)
+        {
+            targets.push(Target::Object(o.id));
+        }
+    }
     for player in &state.players {
         targets.push(Target::Player(player.id));
     }
     targets
 }
 
-/// All creatures + all players, excluding a specific creature.
+/// All creatures + planeswalkers + all players, excluding a specific object.
 pub fn any_targets_except(state: &GameState, exclude: ObjectId) -> Vec<Target> {
     let mut targets = creature_targets_except(state, exclude);
+    // Add planeswalkers (which have power = None, so creature_targets misses them)
+    for o in state.objects.values() {
+        if o.zone == Zone::Battlefield && o.power.is_none() && o.id != exclude
+            && o.card_types.contains(&crate::types::CardType::Planeswalker)
+        {
+            targets.push(Target::Object(o.id));
+        }
+    }
     for player in &state.players {
         targets.push(Target::Player(player.id));
     }
