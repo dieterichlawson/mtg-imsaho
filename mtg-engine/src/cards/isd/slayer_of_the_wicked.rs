@@ -40,9 +40,11 @@ impl CardBehavior for SlayerOfTheWicked {
         let targets: Vec<Target> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != object_id)
             .filter(|o| {
-                registry.card_data(o.card_id)
+                let from_registry = registry.card_data(o.card_id)
                     .map(|d| d.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie"))
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                let from_instance = o.subtypes.iter().any(|s| s == "Vampire" || s == "Werewolf" || s == "Zombie");
+                from_registry || from_instance
             })
             .map(|o| Target::Object(o.id))
             .collect();

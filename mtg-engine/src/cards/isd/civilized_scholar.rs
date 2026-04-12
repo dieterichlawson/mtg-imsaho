@@ -133,10 +133,9 @@ impl CardBehavior for CivilizedScholar {
             state.log(crate::state::LogLevel::Event,
                 format!("Civilized Scholar: p{} discarded {}", controller.0, discard_name));
             if is_creature {
+                crate::cards::helpers::apply_transform(state, object_id, registry);
                 if let Some(obj) = state.get_object_mut(object_id) {
-                    obj.tapped = false;
-                    obj.is_transformed = true;
-                    obj.name = "Homicidal Brute".into();
+                    obj.tapped = false; // Scholar untaps on transform per oracle
                 }
                 state.log(crate::state::LogLevel::Event,
                     "Civilized Scholar transforms into Homicidal Brute".into());
@@ -155,14 +154,13 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, _registry: &CardRegistry) {
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, registry: &CardRegistry) {
         // Check if the discarded card was a creature.
         let is_creature = state.get_object(discarded_id).map(|o| o.power.is_some()).unwrap_or(false);
         if is_creature {
+            crate::cards::helpers::apply_transform(state, self_id, registry);
             if let Some(obj) = state.get_object_mut(self_id) {
-                obj.tapped = false;
-                obj.is_transformed = true;
-                obj.name = "Homicidal Brute".into();
+                obj.tapped = false; // Scholar untaps on transform per oracle
             }
             state.log(crate::state::LogLevel::Event,
                 "Civilized Scholar transforms into Homicidal Brute".into());

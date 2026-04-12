@@ -143,10 +143,7 @@ impl CardBehavior for DelverOfSecrets {
         if top_is_instant_or_sorcery {
             state.log(LogLevel::Event,
                 format!("Delver of Secrets: reveals {} — transforming!", top_card_name));
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.is_transformed = true;
-                obj.name = "Insectile Aberration".into();
-            }
+            crate::cards::helpers::apply_transform(state, self_id, registry);
         } else {
             state.log(LogLevel::Event,
                 format!("Delver of Secrets: reveals {} — not an instant or sorcery, no transform.", top_card_name));

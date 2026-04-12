@@ -38,18 +38,16 @@ impl CardBehavior for Moonmist {
             .filter(|o| o.zone == Zone::Battlefield)
             .filter(|o| {
                 // Check if the creature currently has the Human subtype on its
-                // active face. Check instance subtypes first (set when transformed),
-                // then fall back to registry data for the correct face.
-                let has_human_subtype = if !o.subtypes.is_empty() {
-                    o.subtypes.iter().any(|s| s == "Human")
+                // active face. Check instance subtypes first, then also check
+                // the registry for the correct face (transform-aware).
+                let has_human_subtype = if o.subtypes.iter().any(|s| s == "Human") {
+                    true
                 } else if o.is_transformed {
-                    // Transformed but no instance subtypes — check back face data.
                     registry.get(o.card_id)
                         .and_then(|b| b.back_face_data())
                         .map(|d| d.subtypes.iter().any(|s| s == "Human"))
                         .unwrap_or(false)
                 } else {
-                    // Not transformed, no instance subtypes — check front face data.
                     registry.card_data(o.card_id)
                         .map(|d| d.subtypes.iter().any(|s| s == "Human"))
                         .unwrap_or(false)

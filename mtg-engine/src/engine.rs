@@ -1807,6 +1807,9 @@ fn matches_ability_target_filter(
         }
         TargetFilter::HasSubtype(subtype) => {
             obj.subtypes.contains(subtype)
+                || registry.card_data(obj.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                    .unwrap_or(false)
         }
         TargetFilter::SameNameAsSource => {
             // Only target creatures with the same name as the source permanent.
@@ -1907,7 +1910,7 @@ fn generate_ability_targets(
         TargetRequirement::PermanentWithFilter(filter) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
-                .filter(|o| matches_target_filter(o, filter))
+                .filter(|o| matches_target_filter(o, filter, registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
@@ -1932,7 +1935,7 @@ fn generate_ability_targets(
 
 /// Check if a battlefield object matches a TargetFilter.
 /// Used by generate_ability_targets to filter targets for activated abilities.
-fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter) -> bool {
+fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter, registry: &CardRegistry) -> bool {
     use crate::cards::TargetFilter;
     match filter {
         TargetFilter::Any => true,
@@ -1941,7 +1944,12 @@ fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::
         }
         TargetFilter::Noncreature => obj.power.is_none(),
         TargetFilter::Nonblack => !obj.colors.contains(&crate::types::Color::Black),
-        TargetFilter::HasSubtype(subtype) => obj.subtypes.iter().any(|s| s == subtype),
+        TargetFilter::HasSubtype(subtype) => {
+            obj.subtypes.iter().any(|s| s == subtype)
+                || registry.card_data(obj.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
+                    .unwrap_or(false)
+        }
         _ => true, // Other filters not yet needed for abilities.
     }
 }
@@ -2906,11 +2914,18 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             if *human_bonus {
                 let is_human = state.get_object(*id)
                     .map(|o| {
-                        let obj_has = o.subtypes.iter().any(|s| s == "Human");
-                        let card_has = registry.card_data(o.card_id)
-                            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                            .unwrap_or(false);
-                        obj_has || card_has
+                        if o.subtypes.iter().any(|s| s == "Human") {
+                            true
+                        } else if o.is_transformed {
+                            registry.get(o.card_id)
+                                .and_then(|b| b.back_face_data())
+                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                                .unwrap_or(false)
+                        } else {
+                            registry.card_data(o.card_id)
+                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                                .unwrap_or(false)
+                        }
                     })
                     .unwrap_or(false);
                 if is_human {
@@ -3459,6 +3474,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
                 obj.name = card_name.clone();
                 obj.keywords = card_data.keywords.clone();
                 obj.card_types = card_data.card_types.clone();
+                obj.subtypes = card_data.subtypes.clone();
                 library_ids.push(obj_id);
             }
         }

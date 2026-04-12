@@ -9,7 +9,7 @@ use crate::types::*;
 pub struct ClifftopRetreat;
 
 impl ClifftopRetreat {
-    fn controller_has_matching_land(state: &GameState, object_id: ObjectId) -> bool {
+    fn controller_has_matching_land(state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> bool {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return false,
@@ -17,9 +17,15 @@ impl ClifftopRetreat {
         state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .any(|o| {
-                o.id != object_id
-                    && (o.subtypes.iter().any(|s| s == "Mountain")
-                        || o.subtypes.iter().any(|s| s == "Plains"))
+                if o.id == object_id {
+                    return false;
+                }
+                let has_subtype = |name: &str| {
+                    o.subtypes.iter().any(|s| s == name)
+                        || registry.card_data(o.card_id)
+                            .map_or(false, |d| d.subtypes.iter().any(|s| s == name))
+                };
+                has_subtype("Mountain") || has_subtype("Plains")
             })
     }
 }
@@ -48,8 +54,8 @@ impl CardBehavior for ClifftopRetreat {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        if !Self::controller_has_matching_land(state, object_id) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+        if !Self::controller_has_matching_land(state, object_id, registry) {
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.tapped = true;
             }

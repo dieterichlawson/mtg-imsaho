@@ -399,10 +399,23 @@ fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, 
 }
 
 /// Get all subtypes of a creature (from both card data and object-level subtypes).
+/// Transform-aware: uses back-face data for transformed DFCs.
 pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
     let mut subtypes = Vec::new();
     if let Some(obj) = state.get_object(creature_id) {
         subtypes.extend(obj.subtypes.iter().cloned());
+        if obj.is_transformed {
+            if let Some(behavior) = registry.get(obj.card_id) {
+                if let Some(back) = behavior.back_face_data() {
+                    for s in &back.subtypes {
+                        if !subtypes.contains(s) {
+                            subtypes.push(s.clone());
+                        }
+                    }
+                    return subtypes;
+                }
+            }
+        }
         if let Some(data) = registry.card_data(obj.card_id) {
             for s in &data.subtypes {
                 if !subtypes.contains(s) {

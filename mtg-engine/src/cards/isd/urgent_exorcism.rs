@@ -37,12 +37,15 @@ impl CardBehavior for UrgentExorcism {
                     Some(o) if o.zone == Zone::Battlefield => o,
                     _ => return false,
                 };
-                registry.card_data(obj.card_id)
+                let from_registry = registry.card_data(obj.card_id)
                     .map(|d| {
                         d.card_types.contains(&CardType::Enchantment)
                             || d.subtypes.contains(&"Spirit".to_string())
                     })
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                let from_instance = obj.card_types.contains(&CardType::Enchantment)
+                    || obj.subtypes.contains(&"Spirit".to_string());
+                from_registry || from_instance
             }
             _ => false,
         }

@@ -41,9 +41,11 @@ impl CardBehavior for VampiricFury {
             })
             .filter(|obj| {
                 // Check if this creature has the "Vampire" subtype.
-                registry.card_data(obj.card_id)
+                let from_registry = registry.card_data(obj.card_id)
                     .map(|data| data.subtypes.iter().any(|s| s == "Vampire"))
-                    .unwrap_or(false)
+                    .unwrap_or(false);
+                let from_instance = obj.subtypes.iter().any(|s| s == "Vampire");
+                from_registry || from_instance
             })
             .map(|obj| obj.id)
             .collect();
