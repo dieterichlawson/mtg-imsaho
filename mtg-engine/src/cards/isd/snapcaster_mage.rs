@@ -43,14 +43,16 @@ impl CardBehavior for SnapcasterMage {
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-        // Find all eligible instant/sorcery cards in graveyard without innate flashback.
+        // Find all eligible instant/sorcery cards in graveyard.
+        // Per oracle, Snapcaster can target any instant or sorcery — including
+        // cards that already have printed flashback (granting a second flashback
+        // cost equal to their mana cost).
         let eligible: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller)
             .filter(|o| {
                 registry.card_data(o.card_id)
                     .map(|d| {
-                        (d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
-                            && d.flashback_cost.is_none()
+                        d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery)
                     })
                     .unwrap_or(false)
             })

@@ -357,29 +357,7 @@ fn slayer_of_the_wicked_sees_instance_vampire() {
 }
 
 // ────────────────────────────────────────────────────────────────────────────
-// 9. Mayor of Avabruck -- front face should NOT have Werewolf subtype
-// ────────────────────────────────────────────────────────────────────────────
-
-/// Mayor of Avabruck's front face is "Human Advisor", not a Werewolf.
-/// The Werewolf subtype only appears on the back face (Howlpack Alpha).
-/// Oracle (front): "Human Advisor"
-#[test]
-fn mayor_of_avabruck_front_face_not_werewolf() {
-    let reg = registry();
-    let card_id = reg.get_id_by_name("Mayor of Avabruck").unwrap();
-    let data = reg.card_data(card_id).unwrap();
-
-    // Front face subtypes should be Human Advisor only.
-    assert!(data.subtypes.contains(&"Human".to_string()),
-        "Front face should be Human");
-    assert!(data.subtypes.contains(&"Advisor".to_string()),
-        "Front face should be Advisor");
-    assert!(!data.subtypes.contains(&"Werewolf".to_string()),
-        "Front face should NOT have Werewolf subtype (only back face Howlpack Alpha is a Werewolf)");
-}
-
-// ────────────────────────────────────────────────────────────────────────────
-// 10. Nevermore -- "As enters" should not be respondable (replacement effect)
+// 9. Nevermore -- "As enters" should not be respondable (replacement effect)
 // ────────────────────────────────────────────────────────────────────────────
 // This is hard to test mechanically since the engine's trigger model doesn't
 // differentiate "As" vs "When". Documenting but skipping a mechanical test.

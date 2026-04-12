@@ -4,7 +4,7 @@ Audit date: 2026-04-12
 
 A manual review of every implemented card file for deviations from MTG oracle text behavior.
 
-**Failing tests:** `mtg-engine/tests/card_shortcuts.rs` -- 12 failing tests, 2 passing controls.
+**Failing tests:** `mtg-engine/tests/card_shortcuts.rs` -- 11 failing tests, 2 passing controls.
 
 ---
 
@@ -58,25 +58,19 @@ A manual review of every implemented card file for deviations from MTG oracle te
 **Oracle:** "you may destroy target Vampire, Werewolf, or Zombie"
 **Bug:** Only checks `registry.card_data().subtypes`. Doesn't check `obj.subtypes`. A creature that gained the Vampire subtype via Olivia Voldaren wouldn't be a valid target.
 
-### 9. Mayor of Avabruck -- front face incorrectly has "Werewolf" subtype
-**File:** `isd/mayor_of_avabruck.rs:33`
-**Test:** `mayor_of_avabruck_front_face_not_werewolf`
-**Oracle:** Front face is "Human Advisor" only. The Werewolf subtype belongs on the back face (Howlpack Alpha).
-**Bug:** `subtypes: vec!["Human", "Advisor", "Werewolf"]`. This means Victim of Night incorrectly can't target it, and Moonmist may interact with it incorrectly.
-
-### 10. Festerhide Boar -- morbid counters only applied when cast, not when reanimated
+### 9. Festerhide Boar -- morbid counters only applied when cast, not when reanimated
 **File:** `isd/festerhide_boar.rs:34-43`
 **Test:** `festerhide_boar_gets_morbid_counters_when_reanimated`
 **Oracle:** "This creature enters with two +1/+1 counters on it if a creature died this turn."
 **Bug:** Counter logic is only in `on_resolve` (the cast path). There's no `has_etb_handler`/`on_enter_battlefield` override. If the Boar is reanimated (e.g., Unburial Rites moves it to battlefield), the morbid counters are never applied.
 
-### 11. Lava Axe -- can't target planeswalkers
+### 10. Lava Axe -- can't target planeswalkers
 **File:** `lava_axe.rs:29-30`
 **Test:** `lava_axe_target_requirement_includes_planeswalkers`
 **Oracle:** "Lava Axe deals 5 damage to target player or planeswalker."
 **Bug:** Uses `TargetRequirement::PlayerOnly`, so the engine won't present planeswalkers as targeting options.
 
-### 12. Civilized Scholar -- creature detection uses power heuristic instead of registry
+### 11. Civilized Scholar -- creature detection uses power heuristic instead of registry
 **File:** `isd/civilized_scholar.rs:126`
 **Test:** `civilized_scholar_detects_creature_via_registry`
 **Oracle:** "If a creature card is discarded this way"
@@ -100,6 +94,7 @@ A manual review of every implemented card file for deviations from MTG oracle te
 
 ## NOT ISSUES -- verified correct or acceptable
 
+- **Mayor of Avabruck** -- front face IS "Human Advisor Werewolf" per Scryfall type line. The implementation is correct.
 - **Forbidden Alchemy** -- doc comment says "Simplified: draw 1 card, mill 3" but the actual code correctly reveals top 4, lets player choose, and mills the rest. Stale comment only.
 - **Daybreak Ranger** -- front face IS "Human Archer Werewolf" per Scryfall. The subtypes in the code are correct.
 - **Bloodline Keeper** -- creates a new CardRegistry in `activated_abilities`. Wasteful but functionally correct.
