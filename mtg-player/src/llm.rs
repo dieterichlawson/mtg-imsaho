@@ -2913,4 +2913,83 @@ mod tests {
         assert_eq!(labels[0], "Howlpack of Estwald 4/6");
         assert_eq!(labels[1], "Howlpack of Estwald 5/7");
     }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Audit failing tests — harness prompts
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Bug 37-002 (audits/AUDIT_BUGS.md): target-selection prompts use
+    /// `obj_name`, which returns the raw object name with a
+    /// controller suffix but no per-collision disambiguator. Two
+    /// same-named creatures under the same controller collapse to
+    /// identical strings — the LLM can't tell them apart.
+    ///
+    /// The fix is to create a `format_object_labels` helper modeled
+    /// on `format_combat_creature_list` and route prompt_target_selection
+    /// through it. For now, we assert the symptom: `obj_name` returns
+    /// the same string for two distinct same-named creatures.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug 37-002 is fixed
+    /// (either by `obj_name` gaining collision awareness, or by
+    /// prompt_target_selection routing through a new disambiguator).
+    #[test]
+    fn bug_37_002_target_selection_disambiguates_identical_creatures() {
+        let mut view = empty_view();
+        view.battlefield.push(perm(50, "Champion of the Parish", 1, 1, PlayerId(0)));
+        view.battlefield.push(perm(51, "Champion of the Parish", 1, 1, PlayerId(0)));
+
+        let label_a = LlmPlayer::obj_name(&view, ObjectId(50));
+        let label_b = LlmPlayer::obj_name(&view, ObjectId(51));
+
+        assert_ne!(
+            label_a, label_b,
+            "obj_name (used by prompt_target_selection to render \
+             target-choice labels) should produce distinct strings for \
+             two same-named creatures under the same controller. Bug \
+             37-002: both collapse to 'Champion of the Parish (your)', \
+             so the LLM can't deliberately pick between index 0 and \
+             index 1."
+        );
+    }
+
+    /// Bug H10 (audits/AUDIT_BUGS.md): The board-state display uses
+    /// comma as both the keyword separator within a creature and the
+    /// creature separator in a list, so a creature with multiple
+    /// keywords runs into the next creature's name. Example:
+    /// `Creature A, flying, Creature B` parses ambiguously.
+    ///
+    /// `format_perms_compact` generates this display. We check that
+    /// when two creatures are present and the first one has a
+    /// keyword, the output contains a clear separator that's
+    /// distinguishable from the keyword list.
+    ///
+    /// This test asserts the EXPECTED CORRECT behavior, so it currently
+    /// fails. It will start passing as soon as Bug H10 is fixed.
+    #[test]
+    fn bug_h10_board_display_distinguishes_keyword_and_creature_separators() {
+        let mut view = empty_view();
+        let mut p0 = perm(60, "Angel Token", 4, 4, PlayerId(0));
+        p0.keywords = vec![mtg_engine::types::Keyword::Flying];
+        view.battlefield.push(p0);
+        view.battlefield.push(perm(61, "Grizzly Bears", 2, 2, PlayerId(0)));
+
+        let perms: Vec<_> = view.battlefield.iter().collect();
+        let output = LlmPlayer::format_perms_compact(&perms, &perms);
+
+        // The fix must pick a separator for creatures that is NOT
+        // ", " (comma + space) — the existing comma-separated keyword
+        // list collides with a comma creature separator. Acceptable
+        // fixes: semicolon, pipe, newline, " / ", etc.
+        let suspicious = output.contains("Flying, Grizzly Bears")
+            || output.contains("flying, Grizzly Bears");
+        assert!(
+            !suspicious,
+            "Board-state display uses comma as both the keyword \
+             separator within a creature and the creature separator \
+             between entries — 'Flying, Grizzly Bears' is ambiguous. \
+             Bug H10. Got: {:?}",
+            output,
+        );
+    }
 }

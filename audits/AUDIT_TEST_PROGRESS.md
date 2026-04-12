@@ -50,6 +50,9 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug BP (Combat rules) — `mtg-engine/tests/audit_combat_rules_family.rs::bug_bp_forced_attack_respects_cant_attack` — status: failing-as-expected
 - Bug BS (Misc) — `mtg-engine/tests/audit_misc_final.rs::bug_bs_runic_repetition_resets_cast_with_flashback` — status: failing-as-expected
 - Bug E1-002 (CDA display) — `mtg-engine/tests/audit_misc_final.rs::bug_e1_002_cardview_uses_effective_pt_for_cda_creatures` — status: failing-as-expected
+- Bug 31-001 (Harness display) — `mtg-engine/tests/audit_harness_display_family.rs::bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc` — status: failing-as-expected
+- Bug 37-002 (Harness display) — `mtg-player/src/llm.rs::tests::bug_37_002_target_selection_disambiguates_identical_creatures` — status: failing-as-expected
+- Bug H10 (Harness display) — `mtg-player/src/llm.rs::tests::bug_h10_board_display_distinguishes_keyword_and_creature_separators` — status: failing-as-expected
 - Bug 17-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature` — status: failing-as-expected
 - Bug E1-001 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature` — status: failing-as-expected
 - Bug 0F-003 (Hexproof / target-filter) — `mtg-engine/tests/audit_hexproof_filter_family.rs::bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb` — status: failing-as-expected
