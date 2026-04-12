@@ -245,9 +245,9 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             }
         }
 
-        // Rule 704.5k: Legend rule — if a player controls two or more legendary
-        // permanents with the same name, all are put into the graveyard.
-        // (Simplified: keep the newest, remove the rest.)
+        // Rule 704.5j: Legend rule — if a player controls two or more legendary
+        // permanents with the same name, that player chooses one of them, and
+        // the rest are put into their owners' graveyards.
         {
             use std::collections::HashMap as Map;
             let mut legend_groups: Map<(crate::ids::PlayerId, String), Vec<crate::ids::ObjectId>> = Map::new();
@@ -258,13 +258,30 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                         .push(obj.id);
                 }
             }
-            for (_, ids) in legend_groups {
+            for ((player, name), ids) in legend_groups {
                 if ids.len() > 1 {
-                    // Keep the first (oldest), remove the rest.
-                    for &id in &ids[1..] {
-                        state.move_object(id, Zone::Graveyard, registry);
-                        took_action = true;
-                    }
+                    // Player must choose which to keep.
+                    let targets: Vec<crate::actions::Target> = ids.iter()
+                        .map(|&id| crate::actions::Target::Object(id))
+                        .collect();
+                    crate::cards::helpers::present_target_choice(
+                        state,
+                        ids[0], // source (arbitrary, just for bookkeeping)
+                        player,
+                        targets,
+                        crate::state::PendingEffect::LegendRuleKeep {
+                            player,
+                            legend_name: name.clone(),
+                        },
+                        &format!("Legend rule: choose which {} to keep", name),
+                        false,
+                    );
+                    // Don't set took_action — we need to break out of the SBA
+                    // loop and let the engine wait for the player's choice.
+                    // The next SBA pass (after the choice is resolved) will
+                    // find no more duplicates.
+                    any_action = true;
+                    return any_action;
                 }
             }
         }
