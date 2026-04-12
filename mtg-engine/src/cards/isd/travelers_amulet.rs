@@ -52,34 +52,48 @@ impl CardBehavior for TravelersAmulet {
         // The artifact was already sacrificed by the engine.
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
-        // Search library for a basic land card.
-        let player = state.get_player(controller);
-        let basic_land_id = player.library_order.iter().find(|&&lib_id| {
-            state.get_object(lib_id)
-                .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| {
-                    d.card_types.contains(&CardType::Land)
-                        && d.supertypes.contains(&Supertype::Basic)
-                })
-                .unwrap_or(false)
-        }).copied();
+        // Search library for all basic land cards.
+        let basic_lands: Vec<crate::ids::ObjectId> = state.get_player(controller).library_order.iter()
+            .filter(|&&lib_id| {
+                state.get_object(lib_id)
+                    .and_then(|o| registry.card_data(o.card_id))
+                    .map(|d| {
+                        d.card_types.contains(&CardType::Land)
+                            && d.supertypes.contains(&Supertype::Basic)
+                    })
+                    .unwrap_or(false)
+            })
+            .copied()
+            .collect();
 
-        if let Some(land_id) = basic_land_id {
-            // Remove from library.
-            let player = state.get_player_mut(controller);
-            player.library_order.retain(|&id| id != land_id);
-            // Put into hand.
-            state.move_object(land_id, Zone::Hand, registry);
-
-            let name = registry.card_data(
-                state.get_object(land_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
-            ).map(|d| d.name).unwrap_or_else(|| "a basic land".into());
-            state.log(crate::state::LogLevel::Event,
-                format!("Traveler's Amulet: p{} searched for {}", controller.0, name));
-        } else {
+        if basic_lands.is_empty() {
             state.log(crate::state::LogLevel::Event,
                 format!("Traveler's Amulet: p{} found no basic land", controller.0));
+            // Still shuffle (you searched).
+            use rand::seq::SliceRandom;
+            state.get_player_mut(controller).library_order.shuffle(&mut rand::thread_rng());
+        } else if basic_lands.len() == 1 {
+            let land_id = basic_lands[0];
+            state.get_player_mut(controller).library_order.retain(|&id| id != land_id);
+            state.move_object(land_id, Zone::Hand, registry);
+            let name = state.obj_name(land_id);
+            state.log(crate::state::LogLevel::Event,
+                format!("Traveler's Amulet: p{} searched for {}", controller.0, name));
+            use rand::seq::SliceRandom;
+            state.get_player_mut(controller).library_order.shuffle(&mut rand::thread_rng());
+        } else {
+            // Multiple basic lands — player chooses.
+            state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                player: controller,
+                source: object_id,
+                choice: crate::state::ResolutionChoiceKind::ChooseFromLibrary {
+                    description: "Traveler's Amulet: choose a basic land card".into(),
+                    options: basic_lands,
+                    searcher: controller,
+                    source_id: object_id,
+                },
+            });
+            // ChooseFromLibrary handler moves to hand and shuffles.
         }
-        // Shuffle (no-op in our engine, library is treated as ordered for gameplay).
     }
 }
