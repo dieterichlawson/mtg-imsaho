@@ -1616,7 +1616,9 @@ impl LlmPlayer {
                     }
                     ResolvedChoice::ChosenTarget(None) => "Decline".into(),
                     ResolvedChoice::ChosenCard(id) => Self::obj_name(view, *id),
-                    ResolvedChoice::ChosenIndex(i) => format!("Option {}", i),
+                    ResolvedChoice::ChosenIndex(i, ref label) => {
+                        label.clone().unwrap_or_else(|| format!("Option {}", i))
+                    }
                     ResolvedChoice::ChosenSubset(ids) => {
                         let names: Vec<String> = ids.iter()
                             .map(|id| Self::obj_name(view, *id))
@@ -2946,12 +2948,12 @@ mod tests {
         view.battlefield.push(perm(1, "Grizzly Bears", 2, 2, PlayerId(0)));
         view.battlefield.push(perm(2, "Llanowar Elves", 1, 1, PlayerId(0)));
         let labels = LlmPlayer::format_combat_creature_list(&view, &[ObjectId(1), ObjectId(2)]);
-        assert_eq!(labels[0], "Grizzly Bears 2/2");
-        assert_eq!(labels[1], "Llanowar Elves 1/1");
+        assert_eq!(labels[0], "Grizzly Bears (#1) 2/2");
+        assert_eq!(labels[1], "Llanowar Elves (#2) 1/1");
     }
 
     #[test]
-    fn disambiguate_identical_names_get_numeric_suffixes() {
+    fn disambiguate_identical_names_get_ids() {
         let mut view = empty_view();
         view.battlefield.push(perm(10, "Rakish Heir", 4, 2, PlayerId(0)));
         view.battlefield.push(perm(11, "Rakish Heir", 4, 2, PlayerId(0)));
@@ -2960,16 +2962,14 @@ mod tests {
             &view,
             &[ObjectId(10), ObjectId(11), ObjectId(12)],
         );
-        assert_eq!(labels[0], "Rakish Heir 4/2 #1");
-        assert_eq!(labels[1], "Rakish Heir 4/2 #2");
-        assert_eq!(labels[2], "Rakish Heir 4/2 #3");
+        // Each gets a unique object ID — no extra disambiguation needed
+        assert_eq!(labels[0], "Rakish Heir (#10) 4/2");
+        assert_eq!(labels[1], "Rakish Heir (#11) 4/2");
+        assert_eq!(labels[2], "Rakish Heir (#12) 4/2");
     }
 
     #[test]
-    fn disambiguate_attached_aura_shown_inline_for_collisions() {
-        // The audit case: two Rakish Heirs, one wearing Bonds of Faith.
-        // The action label must show the aura inline so the model can match
-        // the index to the right physical creature.
+    fn disambiguate_attached_aura_shown_inline() {
         let mut view = empty_view();
         view.battlefield.push(perm(20, "Rakish Heir", 4, 2, PlayerId(0)));
         view.battlefield.push(perm(21, "Rakish Heir", 4, 2, PlayerId(0)));
@@ -2979,12 +2979,12 @@ mod tests {
             &view,
             &[ObjectId(20), ObjectId(21)],
         );
-        assert_eq!(labels[0], "Rakish Heir 4/2 #1");
-        assert_eq!(labels[1], "Rakish Heir 4/2 #2 [+Bonds of Faith]");
+        assert_eq!(labels[0], "Rakish Heir (#20) 4/2");
+        assert_eq!(labels[1], "Rakish Heir (#21) 4/2 [+Bonds of Faith]");
     }
 
     #[test]
-    fn disambiguate_partial_collision_only_marks_collisions() {
+    fn disambiguate_partial_collision_all_get_ids() {
         let mut view = empty_view();
         view.battlefield.push(perm(30, "Grizzly Bears", 2, 2, PlayerId(0)));
         view.battlefield.push(perm(31, "Grizzly Bears", 2, 2, PlayerId(0)));
@@ -2993,15 +2993,13 @@ mod tests {
             &view,
             &[ObjectId(30), ObjectId(31), ObjectId(32)],
         );
-        assert_eq!(labels[0], "Grizzly Bears 2/2 #1");
-        assert_eq!(labels[1], "Grizzly Bears 2/2 #2");
-        assert_eq!(labels[2], "Llanowar Elves 1/1"); // unique → no suffix
+        assert_eq!(labels[0], "Grizzly Bears (#30) 2/2");
+        assert_eq!(labels[1], "Grizzly Bears (#31) 2/2");
+        assert_eq!(labels[2], "Llanowar Elves (#32) 1/1");
     }
 
     #[test]
-    fn disambiguate_different_pt_does_not_collide() {
-        // Two creatures with the same name but different effective P/T already
-        // render differently and don't need disambiguation.
+    fn disambiguate_different_pt_both_get_ids() {
         let mut view = empty_view();
         view.battlefield.push(perm(40, "Howlpack of Estwald", 4, 6, PlayerId(0)));
         view.battlefield.push(perm(41, "Howlpack of Estwald", 5, 7, PlayerId(0)));
@@ -3009,8 +3007,8 @@ mod tests {
             &view,
             &[ObjectId(40), ObjectId(41)],
         );
-        assert_eq!(labels[0], "Howlpack of Estwald 4/6");
-        assert_eq!(labels[1], "Howlpack of Estwald 5/7");
+        assert_eq!(labels[0], "Howlpack of Estwald (#40) 4/6");
+        assert_eq!(labels[1], "Howlpack of Estwald (#41) 5/7");
     }
 
     // ─────────────────────────────────────────────────────────────────

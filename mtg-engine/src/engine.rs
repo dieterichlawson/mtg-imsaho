@@ -400,7 +400,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     }
                     ResolutionChoiceKind::ChooseCardType { options, .. } => {
                         options.iter().enumerate()
-                            .map(|(i, _)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i) })
+                            .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, Some(name.clone())) })
                             .collect()
                     }
                     ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, .. } => {
@@ -418,11 +418,15 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             })
                             .collect()
                     }
-                    ResolutionChoiceKind::ChoosePile { .. } => {
-                        // Two options: choose pile 1 or pile 2.
+                    ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. } => {
+                        let fmt_pile = |ids: &[ObjectId]| -> String {
+                            if ids.is_empty() { return "empty".to_string(); }
+                            ids.iter().filter_map(|id| state.objects.get(id).map(|o| o.name.clone()))
+                                .collect::<Vec<_>>().join(", ")
+                        };
                         vec![
-                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0) },
-                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(1) },
+                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, Some(format!("Pile 1: [{}]", fmt_pile(pile_1)))) },
+                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(1, Some(format!("Pile 2: [{}]", fmt_pile(pile_2)))) },
                         ]
                     }
                 };
@@ -2733,7 +2737,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         }
                     }
                     (ResolutionChoiceKind::ChooseCardType { options, spell_id, controller, .. },
-                     ResolvedChoice::ChosenIndex(index)) => {
+                     ResolvedChoice::ChosenIndex(index, _)) => {
                         let chosen_type = options.get(*index).cloned().unwrap_or_default();
                         let card_type = match chosen_type.as_str() {
                             "Creature" => CardType::Creature,
@@ -2804,7 +2808,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         });
                     }
                     (ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. },
-                     ResolvedChoice::ChosenIndex(index)) => {
+                     ResolvedChoice::ChosenIndex(index, _)) => {
                         // Target player chose which pile to sacrifice.
                         let chosen_pile = if *index == 0 { pile_1 } else { pile_2 };
                         let pile_label = if *index == 0 { "Pile 1" } else { "Pile 2" };
