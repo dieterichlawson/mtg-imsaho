@@ -305,6 +305,52 @@ fn bug_ay_olivia_vampire_steal_can_target_registry_vampire() {
     );
 }
 
+/// Bug AT — Vampiric Fury aspect (audits/AUDIT_BUGS.md): Vampiric
+/// Fury's "Vampire creatures you control get +2/+0" filter uses the
+/// same registry-only pattern as Slayer of the Wicked. A Vampire
+/// TOKEN (Bloodline Keeper's 2/2 Vampire) should receive the buff
+/// but doesn't because `registry.card_data(CardId(0))` returns None.
+///
+/// Oracle (Vampiric Fury): "Vampire creatures you control get +2/+0
+/// and gain first strike until end of turn."
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug AT is fixed.
+#[test]
+fn bug_at_vampiric_fury_buffs_vampire_token() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let token = state.create_token_with_subtypes(
+        "Vampire", P0, 2, 2,
+        vec![Color::Black],
+        vec![CardType::Creature],
+        vec![],
+        vec!["Vampire".into()],
+        &registry,
+    );
+    if let Some(obj) = state.get_object_mut(token) {
+        obj.summoning_sick = false;
+    }
+
+    let fury_card_id = registry.get_id_by_name("Vampiric Fury").unwrap();
+    let fury = state.create_object(fury_card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(fury).unwrap().name = "Vampiric Fury".into();
+    let behavior = registry.get(fury_card_id).unwrap();
+    behavior.on_resolve(&mut state, fury, &[], &registry);
+
+    let eff_p = state.effective_power(token, &registry).unwrap_or(0);
+    assert_eq!(
+        eff_p, 4,
+        "Vampiric Fury should give a Vampire TOKEN +2/+0 (2 base + 2 \
+         buff = 4). Bug AT: the registry-only subtype filter calls \
+         registry.card_data(CardId(0)) for tokens → returns None → \
+         token is excluded from the Vampire filter. Got effective_power \
+         = {}",
+        eff_p,
+    );
+}
+
 /// Bug AU (audits/AUDIT_BUGS.md): Moonmist's Human filter takes the
 /// "instance subtypes non-empty" branch when a creature's `obj.subtypes`
 /// has been mutated (e.g. Olivia bit it) and then ignores the registry

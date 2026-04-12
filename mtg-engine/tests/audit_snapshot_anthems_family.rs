@@ -81,6 +81,46 @@ fn bug_ap_rally_the_peasants_buffs_creatures_entering_later() {
     );
 }
 
+/// Bug AP — Vampiric Fury subtype-filtered aspect (audits/AUDIT_BUGS.md):
+/// Vampiric Fury combines the snapshot-anthem defect (Bug AP) with a
+/// subtype filter. A Bloodline Keeper Vampire TOKEN entering after
+/// Vampiric Fury resolves should get +2/+0 but doesn't — the token
+/// was absent from the snapshot AND the registry-only Vampire filter
+/// (Bug AT) compounds the issue for tokens.
+///
+/// Oracle (Vampiric Fury): "Vampire creatures you control get +2/+0
+/// and gain first strike until end of turn."
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing once both Bug AP (snapshot) and
+/// Bug AT (registry-only filter) are fixed.
+#[test]
+fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Resolve Vampiric Fury while P0 has NO Vampires in play.
+    let fury_card_id = registry.get_id_by_name("Vampiric Fury").unwrap();
+    let fury = state.create_object(fury_card_id, P0, Zone::Stack, None, None);
+    state.get_object_mut(fury).unwrap().name = "Vampiric Fury".into();
+    let behavior = registry.get(fury_card_id).unwrap();
+    behavior.on_resolve(&mut state, fury, &[], &registry);
+
+    // A Vampire enters AFTER the anthem resolved. Per oracle it
+    // should still get +2/+0 this turn.
+    let vamp = named_creature(&mut state, &registry, "Stromkirk Noble", P0);
+
+    let eff_p = state.effective_power(vamp, &registry).unwrap_or(0);
+    assert_eq!(
+        eff_p, 3,
+        "A Vampire entering after Vampiric Fury resolves should still \
+         get +2/+0 (1 base + 2 anthem = 3). Bug AP: the snapshot \
+         walks the battlefield at resolution time and pushes per-target \
+         ModifyPT, so newcomers are missed. effective_power = {}",
+        eff_p,
+    );
+}
+
 /// Bug BK (audits/AUDIT_BUGS.md): Instigator Gang's "Attacking
 /// creatures you control get +1/+0" is modeled as an
 /// `AnyCreatureAttacks` triggered ability that pushes a per-attacker

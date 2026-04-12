@@ -92,6 +92,87 @@ fn bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature() {
     );
 }
 
+/// Bug 17-003 — creature_targets path (audits/AUDIT_BUGS.md):
+/// Crossway Vampire's ETB "target creature can't block" uses the
+/// `creature_targets` helper (not `any_targets`), which also lacks
+/// a hexproof filter. This is a DIFFERENT helper from the one
+/// Pitchburn Devils tests.
+///
+/// Oracle (Crossway Vampire): "When this creature enters, target
+/// creature can't block this turn."
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 17-003 is fixed.
+#[test]
+fn bug_17_003_crossway_vampire_creature_targets_excludes_hexproof() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let lumberknot = named_creature(&mut state, &registry, "Lumberknot", P1);
+    // A second non-hexproof target so present_target_choice doesn't
+    // auto-resolve the single mandatory target.
+    let _bears = ready_creature(&mut state, P1, 2, 2);
+
+    let cv = named_creature(&mut state, &registry, "Crossway Vampire", P0);
+    let cv_card_id = state.get_object(cv).unwrap().card_id;
+    let behavior = registry.get(cv_card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, cv, &registry);
+
+    let lumberknot_in_options = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.iter().any(|t| matches!(t, Target::Object(id) if *id == lumberknot)),
+        _ => false,
+    };
+    assert!(
+        !lumberknot_in_options,
+        "Crossway Vampire's ETB 'target creature can't block' should \
+         NOT offer an opponent's hexproof creature. Bug 17-003: \
+         creature_targets() doesn't filter hexproof."
+    );
+}
+
+/// Bug 17-003 — creature_targets_except path (audits/AUDIT_BUGS.md):
+/// Fiend Hunter's ETB "you may exile another target creature" uses
+/// the `creature_targets_except` helper, which also lacks a hexproof
+/// filter. This is the third distinct helper in this bug family.
+///
+/// Oracle (Fiend Hunter): "When this creature enters, you may exile
+/// another target creature."
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug 17-003 is fixed.
+#[test]
+fn bug_17_003_fiend_hunter_creature_targets_except_excludes_hexproof() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    let lumberknot = named_creature(&mut state, &registry, "Lumberknot", P1);
+    let _bears = ready_creature(&mut state, P1, 2, 2);
+
+    let fh = named_creature(&mut state, &registry, "Fiend Hunter", P0);
+    let fh_card_id = state.get_object(fh).unwrap().card_id;
+    let behavior = registry.get(fh_card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, fh, &registry);
+
+    let lumberknot_in_options = match &state.awaiting_action {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseTarget { options, .. }, ..
+        }) => options.iter().any(|t| matches!(t, Target::Object(id) if *id == lumberknot)),
+        _ => false,
+    };
+    assert!(
+        !lumberknot_in_options,
+        "Fiend Hunter's ETB 'exile another target creature' should NOT \
+         offer an opponent's hexproof creature. Bug 17-003: \
+         creature_targets_except() doesn't filter hexproof."
+    );
+}
+
 /// Bug E1-001 (audits/AUDIT_BUGS.md): Grimgrin, Corpse-Born's attack
 /// trigger inline-enumerates the defender's creatures and only filters
 /// protection — not hexproof.
@@ -166,6 +247,14 @@ fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
 /// `state.players.iter().map(|p| Target::Player(p.id))`. No filter on
 /// `state.player_has_hexproof`. The Bitterheart Witch handler shows the
 /// correct shape (`bitterheart_witch.rs:14-17`).
+///
+/// NOTE: the same missing `player_has_hexproof` filter exists in
+/// Bloodgift Demon (`bloodgift_demon.rs:48-51`),
+/// Selhoff Occultist (`selhoff_occultist.rs:57-59`), and
+/// Rage Thrower (`rage_thrower.rs:44-47`). All four cards use the
+/// identical `state.players.iter()` pattern with no hexproof check.
+/// One test covers the shared defect; the other three cards need
+/// the same one-line fix.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 0F-003 is fixed.

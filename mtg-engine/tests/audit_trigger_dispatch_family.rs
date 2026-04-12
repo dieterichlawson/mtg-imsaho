@@ -69,6 +69,14 @@ use mtg_engine::types::*;
 /// `dead_toughness` mirrors what `triggers.rs` does at trigger
 /// resolution time.
 ///
+/// NOTE: the same `o.zone == Zone::Battlefield` early-return gate
+/// exists in Murder of Crows (`murder_of_crows.rs:38-43`),
+/// Rage Thrower (`rage_thrower.rs:38-43`), and
+/// Selhoff Occultist (`selhoff_occultist.rs:47-54`). All four use
+/// the identical zone-gate pattern. One test covers the shared
+/// defect; the other three need the same one-line fix (drop the
+/// zone guard, mirror Falkenrath Noble's handler which is correct).
+///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug BT is fixed.
 #[test]
