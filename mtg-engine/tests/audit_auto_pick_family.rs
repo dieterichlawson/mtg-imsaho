@@ -521,3 +521,76 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
         kessig_entries,
     );
 }
+
+/// Bug BF (audits/AUDIT_BUGS.md): Traveler's Amulet's
+/// `on_activate_ability` searches the library for a basic land but
+/// does NOT shuffle the library afterwards. Per oracle: "{1},
+/// Sacrifice this artifact: Search your library for a basic land card,
+/// reveal it, put it into your hand, **then shuffle**."
+///
+/// Other tutors (Caravan Vigil, Ghost Quarter, Bitterheart Witch,
+/// Garruk) DO call `library_order.shuffle(&mut rng)`. Traveler's
+/// Amulet was missed — the comment at line 83 says "no-op".
+///
+/// We fill the library with 20 non-land cards plus one Forest,
+/// activate the Amulet, and check that the remaining 20 cards are
+/// not in the original insertion order. With 20 cards the probability
+/// of a random shuffle reproducing the same order is 1/20! ≈ 4e-19.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug BF is fixed.
+#[test]
+fn bug_bf_travelers_amulet_shuffles_library_after_search() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Build a library of 20 Grizzly Bears + 1 Forest (at the end).
+    let bears_card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
+    for _ in 0..20 {
+        let id = state.create_object(bears_card_id, P0, Zone::Library, Some(2), Some(2));
+        state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
+        state.get_player_mut(P0).library_order.push(id);
+    }
+    let forest_card_id = registry.get_id_by_name("Forest").unwrap();
+    let forest = state.create_object(forest_card_id, P0, Zone::Library, None, None);
+    state.get_object_mut(forest).unwrap().name = "Forest".into();
+    state.get_player_mut(P0).library_order.push(forest);
+
+    // Snapshot the order AFTER inserting (the Forest will be removed
+    // by the search, so we only snapshot the 20 Bears).
+    let order_before: Vec<_> = state
+        .get_player(P0)
+        .library_order
+        .iter()
+        .filter(|&&id| id != forest)
+        .copied()
+        .collect();
+
+    // Traveler's Amulet on the battlefield. Fire activation directly.
+    let amulet = named_creature(&mut state, &registry, "Traveler's Amulet", P0);
+    let amulet_card_id = state.get_object(amulet).unwrap().card_id;
+    let behavior = registry.get(amulet_card_id).unwrap();
+    behavior.on_activate_ability(&mut state, amulet, 0, &[], &registry);
+
+    // Forest should have moved to hand.
+    assert_eq!(
+        state.get_object(forest).map(|o| o.zone),
+        Some(Zone::Hand),
+        "Test setup: Forest should have been tutored into hand"
+    );
+
+    // The remaining library should be shuffled (different order from
+    // the original insertion order).
+    let order_after: Vec<_> = state
+        .get_player(P0)
+        .library_order
+        .clone();
+
+    assert_ne!(
+        order_before, order_after,
+        "Traveler's Amulet should shuffle the library after searching. \
+         Bug BF: the comment at line 83 says 'no-op' and no shuffle \
+         call is made. With 20 cards, the probability of a random \
+         shuffle matching the original order is ~4e-19."
+    );
+}

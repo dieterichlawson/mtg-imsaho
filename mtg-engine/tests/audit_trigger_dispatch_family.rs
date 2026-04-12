@@ -514,6 +514,130 @@ fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
     );
 }
 
+/// Bug M (audits/AUDIT_BUGS.md): Snapcaster Mage's ETB trigger
+/// ("target instant or sorcery in your graveyard gains flashback")
+/// should choose its target when the trigger is PUT ON THE STACK
+/// (CR 603.3d), not when the trigger resolves. Today the target
+/// choice is deferred to `on_enter_battlefield` (resolution time),
+/// so opponents never get a priority window between "Snapcaster
+/// trigger goes on stack with target X" and "X gains flashback."
+///
+/// Oracle (Snapcaster Mage): "When this creature enters, target
+/// instant or sorcery card in your graveyard gains flashback until
+/// end of turn."
+///
+/// Failure mode: `triggers.rs:975-981` resolves the ETB trigger by
+/// calling `behavior.on_enter_battlefield`, which is where the
+/// target choice lives. The trigger was queued at collection time
+/// with no target — opponents couldn't respond to "Snapcaster
+/// targets Ancient Grudge" because the target wasn't locked in yet.
+///
+/// We put Snapcaster on the battlefield, push an EnteredBattlefield
+/// event, call `collect_triggers` (NOT `process_triggers`), and
+/// assert that `state.awaiting_action` is already set for the
+/// target choice. Today it's None because the choice is deferred
+/// to resolution.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug M is fixed.
+#[test]
+fn bug_m_snapcaster_target_chosen_at_stack_time() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // A valid flashback target in P0's graveyard.
+    let grudge_card_id = registry.get_id_by_name("Ancient Grudge").unwrap();
+    let _grudge = state.create_object(grudge_card_id, P0, Zone::Graveyard, None, None);
+
+    // Snapcaster Mage enters the battlefield — push the ETB event.
+    let snap_card_id = registry.get_id_by_name("Snapcaster Mage").unwrap();
+    let snap = state.create_object(snap_card_id, P0, Zone::Battlefield, Some(2), Some(1));
+    state.get_object_mut(snap).unwrap().name = "Snapcaster Mage".into();
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: snap,
+        controller: P0,
+    });
+
+    // Collect triggers — should queue the Snapcaster ETB trigger.
+    let had_triggers = mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    assert!(had_triggers, "Test setup: Snapcaster ETB should produce a trigger");
+
+    // CR 603.3d: the target should be chosen NOW (at stack-queue
+    // time). awaiting_action should be set for a target choice.
+    assert!(
+        state.awaiting_action.is_some(),
+        "Snapcaster Mage's ETB trigger should prompt for a target \
+         when the trigger is put on the stack (CR 603.3d), not when \
+         it resolves. Bug M: the target choice is deferred to \
+         on_enter_battlefield at resolution time, so opponents can't \
+         respond between 'trigger goes on stack' and 'target locked in'. \
+         awaiting_action = {:?}",
+        state.awaiting_action,
+    );
+}
+
+/// Bug N (audits/AUDIT_BUGS.md): When multiple triggered abilities
+/// controlled by the same player trigger simultaneously, CR 603.3b
+/// says that player chooses the order they go on the stack. The engine
+/// pushes them in collection order without ever asking.
+///
+/// Oracle (CR 603.3b): "If multiple triggered abilities triggered at
+/// the same time, the active player puts all of theirs on the stack
+/// in any order, then each other player in turn order does the same."
+///
+/// Failure mode: `triggers.rs:946-951` does:
+/// ```
+/// for t in ap_triggers { state.stack.push(...); }
+/// for t in nap_triggers { state.stack.push(...); }
+/// ```
+/// No ordering prompt is presented. With 2+ Falkenrath Nobles and a
+/// creature death, both drain triggers fire simultaneously and the
+/// player should choose the stack order.
+///
+/// We set up two Falkenrath Nobles, kill a P1 creature, collect
+/// triggers, and assert the engine pauses for an ordering choice.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug N is fixed.
+#[test]
+fn bug_n_apnap_ordering_prompt_for_simultaneous_triggers() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two Falkenrath Nobles for P0 — each triggers on creature death.
+    let _noble1 = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let _noble2 = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+
+    // Kill a P1 creature to fire both AnyCreatureDies triggers.
+    let victim = ready_creature(&mut state, P1, 1, 1);
+    state.get_object_mut(victim).unwrap().damage_marked = 2;
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+
+    // Collect triggers — should produce 2+ simultaneous AP triggers.
+    let had_triggers = mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    assert!(had_triggers, "Test setup: should have had triggers after creature death");
+
+    // Count AP (P0) triggers on the stack.
+    let ap_count = state.stack.iter().filter(|e| {
+        matches!(e, mtg_engine::state::StackEntry::Trigger(t) if t.controller() == P0)
+    }).count();
+    assert!(
+        ap_count >= 2,
+        "Test setup: expected 2+ simultaneous P0 triggers, got {}",
+        ap_count,
+    );
+
+    // CR 603.3b: the player should be prompted to choose the order.
+    assert!(
+        state.awaiting_action.is_some(),
+        "When a player has 2+ simultaneous triggered abilities, the \
+         engine should prompt them to choose the stack order (CR 603.3b). \
+         Bug N: triggers.rs pushes them in collection order without any \
+         prompt. awaiting_action = {:?}",
+        state.awaiting_action,
+    );
+}
+
 /// Bug Q (audits/AUDIT_BUGS.md): Dearly Departed's "each Human
 /// creature you control enters with an additional +1/+1 counter" is
 /// implemented as a `TriggerKind::AnyCreatureEnters` triggered

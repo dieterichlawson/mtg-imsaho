@@ -399,7 +399,7 @@ fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, 
 }
 
 /// Get all subtypes of a creature (from both card data and object-level subtypes).
-fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
+pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
     let mut subtypes = Vec::new();
     if let Some(obj) = state.get_object(creature_id) {
         subtypes.extend(obj.subtypes.iter().cloned());

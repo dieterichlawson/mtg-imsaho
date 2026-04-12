@@ -29,7 +29,7 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug 31-003 (Subtype filter family) — `mtg-engine/tests/audit_subtype_family.rs::bug_31_003_urgent_exorcism_targets_spirit_token` — status: failing-as-expected
 - Bug 31-002 (Subtype filter family) — `mtg-engine/tests/audit_subtype_family.rs::bug_31_002_avacynian_priest_can_tap_transformed_werewolf` — status: failing-as-expected
 - Bug 31-004 (Subtype filter family) — `mtg-engine/tests/audit_subtype_family.rs::bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf` — status: failing-as-expected
-- Bug AO (Subtype filter family) — none — status: blocked — `combat::get_subtypes` is a private helper whose only in-set caller is Moonmist's combat-damage prevention, and Moonmist only checks Werewolf/Wolf (which all ISD werewolf back faces still carry), so no observable behavior path exposes the latent union-of-faces bug today
+- Bug AO (Subtype filter family) — `mtg-engine/tests/audit_subtype_family.rs::bug_ao_get_subtypes_excludes_dropped_front_face_subtype` — status: failing-as-expected (required making `combat::get_subtypes` pub)
 - Bug 99-002 (Subtype filter family) — `mtg-engine/tests/audit_subtype_family.rs::bug_99_002_delver_transform_updates_obj_subtypes` — status: failing-as-expected
 - Bug T (Damage helper bypass) — `mtg-engine/tests/audit_damage_helper_family.rs::bug_t_skirsdag_cultist_pushes_damaged_by` — status: failing-as-expected
 - Bug T (Damage helper bypass) — `mtg-engine/tests/audit_damage_helper_family.rs::bug_t_rolling_temblor_pushes_damaged_by` — status: failing-as-expected
@@ -64,8 +64,8 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug H9 (Draft) — `mtg-draft/tests/audit_draft_bugs.rs::bug_h9_deckbuilder_error_names_the_actual_problem` — status: failing-as-expected
 - Bug Q (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_q_dearly_departed_is_not_a_trigger` — status: failing-as-expected
 - Bug X (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_x_aura_granted_ability_does_not_collide_with_native_index` — status: failing-as-expected
-- Bug M (Trigger dispatch) — none — status: blocked — Snapcaster picks target on resolve, not on cast. Testing the fix requires observing the stack between "trigger queued" and "target locked in", which requires exposing the trigger collection pipeline in a testable way. The fix itself restructures target-choice timing for targeted triggered abilities — a meaningful engine change. Mark as blocked on that infrastructure
-- Bug N (Trigger dispatch) — none — status: blocked — APNAP simultaneous-trigger ordering prompt doesn't exist in the engine at all (no `ChooseOrder`-style `ResolutionChoiceKind`). Testing the fix means checking that a new prompt type appears when multiple triggers queue, which is exactly the missing infrastructure
+- Bug M (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_m_snapcaster_target_chosen_at_stack_time` — status: failing-as-expected
+- Bug N (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_n_apnap_ordering_prompt_for_simultaneous_triggers` — status: failing-as-expected
 - Bug G (Cosmetic) — none — status: skipped-judgment-call — cosmetic duplicate "Step: Upkeep AUTO-PASS" log entry. Priority loop pass counting is internal and the duplicate is noise, not a gameplay bug. Not worth a test
 - Bug AO (Subtype filter family) — none — status: blocked — no in-set card has a back face that drops a subtype Moonmist's combat-damage prevention cares about, so the latent union-of-faces bug has no observable path today
 - Bug BF (Auto-pick) — none — status: blocked — Traveler's Amulet's missing library shuffle requires deterministic/seeded RNG to assert. The engine uses `rand::thread_rng()` ubiquitously; making this testable is a larger fixture change
@@ -95,7 +95,7 @@ See `prompts/AUDIT_TEST_AGENT_PROMPT.md` for the workflow.
 - Bug E (Auto-pick) — `mtg-engine/tests/audit_auto_pick_family.rs::bug_e_nevermore_does_not_read_opponent_hand` — status: failing-as-expected
 - Bug F (Auto-pick) — `mtg-engine/tests/audit_auto_pick_family.rs::bug_f_stitched_drake_enumerates_exile_choices` — status: failing-as-expected
 - Bug U (Auto-pick) — `mtg-engine/tests/audit_auto_pick_family.rs::bug_u_kessig_wolf_run_enumerates_x_choices` — status: failing-as-expected
-- Bug BF (Auto-pick) — none — status: blocked — Traveler's Amulet "doesn't shuffle" is a deterministic-shuffle observation; testing it requires asserting that the post-search library order is randomized, which is non-deterministic and brittle. Possible to test by seeding RNG, but that's a separate fixture concern
+- Bug BF (Auto-pick) — `mtg-engine/tests/audit_auto_pick_family.rs::bug_bf_travelers_amulet_shuffles_library_after_search` — status: failing-as-expected
 - Bug BT (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death` — status: failing-as-expected
 - Bug L (Trigger dispatch) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_l_charmbreaker_devils_does_not_buff_on_creature_spell` — status: failing-as-expected
 - Bug CA (Misc) — `mtg-engine/tests/audit_trigger_dispatch_family.rs::bug_ca_moldgraf_monstrosity_uses_controller_not_owner` — status: failing-as-expected

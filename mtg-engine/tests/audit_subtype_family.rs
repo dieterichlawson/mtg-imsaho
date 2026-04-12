@@ -24,6 +24,9 @@
 //!   registry, wrongly grants 2 counters to transformed ex-Humans
 //! - Bug 99-002: Delver of Secrets hand-rolls its transform without
 //!   `apply_transform`, leaving `obj.subtypes` stale
+//! - Bug AO: `combat::get_subtypes` unions instance + front-face
+//!   registry subtypes, so a transformed DFC falsely reports dropped
+//!   front-face subtypes
 
 mod common;
 use common::*;
@@ -682,5 +685,56 @@ fn bug_99_002_delver_transform_updates_obj_subtypes() {
          {:?}. Bug 99-002: Delver's hand-rolled transform leaves the stale \
          instance subtypes alone.",
         obj.subtypes,
+    );
+}
+
+/// Bug AO (audits/AUDIT_BUGS.md): `combat::get_subtypes` is not
+/// face-aware for transformed DFCs. It unions the instance
+/// `obj.subtypes` (set by `apply_transform` to the back-face
+/// subtypes) with `registry.card_data(obj.card_id).subtypes` (always
+/// the front face). For a DFC that DROPS a subtype on its back face,
+/// the dropped subtype falsely persists in the union.
+///
+/// Oracle (Cloistered Youth front face): "Human" subtype.
+/// Oracle (Unholy Fiend back face): "Horror" subtype (Human dropped).
+///
+/// Failure mode: `combat.rs:402-415` calls `registry.card_data()`
+/// which always returns front-face data. For a transformed Cloistered
+/// Youth, `obj.subtypes = ["Horror"]` (back face) and
+/// `registry.card_data().subtypes = ["Human"]` (front face). The
+/// union is `["Horror", "Human"]` — but the live face is Horror only.
+///
+/// We transform Cloistered Youth via `apply_transform`, then call
+/// `combat::get_subtypes` and assert "Human" is NOT in the result.
+///
+/// This test asserts the EXPECTED CORRECT behavior, so it currently
+/// fails. It will start passing as soon as Bug AO is fixed.
+#[test]
+fn bug_ao_get_subtypes_excludes_dropped_front_face_subtype() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Cloistered Youth → transform → Unholy Fiend (Horror, no Human).
+    let youth = named_creature(&mut state, &registry, "Cloistered Youth", P0);
+    mtg_engine::cards::helpers::apply_transform(&mut state, youth, &registry);
+    assert!(
+        state.get_object(youth).unwrap().is_transformed,
+        "Test setup: Cloistered Youth should be transformed to Unholy Fiend"
+    );
+    // Sanity: instance subtypes are ["Horror"] after transform.
+    assert!(
+        state.get_object(youth).unwrap().subtypes.iter().any(|s| s == "Horror"),
+        "Test setup: Unholy Fiend should have Horror in obj.subtypes"
+    );
+
+    let subtypes = mtg_engine::combat::get_subtypes(&state, youth, &registry);
+    assert!(
+        !subtypes.iter().any(|s| s == "Human"),
+        "combat::get_subtypes for a transformed Unholy Fiend should NOT \
+         include 'Human' (the front-face-only subtype). Bug AO: \
+         get_subtypes unions instance subtypes with the front-face \
+         registry data, so 'Human' persists even though the live back \
+         face is Horror only. subtypes = {:?}",
+        subtypes,
     );
 }
