@@ -156,6 +156,8 @@ pub enum TriggerKind {
     EndCombat,
     /// When this permanent leaves the battlefield.
     LeavesBattlefield,
+    /// Whenever a creature card is milled from an opponent's library.
+    CreatureCardMilled,
 }
 
 /// A triggered ability definition on a card.
@@ -318,6 +320,10 @@ pub trait CardBehavior: Send + Sync {
     /// would deal to a player. Returns `true` if the damage was fully replaced
     /// (caller should skip normal damage). Used by Undead Alchemist.
     fn replace_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) -> bool { false }
+
+    /// Called when a creature card is milled from an opponent's library to their graveyard.
+    /// Used by Undead Alchemist's second ability (exile the card, create a Zombie token).
+    fn on_creature_card_milled(&self, _state: &mut GameState, _self_id: ObjectId, _milled_object: ObjectId, _milled_player: PlayerId, _registry: &CardRegistry) {}
 
     /// Whether this card can be cast from the graveyard (not flashback — stays in graveyard after).
     /// Used by Skaab Ruinator.

@@ -162,6 +162,15 @@ pub enum PendingTrigger {
         controller: PlayerId,
         description: String,
     },
+    /// A watcher observing a creature card being milled from an opponent's library.
+    CreatureCardMilledWatch {
+        watcher_id: ObjectId,
+        watcher_card_id: CardId,
+        controller: PlayerId,
+        milled_object: ObjectId,
+        milled_player: PlayerId,
+        description: String,
+    },
 }
 
 impl PendingTrigger {
@@ -186,6 +195,7 @@ impl PendingTrigger {
             PendingTrigger::CombatDamageToCreature { controller, .. } => *controller,
             PendingTrigger::BecomesBlockedTrigger { controller, .. } => *controller,
             PendingTrigger::StateTriggered { controller, .. } => *controller,
+            PendingTrigger::CreatureCardMilledWatch { controller, .. } => *controller,
         }
     }
 
@@ -303,6 +313,13 @@ impl PendingTrigger {
                     format!("{}'s state-triggered ability", card_name(*card_id))
                 } else {
                     format!("{}'s state-triggered ability ({})", card_name(*card_id), description)
+                }
+            }
+            PendingTrigger::CreatureCardMilledWatch { watcher_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s mill-watcher trigger", card_name(*watcher_card_id))
+                } else {
+                    format!("{}'s mill-watcher trigger ({})", card_name(*watcher_card_id), description)
                 }
             }
         }
@@ -924,6 +941,39 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     }
                 }
             }
+            GameEvent::CreatureCardMilled { object, milled_player } => {
+                let milled_obj = *object;
+                let milled_player = *milled_player;
+                // Find watchers on the battlefield with CreatureCardMilled triggers.
+                let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield)
+                    .map(|o| (o.id, o.card_id, o.controller))
+                    .collect();
+                for (watcher_id, watcher_card_id, watcher_controller) in watchers {
+                    // Only watchers who are opponents of the milled player.
+                    if watcher_controller == milled_player { continue; }
+                    let has_trigger = registry.get(watcher_card_id)
+                        .map(|b| b.card_data().triggered_abilities.iter()
+                            .any(|t| t.kind == crate::cards::TriggerKind::CreatureCardMilled))
+                        .unwrap_or(false);
+                    if has_trigger {
+                        let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::CreatureCardMilled, false);
+                        let trigger = PendingTrigger::CreatureCardMilledWatch {
+                            watcher_id,
+                            watcher_card_id,
+                            controller: watcher_controller,
+                            milled_object: milled_obj,
+                            milled_player,
+                            description: desc,
+                        };
+                        if watcher_controller == active_player {
+                            ap_triggers.push(trigger);
+                        } else {
+                            nap_triggers.push(trigger);
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -1099,6 +1149,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_state_trigger(state, object_id, registry);
+                }
+            }
+        }
+        PendingTrigger::CreatureCardMilledWatch { watcher_id, watcher_card_id, milled_object, milled_player, .. } => {
+            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if let Some(behavior) = registry.get(watcher_card_id) {
+                    behavior.on_creature_card_milled(state, watcher_id, milled_object, milled_player, registry);
                 }
             }
         }

@@ -453,6 +453,9 @@ fn undead_alchemist_mills_instead_of_damage() {
     let replaced = behavior.replace_combat_damage_to_player(&mut state, alchemist, zombie, P1, 2, &reg);
     assert!(replaced, "Undead Alchemist should replace Zombie combat damage");
 
+    // Process triggers so the CreatureCardMilled events fire the exile+token ability.
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
+
     // Life should be unchanged (damage was replaced, never applied).
     assert_eq!(state.get_player(P1).life, initial_life, "Life should be unchanged — damage was replaced");
 

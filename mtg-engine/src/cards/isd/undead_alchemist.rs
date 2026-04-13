@@ -35,8 +35,40 @@ impl CardBehavior for UndeadAlchemist {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![],
+            triggered_abilities: vec![
+                crate::cards::TriggeredAbilityDef {
+                    kind: crate::cards::TriggerKind::CreatureCardMilled,
+                    description: "exile milled creature, create Zombie token".into(),
+                },
+            ],
         }
+    }
+
+    fn on_creature_card_milled(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        milled_object: ObjectId,
+        _milled_player: PlayerId,
+        registry: &CardRegistry,
+    ) {
+        let controller = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            _ => return,
+        };
+        // Exile the milled creature card and create a 2/2 Zombie token.
+        state.move_object(milled_object, Zone::Exile, registry);
+        state.create_token_with_subtypes(
+            "Zombie", controller, 2, 2,
+            vec![Color::Black],
+            vec![CardType::Creature],
+            vec![],
+            vec!["Zombie".into()],
+            registry,
+        );
+        let name = state.get_object(milled_object).map(|o| o.name.clone()).unwrap_or_default();
+        state.log(crate::state::LogLevel::Event,
+            format!("Undead Alchemist: exiled milled {}, created Zombie token", name));
     }
 
     fn replace_combat_damage_to_player(
@@ -65,44 +97,14 @@ impl CardBehavior for UndeadAlchemist {
             return false;
         }
 
-        // Mill that many cards instead of dealing damage.
-        let player_state = state.get_player(damaged_player);
-        let mill_count = std::cmp::min(amount as usize, player_state.library_order.len());
-        let milled_ids: Vec<ObjectId> = player_state.library_order[..mill_count].to_vec();
-
-        let player_state = state.get_player_mut(damaged_player);
-        for _ in 0..mill_count {
-            player_state.library_order.remove(0);
-        }
-        for &obj_id in &milled_ids {
-            state.move_object(obj_id, Zone::Graveyard, registry);
-        }
-
-        // Ability 2 (inline for combat-mill path): exile milled creatures, create Zombies.
-        for &obj_id in &milled_ids {
-            let is_creature = state.get_object(obj_id)
-                .map(|o| {
-                    registry.card_data(o.card_id)
-                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                        .unwrap_or(o.power.is_some())
-                })
-                .unwrap_or(false);
-            if is_creature {
-                state.move_object(obj_id, Zone::Exile, registry);
-                state.create_token_with_subtypes(
-                    "Zombie", controller, 2, 2,
-                    vec![Color::Black],
-                    vec![CardType::Creature],
-                    vec![],
-                    vec!["Zombie".into()],
-                    registry,
-                );
-            }
-        }
+        // Mill that many cards instead of dealing damage. mill_cards emits
+        // CreatureCardMilled events, which the trigger system picks up to
+        // fire our on_creature_card_milled (exile + create Zombie token).
+        crate::engine::mill_cards(state, damaged_player, amount as usize, registry);
 
         state.log(crate::state::LogLevel::Event,
-            format!("Undead Alchemist: Zombie dealt {} combat damage, milled {} cards instead",
-                amount, mill_count));
+            format!("Undead Alchemist: Zombie combat damage replaced with mill ({})",
+                amount));
         true // Damage fully replaced
     }
 }

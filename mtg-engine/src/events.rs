@@ -38,6 +38,8 @@ pub enum GameEvent {
     GameEnded { result: GameResult },
     PriorityPassed { player: PlayerId },
     Discarded { player: PlayerId, object: ObjectId },
+    /// A creature card was milled from a player's library to their graveyard.
+    CreatureCardMilled { object: ObjectId, milled_player: PlayerId },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

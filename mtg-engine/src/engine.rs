@@ -3881,14 +3881,28 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
 pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) {
     let mut milled = 0;
     for _ in 0..count {
-        let card_id = {
+        let obj_id = {
             let player_state = state.get_player_mut(player);
             if player_state.library_order.is_empty() {
                 break;
             }
             player_state.library_order.remove(0)
         };
-        state.move_object(card_id, Zone::Graveyard, registry);
+        // Check if it's a creature card before moving (for mill-watcher triggers).
+        let is_creature = state.get_object(obj_id)
+            .map(|o| {
+                registry.card_data(o.card_id)
+                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                    .unwrap_or(o.power.is_some())
+            })
+            .unwrap_or(false);
+        state.move_object(obj_id, Zone::Graveyard, registry);
+        if is_creature {
+            state.events.push(crate::events::GameEvent::CreatureCardMilled {
+                object: obj_id,
+                milled_player: player,
+            });
+        }
         milled += 1;
     }
     if milled > 0 {
