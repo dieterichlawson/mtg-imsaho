@@ -12,7 +12,6 @@ mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::ids::CardId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::types::*;
 

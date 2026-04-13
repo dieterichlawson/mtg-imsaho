@@ -6,9 +6,7 @@ use common::*;
 use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
-use mtg_engine::engine;
 use mtg_engine::ids::CardId;
-use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -134,7 +132,7 @@ fn wreath_of_geists_updates_dynamically() {
     assert_eq!(state.effective_power(creature, &reg), Some(2));
 
     // Add a creature to graveyard: 2/2 + 1/1 = 3/3.
-    let dead = state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
+    let _dead = state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
     assert_eq!(state.effective_power(creature, &reg), Some(3));
     assert_eq!(state.effective_toughness(creature, &reg), Some(3));
 }

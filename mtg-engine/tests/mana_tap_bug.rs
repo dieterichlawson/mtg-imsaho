@@ -19,7 +19,7 @@ use common::*;
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
-use mtg_engine::ids::{CardId, PlayerId};
+use mtg_engine::ids::PlayerId;
 use mtg_engine::state::GameState;
 use mtg_engine::types::*;
 
@@ -47,7 +47,7 @@ fn setup_turn19_state() -> (GameState, CardRegistry) {
         let id = state.create_object(mountain_id, P0, Zone::Battlefield, None, None);
         state.get_object_mut(id).unwrap().tapped = true;
     }
-    let bloodhall = state.create_object(bloodhall_id, P0, Zone::Battlefield, None, None);
+    let _bloodhall = state.create_object(bloodhall_id, P0, Zone::Battlefield, None, None);
 
     // P0's creatures
     let _vi = named_creature(&mut state, &registry, "Vampire Interloper", P0);
@@ -225,7 +225,7 @@ fn meaningful_action_detected_after_partial_taps() {
     // After tapping one Swamp, the engine should still see meaningful actions
     // (more mana abilities to tap + Falkenrath Marauders castable with potential mana)
     let legal2 = engine::legal_actions(&state2, &registry);
-    let has_non_pass = legal2.actions.iter().any(|a| !matches!(a,
+    let _has_non_pass = legal2.actions.iter().any(|a| !matches!(a,
         Action::PassPriority | Action::Concede | Action::ActivateManaAbility { .. }
     ));
     let has_mana_ability = legal2.actions.iter().any(|a| matches!(a, Action::ActivateManaAbility { .. }));

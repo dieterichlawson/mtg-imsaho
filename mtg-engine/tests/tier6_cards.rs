@@ -221,7 +221,7 @@ fn rakish_heir_counter_on_other_vampire_combat_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
 
-    let heir = named_creature(&mut state, &reg, "Rakish Heir", P0);
+    let _heir = named_creature(&mut state, &reg, "Rakish Heir", P0);
     let other_vamp = named_creature(&mut state, &reg, "Stromkirk Noble", P0);
 
     state.events.push(mtg_engine::events::GameEvent::CombatDamageDealt {

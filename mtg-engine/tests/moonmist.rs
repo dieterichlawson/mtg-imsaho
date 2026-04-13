@@ -7,7 +7,6 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::Target;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 

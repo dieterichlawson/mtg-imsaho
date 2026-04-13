@@ -1,7 +1,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
@@ -39,7 +39,7 @@ fn test_x_cost_spell_autotap_does_not_panic() {
     land_on_battlefield(&mut state, &registry, "Mountain", P0);
 
     // Put a target creature for the opponent
-    let target_creature = ready_creature(&mut state, P1, 2, 2);
+    let _target_creature = ready_creature(&mut state, P1, 2, 2);
 
     // Get legal actions — Devil's Play should be castable
     let legal = engine::legal_actions(&state, &registry);
@@ -104,7 +104,7 @@ fn test_x_cost_spell_correct_x_value() {
         .iter()
         .find(|o| o.name == "Devil's Play")
         .expect("Devil's Play should be on the stack");
-    let spell_id = spell_obj.id;
+    let _spell_id = spell_obj.id;
     let x_val = spell_obj.x_value;
 
     // X should be total mana (5) minus non-X cost (1 for {R}) = 4

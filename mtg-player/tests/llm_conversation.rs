@@ -37,7 +37,7 @@ fn init_conversation_sets_system_prompt_with_decklists() {
         ("Lightning Bolt".to_string(), 4),
         ("Mountain".to_string(), 16),
     ];
-    let opp_deck = vec![
+    let _opp_deck = vec![
         ("Grizzly Bears".to_string(), 4),
         ("Forest".to_string(), 16),
     ];

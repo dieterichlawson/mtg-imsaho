@@ -3162,7 +3162,7 @@ mod tests {
     fn bug_h8_x_cost_spell_label_shows_x() {
         use mtg_engine::actions::{CastTargetSpec, CastableSpell};
 
-        let view = empty_view();
+        let _view = empty_view();
         let cs = CastableSpell {
             object_id: ObjectId(201),
             name: "Devil's Play".into(),

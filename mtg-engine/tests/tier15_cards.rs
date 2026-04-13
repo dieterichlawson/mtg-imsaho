@@ -2248,7 +2248,7 @@ fn liliana_minus_six_can_target_self() {
     }
 
     // P0 has a creature (besides Liliana herself, which is also a permanent).
-    let c1 = ready_creature(&mut state, P0, 2, 2);
+    let _c1 = ready_creature(&mut state, P0, 2, 2);
 
     let behavior = reg.get(state.get_object(liliana).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, liliana, 2, &[Target::Player(P0)], &reg);

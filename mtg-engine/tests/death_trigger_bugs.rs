@@ -8,7 +8,6 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
 use mtg_engine::ids::PlayerId;
-use mtg_engine::state::GameState;
 use mtg_engine::types::{Step, Zone};
 
 const P0: PlayerId = PlayerId(0);
@@ -26,7 +25,7 @@ fn lands_should_not_trigger_on_creature_death() {
     state.create_object(swamp_id, P0, Zone::Battlefield, None, None);
 
     // Put a Falkenrath Noble on the battlefield (HAS a death trigger).
-    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
 
     // Put an opponent creature that will die.
     let victim = ready_creature(&mut state, P1, 1, 1);

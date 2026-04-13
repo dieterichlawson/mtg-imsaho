@@ -174,7 +174,7 @@ fn frightful_delusion_discard_on_pay() {
 
     // Give P1 mana to pay {1} and a card in hand to discard.
     state.get_player_mut(P1).mana_pool.add(ManaType::Colorless, 1);
-    let discard_card = state.create_object(CardId(9999), P1, Zone::Hand, None, None);
+    let _discard_card = state.create_object(CardId(9999), P1, Zone::Hand, None, None);
 
     // Resolve Frightful Delusion. P1 should get a pay-or-not choice.
     mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);

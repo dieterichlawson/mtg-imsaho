@@ -22,7 +22,7 @@ fn can_activate_with_rg_only() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let _wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
-    let creature = ready_creature(&mut state, P0, 2, 2);
+    let _creature = ready_creature(&mut state, P0, 2, 2);
 
     // Add just {R}{G} — X will be 0.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);

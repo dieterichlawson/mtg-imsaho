@@ -10,7 +10,6 @@ mod common;
 use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::combat;
-use mtg_engine::ids::CardId;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {

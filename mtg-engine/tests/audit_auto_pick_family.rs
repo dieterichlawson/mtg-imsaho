@@ -513,7 +513,7 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
         .expect("Kessig Wolf Run ability should be available");
 
     // Activate it — the engine should present a followup ChooseXValue prompt.
-    let mut new_state = engine::submit_action(&state, kessig_action, &registry);
+    let new_state = engine::submit_action(&state, kessig_action, &registry);
 
     // After activation, a ChooseXValue prompt should be pending with max_x >= 2.
     let has_x_prompt = match &new_state.awaiting_action {

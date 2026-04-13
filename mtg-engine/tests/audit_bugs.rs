@@ -89,7 +89,7 @@ fn bug_victim_of_night_can_target_vampire_token() {
         "Token should have Vampire subtype");
 
     // Cast Victim of Night targeting the Vampire token
-    let victim = castable_spell(&mut state, &registry, "Victim of Night", P0);
+    let _victim = castable_spell(&mut state, &registry, "Victim of Night", P0);
 
     // Check if the Vampire token is a valid target
     let behavior = registry.get(
@@ -176,7 +176,7 @@ fn bug_falkenrath_noble_auto_targets_opponent() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place Falkenrath Noble for P0
-    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
 
     // Place a creature for P1 and kill it to trigger Noble
     let victim = ready_creature(&mut state, P1, 1, 1);
@@ -433,7 +433,7 @@ fn bug_ghost_quarter_may_search_is_mandatory() {
     };
 
     // Put a Plains in P1's library
-    let plains_id = {
+    let _plains_id = {
         let card_id = registry.get_id_by_name("Plains").unwrap();
         let id = state.create_object(card_id, P1, Zone::Library, None, None);
         state.get_object_mut(id).unwrap().name = "Plains".into();
@@ -643,7 +643,7 @@ fn bug_delver_reveal_suppressed_for_non_instant_sorcery() {
     let delver = named_creature(&mut state, &registry, "Delver of Secrets", P0);
 
     // Put a creature (not instant/sorcery) on top of library
-    let creature_card = {
+    let _creature_card = {
         let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
         let id = state.create_object(card_id, P0, Zone::Library, Some(2), Some(2));
         state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
@@ -939,7 +939,7 @@ fn bug_nevermore_not_enforced_for_flashback() {
 #[test]
 fn bug_tribute_to_hunger_can_target_self() {
     let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let state = game_at_step(Step::PrecombatMain, P0);
 
     // Check if Tribute to Hunger's is_valid_target allows targeting self
     let behavior = registry.get(
@@ -977,7 +977,7 @@ fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
     // token copy, the token ceases to exist in library.
     // We simulate by renaming the Phantasm after it's shuffled in.
 
-    let phantasm = named_creature(&mut state, &registry, "Mirror-Mad Phantasm", P0);
+    let _phantasm = named_creature(&mut state, &registry, "Mirror-Mad Phantasm", P0);
 
     // Give P0 a library
     for _ in 0..3 {
@@ -1144,7 +1144,7 @@ fn bug_harvest_pyre_auto_selects_exile() {
     }
 
     // Place a target
-    let target = ready_creature(&mut state, P1, 5, 5);
+    let _target = ready_creature(&mut state, P1, 5, 5);
 
     // Add mana for Harvest Pyre
     add_mana_for(&mut state, &registry, "Harvest Pyre", P0);
@@ -1423,7 +1423,7 @@ fn bug_night_terrors_stuck_on_stack() {
 
     // Resolve any pending choices
     // The spell should either be in graveyard (resolved) or awaiting a choice
-    let nt_zone = state.get_object(nt).unwrap().zone;
+    let _nt_zone = state.get_object(nt).unwrap().zone;
     let has_choice = state.awaiting_action.is_some();
 
     // With multiple nonland cards, a choice should be presented
@@ -1622,7 +1622,7 @@ fn bug_grimoire_legend_rule_not_applied() {
     let existing = named_creature(&mut state, &registry, "Grimgrin, Corpse-Born", P0);
 
     // Put another copy of the same legendary in P1's graveyard
-    let graveyard_copy = {
+    let _graveyard_copy = {
         let card_id = registry.get_id_by_name("Grimgrin, Corpse-Born").unwrap();
         let id = state.create_object(card_id, P1, Zone::Graveyard, Some(5), Some(5));
         state.get_object_mut(id).unwrap().name = "Grimgrin, Corpse-Born".into();
@@ -1731,7 +1731,7 @@ fn bug_boneyard_wurm_view_shows_base_pt() {
     // Put 3 creature cards in P0's graveyard
     for _ in 0..3 {
         let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
-        let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
+        let _id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
     }
 
     // Place Boneyard Wurm
@@ -1770,9 +1770,9 @@ fn bug_skirsdag_high_priest_auto_selects_tap_targets() {
 
     // Place Skirsdag High Priest and 3 other creatures
     let priest = named_creature(&mut state, &registry, "Skirsdag High Priest", P0);
-    let c1 = ready_creature(&mut state, P0, 1, 1);
-    let c2 = ready_creature(&mut state, P0, 2, 2);
-    let c3 = ready_creature(&mut state, P0, 3, 3);
+    let _c1 = ready_creature(&mut state, P0, 1, 1);
+    let _c2 = ready_creature(&mut state, P0, 2, 2);
+    let _c3 = ready_creature(&mut state, P0, 3, 3);
 
     // Morbid must be active
     state.creature_died_this_turn = true;
@@ -1848,7 +1848,7 @@ fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
     }
 
     // Place exactly ONE creature — the one we'd want to equip
-    let creature = ready_creature(&mut state, P0, 3, 3);
+    let _creature = ready_creature(&mut state, P0, 3, 3);
 
     // With only 1 creature, equipping Demonmail Hauberk means sacrificing
     // that creature to equip... nothing. This should not be available.
@@ -2000,10 +2000,10 @@ fn bug_stitchers_apprentice_trigger_desync() {
     let apprentice = named_creature(&mut state, &registry, "Stitcher's Apprentice", P0);
 
     // Place Falkenrath Noble (triggers on any creature death)
-    let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    let _noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
 
     // Place a creature to sacrifice
-    let victim = ready_creature(&mut state, P0, 1, 1);
+    let _victim = ready_creature(&mut state, P0, 1, 1);
 
     let p1_life_before = state.get_player(P1).life;
 
@@ -2065,7 +2065,7 @@ fn bug_creepy_doll_trigger_with_lethal_damage() {
     // The key question is whether the trigger FIRES at all — it should.
     // We can't control the coin flip, but we can verify the trigger ran
     // by checking if try_destroy was called (regeneration shield consumed).
-    let shields_after = state.get_object(target).unwrap().regeneration_shields;
+    let _shields_after = state.get_object(target).unwrap().regeneration_shields;
 
     // If the coin flip was won AND try_destroy was called, the shield is consumed.
     // If the coin flip was lost, shields remain at 1.

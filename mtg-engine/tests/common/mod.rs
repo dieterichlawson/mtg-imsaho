@@ -1,4 +1,9 @@
 //! Shared test helpers.
+//!
+//! Each integration test file compiles as a separate binary, so helpers
+//! only used by *other* test files appear dead in each binary. This is a
+//! known Rust issue (rust-lang/rust#46379) with no upstream fix.
+#![allow(dead_code, unused_imports)]
 
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;

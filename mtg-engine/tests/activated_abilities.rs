@@ -211,7 +211,7 @@ fn darkthicket_wolf_once_per_turn() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let wolf = named_creature(&mut state, &reg, "Darkthicket Wolf", P0);
+    let _wolf = named_creature(&mut state, &reg, "Darkthicket Wolf", P0);
 
     // First activation should work.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
@@ -313,7 +313,7 @@ fn avacynian_priest_cannot_target_humans() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
+    let _priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
 
     // Create a Human creature (Elder Cathar).
     let human = named_creature(&mut state, &reg, "Elder Cathar", P1);
@@ -334,10 +334,10 @@ fn avacynian_priest_requires_tap() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    let priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
+    let _priest = named_creature(&mut state, &reg, "Avacynian Priest", P0);
 
     // Create a non-Human target.
-    let wolf = named_creature(&mut state, &reg, "Kessig Wolf", P1);
+    let _wolf = named_creature(&mut state, &reg, "Kessig Wolf", P1);
 
     // First activation should work.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);

@@ -12,10 +12,8 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::events::GameEvent;
-use mtg_engine::ids::PlayerId;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::state::GameState;
 use mtg_engine::triggers;

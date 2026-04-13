@@ -116,11 +116,11 @@ fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
 
     // Check if any SpellCast triggers were created on the stack
     let stack_str = format!("{:?}", state.stack);
-    let has_spell_trigger = stack_str.contains("SpellCast");
+    let _has_spell_trigger = stack_str.contains("SpellCast");
 
     // Also check if Burning Vengeance's on_spell_cast was called by checking
     // if an AwaitingAction was set (BV presents a target choice)
-    let has_bv_choice = state.awaiting_action.is_some();
+    let _has_bv_choice = state.awaiting_action.is_some();
 
     // The fix works: the trigger fires (verified by TRACE logs) but the handler
     // returns early because the spell wasn't cast from graveyard. The trigger
@@ -145,7 +145,7 @@ fn bug_dearly_departed_graveyard_watcher_ignored() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put Dearly Departed in P0's graveyard
-    let departed = {
+    let _departed = {
         let card_id = registry.get_id_by_name("Dearly Departed").unwrap();
         let id = state.create_object(card_id, P0, Zone::Graveyard, Some(5), Some(5));
         state.get_object_mut(id).unwrap().name = "Dearly Departed".into();
@@ -241,7 +241,7 @@ fn bug_snapcaster_excludes_innate_flashback_cards() {
     };
 
     // Cast Snapcaster Mage — should be able to target Think Twice
-    let snap = castable_spell(&mut state, &registry, "Snapcaster Mage", P0);
+    let _snap = castable_spell(&mut state, &registry, "Snapcaster Mage", P0);
 
     // Check if Think Twice is a valid target
     let behavior = registry.get(
@@ -280,7 +280,7 @@ fn bug_moonmist_second_cast_fails() {
 
     // Cast second Moonmist — should transform back
     let moon2 = castable_spell(&mut state, &registry, "Moonmist", P0);
-    state = cast_and_resolve(&state, &registry, moon2, vec![]);
+    let _state = cast_and_resolve(&state, &registry, moon2, vec![]);
 
     // BUG: Second Moonmist may fail to transform back because the creature
     // is now a Werewolf (not Human), and Moonmist says "transform all Humans"
@@ -382,7 +382,7 @@ fn bug_woodland_sleuth_intervening_if_not_at_collection() {
 
     // Place Woodland Sleuth — ETB trigger should NOT go on the stack
     // because morbid is false at collection time
-    let sleuth = named_creature(&mut state, &registry, "Woodland Sleuth", P0);
+    let _sleuth = named_creature(&mut state, &registry, "Woodland Sleuth", P0);
 
     // Put a creature in graveyard (potential return target)
     let gy_creature = {
@@ -572,8 +572,8 @@ fn bug_night_terrors_wrong_pending_effect() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Give P1 multiple nonland cards
-    let card1 = spell_in_hand(&mut state, &registry, "Grizzly Bears", P1);
-    let card2 = spell_in_hand(&mut state, &registry, "Lightning Bolt", P1);
+    let _card1 = spell_in_hand(&mut state, &registry, "Grizzly Bears", P1);
+    let _card2 = spell_in_hand(&mut state, &registry, "Lightning Bolt", P1);
 
     // Cast Night Terrors targeting P1
     let nt = castable_spell(&mut state, &registry, "Night Terrors", P0);
@@ -717,7 +717,7 @@ fn bug_bitterheart_witch_hexproof_not_filtered() {
 #[test]
 fn bug_memorys_journey_missing_player_target() {
     let registry = CardRegistry::with_all_cards();
-    let state = game_at_step(Step::PrecombatMain, P0);
+    let _state = game_at_step(Step::PrecombatMain, P0);
 
     // Check the target requirement
     let behavior = registry.get(
@@ -752,7 +752,7 @@ fn bug_mask_of_avacyn_duplicate_equip_action() {
         obj.is_equipment = true;
     }
     let c1 = ready_creature(&mut state, P0, 2, 2);
-    let c2 = ready_creature(&mut state, P0, 3, 3);
+    let _c2 = ready_creature(&mut state, P0, 3, 3);
 
     // Equip to c1
     if let Some(obj) = state.get_object_mut(mask) {
@@ -884,19 +884,19 @@ fn bug_ghoulcallers_chant_modal_targeting() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put a creature and two Zombies in P0's graveyard
-    let bear = {
+    let _bear = {
         let card_id = registry.get_id_by_name("Grizzly Bears").unwrap();
         let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
         state.get_object_mut(id).unwrap().name = "Grizzly Bears".into();
         id
     };
-    let zombie1 = {
+    let _zombie1 = {
         let card_id = registry.get_id_by_name("Walking Corpse").unwrap();
         let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
         state.get_object_mut(id).unwrap().name = "Walking Corpse".into();
         id
     };
-    let zombie2 = {
+    let _zombie2 = {
         let card_id = registry.get_id_by_name("Diregraf Ghoul").unwrap();
         let id = state.create_object(card_id, P0, Zone::Graveyard, Some(2), Some(2));
         state.get_object_mut(id).unwrap().name = "Diregraf Ghoul".into();

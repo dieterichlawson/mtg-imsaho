@@ -7,7 +7,6 @@ use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
-use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
 use mtg_engine::types::*;
 
@@ -514,7 +513,7 @@ fn instigator_gang_buffs_other_attackers_you_control() {
 fn instigator_gang_does_not_buff_opponent_attackers() {
     let reg = registry();
     let mut state = game_at_step(Step::DeclareAttackers, P1);
-    let gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
+    let _gang = named_creature(&mut state, &reg, "Instigator Gang", P0);
     let enemy = ready_creature(&mut state, P1, 2, 2);
 
     // Opponent's creature attacks.
