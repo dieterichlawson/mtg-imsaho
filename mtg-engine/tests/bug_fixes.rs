@@ -51,11 +51,25 @@ fn legend_rule_removes_duplicate() {
 
     check_state_based_actions(&mut state, &reg);
 
+    // SBA should have set up a legend-rule choice.
+    assert!(state.awaiting_action.is_some(),
+        "Legend rule SBA should present a choice for which legendary to keep");
+
+    // Resolve the choice: keep legend1.
+    use mtg_engine::actions::{Action, ResolvedChoice, Target};
+    let new_state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(legend1))),
+        },
+        &reg,
+    );
+
     // One should be on battlefield, one in graveyard.
-    let on_bf: Vec<_> = state.objects.values()
+    let on_bf: Vec<_> = new_state.objects.values()
         .filter(|o| o.name == "Thalia" && o.zone == Zone::Battlefield)
         .collect();
-    let in_gy: Vec<_> = state.objects.values()
+    let in_gy: Vec<_> = new_state.objects.values()
         .filter(|o| o.name == "Thalia" && o.zone == Zone::Graveyard)
         .collect();
 

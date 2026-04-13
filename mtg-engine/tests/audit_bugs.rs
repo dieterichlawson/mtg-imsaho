@@ -1634,15 +1634,35 @@ fn bug_grimoire_legend_rule_not_applied() {
     behavior.on_activate_ability(&mut state, grimoire, 1, &[], &registry);
 
     // After returning, we should have two legendary Grimgrins controlled by P0.
-    // SBA should destroy one (legend rule).
+    let grimgrins: Vec<_> = state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Grimgrin"))
+        .map(|o| (o.id, o.is_legendary))
+        .collect();
+    assert_eq!(grimgrins.len(), 2,
+        "Test setup: should have 2 Grimgrins on battlefield before SBA. Got: {:?}", grimgrins);
+    assert!(grimgrins.iter().all(|(_, leg)| *leg),
+        "Both Grimgrins must have is_legendary=true for SBA to detect them. Got: {:?}", grimgrins);
+
+    // SBA should present a legend-rule choice.
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    assert!(state.awaiting_action.is_some(),
+        "Legend rule SBA should present a choice for which Grimgrin to keep");
+
+    // Resolve the choice: keep the existing one.
+    use mtg_engine::actions::{Action, ResolvedChoice, Target};
+    let new_state = mtg_engine::engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: ResolvedChoice::ChosenTarget(Some(Target::Object(existing))),
+        },
+        &registry,
+    );
 
     // Count Grimgrins on battlefield
-    let grimgrin_count = state.objects.values()
+    let grimgrin_count = new_state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Grimgrin"))
         .count();
 
-    // BUG: Both Grimgrins stay on the battlefield (legend rule not enforced)
     assert_eq!(grimgrin_count, 1,
         "Legend rule should leave only 1 Grimgrin. Found: {}", grimgrin_count);
 }
