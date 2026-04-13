@@ -63,7 +63,6 @@ use mtg_engine::types::*;
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 99-003 is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_99_003_daybreak_ranger_no_cross_contamination() {
     let registry = CardRegistry::with_all_cards();
 
@@ -137,7 +136,6 @@ fn bug_99_003_daybreak_ranger_no_cross_contamination() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug BE is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_be_garruk_transforms_before_zero_loyalty_death() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);

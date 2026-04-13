@@ -80,7 +80,6 @@ use mtg_engine::types::*;
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug BT is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::CombatDamage, P0);
@@ -198,7 +197,6 @@ fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug CA is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PostcombatMain, P0);
@@ -256,7 +254,6 @@ fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug BU is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_bu_burning_vengeance_no_stale_opponent_log() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -321,7 +318,6 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug K is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -387,7 +383,6 @@ fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 17-002 is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -469,7 +464,6 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug AE is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::CombatDamage, P0);
@@ -555,7 +549,6 @@ fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug M is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_m_snapcaster_target_chosen_at_stack_time() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -615,7 +608,6 @@ fn bug_m_snapcaster_target_chosen_at_stack_time() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug N is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_n_apnap_ordering_prompt_for_simultaneous_triggers() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -677,7 +669,6 @@ fn bug_n_apnap_ordering_prompt_for_simultaneous_triggers() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug Q is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_q_dearly_departed_is_not_a_trigger() {
     let registry = CardRegistry::with_all_cards();
     let dearly_card_id = registry.get_id_by_name("Dearly Departed").unwrap();
@@ -728,7 +719,6 @@ fn bug_q_dearly_departed_is_not_a_trigger() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug X is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_x_aura_granted_ability_does_not_collide_with_native_index() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);

@@ -33,7 +33,6 @@ fn registry() -> CardRegistry {
 /// Since no legendary cards exist in the registry yet, we simulate by
 /// setting the `is_legendary` flag directly on the GameObject.
 #[test]
-#[ignore] // Known bug
 fn legend_rule_removes_duplicate() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);

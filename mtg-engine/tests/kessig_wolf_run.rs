@@ -60,7 +60,6 @@ fn cannot_activate_without_rg() {
 
 /// X=3 with 5 mana gives +3/+0 and trample.
 #[test]
-#[ignore] // Known bug
 fn x_equals_3_gives_plus_3() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);

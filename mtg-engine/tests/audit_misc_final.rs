@@ -55,7 +55,6 @@ use mtg_engine::types::*;
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 76-001 is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -122,7 +121,6 @@ fn bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 76-002 is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -172,7 +170,6 @@ fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 99-001 is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -256,7 +253,6 @@ fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug AC is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -320,7 +316,6 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug BS is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_bs_runic_repetition_resets_cast_with_flashback() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -369,7 +364,6 @@ fn bug_bs_runic_repetition_resets_cast_with_flashback() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug E1-002 is fixed.
 #[test]
-#[ignore] // Known bug
 fn bug_e1_002_cardview_uses_effective_pt_for_cda_creatures() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);

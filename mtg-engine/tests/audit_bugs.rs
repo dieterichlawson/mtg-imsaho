@@ -1613,7 +1613,6 @@ fn bug_evil_twin_marker_set_before_choice() {
 /// graveyards, but doesn't apply the legend rule to legendary creatures
 /// that are already on the battlefield.
 #[test]
-#[ignore] // Known bug — legend rule not applied to Grimoire of the Dead tokens
 fn bug_grimoire_legend_rule_not_applied() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
