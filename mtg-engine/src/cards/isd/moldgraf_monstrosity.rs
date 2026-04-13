@@ -40,8 +40,9 @@ impl CardBehavior for MoldgrafMonstrosity {
     }
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+        // CR 603.10c: "your" means last-known controller, not owner.
         let controller = match state.get_object(object_id) {
-            Some(o) => o.owner,
+            Some(o) => o.controller,
             None => return,
         };
 
