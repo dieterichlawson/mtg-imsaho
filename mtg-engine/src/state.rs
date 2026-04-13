@@ -179,6 +179,35 @@ pub enum TemporaryEffect {
     GrantFlashback { target: ObjectId, cost: crate::types::ManaCost },
     /// Prevent combat damage from non-Wolf/Werewolf creatures (Moonmist).
     PreventNonWolfWerewolfCombatDamage,
+    /// Blanket P/T modifier — applies to all creatures matching a filter.
+    /// Used by anthems like Rally the Peasants ("creatures you control get +2/+0").
+    ModifyPTAll {
+        controller: PlayerId,
+        filter: Option<crate::types::CreatureFilter>,
+        power_mod: i32,
+        toughness_mod: i32,
+    },
+    /// Blanket keyword grant — applies to all creatures matching a filter.
+    /// Used by Vampiric Fury ("Vampire creatures you control gain first strike").
+    GrantKeywordAll {
+        controller: PlayerId,
+        filter: Option<crate::types::CreatureFilter>,
+        keyword: crate::types::Keyword,
+    },
+    /// Blanket protection grant — applies to all creatures controlled by a player.
+    /// Used by Spare from Evil ("creatures you control gain protection from non-Human").
+    GrantProtectionAll {
+        controller: PlayerId,
+        protection_filter: crate::types::CreatureFilter,
+    },
+    /// P/T modifier that disappears if source leaves the battlefield.
+    /// Used by static abilities like Instigator Gang's "attacking creatures get +1/+0".
+    ModifyPTWhileSourceInPlay {
+        target: ObjectId,
+        source: ObjectId,
+        power_mod: i32,
+        toughness_mod: i32,
+    },
 }
 
 impl GameState {
@@ -941,10 +970,25 @@ impl GameState {
 
         // Until-end-of-turn effects.
         for effect in &self.until_end_of_turn {
-            if let TemporaryEffect::ModifyPT { target, power_mod, .. } = effect {
-                if *target == id {
+            match effect {
+                TemporaryEffect::ModifyPT { target, power_mod, .. } if *target == id => {
                     power += power_mod;
                 }
+                TemporaryEffect::ModifyPTAll { controller, filter, power_mod, .. } => {
+                    if obj.controller == *controller && obj.zone == Zone::Battlefield {
+                        let matches = match filter {
+                            None => true,
+                            Some(f) => self.matches_filter(id, f, *controller, registry),
+                        };
+                        if matches { power += power_mod; }
+                    }
+                }
+                TemporaryEffect::ModifyPTWhileSourceInPlay { target, source, power_mod, .. } if *target == id => {
+                    if self.get_object(*source).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                        power += power_mod;
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -985,10 +1029,25 @@ impl GameState {
         toughness -= *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
 
         for effect in &self.until_end_of_turn {
-            if let TemporaryEffect::ModifyPT { target, toughness_mod, .. } = effect {
-                if *target == id {
+            match effect {
+                TemporaryEffect::ModifyPT { target, toughness_mod, .. } if *target == id => {
                     toughness += toughness_mod;
                 }
+                TemporaryEffect::ModifyPTAll { controller, filter, toughness_mod, .. } => {
+                    if obj.controller == *controller && obj.zone == Zone::Battlefield {
+                        let matches = match filter {
+                            None => true,
+                            Some(f) => self.matches_filter(id, f, *controller, registry),
+                        };
+                        if matches { toughness += toughness_mod; }
+                    }
+                }
+                TemporaryEffect::ModifyPTWhileSourceInPlay { target, source, toughness_mod, .. } if *target == id => {
+                    if self.get_object(*source).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                        toughness += toughness_mod;
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -1089,10 +1148,22 @@ impl GameState {
 
         // 3. Temporary keyword grants (until end of turn).
         for effect in &self.until_end_of_turn {
-            if let TemporaryEffect::GrantKeyword { target, keyword: kw } = effect {
-                if *target == creature_id && *kw == keyword {
+            match effect {
+                TemporaryEffect::GrantKeyword { target, keyword: kw } if *target == creature_id && *kw == keyword => {
                     return true;
                 }
+                TemporaryEffect::GrantKeywordAll { controller, filter, keyword: kw } if *kw == keyword => {
+                    if let Some(obj) = self.get_object(creature_id) {
+                        if obj.controller == *controller && obj.zone == Zone::Battlefield {
+                            let matches = match filter {
+                                None => true,
+                                Some(f) => self.matches_filter(creature_id, f, *controller, registry),
+                            };
+                            if matches { return true; }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
@@ -1140,12 +1211,22 @@ impl GameState {
 
         // Check until-end-of-turn protection grants (e.g., Spare from Evil).
         for effect in &self.until_end_of_turn {
-            if let TemporaryEffect::GrantProtection { target, filter } = effect {
-                if *target == target_id {
+            match effect {
+                TemporaryEffect::GrantProtection { target, filter } if *target == target_id => {
                     if self.matches_filter(source_id, filter, crate::ids::PlayerId(0), registry) {
                         return true;
                     }
                 }
+                TemporaryEffect::GrantProtectionAll { controller, protection_filter } => {
+                    if let Some(obj) = self.get_object(target_id) {
+                        if obj.controller == *controller && obj.zone == Zone::Battlefield {
+                            if self.matches_filter(source_id, protection_filter, *controller, registry) {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 

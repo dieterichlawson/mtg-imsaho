@@ -32,40 +32,22 @@ impl CardBehavior for VampiricFury {
 
         // Build a registry to look up subtypes.
 
-        // Collect vampire creature IDs controlled by this player.
-        let vampire_ids: Vec<ObjectId> = state.objects.values()
-            .filter(|obj| {
-                obj.zone == Zone::Battlefield
-                    && obj.controller == controller
-                    && obj.power.is_some() // is a creature
-            })
-            .filter(|obj| {
-                // Check if this creature has the "Vampire" subtype
-                // via registry or instance subtypes (e.g., from Olivia Voldaren).
-                let registry_has = registry.card_data(obj.card_id)
-                    .map(|data| data.subtypes.iter().any(|s| s == "Vampire"))
-                    .unwrap_or(false);
-                let instance_has = obj.subtypes.iter().any(|s| s == "Vampire");
-                registry_has || instance_has
-            })
-            .map(|obj| obj.id)
-            .collect();
-
-        for id in vampire_ids {
-            state.until_end_of_turn.push(
-                crate::state::TemporaryEffect::ModifyPT {
-                    target: id,
-                    power_mod: 2,
-                    toughness_mod: 0,
-                }
-            );
-            state.until_end_of_turn.push(
-                TemporaryEffect::GrantKeyword {
-                    target: id,
-                    keyword: Keyword::FirstStrike,
-                }
-            );
-        }
+        let vampire_filter = Some(crate::types::CreatureFilter::HasSubtype("Vampire".into()));
+        state.until_end_of_turn.push(
+            crate::state::TemporaryEffect::ModifyPTAll {
+                controller,
+                filter: vampire_filter.clone(),
+                power_mod: 2,
+                toughness_mod: 0,
+            }
+        );
+        state.until_end_of_turn.push(
+            TemporaryEffect::GrantKeywordAll {
+                controller,
+                filter: vampire_filter,
+                keyword: Keyword::FirstStrike,
+            }
+        );
 
         state.move_spell_after_resolve(object_id, registry);
     }

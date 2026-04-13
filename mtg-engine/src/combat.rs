@@ -464,13 +464,23 @@ fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker
 
     // Check until-end-of-turn protection grants.
     for effect in &state.until_end_of_turn {
-        if let crate::state::TemporaryEffect::GrantProtection { target, filter } = effect {
-            if *target == protected {
+        match effect {
+            crate::state::TemporaryEffect::GrantProtection { target, filter } if *target == protected => {
                 let controller = state.get_object(protected).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
                 if state.matches_filter(attacker, filter, controller, registry) {
                     return true;
                 }
             }
+            crate::state::TemporaryEffect::GrantProtectionAll { controller, protection_filter } => {
+                if let Some(obj) = state.get_object(protected) {
+                    if obj.controller == *controller && obj.zone == crate::types::Zone::Battlefield {
+                        if state.matches_filter(attacker, protection_filter, *controller, registry) {
+                            return true;
+                        }
+                    }
+                }
+            }
+            _ => {}
         }
     }
 

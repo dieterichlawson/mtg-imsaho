@@ -239,11 +239,10 @@ fn vampiric_fury_buffs_instance_vampire() {
     behavior.on_resolve(&mut state, fury, &[], &reg);
 
     // The creature has "Vampire" in its instance subtypes, so it should get buffed.
-    let has_pump = state.until_end_of_turn.iter().any(|e| {
-        matches!(e, mtg_engine::state::TemporaryEffect::ModifyPT { target, power_mod: 2, .. } if *target == creature)
-    });
-    assert!(has_pump,
-        "Vampiric Fury should buff creatures with Vampire instance subtype (e.g., via Olivia)");
+    let eff_p = state.effective_power(creature, &reg).unwrap_or(0);
+    assert_eq!(eff_p, 4,
+        "Vampiric Fury should buff creatures with Vampire instance subtype (e.g., via Olivia). \
+         Expected 4 (2 base + 2 anthem), got {}", eff_p);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

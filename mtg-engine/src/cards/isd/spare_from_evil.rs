@@ -33,31 +33,17 @@ impl CardBehavior for SpareFromEvil {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
-        // Collect creature IDs controlled by this player.
-        let creature_ids: Vec<ObjectId> = state.objects.values()
-            .filter(|obj| {
-                obj.zone == Zone::Battlefield
-                    && obj.controller == controller
-                    && obj.power.is_some()
-            })
-            .map(|obj| obj.id)
-            .collect();
-
         // Grant protection from non-Human creatures until end of turn.
         let filter = CreatureFilter::Not(Box::new(CreatureFilter::HasSubtype("Human".into())));
-        for id in &creature_ids {
-            state.until_end_of_turn.push(
-                crate::state::TemporaryEffect::GrantProtection {
-                    target: *id,
-                    filter: filter.clone(),
-                }
-            );
-        }
+        state.until_end_of_turn.push(
+            crate::state::TemporaryEffect::GrantProtectionAll {
+                controller,
+                protection_filter: filter,
+            }
+        );
 
-        if !creature_ids.is_empty() {
-            state.log(crate::state::LogLevel::Event,
-                format!("Spare from Evil: {} creatures gain protection from non-Human creatures until end of turn", creature_ids.len()));
-        }
+        state.log(crate::state::LogLevel::Event,
+            "Spare from Evil: creatures gain protection from non-Human creatures until end of turn".into());
 
         state.move_spell_after_resolve(object_id, registry);
     }

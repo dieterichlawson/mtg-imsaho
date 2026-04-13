@@ -97,8 +97,9 @@ impl CardBehavior for InstigatorGang {
         }
         let bonus = if is_transformed { 3 } else { 1 };
         state.until_end_of_turn.push(
-            crate::state::TemporaryEffect::ModifyPT {
+            crate::state::TemporaryEffect::ModifyPTWhileSourceInPlay {
                 target: attacker_id,
+                source: self_id,
                 power_mod: bonus,
                 toughness_mod: 0,
             }

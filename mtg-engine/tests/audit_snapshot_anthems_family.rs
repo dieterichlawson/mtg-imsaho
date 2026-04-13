@@ -163,9 +163,10 @@ fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
         .card_types = vec![CardType::Creature];
 
     // Mirror what instigator_gang.rs's on_any_creature_attacks does:
-    // push a ModifyPT into until_end_of_turn keyed to the attacker.
-    state.until_end_of_turn.push(TemporaryEffect::ModifyPT {
+    // push a ModifyPTWhileSourceInPlay keyed to the attacker and gang.
+    state.until_end_of_turn.push(TemporaryEffect::ModifyPTWhileSourceInPlay {
         target: attacker,
+        source: gang,
         power_mod: 1,
         toughness_mod: 0,
     });

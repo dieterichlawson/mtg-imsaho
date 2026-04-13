@@ -30,25 +30,14 @@ impl CardBehavior for RallyThePeasants {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
-        // Collect creature IDs controlled by this player.
-        let creature_ids: Vec<ObjectId> = state.objects.values()
-            .filter(|obj| {
-                obj.zone == Zone::Battlefield
-                    && obj.controller == controller
-                    && obj.power.is_some() // is a creature
-            })
-            .map(|obj| obj.id)
-            .collect();
-
-        for id in creature_ids {
-            state.until_end_of_turn.push(
-                crate::state::TemporaryEffect::ModifyPT {
-                    target: id,
-                    power_mod: 2,
-                    toughness_mod: 0,
-                }
-            );
-        }
+        state.until_end_of_turn.push(
+            crate::state::TemporaryEffect::ModifyPTAll {
+                controller,
+                filter: None,
+                power_mod: 2,
+                toughness_mod: 0,
+            }
+        );
 
         state.move_spell_after_resolve(object_id, registry);
     }
