@@ -502,7 +502,7 @@ fn creeping_renaissance_returns_creatures_from_graveyard() {
     // Choose "Creature" (index 0).
     state = mtg_engine::engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, None) },
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, "Option 0".into()) },
         &reg,
     );
 
@@ -543,7 +543,7 @@ fn creeping_renaissance_only_returns_chosen_type() {
     // Choose "Enchantment" (index 2).
     state = mtg_engine::engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(2, None) },
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(2, "Option 2".into()) },
         &reg,
     );
 
@@ -596,7 +596,7 @@ fn creeping_renaissance_flashback_exiles() {
     // Choose "Creature" (index 0).
     state = mtg_engine::engine::submit_action(
         &state,
-        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, None) },
+        &Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, "Option 0".into()) },
         &reg,
     );
 
@@ -2143,7 +2143,7 @@ fn liliana_minus_six_pile_division_and_choice() {
 
     // P1 chooses pile 1 (sacrifices c1 only).
     state = engine::submit_action(&state, &Action::ResolveChoice {
-        choice: ResolvedChoice::ChosenIndex(0, None),
+        choice: ResolvedChoice::ChosenIndex(0, "Option 0".into()),
     }, &reg);
 
     assert_eq!(state.get_object(c1).unwrap().zone, Zone::Graveyard, "c1 should be sacrificed");
@@ -2175,7 +2175,7 @@ fn liliana_minus_six_empty_pile_allowed() {
 
     // P1 chooses the empty pile (pile 2, index 1) — nothing sacrificed.
     state = engine::submit_action(&state, &Action::ResolveChoice {
-        choice: ResolvedChoice::ChosenIndex(1, None),
+        choice: ResolvedChoice::ChosenIndex(1, "Option 1".into()),
     }, &reg);
 
     assert_eq!(state.get_object(c1).unwrap().zone, Zone::Battlefield, "Chose empty pile, nothing sacrificed");
@@ -2207,7 +2207,7 @@ fn liliana_minus_six_all_in_one_pile() {
 
     // P1 chooses pile 1 — all sacrificed.
     state = engine::submit_action(&state, &Action::ResolveChoice {
-        choice: ResolvedChoice::ChosenIndex(0, None),
+        choice: ResolvedChoice::ChosenIndex(0, "Option 0".into()),
     }, &reg);
 
     assert_eq!(state.get_object(c1).unwrap().zone, Zone::Graveyard);

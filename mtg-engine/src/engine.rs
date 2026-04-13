@@ -400,7 +400,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     }
                     ResolutionChoiceKind::ChooseCardType { options, .. } => {
                         options.iter().enumerate()
-                            .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, Some(name.clone())) })
+                            .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, name.clone()) })
                             .collect()
                     }
                     ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, .. } => {
@@ -425,13 +425,13 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 .collect::<Vec<_>>().join(", ")
                         };
                         vec![
-                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, Some(format!("Pile 1: [{}]", fmt_pile(pile_1)))) },
-                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(1, Some(format!("Pile 2: [{}]", fmt_pile(pile_2)))) },
+                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(0, format!("Pile 1: [{}]", fmt_pile(pile_1))) },
+                            Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(1, format!("Pile 2: [{}]", fmt_pile(pile_2))) },
                         ]
                     }
                     ResolutionChoiceKind::ChooseCardName { options, .. } => {
                         options.iter().enumerate()
-                            .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, Some(name.clone())) })
+                            .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, name.clone()) })
                             .collect()
                     }
                     ResolutionChoiceKind::ChooseXValue { max_x, .. } => {

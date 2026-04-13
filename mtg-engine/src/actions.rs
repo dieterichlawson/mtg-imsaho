@@ -97,9 +97,9 @@ pub enum ResolvedChoice {
     /// Choose a card from a revealed set.
     ChosenCard(ObjectId),
     /// Choose an option by index from a numbered list.
-    /// The optional label is a human-readable name for the option
+    /// The label is a human-readable name for the option
     /// (e.g. "Creature" for a card type choice).
-    ChosenIndex(usize, Option<String>),
+    ChosenIndex(usize, String),
     /// Choose a subset of objects (e.g., pile division — chosen objects form pile 1, rest form pile 2).
     ChosenSubset(Vec<ObjectId>),
     /// Choose X for an X-cost spell or ability.
