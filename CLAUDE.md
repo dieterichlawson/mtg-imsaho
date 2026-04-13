@@ -12,6 +12,8 @@ Always fix compiler warnings before finishing work. Run `cargo check` and ensure
 
 When running `cargo test`, check for BOTH test failures AND compilation errors. A compilation error in one test file prevents that binary from running, which shows as 0 failures — because the tests never executed, not because they passed. Always report compilation errors as problems, not as passing tests. If the numbers don't make sense, investigate before reporting success.
 
+Do NOT pipe `cargo test` through `grep "FAILED"` as a way to check test results — this silently drops compilation errors. Instead, check the exit code first (`cargo test; echo $?`), and if non-zero, look at the full output for both "FAILED" and "could not compile" lines.
+
 ## Repository layout
 
 Keep the repo root tidy. When creating a new file, place it in the correct directory instead of at the root:
