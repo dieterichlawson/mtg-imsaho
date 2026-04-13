@@ -47,7 +47,8 @@ use mtg_engine::types::*;
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 31-001 is fixed.
 #[test]
-#[ignore] // Known bugfn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
+#[ignore] // Known bug — trigger label uses front-face name for transformed DFCs
+fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::Upkeep, P0);
 
