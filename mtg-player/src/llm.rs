@@ -1586,6 +1586,11 @@ impl LlmPlayer {
         if let Some(&n) = counters.get(&CounterType::Loyalty) {
             if n > 0 { bits.push(format!("LOYx{}", n)); }
         }
+        for (ct, &n) in counters {
+            if n > 0 && !matches!(ct, CounterType::PlusOnePlusOne | CounterType::MinusOneMinusOne | CounterType::Loyalty) {
+                bits.push(format!("{:?}x{}", ct, n));
+            }
+        }
         if bits.is_empty() { None } else { Some(bits.join(",")) }
     }
 
@@ -1910,7 +1915,7 @@ impl LlmPlayer {
             let is_land = p.card_types.iter().all(|t| matches!(t, mtg_engine::types::CardType::Land));
             if !is_land {
                 let owner = if p.controller == view.you { "your" } else { "opponent's" };
-                return format!("{} ({})", p.name, owner);
+                return format!("{} (#{}) ({})", p.name, id.0, owner);
             }
             return p.name.clone();
         }
