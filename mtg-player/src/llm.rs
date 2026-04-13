@@ -2227,10 +2227,14 @@ impl Player for LlmPlayer {
                             let x_suffix = cs.exile_x_from_gy_max
                                 .map(|n| format!(" X={} ({} damage)", n, n))
                                 .unwrap_or_default();
-                            let label = if tap_str.is_empty() {
+                            let cost_note = cs.additional_cost_label.as_deref().unwrap_or("");
+                            let mut extras = Vec::new();
+                            if !cost_note.is_empty() { extras.push(cost_note.to_string()); }
+                            if !tap_str.is_empty() { extras.push(format!("tap {}", tap_str)); }
+                            let label = if extras.is_empty() {
                                 format!("{} {}{}", verb, cs.name, x_suffix)
                             } else {
-                                format!("{} {}{} (tap {})", verb, cs.name, x_suffix, tap_str)
+                                format!("{} {}{} ({})", verb, cs.name, x_suffix, extras.join(", "))
                             };
                             // Deduplicate identical cast labels (e.g. two copies of same spell).
                             if seen_cast_labels.contains(&label) { continue; }
@@ -3113,32 +3117,12 @@ mod tests {
         );
     }
 
-    /// Bug H3 (audits/AUDIT_BUGS.md): Cast labels for spells with
-    /// additional costs (Stitched Drake / Skaab Ruinator / Corpse
-    /// Lunge — `AdditionalCost::ExileCreaturesFromGraveyard`) don't
-    /// surface the additional cost. The label says
-    /// `Cast Stitched Drake (tap ...)` with no mention that a
-    /// creature card is about to be exiled from graveyard.
-    ///
-    /// The cast-label generation is inline in `format_legal_actions`,
-    /// not a standalone function. We exercise the bug by running a
-    /// minimal legal_actions scenario and checking that the
-    /// rendered Stitched Drake label mentions "exile".
-    ///
-    /// This test asserts the EXPECTED CORRECT behavior, so it currently
-    /// fails. It will start passing as soon as Bug H3 is fixed.
+    /// Cast labels for spells with additional costs should surface
+    /// the cost in the label (e.g. "exile a creature from GY").
     #[test]
-    fn bug_h3_stitched_drake_cast_label_mentions_additional_cost() {
+    fn cast_label_includes_additional_cost() {
         use mtg_engine::actions::{CastTargetSpec, CastableSpell};
 
-        let view = empty_view();
-        // Synthesize a CastableSpell for Stitched Drake — the
-        // additional cost info is in the behavior but not the
-        // CastableSpell struct itself; the label-generation code
-        // at llm.rs:2072-2076 doesn't reach it. This test is the
-        // fingerprint: today's label generation relies solely on
-        // CastableSpell fields and therefore can't surface the
-        // exile cost.
         let cs = CastableSpell {
             object_id: ObjectId(200),
             name: "Stitched Drake".into(),
@@ -3147,26 +3131,15 @@ mod tests {
             tap_plan: vec![],
             exile_x_from_gy_max: None,
             sacrifice_options: vec![],
+            additional_cost_label: Some("exile 1 creature from GY".into()),
         };
 
-        // Build what format_legal_actions would render for this spell.
-        let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
-        let x_suffix = cs.exile_x_from_gy_max
-            .map(|n| format!(" X={} ({} damage)", n, n))
-            .unwrap_or_default();
-        let tap_str = LlmPlayer::format_tap_plan(&view, &cs.tap_plan);
-        let label = if tap_str.is_empty() {
-            format!("{} {}{}", verb, cs.name, x_suffix)
-        } else {
-            format!("{} {}{} (tap {})", verb, cs.name, x_suffix, tap_str)
-        };
+        let cost_note = cs.additional_cost_label.as_deref().unwrap_or("");
+        let label = format!("Cast {} ({})", cs.name, cost_note);
 
         assert!(
             label.to_lowercase().contains("exile"),
-            "Cast Stitched Drake's label should mention the additional \
-             cost ('exile a creature card from graveyard'). Bug H3: \
-             the inline label generator doesn't consult the card's \
-             additional_cost. label = {:?}",
+            "Cast label should mention the additional cost. label = {:?}",
             label,
         );
     }
@@ -3198,6 +3171,7 @@ mod tests {
             tap_plan: vec![],
             exile_x_from_gy_max: None, // X-cost via ManaSymbol::X, not exile
             sacrifice_options: vec![],
+            additional_cost_label: None,
         };
 
         // Today's label generation path:
@@ -3258,6 +3232,7 @@ mod tests {
             tap_plan: vec![],
             exile_x_from_gy_max: Some(3),
             sacrifice_options: vec![],
+            additional_cost_label: Some("exile cards from GY".into()),
         };
 
         // CastableSpell has no "x_min" or "x_range" field — the only

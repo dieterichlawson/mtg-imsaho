@@ -147,6 +147,10 @@ pub struct CastableSpell {
     /// Infernal Plunge). Empty if the spell has no sacrifice cost.
     /// Player implementations should prompt the agent to choose one.
     pub sacrifice_options: Vec<ObjectId>,
+    /// Human-readable summary of additional costs beyond mana (e.g.
+    /// "exile a creature from GY", "sacrifice a creature"). `None`
+    /// when the spell has no additional cost.
+    pub additional_cost_label: Option<String>,
 }
 
 /// An activated ability that can be activated, with its valid target options.

@@ -1129,6 +1129,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 };
                 actions.extend(cast_actions);
                 let spec = build_cast_target_spec(state, player, obj.id, &target_req, behavior);
+                let additional_cost_label = match &data.additional_cost {
+                    Some(AdditionalCost::SacrificeCreature) => Some("sacrifice a creature".into()),
+                    Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => {
+                        Some(format!("exile {} creature{} from GY", n, if *n == 1 { "" } else { "s" }))
+                    }
+                    Some(AdditionalCost::ExileXFromGraveyard) => Some("exile cards from GY".into()),
+                    None => None,
+                };
                 castable_spells.push(crate::actions::CastableSpell {
                     object_id: obj.id,
                     name: data.name.clone(),
@@ -1137,6 +1145,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     tap_plan: spell_tap_plan,
                     exile_x_from_gy_max,
                     sacrifice_options: eligible_sacrifices.clone(),
+                    additional_cost_label,
                 });
             }
         }
@@ -1242,6 +1251,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     tap_plan: fb_tap_plan,
                     exile_x_from_gy_max: None,
                     sacrifice_options: vec![], // Flashback spells don't have sacrifice additional costs
+                    additional_cost_label: None,
                 });
             }
         }
