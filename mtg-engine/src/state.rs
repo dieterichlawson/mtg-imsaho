@@ -277,7 +277,8 @@ impl GameState {
         id
     }
 
-    /// Create a token on the battlefield.
+    /// Create a token on the battlefield. Returns all created IDs
+    /// (primary + Parallel Lives extras).
     pub fn create_token(
         &mut self,
         name: &str,
@@ -288,7 +289,7 @@ impl GameState {
         card_types: Vec<crate::types::CardType>,
         keywords: Vec<crate::types::Keyword>,
         registry: &crate::cards::CardRegistry,
-    ) -> ObjectId {
+    ) -> Vec<ObjectId> {
         self.create_token_with_subtypes(name, owner, power, toughness, colors, card_types, keywords, vec![], registry)
     }
 
@@ -306,7 +307,7 @@ impl GameState {
         keywords: Vec<crate::types::Keyword>,
         subtypes: Vec<String>,
         registry: &crate::cards::CardRegistry,
-    ) -> ObjectId {
+    ) -> Vec<ObjectId> {
         // Check for token-doubling replacement effects (e.g. Parallel Lives).
         let doubler_count = self.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.controller == owner)
@@ -324,17 +325,21 @@ impl GameState {
             0
         };
 
+        let mut all_ids = Vec::new();
+
         // Create the primary token.
         let id = self.create_token_internal(name, owner, power, toughness,
             colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(), registry);
+        all_ids.push(id);
 
         // Create extra copies for token doublers.
         for _ in 0..extra_copies {
-            self.create_token_internal(name, owner, power, toughness,
+            let extra = self.create_token_internal(name, owner, power, toughness,
                 colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(), registry);
+            all_ids.push(extra);
         }
 
-        id
+        all_ids
     }
 
     /// Internal token creation without Parallel Lives doubling.
@@ -408,8 +413,8 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let source = self.get_object(source_id);
-        let (name, power, toughness, card_id) = match source {
-            Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id),
+        let (name, power, toughness, card_id, is_legendary) = match source {
+            Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.is_legendary),
             None => return ObjectId(0),
         };
         let (colors, keywords, card_types, subtypes) = registry.card_data(card_id)
@@ -429,7 +434,7 @@ impl GameState {
             })
             .unwrap_or_default();
 
-        let id = self.create_token_with_subtypes(
+        let all_ids = self.create_token_with_subtypes(
             &name,
             owner,
             power.unwrap_or(0),
@@ -440,11 +445,15 @@ impl GameState {
             subtypes.iter().map(|s| s.to_string()).collect(),
             registry,
         );
-        // Copy the card_id so the token gets the same CardBehavior.
-        if let Some(obj) = self.get_object_mut(id) {
-            obj.card_id = card_id;
+        // Copy the card_id and is_legendary so ALL tokens (including Parallel Lives extras)
+        // get the same CardBehavior and are correctly flagged for the legend rule.
+        for &token_id in &all_ids {
+            if let Some(obj) = self.get_object_mut(token_id) {
+                obj.card_id = card_id;
+                obj.is_legendary = is_legendary;
+            }
         }
-        id
+        all_ids.into_iter().next().unwrap_or(ObjectId(0))
     }
 
     /// Move an object to a new zone.

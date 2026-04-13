@@ -435,7 +435,7 @@ fn undead_alchemist_mills_instead_of_damage() {
         vec![Color::Black], vec![CardType::Creature], vec![],
         vec!["Zombie".into()],
         &reg,
-    );
+    )[0];
     state.get_object_mut(zombie).unwrap().summoning_sick = false;
 
     // Put creature cards in P1's library so milling creates tokens.
@@ -1558,6 +1558,7 @@ fn grimgrin_sacrifice_untaps_and_counters() {
             targets: vec![],
             tap_plan: vec![],
             sacrifice: Some(zombie),
+            x_value: None,
         },
         &reg,
     );
@@ -2638,6 +2639,7 @@ fn grimoire_discard_presents_choice_and_adds_study_counter() {
         &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
 tap_plan: vec![],
 sacrifice: None,
+x_value: None,
 },
         &reg,
     );
@@ -2681,6 +2683,7 @@ fn grimoire_single_card_in_hand_auto_discards() {
         &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
 tap_plan: vec![],
 sacrifice: None,
+x_value: None,
 },
         &reg,
     );
@@ -2721,6 +2724,7 @@ fn grimoire_accumulates_three_study_counters() {
             &Action::ActivateAbility { object_id: grimoire, ability_index: 0, targets: vec![],
 tap_plan: vec![],
 sacrifice: None,
+x_value: None,
 },
             &reg,
         );
@@ -2765,6 +2769,7 @@ fn grimoire_reanimates_all_graveyard_creatures() {
         &Action::ActivateAbility { object_id: grimoire, ability_index: 1, targets: vec![],
 tap_plan: vec![],
 sacrifice: None,
+x_value: None,
 },
         &reg,
     );
@@ -2824,6 +2829,7 @@ fn civilized_scholar_discard_creature_transforms() {
         &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
 tap_plan: vec![],
 sacrifice: None,
+x_value: None,
 },
         &reg,
     );
@@ -2868,6 +2874,7 @@ fn civilized_scholar_discard_noncreature_no_transform() {
         &Action::ActivateAbility { object_id: scholar, ability_index: 0, targets: vec![],
 tap_plan: vec![],
 sacrifice: None,
+x_value: None,
 },
         &reg,
     );

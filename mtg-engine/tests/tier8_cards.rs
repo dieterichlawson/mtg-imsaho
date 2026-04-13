@@ -36,6 +36,7 @@ fn selfless_cathar_pump_all_creatures() {
             targets: vec![],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -74,6 +75,7 @@ fn silverchase_fox_exiles_enchantment() {
             targets: vec![Target::Object(enchantment)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -115,6 +117,7 @@ fn brain_weevil_forces_discard() {
             targets: vec![Target::Player(P1)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -163,6 +166,7 @@ fn disciple_of_griselbrand_gains_life() {
             targets: vec![],
             tap_plan: vec![],
             sacrifice: Some(fatty),
+            x_value: None,
         },
         &reg,
     );
@@ -374,6 +378,7 @@ fn skirsdag_cultist_deals_2_damage_to_creature() {
             targets: vec![Target::Object(target)],
             tap_plan: vec![],
             sacrifice: Some(fodder),
+            x_value: None,
         },
         &reg,
     );
@@ -404,6 +409,7 @@ fn skirsdag_cultist_deals_2_damage_to_player() {
             targets: vec![Target::Player(P1)],
             tap_plan: vec![],
             sacrifice: Some(fodder),
+            x_value: None,
         },
         &reg,
     );
@@ -454,6 +460,7 @@ fn stitchers_apprentice_creates_token_then_sacrifices() {
             targets: vec![],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -504,6 +511,7 @@ fn stitchers_apprentice_token_is_2_2_homunculus() {
             targets: vec![],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );

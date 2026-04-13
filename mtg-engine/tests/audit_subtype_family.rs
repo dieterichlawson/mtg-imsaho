@@ -180,7 +180,7 @@ fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
         vec![],
         vec!["Vampire".into()],
         &registry,
-    );
+    )[0];
     if let Some(obj) = state.get_object_mut(token) {
         obj.summoning_sick = false;
     }
@@ -328,7 +328,7 @@ fn bug_at_vampiric_fury_buffs_vampire_token() {
         vec![],
         vec!["Vampire".into()],
         &registry,
-    );
+    )[0];
     if let Some(obj) = state.get_object_mut(token) {
         obj.summoning_sick = false;
     }
@@ -463,7 +463,7 @@ fn bug_31_003_urgent_exorcism_targets_spirit_token() {
         vec![],
         vec!["Spirit".into()],
         &registry,
-    );
+    )[0];
     if let Some(obj) = state.get_object_mut(token) {
         obj.summoning_sick = false;
     }

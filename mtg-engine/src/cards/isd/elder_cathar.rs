@@ -49,11 +49,18 @@ impl CardBehavior for ElderCathar {
             if let Target::Object(id) = targets[0] {
                 let is_human = state.get_object(id)
                     .map(|o| {
-                        let obj_has = o.subtypes.iter().any(|s| s == "Human");
-                        let card_has = registry.card_data(o.card_id)
-                            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                            .unwrap_or(false);
-                        obj_has || card_has
+                        if o.subtypes.iter().any(|s| s == "Human") {
+                            true
+                        } else if o.is_transformed {
+                            registry.get(o.card_id)
+                                .and_then(|b| b.back_face_data())
+                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                                .unwrap_or(false)
+                        } else {
+                            registry.card_data(o.card_id)
+                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                                .unwrap_or(false)
+                        }
                     })
                     .unwrap_or(false);
                 let count = if is_human { 2 } else { 1 };

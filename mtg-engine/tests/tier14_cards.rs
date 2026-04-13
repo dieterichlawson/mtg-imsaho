@@ -362,6 +362,7 @@ fn kessig_wolf_run_grants_power_and_trample() {
             targets: vec![Target::Object(creature)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -489,6 +490,7 @@ fn olivia_ping_ability() {
             targets: vec![Target::Object(target_creature)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -529,6 +531,7 @@ fn olivia_gain_control_of_vampire() {
             targets: vec![Target::Object(vampire)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );

@@ -162,36 +162,60 @@ pub fn present_optional_target_choice(
 // Build lists of valid targets for common patterns.
 // ═══════════════════════════════════════════════════════════════════
 
-/// All creatures on the battlefield.
-pub fn creature_targets(state: &GameState) -> Vec<Target> {
+/// All targetable creatures on the battlefield (respects hexproof/protection).
+pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+        .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
         .collect()
 }
 
-/// All creatures on the battlefield except a specific one.
-pub fn creature_targets_except(state: &GameState, exclude: ObjectId) -> Vec<Target> {
+/// All targetable creatures on the battlefield except a specific one.
+pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != exclude)
+        .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
         .map(|o| Target::Object(o.id))
         .collect()
 }
 
-/// All creatures + all players ("any target").
-pub fn any_targets(state: &GameState) -> Vec<Target> {
-    let mut targets = creature_targets(state);
+/// All targetable creatures + planeswalkers + all players ("any target").
+pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
+    let mut targets = creature_targets(state, source_id, controller, registry);
+    // Add planeswalkers (which have power = None, so creature_targets misses them)
+    for o in state.objects.values() {
+        if o.zone == Zone::Battlefield && o.power.is_none()
+            && o.card_types.contains(&crate::types::CardType::Planeswalker)
+            && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
+        {
+            targets.push(Target::Object(o.id));
+        }
+    }
     for player in &state.players {
-        targets.push(Target::Player(player.id));
+        if !state.player_has_hexproof(player.id, registry) || player.id == controller {
+            targets.push(Target::Player(player.id));
+        }
     }
     targets
 }
 
-/// All creatures + all players, excluding a specific creature.
-pub fn any_targets_except(state: &GameState, exclude: ObjectId) -> Vec<Target> {
-    let mut targets = creature_targets_except(state, exclude);
+/// All targetable creatures + planeswalkers + all players, excluding a specific object.
+pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
+    let mut targets = creature_targets_except(state, exclude, source_id, controller, registry);
+    // Add planeswalkers (which have power = None, so creature_targets misses them)
+    for o in state.objects.values() {
+        if o.zone == Zone::Battlefield && o.power.is_none() && o.id != exclude
+            && o.card_types.contains(&crate::types::CardType::Planeswalker)
+            && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
+        {
+            targets.push(Target::Object(o.id));
+        }
+    }
     for player in &state.players {
-        targets.push(Target::Player(player.id));
+        if !state.player_has_hexproof(player.id, registry) || player.id == controller {
+            targets.push(Target::Player(player.id));
+        }
     }
     targets
 }

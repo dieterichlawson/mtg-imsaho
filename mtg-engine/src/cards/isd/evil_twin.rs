@@ -39,12 +39,19 @@ impl CardBehavior for EvilTwin {
     }
 
     fn has_etb_handler(&self) -> bool { true }
+    fn enters_as_copy(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
+        // Mark as entering with a pending copy effect (CR 614.1d) so SBA
+        // doesn't kill the 0/0 before the copy decision happens.
+        if let Some(obj) = state.get_object_mut(object_id) {
+            obj.entering_copy_source = true;
+        }
+
         // Collect all creatures on the battlefield except Evil Twin itself.
-        let targets = crate::cards::helpers::creature_targets_except(state, object_id);
+        let targets = crate::cards::helpers::creature_targets_except(state, object_id, object_id, controller, registry);
 
         // "You may" — present an optional choice. If no creatures exist or the
         // player declines, Evil Twin stays as a 0/0 and dies to SBA.
@@ -57,6 +64,11 @@ impl CardBehavior for EvilTwin {
                 PendingEffect::CopyCreature { source_id: object_id },
                 "Evil Twin: you may choose a creature to copy",
             );
+        } else {
+            // No targets — clear the flag so SBA can clean up the 0/0.
+            if let Some(obj) = state.get_object_mut(object_id) {
+                obj.entering_copy_source = false;
+            }
         }
     }
 

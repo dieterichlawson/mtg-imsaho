@@ -37,8 +37,13 @@ impl CardBehavior for VillageCannibals {
             return;
         }
         let is_human = state.get_object(dead_id)
-            .and_then(|o| registry.card_data(o.card_id))
-            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+            .map(|o| {
+                let from_registry = registry.card_data(o.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false);
+                let from_instance = o.subtypes.iter().any(|s| s == "Human");
+                from_registry || from_instance
+            })
             .unwrap_or(false);
         if is_human {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);

@@ -496,7 +496,7 @@ fn intangible_virtue_buffs_creatures() {
         vec![CardType::Creature],
         vec![],
         &reg,
-    );
+    )[0];
     state.get_object_mut(token).unwrap().summoning_sick = false;
 
     // Also create a non-token creature that should NOT be buffed.
@@ -542,7 +542,7 @@ fn token_has_summoning_sickness() {
         vec![CardType::Creature],
         vec![Keyword::Flying],
         &reg,
-    );
+    )[0];
 
     let obj = state.get_object(token).unwrap();
     assert!(obj.summoning_sick,
@@ -562,7 +562,7 @@ fn tokens_cease_to_exist_when_killed() {
         vec![CardType::Creature],
         vec![Keyword::Flying],
         &reg,
-    );
+    )[0];
 
     // Kill it by casting Lightning Bolt on it.
     let bolt = castable_spell(&mut state, &reg, "Lightning Bolt", P0);

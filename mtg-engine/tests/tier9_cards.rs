@@ -58,6 +58,7 @@ fn travelers_amulet_finds_basic_land() {
             targets: vec![],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -113,6 +114,7 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
             targets: vec![Target::Object(creature_b)],
             tap_plan: vec![],
             sacrifice: Some(creature_a),
+            x_value: None,
         },
         &reg,
     );
@@ -209,6 +211,7 @@ fn runechanters_pike_equip_ability() {
             targets: vec![Target::Object(creature)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -282,6 +285,7 @@ fn inquisitors_flail_equip_ability() {
             targets: vec![Target::Object(creature)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -436,6 +440,7 @@ fn blazing_torch_deals_damage_to_player() {
             targets: vec![Target::Player(P1)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -472,6 +477,7 @@ fn blazing_torch_deals_damage_to_creature() {
             targets: vec![Target::Object(enemy)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -501,6 +507,7 @@ fn blazing_torch_damage_source_is_torch_not_creature() {
             targets: vec![Target::Object(enemy)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
@@ -532,6 +539,7 @@ fn blazing_torch_equip_ability() {
             targets: vec![Target::Object(creature)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );

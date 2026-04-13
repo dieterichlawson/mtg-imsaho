@@ -101,8 +101,16 @@ impl CardBehavior for OliviaVoldaren {
                     if let Some(target_obj) = state.get_object(*target_id) {
                         if target_obj.zone == Zone::Battlefield {
                             // Deal 1 damage.
+                            let is_planeswalker = state.get_object(*target_id)
+                                .map(|o| o.card_types.contains(&CardType::Planeswalker))
+                                .unwrap_or(false);
                             if let Some(obj) = state.get_object_mut(*target_id) {
-                                obj.damage_marked += 1;
+                                if is_planeswalker {
+                                    let loyalty = obj.counters.entry(CounterType::Loyalty).or_insert(0);
+                                    *loyalty = loyalty.saturating_sub(1);
+                                } else {
+                                    obj.damage_marked += 1;
+                                }
                                 obj.damaged_by.push(object_id);
                                 // Add Vampire subtype if not already present.
                                 if !obj.subtypes.contains(&"Vampire".to_string()) {

@@ -362,7 +362,7 @@ fn howlpack_alpha_werewolf_wolf_creature_gets_only_plus_one() {
         vec![],
         vec!["Werewolf".into(), "Wolf".into()],
         &reg,
-    );
+    )[0];
 
     // The creature should get exactly +1/+1 (not +2/+2) from Howlpack Alpha
     assert_eq!(state.effective_power(dual_id, &reg).unwrap(), 3,
@@ -438,6 +438,7 @@ fn nightfall_predator_can_fight_own_creature() {
             targets: vec![Target::Object(own_creature)],
             tap_plan: vec![],
             sacrifice: None,
+            x_value: None,
         },
         &reg,
     );
