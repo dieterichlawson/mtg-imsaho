@@ -575,6 +575,23 @@ fn deal_damage_to_player(
     let mut amount = amount;
     amount *= combat_damage_multiplier(state, source, registry);
 
+    // CR 614: Check for replacement effects that replace combat damage to a player
+    // (e.g. Undead Alchemist: Zombie damage → mill instead).
+    let source_controller = state.get_object(source).map(|o| o.controller);
+    if let Some(controller) = source_controller {
+        let replacers: Vec<(ObjectId, crate::ids::CardId)> = state.objects.values()
+            .filter(|o| o.zone == crate::types::Zone::Battlefield && o.controller == controller)
+            .map(|o| (o.id, o.card_id))
+            .collect();
+        for (obj_id, card_id) in replacers {
+            if let Some(behavior) = registry.get(card_id) {
+                if behavior.replace_combat_damage_to_player(state, obj_id, source, player, amount, registry) {
+                    return; // Damage fully replaced
+                }
+            }
+        }
+    }
+
     let old_life = state.get_player(player).life;
     let new_life = old_life - amount as i32;
     state.get_player_mut(player).life = new_life;

@@ -862,7 +862,7 @@ fn bug_undead_alchemist_trigger_only_from_own_mill() {
     // Simulate the Zombie dealing 2 combat damage to P1
     // This should trigger Undead Alchemist's replacement: mill 2 instead of damage
     let behavior = registry.get(state.get_object(alchemist).unwrap().card_id).unwrap();
-    behavior.on_any_combat_damage_to_player(&mut state, alchemist, zombie, P1, 2, &registry);
+    behavior.replace_combat_damage_to_player(&mut state, alchemist, zombie, P1, 2, &registry);
 
     let milled = lib_before - state.get_player(P1).library_order.len();
 

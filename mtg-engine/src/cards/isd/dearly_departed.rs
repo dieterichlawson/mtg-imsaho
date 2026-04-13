@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -27,44 +27,43 @@ impl CardBehavior for DearlyDeparted {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::AnyCreatureEnters,
-                    description: "Human enters with +1/+1 counter (Dearly Departed in graveyard)".into(),
-                },
-            ],
+            triggered_abilities: vec![],
         }
     }
 
-    fn trigger_zones(&self, kind: &TriggerKind) -> Vec<Zone> {
-        match kind {
-            TriggerKind::AnyCreatureEnters => vec![Zone::Graveyard],
-            _ => vec![Zone::Battlefield],
-        }
+    fn entering_modifier_zones(&self) -> Vec<Zone> {
+        vec![Zone::Graveyard]
     }
 
-    fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
-        // Dearly Departed must be in OUR graveyard.
-        let self_obj = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Graveyard => o,
-            _ => return,
+    fn modify_creature_entering_counters(
+        &self,
+        state: &GameState,
+        self_id: ObjectId,
+        entering_id: ObjectId,
+        entering_controller: PlayerId,
+        registry: &CardRegistry,
+    ) -> Vec<(CounterType, u32)> {
+        // Must be in our graveyard.
+        let owner = match state.get_object(self_id) {
+            Some(o) if o.zone == Zone::Graveyard => o.owner,
+            _ => return vec![],
         };
-        let owner = self_obj.owner;
-        // Only applies to creatures we control.
-        if entered_controller != owner {
-            return;
+        if entering_controller != owner {
+            return vec![];
         }
-        // Check if the entered creature is a Human.
-        let card_id = state.get_object(entered_id).map(|o| o.card_id);
-        let is_human = card_id
-            .and_then(|cid| registry.card_data(cid))
-            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-            .unwrap_or(false)
-            || state.get_object(entered_id)
-                .map(|o| o.subtypes.iter().any(|s| s == "Human"))
-                .unwrap_or(false);
-        if is_human {
-            state.add_counters(entered_id, CounterType::PlusOnePlusOne, 1);
+        // Only affects Human creatures.
+        let is_human = state.get_object(entering_id)
+            .map(|o| {
+                let registry_has = registry.card_data(o.card_id)
+                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
+                    .unwrap_or(false);
+                let instance_has = o.subtypes.iter().any(|s| s == "Human");
+                registry_has || instance_has
+            })
+            .unwrap_or(false);
+        if !is_human {
+            return vec![];
         }
+        vec![(CounterType::PlusOnePlusOne, 1)]
     }
 }

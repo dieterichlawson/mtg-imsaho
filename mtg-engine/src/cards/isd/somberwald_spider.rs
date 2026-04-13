@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -23,22 +23,15 @@ impl CardBehavior for SomberwaldSpider {
             oracle_text: "Reach (This creature can block creatures with flying.)\nMorbid — This creature enters with two +1/+1 counters on it if a creature died this turn.".into(),
             keywords: vec![Keyword::Reach],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EntersBattlefield,
-                    description: "if morbid, put two +1/+1 counters on it".into(),
-                },
-            ],
+            triggered_abilities: vec![],
         }
     }
 
-    fn has_etb_handler(&self) -> bool { true }
-
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn entering_with_counters(&self, state: &GameState, _self_id: ObjectId, _from_zone: Option<Zone>, _registry: &CardRegistry) -> Vec<(CounterType, u32)> {
         if state.creature_died_this_turn {
-            state.add_counters(object_id, CounterType::PlusOnePlusOne, 2);
-            state.log(crate::state::LogLevel::Event,
-                "Somberwald Spider enters with morbid — two +1/+1 counters".to_string());
+            vec![(CounterType::PlusOnePlusOne, 2)]
+        } else {
+            vec![]
         }
     }
 }

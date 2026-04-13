@@ -425,6 +425,13 @@ impl GameState {
         self.objects.insert(id, obj);
         // Apply entering-battlefield replacement effects (CR 614.1d) for tokens too.
         self.apply_entering_copy_replacement(id, registry);
+
+        // CR 614.1c: Apply "enters with" counters for tokens.
+        let token_counters = self.compute_entering_counters(id, None, registry);
+        for (counter_type, count) in &token_counters {
+            self.add_counters(id, *counter_type, *count);
+        }
+
         let controller = self.get_object(id).map(|o| o.controller).unwrap_or(owner);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
             object: id,
@@ -512,6 +519,14 @@ impl GameState {
         // immediately before it left the battlefield.
         let pre_move_controller = self.objects.get(&id).map(|o| o.controller);
 
+        // CR 614.1c: Compute "enters with" counters BEFORE the zone change,
+        // so graveyard counts still include this creature if entering from GY.
+        let entering_counters = if to == Zone::Battlefield && from.map(|z| z != Zone::Battlefield).unwrap_or(false) {
+            self.compute_entering_counters(id, from, registry)
+        } else {
+            vec![]
+        };
+
         if let Some(obj) = self.objects.get_mut(&id) {
             let from = obj.zone;
             obj.zone = to;
@@ -551,10 +566,12 @@ impl GameState {
             }
             if to == Zone::Battlefield && from_zone != Zone::Battlefield {
                 // Apply entering-battlefield replacement effects (CR 614.1d).
-                // If a permanent with ReplacementEffect::EnterAsCopy is on the
-                // battlefield under the same controller, the entering creature
-                // becomes a copy of that source before it officially "enters."
                 self.apply_entering_copy_replacement(id, registry);
+
+                // CR 614.1c: Apply pre-computed "enters with" counters.
+                for (counter_type, count) in &entering_counters {
+                    self.add_counters(id, *counter_type, *count);
+                }
 
                 let controller = self.get_object(id).map(|o| o.controller).unwrap_or(PlayerId(0));
                 self.events.push(crate::events::GameEvent::EnteredBattlefield {
@@ -636,6 +653,46 @@ impl GameState {
             self.log(LogLevel::Event,
                 format!("{} enters as a copy of {} ({}/{})", old_name, name, power, toughness));
         }
+    }
+
+    /// CR 614.1c: Compute all "enters with" counters for a creature about to
+    /// enter the battlefield. Called BEFORE the zone change so graveyard counts
+    /// are accurate (e.g. Unbreathing Horde counts itself when entering from GY).
+    fn compute_entering_counters(
+        &self,
+        entering_id: ObjectId,
+        from_zone: Option<Zone>,
+        registry: &crate::cards::CardRegistry,
+    ) -> Vec<(crate::types::CounterType, u32)> {
+        let card_id = match self.get_object(entering_id) {
+            Some(o) => o.card_id,
+            None => return vec![],
+        };
+
+        let mut counters = Vec::new();
+
+        // 1. Self "enters with" counters (Festerhide Boar, Unbreathing Horde, etc.)
+        if let Some(behavior) = registry.get(card_id) {
+            let self_counters = behavior.entering_with_counters(self, entering_id, from_zone, registry);
+            counters.extend(self_counters);
+        }
+
+        // 2. External modifiers (Dearly Departed in graveyard, etc.)
+        let entering_controller = self.get_object(entering_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        for obj in self.objects.values() {
+            if obj.id == entering_id { continue; }
+            if let Some(behavior) = registry.get(obj.card_id) {
+                let zones = behavior.entering_modifier_zones();
+                if zones.contains(&obj.zone) {
+                    let extra = behavior.modify_creature_entering_counters(
+                        self, obj.id, entering_id, entering_controller, registry,
+                    );
+                    counters.extend(extra);
+                }
+            }
+        }
+
+        counters
     }
 
     /// Get an object by ID.

@@ -1195,12 +1195,13 @@ fn bug_unbreathing_horde_no_counters_via_reanimation() {
         state.get_object_mut(id).unwrap().name = "Walking Corpse".into();
     }
 
-    // Place Unbreathing Horde on battlefield directly (simulating reanimation)
-    let horde = named_creature(&mut state, &registry, "Unbreathing Horde", P0);
-
-    // Fire ETB trigger
-    let behavior = registry.get(state.get_object(horde).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, horde, &registry);
+    // Put Unbreathing Horde in graveyard, then move to battlefield
+    // (simulating reanimation). The entering_with_counters replacement
+    // effect fires during move_object.
+    let horde_card_id = registry.get_id_by_name("Unbreathing Horde").unwrap();
+    let horde = state.create_object(horde_card_id, P0, Zone::Graveyard, Some(0), Some(0));
+    state.get_object_mut(horde).unwrap().name = "Unbreathing Horde".into();
+    state.move_object(horde, Zone::Battlefield, &registry);
 
     // Should have +1/+1 counters equal to Zombies in graveyard (3)
     let counters = state.get_counter_count(horde, CounterType::PlusOnePlusOne);
@@ -1700,11 +1701,13 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
         obj.subtypes = vec!["Zombie".into()];
     }
 
-    // Simulate combat damage event processing
-    let behavior1 = registry.get(
-        registry.get_id_by_name("Undead Alchemist").unwrap()
-    ).unwrap();
-    behavior1.on_any_combat_damage_to_player(&mut state, _alch1, zombie, P1, 2, &registry);
+    // Simulate combat damage replacement — the engine iterates replacers
+    // and the first Alchemist replaces the damage. The second should not
+    // double-replace.
+    let alch_card_id = registry.get_id_by_name("Undead Alchemist").unwrap();
+    let behavior1 = registry.get(alch_card_id).unwrap();
+    let replaced = behavior1.replace_combat_damage_to_player(&mut state, _alch1, zombie, P1, 2, &registry);
+    assert!(replaced, "First Alchemist should replace the damage");
 
     let milled = lib_before - state.get_player(P1).library_order.len();
 

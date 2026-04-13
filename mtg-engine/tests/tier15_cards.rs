@@ -54,12 +54,12 @@ fn dearly_departed_gives_counter_to_entering_humans() {
     let dd = named_creature(&mut state, &reg, "Dearly Departed", P0);
     state.move_object(dd, Zone::Graveyard, &reg);
 
-    // Place a Human creature on the battlefield (Champion of the Parish is a Human).
-    let human = named_creature(&mut state, &reg, "Champion of the Parish", P0);
-
-    // Trigger "any creature enters" on the Dearly Departed.
-    let behavior = reg.get(state.get_object(dd).unwrap().card_id).unwrap();
-    behavior.on_any_creature_enters(&mut state, dd, human, P0, &reg);
+    // Create a Human in hand, then move to battlefield so the
+    // entering-with-counters replacement effect fires.
+    let champ_id = reg.get_id_by_name("Champion of the Parish").unwrap();
+    let human = state.create_object(champ_id, P0, Zone::Hand, Some(1), Some(1));
+    state.get_object_mut(human).unwrap().name = "Champion of the Parish".into();
+    state.move_object(human, Zone::Battlefield, &reg);
 
     let counters = state.get_object(human).unwrap()
         .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
@@ -448,15 +448,13 @@ fn undead_alchemist_mills_instead_of_damage() {
 
     let initial_life = state.get_player(P1).life;
 
-    // Simulate: Zombie dealt 2 combat damage to P1.
-    // First, reduce life (as combat damage normally does), then the trigger restores it.
-    state.get_player_mut(P1).life = initial_life - 2;
-
+    // The replacement effect intercepts damage before it's applied.
     let behavior = reg.get(state.get_object(alchemist).unwrap().card_id).unwrap();
-    behavior.on_any_combat_damage_to_player(&mut state, alchemist, zombie, P1, 2, &reg);
+    let replaced = behavior.replace_combat_damage_to_player(&mut state, alchemist, zombie, P1, 2, &reg);
+    assert!(replaced, "Undead Alchemist should replace Zombie combat damage");
 
-    // Life should be restored (damage was replaced by mill).
-    assert_eq!(state.get_player(P1).life, initial_life, "Life should be restored");
+    // Life should be unchanged (damage was replaced, never applied).
+    assert_eq!(state.get_player(P1).life, initial_life, "Life should be unchanged — damage was replaced");
 
     // The creature cards should have been exiled (not in graveyard).
     let p1_exile = state.objects.values()

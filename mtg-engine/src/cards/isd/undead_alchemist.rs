@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::*;
@@ -9,10 +9,12 @@ use crate::types::*;
 /// opponent's graveyard from their library, exile that card and create a 2/2
 /// black Zombie creature token.
 ///
-/// Simplified: The replacement effect is handled in on_any_combat_damage_to_player.
-/// Since we can't truly replace damage at this level, we mill the opponent and
-/// prevent the life loss by restoring it. The mill-to-exile-and-token part is
-/// also handled there.
+/// Ability 1 is a replacement effect: combat damage from Zombies is replaced
+/// with milling. Implemented via replace_combat_damage_to_player.
+///
+/// Ability 2 (mill-watcher trigger for non-combat mill sources) is not yet
+/// implemented as a standalone trigger — currently the exile-and-token logic
+/// is inlined in the replacement effect for the combat mill path only.
 pub struct UndeadAlchemist;
 
 impl CardBehavior for UndeadAlchemist {
@@ -33,52 +35,50 @@ impl CardBehavior for UndeadAlchemist {
             flashback_cost: None,
             continuous_effects: vec![],
             additional_cost: None,
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::AnyCombatDamageToPlayer,
-                    description: "mill instead of damage, exile creatures for Zombie tokens".into(),
-                },
-            ],
+            triggered_abilities: vec![],
         }
     }
 
-    fn on_any_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, amount: u32, registry: &CardRegistry) {
+    fn replace_combat_damage_to_player(
+        &self,
+        state: &mut GameState,
+        self_id: ObjectId,
+        source_id: ObjectId,
+        damaged_player: PlayerId,
+        amount: u32,
+        registry: &CardRegistry,
+    ) -> bool {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            _ => return false,
         };
-        // Check if the source is a Zombie we control.
+        // Only replace damage from Zombies we control.
         let source = match state.get_object(source_id) {
             Some(o) if o.controller == controller => o,
-            _ => return,
+            _ => return false,
         };
         let is_zombie = registry.card_data(source.card_id)
             .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
             .unwrap_or(false)
             || source.subtypes.iter().any(|s| s == "Zombie");
         if !is_zombie {
-            return;
+            return false;
         }
-        // "Instead" — restore the life loss from combat damage.
-        let current_life = state.get_player(damaged_player).life;
-        state.get_player_mut(damaged_player).life = current_life + amount as i32;
 
-        // Mill that many cards.
+        // Mill that many cards instead of dealing damage.
         let player_state = state.get_player(damaged_player);
         let mill_count = std::cmp::min(amount as usize, player_state.library_order.len());
         let milled_ids: Vec<ObjectId> = player_state.library_order[..mill_count].to_vec();
 
-        // Remove from library.
         let player_state = state.get_player_mut(damaged_player);
         for _ in 0..mill_count {
             player_state.library_order.remove(0);
         }
-        // Move to graveyard, then check for creatures.
         for &obj_id in &milled_ids {
             state.move_object(obj_id, Zone::Graveyard, registry);
         }
 
-        // Check each milled card: if it's a creature, exile it and create a Zombie.
+        // Ability 2 (inline for combat-mill path): exile milled creatures, create Zombies.
         for &obj_id in &milled_ids {
             let is_creature = state.get_object(obj_id)
                 .map(|o| {
@@ -103,5 +103,6 @@ impl CardBehavior for UndeadAlchemist {
         state.log(crate::state::LogLevel::Event,
             format!("Undead Alchemist: Zombie dealt {} combat damage, milled {} cards instead",
                 amount, mill_count));
+        true // Damage fully replaced
     }
 }

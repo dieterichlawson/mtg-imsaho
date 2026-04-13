@@ -299,6 +299,26 @@ pub trait CardBehavior: Send + Sync {
     /// The engine checks these instead of hardcoding card names.
     fn replacement_effects(&self) -> Vec<crate::types::ReplacementEffect> { vec![] }
 
+    /// CR 614.1c: Compute counters this creature enters the battlefield with.
+    /// Called BEFORE the zone change completes, so graveyard counts still
+    /// include this creature if it's entering from the graveyard.
+    /// `from_zone` is the zone the creature is coming from (`None` for tokens).
+    fn entering_with_counters(&self, _state: &GameState, _self_id: ObjectId, _from_zone: Option<Zone>, _registry: &CardRegistry) -> Vec<(crate::types::CounterType, u32)> { vec![] }
+
+    /// CR 614.1c: Compute additional counters another creature should enter
+    /// with, contributed by this card from its current zone.
+    /// Used by Dearly Departed (in graveyard, adds +1/+1 to entering Humans).
+    fn modify_creature_entering_counters(&self, _state: &GameState, _self_id: ObjectId, _entering_id: ObjectId, _entering_controller: PlayerId, _registry: &CardRegistry) -> Vec<(crate::types::CounterType, u32)> { vec![] }
+
+    /// Zones from which this card contributes entering counters to other creatures.
+    /// Default: empty. Dearly Departed returns `[Zone::Graveyard]`.
+    fn entering_modifier_zones(&self) -> Vec<Zone> { vec![] }
+
+    /// CR 614: Replace combat damage a Zombie (or other qualifying creature)
+    /// would deal to a player. Returns `true` if the damage was fully replaced
+    /// (caller should skip normal damage). Used by Undead Alchemist.
+    fn replace_combat_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) -> bool { false }
+
     /// Whether this card can be cast from the graveyard (not flashback — stays in graveyard after).
     /// Used by Skaab Ruinator.
     fn can_cast_from_graveyard(&self) -> bool { false }

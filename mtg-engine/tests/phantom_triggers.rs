@@ -121,10 +121,10 @@ fn champion_on_battlefield_does_trigger() {
     );
 }
 
-/// Dearly Departed in the graveyard SHOULD trigger when a Human enters,
-/// since its trigger_zones returns Graveyard.
+/// Dearly Departed in the graveyard adds a +1/+1 counter to entering
+/// Humans via a CR 614.1c replacement effect (not a trigger).
 #[test]
-fn dearly_departed_in_graveyard_does_trigger() {
+fn dearly_departed_in_graveyard_adds_counter() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -133,19 +133,15 @@ fn dearly_departed_in_graveyard_does_trigger() {
     let data = reg.card_data(card_id).unwrap();
     let _departed = state.create_object(card_id, P0, Zone::Graveyard, data.power, data.toughness);
 
-    // A Human enters the battlefield under the same controller.
-    let human = named_creature(&mut state, &reg, "Unruly Mob", P0);
-    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
-        object: human,
-        controller: P0,
-    });
+    // A Human enters via move_object so the replacement effect fires.
+    let human_id = reg.get_id_by_name("Unruly Mob").unwrap();
+    let human = state.create_object(human_id, P0, Zone::Hand, Some(1), Some(1));
+    state.get_object_mut(human).unwrap().name = "Unruly Mob".into();
+    state.move_object(human, Zone::Battlefield, &reg);
 
-    let had_triggers = triggers::collect_triggers(&mut state, &reg);
-    assert!(had_triggers, "Dearly Departed in graveyard should trigger for Human ETB");
-    assert!(
-        state.stack.iter().any(|e| matches!(e, StackEntry::Trigger(_))),
-        "Watch trigger should be on the stack"
-    );
+    let counters = state.get_object(human).unwrap()
+        .counters.get(&mtg_engine::types::CounterType::PlusOnePlusOne).copied().unwrap_or(0);
+    assert_eq!(counters, 1, "Human entering with Dearly Departed in graveyard should get +1/+1 counter");
 }
 
 /// Dearly Departed on the battlefield should NOT trigger (it only fires from graveyard).

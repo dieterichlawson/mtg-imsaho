@@ -1,5 +1,4 @@
-use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
@@ -10,53 +9,18 @@ use crate::types::*;
 /// If this creature would be dealt damage, prevent that damage and remove a +1/+1
 /// counter from it.
 ///
-/// "Enters with" is a replacement effect — counters must be counted and added as
-/// part of entry, before ETB triggers. Per ruling: "If Unbreathing Horde enters
-/// from a graveyard, it will count itself."
-///
-/// Counter placement is implemented in on_enter_battlefield so it fires for both
-/// the cast path (ETB trigger after on_resolve moves the card) and the reanimation
-/// path (ETB trigger fires directly).
+/// "Enters with" is a replacement effect (CR 614.1c). Per Scryfall ruling:
+/// "If Unbreathing Horde enters from a graveyard, it will count itself."
+/// The entering_with_counters callback is called BEFORE the zone change,
+/// so graveyard counts naturally include the Horde when entering from GY.
 pub struct UnbreathingHorde;
 
 impl UnbreathingHorde {
-    fn add_zombie_counters(state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        let bf_count = Self::count_zombies_on_battlefield(state, controller, object_id, registry);
-        let gy_count = Self::count_zombies_in_graveyard(state, controller, registry);
-        let total = bf_count + gy_count;
-        if total > 0 {
-            state.add_counters(object_id, CounterType::PlusOnePlusOne, total);
-        }
-        state.log(crate::state::LogLevel::Event,
-            format!("Unbreathing Horde enters with {} +1/+1 counters ({} battlefield + {} graveyard Zombies)",
-                total, bf_count, gy_count));
-    }
-
-    fn count_zombies_on_battlefield(state: &GameState, controller: crate::ids::PlayerId, exclude: ObjectId, registry: &CardRegistry) -> u32 {
-        state.objects.values()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                && o.controller == controller
-                && o.id != exclude
-                && (registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                    .unwrap_or(false)
-                    || o.subtypes.iter().any(|s| s == "Zombie"))
-            })
-            .count() as u32
-    }
-
-    fn count_zombies_in_graveyard(state: &GameState, controller: crate::ids::PlayerId, registry: &CardRegistry) -> u32 {
-        state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .filter(|o| {
-                registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                    .unwrap_or(false)
-                    || o.subtypes.iter().any(|s| s == "Zombie")
-            })
-            .count() as u32
+    fn is_zombie(obj: &crate::state::GameObject, registry: &CardRegistry) -> bool {
+        registry.card_data(obj.card_id)
+            .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
+            .unwrap_or(false)
+            || obj.subtypes.iter().any(|s| s == "Zombie")
     }
 }
 
@@ -80,44 +44,43 @@ impl CardBehavior for UnbreathingHorde {
                 ContinuousEffect::PreventDamageRemoveCounter { scope: EffectScope::OnSelf },
             ],
             additional_cost: None,
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EntersBattlefield,
-                    description: "enters with +1/+1 counters for each Zombie".into(),
-                },
-            ],
+            triggered_abilities: vec![],
         }
     }
 
-    fn has_etb_handler(&self) -> bool { true }
+    fn entering_with_counters(&self, state: &GameState, self_id: ObjectId, _from_zone: Option<Zone>, registry: &CardRegistry) -> Vec<(CounterType, u32)> {
+        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        // Skip if counters were already added via on_resolve (cast path).
-        let already_has_counters = state.get_object(object_id)
-            .map(|o| *o.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0) > 0)
+        // Count other Zombies on the battlefield.
+        let bf_count = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                && o.controller == controller
+                && o.id != self_id
+                && Self::is_zombie(o, registry)
+            })
+            .count() as u32;
+
+        // Count Zombie cards in graveyard. Because this callback is called
+        // BEFORE the zone change, the Horde is still in its original zone.
+        // If entering from graveyard, the Horde naturally appears in this
+        // count (per the Scryfall ruling: "it will count itself").
+        let gy_count = state.objects_in_zone(Zone::Graveyard, controller)
+            .iter()
+            .filter(|o| o.id != self_id && Self::is_zombie(o, registry))
+            .count() as u32;
+
+        // Per ruling: count self when entering from graveyard.
+        let self_in_gy = state.get_object(self_id)
+            .map(|o| o.zone == Zone::Graveyard)
             .unwrap_or(false);
-        if already_has_counters {
-            return;
-        }
-        Self::add_zombie_counters(state, object_id, registry);
-    }
+        let self_count = if self_in_gy { 1u32 } else { 0 };
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // Count Zombies BEFORE entering (the Horde is still on the stack).
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
-        let bf_count = Self::count_zombies_on_battlefield(state, controller, object_id, registry);
-        let gy_count = Self::count_zombies_in_graveyard(state, controller, registry);
-
-        // Move to battlefield.
-        state.move_object(object_id, Zone::Battlefield, registry);
-
-        // Add counters after entering.
-        let total = bf_count + gy_count;
+        let total = bf_count + gy_count + self_count;
         if total > 0 {
-            state.add_counters(object_id, CounterType::PlusOnePlusOne, total);
+            vec![(CounterType::PlusOnePlusOne, total)]
+        } else {
+            vec![]
         }
-        state.log(crate::state::LogLevel::Event,
-            format!("Unbreathing Horde enters with {} +1/+1 counters ({} battlefield + {} graveyard Zombies)",
-                total, bf_count, gy_count));
     }
 }
