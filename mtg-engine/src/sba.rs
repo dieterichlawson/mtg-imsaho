@@ -188,38 +188,10 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             }
         }
 
-        // Rule 704.5i: A planeswalker with 0 or less loyalty goes to graveyard.
-        let pw_zero_loyalty: Vec<_> = state.objects.values()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && o.card_types.contains(&crate::types::CardType::Planeswalker)
-                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
-            })
-            .map(|o| o.id)
-            .collect();
-        // Also check via registry for non-token planeswalkers.
-        let pw_zero_loyalty_registry: Vec<_> = state.objects.values()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && !o.card_types.contains(&crate::types::CardType::Planeswalker)
-                    && registry.card_data(o.card_id)
-                        .map(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
-                        .unwrap_or(false)
-                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
-            })
-            .map(|o| o.id)
-            .collect();
-        for id in pw_zero_loyalty.into_iter().chain(pw_zero_loyalty_registry) {
-            state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
-                state.obj_name(id)));
-            state.move_object(id, Zone::Graveyard, registry);
-            took_action = true;
-        }
-
-        // State-triggered abilities (CR 603.8): checked during SBA processing.
-        // When the condition is met and the trigger is not already on the stack,
-        // push a trigger onto pending_triggers so it goes on the stack and can
-        // be responded to. The trigger won't fire again while it's on the stack.
+        // State-triggered abilities (CR 603.8): checked during SBA processing,
+        // BEFORE zero-loyalty destruction. Per CR 603.8, state triggers fire as
+        // soon as their condition is true — Garruk Relentless's "transform when
+        // ≤2 loyalty" must trigger before the zero-loyalty SBA destroys him.
         {
             let garruk_card_id = registry.get_id_by_name("Garruk Relentless");
             if let Some(gid) = garruk_card_id {
@@ -247,9 +219,39 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                     );
                     state.log(LogLevel::Event,
                         "Garruk Relentless's state-triggered ability triggers (transform)".into());
-                    took_action = true;
+                    // Return immediately so the state trigger goes on the stack
+                    // before any further SBA processing (e.g. zero-loyalty death).
+                    return true;
                 }
             }
+        }
+
+        // Rule 704.5i: A planeswalker with 0 or less loyalty goes to graveyard.
+        let pw_zero_loyalty: Vec<_> = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                    && o.card_types.contains(&crate::types::CardType::Planeswalker)
+                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
+            })
+            .map(|o| o.id)
+            .collect();
+        // Also check via registry for non-token planeswalkers.
+        let pw_zero_loyalty_registry: Vec<_> = state.objects.values()
+            .filter(|o| {
+                o.zone == Zone::Battlefield
+                    && !o.card_types.contains(&crate::types::CardType::Planeswalker)
+                    && registry.card_data(o.card_id)
+                        .map(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
+                        .unwrap_or(false)
+                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
+            })
+            .map(|o| o.id)
+            .collect();
+        for id in pw_zero_loyalty.into_iter().chain(pw_zero_loyalty_registry) {
+            state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
+                state.obj_name(id)));
+            state.move_object(id, Zone::Graveyard, registry);
+            took_action = true;
         }
 
         // Rule 704.5j: Legend rule — if a player controls two or more legendary

@@ -215,7 +215,7 @@ impl GameView {
                         Some(StackItemView {
                             object_id: ObjectId(0), // triggers don't have an object ID
                             card_id: CardId(0),
-                            name: trigger.display_name(registry),
+                            name: trigger.display_name_with_state(registry, Some(state)),
                             controller: trigger.controller(),
                             targets: vec![],
                         })

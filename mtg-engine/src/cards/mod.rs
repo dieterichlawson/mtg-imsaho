@@ -195,6 +195,8 @@ pub enum TargetFilter {
     SubtypeOrCardType { subtypes: Vec<String>, card_types: Vec<CardType> },
     /// Only creatures with a specific subtype (Olivia Voldaren: target Vampire).
     HasSubtype(String),
+    /// Only creatures with a specific keyword (Daybreak Ranger: flying).
+    HasKeyword(Keyword),
     /// "Another" — excludes the source permanent from valid targets.
     Another,
     /// Only creatures with the same name as the source permanent (Evil Twin).
@@ -225,6 +227,7 @@ impl std::fmt::Display for TargetFilter {
                 write!(f, "{}", names.join(" or "))
             }
             TargetFilter::HasSubtype(subtype) => write!(f, "{}", subtype),
+            TargetFilter::HasKeyword(kw) => write!(f, "with {:?}", kw),
             TargetFilter::Another => write!(f, "another"),
             TargetFilter::SameNameAsSource => write!(f, "with the same name"),
             TargetFilter::SubtypeOrCardType { subtypes, card_types } => {

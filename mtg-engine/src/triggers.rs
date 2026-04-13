@@ -200,11 +200,32 @@ impl PendingTrigger {
     }
 
     /// Display name for the stack view, including what the trigger does.
+    /// Uses the object's current transform state to show the correct face name.
     pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
-        let card_name = |card_id: CardId| {
+        self.display_name_with_state(registry, None)
+    }
+
+    /// Display name with optional game state for transform-aware name lookup.
+    pub fn display_name_with_state(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
+        let face_name = |card_id: CardId, object_id: Option<ObjectId>| {
+            // Check if the object is transformed and use back-face name if so.
+            let is_transformed = object_id
+                .and_then(|oid| state.and_then(|s| s.get_object(oid)))
+                .map(|o| o.is_transformed)
+                .unwrap_or(false);
+            if is_transformed {
+                if let Some(behavior) = registry.get(card_id) {
+                    if let Some(back) = behavior.back_face_data() {
+                        return back.name;
+                    }
+                }
+            }
             registry.card_data(card_id)
                 .map(|d| d.name)
                 .unwrap_or_else(|| "Unknown".into())
+        };
+        let card_name = |card_id: CardId| {
+            face_name(card_id, None)
         };
         match self {
             PendingTrigger::SelfDies { dead_card_id, description, .. } => {
@@ -264,11 +285,12 @@ impl PendingTrigger {
                     format!("{}'s end of combat trigger ({})", card_name(*card_id), description)
                 }
             }
-            PendingTrigger::UpkeepTrigger { card_id, description, .. } => {
+            PendingTrigger::UpkeepTrigger { object_id, card_id, description, .. } => {
+                let name = face_name(*card_id, Some(*object_id));
                 if description.is_empty() {
-                    format!("{}'s upkeep trigger", card_name(*card_id))
+                    format!("{}'s upkeep trigger", name)
                 } else {
-                    format!("{}'s upkeep trigger ({})", card_name(*card_id), description)
+                    format!("{}'s upkeep trigger ({})", name, description)
                 }
             }
             PendingTrigger::EndStepTrigger { card_id, description, .. } => {

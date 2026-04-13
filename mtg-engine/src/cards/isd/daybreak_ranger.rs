@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::helpers;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
-                   TargetRequirement, TriggerKind, TriggeredAbilityDef};
-use crate::ids::{ObjectId, PlayerId};
+                   TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::*;
 
@@ -109,36 +109,10 @@ impl CardBehavior for DaybreakRanger {
                 cost: ManaCost::free(),
                 requires_tap: true,
                 sacrifice_cost: SacrificeCost::None,
-                target_requirement: Some(TargetRequirement::Creature),
+                target_requirement: Some(TargetRequirement::CreatureWithFilter(TargetFilter::HasKeyword(Keyword::Flying))),
                 once_per_turn: false,
                 sorcery_speed_only: false,
             }]
-        }
-    }
-
-    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
-        match target {
-            Target::Object(id) => {
-                let _obj = match state.get_object(*id) {
-                    Some(o) if o.zone == Zone::Battlefield && o.power.is_some() => o,
-                    _ => return false,
-                };
-                // Check if the source is transformed (Nightfall Predator targets any creature you don't control).
-                let self_transformed = state.objects.values()
-                    .find(|o| o.controller == caster && o.zone == Zone::Battlefield
-                        && registry.card_data(o.card_id).map(|d| d.name == "Daybreak Ranger").unwrap_or(false))
-                    .map(|o| o.is_transformed)
-                    .unwrap_or(false);
-                if self_transformed {
-                    // Nightfall Predator: "{R}, {T}: This creature fights target creature."
-                    // No controller restriction — can fight any creature.
-                    true
-                } else {
-                    // Daybreak Ranger: target creature with flying
-                    state.has_keyword(*id, Keyword::Flying, registry)
-                }
-            }
-            Target::Player(_) => false,
         }
     }
 

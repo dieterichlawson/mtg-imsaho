@@ -1265,7 +1265,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         // Responding to something on the stack.
         let top_name = match state.stack.last() {
             Some(crate::state::StackEntry::Spell(id)) => card_name(state, registry, *id),
-            Some(crate::state::StackEntry::Trigger(t)) => t.display_name(registry),
+            Some(crate::state::StackEntry::Trigger(t)) => t.display_name_with_state(registry, Some(state)),
             None => "?".into(),
         };
         let caster = match state.stack.last() {
@@ -1908,6 +1908,9 @@ fn matches_ability_target_filter(
                 || registry.card_data(obj.card_id)
                     .map(|d| d.subtypes.iter().any(|s| s == subtype))
                     .unwrap_or(false)
+        }
+        TargetFilter::HasKeyword(keyword) => {
+            state.has_keyword(obj.id, *keyword, registry)
         }
         TargetFilter::SameNameAsSource => {
             // Only target creatures with the same name as the source permanent.

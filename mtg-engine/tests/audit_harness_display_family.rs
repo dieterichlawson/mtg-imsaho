@@ -62,7 +62,7 @@ fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
         controller: P0,
         description: "transform back if 2+ spells cast".into(),
     };
-    let label = trigger.display_name(&registry);
+    let label = trigger.display_name_with_state(&registry, Some(&state));
 
     assert!(
         !label.contains("Tormented Pariah"),
