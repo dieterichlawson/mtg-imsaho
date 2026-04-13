@@ -8,6 +8,10 @@ Break all changes down into a series of small commits when possible. Each commit
 
 Always fix compiler warnings before finishing work. Run `cargo check` and ensure zero warnings.
 
+## Verifying test results
+
+When running `cargo test`, check for BOTH test failures AND compilation errors. A compilation error in one test file prevents that binary from running, which shows as 0 failures — because the tests never executed, not because they passed. Always report compilation errors as problems, not as passing tests. If the numbers don't make sense, investigate before reporting success.
+
 ## Repository layout
 
 Keep the repo root tidy. When creating a new file, place it in the correct directory instead of at the root:
