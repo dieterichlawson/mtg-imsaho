@@ -2,6 +2,7 @@
 *.txt
 *.log
 /results.json
+/reports/coverage/
 # Claude Code: commit commands/skills and project settings, ignore local/personal files
 .claude/settings.local.json
 .claude/worktrees/
