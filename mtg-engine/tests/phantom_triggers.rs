@@ -58,9 +58,13 @@ fn real_etb_trigger_still_fires() {
 
     let had_triggers = triggers::collect_triggers(&mut state, &reg);
     assert!(had_triggers, "Crossway Vampire has an ETB trigger");
+    // CR 603.3d: with two valid creature targets (Crossway itself and
+    // Vampire Interloper), the trigger pauses for a target-choice prompt
+    // before going on the stack.
     assert!(
-        state.stack.iter().any(|e| matches!(e, StackEntry::Trigger(_))),
-        "ETB trigger should be on the stack"
+        state.awaiting_action.is_some()
+            || state.stack.iter().any(|e| matches!(e, StackEntry::Trigger(_))),
+        "ETB trigger should be on the stack or awaiting a target choice"
     );
 }
 

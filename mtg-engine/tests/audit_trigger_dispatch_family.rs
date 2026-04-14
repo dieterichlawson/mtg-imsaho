@@ -637,13 +637,18 @@ fn simultaneous_triggers_auto_order_no_prompt() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Two Falkenrath Nobles for P0 — each triggers on creature death.
-    let _noble1 = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
-    let _noble2 = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
+    // Two Abattoir Ghouls for P0 — each has an untargeted death-watch
+    // trigger ("whenever a creature dealt damage by ... dies, you gain
+    // life equal to that creature's toughness"). Untargeted triggers
+    // exercise the stack-ordering code path without invoking CR 603.3d
+    // stack-time target choices.
+    let ghoul1 = named_creature(&mut state, &registry, "Abattoir Ghoul", P0);
+    let ghoul2 = named_creature(&mut state, &registry, "Abattoir Ghoul", P0);
 
-    // Kill a P1 creature to fire both AnyCreatureDies triggers.
-    let victim = ready_creature(&mut state, P1, 1, 1);
-    state.get_object_mut(victim).unwrap().damage_marked = 2;
+    // Kill a creature damaged by both ghouls simultaneously.
+    let victim = ready_creature(&mut state, P1, 1, 5);
+    state.get_object_mut(victim).unwrap().damage_marked = 5;
+    state.get_object_mut(victim).unwrap().damaged_by = vec![ghoul1, ghoul2];
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     let had_triggers = mtg_engine::triggers::collect_triggers(&mut state, &registry);
@@ -657,10 +662,10 @@ fn simultaneous_triggers_auto_order_no_prompt() {
         "Test setup: expected 2+ simultaneous P0 triggers, got {ap_count}",
     );
 
-    // No prompt — triggers were auto-ordered onto the stack.
+    // No prompt — untargeted triggers were auto-ordered onto the stack.
     assert!(
         state.awaiting_action.is_none(),
-        "Simultaneous triggers should be auto-ordered without prompting. \
+        "Simultaneous untargeted triggers should be auto-ordered without prompting. \
          awaiting_action = {:?}",
         state.awaiting_action,
     );

@@ -1,6 +1,6 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::ObjectId;
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
@@ -32,39 +32,51 @@ impl CardBehavior for ReaperFromTheAbyss {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
-                    description: "destroy target non-Demon creature".into(),
-                target_requirement: None,
+                    description: "if morbid, destroy target non-Demon creature".into(),
+                    // CR 603.3d: target chosen as the trigger goes on the stack.
+                    // Use Creature + is_valid_target to filter to non-Demon creatures.
+                    // When morbid is not satisfied, is_valid_target returns false for
+                    // every creature and the trigger is removed per CR 603.3c.
+                    target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
         }
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
-        // Morbid — only trigger if a creature died this turn.
+    /// Filter to non-Demon creatures on the battlefield. Additionally enforce
+    /// the morbid condition here: if no creature died this turn, no creature
+    /// is a legal target, so the trigger is removed from the stack per CR 603.3c.
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+        if !state.creature_died_this_turn {
+            return false;
+        }
+        let Target::Object(id) = target else { return false; };
+        let Some(obj) = state.get_object(*id) else { return false; };
+        if obj.zone != Zone::Battlefield || obj.power.is_none() {
+            return false;
+        }
+        // Exclude Demons (check both the object's subtypes and the card data).
+        let is_demon = obj.subtypes.iter().any(|s| s == "Demon")
+            || registry.card_data(obj.card_id)
+                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Demon"));
+        !is_demon
+    }
+
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        // Must still be on the battlefield.
+        if !state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+            return;
+        }
+        // Morbid — only destroy if a creature died this turn (CR 603.4 intervening-if,
+        // also enforced at stack-time via is_valid_target).
         if !state.creature_died_this_turn {
             return;
         }
-        // Collect non-Demon creatures as targets.
-        let targets: Vec<Target> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != self_id)
-            .filter(|o| {
-                let is_demon = registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Demon"))
-                    || o.subtypes.iter().any(|s| s == "Demon");
-                !is_demon
-            })
-            .map(|o| Target::Object(o.id))
-            .collect();
-        // Present choice to controller.
-        crate::cards::helpers::present_target_choice(
-            state, self_id, controller, targets,
-            PendingEffect::DestroyCreature { source_name: "Reaper from the Abyss".into() },
-            "Reaper from the Abyss: destroy target non-Demon creature",
-            false,
-        );
+        // CR 603.3d: target was chosen when the trigger went on the stack.
+        let Some(target) = chosen_targets.first() else { return };
+        let effect = PendingEffect::DestroyCreature {
+            source_name: "Reaper from the Abyss".into(),
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
 }

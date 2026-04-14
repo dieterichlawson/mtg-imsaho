@@ -700,6 +700,8 @@ fn pitchburn_devils_choice_with_targets() {
         },
         &reg,
     );
+    // Resolve the pending trigger on the stack to actually apply damage.
+    triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_object(blocker).unwrap().damage_marked, 3,
         "Chosen creature should take 3 damage");

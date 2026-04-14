@@ -1,6 +1,6 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::ObjectId;
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
@@ -30,13 +30,27 @@ impl CardBehavior for AngelOfFlightAlabaster {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "return target Spirit card from your graveyard to your hand".into(),
-                target_requirement: None,
+                    // CR 603.3d: target chosen as the trigger goes on the stack.
+                    // Use GraveyardCardOwnedByCaster + is_valid_target to filter to Spirits.
+                    target_requirement: Some(TargetRequirement::GraveyardCardOwnedByCaster),
                 },
             ],
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
+    /// Filter graveyard cards to Spirit cards only.
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+        let Target::Object(id) = target else { return false; };
+        let Some(obj) = state.get_object(*id) else { return false; };
+        if obj.zone != Zone::Graveyard {
+            return false;
+        }
+        obj.subtypes.iter().any(|s| s == "Spirit")
+            || registry.card_data(obj.card_id)
+                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Spirit"))
+    }
+
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -44,22 +58,11 @@ impl CardBehavior for AngelOfFlightAlabaster {
         if state.active_player != controller {
             return;
         }
-        // Collect Spirit cards in graveyard as targets.
-        let targets: Vec<Target> = state.objects_in_zone(Zone::Graveyard, controller)
-            .iter()
-            .filter(|o| {
-                registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Spirit"))
-                || o.subtypes.iter().any(|s| s == "Spirit")
-            })
-            .map(|o| Target::Object(o.id))
-            .collect();
-        // Present choice to controller (mandatory if any valid targets exist).
-        crate::cards::helpers::present_target_choice(
-            state, self_id, controller, targets,
-            PendingEffect::ReturnToHand { source_name: "Angel of Flight Alabaster".into() },
-            "Angel of Flight Alabaster: return target Spirit from graveyard to hand",
-            false,
-        );
+        // CR 603.3d: target was chosen when the trigger went on the stack.
+        let Some(target) = chosen_targets.first() else { return };
+        let effect = PendingEffect::ReturnToHand {
+            source_name: "Angel of Flight Alabaster".into(),
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
 }

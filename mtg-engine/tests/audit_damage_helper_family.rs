@@ -237,12 +237,13 @@ fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
         .unwrap()
         .card_types = vec![CardType::Planeswalker];
 
-    // Pitchburn Devils on P0's side. We fire its death trigger directly
-    // so we don't have to drive the SBA pipeline.
+    // Pitchburn Devils on P0's side. Drive the death via SBA so the
+    // SelfDies trigger enters the pipeline with stack-time targeting.
     let pd = named_creature(&mut state, &registry, "Pitchburn Devils", P0);
-    let pd_card_id = state.get_object(pd).unwrap().card_id;
-    let behavior = registry.get(pd_card_id).unwrap();
-    behavior.on_dies(&mut state, pd, &[], &registry);
+    state.get_object_mut(pd).unwrap().damage_marked = 3;
+    state.events.clear();
+    mtg_engine::sba::check_state_based_actions(&mut state, &registry);
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
 
     let garruk_in_options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {

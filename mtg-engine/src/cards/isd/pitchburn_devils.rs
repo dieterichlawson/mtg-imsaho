@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
@@ -27,21 +27,21 @@ impl CardBehavior for PitchburnDevils {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "deal 3 damage to any target".into(),
-                target_requirement: None,
+                    // CR 603.3d: target chosen as the trigger goes on the stack.
+                    target_requirement: Some(TargetRequirement::AnyTarget),
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
-        // "Any target" — all creatures + all players.
-        let targets = crate::cards::helpers::any_targets(state, object_id, controller, registry);
-        crate::cards::helpers::present_target_choice(
-            state, object_id, controller, targets,
-            PendingEffect::DealDamage { amount: 3, source_id: object_id, source_name: "Pitchburn Devils".into() },
-            "Pitchburn Devils: deal 3 damage to any target",
-            false, // mandatory
-        );
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        // CR 603.3d: target was chosen when the trigger went on the stack.
+        let Some(target) = chosen_targets.first() else { return };
+        let effect = PendingEffect::DealDamage {
+            amount: 3,
+            source_id: object_id,
+            source_name: "Pitchburn Devils".into(),
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
 }

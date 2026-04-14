@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost,
-                   TriggerKind, TriggeredAbilityDef};
-use crate::ids::ObjectId;
+                   TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, ContinuousEffect, EffectScope, Zone, CounterType};
 
@@ -39,7 +39,9 @@ impl CardBehavior for GrimgrinCorpseBorn {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "destroy target creature defending player controls, then +1/+1 counter".into(),
-                target_requirement: None,
+                    // CR 603.3d: target chosen as the trigger goes on the stack.
+                    // Use Creature + is_valid_target to filter to the defending player's creatures.
+                    target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
         }
@@ -54,6 +56,33 @@ impl CardBehavior for GrimgrinCorpseBorn {
         }
         state.log(crate::state::LogLevel::Event,
             "Grimgrin, Corpse-Born enters the battlefield tapped".into());
+    }
+
+    /// Filter the attack trigger's targets to creatures the defending
+    /// player controls. The activated ability is untargeted, so this
+    /// filter only applies to the trigger's `TargetRequirement::Creature`.
+    /// `caster` is the controller of the ability (Grimgrin's controller).
+    /// The defending player is whoever Grimgrin is attacking — read from
+    /// combat state and fall back to the opponent of `caster`.
+    fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+        let Target::Object(id) = target else { return false; };
+        let Some(obj) = state.get_object(*id) else { return false; };
+        if obj.zone != Zone::Battlefield || obj.power.is_none() {
+            return false;
+        }
+        // Determine the defending player: any of the caster's attackers
+        // has a defender entry in combat.attackers. If there are multiple
+        // attackers from the caster, any of their defenders is acceptable
+        // (in practice all attack the same defender in a 2-player game).
+        let defender = state.combat.as_ref()
+            .and_then(|c| c.attackers.iter()
+                .find_map(|(atk, def)| {
+                    state.get_object(*atk).and_then(|a| {
+                        if a.controller == caster { Some(*def) } else { None }
+                    })
+                }))
+            .unwrap_or_else(|| state.opponent(caster));
+        obj.controller == defender
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
@@ -85,46 +114,17 @@ impl CardBehavior for GrimgrinCorpseBorn {
             "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into());
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
-
-        // Get the defending player from combat state, falling back to opponent.
-        let defender = state.combat.as_ref()
-            .and_then(|c| c.attackers.get(&self_id).copied())
-            .unwrap_or_else(|| state.opponent(controller));
-
-        // Collect creatures the defending player controls as potential targets.
-        // Filter out creatures with protection from Grimgrin's subtypes.
-        let targets: Vec<Target> = state.objects_in_zone(Zone::Battlefield, defender)
-            .iter()
-            .filter(|o| o.power.is_some())
-            .filter(|o| crate::engine::can_be_targeted_by(state, o.id, controller, Some(self_id), registry))
-            .map(|o| Target::Object(o.id))
-            .collect();
-
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        // CR 603.3d: target was chosen when the trigger went on the stack.
         // Per ruling: "If the defending player controls no creatures when Grimgrin attacks,
         // the last ability will be removed from the stack and have no effect."
-        // This means no +1/+1 counter either.
-        if targets.is_empty() {
-            return;
-        }
-
-        // Present target choice to the controller. The effect destroys the target
-        // and then adds a +1/+1 counter to Grimgrin.
-        crate::cards::helpers::present_target_choice(
-            state,
-            self_id,
-            controller,
-            targets,
-            PendingEffect::DestroyThenCounter {
-                source_id: self_id,
-                source_name: "Grimgrin, Corpse-Born".into(),
-            },
-            "Grimgrin, Corpse-Born: destroy target creature defending player controls",
-            false,
-        );
+        // That removal is handled by process_pending_trigger_pushes (no legal targets).
+        // When we reach here, we have a target to destroy.
+        let Some(target) = chosen_targets.first() else { return };
+        let effect = PendingEffect::DestroyThenCounter {
+            source_id: self_id,
+            source_name: "Grimgrin, Corpse-Born".into(),
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
 }

@@ -10,6 +10,7 @@ use mtg_engine::ids::CardId;
 use mtg_engine::engine;
 use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::sba::check_state_based_actions;
+use mtg_engine::triggers;
 
 use mtg_engine::types::*;
 
@@ -1603,12 +1604,14 @@ fn grimgrin_attack_trigger_destroys_and_adds_counter() {
         blocker_assignments: std::collections::HashMap::new(),
     });
 
-    // Call on_attacks directly (simulating trigger resolution).
-    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
+    // Fire the AttackersDeclared event and run the trigger pipeline.
+    state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(grimgrin, P1)],
+    });
+    triggers::process_triggers(&mut state, &reg);
 
-    // With only one defender creature, the choice auto-applies (mandatory + 1 target).
-    // The target should be destroyed and Grimgrin should get a +1/+1 counter.
+    // With only one defender creature, the target is auto-chosen and the
+    // trigger goes directly on the stack and resolves.
     assert_eq!(state.get_object(defender_creature).unwrap().zone, Zone::Graveyard,
         "Defending creature should be destroyed");
     assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 1,
@@ -1632,8 +1635,12 @@ fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
         blocker_assignments: std::collections::HashMap::new(),
     });
 
-    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
+    // Fire the AttackersDeclared event and collect triggers (which enters
+    // the stack-time target-choice prompt because there are two valid defenders).
+    state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(grimgrin, P1)],
+    });
+    triggers::collect_triggers(&mut state, &reg);
 
     // With multiple targets, the controller should be presented a choice.
     assert!(state.awaiting_action.is_some(),
@@ -1647,6 +1654,8 @@ fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
         },
         &reg,
     );
+    // Resolve the trigger on the stack.
+    triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_object(creature_a).unwrap().zone, Zone::Graveyard,
         "Chosen creature should be destroyed");
@@ -1671,10 +1680,12 @@ fn grimgrin_attack_no_targets_no_counter() {
         blocker_assignments: std::collections::HashMap::new(),
     });
 
-    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
+    state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(grimgrin, P1)],
+    });
+    triggers::process_triggers(&mut state, &reg);
 
-    // No valid targets — ability does nothing, no +1/+1 counter.
+    // No valid targets — trigger removed from stack (CR 603.3c), no +1/+1 counter.
     assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 0,
         "Grimgrin should NOT get a +1/+1 counter when defender has no creatures");
 }
@@ -1698,8 +1709,10 @@ fn grimgrin_attack_indestructible_target_still_gets_counter() {
         blocker_assignments: std::collections::HashMap::new(),
     });
 
-    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
+    state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(grimgrin, P1)],
+    });
+    triggers::process_triggers(&mut state, &reg);
 
     // The indestructible creature should still be on the battlefield.
     assert_eq!(state.get_object(indestructible).unwrap().zone, Zone::Battlefield,
@@ -1728,11 +1741,14 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
         blocker_assignments: std::collections::HashMap::new(),
     });
 
-    let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
+    state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
+        attackers: vec![(grimgrin, P1)],
+    });
+    triggers::process_triggers(&mut state, &reg);
 
-    // With only one defender creature, auto-applies. The defender's creature should
-    // be destroyed, not the controller's own creature.
+    // With only one defender creature (own_creature is filtered out by
+    // is_valid_target), the target auto-resolves. The defender's creature
+    // should be destroyed, not the controller's own creature.
     assert_eq!(state.get_object(defender_creature).unwrap().zone, Zone::Graveyard,
         "Defending player's creature should be targeted");
     assert_eq!(state.get_object(own_creature).unwrap().zone, Zone::Battlefield,

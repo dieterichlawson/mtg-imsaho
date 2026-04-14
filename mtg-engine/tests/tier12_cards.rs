@@ -301,20 +301,24 @@ fn burning_vengeance_triggers_on_flashback() {
 
     // Burning Vengeance now presents a target choice. Resolve it by targeting P1.
     assert!(state.awaiting_action.is_some(), "Should be awaiting target choice");
-    if let Some(ref choice) = state.awaiting_action {
-        // Apply the effect directly for the test.
-        let effect = match choice {
-            mtg_engine::state::AwaitingAction::ResolutionChoice {
-                choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { effect, .. },
-                ..
-            } => Some(effect.clone()),
-            _ => None,
-        };
-        state.awaiting_action = None;
-        if let Some(effect) = effect {
-            mtg_engine::engine::apply_pending_effect(&mut state, &mtg_engine::actions::Target::Player(P1), &effect, &reg);
-        }
-    }
+    // CR 603.3d: the prompt's effect is AttachTargetToPendingTrigger — it
+    // attaches the chosen target and pushes the trigger onto the stack.
+    let effect = match &state.awaiting_action {
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { effect, .. },
+            ..
+        }) => effect.clone(),
+        _ => panic!("expected ChooseTarget prompt"),
+    };
+    state.awaiting_action = None;
+    mtg_engine::engine::apply_pending_effect(
+        &mut state,
+        &mtg_engine::actions::Target::Player(P1),
+        &effect,
+        &reg,
+    );
+    // Resolve the trigger on the stack to actually apply the damage.
+    triggers::process_triggers(&mut state, &reg);
 
     // Opponent should have lost 2 life.
     assert_eq!(state.get_player(P1).life, 18,

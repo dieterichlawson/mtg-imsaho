@@ -1,5 +1,5 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
-use crate::ids::ObjectId;
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 use crate::actions::Target;
@@ -30,7 +30,8 @@ impl CardBehavior for MorkrutBanshee {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "if morbid, target creature gets -4/-4 until end of turn".into(),
-                target_requirement: None,
+                    // CR 603.3d: target chosen as the trigger goes on the stack.
+                    target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
         }
@@ -38,19 +39,25 @@ impl CardBehavior for MorkrutBanshee {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
+    /// Enforce morbid at target selection: if no creature died this turn,
+    /// no creature is a legal target, so the trigger is removed per CR 603.3c.
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, _target: &Target, _registry: &CardRegistry) -> bool {
+        state.creature_died_this_turn
+    }
+
+    fn on_enter_battlefield(&self, state: &mut GameState, _object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        // Morbid — only apply if a creature died this turn (also enforced at
+        // stack-time via is_valid_target).
         if !state.creature_died_this_turn {
             return;
         }
-
-        let controller = crate::cards::helpers::controller_of(state, object_id);
-        // "Target creature" — can target ANY creature including itself.
-        let targets = crate::cards::helpers::creature_targets(state, object_id, controller, registry);
-        crate::cards::helpers::present_target_choice(
-            state, object_id, controller, targets,
-            PendingEffect::DebuffUntilEOT { power: -4, toughness: -4, source_name: "Morkrut Banshee".into() },
-            "Morkrut Banshee: target creature gets -4/-4 until end of turn",
-            false, // mandatory, not "you may"
-        );
+        // CR 603.3d: target was chosen when the trigger went on the stack.
+        let Some(target) = chosen_targets.first() else { return };
+        let effect = PendingEffect::DebuffUntilEOT {
+            power: -4,
+            toughness: -4,
+            source_name: "Morkrut Banshee".into(),
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
 }

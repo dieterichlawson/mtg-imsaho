@@ -1,6 +1,6 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::GameState;
+use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 use crate::actions::Target;
 
@@ -31,13 +31,17 @@ impl CardBehavior for BurningVengeance {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SpellCast,
                     description: "deal 2 damage to any target".into(),
-                target_requirement: None,
+                    // CR 603.3d: target chosen as the trigger goes on the stack.
+                    // The trigger will be enumerated for ALL spell casts; the
+                    // handler filters to flashback casts only by checking the
+                    // spell's `cast_with_flashback` flag.
+                    target_requirement: Some(TargetRequirement::AnyTarget),
                 },
             ],
         }
     }
 
-    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -52,18 +56,13 @@ impl CardBehavior for BurningVengeance {
         if !cast_from_gy {
             return;
         }
-
-        // "Burning Vengeance deals 2 damage to any target" — present choice.
-        let targets = crate::cards::helpers::any_targets(state, self_id, controller, registry);
-        crate::cards::helpers::present_target_choice(
-            state, self_id, controller, targets,
-            crate::state::PendingEffect::DealDamage {
-                amount: 2,
-                source_id: self_id,
-                source_name: "Burning Vengeance".into(),
-            },
-            "Burning Vengeance: deal 2 damage to any target",
-            false,
-        );
+        // CR 603.3d: target was chosen when the trigger went on the stack.
+        let Some(target) = chosen_targets.first() else { return };
+        let effect = PendingEffect::DealDamage {
+            amount: 2,
+            source_id: self_id,
+            source_name: "Burning Vengeance".into(),
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
 }

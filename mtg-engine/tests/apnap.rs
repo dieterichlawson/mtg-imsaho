@@ -30,19 +30,17 @@ fn process_triggers_with_choices(state: &mut GameState, reg: &CardRegistry) {
     use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
     use mtg_engine::actions::Target;
 
+    // Collect triggers — this also calls process_pending_trigger_pushes, which
+    // may set awaiting_action for stack-time target choices (CR 603.3d).
     triggers::collect_triggers(state, reg);
+
     let mut safety = 0;
     loop {
-        if safety > 50 { break; }
+        if safety > 100 { break; }
         safety += 1;
 
-        // Try to resolve next trigger.
-        if !triggers::resolve_next_trigger(state, reg) {
-            // No more triggers on stack.
-            break;
-        }
-
-        // If a trigger paused for a choice, auto-resolve it.
+        // First, clear any outstanding stack-time target choice by picking
+        // the opponent (or the first legal option).
         if state.awaiting_action.is_some() {
             let (target, effect) = match &state.awaiting_action {
                 Some(AwaitingAction::ResolutionChoice { player, choice, .. }) => {
@@ -65,6 +63,15 @@ fn process_triggers_with_choices(state: &mut GameState, reg: &CardRegistry) {
             if let (Some(target), Some(effect)) = (target, effect) {
                 mtg_engine::engine::apply_pending_effect(state, &target, &effect, reg);
             }
+            // Loop back: applying the effect (e.g., AttachTargetToPendingTrigger)
+            // may set up another prompt for the next pending trigger.
+            continue;
+        }
+
+        // Then try to resolve next trigger on the stack.
+        if !triggers::resolve_next_trigger(state, reg) {
+            // No more triggers on stack and no prompts to clear.
+            break;
         }
 
         // Collect any new triggers caused by the resolution.

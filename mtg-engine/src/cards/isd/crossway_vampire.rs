@@ -1,6 +1,6 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 use crate::actions::Target;
 
@@ -29,7 +29,8 @@ impl CardBehavior for CrosswayVampire {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "target creature can't block this turn".into(),
-                target_requirement: None,
+                    // CR 603.3d: target chosen as the trigger goes on the stack.
+                    target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
         }
@@ -37,15 +38,12 @@ impl CardBehavior for CrosswayVampire {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = crate::cards::helpers::controller_of(state, object_id);
-        // "Target creature" — any creature, including self (Oracle doesn't say "another").
-        let targets = crate::cards::helpers::creature_targets(state, object_id, controller, registry);
-        crate::cards::helpers::present_target_choice(
-            state, object_id, controller, targets,
-            crate::state::PendingEffect::CantBlockThisTurn { source_name: "Crossway Vampire".into() },
-            "Crossway Vampire: target creature can't block this turn",
-            false, // mandatory
-        );
+    fn on_enter_battlefield(&self, state: &mut GameState, _object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        // CR 603.3d: target was chosen when the trigger went on the stack.
+        let Some(target) = chosen_targets.first() else { return };
+        let effect = PendingEffect::CantBlockThisTurn {
+            source_name: "Crossway Vampire".into(),
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
 }

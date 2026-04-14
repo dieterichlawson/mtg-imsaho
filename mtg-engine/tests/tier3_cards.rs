@@ -267,12 +267,16 @@ fn pitchburn_devils_deals_3_on_death() {
     // Should be awaiting a target choice (both players are valid targets).
     assert!(state.awaiting_action.is_some(), "Should be awaiting damage target choice");
 
-    // Choose opponent as target.
+    // Choose opponent as target. This attaches the target to the pending
+    // trigger and pushes it on the stack.
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::ChosenTarget(Some(Target::Player(P1))) },
         &reg,
     );
+
+    // Resolve the trigger on the stack so the damage is actually applied.
+    triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, 17,
         "Opponent should lose 3 life from Pitchburn Devils dying");
@@ -326,16 +330,18 @@ fn rage_thrower_deals_2_on_death() {
 
     triggers::process_triggers(&mut state, &reg);
 
-    // Rage Thrower presents a "target player" choice. Choose opponent (P1).
+    // Rage Thrower presents a "target player or planeswalker" choice.
+    // Choose opponent (P1).
     assert!(state.awaiting_action.is_some(), "Rage Thrower should present a target choice");
-    let target = mtg_engine::actions::Target::Player(P1);
-    mtg_engine::engine::apply_pending_effect(&mut state, &target,
-        &mtg_engine::state::PendingEffect::DealDamage {
-            amount: 2,
-            source_id: mtg_engine::ids::ObjectId(0),
-            source_name: "Rage Thrower".into(),
-        }, &reg);
-    state.awaiting_action = None;
+    state = engine::submit_action(
+        &state,
+        &Action::ResolveChoice {
+            choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(Target::Player(P1))),
+        },
+        &reg,
+    );
+    // Resolve the trigger on the stack to actually apply the damage.
+    triggers::process_triggers(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, 18,
         "P1 should lose 2 life from Rage Thrower's trigger");
