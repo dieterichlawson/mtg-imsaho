@@ -59,6 +59,7 @@ fn travelers_amulet_finds_basic_land() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -115,6 +116,7 @@ fn demonmail_hauberk_equip_sacrifices_creature() {
             tap_plan: vec![],
             sacrifice: Some(creature_a),
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -212,6 +214,7 @@ fn runechanters_pike_equip_ability() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -286,6 +289,7 @@ fn inquisitors_flail_equip_ability() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -441,6 +445,7 @@ fn blazing_torch_deals_damage_to_player() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -478,6 +483,7 @@ fn blazing_torch_deals_damage_to_creature() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -508,6 +514,7 @@ fn blazing_torch_damage_source_is_torch_not_creature() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -540,6 +547,7 @@ fn blazing_torch_equip_ability() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );

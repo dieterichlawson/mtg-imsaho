@@ -365,6 +365,7 @@ fn kessig_wolf_run_grants_power_and_trample() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -493,6 +494,7 @@ fn olivia_ping_ability() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -534,6 +536,7 @@ fn olivia_gain_control_of_vampire() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );

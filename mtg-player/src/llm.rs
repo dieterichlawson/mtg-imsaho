@@ -1790,6 +1790,7 @@ impl LlmPlayer {
                 tap_plan: ab.tap_plan.clone(),
                 sacrifice: chosen.sacrifice,
                 x_value: None,
+                source_card_id: ab.source_card_id,
             };
         }
 
@@ -1866,6 +1867,7 @@ impl LlmPlayer {
             tap_plan: ab.tap_plan.clone(),
             sacrifice: chosen_sacrifice,
             x_value: None,
+            source_card_id: ab.source_card_id,
         }
     }
 

@@ -723,6 +723,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 tap_plan: ability_tap_plan.clone(),
                                 sacrifice: *sac,
                                 x_value: None,
+                                source_card_id: if source_card_id == obj_card_id { None } else { Some(source_card_id) },
                             });
                         }
                     }
@@ -738,6 +739,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         tap_plan: ability_tap_plan.clone(),
                         sacrifice: *sac,
                         x_value: None,
+                        source_card_id: if source_card_id == obj_card_id { None } else { Some(source_card_id) },
                     });
                 }
             }
@@ -1305,24 +1307,30 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     };
 
     // Build collapsed activatable abilities from the expanded ActivateAbility actions.
-    // Group by (object_id, ability_index) and collect every (target, sacrifice) combo
-    // as well as the de-duplicated target list. We capture the tap_plan from the first
-    // action in each group so player UIs can display "(tap Forest, Mountain)" alongside
-    // the ability label, like Cast does.
-    let mut ability_map: std::collections::HashMap<(ObjectId, usize), AbilityGroup> =
+    // Group by (object_id, source_card_id, ability_index) — including source_card_id
+    // ensures aura-granted abilities don't collapse into native ones with the same
+    // ability_index. Collect every (target, sacrifice) combo as well as the
+    // de-duplicated target list. We capture the tap_plan from the first action in
+    // each group so player UIs can display "(tap Forest, Mountain)" alongside the
+    // ability label, like Cast does.
+    let mut ability_map: std::collections::HashMap<(ObjectId, Option<crate::ids::CardId>, usize), AbilityGroup> =
         std::collections::HashMap::new();
     for action in &actions {
-        if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, .. } = action {
-            let entry = ability_map.entry((*object_id, *ability_index)).or_insert_with(|| {
+        if let Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, source_card_id, .. } = action {
+            let entry = ability_map.entry((*object_id, *source_card_id, *ability_index)).or_insert_with(|| {
                 let name = state.obj_name(*object_id);
-                let desc = registry.get(
+                // Look up the description from the source card's behavior. For
+                // native (source_card_id = None), use the object's own card.
+                let lookup_card_id = source_card_id.unwrap_or_else(|| {
                     state.get_object(*object_id).map_or(crate::ids::CardId(0), |o| o.card_id)
-                ).and_then(|b| {
-                    b.activated_abilities(state, *object_id, registry)
-                        .into_iter()
-                        .find(|a| a.ability_index == *ability_index)
-                        .map(|a| a.description.clone())
-                }).unwrap_or_default();
+                });
+                let desc = registry.get(lookup_card_id)
+                    .and_then(|b| {
+                        b.activated_abilities(state, *object_id, registry)
+                            .into_iter()
+                            .find(|a| a.ability_index == *ability_index)
+                            .map(|a| a.description.clone())
+                    }).unwrap_or_default();
                 AbilityGroup {
                     name,
                     description: desc,
@@ -1344,10 +1352,11 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
     let activatable_abilities: Vec<crate::actions::ActivatableAbility> = ability_map
         .into_iter()
-        .map(|((object_id, ability_index), g)| {
+        .map(|((object_id, source_card_id, ability_index), g)| {
             crate::actions::ActivatableAbility {
                 object_id,
                 ability_index,
+                source_card_id,
                 name: g.name,
                 description: g.description,
                 target_options: g.target_options,
@@ -2360,7 +2369,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             activate_mana_source(&mut new_state, *object_id, *ability_index, registry);
         }
 
-        Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, .. } => {
+        Action::ActivateAbility { object_id, ability_index, targets, tap_plan, sacrifice, source_card_id, .. } => {
             let player = new_state.priority_player.expect("ActivateAbility requires priority");
 
             // Execute autotap plan: tap mana sources to fill the mana pool before
@@ -2371,38 +2380,68 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
             let card_id = obj.card_id;
-
-            // Find the ability — check the permanent's own card, Evil Twin override, then attached auras.
             let is_evil_twin_copy = new_state.get_object(*object_id)
                 .is_some_and(|o| o.card_state.contains_key("is_evil_twin"));
-            let ability = registry.get(card_id)
-                .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
-                    .into_iter().find(|a| a.ability_index == *ability_index))
-                .or_else(|| {
-                    // Evil Twin copies another creature: its card_id changes to the copied
-                    // creature's card_id, so we must also check Evil Twin's own behavior.
-                    if is_evil_twin_copy {
-                        registry.get_id_by_name("Evil Twin")
-                            .filter(|&et_id| et_id != card_id)
-                            .and_then(|et_id| {
-                                registry.get(et_id)
-                                    .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
-                                        .into_iter().find(|a| a.ability_index == *ability_index))
-                            })
+
+            // Resolve which card's behavior contributed this ability:
+            // - Some(cid): caller explicitly disambiguated the source — used by
+            //   legal_actions to mark aura-granted abilities. Look up in cid only.
+            // - None: backward-compat chained lookup (native → Evil Twin override
+            //   → attached auras). Used by tests and code paths that don't need
+            //   to disambiguate (only one of those sources contributes the ability).
+            let (behavior_card_id, ability) = if let Some(cid) = *source_card_id {
+                let ab = registry.get(cid)
+                    .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
+                        .into_iter().find(|a| a.ability_index == *ability_index));
+                (cid, ab)
+            } else {
+                let native = registry.get(card_id)
+                    .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
+                        .into_iter().find(|a| a.ability_index == *ability_index));
+                if native.is_some() {
+                    (card_id, native)
+                } else if is_evil_twin_copy {
+                    // Evil Twin override: dispatch to Evil Twin's behavior.
+                    let et_id = registry.get_id_by_name("Evil Twin")
+                        .filter(|&et_id| et_id != card_id);
+                    let ab = et_id.and_then(|cid| registry.get(cid))
+                        .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
+                            .into_iter().find(|a| a.ability_index == *ability_index));
+                    if let Some(ab) = ab {
+                        (et_id.unwrap_or(card_id), Some(ab))
                     } else {
-                        None
-                    }
-                })
-                .or_else(|| {
-                    // Check attached auras.
-                    new_state.objects.values()
-                        .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
-                        .find_map(|a| {
-                            registry.get(a.card_id)
+                        // Fall through to attached lookup below.
+                        let mut found = (card_id, None);
+                        for attached in new_state.objects.values()
+                            .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
+                        {
+                            if let Some(ab) = registry.get(attached.card_id)
                                 .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
-                                    .into_iter().find(|ab| ab.ability_index == *ability_index))
-                        })
-                });
+                                    .into_iter().find(|a| a.ability_index == *ability_index))
+                            {
+                                found = (attached.card_id, Some(ab));
+                                break;
+                            }
+                        }
+                        found
+                    }
+                } else {
+                    // Walk attached auras/equipment.
+                    let mut found = (card_id, None);
+                    for attached in new_state.objects.values()
+                        .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
+                    {
+                        if let Some(ab) = registry.get(attached.card_id)
+                            .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
+                                .into_iter().find(|a| a.ability_index == *ability_index))
+                        {
+                            found = (attached.card_id, Some(ab));
+                            break;
+                        }
+                    }
+                    found
+                }
+            };
 
             if let Some(ab) = ability {
                 // Pay mana cost (with X-cost support).
@@ -2458,27 +2497,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                 }
 
-                // Find which behavior to call (card itself, Evil Twin override, or attached aura).
-                let behavior_card_id = if registry.get(card_id)
-                    .is_some_and(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
-                {
-                    card_id
-                } else if is_evil_twin_copy {
-                    // Evil Twin has copied another creature: dispatch to Evil Twin's behavior.
-                    registry.get_id_by_name("Evil Twin")
-                        .filter(|&et_id| et_id != card_id)
-                        .unwrap_or(card_id)
-                } else {
-                    // Must be from an attached aura.
-                    new_state.objects.values()
-                        .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
-                        .find(|a| {
-                            registry.get(a.card_id)
-                                .is_some_and(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
-                        })
-                        .map_or(card_id, |a| a.card_id)
-                };
-
+                // behavior_card_id was already resolved when we looked up the ability above.
                 if let Some(behavior) = registry.get(behavior_card_id) {
                     behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, targets, registry);
                 }

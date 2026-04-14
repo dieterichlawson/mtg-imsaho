@@ -80,6 +80,7 @@ fn x_equals_3_gives_plus_3() {
         tap_plan: vec![],
         sacrifice: None,
         x_value: None,
+        source_card_id: None,
     };
 
     state = mtg_engine::engine::submit_action(&state, &action, &reg);
@@ -119,6 +120,7 @@ fn x_equals_0_gives_trample_only() {
         tap_plan: vec![],
         sacrifice: None,
         x_value: None,
+        source_card_id: None,
     };
 
     state = mtg_engine::engine::submit_action(&state, &action, &reg);

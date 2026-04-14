@@ -713,7 +713,6 @@ fn bug_q_dearly_departed_is_not_a_trigger() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug X is fixed.
 #[test]
-#[ignore = "Tabled — fix requires adding source_card_id to Action::ActivateAbility (~129 call sites)"]
 fn bug_x_aura_granted_ability_does_not_collide_with_native_index() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -728,6 +727,13 @@ fn bug_x_aura_granted_ability_does_not_collide_with_native_index() {
         obj.name = "Skeletal Grimace".into();
         obj.attached_to = Some(ranger);
     }
+
+    // A flying creature on the opposite side so Daybreak Ranger's
+    // native {T}: deal 2 to flying ability has a valid target and
+    // appears in legal_actions.
+    let flying_target = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(flying_target).unwrap().keywords = vec![Keyword::Flying];
+    state.get_object_mut(flying_target).unwrap().card_types = vec![CardType::Creature];
 
     // Enough mana to activate both abilities (optional — the test
     // only checks the enumeration, not actually activating).

@@ -1560,6 +1560,7 @@ fn grimgrin_sacrifice_untaps_and_counters() {
             tap_plan: vec![],
             sacrifice: Some(zombie),
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );
@@ -2641,6 +2642,7 @@ fn grimoire_discard_presents_choice_and_adds_study_counter() {
 tap_plan: vec![],
 sacrifice: None,
 x_value: None,
+source_card_id: None,
 },
         &reg,
     );
@@ -2685,6 +2687,7 @@ fn grimoire_single_card_in_hand_auto_discards() {
 tap_plan: vec![],
 sacrifice: None,
 x_value: None,
+source_card_id: None,
 },
         &reg,
     );
@@ -2726,6 +2729,7 @@ fn grimoire_accumulates_three_study_counters() {
 tap_plan: vec![],
 sacrifice: None,
 x_value: None,
+source_card_id: None,
 },
             &reg,
         );
@@ -2771,6 +2775,7 @@ fn grimoire_reanimates_all_graveyard_creatures() {
 tap_plan: vec![],
 sacrifice: None,
 x_value: None,
+source_card_id: None,
 },
         &reg,
     );
@@ -2831,6 +2836,7 @@ fn civilized_scholar_discard_creature_transforms() {
 tap_plan: vec![],
 sacrifice: None,
 x_value: None,
+source_card_id: None,
 },
         &reg,
     );
@@ -2876,6 +2882,7 @@ fn civilized_scholar_discard_noncreature_no_transform() {
 tap_plan: vec![],
 sacrifice: None,
 x_value: None,
+source_card_id: None,
 },
         &reg,
     );

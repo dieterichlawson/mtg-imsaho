@@ -51,6 +51,12 @@ pub enum Action {
         /// For X-cost abilities, the chosen X value. When Some, the apply path
         /// uses this instead of computing X from remaining mana in the pool.
         x_value: Option<u32>,
+        /// Disambiguates which behavior contributed this ability. `None` means
+        /// the object's native card (or Evil Twin override). `Some(cid)` means
+        /// the ability is granted by an attached aura whose card is `cid`.
+        /// Required to disambiguate when an aura grants an ability with the
+        /// same `ability_index` as a native ability.
+        source_card_id: Option<crate::ids::CardId>,
     },
 
     /// Activate a planeswalker loyalty ability.
@@ -166,6 +172,9 @@ pub struct CastableSpell {
 pub struct ActivatableAbility {
     pub object_id: ObjectId,
     pub ability_index: usize,
+    /// Disambiguates aura-granted abilities from native ones. See
+    /// [`Action::ActivateAbility::source_card_id`].
+    pub source_card_id: Option<crate::ids::CardId>,
     pub name: String,
     pub description: String,
     pub target_options: Vec<Target>,

@@ -438,6 +438,7 @@ fn nightfall_predator_can_fight_own_creature() {
             tap_plan: vec![],
             sacrifice: None,
             x_value: None,
+            source_card_id: None,
         },
         &reg,
     );

@@ -105,6 +105,7 @@ fn hauberk_explicit_sacrifice_attaches_correctly() {
         tap_plan: vec![],
         sacrifice: Some(creature_a),
         x_value: None,
+        source_card_id: None,
     };
     let new_state = engine::submit_action(&state, &action, &reg);
 
@@ -245,6 +246,7 @@ fn skirsdag_cultist_explicit_sacrifice() {
         tap_plan: vec![],
         sacrifice: Some(fodder),
         x_value: None,
+        source_card_id: None,
     };
     let new_state = engine::submit_action(&state, &action, &reg);
     assert_eq!(new_state.get_object(target).unwrap().damage_marked, 2);
