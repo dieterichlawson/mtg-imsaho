@@ -65,10 +65,79 @@ fn funding_prompt_is_presented_after_non_x_payment() {
 
     let post_cast = cast_devils_play(&state, &registry, dp);
     let options = extract_funding(&post_cast);
-    // One Mountain was tapped for the {R} non-X pip. 2 remain.
+    // The funding options reflect what's available for X *after* the
+    // non-X portion ({R}) is paid — one Mountain's worth is reserved for
+    // that, leaving 2 for X. Note: under rules-strict casting, no mana is
+    // actually paid yet (see rules_strict_spell_stays_in_hand below); the
+    // prompt just shows the post-payment availability the agent should
+    // reason about.
     let mountain = options.groups.iter().find(|g| g.name == "Mountain").unwrap();
     assert_eq!(mountain.source_ids.len(), 2);
     assert_eq!(options.max_x, 2);
+}
+
+#[test]
+fn rules_strict_spell_stays_in_hand_until_funding_completes() {
+    // CR 601.2h → 601.2i: additional costs and mana are paid BEFORE the
+    // spell becomes cast. While the ChooseXFunding prompt is pending,
+    // the spell must still be in hand (not on stack), no mana should be
+    // tapped, and no SpellCast event should have fired.
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let dp = spell_in_hand(&mut state, &registry, "Devil's Play", P0);
+    let mountains: Vec<_> = (0..3)
+        .map(|_| place_land(&mut state, &registry, "Mountain", P0))
+        .collect();
+    let _ = ready_creature(&mut state, P1, 2, 2);
+
+    let post_cast = cast_devils_play(&state, &registry, dp);
+
+    // Spell still in hand — not on stack.
+    assert_eq!(
+        post_cast.get_object(dp).map(|o| o.zone),
+        Some(Zone::Hand),
+        "spell should stay in hand until funding completes"
+    );
+    assert!(
+        post_cast.stack.is_empty(),
+        "stack should be empty while ChooseXFunding is pending"
+    );
+    // Mountains still untapped — tap_plan hasn't executed.
+    for m in &mountains {
+        assert!(
+            !post_cast.get_object(*m).unwrap().tapped,
+            "Mountain should remain untapped during the funding prompt"
+        );
+    }
+    // No mana paid yet.
+    assert_eq!(post_cast.get_player(P0).mana_pool.total(), 0);
+    // SpellCast must not have fired.
+    assert!(!post_cast.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::SpellCast { object, .. } if *object == dp)));
+    // pending_spell_cast should be set.
+    assert!(post_cast.pending_spell_cast.is_some());
+
+    // After funding: spell on stack, mountains tapped, SpellCast fired.
+    let mut response = FundingResponse::default();
+    response.taps.insert("Mountain".into(), 2);
+    let action = Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
+    let final_state = engine::submit_action(&post_cast, &action, &registry);
+
+    assert_eq!(
+        final_state.get_object(dp).map(|o| o.zone),
+        Some(Zone::Stack),
+        "spell should be on stack after funding completes"
+    );
+    // All 3 Mountains tapped (1 for {R}, 2 for X=2).
+    for m in &mountains {
+        assert!(
+            final_state.get_object(*m).unwrap().tapped,
+            "all Mountains should be tapped after funding resolves"
+        );
+    }
+    assert!(final_state.events.iter().any(|e| matches!(e,
+        mtg_engine::events::GameEvent::SpellCast { object, .. } if *object == dp)));
+    assert!(final_state.pending_spell_cast.is_none());
 }
 
 #[test]

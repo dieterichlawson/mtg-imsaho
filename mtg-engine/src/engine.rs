@@ -2219,11 +2219,6 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         Action::CastSpell { object_id, targets, sacrifice, exile_count, exile_ids, alternative_cost, tap_plan } => {
             let player = new_state.priority_player.expect("CastSpell requires priority");
 
-            // Execute autotap plan: activate mana sources before paying the spell cost.
-            for &(source_id, ability_index) in tap_plan {
-                activate_mana_source(&mut new_state, source_id, ability_index, registry);
-            }
-
             // Detect flashback vs cast-from-graveyard.
             // Flashback: card has flashback_cost or dynamically granted flashback.
             // Cast-from-graveyard: card has can_cast_from_graveyard() (Skaab Ruinator) — uses normal mana cost.
@@ -2235,8 +2230,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let is_cast_from_graveyard = in_graveyard && behavior.can_cast_from_graveyard();
             let is_flashback = in_graveyard && !is_cast_from_graveyard;
 
-            // Pay the appropriate mana cost (applying cost reduction for non-flashback).
-            // If an alternative_cost is provided (e.g. Rooftop Storm's {0}), use it directly.
+            // Resolve the appropriate mana cost (applying cost reduction for
+            // non-flashback). If an alternative_cost is provided (e.g.
+            // Rooftop Storm's {0}), use it directly.
             let cost = if let Some(alt) = alternative_cost {
                 alt.clone()
             } else if is_flashback {
@@ -2253,15 +2249,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 effective_spell_cost(&new_state, registry, card_id, &base_cost, player)
             };
 
-            // Handle X-cost spells: pay non-X portion, then (after the spell is
-            // placed on the stack below) prompt the player with ChooseXFunding
-            // to pick specific sources to tap and pool mana to spend for X.
+            // Rules-strict X-cost casting (CR 601.2h → 601.2i): costs are
+            // paid BEFORE the spell becomes cast. For X-cost spells with a
+            // non-zero max_x, we can't pay the cost yet — we don't know X.
+            // So we stash the full casting context on `pending_spell_cast`,
+            // set up `ChooseXFunding`, and leave the spell in its origin
+            // zone (hand / graveyard). The resolution handler executes
+            // everything atomically once funding lands: tap mana, pay mana,
+            // pay additional costs, move to stack, fire SpellCast.
             //
-            // Rules ordering (CR 601.2): X is announced as part of casting and
-            // the total cost is paid before the spell becomes cast. This flow
-            // defers the `SpellCast` event and the "spell becomes cast"
-            // bookkeeping (cast log, `num_spells_cast_this_turn`, triggers)
-            // until AFTER funding completes — see the ChooseXFunding handler.
+            // The max_x == 0 fallthrough (no funding choice possible) and
+            // the non-X path both run the eager flow below — no prompt
+            // needed, so paying costs up front is fine.
             //
             // NOTE: If you change this flow, also update the "X-cost spells"
             // bullet in GAME_RULES in mtg-player/src/llm.rs so the agent's
@@ -2269,8 +2268,66 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let has_x = cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
 
             if has_x {
-                // Pay non-X cost first. Autotap has already filled the pool
-                // for the non-X portion via `tap_plan` above.
+                let non_x_cost = ManaCost::new(
+                    cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                );
+                // Probe max_x without touching state: simulate tap_plan's
+                // mana output + existing pool + any remaining untapped
+                // sources after the tap_plan runs.
+                let probe_options = {
+                    // Apply tap_plan and non-X payment in a clone to see
+                    // what's left for X.
+                    let mut probe = new_state.clone();
+                    for &(source_id, ability_index) in tap_plan {
+                        activate_mana_source(&mut probe, source_id, ability_index, registry);
+                    }
+                    let _ = mana::auto_pay(&mut probe.get_player_mut(player).mana_pool, &non_x_cost);
+                    crate::funding::build_options(&probe, player, registry)
+                };
+
+                if probe_options.max_x > 0 {
+                    // Stash context; leave spell in hand. Set up the prompt.
+                    let spell_name = card_name(&new_state, registry, *object_id);
+                    new_state.pending_spell_cast = Some(crate::state::PendingSpellCast {
+                        object_id: *object_id,
+                        player,
+                        card_id,
+                        targets: targets.clone(),
+                        sacrifice: *sacrifice,
+                        exile_ids: exile_ids.clone(),
+                        exile_count: *exile_count,
+                        tap_plan: tap_plan.clone(),
+                        alternative_cost: alternative_cost.clone(),
+                        non_x_mana_cost: non_x_cost,
+                        is_flashback,
+                    });
+                    new_state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                        player,
+                        source: *object_id,
+                        choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
+                            description: format!("{spell_name}: choose X funding (0-{})", probe_options.max_x),
+                            options: probe_options,
+                            source_id: *object_id,
+                            is_ability: false,
+                        },
+                    });
+                    // Nothing else happens until the player submits the
+                    // funding response — spell stays in hand, no mana
+                    // paid, no taps executed.
+                    return new_state;
+                }
+                // max_x == 0: no legal funding choice, X is forced to 0.
+                // Fall through to the eager path and pay as X=0.
+            }
+
+            // Eager path: non-X spells and X-cost spells with max_x == 0.
+            // Execute tap_plan, pay mana, pay additional costs, move to stack.
+            for &(source_id, ability_index) in tap_plan {
+                activate_mana_source(&mut new_state, source_id, ability_index, registry);
+            }
+
+            if has_x {
+                // max_x == 0 case: pay only the non-X portion.
                 let non_x_cost = ManaCost::new(
                     cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
                 );
@@ -2407,35 +2464,13 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.stack.push(crate::state::StackEntry::Spell(*object_id));
 
             if has_x {
-                // Set x_value tentatively to None — funding handler will set
-                // it to the chosen X and then fire SpellCast + logging +
-                // the spells-cast-this-turn counter.
+                // Eager path reached here only when max_x == 0 (X forced to
+                // 0). The funding-prompt path already returned earlier.
                 if let Some(obj) = new_state.get_object_mut(*object_id) {
-                    obj.x_value = None;
+                    obj.x_value = Some(0);
                 }
-                let options = crate::funding::build_options(&new_state, player, registry);
-                let spell_name = card_name(&new_state, registry, *object_id);
-                if options.max_x > 0 {
-                    new_state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
-                        player,
-                        source: *object_id,
-                        choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
-                            description: format!("{spell_name}: choose X funding (0-{})", options.max_x),
-                            options,
-                            source_id: *object_id,
-                            is_ability: false,
-                        },
-                    });
-                } else {
-                    // No mana available for X — X is forced to 0.
-                    if let Some(obj) = new_state.get_object_mut(*object_id) {
-                        obj.x_value = Some(0);
-                    }
-                    finalize_spell_cast(&mut new_state, player, *object_id, is_flashback, targets, registry);
-                }
-            } else {
-                finalize_spell_cast(&mut new_state, player, *object_id, is_flashback, targets, registry);
             }
+            finalize_spell_cast(&mut new_state, player, *object_id, is_flashback, targets, registry);
         }
 
         Action::ActivateManaAbility { object_id, ability_index } => {
@@ -3057,12 +3092,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.log(LogLevel::Event,
                             format!("Nevermore names \"{chosen_name}\""));
                     }
-                    // X-cost funding resolution: apply the player's chosen
-                    // allocation (drain pool, tap sources), set X on the
-                    // spell/ability, and fire the deferred `SpellCast`
-                    // event (for spells) or `on_activate_ability` effect
-                    // (for abilities). This is the continuation of the
-                    // CR 601.2b → 601.2i ordering.
+                    // X-cost funding resolution: rules-strict atomic cast.
+                    // For spells: the spell is still in its origin zone.
+                    // Execute the stashed tap_plan, pay the non-X mana cost,
+                    // apply the funding response (pays X), pay additional
+                    // costs (sacrifice / exile), move the spell to the
+                    // stack, and fire SpellCast — all in one step. This
+                    // implements CR 601.2b → 601.2i: announce X, pay total
+                    // cost, THEN the spell becomes cast.
+                    //
+                    // For abilities: the ability was already partially
+                    // committed (tap/sac paid eagerly in the activate
+                    // handler); apply funding and fire the deferred effect.
                     //
                     // NOTE: If you change this, also update the "X-cost
                     // spells" bullet in GAME_RULES in mtg-player/src/llm.rs.
@@ -3070,15 +3111,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                      ResolvedChoice::XFunding(response)) => {
                         let player = new_state.priority_player
                             .unwrap_or(new_state.active_player);
-                        // Validate once more at apply time (belt-and-braces —
-                        // players should have validated against the schema).
+                        // Validate the response shape. For X-funding this
+                        // should be impossible-by-construction with the
+                        // string-enum schema, but validate defensively.
                         crate::funding::validate(response, options)
                             .expect("ChooseXFunding response must be valid (player implementations should pre-validate)");
-                        let x = crate::funding::apply(&mut new_state, player, options, response, registry);
-                        new_state.log(LogLevel::Event, format!("Funded X = {x}"));
+
                         if *is_ability {
+                            // Abilities: costs paid eagerly at activation.
+                            // Just pay X and fire the effect.
+                            let x = crate::funding::apply(&mut new_state, player, options, response, registry);
+                            new_state.log(LogLevel::Event, format!("Funded X = {x}"));
                             new_state.last_activated_x_value = Some(x);
-                            // Fire the deferred ability effect.
                             let pending = new_state.pending_ability_effect.take()
                                 .expect("pending_ability_effect must be set for X-cost ability funding");
                             if let Some(behavior) = registry.get(pending.behavior_card_id) {
@@ -3099,15 +3143,120 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                 ),
                             );
                         } else {
-                            // Spell: set x_value and fire SpellCast now that
-                            // the spell has formally "become cast".
-                            if let Some(obj) = new_state.get_object_mut(*source_id) {
+                            // Spells: pull the stashed casting context and
+                            // run the full casting sequence atomically.
+                            let pending = new_state.pending_spell_cast.take()
+                                .expect("pending_spell_cast must be set for X-cost spell funding");
+                            debug_assert_eq!(pending.object_id, *source_id);
+                            debug_assert_eq!(pending.player, player);
+
+                            // Step 1: execute tap_plan for the non-X cost.
+                            for (src_id, ability_index) in &pending.tap_plan {
+                                activate_mana_source(&mut new_state, *src_id, *ability_index, registry);
+                            }
+
+                            // Step 2: pay the non-X mana portion.
+                            mana::auto_pay(
+                                &mut new_state.get_player_mut(player).mana_pool,
+                                &pending.non_x_mana_cost,
+                            ).expect("non-X mana should be payable after tap_plan");
+
+                            // Step 3: apply the funding response (pays X by
+                            // tapping funding sources + draining pool).
+                            let x = crate::funding::apply(&mut new_state, player, options, response, registry);
+                            new_state.log(LogLevel::Event, format!("Funded X = {x}"));
+
+                            // Step 4: pay additional costs (sacrifice / exile).
+                            if let Some(sac_id) = pending.sacrifice {
+                                let sac_name = card_name(&new_state, registry, sac_id);
+                                crate::destruction::sacrifice(&mut new_state, sac_id, registry);
+                                new_state.log(LogLevel::Event,
+                                    format!("Sacrificed {sac_name} as additional cost"));
+                            }
+                            let additional = registry.get(pending.card_id)
+                                .and_then(|b| b.card_data().additional_cost);
+                            if let Some(crate::cards::AdditionalCost::ExileCreaturesFromGraveyard(n)) = additional {
+                                let to_exile: Vec<ObjectId> = if pending.exile_ids.is_empty() {
+                                    let mut cands: Vec<(ObjectId, i32)> = new_state.objects.values()
+                                        .filter(|o| {
+                                            o.zone == Zone::Graveyard && o.owner == player
+                                                && o.id != pending.object_id
+                                                && (o.power.is_some() || registry.card_data(o.card_id)
+                                                    .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
+                                        })
+                                        .map(|o| (o.id, new_state.effective_power(o.id, registry).unwrap_or(0)))
+                                        .collect();
+                                    cands.sort_by(|a, b| b.1.cmp(&a.1));
+                                    cands.into_iter().take(n).map(|(id, _)| id).collect()
+                                } else {
+                                    pending.exile_ids.clone()
+                                };
+                                if let Some(&first) = to_exile.first() {
+                                    let power = new_state.effective_power(first, registry).unwrap_or(0);
+                                    if let Some(obj) = new_state.get_object_mut(pending.object_id) {
+                                        obj.card_state.insert("exiled_power".into(),
+                                            ObjectId(u64::try_from(power).unwrap_or(0)));
+                                    }
+                                }
+                                for eid in &to_exile {
+                                    let name = card_name(&new_state, registry, *eid);
+                                    new_state.move_object(*eid, Zone::Exile, registry);
+                                    new_state.log(LogLevel::Event,
+                                        format!("Exiled {name} from graveyard as additional cost"));
+                                }
+                            } else if matches!(additional, Some(crate::cards::AdditionalCost::ExileXFromGraveyard)) {
+                                let gy_cards: Vec<ObjectId> = if pending.exile_ids.is_empty() {
+                                    let count = pending.exile_count.unwrap_or(0) as usize;
+                                    new_state.objects.values()
+                                        .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != pending.object_id)
+                                        .map(|o| o.id)
+                                        .take(count)
+                                        .collect()
+                                } else {
+                                    pending.exile_ids.clone()
+                                };
+                                let count = u32::try_from(gy_cards.len()).unwrap_or(u32::MAX);
+                                for gid in &gy_cards {
+                                    new_state.move_object(*gid, Zone::Exile, registry);
+                                }
+                                if let Some(obj) = new_state.get_object_mut(pending.object_id) {
+                                    obj.card_state.insert("exile_count".into(), ObjectId(u64::from(count)));
+                                }
+                                new_state.log(LogLevel::Event,
+                                    format!("Exiled {count} cards from graveyard as additional cost"));
+                            }
+
+                            // Step 5: move spell to stack, set metadata,
+                            // push StackEntry.
+                            new_state.move_object(pending.object_id, Zone::Stack, registry);
+                            {
+                                let obj = new_state.get_object_mut(pending.object_id)
+                                    .expect("spell must exist after moving to stack");
+                                obj.targets.clone_from(&pending.targets);
+                                if pending.is_flashback {
+                                    obj.cast_with_flashback = true;
+                                }
                                 obj.x_value = Some(x);
                             }
-                            let (targets, is_flashback) = new_state.get_object(*source_id)
-                                .map(|o| (o.targets.clone(), o.cast_with_flashback))
-                                .unwrap_or_default();
-                            finalize_spell_cast(&mut new_state, player, *source_id, is_flashback, &targets, registry);
+                            if let Some(behavior) = registry.get(pending.card_id) {
+                                if let crate::cards::TargetRequirement::ModalChoice(ref modes) =
+                                    behavior.target_requirement()
+                                {
+                                    let chosen = detect_modal_choice_mode(
+                                        &new_state, player, pending.object_id, &pending.targets, modes, behavior,
+                                    );
+                                    if let Some(obj) = new_state.get_object_mut(pending.object_id) {
+                                        obj.chosen_mode = Some(chosen);
+                                    }
+                                }
+                            }
+                            new_state.stack.push(crate::state::StackEntry::Spell(pending.object_id));
+
+                            // Step 6: fire SpellCast + bookkeeping.
+                            finalize_spell_cast(
+                                &mut new_state, player, pending.object_id,
+                                pending.is_flashback, &pending.targets, registry,
+                            );
                         }
                     }
                     _ => {}

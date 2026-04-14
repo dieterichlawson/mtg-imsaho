@@ -122,6 +122,15 @@ pub struct GameState {
     #[serde(default)]
     pub pending_ability_effect: Option<PendingAbilityEffect>,
 
+    /// Context stashed between a `CastSpell` action and the follow-up
+    /// `ChooseXFunding` resolution for X-cost spells. See [`PendingSpellCast`].
+    /// Populated when the `CastSpell` handler sets up the prompt; consumed
+    /// when the prompt resolves so the engine can execute the full casting
+    /// sequence atomically. While this is `Some`, the spell is NOT on the
+    /// stack — it remains in its origin zone until funding completes.
+    #[serde(default)]
+    pub pending_spell_cast: Option<PendingSpellCast>,
+
     /// Index for trigger processing resumption after a resolution choice.
     #[serde(default)]
     pub trigger_event_index: usize,
@@ -263,6 +272,7 @@ impl GameState {
             num_spells_cast_last_turn: HashMap::new(),
             last_activated_x_value: None,
             pending_ability_effect: None,
+            pending_spell_cast: None,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -1717,6 +1727,41 @@ pub struct PendingAbilityEffect {
     pub description: String,
     /// Player who activated the ability.
     pub activator: PlayerId,
+}
+
+/// Context stashed between `CastSpell` action submission and the follow-up
+/// `ChooseXFunding` resolution for X-cost spells. The spell stays in its
+/// originating zone (Hand for normal casts, Graveyard for flashback/
+/// cast-from-graveyard) until funding completes — per CR 601.2h → 601.2i
+/// the total cost is paid before the spell becomes cast. Once funding
+/// resolves the engine executes the stashed plan atomically: tap mana,
+/// pay mana (non-X + X), pay additional costs, move to stack, fire
+/// `SpellCast`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingSpellCast {
+    /// The spell object being cast (still in its origin zone).
+    pub object_id: ObjectId,
+    /// Player casting the spell.
+    pub player: PlayerId,
+    /// Card ID for behavior / `card_data` lookups.
+    pub card_id: CardId,
+    /// Chosen targets.
+    pub targets: Vec<crate::actions::Target>,
+    /// Chosen sacrifice for `AdditionalCost::SacrificeCreature`, if any.
+    pub sacrifice: Option<ObjectId>,
+    /// Chosen graveyard cards for `ExileXFromGraveyard` /
+    /// `ExileCreaturesFromGraveyard` additional costs.
+    pub exile_ids: Vec<ObjectId>,
+    /// Count chosen for `ExileXFromGraveyard`.
+    pub exile_count: Option<u32>,
+    /// Autotap plan produced by `compute_autotap` on the non-X portion.
+    pub tap_plan: Vec<(ObjectId, usize)>,
+    /// Alternative cost (e.g. Rooftop Storm) if in effect.
+    pub alternative_cost: Option<crate::types::ManaCost>,
+    /// Non-X portion of the spell's mana cost (ready for `auto_pay`).
+    pub non_x_mana_cost: crate::types::ManaCost,
+    /// True if this is a flashback cast.
+    pub is_flashback: bool,
 }
 
 /// What the engine is waiting for the player to do.

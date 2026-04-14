@@ -82,13 +82,15 @@ fn test_x_cost_spell_autotap_does_not_panic() {
     // because the tap_plan was empty for X-cost spells.
     let new_state = engine::submit_action(&state, cast_action, &registry);
 
-    // The spell should be on the stack now
+    // Rules-strict X-cost casting: the spell stays in hand until the
+    // ChooseXFunding prompt is resolved. After that, it's on the stack.
+    let new_state = resolve_max_x_funding(&new_state, &registry);
     assert!(
         new_state
             .objects_in_zone(Zone::Stack, P0)
             .iter()
             .any(|o| o.name == "Devil's Play"),
-        "Devil's Play should be on the stack"
+        "Devil's Play should be on the stack after funding completes"
     );
 }
 

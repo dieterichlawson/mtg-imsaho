@@ -2144,7 +2144,23 @@ impl LlmPlayer {
             }
         };
 
-        // Floating: per-color min=0, max=available.
+        // Integer-range fields use string-enum so the schema is portable across
+        // providers: Anthropic rejects `minimum`/`maximum` on integer fields,
+        // Gemini rejects `enum` on integer fields, and only `enum` on string
+        // fields is both accepted and enforced by both. Response is parsed
+        // back to u32 below.
+        let int_enum_str = |legal_values: Vec<u32>, description: &str| -> serde_json::Value {
+            let enum_vals: Vec<serde_json::Value> = legal_values.into_iter()
+                .map(|n| serde_json::json!(n.to_string()))
+                .collect();
+            serde_json::json!({
+                "type": "string",
+                "enum": enum_vals,
+                "description": description,
+            })
+        };
+
+        // Floating: per-color legal values are 0..=available.
         let mut floating_props = serde_json::Map::new();
         let colors = [
             ManaType::White, ManaType::Blue, ManaType::Black,
@@ -2153,12 +2169,9 @@ impl LlmPlayer {
         let mut floating_required = Vec::new();
         for mt in colors {
             let available = options.pool.get(&mt).copied().unwrap_or(0);
-            floating_props.insert(mt_key(mt).to_string(), serde_json::json!({
-                "type": "integer",
-                "minimum": 0,
-                "maximum": available,
-                "description": format!("Drain up to {available} from your {mt:?} pool"),
-            }));
+            let legal: Vec<u32> = (0..=available).collect();
+            let desc = format!("Drain up to {available} from your {mt:?} pool");
+            floating_props.insert(mt_key(mt).to_string(), int_enum_str(legal, &desc));
             floating_required.push(mt_key(mt).to_string());
         }
 
@@ -2166,42 +2179,33 @@ impl LlmPlayer {
             let mut props = serde_json::Map::new();
             let mut required = Vec::new();
             for g in options.groups.iter().filter(|g| g.category == cat) {
-                let max = g.max_contribution();
                 let colors_str: Vec<String> = g.colors_produced.iter().map(|c| format!("{c:?}")).collect();
                 let color_hint = if colors_str.is_empty() {
                     String::new()
                 } else {
                     format!(" (produces {{{}}})", colors_str.join(","))
                 };
-                let schema = if g.mana_per_tap == 1 {
-                    serde_json::json!({
-                        "type": "integer",
-                        "minimum": 0,
-                        "maximum": max,
-                        "description": format!(
-                            "Tap 0-{} of your {} untapped {}{}: each produces {} mana",
-                            g.source_ids.len(), g.source_ids.len(), g.name, color_hint, g.mana_per_tap
-                        ),
-                    })
+                // Legal allocations are 0, mana_per_tap, 2*mana_per_tap, ...,
+                // count*mana_per_tap. For 1-mana sources this degenerates to
+                // a simple 0..=count range; for multi-mana sources (Sol Ring)
+                // the enum excludes fractional activations.
+                let legal: Vec<u32> = (0..=g.source_ids.len())
+                    .map(|i| u32::try_from(i).unwrap_or(u32::MAX)
+                        .saturating_mul(g.mana_per_tap))
+                    .collect();
+                let desc = if g.mana_per_tap == 1 {
+                    format!(
+                        "Tap 0-{} of your {} untapped {}{}: each produces {} mana",
+                        g.source_ids.len(), g.source_ids.len(), g.name, color_hint, g.mana_per_tap
+                    )
                 } else {
-                    let enum_vals: Vec<serde_json::Value> = (0..=g.source_ids.len())
-                        .map(|i| {
-                            let amount = u32::try_from(i).unwrap_or(u32::MAX)
-                                .saturating_mul(g.mana_per_tap);
-                            serde_json::json!(amount)
-                        })
-                        .collect();
-                    serde_json::json!({
-                        "type": "integer",
-                        "enum": enum_vals,
-                        "description": format!(
-                            "Tap 0-{} of your {} untapped {}{}: each produces {} mana (so allocate 0, {}, ..., or {})",
-                            g.source_ids.len(), g.source_ids.len(), g.name, color_hint,
-                            g.mana_per_tap, g.mana_per_tap, max
-                        ),
-                    })
+                    format!(
+                        "Tap 0-{} of your {} untapped {}{}: each produces {} mana (so allocate 0, {}, ..., or {})",
+                        g.source_ids.len(), g.source_ids.len(), g.name, color_hint,
+                        g.mana_per_tap, g.mana_per_tap, g.max_contribution()
+                    )
                 };
-                props.insert(g.name.clone(), schema);
+                props.insert(g.name.clone(), int_enum_str(legal, &desc));
                 required.push(g.name.clone());
             }
             (props, required)
@@ -2255,13 +2259,20 @@ impl LlmPlayer {
         let full_prompt = self.build_prompt(view, &prompt_text);
         let response = self.send_message_structured(&full_prompt, &schema);
 
-        // Parse response.
+        // Parse response. The schema uses string-enum for integer-range
+        // fields (see `int_enum_str` above), so values arrive as strings
+        // like "2" and we parse back to u32. Any non-parseable value
+        // falls back to 0 — `validate` catches downstream issues.
+        let parse_int_str = |v: &serde_json::Value| -> u32 {
+            v.as_str()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(0)
+        };
         let mut funding = FundingResponse::default();
         for mt in colors {
             let amount = response.get("floating")
                 .and_then(|f| f.get(mt_key(mt)))
-                .and_then(serde_json::Value::as_u64)
-                .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX));
+                .map_or(0, parse_int_str);
             if amount > 0 {
                 funding.pool.insert(mt, amount);
             }
@@ -2269,8 +2280,7 @@ impl LlmPlayer {
         for cat_key in ["lands", "rocks", "dorks"] {
             if let Some(obj) = response.get(cat_key).and_then(|v| v.as_object()) {
                 for (name, val) in obj {
-                    let amount = val.as_u64()
-                        .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX));
+                    let amount = parse_int_str(val);
                     if amount > 0 {
                         funding.taps.insert(name.clone(), amount);
                     }
