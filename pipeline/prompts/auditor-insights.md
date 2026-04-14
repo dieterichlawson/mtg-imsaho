@@ -11,10 +11,13 @@ help future auditors find bugs they might otherwise miss.
 
 ## Inline damage bypasses engine protections
 Cards that apply damage by directly writing `obj.damage_marked += N` instead of
-using the central `PendingEffect::DealDamage` path bypass protection checks
-(`has_protection_from`) and damage prevention replacement effects
-(`PreventDamageRemoveCounter`). Always check whether a card's damage code goes
-through the central handler in `resolve_single_effect()` (engine.rs).
+using the central `PendingEffect::DealDamage` path bypass the damage-processing
+results enumerated in CR 120.3 and the replacement-effect layer (CR 614):
+protection (702.16), hexproof/ward (702.11/702.21), lifelink (702.15),
+planeswalker loyalty removal (120.3c / 306.8), battle defense removal
+(120.3d), damage prevention, and any "whenever damage is dealt" triggers.
+Always check whether a card's damage code goes through the central handler
+in `resolve_single_effect()` (engine.rs).
 
 ## Zone-change cleanup does not reset characteristic modifications
 The cleanup block in `move_object()` (state.rs) does NOT clear `subtypes`,
@@ -26,21 +29,26 @@ whether the card modifies any of these fields and whether that modification
 would survive a zone change.
 
 ## "For as long as you control [source]" requires continuous re-evaluation
-Effects with "for as long as you control [source]" must end when the source's
-controller changes, not just when the source leaves the battlefield. An
-implementation that only uses `on_leave_battlefield` will fail when the source
-is stolen without leaving the battlefield (e.g., Act of Treason). Check whether
-the card has any mechanism to detect controller changes on the source permanent.
+Per CR 611.2b, a "for as long as" duration ends as soon as its condition
+becomes false — not just when the source leaves the battlefield. Effects
+with "for as long as you control [source]" must end when the source's
+controller changes even if the source stays on the battlefield (e.g., Act
+of Treason takes temporary control without a zone change). An implementation
+that only uses `on_leave_battlefield` will miss this case. Check whether the
+card has any mechanism to detect controller changes on the source permanent.
 
 ### "Each player" choice effects require simultaneous resolution
-When a card says "each player" does something that involves a choice (discard,
-sacrifice, etc.), the MTG rules typically require all players to choose first
-(in turn order), then all choices are executed simultaneously. The engine's
-chained-choice pattern (resolve one player's choice, then set up the next
-player's choice) forces sequential execution, meaning earlier players' resolved
-choices can trigger abilities or alter game state before later players act. Any
-card with "each player discards/sacrifices/chooses" should be checked for
-whether simultaneity matters per its rulings.
+Per CR 101.4 (APNAP), when multiple players must make choices or take
+actions at the same time, the active player chooses first, then each other
+player in turn order — but then the actions happen SIMULTANEOUSLY. A card
+like "each player discards a card" resolves with all choices locked in
+before any discards occur, so no player's choice can affect another's
+chosen state. The engine's chained-choice pattern (resolve one player's
+choice, then set up the next player's) forces sequential execution,
+letting earlier players' resolved choices trigger abilities or alter
+game state before later players choose. Any card with "each player
+discards/sacrifices/chooses" should be checked for whether simultaneity
+matters per its rulings.
 Discovered auditing: Liliana of the Veil
 
 ### DFC face-dependent `is_valid_target` breaks with multiple copies
@@ -63,7 +71,9 @@ engine has registry-based fallbacks for keywords and subtypes (checking
 for those fields. However, `obj_name()` reads `obj.name` directly with NO
 registry fallback. This makes `name` the most impactful stale field for DFCs
 after zone changes — the card retains its back-face name in non-battlefield
-zones, violating MTG rule 712.10. Also check whether a DFC card uses
+zones, violating CR 712.8a ("While a double-faced card is outside the game
+or in a zone other than the battlefield or stack, it has only the
+characteristics of its front face"). Also check whether a DFC card uses
 `helpers::apply_transform` (the correct path) vs manual transform.
 Discovered auditing: Bloodline Keeper // Lord of Lineage
 
@@ -71,14 +81,17 @@ Discovered auditing: Bloodline Keeper // Lord of Lineage
 `ActivatedAbilityDef` only supports mana costs, tap requirements, and sacrifice
 costs. It has no field for "remove N counters" as an activation cost. Cards that
 require counter removal as a cost (text like "Remove three study counters from ~")
-must handle it manually in `on_activate_ability`. When such a card also sacrifices
-itself as part of the same cost, the counter removal is sometimes skipped entirely
-— the sacrifice moves the object to the graveyard, which clears all counters via
-`move_object`. This means the counter count is wrong at the moment of sacrifice
-(the object has its full counter count instead of N minus the cost). Check any
-card with "Remove N counters" in its activation cost to verify the counters are
-actually removed, and that the count is correct at the time of any simultaneous
-sacrifice or zone change.
+must handle it manually in `on_activate_ability`. Per CR 601.2h / 602.2b, costs
+are paid in any order within the non-random group, but each cost must actually
+be paid — the stated action must occur (118.11). When such a card also
+sacrifices itself as part of the same cost, the counter removal is sometimes
+skipped entirely: the sacrifice moves the object to the graveyard, which clears
+all counters via `move_object` in one step, so the "remove N counters" action
+never actually runs. The counter count is wrong at the moment of sacrifice (the
+object has its full counter count instead of N minus the cost). Check any card
+with "Remove N counters" in its activation cost to verify the counters are
+removed first (or independently of the sacrifice), and that the count is
+correct at the time of any simultaneous sacrifice or zone change.
 Discovered auditing: Grimoire of the Dead
 
 ### Controller update after move_object causes stale EnteredBattlefield events

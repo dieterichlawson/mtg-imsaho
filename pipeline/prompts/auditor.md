@@ -24,6 +24,17 @@ These rules exist because previous audits hit specific failure modes:
    engine component causes a card to behave incorrectly, that IS a finding.
    Do not distinguish "card bugs" from "engine bugs."
 
+5. **Implementations must be rules-strict.** The Comprehensive Rules define
+   every game action in precise, ordered steps. Shortcuts that collapse,
+   reorder, or expose intermediate state are bugs — even when the "usual"
+   outcome matches. Game state is observable between rule-defined points:
+   triggers fire at specific steps, priority is granted at specific steps,
+   the stack is publicly visible, replacement effects apply at specific
+   points. "It works in the common case" is not a defense; the edge cases
+   are why the rules specify the steps. If code deviates from a CR-defined
+   procedure, that is a finding — you do not need to construct a specific
+   card that exploits the difference today.
+
 ## What is NOT a finding
 
 - Ability words (Morbid, Transform, Flashback) missing from `keywords` vec
@@ -75,35 +86,53 @@ Don't just read the card file — trace into the engine:
 
 ### Step 6. Check tricky interactions
 For each rules-significant word in the oracle text:
-- **"may"**: Is the choice presented to the player?
-- **"target"**: Player choosing, or auto-selected? ("target" means it
-  can be responded to; "choose" cannot.)
+- **"may"**: Is the choice presented to the player? Optional triggered
+  abilities (603.5) still go on the stack; the choice is made on
+  resolution.
+- **"target"**: Player choosing at 601.2c, or auto-selected? "Target"
+  invokes the targeting rules (CR 115) — the target must be legal on
+  announcement and resolution, and is subject to shroud, hexproof,
+  protection, and ward (702). "Choose" without "target" selects on
+  resolution and does NOT invoke targeting rules.
 - **"each"**: Applied to ALL matching, no targeting?
 - **"another"**: Self correctly excluded?
-- **"whenever"**: Triggers once per event in simultaneous batches?
-- **"as long as"**: Continuously re-evaluated, not snapshot?
-- **"until end of turn"**: Cleaned up at end of turn?
-- **"destroy" vs "sacrifice" vs "exile"**: Each has different rules
-  interactions (indestructible blocks destroy but not sacrifice).
-- **Intervening-if clauses** (e.g., "When X enters, if Y, do Z"):
-  The condition must be true BOTH when the trigger event occurs AND
-  when the trigger resolves. Check that both checks exist in code.
-- **Source leaves before trigger resolves**: If the card has a triggered
-  ability, what happens if the source leaves the battlefield between
-  trigger and resolution? Some abilities still resolve (life gain, draw
-  cards), others don't (abilities that modify the source itself).
-  Check whether the code handles this correctly.
-- **X-cost spells/abilities**: Is X chosen correctly? Is X reflected
-  in the mana cost, damage amount, number of targets, etc.? Can the
-  player choose X=0? For flashback with X, does the cost work the
-  same way? Is the X value passed through to resolution correctly?
-- **Double-faced cards (DFCs) / Transform**: When a card transforms,
-  which characteristics come from the back face vs. the front face?
-  Do effects that modified the front face (counters, type changes,
-  aura attachments) persist correctly through transform? Do triggers
-  that reference the card by name still work on the back face? Does
-  the card's `is_transformed` state affect ability availability,
-  P/T, subtypes, and continuous effects correctly?
+- **"whenever"**: Each separate occurrence of the trigger event creates
+  a separate trigger instance (603.2). If four creatures die at once,
+  a "Whenever a creature dies" ability triggers four times.
+- **"as long as"**: Continuously re-evaluated (611.2b), not snapshot.
+  If the condition becomes false, the effect ends immediately.
+- **"until end of turn"**: Ends during the cleanup step, as part of
+  the simultaneous action that also removes damage (514.2).
+- **"destroy" vs "sacrifice" vs "exile"**: Each bypasses different
+  protections. Indestructible prevents "destroy" but not sacrifice or
+  exile (702.12b). Regenerate replaces "destroy" but not sacrifice/
+  exile (701.19). "Exile" bypasses graveyard-trigger abilities and
+  death triggers.
+- **Intervening-if clauses** (e.g., "When X enters, if Y, do Z"): Per
+  603.4, the condition must be true BOTH when the trigger event occurs
+  AND when the trigger resolves. Check that both checks exist in code.
+- **Source leaves before trigger resolves**: Per 603.6c, a leaves-the-
+  battlefield ability looks for the object in the zone it moved to.
+  Per 603.10, abilities that trigger on zone change use last-known
+  information. Abilities that don't reference the source (gain life,
+  draw a card) still resolve; abilities that reference the source
+  (put a counter on ~) fail to find it and do nothing for that part.
+- **X-cost spells/abilities**: Per 107.3a, the controller announces X
+  at 601.2b; the total cost is locked in at 601.2f. Is X reflected in
+  the mana cost, damage amount, number of targets, etc.? Can the
+  player choose X=0 (generally legal unless the card restricts it)?
+  For flashback with X, the same 601.2 sequence applies. Is X passed
+  through to resolution correctly?
+- **Double-faced cards (DFCs) / Transform**: Per 712.8a, a DFC outside
+  the battlefield/stack has only its front-face characteristics. Per
+  712.8d–e, a DFC on the battlefield has only the face-up face's
+  characteristics. Per 712.18, transforming does NOT create a new
+  object — effects applied to the permanent continue to apply.
+  Check: effects that modified the front face persist through
+  transform; triggers referencing the card by name still work after
+  transform (the card has a different name on each face); `is_transformed`
+  state drives ability availability, P/T, subtypes, and continuous
+  effects correctly.
 
 ### Step 7. Check known anti-patterns
 - `move_object(Zone::Graveyard)` instead of `move_spell_after_resolve`
@@ -122,16 +151,27 @@ Search for `fn move_object` in `state.rs`. Read the cleanup block that
 runs when an object leaves the battlefield. Does this card modify any
 object field (subtypes, name, keywords, power, toughness, colors, etc.)
 that is NOT cleared in that block? If so, the modification incorrectly
-persists through zone changes — that is a bug per MTG rule 611.2a
-(indefinite effects end on zone change).
+persists through zone changes. Per CR 400.7, an object that changes
+zones becomes a NEW object with no memory of its previous existence
+(with enumerated exceptions, none of which are runtime mutations like
+added subtypes). Per CR 611.3b, continuous effects from static abilities
+apply only while the source permanent is on the battlefield. Runtime
+modifications recorded on the object must therefore be cleared on zone
+change.
 
 **8b. Trigger dispatch filters** (if card has triggered abilities):
 Search for the relevant `TriggerKind` dispatch in `triggers.rs`. Read
 the actual filter/guard conditions. Does the dispatch exclude cases the
-oracle text covers? For example: a death-watch trigger that filters by
-`zone == Battlefield` will miss the source if it dies simultaneously
-with its target. A spell-cast trigger that filters by instant/sorcery
-will miss other spell types the oracle doesn't restrict to.
+oracle text covers? Per CR 603.2, a triggered ability triggers whenever
+the trigger event occurs — a dispatch filter that excludes valid events
+silently drops triggers. Common failure modes:
+- Death-watch trigger filtered by `zone == Battlefield` misses the source
+  when it dies simultaneously with the watched creature. Per 603.6c +
+  603.10, the ability uses last-known information from the battlefield.
+- SpellCast trigger filtered by instant/sorcery misses other spell types
+  when the oracle says "a spell" without restriction.
+- EnterBattlefield trigger that fires before continuous effects apply
+  (611.3c) sees wrong characteristics.
 
 **8c. Activated ability offering** (if card has activated abilities):
 Search for where activated abilities are enumerated in `engine.rs`
@@ -150,20 +190,36 @@ which correctly checks both.
 **8e. Damage path** (if card deals non-combat damage):
 Does the card use the central damage helper (`apply_pending_effect`
 with `DealDamage`), or does it inline the damage directly (setting
-`damage_marked` or calling `life -= N`)? Inlined damage bypasses
-protection checks, planeswalker loyalty counter removal, lifelink,
-and damage replacement effects. If the card inlines damage, that is
-a finding.
+`damage_marked` or calling `life -= N`)? Per CR 120.3, damage dealt has
+different results depending on the recipient: to players, life loss
+(120.3a); to creatures, damage marked + lifelink (120.3b); to
+planeswalkers, loyalty counters removed (120.3c; also 306.8); to
+battles, defense counters removed (120.3d). Inlined damage bypasses the
+results for anything it doesn't handle by hand, plus protection (702.16),
+hexproof (702.11), shroud (702.18), ward (702.21), lifelink (702.15),
+damage replacement / prevention effects (614), and "whenever damage is
+dealt" triggers (no event fires). If the card inlines damage, that is a
+finding.
 
-**8f. Target enumeration respects hexproof/protection** (if card enumerates
-targets at resolution):
-Does the code filter targets through hexproof and protection checks? Cards
-that build target lists (via `creature_targets`, `any_targets`, or manual
-filtering) must call `can_be_targeted_by` or equivalent. If the card just
-iterates battlefield objects and picks targets without this check, creatures
-with hexproof or protection can be illegally targeted. Also check: does
-"any target" / "target creature or player" include planeswalkers? The engine
-has historically dropped planeswalkers from these enumerations.
+**8f. Target enumeration respects hexproof/protection/ward** (if card
+targets):
+Does the code filter candidates through the targeting restrictions (CR
+115, 702.11 hexproof, 702.16 protection, 702.18 shroud, 702.21 ward)?
+Cards that build target lists (via `creature_targets`, `any_targets`,
+or manual filtering) must call `can_be_targeted_by` or equivalent. If
+the card just iterates battlefield objects and picks targets without
+this check, creatures with hexproof or protection can be illegally
+targeted. Also verify the targeting category matches the oracle's words
+(CR 115.4):
+- **"any target"**: creatures, players, planeswalkers, and battles
+  (115.4). Historically the engine has dropped planeswalkers/battles
+  from these enumerations.
+- **"target creature or player"**: creatures and players ONLY.
+  Planeswalkers are NOT included under current rules — the pre-2018
+  redirect rule was removed (306.7), and cards have been errata'd.
+- **"target permanent"**: any permanent, including planeswalkers and
+  battles.
+- **"target creature"**: creatures only.
 
 **8g. Token/copy completeness** (if card creates tokens or copies):
 Does the token/copy have all the right characteristics? Check: subtypes,
@@ -176,14 +232,85 @@ tokens (including Parallel Lives extras) get any post-creation mutations.
 **8h. Continuous effect duration** (if card grants ongoing effects):
 Does the oracle text say "until end of turn", "for as long as", or
 grant an indefinite effect? Verify the implementation matches:
-- "Until end of turn" → must use `until_end_of_turn` or equivalent
-  cleanup mechanism
-- "For as long as [condition]" → must continuously re-evaluate, not
-  snapshot at resolution time
-- Indefinite (no duration specified) → effect should persist until
-  the source leaves the battlefield or changes zones
+- **"Until end of turn"** → ends during the cleanup step (514.2),
+  simultaneously with damage removal. Must use `until_end_of_turn`
+  or equivalent cleanup.
+- **"For as long as [condition]"** → per 611.2b, ends as soon as the
+  condition becomes false. Must continuously re-evaluate, not snapshot
+  at resolution.
+- **Indefinite (no duration specified)** from a spell/ability resolution
+  → per 611.2a, lasts until end of game. However, the set of affected
+  objects is fixed when the effect begins (611.2c), and zone change
+  creates a new object (400.7), so such effects typically stop applying
+  when the affected permanent leaves the battlefield.
+- **Static-ability continuous effects** (e.g., a lord's "+1/+1 to each X")
+  → per 611.3b, apply only while the source is on the battlefield; no
+  explicit cleanup needed.
 
-### Step 8i. Rulings coverage (if rulings are provided)
+**8i. Casting / activation atomicity** (if the card has non-trivial
+casting: X-cost, additional costs such as sacrifice / discard / exile /
+pay life, alternative costs such as flashback / madness / bestow, modal
+choices, or any multi-step cost payment):
+
+Per CR 601.2, casting a spell proceeds through 601.2a–i in order:
+announce (a), modes / X value / intent to pay alternative or additional
+costs (b), targets (c), divisions (d), legality check (e), determine and
+lock in total cost (f), activate mana abilities (g), pay total cost (h),
+THEN the spell becomes cast and cast-triggers ("Whenever ~ is cast",
+"Whenever a spell is put onto the stack") fire (i). The same applies to
+602.2 for activated abilities. No priority passes and no unrelated
+events are emitted between 601.2a and 601.2i.
+
+We have a class of bug in this codebase where cast paths took shortcuts
+— typically placing the spell on the stack, then opening a player prompt
+for a remaining cost choice (X funding, exile-from-graveyard subset,
+sacrifice target), leaving the spell "half-cast" with intermediate state
+observable during the prompt. Any code path that lets the game observe a
+partial cast is a finding: SpellCast fired before cost paid, spell on
+stack with unpaid cost during a prompt, cost-reducing effects applying
+after 601.2f, cast-triggers firing at 601.2a instead of 601.2i.
+
+Check for:
+- **Mid-cast player prompts that expose half-cast state.** If the engine
+  opens a prompt between 601.2a and 601.2h (ChooseXFunding,
+  ChooseExileFromGraveyard, ChooseSacrificeTarget, etc.), other parts of
+  the engine must not observe the in-progress cast. The reference pattern
+  is X-cost funding: keep the spell in its origin zone, stash the pending
+  cast context, resolve the prompt, then atomically tap / pay / move to
+  stack / fire SpellCast via `finalize_spell_cast()`.
+- **SpellCast / cast-trigger timing.** SpellCast must fire at 601.2i —
+  after cost payment — not at 601.2a. Verify the cast path calls
+  `finalize_spell_cast()` only after all costs are paid.
+- **Additional costs paid during casting, not resolution.** "As an
+  additional cost to cast this spell, [X]" (Altar's Reap, Harvest Pyre)
+  → paid at 601.2h, before the spell resolves and before cast-triggers
+  fire. Do not defer the cost to `on_resolve`.
+- **Alternative costs paid during casting.** Flashback, bestow, madness,
+  dash, overload, emerge, escape → announced at 601.2b, paid at 601.2h.
+  Never resolution-time.
+- **No silent auto-selection during cost payment.** If a cost requires a
+  player choice (which creature to sacrifice, which cards to exile), the
+  engine must prompt — not pick a default. A silent fallback to "the
+  first creature on the battlefield" (or similar) is a finding.
+- **Total cost locked in at 601.2f.** After 601.2f, effects that would
+  change the cost have no effect (CR 601.2f final sentence; the Altar's
+  Reap / Thunderscape Familiar example in 601.2h).
+
+**Distinguishing wording — casting-time costs vs resolution-time effects:**
+- "As an additional cost to cast this spell, [X]" → casting cost (601.2h)
+- "You may cast ~ without paying its mana cost" / "Rather than pay ~'s
+  mana cost, [X]" → alternative cost (CR 118.9, paid at 601.2h)
+- "Flashback [cost]" / "Buyback [cost]" / "Kicker [cost]" → keyword
+  alternative / additional costs, announced at 601.2b, paid at 601.2h
+- "When you cast ~, [X]" → triggered ability firing at 601.2i, AFTER
+  payment — not part of the cast's cost
+- "As ~ enters the battlefield, [X]" / "As ~ resolves, [X]" → resolution
+  effect, not a casting cost
+- "~'s controller may pay [X]. If they don't, [Y]" on a triggered
+  ability → optional cost paid during the TRIGGER'S resolution, not
+  during the cast that spawned the trigger
+
+### Step 8j. Rulings coverage (if rulings are provided)
 For each ruling provided in the oracle text:
 1. Verify the ruling's behavior is correctly implemented in the code
 2. Search for a test that covers this specific ruling
@@ -196,7 +323,7 @@ Before writing findings:
 - For each finding, confirm with exact quotes from both sides
 - Drop any finding where quotes match or can't be produced
 - Check for outdated rules
-- For each required engine check (8a-8h), confirm you actually did it.
+- For each required engine check (8a-8i), confirm you actually did it.
   If you skipped one that applies, go back and do it now.
 
 ### Step 10. Contribute insights for future auditors
@@ -240,6 +367,7 @@ status: correct (or note any card data issues)
 8g: done — {brief result} (or n/a)
 8h: done — {brief result} (or n/a)
 8i: done — {brief result} (or n/a)
+8j: done — {brief result} (or n/a)
 
 ## Untested Rulings
 - {ruling}: NOT TESTED (or omit section if all tested)
