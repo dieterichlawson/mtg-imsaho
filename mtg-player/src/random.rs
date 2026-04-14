@@ -24,6 +24,27 @@ impl Player for RandomPlayer {
     fn choose_action(&mut self, _view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
         let legal_actions = &legal.actions;
 
+        // X-cost funding: no enumerated actions to pick from. Default to
+        // tapping everything (max X), which is rarely optimal but lets
+        // RandomPlayer-driven tests make forward progress through X-cost
+        // spells/abilities without requiring smart choices.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. }) =
+            legal.resolution_prompt.as_ref()
+        {
+            use mtg_engine::actions::ResolvedChoice;
+            use mtg_engine::funding::FundingResponse;
+            let mut response = FundingResponse::default();
+            for (mt, amt) in &options.pool {
+                if *amt > 0 {
+                    response.pool.insert(*mt, *amt);
+                }
+            }
+            for g in &options.groups {
+                response.taps.insert(g.name.clone(), g.max_contribution());
+            }
+            return Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
+        }
+
         // Deterministic mulligan policy: always keep the first hand, never
         // mulligan. For the bottom sub-phase (only reached via a forced keep
         // at the cap or if this player had previously mulliganed), pick the

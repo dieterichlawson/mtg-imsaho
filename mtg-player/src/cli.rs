@@ -1273,7 +1273,7 @@ impl CliPlayer {
                             .collect();
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
-                    ResolvedChoice::ChosenXValue(x) => format!("X = {x}"),
+                    ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
                 }
             }
         }
@@ -1806,6 +1806,96 @@ impl CliPlayer {
 impl CliPlayer {
     /// Interactive library search UI: full-screen card browser with type-to-filter,
     /// arrow key navigation, oracle text display, and Enter to select.
+    /// Ask the human for an X value, then auto-distribute payment across
+    /// pool mana (first) and then by source category (lands → rocks → dorks).
+    /// Pool drains prefer colors the pool has the most of so the player's
+    /// "scarce" colored mana is preserved when possible.
+    fn prompt_x_funding(
+        view: &GameView,
+        options: &mtg_engine::funding::FundingOptions,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        use mtg_engine::funding::FundingResponse;
+        use mtg_engine::types::ManaType;
+
+        println!("\n{description}");
+        println!("Max X = {}", options.max_x);
+        let pool_summary: Vec<String> = [
+            ManaType::White, ManaType::Blue, ManaType::Black,
+            ManaType::Red, ManaType::Green, ManaType::Colorless,
+        ].iter().filter_map(|mt| {
+            let n = options.pool.get(mt).copied().unwrap_or(0);
+            if n > 0 { Some(format!("{n} {mt:?}")) } else { None }
+        }).collect();
+        if !pool_summary.is_empty() {
+            println!("Pool: {}", pool_summary.join(", "));
+        }
+        for g in &options.groups {
+            println!(
+                "  {} x{} ({}/tap, max {})",
+                g.name, g.source_ids.len(), g.mana_per_tap, g.max_contribution()
+            );
+        }
+        let _ = view;
+
+        let x: u32 = loop {
+            let input = Self::read_line("X = ");
+            if input.trim().is_empty() {
+                break 0;
+            }
+            match input.trim().parse::<u32>() {
+                Ok(n) if n <= options.max_x => break n,
+                _ => println!("Enter an integer between 0 and {}.", options.max_x),
+            }
+        };
+
+        // Distribute X: drain from pool (larger color buckets first), then
+        // tap sources starting from whole-ability steps. Any mismatch at
+        // the end (X isn't achievable due to multi-mana-source quanta) is
+        // rounded down by dropping excess.
+        let mut response = FundingResponse::default();
+        let mut remaining = x;
+
+        // Pool: drain largest buckets first.
+        let mut pool_sorted: Vec<(ManaType, u32)> = options.pool.iter()
+            .map(|(k, v)| (*k, *v))
+            .collect();
+        pool_sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        for (mt, avail) in pool_sorted {
+            if remaining == 0 { break; }
+            let take = avail.min(remaining);
+            if take > 0 {
+                response.pool.insert(mt, take);
+                remaining -= take;
+            }
+        }
+
+        // Taps: iterate groups in their given order (category-sorted). For
+        // each, take as many whole activations as needed.
+        for g in &options.groups {
+            if remaining == 0 { break; }
+            if g.mana_per_tap == 0 { continue; }
+            let max_taps = u32::try_from(g.source_ids.len()).unwrap_or(u32::MAX);
+            // Take as many full activations as fit within `remaining`. If
+            // the quantum (mana_per_tap) doesn't divide `remaining` evenly,
+            // we under-tap rather than over-tap.
+            let take_taps = (remaining / g.mana_per_tap).min(max_taps);
+            if take_taps > 0 {
+                let amount = take_taps * g.mana_per_tap;
+                response.taps.insert(g.name.clone(), amount);
+                remaining -= amount;
+            }
+        }
+        if remaining > 0 {
+            println!(
+                "(Note: could not allocate final {remaining} mana due to multi-mana source quanta; X = {})",
+                x - remaining,
+            );
+        }
+        Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }
+    }
+
     fn library_search_ui(view: &GameView, actions: &[Action]) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
@@ -1971,6 +2061,15 @@ impl Player for CliPlayer {
         }
 
         let legal_actions = &legal.actions;
+
+        // X-cost funding: prompt the user for an X value and auto-distribute
+        // across pool mana and tap sources (pool first, then by category).
+        // A richer per-source UI could be added later.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, description, .. }) =
+            legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_x_funding(view, options, description);
+        }
 
         // Special case: library search — show interactive card browser.
         if legal_actions.iter().all(|a| matches!(a, Action::ResolveChoice { .. }))

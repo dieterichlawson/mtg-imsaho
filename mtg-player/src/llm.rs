@@ -143,9 +143,9 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 
 - **Auto-tap**: When you pick a `Cast [spell]` option, the engine taps the right lands for you automatically. The action label shows which lands will be tapped, e.g. `Cast Doom Blade (tap Swamp, Swamp)`. You almost never need to tap lands manually before casting. The auto-tapper uses these priorities (lowest opportunity cost first): (1) basic lands and mana-only artifacts, (2) non-basic lands with only mana abilities, (3) permanents with utility abilities (tapping locks out the ability), (4) creature mana dorks (tapping prevents attacking/blocking), (5) sources with side effects (e.g. Deranged Assistant mills). Within a tier, it prefers mono-color sources over dual-color sources (to preserve flexibility), and considers which colors your other hand spells need.
 - **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
-- **X-cost spells and abilities**: Spells with {X} in their cost (Devil's Play, Mikaeus the Lunarch) and abilities with {X} (Kessig Wolf Run) use a two-step process: (1) you pick "Cast [spell]" or "Activate [ability]" — the engine auto-taps only the non-X portion of the cost (e.g. {R} for Devil's Play), (2) a followup prompt asks you to choose X from 0 to the maximum you can afford (remaining floating mana + untapped sources). After you pick X, the engine auto-taps additional sources to cover the X generic mana. This means you don't have to tap everything upfront — you can cast an X spell for less than maximum to hold mana back for responses.
+- **X-cost spells and abilities**: Spells with {X} in their cost (Devil's Play, Mikaeus the Lunarch) and abilities with {X} (Kessig Wolf Run) use a two-step process: (1) you pick "Cast [spell]" or "Activate [ability]" — the engine pays only the non-X portion of the cost via auto-tap, (2) a structured follow-up prompt asks you to fund X explicitly. The funding prompt has four buckets: `floating` (drain by color from your pool), `lands`, `rocks`, and `dorks` (tap specific named groups). Each value is a mana amount, not a source count. For 1-mana sources (basic lands, most dorks) pick any integer from 0 to the available count. For multi-mana sources (Sol Ring `{C}{C}`) pick a multiple of the per-tap output (0, 2, 4, ...). X is the sum of everything you allocate. Per CR 601.2b, X is announced as part of casting — so the spell only formally "becomes cast" (and SpellCast triggers fire) AFTER you submit a funding choice. Variable-output or cost-bearing sources (pain lands, Cabal Coffers) aren't shown — tap those manually before casting so their mana floats in the pool.
 - **Spells with sacrifice costs**: Spells that require sacrificing a creature as an additional cost (Altar's Reap, Infernal Plunge) prompt you to choose which creature to sacrifice after you select targets. If you only control one creature, it's auto-selected. The sacrifice happens at cast time (before the spell goes on the stack), so the creature is gone even if the spell gets countered.
-- **Sacrifice-cost activated abilities require manual mana**: Activated abilities whose cost includes "Sacrifice a creature" (Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) do NOT auto-tap. If the ability has a mana cost too, you must tap your lands manually first to float the mana, then activate the ability on the next priority pass. This is to prevent the engine from accidentally tapping a creature mana source and then sacrificing that same creature. If the ability you want isn't appearing in the action list and the only thing missing is mana, tap a land and try again.
+- **Sacrifice-cost activated abilities**: Activated abilities whose cost includes "Sacrifice a creature" (pick one — Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) do NOT auto-tap. You must tap lands manually first to float the mana, then activate on the next priority pass. This prevents the engine from accidentally tapping a creature mana source and then sacrificing that same creature. Abilities that sacrifice *this* permanent specifically (e.g. Selfless Cathar's `{1}{W}, Sacrifice this: Creatures you control get +1/+1`) DO auto-tap — the sacrifice target is fixed, so there's no ambiguity. If a "sac a creature" ability you want isn't appearing in the action list and the only thing missing is mana, tap a land and try again.
 - **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
 - **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
 - **Land drops**: One land per turn, only during your main phase.
@@ -1642,7 +1642,7 @@ impl LlmPlayer {
                             .collect();
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
-                    ResolvedChoice::ChosenXValue(x) => format!("X = {x}"),
+                    ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
                 }
             }
             other => format!("{other}"),
@@ -2113,6 +2113,182 @@ impl LlmPlayer {
         chosen
     }
 
+    /// Handle a `ChooseXFunding` resolution prompt.
+    ///
+    /// Builds a dynamic JSON schema from the engine-provided options (pool
+    /// mana per color + tap groups per category) and asks the model to
+    /// allocate amounts. The sum of allocations becomes X.
+    fn choose_x_funding(
+        &mut self,
+        view: &GameView,
+        options: &mtg_engine::funding::FundingOptions,
+        _source_id: mtg_engine::ids::ObjectId,
+        _is_ability: bool,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+        use mtg_engine::funding::{FundingCategory, FundingResponse};
+        use mtg_engine::types::ManaType;
+
+        // Build schema. Each bucket is an object with one integer field per
+        // group/color. 1-mana sources get min/max; multi-mana sources get an
+        // explicit enum so the response can't specify a fractional tap.
+        let mt_key = |mt: ManaType| -> &'static str {
+            match mt {
+                ManaType::White => "white",
+                ManaType::Blue => "blue",
+                ManaType::Black => "black",
+                ManaType::Red => "red",
+                ManaType::Green => "green",
+                ManaType::Colorless => "colorless",
+            }
+        };
+
+        // Floating: per-color min=0, max=available.
+        let mut floating_props = serde_json::Map::new();
+        let colors = [
+            ManaType::White, ManaType::Blue, ManaType::Black,
+            ManaType::Red, ManaType::Green, ManaType::Colorless,
+        ];
+        let mut floating_required = Vec::new();
+        for mt in colors {
+            let available = options.pool.get(&mt).copied().unwrap_or(0);
+            floating_props.insert(mt_key(mt).to_string(), serde_json::json!({
+                "type": "integer",
+                "minimum": 0,
+                "maximum": available,
+                "description": format!("Drain up to {available} from your {mt:?} pool"),
+            }));
+            floating_required.push(mt_key(mt).to_string());
+        }
+
+        let category_props = |cat: FundingCategory| -> (serde_json::Map<String, serde_json::Value>, Vec<String>) {
+            let mut props = serde_json::Map::new();
+            let mut required = Vec::new();
+            for g in options.groups.iter().filter(|g| g.category == cat) {
+                let max = g.max_contribution();
+                let colors_str: Vec<String> = g.colors_produced.iter().map(|c| format!("{c:?}")).collect();
+                let color_hint = if colors_str.is_empty() {
+                    String::new()
+                } else {
+                    format!(" (produces {{{}}})", colors_str.join(","))
+                };
+                let schema = if g.mana_per_tap == 1 {
+                    serde_json::json!({
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": max,
+                        "description": format!(
+                            "Tap 0-{} of your {} untapped {}{}: each produces {} mana",
+                            g.source_ids.len(), g.source_ids.len(), g.name, color_hint, g.mana_per_tap
+                        ),
+                    })
+                } else {
+                    let enum_vals: Vec<serde_json::Value> = (0..=g.source_ids.len())
+                        .map(|i| {
+                            let amount = u32::try_from(i).unwrap_or(u32::MAX)
+                                .saturating_mul(g.mana_per_tap);
+                            serde_json::json!(amount)
+                        })
+                        .collect();
+                    serde_json::json!({
+                        "type": "integer",
+                        "enum": enum_vals,
+                        "description": format!(
+                            "Tap 0-{} of your {} untapped {}{}: each produces {} mana (so allocate 0, {}, ..., or {})",
+                            g.source_ids.len(), g.source_ids.len(), g.name, color_hint,
+                            g.mana_per_tap, g.mana_per_tap, max
+                        ),
+                    })
+                };
+                props.insert(g.name.clone(), schema);
+                required.push(g.name.clone());
+            }
+            (props, required)
+        };
+
+        let (lands_props, lands_req) = category_props(FundingCategory::Lands);
+        let (rocks_props, rocks_req) = category_props(FundingCategory::Rocks);
+        let (dorks_props, dorks_req) = category_props(FundingCategory::Dorks);
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "thoughts": {"type": "string", "description": "Concise but complete summary of your internal thoughts"},
+                "floating": {
+                    "type": "object",
+                    "properties": floating_props,
+                    "required": floating_required,
+                    "additionalProperties": false,
+                    "description": "Mana to drain from your pool, per color"
+                },
+                "lands": {
+                    "type": "object",
+                    "properties": lands_props,
+                    "required": lands_req,
+                    "additionalProperties": false,
+                },
+                "rocks": {
+                    "type": "object",
+                    "properties": rocks_props,
+                    "required": rocks_req,
+                    "additionalProperties": false,
+                },
+                "dorks": {
+                    "type": "object",
+                    "properties": dorks_props,
+                    "required": dorks_req,
+                    "additionalProperties": false,
+                    "description": "Tapping creature mana sources will tap them — they can't attack or block this turn"
+                }
+            },
+            "required": ["thoughts", "floating", "lands", "rocks", "dorks"],
+            "additionalProperties": false,
+        });
+
+        let prompt_text = format!(
+            "{description}\n\
+             X = sum of all allocated amounts. Legal X values: 0 to {}.\n\
+             Sources with variable output or cost-bearing activation (e.g. pain lands) aren't listed — tap those manually first to float the mana.",
+            options.max_x,
+        );
+        let full_prompt = self.build_prompt(view, &prompt_text);
+        let response = self.send_message_structured(&full_prompt, &schema);
+
+        // Parse response.
+        let mut funding = FundingResponse::default();
+        for mt in colors {
+            let amount = response.get("floating")
+                .and_then(|f| f.get(mt_key(mt)))
+                .and_then(serde_json::Value::as_u64)
+                .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX));
+            if amount > 0 {
+                funding.pool.insert(mt, amount);
+            }
+        }
+        for cat_key in ["lands", "rocks", "dorks"] {
+            if let Some(obj) = response.get(cat_key).and_then(|v| v.as_object()) {
+                for (name, val) in obj {
+                    let amount = val.as_u64()
+                        .map_or(0, |n| u32::try_from(n).unwrap_or(u32::MAX));
+                    if amount > 0 {
+                        funding.taps.insert(name.clone(), amount);
+                    }
+                }
+            }
+        }
+
+        // Best-effort validation: if the model produced something invalid,
+        // clamp to empty (X = 0) so the cast still completes rather than
+        // crashing. Log the issue for investigation.
+        if let Err(e) = mtg_engine::funding::validate(&funding, options) {
+            self.log("MALFORMED", &format!("invalid X funding response ({e}), defaulting to X=0"));
+            funding = FundingResponse::default();
+        }
+        self.log("CHOSE", &format!("X funding sum = {}", funding.x_value()));
+        Action::ResolveChoice { choice: ResolvedChoice::XFunding(funding) }
+    }
+
     /// Confirm concede via structured output. Returns true if the AI confirms.
     fn confirm_concede(&mut self) -> bool {
         self.log("CONCEDE-CHECK", "AI chose Concede, confirming...");
@@ -2195,6 +2371,16 @@ impl Player for LlmPlayer {
         }
 
         let legal_actions = &legal.actions;
+
+        // X-cost funding: structured-prompt choice that can't be pre-enumerated.
+        // The engine surfaces the `FundingOptions` via `resolution_prompt`; we
+        // build a dynamic JSON schema + explanation and parse the response.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseXFunding {
+            options, source_id, is_ability, description,
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return self.choose_x_funding(view, options, *source_id, *is_ability, description);
+        }
 
         // London mulligan keep/mull decision.
         if legal_actions.iter().any(|a| matches!(a, Action::MulliganKeep)) {
@@ -3158,50 +3344,11 @@ mod tests {
         );
     }
 
-    /// Bug H8 (`audits/AUDIT_BUGS.md)`: X-cost spell labels don't show
-    /// what X will be. Only `ExileXFromGraveyard` spells currently
-    /// set `exile_x_from_gy_max` and get an `X=N` suffix. Mana-cost
-    /// X spells (Devil's Play via `ManaSymbol::X`) render as a bare
-    /// `Cast Devil's Play`.
-    ///
-    /// We synthesize a `CastableSpell` for Devil's Play and check that
-    /// the rendered label has an X marker. Today it doesn't because
-    /// `CastableSpell` has no `x_value` field — only
-    /// `exile_x_from_gy_max`.
-    ///
-    /// This test asserts the EXPECTED CORRECT behavior, so it currently
-    /// fails. It will start passing as soon as Bug H8 is fixed.
-    #[test]
-    #[ignore = "Tabled — requires X-cost casting rework"]
-    fn bug_h8_x_cost_spell_label_shows_x() {
-        use mtg_engine::actions::{CastTargetSpec, CastableSpell};
-
-        let _view = empty_view();
-        let cs = CastableSpell {
-            object_id: ObjectId(201),
-            name: "Devil's Play".into(),
-            is_flashback: false,
-            target_spec: CastTargetSpec::SingleTarget(vec![]),
-            tap_plan: vec![],
-            exile_x_from_gy_max: None, // X-cost via ManaSymbol::X, not exile
-            sacrifice_options: vec![],
-            additional_cost_label: None,
-        };
-
-        // Today's label generation path:
-        let x_suffix = cs.exile_x_from_gy_max
-            .map(|n| format!(" X={n} ({n} damage)"))
-            .unwrap_or_default();
-        let label = format!("Cast {}{}", cs.name, x_suffix);
-
-        assert!(
-            label.contains("X=") || label.contains("{X}"),
-            "X-cost spell labels should show the X value so the LLM \
-             can see how much damage Devil's Play would deal. Bug H8: \
-             the label generator only consults `exile_x_from_gy_max`, \
-             which is None for ManaSymbol::X spells. label = {label:?}",
-        );
-    }
+    // Bug H8 (X-cost spell labels don't show X) was removed as part of the
+    // X-cost funding refactor. Under the new flow, the LLM picks "Cast
+    // Devil's Play" without any preset X; X is chosen afterward via a
+    // `ChooseXFunding` structured prompt. The cast-label is intentionally
+    // X-free — there's no value to display at cast-selection time.
 
     /// `ChosenIndex` labels are always provided (not optional) so the
     /// LLM always sees a descriptive label for indexed choices.
@@ -3233,7 +3380,10 @@ mod tests {
     /// This test asserts the EXPECTED CORRECT behavior, so it currently
     /// fails. It will start passing as soon as Bug J is fixed.
     #[test]
-    #[ignore = "Tabled — requires X-cost casting rework"]
+    #[ignore = "Tabled — unrelated to the X-cost mana refactor. Fixing \
+                requires routing ExileXFromGraveyard through a \
+                structured-choice prompt similar to ChooseXFunding so the \
+                LLM can pick the exile count explicitly. Separate follow-up."]
     fn bug_j_harvest_pyre_exposes_x_range_not_just_max() {
         use mtg_engine::actions::{CastTargetSpec, CastableSpell};
 
