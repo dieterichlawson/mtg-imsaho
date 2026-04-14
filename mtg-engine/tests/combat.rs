@@ -26,8 +26,8 @@ fn blocked_creature_with_removed_blocker_deals_no_damage() {
     let attacker = ready_creature(&mut state, P0, 5, 5);
     let blocker = ready_creature(&mut state, P1, 1, 1);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
-    combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
 
     // Blocker is removed before damage (e.g., by a spell).
     state.move_object(blocker, Zone::Graveyard, &reg);
@@ -71,7 +71,7 @@ fn attacking_taps_the_creature() {
     let attacker = ready_creature(&mut state, P0, 3, 3);
     assert!(!state.get_object(attacker).unwrap().tapped);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
 
     assert!(state.get_object(attacker).unwrap().tapped,
         "Creature should be tapped after declaring as attacker (rule 508.1f)");
@@ -100,8 +100,8 @@ fn multiple_blockers_all_deal_damage_to_attacker() {
     let blocker_a = ready_creature(&mut state, P1, 2, 2);
     let blocker_b = ready_creature(&mut state, P1, 3, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
-    combat::declare_blockers(&mut state, &[(blocker_a, attacker), (blocker_b, attacker)]);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker_a, attacker), (blocker_b, attacker)], &reg);
     combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 5,
@@ -117,8 +117,8 @@ fn zero_power_creature_deals_no_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
     let attacker = ready_creature(&mut state, P0, 0, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
-    combat::declare_blockers(&mut state, &[]);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[], &reg);
     combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_player(P1).life, 20,
@@ -154,11 +154,11 @@ fn full_combat_with_partial_block() {
     let attacker_b = ready_creature(&mut state, P0, 2, 1);
     let blocker = ready_creature(&mut state, P1, 3, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker_a, P1), (attacker_b, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(attacker_a, P1), (attacker_b, P1)], &reg);
     assert!(state.get_object(attacker_a).unwrap().tapped);
     assert!(state.get_object(attacker_b).unwrap().tapped);
 
-    combat::declare_blockers(&mut state, &[(blocker, attacker_a)]);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker_a)], &reg);
     combat::deal_combat_damage(&mut state, &reg);
 
     // Attacker A and blocker trade.
@@ -183,8 +183,8 @@ fn attacker_survives_small_blocker() {
     let attacker = ready_creature(&mut state, P0, 5, 5);
     let blocker = ready_creature(&mut state, P1, 1, 1);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
-    combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
     combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 1);
@@ -208,7 +208,7 @@ fn submit_action_declare_blockers_records_assignments() {
     let attacker = ready_creature(&mut state, P0, 3, 3);
     let blocker = ready_creature(&mut state, P1, 2, 2);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
     state.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
 
     let action = Action::DeclareBlockers { assignments: vec![(blocker, attacker)] };
@@ -327,7 +327,7 @@ fn submit_action_declare_blockers_with_none_logs_no_blockers() {
     let attacker = ready_creature(&mut state, P0, 3, 3);
     ready_creature(&mut state, P1, 2, 2);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
     state.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
 
     let action = Action::DeclareBlockers { assignments: vec![] };

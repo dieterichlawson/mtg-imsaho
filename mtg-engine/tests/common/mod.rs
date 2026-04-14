@@ -227,6 +227,42 @@ pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &C
     }
 }
 
+/// Drive `Action::DeclareAttackers` through `engine::submit_action` (the
+/// player-facing API). Preferred over `combat::declare_attackers` in tests
+/// that exercise end-to-end gameplay, because it sets up the
+/// `AwaitingAction`, fires events, and runs the forced-attacker pass.
+pub fn submit_declare_attackers(
+    state: &mut GameState,
+    attackers: &[(ObjectId, PlayerId)],
+    registry: &CardRegistry,
+) {
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareAttackers);
+    *state = mtg_engine::engine::submit_action(
+        state,
+        &Action::DeclareAttackers { attackers: attackers.to_vec() },
+        registry,
+    );
+}
+
+/// Drive `Action::DeclareBlockers` through `engine::submit_action` (the
+/// player-facing API). `defender` is the defending player (typically
+/// `state.opponent(state.active_player)`).
+pub fn submit_declare_blockers(
+    state: &mut GameState,
+    defender: PlayerId,
+    assignments: &[(ObjectId, ObjectId)],
+    registry: &CardRegistry,
+) {
+    state.awaiting_action = Some(mtg_engine::state::AwaitingAction::DeclareBlockers {
+        defending_player: defender,
+    });
+    *state = mtg_engine::engine::submit_action(
+        state,
+        &Action::DeclareBlockers { assignments: assignments.to_vec() },
+        registry,
+    );
+}
+
 /// Place a named equipment card on the battlefield (unattached). Returns the object ID.
 pub fn named_equipment(
     state: &mut GameState,
