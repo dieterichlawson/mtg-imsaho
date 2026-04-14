@@ -78,8 +78,8 @@ fn creature_death_logged_once() {
     let blocker = ready_creature(&mut state, P1, 3, 3);
 
     // Simulate combat: they trade.
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &registry);
-    combat::declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &registry);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &registry);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &registry);
     combat::deal_combat_damage(&mut state, &registry);
     // SBAs kill both creatures.
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);

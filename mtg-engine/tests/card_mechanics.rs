@@ -288,8 +288,8 @@ fn ghostly_possession_prevents_damage() {
     state.get_object_mut(gp).unwrap().attached_to = Some(blocker);
     state.get_object_mut(gp).unwrap().summoning_sick = false;
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
-    combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
     combat::deal_combat_damage(&mut state, &reg);
 
     // Blocker with Ghostly Possession should take no damage.
@@ -316,8 +316,8 @@ fn grave_bramble_protection_prevents_zombie_damage() {
     // Blocker is Grave Bramble (protection from Zombies).
     let bramble = named_creature(&mut state, &reg, "Grave Bramble", P1);
 
-    combat::declare_attackers(&mut state, &[(zombie, P1)], &reg);
-    combat::declare_blockers(&mut state, &[(bramble, zombie)]);
+    submit_declare_attackers(&mut state, &[(zombie, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(bramble, zombie)], &reg);
     combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_object(bramble).unwrap().damage_marked, 0,

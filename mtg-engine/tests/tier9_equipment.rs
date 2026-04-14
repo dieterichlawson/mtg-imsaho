@@ -351,7 +351,7 @@ fn wooden_stake_destroys_vampire_on_block() {
     state.combat = Some(combat);
 
     // Declare blockers: creature blocks vampire.
-    mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(creature, vampire)], &reg);
+    submit_declare_blockers(&mut state, P0, &[(creature, vampire)], &reg);
 
     // Process triggers — this should fire Wooden Stake's block trigger.
     mtg_engine::triggers::process_triggers(&mut state, &reg);
@@ -382,7 +382,7 @@ fn wooden_stake_does_not_destroy_non_vampire() {
     combat.blocker_assignments.insert(bear, vec![]);
     state.combat = Some(combat);
 
-    mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(creature, bear)], &reg);
+    submit_declare_blockers(&mut state, P0, &[(creature, bear)], &reg);
     mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     // Non-Vampire should NOT be destroyed.

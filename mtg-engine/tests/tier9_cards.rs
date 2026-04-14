@@ -5,7 +5,6 @@ mod common;
 use common::*;
 use mtg_engine::actions::{Action, Target};
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::combat;
 use mtg_engine::engine;
 use mtg_engine::sba::check_state_based_actions;
 use mtg_engine::triggers;
@@ -343,7 +342,7 @@ fn trepanation_blade_attack_trigger_mills_and_pumps() {
     state.get_player_mut(P1).library_order = vec![lib1, lib2, lib3];
 
     // Declare creature as attacker.
-    combat::declare_attackers(&mut state, &[(creature, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(creature, P1)], &reg);
 
     // Process triggers — the blade's attack trigger should fire.
     triggers::process_triggers(&mut state, &reg);
@@ -383,7 +382,7 @@ fn trepanation_blade_stops_at_first_land() {
 
     state.get_player_mut(P1).library_order = vec![lib1, lib2];
 
-    combat::declare_attackers(&mut state, &[(creature, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(creature, P1)], &reg);
     triggers::process_triggers(&mut state, &reg);
 
     // Only the first card (land) should be milled.

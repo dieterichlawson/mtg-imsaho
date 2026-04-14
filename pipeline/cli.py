@@ -17,7 +17,6 @@ Usage:
     ./pipeline/cli.py show olivia-01
     ./pipeline/cli.py accept olivia-01
     ./pipeline/cli.py status
-    ./pipeline/cli.py dedup
 """
 
 import argparse
@@ -45,6 +44,19 @@ CARDS_DIR = PROJECT_ROOT / "mtg-engine" / "src" / "cards" / "isd"
 ORACLE_SCRIPT = PROJECT_ROOT / "scripts" / "oracle_lookup.py"
 
 DEFAULT_MODEL = "opus"
+
+# Env vars that force API-key billing when set. Scrubbed from agent
+# subprocesses so the `claude` CLI falls back to Claude Code subscription auth.
+API_KEY_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
+def subscription_env() -> dict:
+    """Inherit current env but strip API-key vars so subprocesses use
+    the Claude Code subscription rather than pay-as-you-go API billing."""
+    env = os.environ.copy()
+    for k in API_KEY_ENV_VARS:
+        env.pop(k, None)
+    return env
 DEFAULT_EFFORT = "max"
 
 
@@ -138,19 +150,29 @@ def run_agent_in(prompt: str, cwd: Path, model: str = DEFAULT_MODEL,
     result = subprocess.run(
         cmd, capture_output=True, text=True,
         cwd=str(cwd), timeout=900,
+        env=subscription_env(),
     )
     elapsed = int(time.time() - start)
     tokens = 0
     tool_uses = 0
+    is_error = False
+    error_message = None
     try:
         data = json.loads(result.stdout)
         tokens = data.get("usage", {}).get("input_tokens", 0) + \
                  data.get("usage", {}).get("output_tokens", 0)
         tool_uses = data.get("num_turns", 0)
+        if data.get("is_error"):
+            is_error = True
+            error_message = data.get("result") or "agent reported is_error=true"
     except (json.JSONDecodeError, KeyError, TypeError):
         pass
+    if result.returncode != 0 and not is_error:
+        is_error = True
+        error_message = (result.stderr or result.stdout or "")[:200] or f"exit {result.returncode}"
     return {"returncode": result.returncode, "tokens": tokens,
-            "tool_uses": tool_uses, "duration": elapsed}
+            "tool_uses": tool_uses, "duration": elapsed,
+            "is_error": is_error, "error_message": error_message}
 
 
 def get_oracle_text(card_name: str) -> str | None:
@@ -251,24 +273,36 @@ def run_agent(prompt: str, model: str = DEFAULT_MODEL,
         cmd, capture_output=True, text=True,
         cwd=str(PROJECT_ROOT),
         timeout=900,
+        env=subscription_env(),
     )
     elapsed = int(time.time() - start)
 
     tokens = 0
     tool_uses = 0
+    is_error = False
+    error_message = None
     try:
         data = json.loads(result.stdout)
         tokens = data.get("usage", {}).get("input_tokens", 0) + \
                  data.get("usage", {}).get("output_tokens", 0)
         tool_uses = data.get("num_turns", 0)
+        if data.get("is_error"):
+            is_error = True
+            error_message = data.get("result") or "agent reported is_error=true"
     except (json.JSONDecodeError, KeyError, TypeError):
         pass
+
+    if result.returncode != 0 and not is_error:
+        is_error = True
+        error_message = (result.stderr or result.stdout or "")[:200] or f"exit {result.returncode}"
 
     return {
         "returncode": result.returncode,
         "tokens": tokens,
         "tool_uses": tool_uses,
         "duration": elapsed,
+        "is_error": is_error,
+        "error_message": error_message,
     }
 
 
@@ -376,7 +410,8 @@ def parse_fix_staging(staging_path: Path) -> dict:
 # ─── Audit command ────────────────────────────────────────────────
 
 def cmd_audit(args):
-    cards = [c.strip() for c in args.cards.split(",")]
+    sep = ";" if ";" in args.cards else ","
+    cards = [c.strip() for c in args.cards.split(sep) if c.strip()]
 
     print(f"\n{'='*60}")
     print(f"AUDIT — {len(cards)} card(s)")
@@ -426,6 +461,21 @@ Use the format specified in the prompt (Checks Performed, Finding N sections, In
         print(f"  [{card}] Spawning agent...")
         result = run_agent(shared_prompt + "\n\n---\n\n" + per_agent,
                           args.model, args.effort)
+
+        if result.get("is_error"):
+            err = result.get("error_message") or "unknown error"
+            print(f"  [{card}] AGENT ERROR: {err} ({result['duration']}s, {result['tokens']} tok)")
+            append_jsonl(METRICS_DIR / "runs.jsonl", {
+                "run_id": run_id, "timestamp": now_iso(), "role": "auditor",
+                "model": args.model, "card": card, "finding_id": None,
+                "findings_created": 0,
+                "test_result": None, "fix_result": None,
+                "validation_passed": False, "rejection_reason": f"agent error: {err}",
+                "total_tokens": result["tokens"], "tool_uses": result["tool_uses"],
+                "duration_seconds": result["duration"], "notes": "agent_error",
+            })
+            return {"card": card, "tickets": 0, "duration": result["duration"],
+                    "tokens": result["tokens"], "error": err}
 
         # Parse staging output
         tickets_created = []
@@ -530,12 +580,21 @@ Use the format specified in the prompt (Checks Performed, Finding N sections, In
     print("AUDIT SUMMARY")
     print(f"{'='*60}")
     total = 0
+    errors = []
     for r in sorted(results, key=lambda x: x["card"]):
         t = r["tickets"]
         total += t
-        status = "PASS" if t == 0 else f"{t} ticket(s)"
+        if r.get("error"):
+            status = "ERROR"
+            errors.append(r)
+        else:
+            status = "PASS" if t == 0 else f"{t} ticket(s)"
         print(f"  {r['card']:<30} {status:<15} {r['duration']}s  {r['tokens']} tok")
     print(f"\n  Total tickets created: {total}")
+    if errors:
+        print(f"\n  {len(errors)} agent error(s):")
+        for r in errors:
+            print(f"    {r['card']}: {r['error']}")
 
 
 # ─── Test command ─────────────────────────────────────────────────
@@ -987,39 +1046,6 @@ def cmd_status(args):
                    cwd=str(PROJECT_ROOT))
 
 
-# ─── Dedup command ────────────────────────────────────────────────
-
-def cmd_dedup(args):
-    tickets = list_tickets()
-    if not tickets:
-        print("No tickets.")
-        return
-
-    # Group by engine path (first line of engine_path in body)
-    by_engine = {}
-    for t in tickets:
-        body = t["body"]
-        path_match = re.search(r"\*\*Engine path:\*\*\n(.+?)(?=\n\*\*|\n##|$)", body, re.DOTALL)
-        if path_match:
-            engine_path = path_match.group(1).strip().split("\n")[0].strip("- ")
-        else:
-            engine_path = "(no engine path)"
-
-        # Normalize to file only
-        engine_file = engine_path.split(":")[0] if ":" in engine_path else engine_path
-        by_engine.setdefault(engine_file, []).append(t)
-
-    print(f"\n{'='*60}")
-    print(f"DEDUP — {len(tickets)} tickets across {len(by_engine)} engine paths")
-    print(f"{'='*60}")
-
-    for path, group in sorted(by_engine.items(), key=lambda x: -len(x[1])):
-        print(f"\n  {path} ({len(group)} tickets)")
-        for t in group:
-            fm = t["frontmatter"]
-            print(f"    {fm.get('id', '?'):<30} {fm.get('status', '?'):<12} {fm.get('card', '?')}")
-
-
 # ─── Main ─────────────────────────────────────────────────────────
 
 def main():
@@ -1036,7 +1062,7 @@ def main():
 
     # audit
     p = sub.add_parser("audit", help="Audit cards for bugs")
-    p.add_argument("--cards", required=True, help="Comma-separated card names")
+    p.add_argument("--cards", required=True, help="Card names separated by ',' (or ';' if any name contains a comma, e.g. 'Mikaeus, the Lunarch')")
     p.add_argument("--parallelism", type=int, default=1)
     add_common(p)
 
@@ -1072,9 +1098,6 @@ def main():
     # status
     sub.add_parser("status", help="Show metrics dashboard")
 
-    # dedup
-    sub.add_parser("dedup", help="Group tickets by engine root cause")
-
     args = parser.parse_args()
 
     TICKETS_DIR.mkdir(exist_ok=True)
@@ -1084,7 +1107,7 @@ def main():
         "audit": cmd_audit, "test": cmd_test, "fix": cmd_fix,
         "merge": cmd_merge, "abandon": cmd_abandon,
         "tickets": cmd_tickets, "show": cmd_show,
-        "status": cmd_status, "dedup": cmd_dedup,
+        "status": cmd_status,
     }
     commands[args.command](args)
 

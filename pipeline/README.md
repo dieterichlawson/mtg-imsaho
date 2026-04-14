@@ -59,9 +59,6 @@ pipeline/
 # Metrics dashboard
 ./pipeline/cli.py status
 
-# Group tickets by engine root cause
-./pipeline/cli.py dedup
-
 # Dry run any command
 ./pipeline/cli.py audit --cards "Fiend Hunter" --dry-run
 ```

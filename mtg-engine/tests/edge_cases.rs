@@ -136,8 +136,8 @@ fn mutually_lethal_combat_both_die() {
     let attacker = ready_creature(&mut state, P0, 3, 3);
     let blocker = ready_creature(&mut state, P1, 3, 3);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
-    combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker, attacker)], &reg);
     combat::deal_combat_damage(&mut state, &reg);
 
     assert_eq!(state.get_object(attacker).unwrap().damage_marked, 3);
@@ -611,7 +611,7 @@ fn eot_protection_prevents_blocking() {
         },
     );
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
 
     // Blocker is not a Human, so can_block_attacker should reject it.
     assert!(
@@ -629,7 +629,7 @@ fn eot_cant_block_prevents_blocking() {
     let attacker = ready_creature(&mut state, P0, 3, 3);
     let blocker = ready_creature(&mut state, P1, 2, 2);
 
-    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    submit_declare_attackers(&mut state, &[(attacker, P1)], &reg);
 
     // Without can't-block, blocker should be eligible.
     let eligible_before = combat::eligible_blockers(&state, P1, &reg);

@@ -9,7 +9,6 @@ mod common;
 
 use common::*;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::combat;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -43,7 +42,7 @@ fn terror_of_kruin_pass_self_requires_two_blockers() {
     let blocker1 = ready_creature(&mut state, P1, 2, 2);
 
     // Try to block with only 1 creature — should be rejected.
-    combat::declare_blockers_with_registry(&mut state, &[(blocker1, terror)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker1, terror)], &reg);
     let assigned = state.combat.as_ref().unwrap()
         .blocker_assignments.get(&terror).unwrap();
     assert_eq!(assigned.len(), 0,
@@ -73,8 +72,9 @@ fn terror_of_kruin_pass_allows_two_blockers() {
     let blocker1 = ready_creature(&mut state, P1, 2, 2);
     let blocker2 = ready_creature(&mut state, P1, 2, 2);
 
-    combat::declare_blockers_with_registry(
+    submit_declare_blockers(
         &mut state,
+        P1,
         &[(blocker1, terror), (blocker2, terror)],
         &reg,
     );
@@ -115,7 +115,7 @@ fn terror_of_kruin_pass_grants_restriction_to_other_werewolves() {
     let blocker1 = ready_creature(&mut state, P1, 2, 2);
 
     // Try to block with only 1 creature — should be rejected.
-    combat::declare_blockers_with_registry(&mut state, &[(blocker1, other_wolf)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker1, other_wolf)], &reg);
     let assigned = state.combat.as_ref().unwrap()
         .blocker_assignments.get(&other_wolf).unwrap();
     assert_eq!(assigned.len(), 0,
@@ -151,7 +151,7 @@ fn terror_of_kruin_pass_does_not_affect_non_werewolves() {
     let blocker1 = ready_creature(&mut state, P1, 2, 2);
 
     // Blocking with 1 creature should be fine for non-Werewolves.
-    combat::declare_blockers_with_registry(&mut state, &[(blocker1, human)], &reg);
+    submit_declare_blockers(&mut state, P1, &[(blocker1, human)], &reg);
     let assigned = state.combat.as_ref().unwrap()
         .blocker_assignments.get(&human).unwrap();
     assert_eq!(assigned.len(), 1,
@@ -188,7 +188,7 @@ fn terror_of_kruin_pass_does_not_affect_opponent_werewolves() {
     let blocker1 = ready_creature(&mut state, P0, 2, 2);
 
     // Opponent's Werewolf should be blockable by 1 creature.
-    combat::declare_blockers_with_registry(&mut state, &[(blocker1, opp_wolf)], &reg);
+    submit_declare_blockers(&mut state, P0, &[(blocker1, opp_wolf)], &reg);
     let assigned = state.combat.as_ref().unwrap()
         .blocker_assignments.get(&opp_wolf).unwrap();
     assert_eq!(assigned.len(), 1,
