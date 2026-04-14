@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, ManaAbilityDef, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{CardType, Zone, ManaType, ManaCost, ManaSymbol, Color, CounterType};
 
 /// Stensia Bloodhall — Land.
 /// {T}: Add {C}.
@@ -26,10 +26,7 @@ impl CardBehavior for StensiaBloodhall {
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ManaAbilityDef {
                 ability_index: 0,
@@ -44,10 +41,7 @@ impl CardBehavior for StensiaBloodhall {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ActivatedAbilityDef {
                 ability_index: 1,
@@ -100,11 +94,9 @@ impl CardBehavior for StensiaBloodhall {
                     target: crate::events::DamageTarget::Object(*target_id),
                     amount: 2,
                 });
-                let target_name = state.get_object(*target_id)
-                    .map(|o| o.name.clone())
-                    .unwrap_or_else(|| "?".into());
+                let target_name = state.get_object(*target_id).map_or_else(|| "?".into(), |o| o.name.clone());
                 state.log(crate::state::LogLevel::Event,
-                    format!("Stensia Bloodhall deals 2 damage to {}", target_name));
+                    format!("Stensia Bloodhall deals 2 damage to {target_name}"));
             }
             None => {}
         }

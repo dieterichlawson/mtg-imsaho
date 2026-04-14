@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Thraben Purebloods — 3/5 for {4}{W}. Vanilla creature.
 pub struct ThrabenPurebloods;

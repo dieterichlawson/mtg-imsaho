@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Zone};
 
 /// Witchbane Orb — {4} Artifact.
 /// When Witchbane Orb enters the battlefield, destroy all Curses attached to you.
@@ -39,7 +39,7 @@ impl CardBehavior for WitchbaneOrb {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Find all curses attached to the controller.
         let curses: Vec<ObjectId> = state.objects.values()
@@ -47,8 +47,7 @@ impl CardBehavior for WitchbaneOrb {
                 o.zone == Zone::Battlefield
                     && o.attached_to_player == Some(controller)
                     && registry.card_data(o.card_id)
-                        .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.subtypes.iter().any(|s| s == "Curse"))
             })
             .map(|o| o.id)
             .collect();
@@ -57,7 +56,7 @@ impl CardBehavior for WitchbaneOrb {
             let name = state.get_object(*curse_id).map(|o| o.name.clone()).unwrap_or_default();
             crate::destruction::try_destroy(state, *curse_id, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Witchbane Orb destroyed {}", name));
+                format!("Witchbane Orb destroyed {name}"));
         }
     }
 }

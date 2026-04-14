@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Divination — {2}{U} sorcery. Draw two cards.
 pub struct Divination;
@@ -28,8 +28,7 @@ impl CardBehavior for Divination {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id)
-            .map(|o| o.controller)
-            .unwrap_or(crate::ids::PlayerId(0));
+            .map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         crate::engine::draw_cards(state, controller, 2, registry);
         state.move_spell_after_resolve(object_id, registry);

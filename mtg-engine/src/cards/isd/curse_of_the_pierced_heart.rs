@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Curse of the Pierced Heart — {1}{R} Enchantment — Aura Curse.
 /// Enchant player.
@@ -50,10 +50,7 @@ impl CardBehavior for CurseOfThePiercedHeart {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.attached_to_player),
             _ => return,
         };
-        let cursed_player = match cursed_player {
-            Some(p) => p,
-            None => return,
-        };
+        let Some(cursed_player) = cursed_player else { return; };
         // Only trigger on the enchanted player's upkeep.
         if state.active_player != cursed_player {
             return;

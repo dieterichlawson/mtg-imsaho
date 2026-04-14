@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Elder of Laurels — {2}{G} 2/3 Human Advisor.
 /// {3}{G}: Target creature gets +X/+X until end of turn, where X is the number of creatures you control.
@@ -28,10 +28,7 @@ impl CardBehavior for ElderOfLaurels {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -52,14 +49,14 @@ impl CardBehavior for ElderOfLaurels {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         let creature_count = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .filter(|o| o.power.is_some())
             .count() as i32;
 
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: *target_id,
@@ -68,7 +65,7 @@ impl CardBehavior for ElderOfLaurels {
                     }
                 );
                 state.log(crate::state::LogLevel::Event,
-                    format!("Elder of Laurels gives target creature +{}/+{}", creature_count, creature_count));
+                    format!("Elder of Laurels gives target creature +{creature_count}/+{creature_count}"));
             }
         }
     }

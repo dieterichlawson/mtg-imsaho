@@ -30,7 +30,7 @@ use std::collections::HashMap;
 use crate::actions::Target;
 use crate::ids::{CardId, ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, CardType, Supertype, Keyword, ContinuousEffect, ManaType, Zone};
 
 /// Static card data — the printed card.
 #[derive(Debug, Clone)]
@@ -211,7 +211,7 @@ impl std::fmt::Display for TargetFilter {
             TargetFilter::YouDontControl => write!(f, "you don't control"),
             TargetFilter::Nonblack => write!(f, "nonblack"),
             TargetFilter::NotSubtypes(types) => write!(f, "non-{}", types.join("/")),
-            TargetFilter::PowerAtLeast(n) => write!(f, "power {}+", n),
+            TargetFilter::PowerAtLeast(n) => write!(f, "power {n}+"),
             TargetFilter::Attacking => write!(f, "attacking"),
             TargetFilter::Noncreature => write!(f, "noncreature"),
             TargetFilter::HasCardType(types) => {
@@ -226,8 +226,8 @@ impl std::fmt::Display for TargetFilter {
                 }).collect();
                 write!(f, "{}", names.join(" or "))
             }
-            TargetFilter::HasSubtype(subtype) => write!(f, "{}", subtype),
-            TargetFilter::HasKeyword(kw) => write!(f, "with {:?}", kw),
+            TargetFilter::HasSubtype(subtype) => write!(f, "{subtype}"),
+            TargetFilter::HasKeyword(kw) => write!(f, "with {kw:?}"),
             TargetFilter::Another => write!(f, "another"),
             TargetFilter::SameNameAsSource => write!(f, "with the same name"),
             TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
@@ -236,7 +236,7 @@ impl std::fmt::Display for TargetFilter {
                     parts.push(match t {
                         CardType::Enchantment => "enchantment".into(),
                         CardType::Artifact => "artifact".into(),
-                        _ => format!("{:?}", t).to_lowercase(),
+                        _ => format!("{t:?}").to_lowercase(),
                     });
                 }
                 write!(f, "{}", parts.join(" or "))
@@ -486,7 +486,7 @@ pub trait CardBehavior: Send + Sync {
         let _ = targets; // default ignores targets
         // Default for permanents: move to battlefield.
         let card_data = self.card_data();
-        if card_data.card_types.iter().any(|t| t.is_permanent()) {
+        if card_data.card_types.iter().any(CardType::is_permanent) {
             state.move_object(object_id, Zone::Battlefield, registry);
             // Set is_legendary from card data for legend rule enforcement.
             if card_data.supertypes.contains(&crate::types::Supertype::Legendary) {
@@ -498,7 +498,7 @@ pub trait CardBehavior: Send + Sync {
             if let Some(loyalty) = self.starting_loyalty() {
                 // For X-cost planeswalkers, the x_value is already set on the object.
                 let x = state.get_object(object_id).and_then(|o| o.x_value).unwrap_or(0);
-                let total = if card_data.cost.as_ref().map(|c| c.symbols.iter().any(|s| matches!(s, crate::types::ManaSymbol::X))).unwrap_or(false) {
+                let total = if card_data.cost.as_ref().is_some_and(|c| c.symbols.iter().any(|s| matches!(s, crate::types::ManaSymbol::X))) {
                     x
                 } else {
                     loyalty
@@ -516,13 +516,19 @@ pub struct CardRegistry {
     name_to_id: HashMap<String, CardId>,
 }
 
-impl CardRegistry {
-    pub fn new() -> Self {
+impl Default for CardRegistry {
+    fn default() -> Self {
         Self {
             cards: HashMap::new(),
             next_id: 1,
             name_to_id: HashMap::new(),
         }
+    }
+}
+
+impl CardRegistry {
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Register a card and return its assigned CardId.
@@ -537,7 +543,7 @@ impl CardRegistry {
 
     /// Look up a card's behavior by ID.
     pub fn get(&self, id: CardId) -> Option<&dyn CardBehavior> {
-        self.cards.get(&id).map(|b| b.as_ref())
+        self.cards.get(&id).map(AsRef::as_ref)
     }
 
     /// Look up a card ID by name.
@@ -556,12 +562,12 @@ impl CardRegistry {
 
     /// Get card data by ID.
     pub fn card_data(&self, id: CardId) -> Option<CardData> {
-        self.get(id).map(|b| b.card_data())
+        self.get(id).map(CardBehavior::card_data)
     }
 
     /// Return all registered card names.
     pub fn all_names(&self) -> Vec<&str> {
-        self.name_to_id.keys().map(|s| s.as_str()).collect()
+        self.name_to_id.keys().map(String::as_str).collect()
     }
 
     /// Build a registry with all built-in cards.

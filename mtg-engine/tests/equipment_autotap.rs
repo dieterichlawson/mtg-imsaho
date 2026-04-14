@@ -32,7 +32,7 @@ fn registry() -> CardRegistry {
 
 /// Place an unattached equipment of the given name on the battlefield.
 fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
-    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {}", name));
+    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
     let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
     let obj = state.get_object_mut(id).unwrap();
     obj.name = name.into();
@@ -42,7 +42,7 @@ fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: Playe
 
 /// Place an untapped basic land of the given name on the battlefield.
 fn untapped_land(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
-    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown land {}", name));
+    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown land {name}"));
     let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
     let obj = state.get_object_mut(id).unwrap();
     obj.name = name.into();
@@ -65,7 +65,7 @@ fn find_equip_action(state: &GameState, reg: &CardRegistry, equipment_id: Object
         .cloned()
         .unwrap_or_else(|| {
             // Build a friendly diagnostic.
-            let actions: Vec<String> = legal.actions.iter().map(|a| format!("{:?}", a)).collect();
+            let actions: Vec<String> = legal.actions.iter().map(|a| format!("{a:?}")).collect();
             panic!(
                 "no Activate action found for equipment {} -> creature {}\nlegal actions:\n  {}",
                 equipment_id.0,
@@ -109,7 +109,7 @@ fn silver_inlaid_dagger_equip_offered_when_only_lands_untapped() {
 
     // The action's tap_plan should reference both Forests.
     if let Action::ActivateAbility { tap_plan, .. } = &action {
-        assert_eq!(tap_plan.len(), 2, "tap_plan should tap both forests for {{2}} cost, got {:?}", tap_plan);
+        assert_eq!(tap_plan.len(), 2, "tap_plan should tap both forests for {{2}} cost, got {tap_plan:?}");
         let tap_ids: Vec<ObjectId> = tap_plan.iter().map(|(id, _)| *id).collect();
         for f in &forests {
             assert!(tap_ids.contains(f), "tap_plan should reference forest {}", f.0);
@@ -334,9 +334,8 @@ fn every_mana_cost_equipment_in_isd_can_be_equipped_via_autotap() {
         )).cloned();
 
         let action = action.unwrap_or_else(|| panic!(
-            "[{}] equip {{{}}}: no Activate action found in legal_actions; the engine \
-             is dropping mana-cost activated abilities again — see Bug A in the audit.",
-            name, equip_cost
+            "[{name}] equip {{{equip_cost}}}: no Activate action found in legal_actions; the engine \
+             is dropping mana-cost activated abilities again — see Bug A in the audit."
         ));
 
         if let Action::ActivateAbility { tap_plan, .. } = &action {
@@ -348,11 +347,11 @@ fn every_mana_cost_equipment_in_isd_can_be_equipped_via_autotap() {
         assert_eq!(
             new_state.get_object(eq).unwrap().attached_to,
             Some(bears),
-            "[{}] equipment should be attached after submit", name
+            "[{name}] equipment should be attached after submit"
         );
         assert!(
             new_state.get_player(P0).mana_pool.is_empty(),
-            "[{}] mana pool should be empty after equip", name
+            "[{name}] mana pool should be empty after equip"
         );
     }
 }
@@ -514,8 +513,7 @@ fn assert_equip_ability_unique_after_attach(reg: &CardRegistry, equip_name: &str
         equip_name, to_b.len(), to_b);
     if let Action::ActivateAbility { object_id, .. } = to_b[0] {
         assert_eq!(*object_id, eq,
-            "{}: equip action's object_id should be the equipment, not the attached creature",
-            equip_name);
+            "{equip_name}: equip action's object_id should be the equipment, not the attached creature");
     }
 }
 

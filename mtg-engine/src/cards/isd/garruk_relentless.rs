@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, Targ
 use crate::state::{AwaitingAction, PendingEffect, ResolutionChoiceKind};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{CardType, Zone, ManaCost, ManaSymbol, Color, Supertype, CounterType, Keyword};
 
 /// Garruk Relentless {3}{G} Legendary Planeswalker — Garruk (3 loyalty).
 ///
@@ -28,18 +28,17 @@ impl GarrukRelentless {
         let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
         crate::destruction::sacrifice(state, sac_id, registry);
         state.log(crate::state::LogLevel::Event,
-            format!("Garruk, the Veil-Cursed: sacrificed {}", sac_name));
+            format!("Garruk, the Veil-Cursed: sacrificed {sac_name}"));
 
         // Find all creature cards in library for the player to choose from.
         let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
             .filter(|&&lib_id| {
                 if let Some(obj) = state.get_object(lib_id) {
-                    if !obj.card_types.is_empty() {
-                        obj.card_types.contains(&CardType::Creature)
-                    } else {
+                    if obj.card_types.is_empty() {
                         registry.card_data(obj.card_id)
-                            .map(|d| d.card_types.contains(&CardType::Creature))
-                            .unwrap_or(false)
+                            .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+                    } else {
+                        obj.card_types.contains(&CardType::Creature)
                     }
                 } else {
                     false
@@ -61,7 +60,7 @@ impl GarrukRelentless {
             player.library_order.retain(|&lid| lid != found_id);
             state.move_object(found_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Garruk, the Veil-Cursed: searched and found {}", found_name));
+                format!("Garruk, the Veil-Cursed: searched and found {found_name}"));
             use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(controller).library_order.shuffle(&mut rng);
@@ -108,7 +107,7 @@ impl CardBehavior for GarrukRelentless {
     }
 
     fn loyalty_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<LoyaltyAbilityDef> {
-        let is_transformed = state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false);
+        let is_transformed = state.get_object(object_id).is_some_and(|o| o.is_transformed);
 
         if is_transformed {
             // Back face: Garruk, the Veil-Cursed
@@ -189,7 +188,7 @@ impl CardBehavior for GarrukRelentless {
                         });
                     }
                     state.log(crate::state::LogLevel::Event,
-                        format!("Garruk: deals 3 to {}, takes {} damage back", target_name, target_power));
+                        format!("Garruk: deals 3 to {target_name}, takes {target_power} damage back"));
                 }
             }
             1 => {
@@ -264,12 +263,11 @@ impl CardBehavior for GarrukRelentless {
                 let x = state.objects_in_zone(Zone::Graveyard, controller)
                     .iter()
                     .filter(|o| {
-                        if !o.card_types.is_empty() {
-                            o.card_types.contains(&CardType::Creature)
-                        } else {
+                        if o.card_types.is_empty() {
                             registry.card_data(o.card_id)
-                                .map(|d| d.card_types.contains(&CardType::Creature))
-                                .unwrap_or(false)
+                                .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+                        } else {
+                            o.card_types.contains(&CardType::Creature)
                         }
                     })
                     .count() as i32;
@@ -292,7 +290,7 @@ impl CardBehavior for GarrukRelentless {
                     });
                 }
                 state.log(crate::state::LogLevel::Event,
-                    format!("Garruk, the Veil-Cursed: creatures get +{}/+{} and trample until end of turn", x, x));
+                    format!("Garruk, the Veil-Cursed: creatures get +{x}/+{x} and trample until end of turn"));
             }
             _ => {}
         }

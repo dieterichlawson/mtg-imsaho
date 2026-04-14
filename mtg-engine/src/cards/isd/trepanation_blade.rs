@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Zone};
 
 /// Trepanation Blade — {3} Artifact — Equipment.
 /// Whenever equipped creature attacks, defending player reveals cards from the top
@@ -47,31 +47,21 @@ impl CardBehavior for TrepanationBlade {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         // self_id is the equipment's ID (from AttacksTrigger resolution).
-        let equip = match state.get_object(self_id) {
-            Some(o) => o,
-            None => return,
-        };
-        let creature_id = match equip.attached_to {
-            Some(id) => id,
-            None => return,
-        };
+        let Some(equip) = state.get_object(self_id) else { return; };
+        let Some(creature_id) = equip.attached_to else { return; };
 
         // Find the defending player from combat state.
         let defending_player = state.combat.as_ref()
             .and_then(|c| c.attackers.get(&creature_id).copied());
-        let defending_player = match defending_player {
-            Some(p) => p,
-            None => return,
-        };
+        let Some(defending_player) = defending_player else { return; };
 
         // Reveal cards from defending player's library until a land is revealed.
         let mut cards_milled = 0;
@@ -88,8 +78,7 @@ impl CardBehavior for TrepanationBlade {
             // may be empty for non-token cards).
             let is_land = state.get_object(card_id)
                 .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)))
-                .unwrap_or(false);
+                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
 
             // Remove from library and put into graveyard.
             let player = state.get_player_mut(defending_player);
@@ -108,7 +97,7 @@ impl CardBehavior for TrepanationBlade {
                     if cards_milled == 1 { "" } else { "s" }));
 
             // Equipped creature gets +1/+0 per card milled until end of turn.
-            if state.get_object(creature_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: creature_id,
@@ -117,16 +106,13 @@ impl CardBehavior for TrepanationBlade {
                     }
                 );
                 state.log(crate::state::LogLevel::Event,
-                    format!("Trepanation Blade: equipped creature gets +{}/+0", cards_milled));
+                    format!("Trepanation Blade: equipped creature gets +{cards_milled}/+0"));
             }
         }
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && obj.power.is_none() {
             vec![ActivatedAbilityDef {
                 ability_index: 0,

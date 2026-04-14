@@ -7,6 +7,7 @@ use mtg_draft::draft::DraftPick;
 /// Per-model token usage tracking. Thread-safe via Mutex.
 use std::sync::Mutex;
 use std::collections::HashMap;
+use std::fmt::Write;
 
 #[derive(Default, Debug)]
 pub struct ModelUsage {
@@ -95,10 +96,16 @@ fn model_pricing(model: &str) -> (f64, f64, f64, f64) {
 
 fn usage_cost(u: &ModelUsage, model: &str) -> f64 {
     let (in_p, out_p, cache_r_p, cache_w_p) = model_pricing(model);
-    (u.input as f64) * in_p / 1_000_000.0
-        + (u.output as f64) * out_p / 1_000_000.0
-        + (u.cache_read as f64) * cache_r_p / 1_000_000.0
-        + (u.cache_create as f64) * cache_w_p / 1_000_000.0
+    // Convert token counts to f64 via u32 since realistic counts fit.
+    // `as u32` saturates via `min` to avoid wraparound on overflow.
+    let input = u32::try_from(u.input).unwrap_or(u32::MAX);
+    let output = u32::try_from(u.output).unwrap_or(u32::MAX);
+    let cache_read = u32::try_from(u.cache_read).unwrap_or(u32::MAX);
+    let cache_create = u32::try_from(u.cache_create).unwrap_or(u32::MAX);
+    f64::from(input) * in_p / 1_000_000.0
+        + f64::from(output) * out_p / 1_000_000.0
+        + f64::from(cache_read) * cache_r_p / 1_000_000.0
+        + f64::from(cache_create) * cache_w_p / 1_000_000.0
 }
 
 /// Print a summary of all token usage and estimated cost, broken down by model and phase.
@@ -118,11 +125,14 @@ pub fn print_usage_summary(total_games: usize) {
     let mut game_cost = 0.0;
     let mut game_calls = 0u64;
     for (model, u) in &game_usage {
-        let (in_p, out_p, cache_r_p, cache_w_p) = model_pricing(model);
-        game_cost += (u.input as f64) * in_p / 1_000_000.0
-            + (u.output as f64) * out_p / 1_000_000.0
-            + (u.cache_read as f64) * cache_r_p / 1_000_000.0
-            + (u.cache_create as f64) * cache_w_p / 1_000_000.0;
+        let mu = ModelUsage {
+            calls: u.calls,
+            input: u.input,
+            output: u.output,
+            cache_read: u.cache_read,
+            cache_create: u.cache_create,
+        };
+        game_cost += usage_cost(&mu, model);
         game_calls += u.calls;
     }
 
@@ -148,9 +158,9 @@ pub fn print_usage_summary(total_games: usize) {
     // Build summary string for both stderr and log file
     let mut summary = String::from("=== Token Usage ===\n");
 
-    summary.push_str(&format!("  Draft:  {} calls, ${:.4}\n", draft_calls, draft_cost));
-    summary.push_str(&format!("  Games:  {} calls, ${:.4}{}\n", game_calls, game_cost,
-        if total_games > 0 { format!(" ({} games, ${:.4}/game avg)", total_games, game_cost / total_games as f64) } else { String::new() }));
+    writeln!(summary, "  Draft:  {draft_calls} calls, ${draft_cost:.4}").unwrap();
+    writeln!(summary, "  Games:  {} calls, ${:.4}{}", game_calls, game_cost,
+        if total_games > 0 { format!(" ({} games, ${:.4}/game avg)", total_games, game_cost / f64::from(u32::try_from(total_games).unwrap_or(u32::MAX))) } else { String::new() }).unwrap();
     summary.push('\n');
 
     let mut models: Vec<_> = combined.iter().collect();
@@ -159,15 +169,14 @@ pub fn print_usage_summary(total_games: usize) {
 
     for (model, u) in &models {
         let cost = usage_cost(u, model);
-        summary.push_str(&format!(
-            "  {}: {} calls, {}in/{}out/{}cached = ${:.4}\n",
+        writeln!(summary, "  {}: {} calls, {}in/{}out/{}cached = ${:.4}",
             model, u.calls, u.input, u.output, u.cache_read, cost
-        ));
+        ).unwrap();
     }
-    summary.push_str(&format!("  ---\n  Total: {} calls, ${:.2}\n", draft_calls + game_calls, total_cost));
+    writeln!(summary, "  ---\n  Total: {} calls, ${:.2}", draft_calls + game_calls, total_cost).unwrap();
 
     // Write to stderr
-    eprint!("\n{}", summary);
+    eprint!("\n{summary}");
 
     // Write to log file
     mtg_player::game_log::write(file!(), line!(), "TOKEN USAGE", &summary);
@@ -309,7 +318,7 @@ fn sanitize_schema_for_anthropic(value: &serde_json::Value) -> serde_json::Value
 /// Shared draft rules (used by all backends).
 fn build_draft_rules(set_name: &str, guide: Option<&str>, card_reference: &str) -> String {
     let guide_section = guide
-        .map(|g| format!("\n## Draft Guide\n\n{}\n", g))
+        .map(|g| format!("\n## Draft Guide\n\n{g}\n"))
         .unwrap_or_default();
     format!(
         r#"You are drafting Magic: The Gathering cards from {set_name}.
@@ -329,9 +338,6 @@ fn build_draft_rules(set_name: &str, guide: Option<&str>, card_reference: &str) 
 ## Card reference
 
 {card_reference}"#,
-        set_name = set_name,
-        guide_section = guide_section,
-        card_reference = card_reference,
     )
 }
 
@@ -348,7 +354,7 @@ pub fn build_card_reference(
         let Some(id) = registry.get_id_by_name(lookup) else { continue };
         let Some(data) = registry.card_data(id) else { continue };
 
-        let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+        let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
         let types: Vec<&str> = data.card_types.iter().map(|t| match t {
             CardType::Creature => "Creature",
             CardType::Instant => "Instant",
@@ -361,12 +367,12 @@ pub fn build_card_reference(
         let subtypes = if data.subtypes.is_empty() { String::new() }
             else { format!(" — {}", data.subtypes.join(" ")) };
         let pt = match (data.power, data.toughness) {
-            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
             _ => String::new(),
         };
-        s.push_str(&format!("{}{} | {}{}{}\n", name, cost, types.join(" "), subtypes, pt));
+        writeln!(s, "{}{} | {}{}{}", name, cost, types.join(" "), subtypes, pt).unwrap();
         if !data.oracle_text.is_empty() {
-            s.push_str(&format!("  {}\n", data.oracle_text.replace('\n', "\n  ")));
+            writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
         }
     }
     s
@@ -414,7 +420,7 @@ impl AnthropicDraftBackend {
         let mut msgs = messages.to_vec();
         if msgs.len() >= 2 {
             let idx = msgs.len() - 2;
-            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(|s| s.to_string()) {
+            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(std::string::ToString::to_string) {
                 msgs[idx] = serde_json::json!({
                     "role": msgs[idx]["role"],
                     "content": [{"type": "text", "text": content, "cache_control": {"type": "ephemeral"}}]
@@ -464,7 +470,7 @@ impl AnthropicDraftBackend {
                         .to_string();
                     if text.is_empty() {
                         let msg = format!("Anthropic returned empty text (attempt {}/6)", attempt + 1);
-                        eprintln!("WARN: {}", msg);
+                        eprintln!("WARN: {msg}");
                         mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
                         continue;
                     }
@@ -474,7 +480,7 @@ impl AnthropicDraftBackend {
                     let code = resp.status().as_u16();
                     if code == 529 || code == 429 {
                         let msg = format!("Anthropic {} (attempt {}/6)", code, attempt + 1);
-                        eprintln!("{}", msg);
+                        eprintln!("{msg}");
                         mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
@@ -485,9 +491,8 @@ impl AnthropicDraftBackend {
                 }
                 Err(e) => {
                     let msg = format!("Anthropic request failed (attempt {}/6): {}", attempt + 1, e);
-                    eprintln!("{}", msg);
+                    eprintln!("{msg}");
                     mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
-                    continue;
                 }
             }
         }
@@ -610,7 +615,7 @@ impl GeminiDraftBackend {
                     record_gemini_usage(&self.model, &json["usage"]);
                     let id = json["id"].as_str()
                         .filter(|s| !s.is_empty())
-                        .map(|s| s.to_string());
+                        .map(std::string::ToString::to_string);
                     let mut text = String::new();
                     if let Some(outputs) = json["outputs"].as_array() {
                         for out in outputs {
@@ -623,7 +628,7 @@ impl GeminiDraftBackend {
                     }
                     if text.is_empty() {
                         let msg = format!("Gemini returned empty text (attempt {}/6, interaction_id: {:?})", attempt + 1, id);
-                        eprintln!("WARN: {}", msg);
+                        eprintln!("WARN: {msg}");
                         mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
                         continue;
                     }
@@ -634,7 +639,7 @@ impl GeminiDraftBackend {
                     if code == 429 || code == 503 {
                         let err_text = resp.text().unwrap_or_default();
                         let msg = format!("Gemini {} (attempt {}/6): {}", code, attempt + 1, &err_text[..err_text.len().min(150)]);
-                        eprintln!("{}", msg);
+                        eprintln!("{msg}");
                         mtg_player::game_log::write(file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
@@ -642,7 +647,7 @@ impl GeminiDraftBackend {
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
                         let msg = format!("Invalid interaction ID, falling back to fresh conversation ({})", &text[..text.len().min(150)]);
-                        eprintln!("WARN: {}", msg);
+                        eprintln!("WARN: {msg}");
                         mtg_player::game_log::write(file!(), line!(), "API_WARN", &msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
@@ -652,7 +657,7 @@ impl GeminiDraftBackend {
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
                         let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
-                        eprintln!("FATAL: {}", msg);
+                        eprintln!("FATAL: {msg}");
                         mtg_player::game_log::write(file!(), line!(), "API_FATAL", &msg);
                         std::process::exit(1);
                     }
@@ -662,9 +667,8 @@ impl GeminiDraftBackend {
                 }
                 Err(e) => {
                     let msg = format!("Gemini request failed (attempt {}/6): {}", attempt + 1, e);
-                    eprintln!("{}", msg);
+                    eprintln!("{msg}");
                     mtg_player::game_log::write(file!(), line!(), "API_ERROR", &msg);
-                    continue;
                 }
             }
         }
@@ -720,22 +724,19 @@ impl DraftLlmClient {
         let parts: Vec<&str> = model_spec.split(':').collect();
         let provider_name = parts[0];
         let model_override = parts.get(1).copied();
-        let draft_thinking_override = parts.get(2).map(|s| s.to_string());
-        let _game_thinking_override = parts.get(3).map(|s| s.to_string());
+        let draft_thinking_override = parts.get(2).map(std::string::ToString::to_string);
+        let _game_thinking_override = parts.get(3).map(std::string::ToString::to_string);
 
-        match provider_name {
-            "gemini" => {
-                let model = model_override.unwrap_or("gemini-2.5-flash");
-                let draft_thinking = draft_thinking_override.unwrap_or_else(|| "high".to_string());
-                Self {
-                    backend: Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference)),
-                }
+        if provider_name == "gemini" {
+            let model = model_override.unwrap_or("gemini-2.5-flash");
+            let draft_thinking = draft_thinking_override.unwrap_or_else(|| "high".to_string());
+            Self {
+                backend: Box::new(GeminiDraftBackend::new(model, set_name, guide, Some(draft_thinking), card_reference)),
             }
-            _ => {
-                let model = model_override.unwrap_or("claude-sonnet-4-6");
-                Self {
-                    backend: Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference)),
-                }
+        } else {
+            let model = model_override.unwrap_or("claude-sonnet-4-6");
+            Self {
+                backend: Box::new(AnthropicDraftBackend::new(model, set_name, guide, card_reference)),
             }
         }
     }
@@ -756,13 +757,13 @@ impl DraftLlmClient {
         );
         for (i, card) in available.iter().enumerate() {
             let name = card.split(" // ").next().unwrap_or(card);
-            prompt.push_str(&format!("{}: {}\n", i, name));
+            writeln!(prompt, "{i}: {name}").unwrap();
         }
         if pick_number == 1 && !pool.is_empty() {
-            prompt.push_str(&format!("\nYour pool so far ({} cards):\n", pool.len()));
+            writeln!(prompt, "\nYour pool so far ({} cards):", pool.len()).unwrap();
             for card in pool {
                 let name = card.split(" // ").next().unwrap_or(card);
-                prompt.push_str(&format!("- {}\n", name));
+                writeln!(prompt, "- {name}").unwrap();
             }
         }
         prompt

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Skirsdag Cultist — {2}{R}{R} 2/2 Human Shaman.
 /// {R}, {T}, Sacrifice a creature: Skirsdag Cultist deals 2 damage to any target.
@@ -30,7 +30,7 @@ impl CardBehavior for SkirsdagCultist {
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         // Only available on the battlefield.
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{R}, {T}, Sacrifice a creature: Deal 2 damage to any target".into(),
@@ -46,7 +46,7 @@ impl CardBehavior for SkirsdagCultist {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         // Deal 2 damage to the chosen target.
         if let Some(target) = targets.first() {
             match target {
@@ -54,12 +54,12 @@ impl CardBehavior for SkirsdagCultist {
                     if let Some(obj) = state.get_object_mut(*target_id) {
                         if obj.zone == Zone::Battlefield {
                             obj.damage_marked += 2;
-                            obj.damaged_by.push(_object_id);
+                            obj.damaged_by.push(object_id);
                         }
                     }
-                    if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                         state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                            source: _object_id,
+                            source: object_id,
                             target: crate::events::DamageTarget::Object(*target_id),
                             amount: 2,
                         });
@@ -71,7 +71,7 @@ impl CardBehavior for SkirsdagCultist {
                     let new_life = old - 2;
                     state.get_player_mut(*player_id).life = new_life;
                     state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: _object_id,
+                        source: object_id,
                         target: crate::events::DamageTarget::Player(*player_id),
                         amount: 2,
                     });

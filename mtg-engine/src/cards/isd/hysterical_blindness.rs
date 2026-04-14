@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Hysterical Blindness — {2}{U} instant. Creatures your opponents control get -4/-0 until end of turn.
 pub struct HystericalBlindness;

@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope};
 
 /// Grave Bramble — 3/4 for {1}{G}{G}. Defender, protection from Zombies.
 pub struct GraveBramble;

@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Gutter Grime — {4}{G} Enchantment.
 /// Whenever a nontoken creature you control dies, put a slime counter on
@@ -50,15 +50,14 @@ impl CardBehavior for GutterGrime {
             return;
         }
         // Must be a nontoken creature.
-        let was_token = state.get_object(dead_id).map(|o| o.is_token).unwrap_or(false);
+        let was_token = state.get_object(dead_id).is_some_and(|o| o.is_token);
         if was_token {
             return;
         }
         // Put a slime counter on Gutter Grime.
         state.add_counters(self_id, CounterType::Slime, 1);
         let slime_count = state.get_object(self_id)
-            .map(|o| *o.counters.get(&CounterType::Slime).unwrap_or(&0))
-            .unwrap_or(1);
+            .map_or(1, |o| *o.counters.get(&CounterType::Slime).unwrap_or(&0));
         // Create the Ooze token with base 0/0 and dynamic P/T linked to this Gutter Grime.
         let token_ids = state.create_token_with_subtypes(
             "Ooze", controller, 0, 0,
@@ -78,7 +77,6 @@ impl CardBehavior for GutterGrime {
             }
         }
         state.log(crate::state::LogLevel::Event,
-            format!("Gutter Grime: added slime counter (now {}), created */* Ooze token (dynamic P/T)",
-                slime_count));
+            format!("Gutter Grime: added slime counter (now {slime_count}), created */* Ooze token (dynamic P/T)"));
     }
 }

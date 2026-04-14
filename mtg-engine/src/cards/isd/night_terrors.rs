@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Night Terrors — {2}{B} Sorcery.
 /// Target player reveals their hand. You choose a nonland card from it. Exile that card.
@@ -35,15 +35,14 @@ impl CardBehavior for NightTerrors {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         if let Some(Target::Player(target_player)) = targets.first() {
             // Reveal target player's hand — find all nonland cards.
             let nonland_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, *target_player)
                 .iter()
                 .filter(|o| {
                     let is_land = registry.card_data(o.card_id)
-                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)))
-                        .unwrap_or(false);
+                        .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
                     !is_land
                 })
                 .map(|o| o.id)

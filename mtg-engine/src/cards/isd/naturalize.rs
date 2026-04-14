@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Naturalize — {1}{G} instant. Destroy target artifact or enchantment.
 pub struct Naturalize;
@@ -38,10 +38,9 @@ impl CardBehavior for Naturalize {
                     _ => return false,
                 };
                 registry.card_data(obj.card_id)
-                    .map(|d| d.card_types.contains(&CardType::Artifact) || d.card_types.contains(&CardType::Enchantment))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.card_types.contains(&CardType::Artifact) || d.card_types.contains(&CardType::Enchantment))
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 

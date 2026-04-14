@@ -18,8 +18,8 @@ fn default_decks_run_to_completion() {
         .output()
         .expect("failed to run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "Should complete: {}", stdout);
-    assert!(stdout.contains("Game over!"), "Should have a winner: {}", stdout);
+    assert!(output.status.success(), "Should complete: {stdout}");
+    assert!(stdout.contains("Game over!"), "Should have a winner: {stdout}");
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn builtin_deck_by_name() {
         .output()
         .expect("failed to run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "Should complete: {}", stdout);
+    assert!(output.status.success(), "Should complete: {stdout}");
     assert!(stdout.contains("Game over!"));
 }
 
@@ -40,7 +40,7 @@ fn builtin_deck_short_names() {
         .output()
         .expect("failed to run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "Should complete: {}", stdout);
+    assert!(output.status.success(), "Should complete: {stdout}");
     assert!(stdout.contains("Game over!"));
 }
 
@@ -56,7 +56,7 @@ fn all_builtin_decks_are_valid() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
         assert!(output.status.success(),
-            "Deck '{}' failed to run.\nstdout: {}\nstderr: {}", deck, stdout, stderr);
+            "Deck '{deck}' failed to run.\nstdout: {stdout}\nstderr: {stderr}");
     }
 }
 
@@ -81,7 +81,7 @@ fn deck_file_loads_successfully() {
         .output()
         .expect("failed to run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "Should complete: {}", stdout);
+    assert!(output.status.success(), "Should complete: {stdout}");
     assert!(stdout.contains("Game over!"));
 
     fs::remove_file(deck_path).ok();
@@ -112,7 +112,7 @@ fn deck_file_with_comments_and_blank_lines() {
         .output()
         .expect("failed to run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(output.status.success(), "Should handle comments and blank lines: {}", stdout);
+    assert!(output.status.success(), "Should handle comments and blank lines: {stdout}");
 
     fs::remove_file(deck_path).ok();
 }
@@ -127,7 +127,7 @@ fn deck_file_uses_filename_as_player_name() {
         .output()
         .expect("failed to run");
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("my_cool_deck"), "Should use filename as deck name: {}", stdout);
+    assert!(stdout.contains("my_cool_deck"), "Should use filename as deck name: {stdout}");
 
     fs::remove_file(deck_path).ok();
 }
@@ -146,7 +146,7 @@ fn unknown_card_in_deck_file_panics() {
     assert!(!output.status.success(), "Should fail on unknown card");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("unknown card 'Totally Fake Card'"),
-        "Error should name the bad card: {}", stderr);
+        "Error should name the bad card: {stderr}");
 
     fs::remove_file(deck_path).ok();
 }
@@ -160,7 +160,7 @@ fn missing_deck_file_panics() {
     assert!(!output.status.success(), "Should fail on missing file");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Failed to read deck file"),
-        "Error should mention file read failure: {}", stderr);
+        "Error should mention file read failure: {stderr}");
 }
 
 #[test]
@@ -175,7 +175,7 @@ fn bad_format_in_deck_file_panics() {
     assert!(!output.status.success(), "Should fail on bad format");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("invalid count"),
-        "Error should mention invalid count: {}", stderr);
+        "Error should mention invalid count: {stderr}");
 
     fs::remove_file(deck_path).ok();
 }
@@ -190,5 +190,5 @@ fn unknown_builtin_name_treated_as_file() {
     assert!(!output.status.success(), "Should fail on unknown deck name");
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Failed to read deck file"),
-        "Should try to open as file and fail: {}", stderr);
+        "Should try to open as file and fail: {stderr}");
 }

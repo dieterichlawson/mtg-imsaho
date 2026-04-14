@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::{GameState, TemporaryEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 
 /// Ranger's Guile — {G} instant. Target creature you control gets +1/+1 and gains hexproof until end of turn.
 pub struct RangersGuile;
@@ -33,16 +33,15 @@ impl CardBehavior for RangersGuile {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: *target_id,

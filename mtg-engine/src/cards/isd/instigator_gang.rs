@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef, helpers};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Instigator Gang {3}{R} 2/3 Human Werewolf — attacking creatures you control get +1/+0
 /// // Wildblood Pack 5/5 Werewolf with Trample — attacking creatures you control get +3/+0
@@ -9,12 +9,12 @@ pub struct InstigatorGang;
 
 impl InstigatorGang {
     fn werewolf_should_transform(state: &GameState, object_id: ObjectId) -> bool {
-        let is_transformed = state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false);
+        let is_transformed = state.get_object(object_id).is_some_and(|o| o.is_transformed);
         let total_spells_last_turn: u32 = state.num_spells_cast_last_turn.values().sum();
-        if !is_transformed {
-            total_spells_last_turn == 0 && !state.is_first_turn
-        } else {
+        if is_transformed {
             state.num_spells_cast_last_turn.values().any(|&count| count >= 2)
+        } else {
+            total_spells_last_turn == 0 && !state.is_first_turn
         }
     }
 }
@@ -79,7 +79,7 @@ impl CardBehavior for InstigatorGang {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 5))
         } else {
             None
@@ -107,15 +107,15 @@ impl CardBehavior for InstigatorGang {
         let face = if is_transformed { "Wildblood Pack" } else { "Instigator Gang" };
         let name = state.get_object(attacker_id).map(|o| o.name.clone()).unwrap_or_default();
         state.log(crate::state::LogLevel::Event,
-            format!("{}: {} gets +{}/+0", face, name, bonus));
+            format!("{face}: {name} gets +{bonus}/+0"));
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
-        if state.get_object(self_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
         if self.should_transform(state, self_id, registry) {
-            let was_transformed = state.get_object(self_id).map(|o| o.is_transformed).unwrap_or(false);
+            let was_transformed = state.get_object(self_id).is_some_and(|o| o.is_transformed);
             helpers::apply_transform(state, self_id, registry);
             let (old_name, new_name) = if was_transformed {
                 ("Wildblood Pack", "Instigator Gang")
@@ -123,7 +123,7 @@ impl CardBehavior for InstigatorGang {
                 ("Instigator Gang", "Wildblood Pack")
             };
             state.log(crate::state::LogLevel::Event,
-                format!("{} transforms into {}", old_name, new_name));
+                format!("{old_name} transforms into {new_name}"));
         }
     }
 }

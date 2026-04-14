@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::actions::Target;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Bloodgift Demon — {3}{B}{B} 5/4 flying Demon.
 /// At the beginning of your upkeep, target player draws a card and loses 1 life.

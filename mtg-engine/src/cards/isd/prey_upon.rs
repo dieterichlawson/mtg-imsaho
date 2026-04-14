@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Prey Upon — {G} sorcery. Target creature you control fights target creature you don't control.
 pub struct PreyUpon;
@@ -36,8 +36,8 @@ impl CardBehavior for PreyUpon {
         if targets.len() == 2 {
             if let (Target::Object(a), Target::Object(b)) = (&targets[0], &targets[1]) {
                 // Fight requires both creatures on the battlefield.
-                let a_on_bf = state.get_object(*a).map(|o| o.zone == Zone::Battlefield).unwrap_or(false);
-                let b_on_bf = state.get_object(*b).map(|o| o.zone == Zone::Battlefield).unwrap_or(false);
+                let a_on_bf = state.get_object(*a).is_some_and(|o| o.zone == Zone::Battlefield);
+                let b_on_bf = state.get_object(*b).is_some_and(|o| o.zone == Zone::Battlefield);
                 if a_on_bf && b_on_bf {
                     let caster = state.get_object(object_id).map(|o| o.controller);
                     let a_mine = caster.and_then(|c| state.get_object(*a).map(|o| o.controller == c)).unwrap_or(false);

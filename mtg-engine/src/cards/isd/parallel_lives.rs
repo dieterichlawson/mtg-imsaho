@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ReplacementEffect};
 
 /// Parallel Lives — {3}{G} Enchantment.
 /// If an effect would create one or more tokens under your control,

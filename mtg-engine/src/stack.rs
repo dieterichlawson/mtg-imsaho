@@ -36,10 +36,9 @@ fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards
                     if !zone_ok { return false; }
 
                     // Check hexproof: opponent's creature with hexproof can't be targeted.
-                    if obj.zone == Zone::Battlefield && obj.controller != caster {
-                        if state.has_keyword(*id, crate::types::Keyword::Hexproof, registry) {
-                            return false;
-                        }
+                    if obj.zone == Zone::Battlefield && obj.controller != caster
+                        && state.has_keyword(*id, crate::types::Keyword::Hexproof, registry) {
+                        return false;
                     }
 
                     true
@@ -90,8 +89,7 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
     // are illegal, it's countered by game rules (fizzled).
     // This now checks hexproof at resolution time (not just at cast time).
     let target_req = registry.get(card_id)
-        .map(|b| b.target_requirement())
-        .unwrap_or(crate::cards::TargetRequirement::None);
+        .map_or(crate::cards::TargetRequirement::None, super::cards::CardBehavior::target_requirement);
     if !targets.is_empty() {
         let behavior = registry.get(card_id);
         let any_legal = targets.iter().any(|t| {

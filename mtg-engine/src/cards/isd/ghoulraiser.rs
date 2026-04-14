@@ -3,7 +3,7 @@ use rand::seq::SliceRandom;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Ghoulraiser — {1}{B}{B} 2/2 Zombie.
 /// When this creature enters, return a Zombie card at random from your graveyard
@@ -51,8 +51,7 @@ impl CardBehavior for Ghoulraiser {
             .iter()
             .filter(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
             })
             .map(|o| o.id)
             .collect();
@@ -64,7 +63,7 @@ impl CardBehavior for Ghoulraiser {
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Ghoulraiser returned {} to hand", name));
+                format!("Ghoulraiser returned {name} to hand"));
         }
     }
 }

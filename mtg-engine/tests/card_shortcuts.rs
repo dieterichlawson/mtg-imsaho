@@ -157,8 +157,7 @@ fn trepanation_blade_stops_on_land() {
     // Should have milled exactly 2 cards (nonland + land), leaving 2 in library.
     let lib_size = state.get_player(P1).library_order.len();
     assert_eq!(lib_size, 2,
-        "Trepanation Blade should stop after revealing a land. Expected 2 cards left, got {}",
-        lib_size);
+        "Trepanation Blade should stop after revealing a land. Expected 2 cards left, got {lib_size}");
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -242,7 +241,7 @@ fn vampiric_fury_buffs_instance_vampire() {
     let eff_p = state.effective_power(creature, &reg).unwrap_or(0);
     assert_eq!(eff_p, 4,
         "Vampiric Fury should buff creatures with Vampire instance subtype (e.g., via Olivia). \
-         Expected 4 (2 base + 2 anthem), got {}", eff_p);
+         Expected 4 (2 base + 2 anthem), got {eff_p}");
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -340,17 +339,12 @@ fn slayer_of_the_wicked_sees_instance_vampire() {
     behavior.on_enter_battlefield(&mut state, slayer, &reg);
 
     // The ETB should present the instance-Vampire as a valid target.
-    let has_target = match &state.awaiting_action {
-        Some(mtg_engine::state::AwaitingAction::ResolutionChoice { choice, .. }) => {
-            match choice {
-                mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. } => {
-                    options.iter().any(|t| matches!(t, Target::Object(id) if *id == target))
-                }
-                _ => false,
-            }
-        }
-        _ => false,
-    };
+    let has_target = matches!(&state.awaiting_action,
+        Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+            choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. },
+            ..
+        }) if options.iter().any(|t| matches!(t, Target::Object(id) if *id == target))
+    );
     assert!(has_target,
         "Slayer of the Wicked should be able to target a creature with Vampire instance subtype");
 }
@@ -446,8 +440,7 @@ fn festerhide_boar_gets_morbid_counters_when_reanimated() {
 
     // Festerhide Boar should have 2 +1/+1 counters from morbid.
     let counters = state.get_object(boar)
-        .map(|o| *o.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0))
-        .unwrap_or(0);
+        .map_or(0, |o| *o.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0));
     assert_eq!(counters, 2,
         "Festerhide Boar should get morbid +1/+1 counters when reanimated, not just when cast");
 }
@@ -471,7 +464,7 @@ fn lava_axe_target_requirement_includes_planeswalkers() {
     // says "target player or planeswalker". PlayerOnly means the engine
     // will never offer a planeswalker as a target option.
     assert_ne!(
-        format!("{:?}", req),
+        format!("{req:?}"),
         format!("{:?}", mtg_engine::cards::TargetRequirement::PlayerOnly),
         "Lava Axe should have a target requirement that includes planeswalkers, not just PlayerOnly"
     );
@@ -506,7 +499,7 @@ fn civilized_scholar_detects_creature_via_registry() {
     behavior.on_discard_choice(&mut state, scholar, card_in_hand, &reg);
 
     // Scholar should detect this as a creature card and transform.
-    let is_transformed = state.get_object(scholar).map(|o| o.is_transformed).unwrap_or(false);
+    let is_transformed = state.get_object(scholar).is_some_and(|o| o.is_transformed);
     assert!(is_transformed,
         "Civilized Scholar should detect creature cards via registry, not just obj.power.is_some()");
 }

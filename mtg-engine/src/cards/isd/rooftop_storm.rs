@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, SpellFilter};
 
 /// Rooftop Storm — {5}{U} Enchantment.
 /// You may pay {0} rather than pay the mana cost for Zombie creature spells you cast.

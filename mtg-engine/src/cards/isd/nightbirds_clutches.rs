@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Nightbird's Clutches — {1}{R} sorcery. Up to two target creatures can't block this turn.
 pub struct NightbirdsClutches;
@@ -34,7 +34,7 @@ impl CardBehavior for NightbirdsClutches {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(target_id) = target {
-                if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                     state.until_end_of_turn.push(crate::state::TemporaryEffect::CantBlock { target: *target_id });
                     state.log(crate::state::LogLevel::Event, format!("{} can't block this turn", state.obj_name(*target_id)));
                 }

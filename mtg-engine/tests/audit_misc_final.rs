@@ -218,8 +218,7 @@ fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
          is_token check reads state.get_object(dead_id), but tokens \
          are already cleaned up by SBA 704.5d at trigger-resolution \
          time, so the handler treats them as nontoken. Slime counters \
-         {} -> {}",
-        slime_before, slime_after,
+         {slime_before} -> {slime_after}",
     );
 }
 
@@ -290,8 +289,7 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
          counts itself per the Scryfall ruling). Bug AC: \
          on_enter_battlefield runs after the move, so the helper sees \
          only the 2 other Zombies in the graveyard and adds 2 counters. \
-         Got: {}",
-        counters,
+         Got: {counters}",
     );
 }
 
@@ -332,8 +330,7 @@ fn bug_bs_runic_repetition_resets_cast_with_flashback() {
 
     let still_flashback = state
         .get_object(devils)
-        .map(|o| o.cast_with_flashback)
-        .unwrap_or(false);
+        .is_some_and(|o| o.cast_with_flashback);
     assert!(
         !still_flashback,
         "After Runic Repetition returns a flashback-cast card from \
@@ -383,8 +380,7 @@ fn bug_e1_002_cardview_uses_effective_pt_for_cda_creatures() {
     assert!(
         eff_p >= 1 && eff_t >= 1,
         "Test setup: Geist-Honored Monk with 1 creature on bf should \
-         have effective P/T ≥ 1/1, got {}/{}",
-        eff_p, eff_t
+         have effective P/T ≥ 1/1, got {eff_p}/{eff_t}"
     );
 
     // Build a GameView from P0's perspective. The Monk's graveyard

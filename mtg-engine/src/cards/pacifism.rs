@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope};
 
 /// Pacifism — {1}{W} aura enchantment. Enchanted creature can't attack or block.
 /// The restriction is checked by GameState::can_attack/can_block.

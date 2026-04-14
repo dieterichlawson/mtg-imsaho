@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::{GameState, TemporaryEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Darkthicket Wolf — {1}{G} 2/2 Wolf. {2}{G}: This creature gets +2/+2 until end of turn.
 /// Activate only once each turn.
@@ -31,7 +31,7 @@ impl CardBehavior for DarkthicketWolf {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{2}{G}: +2/+2 until end of turn".into(),

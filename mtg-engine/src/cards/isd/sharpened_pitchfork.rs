@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, Keyword, EffectScope, EffectCondition, Zone};
 
 /// Sharpened Pitchfork — {2} Artifact — Equipment.
 /// Equipped creature has first strike.
@@ -49,7 +49,7 @@ impl CardBehavior for SharpenedPitchfork {
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         // Gate on power.is_none() — see Cobbled Wings for Bug AJ explanation.
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield && o.power.is_none()).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_none()) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "Equip {1}".into(),
@@ -68,8 +68,7 @@ impl CardBehavior for SharpenedPitchfork {
     fn is_valid_target(&self, state: &GameState, caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => state.get_object(*id)
-                .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
-                .unwrap_or(false),
+                .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster),
             Target::Player(_) => false,
         }
     }

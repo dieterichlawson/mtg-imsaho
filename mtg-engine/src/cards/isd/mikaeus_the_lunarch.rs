@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, Zone, CounterType};
 
 /// Mikaeus, the Lunarch {X}{W} 0/0 Legendary Human Cleric.
 /// Mikaeus enters the battlefield with X +1/+1 counters on it.
@@ -41,7 +41,7 @@ impl CardBehavior for MikaeusTheLunarch {
         if x > 0 {
             state.add_counters(object_id, CounterType::PlusOnePlusOne, x);
             state.log(crate::state::LogLevel::Event,
-                format!("Mikaeus, the Lunarch enters with {} +1/+1 counters", x));
+                format!("Mikaeus, the Lunarch enters with {x} +1/+1 counters"));
         }
         // Set legendary flag.
         if let Some(obj) = state.get_object_mut(object_id) {
@@ -53,7 +53,7 @@ impl CardBehavior for MikaeusTheLunarch {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
-        };
+        }
 
         let mut abilities = vec![];
 

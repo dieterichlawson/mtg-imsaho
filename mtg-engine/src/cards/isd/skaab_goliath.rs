@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Skaab Goliath — {5}{U} 6/9 Zombie Giant with Trample.
 /// As an additional cost to cast this spell, exile two creature cards from your graveyard. Trample.

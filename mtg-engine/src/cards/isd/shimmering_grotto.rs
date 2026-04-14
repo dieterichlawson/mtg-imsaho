@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, ManaAbilityDef, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{CardType, Zone, ManaType, ManaCost, ManaSymbol};
 
 /// Shimmering Grotto — Land.
 /// {T}: Add {C}.
@@ -30,10 +30,7 @@ impl CardBehavior for ShimmeringGrotto {
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![
                 ManaAbilityDef {
@@ -50,10 +47,7 @@ impl CardBehavior for ShimmeringGrotto {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         // The {1},{T} filter ability: pay 1 mana, tap, get any color.
         // We present 5 options (one per color) so the AI can pick.
         if obj.zone == Zone::Battlefield && !obj.tapped {
@@ -114,8 +108,8 @@ impl CardBehavior for ShimmeringGrotto {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
-        let controller = state.get_object(_object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         let (mana_type, symbol) = match ability_index {
             1 => (ManaType::White, "W"),
             2 => (ManaType::Blue, "U"),
@@ -126,6 +120,6 @@ impl CardBehavior for ShimmeringGrotto {
         };
         state.get_player_mut(controller).mana_pool.add(mana_type, 1);
         state.log(crate::state::LogLevel::Event,
-            format!("Shimmering Grotto adds {{{}}}", symbol));
+            format!("Shimmering Grotto adds {{{symbol}}}"));
     }
 }

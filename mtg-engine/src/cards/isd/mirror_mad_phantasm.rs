@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Mirror-Mad Phantasm {3}{U}{U} 5/1 Spirit with Flying.
 /// {1}{U}: Mirror-Mad Phantasm's owner shuffles it into their library. If that player does,
@@ -41,7 +41,7 @@ impl CardBehavior for MirrorMadPhantasm {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
-        };
+        }
 
         vec![ActivatedAbilityDef {
             ability_index: 0,
@@ -88,9 +88,8 @@ impl CardBehavior for MirrorMadPhantasm {
                     if name == "Mirror-Mad Phantasm" {
                         found = Some(card_id);
                         break;
-                    } else {
-                        milled.push(card_id);
                     }
+                    milled.push(card_id);
                 }
                 None => break, // Library empty.
             }

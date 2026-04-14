@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, Keyword, EffectScope};
 
 /// Gruesome Deformity — {B} aura enchantment. Enchanted creature has intimidate.
 pub struct GruesomeDeformity;

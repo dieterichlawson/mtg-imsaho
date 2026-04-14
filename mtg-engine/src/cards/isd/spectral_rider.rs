@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Spectral Rider — 2/2 for {W}{W}. Intimidate.
 pub struct SpectralRider;

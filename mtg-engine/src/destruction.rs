@@ -37,7 +37,7 @@ pub fn try_destroy(state: &mut GameState, id: ObjectId, registry: &CardRegistry)
     }
 
     // Regeneration replaces destruction.
-    let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
+    let shields = state.get_object(id).map_or(0, |o| o.regeneration_shields);
     if shields > 0 {
         regenerate(state, id);
         return DestroyResult::Regenerated;
@@ -62,8 +62,7 @@ pub fn try_destroy_no_regen(state: &mut GameState, id: ObjectId, registry: &Card
 /// Returns true if the permanent existed and was sacrificed.
 pub fn sacrifice(state: &mut GameState, id: ObjectId, registry: &CardRegistry) -> bool {
     let exists = state.get_object(id)
-        .map(|o| o.zone == Zone::Battlefield)
-        .unwrap_or(false);
+        .is_some_and(|o| o.zone == Zone::Battlefield);
     if !exists {
         return false;
     }
@@ -86,12 +85,11 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
 
 /// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.
 fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>) {
-    let is_creature = state.get_object(id).map(|o| o.power.is_some()).unwrap_or(false);
+    let is_creature = state.get_object(id).is_some_and(|o| o.power.is_some());
     if is_creature {
         // Capture last-known information before the zone change clears it.
         let (cid, ctrl, damaged_by) = state.get_object(id)
-            .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
-            .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
+            .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()), |o| (o.card_id, o.controller, o.damaged_by.clone()));
         let last_known_toughness = registry
             .and_then(|r| state.effective_toughness(id, r))
             .or_else(|| state.get_object(id).and_then(|o| o.toughness))

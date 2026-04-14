@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::{GameState, TemporaryEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Keyword, ContinuousEffect, EffectCondition, EffectScope, Zone};
 
 /// Manor Gargoyle — {5} 4/4 Artifact Creature — Gargoyle.
 /// Defender.
@@ -38,7 +38,7 @@ impl CardBehavior for ManorGargoyle {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{1}: Loses defender, gains flying until end of turn".into(),
@@ -75,9 +75,8 @@ impl CardBehavior for ManorGargoyle {
     fn is_valid_target(&self, state: &GameState, _caster: crate::ids::PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => state.get_object(*id)
-                .map(|o| o.zone == Zone::Battlefield && o.power.is_some())
-                .unwrap_or(false),
-            _ => false,
+                .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some()),
+            Target::Player(_) => false,
         }
     }
 }

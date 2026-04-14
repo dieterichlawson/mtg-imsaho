@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Tribute to Hunger — {2}{B} Instant.
 /// Target opponent sacrifices a creature of their choice. You gain life equal to that creature's toughness.
@@ -38,14 +38,13 @@ impl CardBehavior for TributeToHunger {
         // "Target opponent" — can only target opponents, not self.
         match target {
             Target::Player(pid) => *pid != caster,
-            _ => false,
+            Target::Object(_) => false,
         }
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id)
-            .map(|o| o.controller)
-            .unwrap_or(PlayerId(0));
+            .map_or(PlayerId(0), |o| o.controller);
 
         // Target opponent — use the target if provided, otherwise pick the opponent.
         let opponent = match targets.first() {

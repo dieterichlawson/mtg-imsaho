@@ -504,7 +504,7 @@ mod tests {
     fn mono_ability(mana_type: ManaType) -> ManaAbilityDef {
         ManaAbilityDef {
             ability_index: 0,
-            description: format!("Add {:?}", mana_type),
+            description: format!("Add {mana_type:?}"),
             produced: vec![(mana_type, 1)],
             requires_tap: true,
             has_side_effects: false,
@@ -515,14 +515,14 @@ mod tests {
         vec![
             ManaAbilityDef {
                 ability_index: 0,
-                description: format!("Add {:?}", mt1),
+                description: format!("Add {mt1:?}"),
                 produced: vec![(mt1, 1)],
                 requires_tap: true,
                 has_side_effects: false,
             },
             ManaAbilityDef {
                 ability_index: 1,
-                description: format!("Add {:?}", mt2),
+                description: format!("Add {mt2:?}"),
                 produced: vec![(mt2, 1)],
                 requires_tap: true,
                 has_side_effects: false,

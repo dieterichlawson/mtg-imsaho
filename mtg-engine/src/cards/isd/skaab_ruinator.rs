@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Skaab Ruinator — {1}{U}{U} 5/6 Zombie Horror with Flying.
 /// As an additional cost to cast, exile three creature cards from your graveyard.

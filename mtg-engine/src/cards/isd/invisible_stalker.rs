@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope};
 
 /// Invisible Stalker — 1/1 for {1}{U}. Hexproof, can't be blocked.
 pub struct InvisibleStalker;

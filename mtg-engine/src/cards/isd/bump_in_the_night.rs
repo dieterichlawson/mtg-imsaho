@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Bump in the Night — {B} sorcery. Target opponent loses 3 life.
 pub struct BumpInTheNight;
@@ -35,7 +35,7 @@ impl CardBehavior for BumpInTheNight {
         // "Target opponent" — can only target opponents, not yourself.
         match target {
             Target::Player(pid) => *pid != caster,
-            _ => false,
+            Target::Object(_) => false,
         }
     }
 

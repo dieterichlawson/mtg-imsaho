@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::events::{DamageTarget, GameEvent};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Blasphemous Act — {8}{R} Sorcery.
 /// This spell costs {1} less to cast for each creature on the battlefield.

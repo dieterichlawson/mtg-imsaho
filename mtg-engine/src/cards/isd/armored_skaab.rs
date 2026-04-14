@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Armored Skaab — 1/4 for {2}{U}. Zombie Warrior.
 /// When this creature enters, mill four cards.
@@ -35,7 +35,7 @@ impl CardBehavior for ArmoredSkaab {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         crate::engine::mill_cards(state, controller, 4, registry);
         state.log(crate::state::LogLevel::Event,
             "Armored Skaab enters — milled 4 cards".to_string());

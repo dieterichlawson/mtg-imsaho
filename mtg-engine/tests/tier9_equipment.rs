@@ -23,7 +23,7 @@ fn equipment_on_battlefield(
     owner: mtg_engine::ids::PlayerId,
 ) -> mtg_engine::ids::ObjectId {
     let card_id = registry.get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {}", name));
+        .unwrap_or_else(|| panic!("Unknown card: {name}"));
     let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
     let obj = state.get_object_mut(id).unwrap();
     obj.name = name.into();

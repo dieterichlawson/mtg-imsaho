@@ -16,7 +16,7 @@ fn random_starting_player_returns_in_range_over_many_flips() {
         match p.0 {
             0 => saw_0 = true,
             1 => saw_1 = true,
-            other => panic!("random_starting_player returned out-of-range id {}", other),
+            other => panic!("random_starting_player returned out-of-range id {other}"),
         }
     }
     assert!(saw_0 && saw_1,

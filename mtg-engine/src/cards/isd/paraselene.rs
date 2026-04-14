@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Paraselene — {2}{W} Sorcery.
 /// Destroy all enchantments. You gain 1 life for each enchantment destroyed this way.
@@ -28,15 +28,14 @@ impl CardBehavior for Paraselene {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Find all enchantments on the battlefield.
         let enchantments: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield)
             .filter(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.card_types.contains(&CardType::Enchantment))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.card_types.contains(&CardType::Enchantment))
             })
             .map(|o| o.id)
             .collect();

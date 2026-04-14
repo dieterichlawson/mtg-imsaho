@@ -263,8 +263,7 @@ fn furor_forces_attack() {
 
     // The forced attacker should have been auto-added.
     let is_attacking = state.combat.as_ref()
-        .map(|c| c.attackers.contains_key(&creature))
-        .unwrap_or(false);
+        .is_some_and(|c| c.attackers.contains_key(&creature));
     assert!(is_attacking,
         "Creature with Furor of the Bitten should be forced to attack even if not declared");
 }

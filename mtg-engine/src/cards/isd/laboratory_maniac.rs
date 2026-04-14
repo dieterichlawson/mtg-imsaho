@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ReplacementEffect};
 
 /// Laboratory Maniac — {2}{U} 2/2 Human Wizard.
 /// If you would draw a card while your library has no cards in it, you win the game instead.

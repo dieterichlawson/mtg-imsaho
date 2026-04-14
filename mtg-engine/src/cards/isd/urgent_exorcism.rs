@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Urgent Exorcism — {1}{W} instant. Destroy target Spirit or enchantment.
 pub struct UrgentExorcism;
@@ -38,16 +38,15 @@ impl CardBehavior for UrgentExorcism {
                     _ => return false,
                 };
                 let from_registry = registry.card_data(obj.card_id)
-                    .map(|d| {
+                    .is_some_and(|d| {
                         d.card_types.contains(&CardType::Enchantment)
                             || d.subtypes.contains(&"Spirit".to_string())
-                    })
-                    .unwrap_or(false);
+                    });
                 let from_instance = obj.card_types.contains(&CardType::Enchantment)
                     || obj.subtypes.contains(&"Spirit".to_string());
                 from_registry || from_instance
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 

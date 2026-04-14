@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Keyword, ContinuousEffect, EffectScope, CreatureFilter};
 
 /// One-Eyed Scarecrow — 2/3 for {3}. Artifact creature with defender.
 /// Creatures with flying your opponents control get -1/-0.

@@ -189,7 +189,7 @@ fn spider_spawning_creates_tokens() {
     // Put 4 creature cards in graveyard.
     for i in 0..4 {
         let c = state.create_object(CardId(9999), P0, Zone::Graveyard, Some(1), Some(1));
-        state.get_object_mut(c).unwrap().name = format!("Dead {}", i);
+        state.get_object_mut(c).unwrap().name = format!("Dead {i}");
     }
 
     let ss = castable_spell(&mut state, &reg, "Spider Spawning", P0);

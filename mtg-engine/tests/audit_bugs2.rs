@@ -57,8 +57,7 @@ fn bug_brain_weevil_incomplete_discard() {
     let hand_after = state.objects_in_zone(Zone::Hand, P1).len();
     // BUG: Only 1 card discarded instead of 2
     assert_eq!(hand_after, 1,
-        "Brain Weevil should force 2 discards. Hand: {} -> {} (expected 3 -> 1)",
-        hand_before, hand_after);
+        "Brain Weevil should force 2 discards. Hand: {hand_before} -> {hand_after} (expected 3 -> 1)");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -99,17 +98,16 @@ fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
     // Verify BV has SpellCast trigger in registry
     let bv_card_id = mtg_engine::ids::CardId(170);  // from debug output
     let bv_has_trigger = registry.get(bv_card_id)
-        .map(|b| b.card_data().triggered_abilities.iter()
-            .any(|t| matches!(t.kind, mtg_engine::cards::TriggerKind::SpellCast)))
-        .unwrap_or(false);
-    eprintln!("DEBUG: BV on battlefield: {:?}", bv_on_bf);
-    eprintln!("DEBUG: Events: {}, SpellCast: {}, TEI: {}, BV_has_trigger: {}", event_count, has_spellcast_event, tei, bv_has_trigger);
+        .is_some_and(|b| b.card_data().triggered_abilities.iter()
+            .any(|t| matches!(t.kind, mtg_engine::cards::TriggerKind::SpellCast)));
+    eprintln!("DEBUG: BV on battlefield: {bv_on_bf:?}");
+    eprintln!("DEBUG: Events: {event_count}, SpellCast: {has_spellcast_event}, TEI: {tei}, BV_has_trigger: {bv_has_trigger}");
 
     // Process triggers so SpellCast watchers fire
     let stack_before = state.stack.len();
     mtg_engine::triggers::process_triggers(&mut state, &registry);
     let stack_after = state.stack.len();
-    eprintln!("DEBUG: Stack before: {}, after: {}", stack_before, stack_after);
+    eprintln!("DEBUG: Stack before: {stack_before}, after: {stack_after}");
     for (i, entry) in state.stack.iter().enumerate() {
         eprintln!("DEBUG: Stack[{}]: {:?}", i, std::mem::discriminant(entry));
     }
@@ -129,7 +127,7 @@ fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
     //
     // Mark as FIXED: the engine now dispatches SpellCast for all spell types.
     // The Grizzly Bears wasn't from graveyard so BV's handler correctly does nothing.
-    assert!(true, "SpellCast dispatch fixed — trigger fires for creature spells");
+    // SpellCast dispatch fixed — trigger fires for creature spells.
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -170,7 +168,7 @@ fn bug_dearly_departed_graveyard_watcher_ignored() {
     // BUG: Dearly Departed's ability never fires from graveyard because
     // the trigger system only scans battlefield permanents for AnyCreatureEnters watchers
     assert!(counters >= 1,
-        "Dearly Departed in graveyard should give Human a +1/+1 counter. Got: {}", counters);
+        "Dearly Departed in graveyard should give Human a +1/+1 counter. Got: {counters}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -297,7 +295,7 @@ fn bug_moonmist_second_cast_fails() {
     // The bug is about the SECOND Moonmist after a natural untransform, not
     // two Moonmists in a row.
     // This test doesn't reproduce the exact scenario. Mark as needs rework.
-    assert!(true, "Test needs rework — see comment");
+    // Test needs rework — see comment.
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -321,7 +319,7 @@ fn bug_garruk_relentless_not_legendary_on_battlefield() {
     let is_legendary_in_data = data.supertypes.contains(&Supertype::Legendary);
 
     // Also check the object-level flag
-    let obj_legendary = state.get_object(garruk).map(|o| o.is_legendary).unwrap_or(false);
+    let obj_legendary = state.get_object(garruk).is_some_and(|o| o.is_legendary);
 
     // BUG: is_legendary not set on the object
     assert!(is_legendary_in_data, "Garruk should be Legendary in card data");
@@ -360,7 +358,7 @@ fn bug_inquisitors_flail_doubles_fight_damage() {
 
     // BUG: Flail doubles fight damage even though fight is not combat damage
     assert_eq!(damage_on_opponent, 3,
-        "Fight damage should be 3 (not doubled by Flail). Got: {}", damage_on_opponent);
+        "Fight damage should be 3 (not doubled by Flail). Got: {damage_on_opponent}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -555,8 +553,7 @@ fn bug_liliana_sequential_discard() {
     // should be a pending choice for BOTH players.
     // BUG: P0 already discarded (hand=1) before P1 gets to choose
     assert!(p0_hand == 2 || has_choice,
-        "Liliana +1 should be simultaneous. P0 hand: {}, P1 hand: {}, choice pending: {}",
-        p0_hand, p1_hand, has_choice);
+        "Liliana +1 should be simultaneous. P0 hand: {p0_hand}, P1 hand: {p1_hand}, choice pending: {has_choice}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -580,9 +577,9 @@ fn bug_night_terrors_wrong_pending_effect() {
     state = cast_and_resolve(&state, &registry, nt, vec![Target::Player(P1)]);
 
     // Check what PendingEffect is used in the choice
-    let uses_exile_and_store = state.awaiting_action.as_ref().map(|aa| {
-        format!("{:?}", aa).contains("ExileAndStore")
-    }).unwrap_or(false);
+    let uses_exile_and_store = state.awaiting_action.as_ref().is_some_and(|aa| {
+        format!("{aa:?}").contains("ExileAndStore")
+    });
 
     // BUG: Uses ExileAndStore instead of plain Exile
     assert!(!uses_exile_and_store,
@@ -656,7 +653,7 @@ fn bug_cackling_counterpart_colors_not_copied() {
 
     // BUG: Token has no colors (empty vec) instead of copying the original's green
     assert!(!token_colors.is_empty(),
-        "Token copy should have colors copied from original. Got: {:?}", token_colors);
+        "Token copy should have colors copied from original. Got: {token_colors:?}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -698,9 +695,9 @@ fn bug_bitterheart_witch_hexproof_not_filtered() {
     }
 
     // Check if the player choice includes P1 (who has hexproof)
-    let p1_targetable = state.awaiting_action.as_ref().map(|aa| {
-        format!("{:?}", aa).contains(&format!("Player(PlayerId(1))"))
-    }).unwrap_or(false);
+    let p1_targetable = state.awaiting_action.as_ref().is_some_and(|aa| {
+        format!("{aa:?}").contains(&"Player(PlayerId(1))".to_string())
+    });
 
     // BUG: P1 with hexproof (from Witchbane Orb) is still a valid target
     assert!(!p1_targetable,
@@ -728,11 +725,11 @@ fn bug_memorys_journey_missing_player_target() {
     // Oracle: "Target player shuffles up to three target cards from their graveyard into their library."
     // This needs BOTH a player target AND card targets.
     // BUG: May be missing the player target requirement
-    let req_str = format!("{:?}", req);
+    let req_str = format!("{req:?}");
     let has_player_target = req_str.contains("Player");
 
     assert!(has_player_target,
-        "Memory's Journey should target a player. Target requirement: {:?}", req);
+        "Memory's Journey should target a player. Target requirement: {req:?}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -824,7 +821,7 @@ fn bug_spare_from_evil_protection_non_combat_damage() {
     // Protection from non-Human creatures should have prevented the damage.
     let damage = state.get_object(human).unwrap().damage_marked;
     assert_eq!(damage, 0,
-        "Protection from non-Human creatures should prevent non-combat damage. Got: {}", damage);
+        "Protection from non-Human creatures should prevent non-combat damage. Got: {damage}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -868,7 +865,7 @@ fn bug_undead_alchemist_trigger_only_from_own_mill() {
 
     // Should mill 2 cards (replacement effect)
     assert!(milled >= 2,
-        "Undead Alchemist should cause 2 cards to be milled when Zombie deals combat damage. Milled: {}", milled);
+        "Undead Alchemist should cause 2 cards to be milled when Zombie deals combat damage. Milled: {milled}");
 }
 
 // ═══════════════════════════════════════════════════════════════

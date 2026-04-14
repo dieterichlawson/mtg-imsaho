@@ -203,28 +203,28 @@ impl std::fmt::Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Action::PassPriority => write!(f, "Pass priority"),
-            Action::PlayLand { object_id } => write!(f, "Play land {}", object_id),
+            Action::PlayLand { object_id } => write!(f, "Play land {object_id}"),
             Action::CastSpell { object_id, targets, sacrifice, alternative_cost, .. } => {
                 let alt_prefix = if alternative_cost.is_some() { "Cast spell (alt cost) " } else { "Cast spell " };
                 if targets.is_empty() && sacrifice.is_none() {
-                    write!(f, "{}{}", alt_prefix, object_id)
+                    write!(f, "{alt_prefix}{object_id}")
                 } else if let Some(sac) = sacrifice {
-                    write!(f, "{}{} (sacrifice {}) targeting {:?}", alt_prefix, object_id, sac, targets)
+                    write!(f, "{alt_prefix}{object_id} (sacrifice {sac}) targeting {targets:?}")
                 } else {
-                    write!(f, "{}{} targeting {:?}", alt_prefix, object_id, targets)
+                    write!(f, "{alt_prefix}{object_id} targeting {targets:?}")
                 }
             }
             Action::ActivateManaAbility { object_id, ability_index } =>
-                write!(f, "Activate mana ability {} on {}", ability_index, object_id),
+                write!(f, "Activate mana ability {ability_index} on {object_id}"),
             Action::ActivateAbility { object_id, ability_index, targets, sacrifice, .. } => {
                 let sac_str = match sacrifice {
-                    Some(id) => format!(" (sacrificing {})", id),
+                    Some(id) => format!(" (sacrificing {id})"),
                     None => String::new(),
                 };
                 if targets.is_empty() {
-                    write!(f, "Activate ability {} on {}{}", ability_index, object_id, sac_str)
+                    write!(f, "Activate ability {ability_index} on {object_id}{sac_str}")
                 } else {
-                    write!(f, "Activate ability {} on {} targeting {:?}{}", ability_index, object_id, targets, sac_str)
+                    write!(f, "Activate ability {ability_index} on {object_id} targeting {targets:?}{sac_str}")
                 }
             }
             Action::DeclareAttackers { attackers } =>
@@ -240,8 +240,8 @@ impl std::fmt::Display for Action {
                 write!(f, "Bottom {} card(s)", cards.len()),
             Action::Concede => write!(f, "Concede"),
             Action::ActivateLoyaltyAbility { object_id, ability_index, .. } =>
-                write!(f, "Activate loyalty ability {} on {}", ability_index, object_id),
-            Action::ResolveChoice { choice } => write!(f, "Choice: {:?}", choice),
+                write!(f, "Activate loyalty ability {ability_index} on {object_id}"),
+            Action::ResolveChoice { choice } => write!(f, "Choice: {choice:?}"),
         }
     }
 }

@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
 
 /// Festerhide Boar — 3/3 for {3}{G}. Trample.
 /// Morbid — This creature enters with two +1/+1 counters on it if a creature died this turn.

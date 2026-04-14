@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, CreatureFilter};
 
 /// Spare from Evil — {1}{W} instant.
 /// Creatures you control gain protection from non-Human creatures until end of turn.

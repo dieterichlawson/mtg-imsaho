@@ -147,11 +147,9 @@ impl CliPlayer {
             // Find the byte index at `width` chars.
             let hard_end = remaining.char_indices()
                 .nth(width)
-                .map(|(i, _)| i)
-                .unwrap_or(remaining.len());
+                .map_or(remaining.len(), |(i, _)| i);
             // Look for the last space within the width.
             let break_at = remaining[..hard_end].rfind(' ')
-                .map(|i| i) // break before the space
                 .unwrap_or(hard_end); // no space — hard break
             if break_at == 0 {
                 // Edge case: space at position 0 or single huge word.
@@ -221,7 +219,7 @@ impl CliPlayer {
                             // Reset all attributes before/after to avoid bold/dim bleeding into background
                             let _ = execute!(out, SetAttribute(Attribute::Reset),
                                 SetBackgroundColor(bg), SetForegroundColor(Color::Black),
-                                Print(format!("{{{}}}", s)),
+                                Print(format!("{{{s}}}")),
                                 SetAttribute(Attribute::Reset));
                             chars.next(); // skip symbol
                             chars.next(); // skip '}'
@@ -320,7 +318,7 @@ impl CliPlayer {
                 SetAttribute(Attribute::Dim), Print("(empty)"), SetAttribute(Attribute::Reset));
         } else {
             let mut srow: u16 = 1;
-            for item in view.stack.iter() {
+            for item in &view.stack {
                 if srow >= stack_h as u16 { break; }
                 let who = if item.controller == view.you { "you" } else { "opp" };
                 let text = format!("{} ({})", item.name, who);
@@ -335,9 +333,7 @@ impl CliPlayer {
                     if srow >= stack_h as u16 { break; }
                     let target_name = match target {
                         mtg_engine::actions::Target::Object(id) => {
-                            view.battlefield.iter().find(|p| p.object_id == *id)
-                                .map(|p| format!(" -> {}", p.name))
-                                .unwrap_or_else(|| " -> ?".into())
+                            view.battlefield.iter().find(|p| p.object_id == *id).map_or_else(|| " -> ?".into(), |p| format!(" -> {}", p.name))
                         }
                         mtg_engine::actions::Target::Player(pid) => {
                             if *pid == view.you { " -> you".into() } else { " -> opp".into() }
@@ -366,7 +362,7 @@ impl CliPlayer {
             let mut wrapped: Vec<String> = Vec::new();
             let indent = "  ";
             let cont_max = max_chars.saturating_sub(indent.len());
-            for entry in log.iter() {
+            for entry in log {
                 if entry.chars().count() <= max_chars {
                     wrapped.push(entry.clone());
                 } else {
@@ -378,7 +374,7 @@ impl CliPlayer {
                             // Re-wrap the continuation line at the narrower indent width.
                             let sub_lines = Self::word_wrap(&line, cont_max);
                             for sub in sub_lines {
-                                wrapped.push(format!("{}{}", indent, sub));
+                                wrapped.push(format!("{indent}{sub}"));
                             }
                         }
                     }
@@ -413,7 +409,7 @@ impl CliPlayer {
 
         // Turn/phase bar
         let whose_turn = if view.active_player == view.you { "Your turn" } else { "Opponent's turn" };
-        let pass_label = pass_mode_label.map(|l| format!(" [{}]", l)).unwrap_or_default();
+        let pass_label = pass_mode_label.map(|l| format!(" [{l}]")).unwrap_or_default();
         let status = format!(" Turn {} - {} | {}", view.turn_number, step_name, whose_turn);
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Bold), Print(&status), SetAttribute(Attribute::Reset));
@@ -436,7 +432,7 @@ impl CliPlayer {
 
         let is_your_turn = view.active_player == view.you;
         let your_caret = if is_your_turn { "▸ " } else { "  " };
-        let opp_caret = if !is_your_turn { "▸ " } else { "  " };
+        let opp_caret = if is_your_turn { "  " } else { "▸ " };
 
         let your_stats = format!("{}You: {}hp  {}lib  {}gy  {}ex  {}hand",
             your_caret, view.your_life, view.your_library_size, your_gy, your_exile, view.your_hand.len());
@@ -456,10 +452,10 @@ impl CliPlayer {
 
         // Opponent status line
         let _ = execute!(out, cursor::MoveTo(mid_col, row));
-        if !is_your_turn {
-            let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
-        } else {
+        if is_your_turn {
             let _ = execute!(out, SetForegroundColor(Color::Red));
+        } else {
+            let _ = execute!(out, SetForegroundColor(Color::Red), SetAttribute(Attribute::Bold));
         }
         let _ = execute!(out, Print(&opp_stats));
         let _ = execute!(out, SetAttribute(Attribute::Reset), ResetColor);
@@ -482,7 +478,7 @@ impl CliPlayer {
             let creatures: Vec<_> = your_perms.iter().filter(|p| has_type(p, CardType::Creature)).collect();
             let other: usize = your_perms.iter().filter(|p|
                 !has_type(p, CardType::Land) && !has_type(p, CardType::Creature)).count();
-            (if lands.is_empty() { 0 } else { 1 }) + creatures.len() + other
+            usize::from(!lands.is_empty()) + creatures.len() + other
         };
 
         // Pad the divider area so the total battlefield is at least 9 lines
@@ -490,7 +486,7 @@ impl CliPlayer {
         let min_bf_height: u16 = 9;
         let content_rows = 2 + opp_rows + your_row_count as u16; // 2 for status lines
         let padding = if content_rows + 1 < min_bf_height {
-            (min_bf_height - content_rows) as u16
+            min_bf_height - content_rows
         } else {
             1 // at least 1 line for the divider
         };
@@ -531,9 +527,9 @@ impl CliPlayer {
             Self::mid_print(&mut out, mid_col, &mut row, mid_w, "  (empty)", None, false);
         } else {
             for card in &view.your_hand {
-                let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                 let pt = match (card.power, card.toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => String::new(),
                 };
                 if let Some(bg) = Self::basic_land_bg(&card.name) {
@@ -552,7 +548,7 @@ impl CliPlayer {
         if !view.your_mana_pool.is_empty() {
             let mana_str: Vec<String> = view.your_mana_pool.mana.iter()
                 .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{:?}:{}", t, v))
+                .map(|(t, v)| format!("{t:?}:{v}"))
                 .collect();
             Self::mid_print(&mut out, mid_col, &mut row, mid_w,
                 &format!("  Mana: {}", mana_str.join(" ")), Some(Color::Yellow), false);
@@ -568,7 +564,7 @@ impl CliPlayer {
             let wrapped = Self::word_wrap(msg, text_w);
             for (i, line) in wrapped.iter().enumerate() {
                 let leader = if i == 0 { prefix } else { indent };
-                let label = format!("{}{} ", leader, line);
+                let label = format!("{leader}{line} ");
                 let full = format!("{}{}", label, "─".repeat(mid_w.saturating_sub(label.chars().count())));
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
@@ -599,12 +595,12 @@ impl CliPlayer {
         if let Some(labels) = actions {
             for (i, label) in labels.iter().enumerate() {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
-                    SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
+                    SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                     SetAttribute(Attribute::Reset), Print(": "));
                 Self::print_action_label(&mut out, label);
                 row += 1;
             }
-            let has_pass = labels.first().map(|l| l == "Pass priority").unwrap_or(false);
+            let has_pass = labels.first().is_some_and(|l| l == "Pass priority");
             let hints = if has_pass {
                 "  [enter=pass] [f=auto-pass] [/=search] [d=deck] [l=log] [g=gy] [e=exile]"
             } else {
@@ -669,7 +665,7 @@ impl CliPlayer {
                         let _ = execute!(out, SetForegroundColor(color), Print(", "), ResetColor);
                     }
                     let total = untapped + tapped;
-                    let _ = execute!(out, SetForegroundColor(color), Print(format!("{}x ", total)), ResetColor);
+                    let _ = execute!(out, SetForegroundColor(color), Print(format!("{total}x ")), ResetColor);
                     if let Some(bg) = CliPlayer::basic_land_bg(name) {
                         let _ = execute!(out, SetBackgroundColor(bg), SetForegroundColor(Color::Black),
                             Print(name), ResetColor);
@@ -678,7 +674,7 @@ impl CliPlayer {
                     }
                     if *tapped > 0 && *untapped > 0 {
                         let _ = execute!(out, SetForegroundColor(color),
-                            Print(format!(" ({} tapped)", tapped)), ResetColor);
+                            Print(format!(" ({tapped} tapped)")), ResetColor);
                     } else if *tapped > 0 {
                         let _ = execute!(out, SetForegroundColor(color), Print(" (tapped)"), ResetColor);
                     }
@@ -691,9 +687,9 @@ impl CliPlayer {
         let render_nonlands = |out: &mut io::Stdout, row: &mut u16| {
             for c in &creatures {
                 let pt = match (c.effective_power, c.effective_toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => match (c.power, c.toughness) {
-                        (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
                         _ => String::new(),
                     },
                 };
@@ -749,7 +745,7 @@ impl CliPlayer {
 
     fn print_colored(out: &mut impl Write, color: Color, text: &str) {
         let _ = execute!(out, SetForegroundColor(color), SetAttribute(Attribute::Bold),
-            Print(format!("{}\n", text)), SetAttribute(Attribute::Reset), ResetColor);
+            Print(format!("{text}\n")), SetAttribute(Attribute::Reset), ResetColor);
     }
 
     // ── Card reference panel ──────────────────────────────────────
@@ -777,16 +773,14 @@ impl CliPlayer {
         // Priority 3: opponent's battlefield (skip basic lands)
         for p in view.battlefield.iter().filter(|p| p.controller != view.you) {
             let is_basic = registry.card_data(p.card_id)
-                .map(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic))
-                .unwrap_or(false);
+                .is_some_and(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic));
             if is_basic { continue; }
             add(&p.name, p.card_id);
         }
         // Priority 4: your battlefield (skip basic lands)
         for p in view.battlefield.iter().filter(|p| p.controller == view.you) {
             let is_basic = registry.card_data(p.card_id)
-                .map(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic))
-                .unwrap_or(false);
+                .is_some_and(|d| d.supertypes.contains(&mtg_engine::types::Supertype::Basic));
             if is_basic { continue; }
             add(&p.name, p.card_id);
         }
@@ -837,7 +831,7 @@ impl CliPlayer {
         let search_display = if filter.is_empty() {
             format!(" /search{}", " ".repeat(right_w.saturating_sub(8)))
         } else {
-            let text = format!(" /{}", filter);
+            let text = format!(" /{filter}");
             let pad = right_w.saturating_sub(text.chars().count());
             format!("{}{}", text, " ".repeat(pad))
         };
@@ -853,7 +847,7 @@ impl CliPlayer {
             if row >= max_row { break; }
 
             // Name + cost
-            let cost_str = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+            let cost_str = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
             let name_line = format!("{}{}", card.name, cost_str);
             let truncated: String = name_line.chars().take(content_w).collect();
             let _ = execute!(out, cursor::MoveTo(right_col, row), SetAttribute(Attribute::Bold));
@@ -875,7 +869,7 @@ impl CliPlayer {
             let subtypes = if card.subtypes.is_empty() { String::new() }
                 else { format!(" — {}", card.subtypes.join(" ")) };
             let pt = match (card.power, card.toughness) {
-                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                (Some(p), Some(t)) => format!(" {p}/{t}"),
                 _ => String::new(),
             };
             let type_line = format!("{}{}{}", types.join(" "), subtypes, pt);
@@ -942,7 +936,7 @@ impl CliPlayer {
             // Flashback cost
             if let Some(fb) = &card.flashback_cost {
                 if row < max_row {
-                    let fb_line = format!("Flashback {}", fb);
+                    let fb_line = format!("Flashback {fb}");
                     let truncated: String = fb_line.chars().take(content_w).collect();
                     let _ = execute!(out, cursor::MoveTo(right_col, row));
                     Self::print_with_mana(out, &truncated, Some(Color::Cyan));
@@ -1082,18 +1076,18 @@ impl CliPlayer {
         };
 
         // Prompt for sacrifice if the spell has a sacrifice additional cost.
-        let chosen_sacrifice = if spell.sacrifice_options.len() == 1 {
-            Some(spell.sacrifice_options[0])
-        } else if spell.sacrifice_options.len() > 1 {
-            let target = self.prompt_target(view,
-                &spell.sacrifice_options.iter().map(|&id| mtg_engine::actions::Target::Object(id)).collect::<Vec<_>>(),
-                &format!("{}: choose a creature to sacrifice", spell.name))?;
-            match target {
-                mtg_engine::actions::Target::Object(id) => Some(id),
-                _ => None,
+        let chosen_sacrifice = match spell.sacrifice_options.len() {
+            0 => None,
+            1 => Some(spell.sacrifice_options[0]),
+            _ => {
+                let target = self.prompt_target(view,
+                    &spell.sacrifice_options.iter().map(|&id| mtg_engine::actions::Target::Object(id)).collect::<Vec<_>>(),
+                    &format!("{}: choose a creature to sacrifice", spell.name))?;
+                match target {
+                    mtg_engine::actions::Target::Object(id) => Some(id),
+                    mtg_engine::actions::Target::Player(_) => None,
+                }
             }
-        } else {
-            None
         };
 
         Some(Action::CastSpell {
@@ -1169,7 +1163,7 @@ impl CliPlayer {
         }
         name_counts.iter()
             .map(|(name, count)| {
-                if *count > 1 { format!("{}x {}", count, name) } else { name.clone() }
+                if *count > 1 { format!("{count}x {name}") } else { name.clone() }
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -1180,7 +1174,7 @@ impl CliPlayer {
             .find(|p| p.object_id == id)
             .map(|p| {
                 let pt = match (p.effective_power, p.effective_toughness) {
-                    (Some(pw), Some(t)) => format!(" {}/{}", pw, t),
+                    (Some(pw), Some(t)) => format!(" {pw}/{t}"),
                     _ => String::new(),
                 };
                 let is_land = p.card_types.iter().all(|t| matches!(t, CardType::Land));
@@ -1197,7 +1191,7 @@ impl CliPlayer {
             .or_else(|| view.stack.iter()
                 .find(|s| s.object_id == id)
                 .map(|s| s.name.clone()))
-            .unwrap_or_else(|| format!("{}", id))
+            .unwrap_or_else(|| format!("{id}"))
     }
 
     fn format_action(view: &GameView, action: &Action) -> String {
@@ -1208,9 +1202,9 @@ impl CliPlayer {
             Action::CastSpell { object_id, targets, tap_plan, .. } => {
                 let name = Self::perm_name(view, *object_id);
                 let tap_str = Self::format_tap_plan(view, tap_plan);
-                let tap_suffix = if tap_str.is_empty() { String::new() } else { format!(" (tap {})", tap_str) };
+                let tap_suffix = if tap_str.is_empty() { String::new() } else { format!(" (tap {tap_str})") };
                 if targets.is_empty() {
-                    format!("Cast {}{}", name, tap_suffix)
+                    format!("Cast {name}{tap_suffix}")
                 } else {
                     let target_names: Vec<String> = targets.iter().map(|t| match t {
                         Target::Object(id) => Self::perm_name(view, *id),
@@ -1283,7 +1277,7 @@ impl CliPlayer {
                             .collect();
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
-                    ResolvedChoice::ChosenXValue(x) => format!("X = {}", x),
+                    ResolvedChoice::ChosenXValue(x) => format!("X = {x}"),
                 }
             }
         }
@@ -1292,7 +1286,7 @@ impl CliPlayer {
     // ── Input ──────────────────────────────────────────────────────
 
     fn read_line(prompt: &str) -> String {
-        print!("{}", prompt);
+        print!("{prompt}");
         io::stdout().flush().unwrap();
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();
@@ -1374,14 +1368,14 @@ impl CliPlayer {
             let mut idx = 0;
             for perm in &your_perms {
                 let pt = match (perm.effective_power, perm.effective_toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => String::new(),
                 };
                 let flags = format!("{}{}",
                     if perm.tapped { " [T]" } else { "" },
                     if perm.summoning_sick { " [S]" } else { "" });
                 let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(format!("  {:>2}", idx)),
+                    SetAttribute(Attribute::Bold), Print(format!("  {idx:>2}")),
                     SetAttribute(Attribute::Reset),
                     Print(format!(": {}{}{}\n", perm.name, pt, flags)));
                 idx += 1;
@@ -1392,14 +1386,14 @@ impl CliPlayer {
                 Print(" Opponent's permanents:\n"), SetAttribute(Attribute::Reset));
             for perm in &opp_perms {
                 let pt = match (perm.effective_power, perm.effective_toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => String::new(),
                 };
                 let flags = format!("{}{}",
                     if perm.tapped { " [T]" } else { "" },
                     if perm.summoning_sick { " [S]" } else { "" });
                 let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(format!("  {:>2}", idx)),
+                    SetAttribute(Attribute::Bold), Print(format!("  {idx:>2}")),
                     SetAttribute(Attribute::Reset),
                     Print(format!(": {}{}{}\n", perm.name, pt, flags)));
                 idx += 1;
@@ -1431,17 +1425,17 @@ impl CliPlayer {
                     let _ = execute!(out, Print(format!("  Type: {}\n", types.join(" "))));
 
                     if let (Some(p), Some(t)) = (perm.power, perm.toughness) {
-                        let _ = execute!(out, Print(format!("  Base P/T: {}/{}\n", p, t)));
+                        let _ = execute!(out, Print(format!("  Base P/T: {p}/{t}\n")));
                     }
                     if let (Some(p), Some(t)) = (perm.effective_power, perm.effective_toughness) {
-                        let _ = execute!(out, Print(format!("  Effective P/T: {}/{}\n", p, t)));
+                        let _ = execute!(out, Print(format!("  Effective P/T: {p}/{t}\n")));
                     }
                     if perm.damage_marked > 0 {
                         let _ = execute!(out, Print(format!("  Damage marked: {}\n", perm.damage_marked)));
                     }
 
                     let controller = if perm.controller == view.you { "You" } else { "Opponent" };
-                    let _ = execute!(out, Print(format!("  Controller: {}\n", controller)));
+                    let _ = execute!(out, Print(format!("  Controller: {controller}\n")));
                     let _ = execute!(out, Print(format!("  Tapped: {}\n", perm.tapped)));
                     let _ = execute!(out, Print(format!("  Summoning sick: {}\n", perm.summoning_sick)));
                     let _ = execute!(out, Print(format!("  ID: #{}\n", perm.object_id.0)));
@@ -1459,9 +1453,8 @@ impl CliPlayer {
                     if let Some(att) = perm.attached_to {
                         let att_name = view.battlefield.iter()
                             .find(|p| p.object_id == att)
-                            .map(|p| p.name.as_str())
-                            .unwrap_or("?");
-                        let _ = execute!(out, Print(format!("  Attached to: {}\n", att_name)));
+                            .map_or("?", |p| p.name.as_str());
+                        let _ = execute!(out, Print(format!("  Attached to: {att_name}\n")));
                     }
 
                     // Show oracle text
@@ -1492,9 +1485,9 @@ impl CliPlayer {
             let h = terminal::size().map(|(_, h)| h as usize).unwrap_or(24);
             let visible = h.saturating_sub(4); // leave room for header/footer
             let start = if log.len() > visible { log.len() - visible } else { 0 };
-            for (_i, entry) in log[start..].iter().enumerate() {
+            for entry in &log[start..] {
                 let _ = execute!(out, SetAttribute(Attribute::Dim),
-                    Print(format!("  {}\n", entry)), SetAttribute(Attribute::Reset));
+                    Print(format!("  {entry}\n")), SetAttribute(Attribute::Reset));
             }
         }
         let _ = execute!(out, Print("\n  Press enter to return..."));
@@ -1561,7 +1554,7 @@ impl CliPlayer {
         loop {
             let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
             Self::print_colored(&mut out, Color::Cyan,
-                &format!(" YOUR DECK ({} cards)", total_cards));
+                &format!(" YOUR DECK ({total_cards} cards)"));
             let _ = execute!(out, Print("\n"));
 
             let mut cards: Vec<mtg_engine::cards::CardData> = Vec::new();
@@ -1577,9 +1570,9 @@ impl CliPlayer {
             let deck_cards: Vec<&mtg_engine::cards::CardData> = cards.iter().collect();
 
             for (i, data) in deck_cards.iter().enumerate() {
-                let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                 let pt = match (data.power, data.toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => String::new(),
                 };
                 let h = hand_counts.get(&data.name).copied().unwrap_or(0);
@@ -1591,15 +1584,15 @@ impl CliPlayer {
 
                 // Build location breakdown
                 let mut locs = Vec::new();
-                if h > 0 { locs.push(format!("{}hand", h)); }
-                if b > 0 { locs.push(format!("{}board", b)); }
-                if g > 0 { locs.push(format!("{}gy", g)); }
-                if e > 0 { locs.push(format!("{}exile", e)); }
-                if lib > 0 { locs.push(format!("{}lib", lib)); }
+                if h > 0 { locs.push(format!("{h}hand")); }
+                if b > 0 { locs.push(format!("{b}board")); }
+                if g > 0 { locs.push(format!("{g}gy")); }
+                if e > 0 { locs.push(format!("{e}exile")); }
+                if lib > 0 { locs.push(format!("{lib}lib")); }
                 let loc_str = if locs.is_empty() { String::new() } else { format!(" ({})", locs.join(", ")) };
 
                 let _ = execute!(out,
-                    SetAttribute(Attribute::Bold), Print(format!("  {:>2}", i)),
+                    SetAttribute(Attribute::Bold), Print(format!("  {i:>2}")),
                     SetAttribute(Attribute::Reset),
                     Print(format!(": {}x {}{}{}{}\n", total, data.name, cost, pt, loc_str)));
             }
@@ -1615,8 +1608,8 @@ impl CliPlayer {
                     let data = deck_cards[idx];
                     let _ = execute!(out, Clear(ClearType::All), cursor::MoveTo(0, 0));
                     Self::print_colored(&mut out, Color::Cyan, &format!(" {}", data.name));
-                    let cost = data.cost.as_ref().map(|c| format!("{}", c)).unwrap_or_else(|| "(none)".into());
-                    let _ = execute!(out, Print(format!("  Mana cost: {}\n", cost)));
+                    let cost = data.cost.as_ref().map_or_else(|| "(none)".into(), |c| format!("{c}"));
+                    let _ = execute!(out, Print(format!("  Mana cost: {cost}\n")));
                     let types: Vec<&str> = data.card_types.iter().map(|t| match t {
                         CardType::Land => "Land",
                         CardType::Creature => "Creature",
@@ -1631,7 +1624,7 @@ impl CliPlayer {
                         let _ = execute!(out, Print(format!("  Subtypes: {}\n", data.subtypes.join(", "))));
                     }
                     if let (Some(p), Some(t)) = (data.power, data.toughness) {
-                        let _ = execute!(out, Print(format!("  Power/Toughness: {}/{}\n", p, t)));
+                        let _ = execute!(out, Print(format!("  Power/Toughness: {p}/{t}\n")));
                     }
                     if !data.keywords.is_empty() {
                         let kws: Vec<&str> = data.keywords.iter().map(|k| match k {
@@ -1660,7 +1653,7 @@ impl CliPlayer {
                     }
                     if let Some(fb) = &data.flashback_cost {
                         let _ = execute!(out, SetForegroundColor(Color::Cyan),
-                            Print(format!("  Flashback: {}\n", fb)), ResetColor);
+                            Print(format!("  Flashback: {fb}\n")), ResetColor);
                     }
                     let _ = execute!(out, Print("\n  Press enter to return to list..."));
                     let _ = out.flush();
@@ -1673,10 +1666,10 @@ impl CliPlayer {
     // ── Combat ─────────────────────────────────────────────────────
 
     fn choose_attackers(&self, view: &GameView, prompt: &CombatPrompt) -> Action {
-        let (eligible, must_attack, defending) = match prompt {
-            CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player } => (eligible, must_attack, *defending_player),
-            _ => unreachable!(),
+        let CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player: defending } = prompt else {
+            unreachable!()
         };
+        let defending = *defending;
 
         if eligible.is_empty() {
             return Action::DeclareAttackers { attackers: vec![] };
@@ -1701,7 +1694,7 @@ impl CliPlayer {
             let tag = if forced { " [MUST ATTACK]" } else { "" };
             let color = if forced { Color::Red } else { Color::Reset };
             let _ = execute!(out, cursor::MoveTo(col, r),
-                SetAttribute(Attribute::Bold), Print(format!("  {}", i)),
+                SetAttribute(Attribute::Bold), Print(format!("  {i}")),
                 SetAttribute(Attribute::Reset),
                 Print(format!(": {}", Self::perm_name(view, id))),
                 SetForegroundColor(color), Print(tag), ResetColor);
@@ -1724,14 +1717,12 @@ impl CliPlayer {
             }
 
             let tokens: Vec<&str> = input.split(|c: char| c.is_whitespace() || c == ',')
-                .map(|s| s.trim())
+                .map(str::trim)
                 .filter(|s| !s.is_empty())
                 .collect();
             let indices: Vec<usize> = tokens.iter()
                 .filter_map(|s| s.parse().ok()).collect();
-            if indices.len() != tokens.len() {
-                println!("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.");
-            } else {
+            if indices.len() == tokens.len() {
                 let bad: Vec<usize> = indices.iter().copied().filter(|&i| i >= eligible.len()).collect();
                 if bad.is_empty() {
                     return Action::DeclareAttackers {
@@ -1739,16 +1730,17 @@ impl CliPlayer {
                     };
                 }
                 println!("  Invalid attacker(s): {}. Valid range is 0-{}.",
-                    bad.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", "),
+                    bad.iter().map(std::string::ToString::to_string).collect::<Vec<_>>().join(", "),
                     eligible.len() - 1);
+            } else {
+                println!("  Invalid input. Enter numbers like '0 2', 'all', 'a', or 'none'.");
             }
         }
     }
 
     fn choose_blockers(&self, view: &GameView, prompt: &CombatPrompt) -> Action {
-        let (eligible_blockers, attacker_ids) = match prompt {
-            CombatPrompt::ChooseBlockers { eligible_blockers, attackers, .. } => (eligible_blockers, attackers),
-            _ => unreachable!(),
+        let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, .. } = prompt else {
+            unreachable!()
         };
 
         if eligible_blockers.is_empty() {
@@ -1849,9 +1841,9 @@ impl CliPlayer {
                             CardType::Planeswalker => "Planeswalker",
                         }).collect();
                         let type_str = types.join(" ");
-                        let cost_str = c.cost.as_ref().map(|mc| format!("{}", mc)).unwrap_or_default();
+                        let cost_str = c.cost.as_ref().map(|mc| format!("{mc}")).unwrap_or_default();
                         let pt_str = match (c.power, c.toughness) {
-                            (Some(p), Some(t)) => format!("{}/{}", p, t),
+                            (Some(p), Some(t)) => format!("{p}/{t}"),
                             _ => String::new(),
                         };
                         (type_str, c.oracle_text.clone(), cost_str, pt_str)
@@ -1886,12 +1878,12 @@ impl CliPlayer {
             let _ = execute!(out, SetForegroundColor(Color::Yellow),
                 Print("═══ Search Library ═══\n\r"),
                 ResetColor);
-            let _ = execute!(out, Print(format!("Filter: {}_\n\r\n\r", filter)));
+            let _ = execute!(out, Print(format!("Filter: {filter}_\n\r\n\r")));
 
             let (_, term_height) = terminal::size().unwrap_or((80, 24));
             let max_list = (term_height as usize).saturating_sub(8); // Leave room for detail
 
-            let start = if selected >= max_list / 2 { selected - max_list / 2 } else { 0 };
+            let start = selected.saturating_sub(max_list / 2);
             let visible: Vec<_> = filtered.iter().enumerate().skip(start).take(max_list).collect();
 
             for (i, card) in &visible {
@@ -1922,7 +1914,7 @@ impl CliPlayer {
                 let _ = execute!(out, Print("\n\r"));
                 // Oracle text — wrap lines.
                 for line in card.oracle_text.split('\n') {
-                    let _ = execute!(out, Print(format!("  {}\n\r", line)));
+                    let _ = execute!(out, Print(format!("  {line}\n\r")));
                 }
             }
 
@@ -1943,7 +1935,7 @@ impl CliPlayer {
                         }
                     }
                     KeyCode::Up => {
-                        if selected > 0 { selected -= 1; }
+                        selected = selected.saturating_sub(1);
                     }
                     KeyCode::Down => {
                         if selected + 1 < filtered.len() { selected += 1; }
@@ -2119,9 +2111,9 @@ impl Player for CliPlayer {
                             let _ = execute!(out, Print("   (empty)\n"));
                         } else {
                             for card in cards {
-                                let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                                let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                                 let pt = match (card.power, card.toughness) {
-                                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                                    (Some(p), Some(t)) => format!(" {p}/{t}"),
                                     _ => String::new(),
                                 };
                                 let _ = execute!(out, Print("   "));
@@ -2150,9 +2142,9 @@ impl Player for CliPlayer {
                         let _ = execute!(out, Print("   (empty)\n"));
                     } else {
                         for card in &your_exile {
-                            let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                            let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                             let pt = match (card.power, card.toughness) {
-                                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                                (Some(p), Some(t)) => format!(" {p}/{t}"),
                                 _ => String::new(),
                             };
                             let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
@@ -2166,9 +2158,9 @@ impl Player for CliPlayer {
                         let _ = execute!(out, Print("   (empty)\n"));
                     } else {
                         for card in &opp_exile {
-                            let cost = card.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                            let cost = card.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                             let pt = match (card.power, card.toughness) {
-                                (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                                (Some(p), Some(t)) => format!(" {p}/{t}"),
                                 _ => String::new(),
                             };
                             let _ = execute!(out, Print(format!("   {}{}{}\n", card.name, cost, pt)));
@@ -2239,7 +2231,6 @@ impl Player for CliPlayer {
                                 return action;
                             }
                             // User cancelled target selection — re-render
-                            continue;
                         }
                     }
                 }

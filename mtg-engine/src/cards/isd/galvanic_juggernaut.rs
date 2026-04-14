@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope, Zone};
 
 /// Galvanic Juggernaut — {4} 5/5 Artifact Creature — Juggernaut.
 /// Galvanic Juggernaut attacks each combat if able.

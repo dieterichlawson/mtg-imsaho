@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, LogLevel};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Counterspell — {U}{U} instant. Counter target spell.
 pub struct Counterspell;
@@ -34,8 +34,7 @@ impl CardBehavior for Counterspell {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Stack)
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Stack)
             }
             Target::Player(_) => false,
         }
@@ -48,7 +47,7 @@ impl CardBehavior for Counterspell {
                     let countered_name = state.obj_name(*target_id);
                     state.stack.retain(|e| e.as_spell() != Some(*target_id));
                     state.move_spell_after_resolve(*target_id, registry);
-                    state.log(LogLevel::Event, format!("{} was countered", countered_name));
+                    state.log(LogLevel::Event, format!("{countered_name} was countered"));
                 }
             }
         }

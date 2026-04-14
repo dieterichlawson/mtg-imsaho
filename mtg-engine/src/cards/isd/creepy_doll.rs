@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Keyword, Zone};
 use rand::Rng;
 
 /// Creepy Doll — {5} 1/1 Artifact Creature — Construct with Indestructible.
@@ -36,14 +36,14 @@ impl CardBehavior for CreepyDoll {
     }
 
     fn on_deals_combat_damage_to_creature(&self, state: &mut GameState, self_id: ObjectId, damaged_creature: ObjectId, _amount: u32, registry: &CardRegistry) {
-        if state.get_object(self_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
         let won = rand::thread_rng().gen_bool(0.5);
         if won {
             let name = state.get_object(damaged_creature).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event,
-                format!("Creepy Doll won the coin flip! Destroying {}", name));
+                format!("Creepy Doll won the coin flip! Destroying {name}"));
             crate::destruction::try_destroy(state, damaged_creature, registry);
         } else {
             state.log(crate::state::LogLevel::Event,

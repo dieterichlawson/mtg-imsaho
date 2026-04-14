@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope, CreatureFilter};
 
 /// Gallows Warden — {4}{W} 3/3 Spirit, Flying.
 /// Other Spirit creatures you control get +0/+1.

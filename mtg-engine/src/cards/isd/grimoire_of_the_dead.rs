@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Supertype, Zone, CounterType, Color};
 
 /// Grimoire of the Dead {4} Legendary Artifact.
 /// {1}, {T}, Discard a card: Put a study counter on Grimoire of the Dead.
@@ -114,7 +114,7 @@ impl CardBehavior for GrimoireOfTheDead {
                     state.add_counters(object_id, CounterType::Study, 1);
                     let count = state.get_counter_count(object_id, CounterType::Study);
                     state.log(crate::state::LogLevel::Event,
-                        format!("Grimoire of the Dead: study counter added ({}/3)", count));
+                        format!("Grimoire of the Dead: study counter added ({count}/3)"));
                 } else {
                     // Multiple cards -- present choice to player.
                     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -149,14 +149,11 @@ impl CardBehavior for GrimoireOfTheDead {
 
                 let count = creatures.len();
                 for cid in creatures {
-                    let (name, is_legendary) = state.get_object(cid)
-                        .map(|o| {
+                    let (name, is_legendary) = state.get_object(cid).map_or_else(|| (String::new(), false), |o| {
                             let legendary = registry.card_data(o.card_id)
-                                .map(|d| d.supertypes.contains(&Supertype::Legendary))
-                                .unwrap_or(false);
+                                .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
                             (o.name.clone(), legendary)
-                        })
-                        .unwrap_or_else(|| (String::new(), false));
+                        });
                     state.move_object(cid, Zone::Battlefield, registry);
                     if let Some(obj) = state.get_object_mut(cid) {
                         obj.controller = controller;
@@ -170,10 +167,10 @@ impl CardBehavior for GrimoireOfTheDead {
                         }
                     }
                     state.log(crate::state::LogLevel::Event,
-                        format!("Grimoire of the Dead: {} returned as a black Zombie", name));
+                        format!("Grimoire of the Dead: {name} returned as a black Zombie"));
                 }
                 state.log(crate::state::LogLevel::Event,
-                    format!("Grimoire of the Dead: {} creatures returned from all graveyards", count));
+                    format!("Grimoire of the Dead: {count} creatures returned from all graveyards"));
             }
             _ => {}
         }
@@ -184,6 +181,6 @@ impl CardBehavior for GrimoireOfTheDead {
         state.add_counters(self_id, CounterType::Study, 1);
         let count = state.get_counter_count(self_id, CounterType::Study);
         state.log(crate::state::LogLevel::Event,
-            format!("Grimoire of the Dead: study counter added ({}/3)", count));
+            format!("Grimoire of the Dead: study counter added ({count}/3)"));
     }
 }

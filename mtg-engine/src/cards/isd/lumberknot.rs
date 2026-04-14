@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
 
 /// Lumberknot — {2}{G}{G} 1/1 Treefolk. Hexproof.
 /// Whenever a creature dies, put a +1/+1 counter on Lumberknot.
@@ -34,7 +34,7 @@ impl CardBehavior for Lumberknot {
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {
-        if state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }
     }

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Bramblecrush — {2}{G}{G} sorcery. Destroy target noncreature permanent.
 pub struct Bramblecrush;
@@ -39,10 +39,9 @@ impl CardBehavior for Bramblecrush {
                     _ => return false,
                 };
                 registry.card_data(obj.card_id)
-                    .map(|d| !d.card_types.contains(&CardType::Creature))
-                    .unwrap_or(false)
+                    .is_some_and(|d| !d.card_types.contains(&CardType::Creature))
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 

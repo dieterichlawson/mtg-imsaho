@@ -133,14 +133,14 @@ fn non_active_player_triggers_resolve_first() {
         .collect();
 
     assert!(life_events.len() >= 3,
-        "Should have at least 3 life events. Got: {:?}", life_events);
+        "Should have at least 3 life events. Got: {life_events:?}");
 
     // Noble's events come first (NAP resolves first in LIFO).
     // Noble drains: P0 loses 1 life. That should be the first LifeChanged.
     let (first_player, first_old, first_new) = life_events[0];
     assert_eq!(first_player, P0,
         "APNAP LIFO: Non-active player's Noble trigger should resolve first, \
-         causing P0 to lose 1 life. Events: {:?}", life_events);
+         causing P0 to lose 1 life. Events: {life_events:?}");
     assert_eq!(first_new, first_old - 1,
         "First event should be P0 losing 1 life from Noble's drain");
 }
@@ -228,5 +228,5 @@ fn apnap_lifo_order_with_life_totals() {
     // So the first LifeChanged should show P0 going from 20 to 19.
     assert!(!life_events.is_empty());
     assert_eq!(life_events[0], (P0, 20, 19),
-        "First event should be Noble draining P0 (20→19). Events: {:?}", life_events);
+        "First event should be Noble draining P0 (20→19). Events: {life_events:?}");
 }

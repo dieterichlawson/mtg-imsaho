@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::cards::helpers;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Cloistered Youth {1}{W} 1/1 Human // Unholy Fiend 3/3 Horror.
 /// Front: At the beginning of your upkeep, you may transform Cloistered Youth.
@@ -60,7 +60,7 @@ impl CardBehavior for CloisteredYouth {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((3, 3))
         } else {
             None

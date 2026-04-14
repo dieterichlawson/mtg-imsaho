@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Balefire Dragon — {5}{R}{R} 6/6 Dragon. Flying.
 /// Whenever Balefire Dragon deals combat damage to a player, it deals that much damage
@@ -37,7 +37,7 @@ impl CardBehavior for BalefireDragon {
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, damaged_player: PlayerId, amount: u32, _registry: &CardRegistry) {
-        if !state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if !state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             return;
         }
 

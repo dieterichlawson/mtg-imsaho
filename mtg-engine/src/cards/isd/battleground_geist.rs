@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope, CreatureFilter};
 
 /// Battleground Geist — {4}{U} 3/3 Spirit, Flying.
 /// Other Spirit creatures you control get +1/+0.

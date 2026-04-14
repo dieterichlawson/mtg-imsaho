@@ -3,7 +3,7 @@ use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, Sa
                    TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Evil Twin {2}{U}{B} 0/0 Shapeshifter.
 /// You may have Evil Twin enter the battlefield as a copy of any creature on the battlefield,
@@ -55,7 +55,12 @@ impl CardBehavior for EvilTwin {
 
         // "You may" — present an optional choice. If no creatures exist or the
         // player declines, Evil Twin stays as a 0/0 and dies to SBA.
-        if !targets.is_empty() {
+        if targets.is_empty() {
+            // No targets — clear the flag so SBA can clean up the 0/0.
+            if let Some(obj) = state.get_object_mut(object_id) {
+                obj.entering_copy_source = false;
+            }
+        } else {
             crate::cards::helpers::present_optional_target_choice(
                 state,
                 object_id,
@@ -64,11 +69,6 @@ impl CardBehavior for EvilTwin {
                 PendingEffect::CopyCreature { source_id: object_id },
                 "Evil Twin: you may choose a creature to copy",
             );
-        } else {
-            // No targets — clear the flag so SBA can clean up the 0/0.
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.entering_copy_source = false;
-            }
         }
     }
 
@@ -104,10 +104,9 @@ impl CardBehavior for EvilTwin {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Battlefield && o.power.is_some())
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some())
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
@@ -116,7 +115,7 @@ impl CardBehavior for EvilTwin {
             let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
             crate::destruction::try_destroy(state, *target_id, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Evil Twin: destroyed {} (same name)", target_name));
+                format!("Evil Twin: destroyed {target_name} (same name)"));
         }
     }
 }

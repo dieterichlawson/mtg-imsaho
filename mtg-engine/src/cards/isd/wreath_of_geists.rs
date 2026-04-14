@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Wreath of Geists — {G} Aura enchantment. Enchant creature.
 /// Enchanted creature gets +X/+X, where X is the number of creature cards in your graveyard.

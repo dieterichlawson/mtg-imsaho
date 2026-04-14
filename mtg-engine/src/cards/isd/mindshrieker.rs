@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Mindshrieker — {1}{U} 1/1 Spirit Bird with Flying.
 /// {2}: Target player mills a card. Mindshrieker gets +X/+X until end of turn,
@@ -29,10 +29,7 @@ impl CardBehavior for Mindshrieker {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -69,23 +66,23 @@ impl CardBehavior for Mindshrieker {
             let mana_value = {
                 let card_id = state.get_object(milled_card_id).map(|o| o.card_id);
                 card_id.and_then(|cid| registry.get(cid))
-                    .and_then(|b| b.card_data().cost.as_ref().map(|c| c.mana_value()))
+                    .and_then(|b| b.card_data().cost.as_ref().map(crate::types::ManaCost::mana_value))
                     .unwrap_or(0) as i32
             };
 
             // Apply +X/+X until end of turn.
-            if mana_value > 0 {
-                if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                    state.until_end_of_turn.push(
-                        crate::state::TemporaryEffect::ModifyPT {
-                            target: object_id,
-                            power_mod: mana_value,
-                            toughness_mod: mana_value,
-                        }
-                    );
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Mindshrieker gets +{}/+{} (milled card's mana value)", mana_value, mana_value));
-                }
+            if mana_value > 0
+                && state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield)
+            {
+                state.until_end_of_turn.push(
+                    crate::state::TemporaryEffect::ModifyPT {
+                        target: object_id,
+                        power_mod: mana_value,
+                        toughness_mod: mana_value,
+                    }
+                );
+                state.log(crate::state::LogLevel::Event,
+                    format!("Mindshrieker gets +{mana_value}/+{mana_value} (milled card's mana value)"));
             }
         }
     }

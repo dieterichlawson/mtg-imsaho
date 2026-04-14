@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Army of the Damned — {5}{B}{B}{B} sorcery.
 /// Create thirteen tapped 2/2 black Zombie creature tokens.
@@ -39,7 +39,7 @@ impl CardBehavior for ArmyOfTheDamned {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         for _ in 0..13 {
             let token_ids = state.create_token_with_subtypes(
                 "Zombie", controller, 2, 2,

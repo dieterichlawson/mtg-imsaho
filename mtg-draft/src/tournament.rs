@@ -16,12 +16,10 @@ pub struct MatchResult {
 
 impl MatchResult {
     pub fn winner(&self) -> Option<usize> {
-        if self.wins_a > self.wins_b {
-            Some(self.player_a)
-        } else if self.wins_b > self.wins_a {
-            Some(self.player_b)
-        } else {
-            None
+        match self.wins_a.cmp(&self.wins_b) {
+            std::cmp::Ordering::Greater => Some(self.player_a),
+            std::cmp::Ordering::Less => Some(self.player_b),
+            std::cmp::Ordering::Equal => None,
         }
     }
 }
@@ -156,8 +154,8 @@ impl Tournament {
         }
 
         // Handle byes: any unpaired player gets a bye (paired with usize::MAX sentinel)
-        for seat in 0..self.num_players {
-            if !paired[seat] {
+        for (seat, is_paired) in paired.iter().enumerate().take(self.num_players) {
+            if !is_paired {
                 pairings.push((seat, usize::MAX));
             }
         }
@@ -261,7 +259,7 @@ mod tests {
             .iter()
             .flat_map(|&(a, b)| vec![a, b])
             .collect();
-        all_players.sort();
+        all_players.sort_unstable();
         assert_eq!(all_players, vec![0, 1, 2, 3]);
     }
 

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Curse of the Bloody Tome — {2}{U} Enchantment — Aura Curse.
 /// Enchant player.
@@ -49,10 +49,7 @@ impl CardBehavior for CurseOfTheBloodyTome {
             Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,
             _ => return,
         };
-        let cursed_player = match cursed_player {
-            Some(p) => p,
-            None => return,
-        };
+        let Some(cursed_player) = cursed_player else { return; };
         if state.active_player != cursed_player {
             return;
         }

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope};
 
 /// Holy Strength — {W} aura enchantment. Enchanted creature gets +1/+2.
 pub struct HolyStrength;

@@ -2334,7 +2334,7 @@ fn garruk_back_face_creates_deathtouch_wolf() {
     let wolves: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
         .iter()
         .filter(|o| o.is_token && o.name == "Wolf")
-        .cloned()
+        .copied()
         .collect();
     assert_eq!(wolves.len(), 1, "Should create a Wolf token");
     assert_eq!(wolves[0].power, Some(1), "Wolf should be 1/1");

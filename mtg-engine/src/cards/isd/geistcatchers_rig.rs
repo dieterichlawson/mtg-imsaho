@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Zone, Keyword};
 
 /// Geistcatcher's Rig — {6} 4/5 Construct artifact creature.
 /// When Geistcatcher's Rig enters the battlefield, you may have it deal 4 damage
@@ -36,7 +36,7 @@ impl CardBehavior for GeistcatchersRig {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Find all creatures with flying (any controller — can target any creature with flying).
         let targets: Vec<Target> = state.objects.values()

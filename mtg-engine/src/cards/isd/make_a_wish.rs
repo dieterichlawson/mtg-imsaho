@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Make a Wish — {3}{G} Sorcery.
 /// Return two cards at random from your graveyard to your hand.
@@ -28,7 +28,7 @@ impl CardBehavior for MakeAWish {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Get all cards in graveyard (excluding tokens).
         let mut gy_cards: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
@@ -47,7 +47,7 @@ impl CardBehavior for MakeAWish {
             let name = state.get_object(*card_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(*card_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Make a Wish returned {} to hand", name));
+                format!("Make a Wish returned {name} to hand"));
         }
 
         if to_return.is_empty() {

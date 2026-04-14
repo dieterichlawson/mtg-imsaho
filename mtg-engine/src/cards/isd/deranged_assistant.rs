@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, ManaType};
 
 /// Deranged Assistant — {1}{U} 1/1 Human Wizard.
 /// {T}, Mill a card: Add {C}.
@@ -31,10 +31,7 @@ impl CardBehavior for DerangedAssistant {
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         // Need to have a card in library to mill.
         let controller = obj.controller;
         let has_library = !state.get_player(controller).library_order.is_empty();

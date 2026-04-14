@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, CreatureFilter, Keyword, Zone};
 
 /// Full Moon's Rise — {1}{G} Enchantment.
 /// Werewolf creatures you control get +1/+0 and have trample.
@@ -47,10 +47,7 @@ impl CardBehavior for FullMoonsRise {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -68,7 +65,7 @@ impl CardBehavior for FullMoonsRise {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Regenerate all Werewolf creatures you control.
         let werewolves: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
@@ -78,10 +75,10 @@ impl CardBehavior for FullMoonsRise {
                     let subtypes = registry.card_data(o.card_id)
                         .map(|d| d.subtypes.clone())
                         .unwrap_or_default();
-                    let all_subtypes: Vec<&str> = o.subtypes.iter().map(|s| s.as_str())
-                        .chain(subtypes.iter().map(|s| s.as_str()))
+                    let all_subtypes: Vec<&str> = o.subtypes.iter().map(std::string::String::as_str)
+                        .chain(subtypes.iter().map(std::string::String::as_str))
                         .collect();
-                    all_subtypes.iter().any(|&s| s == "Werewolf")
+                    all_subtypes.contains(&"Werewolf")
                 }
             })
             .map(|o| o.id)

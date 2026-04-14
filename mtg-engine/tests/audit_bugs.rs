@@ -198,8 +198,7 @@ fn bug_falkenrath_noble_auto_targets_opponent() {
     // OR if it already resolved, it should have targeted correctly.
     // The bug is that it resolves WITHOUT presenting a choice.
     assert!(awaiting || p1_life == 20,
-        "Noble should either present target choice (awaiting_action) or not have auto-drained yet. P1 life: {}, awaiting: {}",
-        p1_life, awaiting);
+        "Noble should either present target choice (awaiting_action) or not have auto-drained yet. P1 life: {p1_life}, awaiting: {awaiting}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -262,7 +261,7 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
     let p0_life = state.get_player(P0).life;
 
     assert_eq!(drain_count, 3,
-        "Noble should trigger 3 times (self + 2 others), got {} triggers", drain_count);
+        "Noble should trigger 3 times (self + 2 others), got {drain_count} triggers");
     assert_eq!(p0_life, p0_life_before + 3,
         "Noble should trigger 3 times (self + 2 others). P0 life: {} (expected {})",
         p0_life, p0_life_before + 3);
@@ -368,15 +367,10 @@ fn bug_force_attack_ignores_cant_attack() {
     // Get legal actions — neonate should NOT be in must_attack
     let legal = engine::legal_actions(&state, &registry);
 
-    if let Some(ref prompt) = legal.combat_prompt {
-        match prompt {
-            mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. } => {
-                // Correctly: Neonate is excluded from eligible (Pacifism prevents it)
-                assert!(!eligible.contains(&neonate));
-                assert!(!must_attack.contains(&neonate));
-            }
-            _ => {}
-        }
+    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) = legal.combat_prompt.as_ref() {
+        // Correctly: Neonate is excluded from eligible (Pacifism prevents it)
+        assert!(!eligible.contains(&neonate));
+        assert!(!must_attack.contains(&neonate));
     }
 }
 
@@ -387,25 +381,25 @@ fn bug_force_attack_ignores_cant_attack() {
 // be targeted by Zombie creatures' abilities).
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Engine doesn't check protection when validating targets.
-/// Elite Inquisitor has protection from Vampires/Werewolves/Zombies.
-/// A Zombie creature's activated ability (e.g., Brain Weevil's discard)
-/// shouldn't be able to target a player whose creature has protection...
-/// Actually, protection prevents targeting of the PROTECTED PERMANENT,
-/// not the player. Let's test: Doom Blade targeting Elite Inquisitor —
-/// Doom Blade is black, not a Zombie/Vampire/Werewolf, so protection
-/// doesn't help here. Protection from subtypes prevents CREATURES of
-/// those subtypes from blocking/dealing damage/targeting.
-///
-/// The real test: can a spell ENCHANT a creature with protection from
-/// the enchantment's color? Or can a creature with protection be
-/// targeted by a non-creature source? This is complex — marking as
-/// NEEDS_REVIEW since protection from subtypes is narrow and the
-/// engine may correctly handle the common cases.
-///
-/// NOTE: Skipping this test — protection from subtypes primarily
-/// affects combat (blocking + damage prevention), which IS implemented.
-/// The targeting restriction for protection is a less common interaction.
+// Bug: Engine doesn't check protection when validating targets.
+// Elite Inquisitor has protection from Vampires/Werewolves/Zombies.
+// A Zombie creature's activated ability (e.g., Brain Weevil's discard)
+// shouldn't be able to target a player whose creature has protection...
+// Actually, protection prevents targeting of the PROTECTED PERMANENT,
+// not the player. Let's test: Doom Blade targeting Elite Inquisitor —
+// Doom Blade is black, not a Zombie/Vampire/Werewolf, so protection
+// doesn't help here. Protection from subtypes prevents CREATURES of
+// those subtypes from blocking/dealing damage/targeting.
+//
+// The real test: can a spell ENCHANT a creature with protection from
+// the enchantment's color? Or can a creature with protection be
+// targeted by a non-creature source? This is complex — marking as
+// NEEDS_REVIEW since protection from subtypes is narrow and the
+// engine may correctly handle the common cases.
+//
+// NOTE: Skipping this test — protection from subtypes primarily
+// affects combat (blocking + damage prevention), which IS implemented.
+// The targeting restriction for protection is a less common interaction.
 
 // ═══════════════════════════════════════════════════════════════
 // ENGINE: "MAY" TREATED AS MANDATORY
@@ -506,7 +500,7 @@ fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
 
     // BUG: Power is still 3 because instance_continuous_effects was set once at ETB
     assert_eq!(p_after, 1,
-        "Non-Human should lose +2/+2 from Bonds. Power: {} (expected 1)", p_after);
+        "Non-Human should lose +2/+2 from Bonds. Power: {p_after} (expected 1)");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -552,7 +546,7 @@ fn bug_planeswalker_damage_uses_damage_marked_not_loyalty() {
     // BUG: Loyalty is still 3 because DealDamage adds to damage_marked
     // instead of removing loyalty counters
     assert_eq!(loyalty_after, 1,
-        "Planeswalker should lose loyalty from damage. Loyalty: {} (expected 1)", loyalty_after);
+        "Planeswalker should lose loyalty from damage. Loyalty: {loyalty_after} (expected 1)");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -622,8 +616,7 @@ fn bug_num_spells_cast_this_turn_never_incremented() {
 
     // BUG: Count is still 0 because submit_action never updates num_spells_cast_this_turn
     assert!(cast_after > cast_before,
-        "num_spells_cast_this_turn should increment when a spell is cast. Before: {}, After: {}",
-        cast_before, cast_after);
+        "num_spells_cast_this_turn should increment when a spell is cast. Before: {cast_before}, After: {cast_after}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -880,8 +873,7 @@ fn bug_thraben_sentry_auto_transforms_without_choice() {
 
     // BUG: Auto-transforms without presenting "you may" choice
     assert!(!is_transformed || has_choice,
-        "Sentry should either present 'you may' choice or not auto-transform. Transformed: {}, Choice pending: {}",
-        is_transformed, has_choice);
+        "Sentry should either present 'you may' choice or not auto-transform. Transformed: {is_transformed}, Choice pending: {has_choice}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1005,9 +997,8 @@ fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
     // has_drawn_from_empty flag when the library is exhausted.
     loop {
         let top = state.get_player_mut(P0).reveal_top_card();
-        match top {
-            Some(_) => continue, // Not the Phantasm, keep revealing
-            None => break,       // Library empty
+        if top.is_none() {
+            break;
         }
     }
 
@@ -1163,10 +1154,7 @@ fn bug_harvest_pyre_auto_selects_exile() {
     // We can verify by checking if there are more actions for the same X
     // with different exile selections.
     let x2_actions: Vec<_> = pyre_actions.iter().filter(|a| {
-        match a {
-            Action::CastSpell { exile_count: Some(2), .. } => true,
-            _ => false,
-        }
+        matches!(a, Action::CastSpell { exile_count: Some(2), .. })
     }).collect();
 
     // For X=2 with 3 graveyard cards, there should be C(3,2) = 3 different
@@ -1208,8 +1196,7 @@ fn bug_unbreathing_horde_no_counters_via_reanimation() {
 
     // BUG: Counters may not be placed when entering via non-cast path
     assert!(counters >= 3,
-        "Unbreathing Horde should enter with 3 +1/+1 counters (Zombies in GY). Got: {}",
-        counters);
+        "Unbreathing Horde should enter with 3 +1/+1 counters (Zombies in GY). Got: {counters}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1390,7 +1377,7 @@ fn bug_protection_doesnt_prevent_zombie_source_targeting() {
         _ => {
             // If there's only one target (Grave Bramble), auto-applied
             // Check if Grave Bramble was destroyed
-            state.get_object(bramble).map(|o| o.zone != Zone::Battlefield).unwrap_or(false)
+            state.get_object(bramble).is_some_and(|o| o.zone != Zone::Battlefield)
         }
     };
 
@@ -1431,14 +1418,15 @@ fn bug_night_terrors_stuck_on_stack() {
         "Night Terrors should present choice for multiple nonland cards");
 
     // Simulate choosing the first option
-    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { choice, .. }) = &state.awaiting_action {
-        if let mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. } = choice {
-            if let Some(first_target) = options.first() {
-                let choice_action = Action::ResolveChoice {
-                    choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(first_target.clone())),
-                };
-                state = engine::submit_action(&state, &choice_action, &registry);
-            }
+    if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice {
+        choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { options, .. },
+        ..
+    }) = &state.awaiting_action {
+        if let Some(first_target) = options.first() {
+            let choice_action = Action::ResolveChoice {
+                choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(first_target.clone())),
+            };
+            state = engine::submit_action(&state, &choice_action, &registry);
         }
     }
 
@@ -1447,7 +1435,7 @@ fn bug_night_terrors_stuck_on_stack() {
     // BUG: Night Terrors stays on the stack because ExileAndStore doesn't
     // call move_spell_after_resolve for the source spell
     assert_eq!(nt_zone_after, Zone::Graveyard,
-        "Night Terrors should be in graveyard after choice resolves. Zone: {:?}", nt_zone_after);
+        "Night Terrors should be in graveyard after choice resolves. Zone: {nt_zone_after:?}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1592,9 +1580,9 @@ fn bug_evil_twin_marker_set_before_choice() {
     mtg_engine::triggers::process_triggers(&mut state, &registry);
 
     // Check if is_evil_twin is set before the copy choice is made
-    let has_marker = state.get_object(twin).map(|o|
+    let has_marker = state.get_object(twin).is_some_and(|o|
         o.card_state.contains_key("is_evil_twin")
-    ).unwrap_or(false);
+    );
 
     let has_choice = state.awaiting_action.is_some();
 
@@ -1602,8 +1590,7 @@ fn bug_evil_twin_marker_set_before_choice() {
     // If the player declines, the 0/0 Twin dies without the destroy ability.
     // BUG: Marker is set before the choice is presented.
     assert!(!(has_marker && has_choice),
-        "is_evil_twin should not be set while copy choice is pending. Marker: {}, Choice: {}",
-        has_marker, has_choice);
+        "is_evil_twin should not be set while copy choice is pending. Marker: {has_marker}, Choice: {has_choice}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1640,9 +1627,9 @@ fn bug_grimoire_legend_rule_not_applied() {
         .map(|o| (o.id, o.is_legendary))
         .collect();
     assert_eq!(grimgrins.len(), 2,
-        "Test setup: should have 2 Grimgrins on battlefield before SBA. Got: {:?}", grimgrins);
+        "Test setup: should have 2 Grimgrins on battlefield before SBA. Got: {grimgrins:?}");
     assert!(grimgrins.iter().all(|(_, leg)| *leg),
-        "Both Grimgrins must have is_legendary=true for SBA to detect them. Got: {:?}", grimgrins);
+        "Both Grimgrins must have is_legendary=true for SBA to detect them. Got: {grimgrins:?}");
 
     // SBA should present a legend-rule choice.
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
@@ -1665,7 +1652,7 @@ fn bug_grimoire_legend_rule_not_applied() {
         .count();
 
     assert_eq!(grimgrin_count, 1,
-        "Legend rule should leave only 1 Grimgrin. Found: {}", grimgrin_count);
+        "Legend rule should leave only 1 Grimgrin. Found: {grimgrin_count}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1680,7 +1667,7 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Place two Undead Alchemists for P0
-    let _alch1 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
+    let alch1 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
     let _alch2 = named_creature(&mut state, &registry, "Undead Alchemist", P0);
 
     // Put some cards in P1's library
@@ -1706,14 +1693,14 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
     // double-replace.
     let alch_card_id = registry.get_id_by_name("Undead Alchemist").unwrap();
     let behavior1 = registry.get(alch_card_id).unwrap();
-    let replaced = behavior1.replace_combat_damage_to_player(&mut state, _alch1, zombie, P1, 2, &registry);
+    let replaced = behavior1.replace_combat_damage_to_player(&mut state, alch1, zombie, P1, 2, &registry);
     assert!(replaced, "First Alchemist should replace the damage");
 
     let milled = lib_before - state.get_player(P1).library_order.len();
 
     // BUG: With 2 Alchemists, mills 4 instead of 2 (double replacement)
     assert_eq!(milled, 2,
-        "Should mill 2 (replacement applies once, not per Alchemist). Milled: {}", milled);
+        "Should mill 2 (replacement applies once, not per Alchemist). Milled: {milled}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1826,7 +1813,7 @@ fn bug_sturmgeist_draw_skipped_when_leaves() {
     // is no longer on the battlefield (the trigger already went on the stack)
     // BUG: Draw is skipped because handler checks zone == Battlefield
     assert_eq!(hand_after, hand_before + 1,
-        "Should draw 1 card even after Sturmgeist left. Hand: {} -> {}", hand_before, hand_after);
+        "Should draw 1 card even after Sturmgeist left. Hand: {hand_before} -> {hand_after}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1938,11 +1925,11 @@ fn bug_essence_of_wild_replacement_not_applied_for_tokens() {
     )[0];
 
     // The token should be a 6/6 copy of Essence of the Wild
-    let token_power = state.get_object(token).map(|o| o.power).flatten().unwrap_or(0);
+    let token_power = state.get_object(token).and_then(|o| o.power).unwrap_or(0);
 
     // BUG: Token enters as 1/1 Spirit, not as 6/6 Essence copy
     assert_eq!(token_power, 6,
-        "Token should enter as 6/6 Essence of the Wild copy, got power {}", token_power);
+        "Token should enter as 6/6 Essence of the Wild copy, got power {token_power}");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1967,16 +1954,11 @@ fn bug_galvanic_juggernaut_force_attack_when_unable() {
 
     // A tapped creature cannot attack, so force-attack should NOT apply
     let legal = engine::legal_actions(&state, &registry);
-    if let Some(ref prompt) = legal.combat_prompt {
-        match prompt {
-            mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. } => {
-                assert!(!eligible.contains(&jug),
-                    "Tapped Juggernaut should not be eligible to attack");
-                assert!(!must_attack.contains(&jug),
-                    "Tapped Juggernaut should not be forced to attack");
-            }
-            _ => {}
-        }
+    if let Some(mtg_engine::actions::CombatPrompt::ChooseAttackers { must_attack, eligible, .. }) = legal.combat_prompt.as_ref() {
+        assert!(!eligible.contains(&jug),
+            "Tapped Juggernaut should not be eligible to attack");
+        assert!(!must_attack.contains(&jug),
+            "Tapped Juggernaut should not be forced to attack");
     }
 }
 
@@ -2022,8 +2004,7 @@ fn bug_stitchers_apprentice_trigger_desync() {
 
     // BUG: trigger_event_index desync may cause Noble to miss the death
     assert!(p1_life_after < p1_life_before,
-        "Falkenrath Noble should trigger from sacrifice. P1 life: {} -> {}",
-        p1_life_before, p1_life_after);
+        "Falkenrath Noble should trigger from sacrifice. P1 life: {p1_life_before} -> {p1_life_after}");
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -888,5 +888,5 @@ fn harvest_pyre_max_x_cast_action_matches_graveyard_size() {
 
     let target_obj = new_state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, max_x,
-        "casting the max-X variant must deal max_x damage (={})", max_x);
+        "casting the max-X variant must deal max_x damage (={max_x})");
 }

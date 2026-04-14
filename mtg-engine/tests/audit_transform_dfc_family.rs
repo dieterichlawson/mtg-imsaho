@@ -171,7 +171,6 @@ fn bug_be_garruk_transforms_before_zero_loyalty_death() {
          should trigger his CR 603.8 state-triggered transform (to \
          Garruk, the Veil-Cursed) BEFORE the zero-loyalty SBA \
          graveyards him. Bug BE: SBA processes zero-loyalty before \
-         running state triggers, so Garruk dies first. zone = {:?}",
-        zone,
+         running state triggers, so Garruk dies first. zone = {zone:?}",
     );
 }

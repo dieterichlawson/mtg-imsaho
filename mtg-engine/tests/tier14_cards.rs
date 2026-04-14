@@ -302,7 +302,7 @@ fn nevermore_allows_other_spells() {
 
 /// Devil's Play deals X damage.
 #[test]
-#[ignore] // Tabled — requires X-cost/autotap overhaul
+#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn devils_play_deals_x_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -342,7 +342,7 @@ fn devils_play_x_zero() {
 
 /// Kessig Wolf Run grants +1/+0 and trample.
 #[test]
-#[ignore] // Tabled — requires X-cost/autotap overhaul
+#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn kessig_wolf_run_grants_power_and_trample() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -422,7 +422,7 @@ fn snapcaster_mage_grants_flashback() {
     // Process ETB triggers.
     mtg_engine::triggers::collect_triggers(&mut new_state, &reg);
     // Triggers go on the stack; resolve them.
-    while new_state.stack.last().map(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(_))).unwrap_or(false) {
+    while new_state.stack.last().is_some_and(|e| matches!(e, mtg_engine::state::StackEntry::Trigger(_))) {
         mtg_engine::triggers::resolve_next_trigger(&mut new_state, &reg);
     }
 

@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, ManaType};
 
 /// Mentor of the Meek — {2}{W} 2/2 Human Soldier.
 /// Whenever another creature with power 2 or less enters the battlefield

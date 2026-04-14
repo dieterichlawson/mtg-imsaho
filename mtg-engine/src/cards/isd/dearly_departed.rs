@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
 
 /// Dearly Departed — {4}{W}{W} 5/5 Spirit with Flying.
 /// As long as this creature is in your graveyard, each Human creature you control
@@ -53,14 +53,12 @@ impl CardBehavior for DearlyDeparted {
         }
         // Only affects Human creatures.
         let is_human = state.get_object(entering_id)
-            .map(|o| {
+            .is_some_and(|o| {
                 let registry_has = registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                    .unwrap_or(false);
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"));
                 let instance_has = o.subtypes.iter().any(|s| s == "Human");
                 registry_has || instance_has
-            })
-            .unwrap_or(false);
+            });
         if !is_human {
             return vec![];
         }

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Runic Repetition — {2}{U} Sorcery.
 /// Return target exiled card with flashback you own to your hand.
@@ -35,15 +35,13 @@ impl CardBehavior for RunicRepetition {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| {
+                    .is_some_and(|o| {
                         o.zone == Zone::Exile && o.owner == caster
                             && registry.card_data(o.card_id)
-                                .map(|d| d.flashback_cost.is_some())
-                                .unwrap_or(false)
+                                .is_some_and(|d| d.flashback_cost.is_some())
                     })
-                    .unwrap_or(false)
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
@@ -52,7 +50,7 @@ impl CardBehavior for RunicRepetition {
             let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(*target_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Runic Repetition returned {} from exile to hand", name));
+                format!("Runic Repetition returned {name} from exile to hand"));
         }
         state.move_spell_after_resolve(object_id, registry);
     }

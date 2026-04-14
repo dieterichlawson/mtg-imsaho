@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Tree of Redemption — {3}{G} 0/13 Plant with Defender.
 /// {T}: Exchange your life total with Tree of Redemption's toughness.
@@ -31,10 +31,7 @@ impl CardBehavior for TreeOfRedemption {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -76,7 +73,6 @@ impl CardBehavior for TreeOfRedemption {
         }
 
         state.log(crate::state::LogLevel::Event,
-            format!("Tree of Redemption: exchanged life ({}) with toughness ({})",
-                old_life, current_toughness));
+            format!("Tree of Redemption: exchanged life ({old_life}) with toughness ({current_toughness})"));
     }
 }

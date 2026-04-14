@@ -55,7 +55,7 @@ pub fn init(path: &str) {
         .write(true)
         .truncate(true)
         .open(path)
-        .unwrap_or_else(|e| panic!("Failed to create log file {}: {}", path, e));
+        .unwrap_or_else(|e| panic!("Failed to create log file {path}: {e}"));
     let mut guard = LOG.lock().unwrap();
     *guard = Some(LogState { file });
 }
@@ -74,10 +74,7 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
         Ok(g) => g,
         Err(e) => e.into_inner(),
     };
-    let state = match guard.as_mut() {
-        Some(s) => s,
-        None => return,
-    };
+    let Some(state) = guard.as_mut() else { return };
 
     let tid = std::thread::current().id();
     let filename = file.rsplit('/').next().unwrap_or(file);
@@ -85,15 +82,15 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
     // millisecond precision. Use a space between date and time so the
     // line parses cleanly under `cut -f` / `awk -F'\t'`.
     let ts = Local::now().format("%Y-%m-%d %H:%M:%S%.3f").to_string();
-    let loc = format!("{}:{}", filename, line);
+    let loc = format!("{filename}:{line}");
     let level_name = level.name();
     // Thread id renders like `ThreadId(12)` from the Debug impl — strip the
     // wrapper for a slightly terser field.
-    let tid_str = format!("{:?}", tid);
+    let tid_str = format!("{tid:?}");
     let tid_field = tid_str
         .strip_prefix("ThreadId(")
         .and_then(|s| s.strip_suffix(')'))
-        .map(|n| format!("t{}", n))
+        .map(|n| format!("t{n}"))
         .unwrap_or(tid_str);
 
     // Single-line content: everything on one tab-delimited header line.
@@ -111,13 +108,12 @@ pub fn write_at(level: LogLevel, file: &str, line: u32, label: &str, content: &s
     } else {
         let _ = writeln!(
             state.file,
-            "{}\t{}\t{}\t{}\t{}",
-            ts, level_name, tid_field, loc, label
+            "{ts}\t{level_name}\t{tid_field}\t{loc}\t{label}"
         );
         if !content.is_empty() {
             for ln in content.lines() {
                 let trimmed = ln.trim_end();
-                let _ = writeln!(state.file, "{}", trimmed);
+                let _ = writeln!(state.file, "{trimmed}");
             }
         }
     }

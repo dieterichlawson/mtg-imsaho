@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{Zone, ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope, CreatureFilter};
 
 /// Bloodline Keeper {2}{B}{B} 3/3 Vampire // Lord of Lineage 5/5 Vampire.
 /// {T}: Create a 2/2 black Vampire creature token with flying.
@@ -21,8 +21,7 @@ impl BloodlineKeeper {
                     return true;
                 }
                 registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Vampire"))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Vampire"))
             })
             .count()
     }
@@ -79,7 +78,7 @@ impl CardBehavior for BloodlineKeeper {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 5))
         } else {
             None
@@ -148,7 +147,7 @@ impl CardBehavior for BloodlineKeeper {
                 );
                 let face_name = state.get_object(object_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.log(crate::state::LogLevel::Event,
-                    format!("{}: created a 2/2 Vampire token with flying", face_name));
+                    format!("{face_name}: created a 2/2 Vampire token with flying"));
             }
             1 => {
                 // Transform into Lord of Lineage.

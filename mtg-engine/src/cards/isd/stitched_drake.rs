@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Stitched Drake — {1}{U}{U} 3/4 Zombie Drake with Flying.
 /// As an additional cost to cast this spell, exile a creature card from your graveyard. Flying.

@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::events::GameEvent;
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Swords to Plowshares — {W} instant. Exile target creature.
 /// Its controller gains life equal to its power.

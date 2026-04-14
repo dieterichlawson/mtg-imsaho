@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope};
 
 /// Vampire Interloper — 2/1 for {1}{B}. Flying, can't block.
 pub struct VampireInterloper;

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Travel Preparations — {1}{G} sorcery. Put a +1/+1 counter on each of up to two target creatures.
 pub struct TravelPreparations;
@@ -34,7 +34,7 @@ impl CardBehavior for TravelPreparations {
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(target_id) = target {
-                if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                     state.add_counters(*target_id, CounterType::PlusOnePlusOne, 1);
                 }
             }

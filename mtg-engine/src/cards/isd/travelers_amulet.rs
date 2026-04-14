@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Zone, Supertype};
 
 /// Traveler's Amulet — {1} Artifact.
 /// {1}, Sacrifice this artifact: Search your library for a basic land card,
@@ -28,10 +28,7 @@ impl CardBehavior for TravelersAmulet {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -57,11 +54,10 @@ impl CardBehavior for TravelersAmulet {
             .filter(|&&lib_id| {
                 state.get_object(lib_id)
                     .and_then(|o| registry.card_data(o.card_id))
-                    .map(|d| {
+                    .is_some_and(|d| {
                         d.card_types.contains(&CardType::Land)
                             && d.supertypes.contains(&Supertype::Basic)
                     })
-                    .unwrap_or(false)
             })
             .copied()
             .collect();

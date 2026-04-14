@@ -1,6 +1,6 @@
-/// Tests for death trigger bugs:
-/// 1. Spurious death-watch triggers from permanents without AnyCreatureDies triggers
-/// 2. Duplicate death log entries
+//! Tests for death trigger bugs:
+//! 1. Spurious death-watch triggers from permanents without AnyCreatureDies triggers
+//! 2. Duplicate death log entries
 
 mod common;
 use common::*;
@@ -49,13 +49,13 @@ fn lands_should_not_trigger_on_creature_death() {
         match entry {
             mtg_engine::state::StackEntry::Trigger(t) => t.display_name(&registry),
             mtg_engine::state::StackEntry::Spell(id) =>
-                state.get_object(*id).map(|o| o.name.clone()).unwrap_or("?".into()),
+                state.get_object(*id).map_or("?".into(), |o| o.name.clone()),
         }
     }).collect();
 
     for name in &stack_names {
         assert!(!name.contains("Swamp"),
-            "Swamp should not have a triggered ability on creature death, but found: {}", name);
+            "Swamp should not have a triggered ability on creature death, but found: {name}");
     }
 
     // Falkenrath Noble's trigger should have fired — either still on the stack

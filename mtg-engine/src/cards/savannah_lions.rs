@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Savannah Lions — 2/1 for {W}. Vanilla creature.
 pub struct SavannahLions;

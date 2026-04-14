@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Ambush Viper — 2/1 for {1}{G}. Flash, deathtouch.
 pub struct AmbushViper;

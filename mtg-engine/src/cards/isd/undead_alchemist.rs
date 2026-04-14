@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Undead Alchemist — {3}{U} 4/2 Zombie.
 /// If a Zombie you control would deal combat damage to a player, instead that
@@ -68,7 +68,7 @@ impl CardBehavior for UndeadAlchemist {
         );
         let name = state.get_object(milled_object).map(|o| o.name.clone()).unwrap_or_default();
         state.log(crate::state::LogLevel::Event,
-            format!("Undead Alchemist: exiled milled {}, created Zombie token", name));
+            format!("Undead Alchemist: exiled milled {name}, created Zombie token"));
     }
 
     fn replace_combat_damage_to_player(
@@ -90,8 +90,7 @@ impl CardBehavior for UndeadAlchemist {
             _ => return false,
         };
         let is_zombie = registry.card_data(source.card_id)
-            .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-            .unwrap_or(false)
+            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
             || source.subtypes.iter().any(|s| s == "Zombie");
         if !is_zombie {
             return false;
@@ -103,8 +102,7 @@ impl CardBehavior for UndeadAlchemist {
         crate::engine::mill_cards(state, damaged_player, amount as usize, registry);
 
         state.log(crate::state::LogLevel::Event,
-            format!("Undead Alchemist: Zombie combat damage replaced with mill ({})",
-                amount));
+            format!("Undead Alchemist: Zombie combat damage replaced with mill ({amount})"));
         true // Damage fully replaced
     }
 }

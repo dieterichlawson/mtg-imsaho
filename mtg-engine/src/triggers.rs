@@ -211,8 +211,7 @@ impl PendingTrigger {
             // Check if the object is transformed and use back-face name if so.
             let is_transformed = object_id
                 .and_then(|oid| state.and_then(|s| s.get_object(oid)))
-                .map(|o| o.is_transformed)
-                .unwrap_or(false);
+                .is_some_and(|o| o.is_transformed);
             if is_transformed {
                 if let Some(behavior) = registry.get(card_id) {
                     if let Some(back) = behavior.back_face_data() {
@@ -220,9 +219,7 @@ impl PendingTrigger {
                     }
                 }
             }
-            registry.card_data(card_id)
-                .map(|d| d.name)
-                .unwrap_or_else(|| "Unknown".into())
+            registry.card_data(card_id).map_or_else(|| "Unknown".into(), |d| d.name)
         };
         let card_name = |card_id: CardId| {
             face_name(card_id, None)
@@ -288,9 +285,9 @@ impl PendingTrigger {
             PendingTrigger::UpkeepTrigger { object_id, card_id, description, .. } => {
                 let name = face_name(*card_id, Some(*object_id));
                 if description.is_empty() {
-                    format!("{}'s upkeep trigger", name)
+                    format!("{name}'s upkeep trigger")
                 } else {
-                    format!("{}'s upkeep trigger ({})", name, description)
+                    format!("{name}'s upkeep trigger ({description})")
                 }
             }
             PendingTrigger::EndStepTrigger { card_id, description, .. } => {
@@ -452,7 +449,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 // ETB-watch: notify other permanents (and graveyard cards like Dearly Departed)
                 // that a creature entered. Only collect if the watcher's zone matches
                 // the trigger's allowed zones (via CardBehavior::trigger_zones).
-                if state.get_object(*object).map(|o| o.power.is_some()).unwrap_or(false) {
+                if state.get_object(*object).is_some_and(|o| o.power.is_some()) {
                     let watchers: Vec<(ObjectId, CardId, PlayerId, Zone)> = state.objects.values()
                         .filter(|o| (o.zone == Zone::Battlefield || o.zone == Zone::Graveyard) && o.id != *object)
                         .map(|o| (o.id, o.card_id, o.controller, o.zone))
@@ -527,9 +524,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     // Only create death-watch triggers for cards that actually have
                     // an AnyCreatureDies triggered ability.
                     let has_death_trigger = registry.get(watcher_card_id)
-                        .map(|b| b.card_data().triggered_abilities.iter()
-                            .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies))
-                        .unwrap_or(false);
+                        .is_some_and(|b| b.card_data().triggered_abilities.iter()
+                            .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies));
                     if has_death_trigger {
                         let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, false);
                         let trigger = PendingTrigger::DeathWatch {
@@ -681,9 +677,9 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     }
                 }
             }
-            GameEvent::NonCombatDamageDealt { source, target, amount } => {
+            GameEvent::NonCombatDamageDealt { source, target: crate::events::DamageTarget::Player(damaged_player), amount } => {
                 // AnyDamageToPlayer watchers for non-combat damage.
-                if let crate::events::DamageTarget::Player(damaged_player) = target {
+                {
                     let source_id = *source;
                     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
                         .filter(|o| o.zone == Zone::Battlefield)
@@ -975,9 +971,8 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     // Only watchers who are opponents of the milled player.
                     if watcher_controller == milled_player { continue; }
                     let has_trigger = registry.get(watcher_card_id)
-                        .map(|b| b.card_data().triggered_abilities.iter()
-                            .any(|t| t.kind == crate::cards::TriggerKind::CreatureCardMilled))
-                        .unwrap_or(false);
+                        .is_some_and(|b| b.card_data().triggered_abilities.iter()
+                            .any(|t| t.kind == crate::cards::TriggerKind::CreatureCardMilled));
                     if has_trigger {
                         let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::CreatureCardMilled, false);
                         let trigger = PendingTrigger::CreatureCardMilledWatch {
@@ -1032,16 +1027,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
 pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> bool {
     // Check if the top of stack is a trigger.
     let is_trigger = state.stack.last()
-        .map(|e| matches!(e, crate::state::StackEntry::Trigger(_)))
-        .unwrap_or(false);
+        .is_some_and(|e| matches!(e, crate::state::StackEntry::Trigger(_)));
     if !is_trigger {
         return false;
     }
     let entry = state.stack.pop().expect("stack must have trigger entry");
-    let trigger = match entry {
-        crate::state::StackEntry::Trigger(t) => t,
-        _ => unreachable!(),
-    };
+    let crate::state::StackEntry::Trigger(trigger) = entry else { unreachable!() };
 
     match trigger {
         PendingTrigger::EnteredBattlefield { object_id, card_id, .. } => {
@@ -1068,7 +1059,7 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {
             // Allow watchers on battlefield or graveyard (e.g., Dearly Departed).
             let watcher_zone = state.get_object(watcher_id).map(|o| o.zone);
-            if matches!(watcher_zone, Some(Zone::Battlefield) | Some(Zone::Graveyard)) {
+            if matches!(watcher_zone, Some(Zone::Battlefield | Zone::Graveyard)) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_creature_enters(state, watcher_id, entered_id, entered_controller, registry);
                 }
@@ -1080,49 +1071,49 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::CombatDamageToCreature { creature_id, creature_card_id, damaged_creature, amount, .. } => {
-            if state.get_object(creature_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(creature_card_id) {
                     behavior.on_deals_combat_damage_to_creature(state, creature_id, damaged_creature, amount, registry);
                 }
             }
         }
         PendingTrigger::CombatDamageWatch { watcher_id, watcher_card_id, source_id, damaged_player, amount, .. } => {
-            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_combat_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
                 }
             }
         }
         PendingTrigger::DamageToPlayerWatch { watcher_id, watcher_card_id, source_id, damaged_player, amount, .. } => {
-            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_damage_to_player(state, watcher_id, source_id, damaged_player, amount, registry);
                 }
             }
         }
         PendingTrigger::EndCombatTrigger { object_id, card_id, .. } => {
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_end_combat(state, object_id, registry);
                 }
             }
         }
         PendingTrigger::UpkeepTrigger { object_id, card_id, .. } => {
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_upkeep(state, object_id, registry);
                 }
             }
         }
         PendingTrigger::EndStepTrigger { object_id, card_id, .. } => {
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_end_step(state, object_id, registry);
                 }
             }
         }
         PendingTrigger::SpellCastWatch { watcher_id, watcher_card_id, caster, spell_id, .. } => {
-            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_spell_cast(state, watcher_id, caster, spell_id, registry);
                 }
@@ -1134,28 +1125,28 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::AttacksTrigger { object_id, card_id, .. } => {
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_attacks(state, object_id, registry);
                 }
             }
         }
         PendingTrigger::BlocksTrigger { object_id, card_id, blocked_attacker, .. } => {
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_blocks(state, object_id, blocked_attacker, registry);
                 }
             }
         }
         PendingTrigger::AttackWatch { watcher_id, watcher_card_id, attacker_id, attacker_controller, .. } => {
-            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_any_creature_attacks(state, watcher_id, attacker_id, attacker_controller, registry);
                 }
             }
         }
         PendingTrigger::BecomesBlockedTrigger { object_id, card_id, blocker_id, .. } => {
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_becomes_blocked(state, object_id, blocker_id, registry);
                 }
@@ -1168,14 +1159,14 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 obj.state_trigger_on_stack = false;
             }
             // Only resolve if the object is still on the battlefield.
-            if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
                     behavior.on_state_trigger(state, object_id, registry);
                 }
             }
         }
         PendingTrigger::CreatureCardMilledWatch { watcher_id, watcher_card_id, milled_object, milled_player, .. } => {
-            if state.get_object(watcher_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
                     behavior.on_creature_card_milled(state, watcher_id, milled_object, milled_player, registry);
                 }

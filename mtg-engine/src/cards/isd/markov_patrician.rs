@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Markov Patrician — 3/1 for {2}{B}. Lifelink.
 pub struct MarkovPatrician;

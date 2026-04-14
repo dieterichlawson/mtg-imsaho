@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Endless Ranks of the Dead — {2}{B}{B} Enchantment.
 /// At the beginning of your upkeep, create X 2/2 black Zombie creature tokens,
@@ -50,8 +50,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
             .filter(|o| o.power.is_some()) // creatures only
             .filter(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
                 || o.subtypes.iter().any(|s| s == "Zombie")
             })
             .count();
@@ -70,7 +69,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
         }
         if tokens_to_create > 0 {
             state.log(crate::state::LogLevel::Event,
-                format!("Endless Ranks of the Dead: created {} Zombie token(s)", tokens_to_create));
+                format!("Endless Ranks of the Dead: created {tokens_to_create} Zombie token(s)"));
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ReplacementEffect};
 
 /// Essence of the Wild {3}{G}{G}{G} 6/6 Avatar.
 /// Creatures you control enter as a copy of Essence of the Wild.

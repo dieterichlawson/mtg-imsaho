@@ -342,8 +342,7 @@ impl GameState {
             .filter(|o| o.zone == Zone::Battlefield && o.controller == owner)
             .filter(|o| {
                 registry.get(o.card_id)
-                    .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::DoubleTokens))
-                    .unwrap_or(false)
+                    .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::DoubleTokens))
             })
             .count();
         // Each doubler doubles, so 1 = 2x, 2 = 4x, etc.
@@ -354,19 +353,19 @@ impl GameState {
             0
         };
 
-        let mut all_ids = Vec::new();
+        let total = 1 + extra_copies as usize;
+        let mut all_ids = Vec::with_capacity(total);
 
-        // Create the primary token.
-        let id = self.create_token_internal(name, owner, power, toughness,
-            colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(), registry);
-        all_ids.push(id);
-
-        // Create extra copies for token doublers.
+        // Create extra doubled copies first (cloning inputs).
         for _ in 0..extra_copies {
-            let extra = self.create_token_internal(name, owner, power, toughness,
+            let id = self.create_token_internal(name, owner, power, toughness,
                 colors.clone(), card_types.clone(), keywords.clone(), subtypes.clone(), registry);
-            all_ids.push(extra);
+            all_ids.push(id);
         }
+        // Create the final token, consuming the inputs.
+        let id = self.create_token_internal(name, owner, power, toughness,
+            colors, card_types, keywords, subtypes, registry);
+        all_ids.push(id);
 
         all_ids
     }
@@ -432,7 +431,7 @@ impl GameState {
             self.add_counters(id, *counter_type, *count);
         }
 
-        let controller = self.get_object(id).map(|o| o.controller).unwrap_or(owner);
+        let controller = self.get_object(id).map_or(owner, |o| o.controller);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
             object: id,
             controller,
@@ -478,7 +477,7 @@ impl GameState {
             colors,
             card_types,
             keywords,
-            subtypes.iter().map(|s| s.to_string()).collect(),
+            subtypes.clone(),
             registry,
         );
         // Copy the card_id and is_legendary so ALL tokens (including Parallel Lives extras)
@@ -521,7 +520,7 @@ impl GameState {
 
         // CR 614.1c: Compute "enters with" counters BEFORE the zone change,
         // so graveyard counts still include this creature if entering from GY.
-        let entering_counters = if to == Zone::Battlefield && from.map(|z| z != Zone::Battlefield).unwrap_or(false) {
+        let entering_counters = if to == Zone::Battlefield && from.is_some_and(|z| z != Zone::Battlefield) {
             self.compute_entering_counters(id, from, registry)
         } else {
             vec![]
@@ -573,7 +572,7 @@ impl GameState {
                     self.add_counters(id, *counter_type, *count);
                 }
 
-                let controller = self.get_object(id).map(|o| o.controller).unwrap_or(PlayerId(0));
+                let controller = self.get_object(id).map_or(PlayerId(0), |o| o.controller);
                 self.events.push(crate::events::GameEvent::EnteredBattlefield {
                     object: id,
                     controller,
@@ -607,8 +606,7 @@ impl GameState {
                     && o.controller == controller
                     && o.id != entering_id
                     && registry.get(o.card_id)
-                        .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::EnterAsCopy))
-                        .unwrap_or(false)
+                        .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::EnterAsCopy))
             })
             .map(|source| (source.card_id, source.name.clone()));
 
@@ -640,7 +638,7 @@ impl GameState {
         if let Some((name, power, toughness, colors, card_types, subtypes, keywords, oracle_text)) = source_data {
             let old_name = self.get_object(entering_id).map(|o| o.name.clone()).unwrap_or_default();
             if let Some(obj) = self.get_object_mut(entering_id) {
-                obj.name = name.clone();
+                obj.name.clone_from(&name);
                 obj.power = Some(power);
                 obj.toughness = Some(toughness);
                 obj.colors = colors;
@@ -651,7 +649,7 @@ impl GameState {
                 obj.instance_oracle_text = Some(oracle_text);
             }
             self.log(LogLevel::Event,
-                format!("{} enters as a copy of {} ({}/{})", old_name, name, power, toughness));
+                format!("{old_name} enters as a copy of {name} ({power}/{toughness})"));
         }
     }
 
@@ -678,7 +676,7 @@ impl GameState {
         }
 
         // 2. External modifiers (Dearly Departed in graveyard, etc.)
-        let entering_controller = self.get_object(entering_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let entering_controller = self.get_object(entering_id).map_or(PlayerId(0), |o| o.controller);
         for obj in self.objects.values() {
             if obj.id == entering_id { continue; }
             if let Some(behavior) = registry.get(obj.card_id) {
@@ -702,9 +700,7 @@ impl GameState {
 
     /// Return "CardName (#id)" for use in log messages.
     pub fn obj_name(&self, id: ObjectId) -> String {
-        let name = self.get_object(id)
-            .map(|o| o.name.clone())
-            .unwrap_or_else(|| "?".into());
+        let name = self.get_object(id).map_or_else(|| "?".into(), |o| o.name.clone());
         format!("{} (#{})", name, id.0)
     }
 
@@ -776,10 +772,7 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> bool {
         use crate::types::CreatureFilter;
-        let creature = match self.get_object(creature_id) {
-            Some(o) => o,
-            None => return false,
-        };
+        let Some(creature) = self.get_object(creature_id) else { return false; };
         match filter {
             CreatureFilter::ControlledByYou => creature.controller == source_controller,
             CreatureFilter::ControlledByOpponent => creature.controller != source_controller,
@@ -797,8 +790,7 @@ impl GameState {
                 } else {
                     // Check card data subtypes first, then object-level subtypes (for tokens).
                     if registry.card_data(creature.card_id)
-                        .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                        .unwrap_or(false) {
+                        .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype)) {
                         return true;
                     }
                 }
@@ -833,8 +825,7 @@ impl GameState {
             EffectScope::Attached => {
                 self.get_object(source_id)
                     .and_then(|o| o.attached_to)
-                    .map(|target| target == creature_id)
-                    .unwrap_or(false)
+                    .is_some_and(|target| target == creature_id)
             }
             EffectScope::Global(filter) => {
                 // For AttachedPlayer filter, use the source's attached_to_player.
@@ -843,7 +834,7 @@ impl GameState {
                         .and_then(|o| o.attached_to_player);
                     if let Some(player) = attached_player {
                         let creature = self.get_object(creature_id);
-                        return creature.map(|c| c.controller == player).unwrap_or(false);
+                        return creature.is_some_and(|c| c.controller == player);
                     }
                     return false;
                 }
@@ -998,14 +989,13 @@ impl GameState {
         // (e.g., Gutter Grime Ooze tokens whose P/T = slime counters on Gutter Grime).
         let mut power = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
             let counter_type_val = obj.card_state.get("pt_source_counter_type")
-                .map(|v| v.0).unwrap_or(0);
+                .map_or(0, |v| v.0);
             let counter_type = match counter_type_val {
                 1 => crate::types::CounterType::Slime,
                 _ => crate::types::CounterType::PlusOnePlusOne,
             };
             self.get_object(*source_id)
-                .map(|src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
-                .unwrap_or(0)
+                .map_or(0, |src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
         } else if let Some(behavior) = registry.get(obj.card_id) {
             // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
             if let Some((p, _)) = behavior.dynamic_pt(self, id) {
@@ -1041,7 +1031,7 @@ impl GameState {
                     }
                 }
                 TemporaryEffect::ModifyPTWhileSourceInPlay { target, source, power_mod, .. } if *target == id => {
-                    if self.get_object(*source).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    if self.get_object(*source).is_some_and(|o| o.zone == Zone::Battlefield) {
                         power += power_mod;
                     }
                 }
@@ -1059,14 +1049,13 @@ impl GameState {
         // Check if this token has dynamic P/T tied to counter count on a source permanent.
         let mut toughness = if let Some(source_id) = obj.card_state.get("pt_source_counter") {
             let counter_type_val = obj.card_state.get("pt_source_counter_type")
-                .map(|v| v.0).unwrap_or(0);
+                .map_or(0, |v| v.0);
             let counter_type = match counter_type_val {
                 1 => crate::types::CounterType::Slime,
                 _ => crate::types::CounterType::PlusOnePlusOne,
             };
             self.get_object(*source_id)
-                .map(|src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
-                .unwrap_or(0)
+                .map_or(0, |src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
         } else if let Some(behavior) = registry.get(obj.card_id) {
             // Check if this creature's own card has dynamic P/T.
             if let Some((_, t)) = behavior.dynamic_pt(self, id) {
@@ -1100,7 +1089,7 @@ impl GameState {
                     }
                 }
                 TemporaryEffect::ModifyPTWhileSourceInPlay { target, source, toughness_mod, .. } if *target == id => {
-                    if self.get_object(*source).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    if self.get_object(*source).is_some_and(|o| o.zone == Zone::Battlefield) {
                         toughness += toughness_mod;
                     }
                 }
@@ -1276,10 +1265,9 @@ impl GameState {
                 }
                 TemporaryEffect::GrantProtectionAll { controller, protection_filter } => {
                     if let Some(obj) = self.get_object(target_id) {
-                        if obj.controller == *controller && obj.zone == Zone::Battlefield {
-                            if self.matches_filter(source_id, protection_filter, *controller, registry) {
-                                return true;
-                            }
+                        if obj.controller == *controller && obj.zone == Zone::Battlefield
+                            && self.matches_filter(source_id, protection_filter, *controller, registry) {
+                            return true;
                         }
                     }
                 }
@@ -1373,8 +1361,7 @@ impl GameState {
                     o.zone == Zone::Battlefield && o.controller == controller && (
                         o.subtypes.iter().any(|s| s == subtype)
                         || registry.card_data(o.card_id)
-                            .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                            .unwrap_or(false)
+                            .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
                     )
                 })
             }
@@ -1384,8 +1371,7 @@ impl GameState {
                     o.zone == Zone::Battlefield && o.controller == opponent && (
                         o.subtypes.iter().any(|s| s == subtype)
                         || registry.card_data(o.card_id)
-                            .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                            .unwrap_or(false)
+                            .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
                     )
                 })
             }
@@ -1398,16 +1384,14 @@ impl GameState {
                     return false;
                 }
                 self.get_object(source_id)
-                    .map(|o| {
+                    .is_some_and(|o| {
                         if o.keywords.contains(kw) {
                             true
                         } else {
                             registry.card_data(o.card_id)
-                                .map(|d| d.keywords.contains(kw))
-                                .unwrap_or(false)
+                                .is_some_and(|d| d.keywords.contains(kw))
                         }
                     })
-                    .unwrap_or(false)
             }
             EffectCondition::AttachedHasSubtype(subtype) => {
                 // Check if the creature this aura is attached to has the subtype.
@@ -1417,12 +1401,11 @@ impl GameState {
                     .and_then(|o| o.attached_to)
                     .and_then(|target_id| {
                         self.get_object(target_id).map(|target_obj| {
-                            if !target_obj.subtypes.is_empty() {
-                                target_obj.subtypes.iter().any(|s| s == subtype)
-                            } else {
+                            if target_obj.subtypes.is_empty() {
                                 registry.card_data(target_obj.card_id)
-                                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                                    .unwrap_or(false)
+                                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
+                            } else {
+                                target_obj.subtypes.iter().any(|s| s == subtype)
                             }
                         })
                     })
@@ -1438,8 +1421,7 @@ impl GameState {
     /// Flashback spells go to exile; others go to graveyard.
     pub fn move_spell_after_resolve(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {
         let exile = self.get_object(object_id)
-            .map(|o| o.cast_with_flashback)
-            .unwrap_or(false);
+            .is_some_and(|o| o.cast_with_flashback);
         if exile {
             self.move_object(object_id, Zone::Exile, registry);
         } else {
@@ -1453,8 +1435,7 @@ impl GameState {
             o.zone == Zone::Battlefield
                 && o.controller == player
                 && registry.get(o.card_id)
-                    .map(|b| b.grants_player_hexproof())
-                    .unwrap_or(false)
+                    .is_some_and(super::cards::CardBehavior::grants_player_hexproof)
         })
     }
 
@@ -1649,7 +1630,7 @@ impl PlayerState {
 }
 
 /// Combat state, tracking attackers and blockers.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CombatState {
     /// Map of attacker ObjectId -> defending PlayerId.
     pub attackers: HashMap<ObjectId, PlayerId>,
@@ -1659,10 +1640,7 @@ pub struct CombatState {
 
 impl CombatState {
     pub fn new() -> Self {
-        Self {
-            attackers: HashMap::new(),
-            blocker_assignments: HashMap::new(),
-        }
+        Self::default()
     }
 }
 

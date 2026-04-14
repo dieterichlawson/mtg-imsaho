@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
 
 /// Somberwald Spider — 2/4 for {4}{G}. Reach.
 /// Morbid — This creature enters with two +1/+1 counters on it if a creature died this turn.

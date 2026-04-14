@@ -3,7 +3,7 @@ use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, Sa
 use crate::events::{DamageTarget, GameEvent};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, CreatureFilter, EffectScope, Zone};
 
 /// Blazing Torch — {1} Artifact — Equipment.
 /// Equipped creature can't be blocked by Vampires or Zombies.
@@ -50,17 +50,13 @@ impl CardBehavior for BlazingTorch {
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => state.get_object(*id)
-                .map(|o| o.zone == Zone::Battlefield)
-                .unwrap_or(false),
+                .is_some_and(|o| o.zone == Zone::Battlefield),
             Target::Player(pid) => !state.get_player(*pid).lost,
         }
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
 
         if obj.zone != Zone::Battlefield {
             return vec![];
@@ -110,7 +106,7 @@ impl CardBehavior for BlazingTorch {
                     o.zone == Zone::Battlefield
                         && o.is_equipment
                         && o.attached_to == Some(object_id)
-                        && torch_card_id.map(|tc| o.card_id == tc).unwrap_or(false)
+                        && torch_card_id.is_some_and(|tc| o.card_id == tc)
                 })
                 .map(|o| o.id);
 

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Giant Growth — {G} instant. Target creature gets +3/+3 until end of turn.
 pub struct GiantGrowth;
@@ -31,7 +31,7 @@ impl CardBehavior for GiantGrowth {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.until_end_of_turn.push(
                     crate::state::TemporaryEffect::ModifyPT {
                         target: *target_id,

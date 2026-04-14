@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Ancient Grudge — {1}{R} instant. Destroy target artifact. Flashback {G}.
 pub struct AncientGrudge;
@@ -39,10 +39,9 @@ impl CardBehavior for AncientGrudge {
                     _ => return false,
                 };
                 registry.card_data(obj.card_id)
-                    .map(|d| d.card_types.contains(&CardType::Artifact))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 

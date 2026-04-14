@@ -52,7 +52,7 @@ fn fiend_hunter_can_target_own_creature() {
     // Fiend Hunter should present an optional choice including own creature.
     assert!(state.awaiting_action.is_some(),
         "Fiend Hunter should present a choice (not auto-target). \
-         Own creature zone: {:?}", own_creature_zone);
+         Own creature zone: {own_creature_zone:?}");
 }
 
 /// Fiend Hunter should present a choice when multiple targets exist.
@@ -87,7 +87,7 @@ fn rangers_guile_cannot_target_opponent_creature() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P1 has a creature. P0 has Ranger's Guile.
-    let _enemy = ready_creature(&mut state, P1, 3, 3);
+    let enemy = ready_creature(&mut state, P1, 3, 3);
     let _rg = castable_spell(&mut state, &reg, "Ranger's Guile", P0);
 
     let legal = engine::legal_actions(&state, &reg);
@@ -96,7 +96,7 @@ fn rangers_guile_cannot_target_opponent_creature() {
     let targets_enemy = legal.actions.iter().any(|a| {
         if let Action::CastSpell { targets, .. } = a {
             targets.iter().any(|t| {
-                if let Target::Object(id) = t { *id == _enemy } else { false }
+                if let Target::Object(id) = t { *id == enemy } else { false }
             })
         } else {
             false
@@ -133,7 +133,7 @@ fn morkrut_banshee_can_target_self() {
         let eff_t = state.effective_toughness(b.id, &reg);
         assert_eq!(eff_t, Some(0),
             "Morkrut Banshee should target itself when it's the only creature (morbid). \
-             Effective toughness should be 0 (4 - 4). Got: {:?}", eff_t);
+             Effective toughness should be 0 (4 - 4). Got: {eff_t:?}");
     } else {
         // Banshee might have already died from the -4/-4 SBA. That's also fine.
         // (It would be in graveyard.)
@@ -196,7 +196,7 @@ fn frightful_delusion_discard_on_pay() {
     let hand_count = state.objects_in_zone(Zone::Hand, P1).len();
     assert_eq!(hand_count, 0,
         "Frightful Delusion: opponent should discard even after paying mana. \
-         Hand has {} cards (should be 0)", hand_count);
+         Hand has {hand_count} cards (should be 0)");
 }
 
 // ════════════════════════════════════════════════════════════════════

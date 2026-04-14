@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, Keyword, EffectCondition, EffectScope};
 
 /// Night Revelers — {4}{R} 4/4 Vampire.
 /// This creature has haste as long as an opponent controls a Human.

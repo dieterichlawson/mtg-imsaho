@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Riot Devils — 2/3 for {2}{R}. Vanilla creature.
 pub struct RiotDevils;

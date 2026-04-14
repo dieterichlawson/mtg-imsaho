@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Memory's Journey — {1}{U} Instant.
 /// Target player shuffles up to three target cards from their graveyard into their library.
@@ -41,7 +41,7 @@ impl CardBehavior for MemorysJourney {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Determine which player's graveyard the cards come from.
         // With the TwoTargets requirement, the first target is Target::Player.
@@ -64,7 +64,7 @@ impl CardBehavior for MemorysJourney {
                     state.move_object(*card_id, Zone::Library, registry);
                     state.get_player_mut(owner).library_order.push(*card_id);
                     state.log(crate::state::LogLevel::Event,
-                        format!("Memory's Journey: {} shuffled into library", name));
+                        format!("Memory's Journey: {name} shuffled into library"));
                 }
             }
         }

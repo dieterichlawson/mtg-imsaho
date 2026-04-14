@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 
 /// Skirsdag High Priest — {1}{B} 1/2 Human Cleric.
 /// Morbid — {T}, Tap two untapped creatures you control: Create a 5/5 black Demon
@@ -29,10 +29,7 @@ impl CardBehavior for SkirsdagHighPriest {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         // Must be on battlefield, untapped, not summoning sick, morbid active,
         // and have at least 2 other untapped creatures to tap.
         if obj.zone != Zone::Battlefield || obj.tapped || obj.summoning_sick {

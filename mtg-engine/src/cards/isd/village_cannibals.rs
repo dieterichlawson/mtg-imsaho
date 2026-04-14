@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Village Cannibals — {2}{B} 2/2 Human.
 /// Whenever another Human creature dies, put a +1/+1 counter on this creature.
@@ -33,18 +33,16 @@ impl CardBehavior for VillageCannibals {
     }
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
-        if state.get_object(self_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
         let is_human = state.get_object(dead_id)
-            .map(|o| {
+            .is_some_and(|o| {
                 let from_registry = registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                    .unwrap_or(false);
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"));
                 let from_instance = o.subtypes.iter().any(|s| s == "Human");
                 from_registry || from_instance
-            })
-            .unwrap_or(false);
+            });
         if is_human {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }

@@ -3,7 +3,7 @@ use rand::seq::SliceRandom;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Woodland Sleuth — {3}{G} 2/3 Human Scout.
 /// Morbid — When this creature enters, if a creature died this turn,
@@ -57,8 +57,7 @@ impl CardBehavior for WoodlandSleuth {
             .iter()
             .filter(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                    .unwrap_or(o.power.is_some())
+                    .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
             })
             .map(|o| o.id)
             .collect();
@@ -70,7 +69,7 @@ impl CardBehavior for WoodlandSleuth {
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Woodland Sleuth (morbid): returned {} to hand", name));
+                format!("Woodland Sleuth (morbid): returned {name} to hand"));
         }
     }
 }

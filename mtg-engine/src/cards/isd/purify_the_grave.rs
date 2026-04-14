@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Purify the Grave — {W} Instant.
 /// Exile target card from a graveyard.
@@ -39,7 +39,7 @@ impl CardBehavior for PurifyTheGrave {
             let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(*target_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Purify the Grave exiled {} from graveyard", name));
+                format!("Purify the Grave exiled {name} from graveyard"));
         }
         state.move_spell_after_resolve(object_id, registry);
     }

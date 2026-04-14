@@ -8,3 +8,6 @@ mtg-engine = { path = "../mtg-engine" }
 mtg-player = { path = "../mtg-player" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[lints]
+workspace = true

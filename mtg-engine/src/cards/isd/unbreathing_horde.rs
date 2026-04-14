@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, Zone, CounterType};
 
 /// Unbreathing Horde — {2}{B} 0/0 Zombie.
 /// This creature enters with a +1/+1 counter on it for each other Zombie you control
@@ -18,8 +18,7 @@ pub struct UnbreathingHorde;
 impl UnbreathingHorde {
     fn is_zombie(obj: &crate::state::GameObject, registry: &CardRegistry) -> bool {
         registry.card_data(obj.card_id)
-            .map(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-            .unwrap_or(false)
+            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
             || obj.subtypes.iter().any(|s| s == "Zombie")
     }
 }
@@ -49,7 +48,7 @@ impl CardBehavior for UnbreathingHorde {
     }
 
     fn entering_with_counters(&self, state: &GameState, self_id: ObjectId, _from_zone: Option<Zone>, registry: &CardRegistry) -> Vec<(CounterType, u32)> {
-        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Count other Zombies on the battlefield.
         let bf_count = state.objects.values()
@@ -72,9 +71,8 @@ impl CardBehavior for UnbreathingHorde {
 
         // Per ruling: count self when entering from graveyard.
         let self_in_gy = state.get_object(self_id)
-            .map(|o| o.zone == Zone::Graveyard)
-            .unwrap_or(false);
-        let self_count = if self_in_gy { 1u32 } else { 0 };
+            .is_some_and(|o| o.zone == Zone::Graveyard);
+        let self_count = u32::from(self_in_gy);
 
         let total = bf_count + gy_count + self_count;
         if total > 0 {

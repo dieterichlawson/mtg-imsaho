@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Rage Thrower — {5}{R} 4/2 Human Shaman.
 /// Whenever another creature dies, this creature deals 2 damage to target player or planeswalker.

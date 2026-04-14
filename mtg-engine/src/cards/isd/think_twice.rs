@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Think Twice — {1}{U} instant. Draw a card.
 pub struct ThinkTwice;
@@ -28,7 +28,7 @@ impl CardBehavior for ThinkTwice {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         crate::engine::draw_cards(state, controller, 1, registry);
         state.move_spell_after_resolve(object_id, registry);
     }

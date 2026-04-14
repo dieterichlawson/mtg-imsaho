@@ -285,13 +285,11 @@ fn multiple_triggers_resolve_individually_with_priority() {
     // Between trigger resolutions, priority was given with different counter counts
     assert!(
         counter_values_at_priority.contains(&0),
-        "Should see 0 counters before first trigger resolves: {:?}",
-        counter_values_at_priority
+        "Should see 0 counters before first trigger resolves: {counter_values_at_priority:?}"
     );
     assert!(
         counter_values_at_priority.contains(&1),
-        "Should see 1 counter between trigger resolutions: {:?}",
-        counter_values_at_priority
+        "Should see 1 counter between trigger resolutions: {counter_values_at_priority:?}"
     );
 }
 

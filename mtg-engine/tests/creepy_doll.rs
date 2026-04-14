@@ -118,7 +118,7 @@ fn on_deals_combat_damage_to_creature_calls_destroy() {
     for _ in 0..50 {
         let mut test_state = state.clone();
         behavior.on_deals_combat_damage_to_creature(&mut test_state, doll, target, 1, &reg);
-        if test_state.get_object(target).map(|o| o.zone != Zone::Battlefield).unwrap_or(false) {
+        if test_state.get_object(target).is_some_and(|o| o.zone != Zone::Battlefield) {
             any_destroyed = true;
             break;
         }

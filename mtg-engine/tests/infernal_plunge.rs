@@ -27,8 +27,7 @@ fn cannot_cast_without_creature() {
     let can_cast = actions.actions.iter().any(|a| {
         matches!(a, Action::CastSpell { object_id, .. } if {
             state.get_object(*object_id)
-                .map(|o| o.name == "Infernal Plunge")
-                .unwrap_or(false)
+                .is_some_and(|o| o.name == "Infernal Plunge")
         })
     });
 
@@ -49,8 +48,7 @@ fn can_cast_with_creature() {
     let can_cast = actions.actions.iter().any(|a| {
         matches!(a, Action::CastSpell { object_id, .. } if {
             state.get_object(*object_id)
-                .map(|o| o.name == "Infernal Plunge")
-                .unwrap_or(false)
+                .is_some_and(|o| o.name == "Infernal Plunge")
         })
     });
 
@@ -132,8 +130,7 @@ fn one_action_per_sacrifice_target() {
     let plunge_actions: Vec<_> = actions.actions.iter().filter(|a| {
         if let Action::CastSpell { object_id, sacrifice, .. } = a {
             state.get_object(*object_id)
-                .map(|o| o.name == "Infernal Plunge")
-                .unwrap_or(false)
+                .is_some_and(|o| o.name == "Infernal Plunge")
             && sacrifice.is_some()
         } else {
             false

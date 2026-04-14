@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::{GameState, LogLevel};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Unburial Rites — {4}{B} sorcery. Return target creature card from your graveyard to the battlefield.
 pub struct UnburialRites;
@@ -37,7 +37,7 @@ impl CardBehavior for UnburialRites {
             let id = *id;
             let returned_name = state.obj_name(id);
             state.move_object(id, Zone::Battlefield, registry);
-            state.log(LogLevel::Event, format!("{} returned to the battlefield", returned_name));
+            state.log(LogLevel::Event, format!("{returned_name} returned to the battlefield"));
         }
         // If target is missing (fizzled), do nothing — just clean up.
         state.move_spell_after_resolve(object_id, registry);

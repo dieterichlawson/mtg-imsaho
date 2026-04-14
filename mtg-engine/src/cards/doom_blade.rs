@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Doom Blade — {1}{B} instant. Destroy target nonblack creature.
 pub struct DoomBlade;
@@ -34,12 +34,11 @@ impl CardBehavior for DoomBlade {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| {
+                    .is_some_and(|o| {
                         o.zone == Zone::Battlefield
                             && o.power.is_some()
                             && !o.colors.contains(&Color::Black)
                     })
-                    .unwrap_or(false)
             }
             Target::Player(_) => false,
         }

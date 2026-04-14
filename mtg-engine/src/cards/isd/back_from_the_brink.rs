@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Back from the Brink — {4}{U}{U} Enchantment.
 /// Exile a creature card from your graveyard and pay its mana cost:
@@ -38,10 +38,7 @@ impl CardBehavior for BackFromTheBrink {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone != Zone::Battlefield {
             return vec![];
         }
@@ -55,8 +52,7 @@ impl CardBehavior for BackFromTheBrink {
                 // or fall back to the registry card data.
                 o.power.is_some()
                     || registry.card_data(o.card_id)
-                        .map(|d| d.card_types.contains(&CardType::Creature))
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.card_types.contains(&CardType::Creature))
             })
             .collect();
 
@@ -86,8 +82,8 @@ impl CardBehavior for BackFromTheBrink {
         }).collect()
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(_object_id) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
         };
@@ -97,8 +93,7 @@ impl CardBehavior for BackFromTheBrink {
 
         // Verify the creature is still in the graveyard and belongs to the controller.
         let valid = state.get_object(creature_id)
-            .map(|o| o.zone == Zone::Graveyard && o.owner == controller)
-            .unwrap_or(false);
+            .is_some_and(|o| o.zone == Zone::Graveyard && o.owner == controller);
         if !valid {
             return;
         }
@@ -113,6 +108,6 @@ impl CardBehavior for BackFromTheBrink {
         state.create_token_copy(creature_id, controller, registry);
 
         state.log(crate::state::LogLevel::Event,
-            format!("Back from the Brink: exiled {} from graveyard, created token copy", name));
+            format!("Back from the Brink: exiled {name} from graveyard, created token copy"));
     }
 }

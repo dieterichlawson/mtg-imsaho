@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Grasp of Phantoms — {3}{U} Sorcery.
 /// Put target creature on top of its owner's library.
@@ -45,7 +45,7 @@ impl CardBehavior for GraspOfPhantoms {
                     // Insert at position 0 (top of library).
                     state.get_player_mut(owner).library_order.insert(0, *target_id);
                     state.log(crate::state::LogLevel::Event,
-                        format!("Grasp of Phantoms put {} on top of its owner's library", name));
+                        format!("Grasp of Phantoms put {name} on top of its owner's library"));
                 }
             }
         }

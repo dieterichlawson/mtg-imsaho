@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Makeshift Mauler — {3}{U} 4/5 Zombie.
 /// As an additional cost to cast this spell, exile a creature card from your graveyard.

@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, CreatureFilter, Keyword, EffectScope};
 
 /// Orchard Spirit — {2}{G} 2/2 Spirit.
 /// Orchard Spirit can't be blocked except by creatures with flying or reach.

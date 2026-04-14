@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Curse of Stalked Prey — {1}{R} Enchantment — Aura Curse.
 /// Enchant player.
@@ -55,7 +55,7 @@ impl CardBehavior for CurseOfStalkedPrey {
             return;
         }
         // Put a +1/+1 counter on the creature that dealt damage.
-        if state.get_object(source_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(source_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
         }
     }

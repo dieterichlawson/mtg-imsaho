@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, Zone, Color};
 
 /// Cellar Door — {2} Artifact.
 /// {3}, {T}: Target player puts the bottom card of their library into their
@@ -31,10 +31,7 @@ impl CardBehavior for CellarDoor {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
@@ -71,12 +68,10 @@ impl CardBehavior for CellarDoor {
 
             // Check if it was a creature.
             let is_creature = state.get_object(milled_id)
-                .map(|o| {
+                .is_some_and(|o| {
                     registry.card_data(o.card_id)
-                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                        .unwrap_or(o.power.is_some())
-                })
-                .unwrap_or(false);
+                        .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                });
 
             if is_creature {
                 state.create_token_with_subtypes(

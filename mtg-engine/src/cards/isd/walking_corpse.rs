@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Walking Corpse — 2/2 for {1}{B}. Vanilla creature.
 pub struct WalkingCorpse;

@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Kessig Cagebreakers — {4}{G} 3/4 Human Rogue.
 /// Whenever Kessig Cagebreakers attacks, create a 2/2 green Wolf creature token
@@ -45,8 +45,7 @@ impl CardBehavior for KessigCagebreakers {
             .iter()
             .filter(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                    .unwrap_or(o.power.is_some())
+                    .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
             })
             .count();
         if creature_count == 0 {
@@ -78,6 +77,6 @@ impl CardBehavior for KessigCagebreakers {
             }
         }
         state.log(crate::state::LogLevel::Event,
-            format!("Kessig Cagebreakers created {} Wolf tokens tapped and attacking", creature_count));
+            format!("Kessig Cagebreakers created {creature_count} Wolf tokens tapped and attacking"));
     }
 }

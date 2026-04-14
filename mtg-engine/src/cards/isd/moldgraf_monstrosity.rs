@@ -3,7 +3,7 @@ use rand::seq::SliceRandom;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Moldgraf Monstrosity {4}{G}{G}{G} 8/8 Insect with Trample.
 /// When Moldgraf Monstrosity dies, exile it, then return two creature cards at random
@@ -70,7 +70,7 @@ impl CardBehavior for MoldgrafMonstrosity {
                 obj.controller = controller;
             }
             state.log(crate::state::LogLevel::Event,
-                format!("Moldgraf Monstrosity: {} returned to the battlefield", name));
+                format!("Moldgraf Monstrosity: {name} returned to the battlefield"));
         }
     }
 }

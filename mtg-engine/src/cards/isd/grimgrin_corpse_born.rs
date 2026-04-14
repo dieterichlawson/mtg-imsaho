@@ -3,7 +3,7 @@ use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, Sa
                    TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, ContinuousEffect, EffectScope, Zone, CounterType};
 
 /// Grimgrin, Corpse-Born {3}{U}{B} 5/5 Legendary Zombie Warrior.
 /// Grimgrin enters tapped and doesn't untap during your untap step.
@@ -59,7 +59,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
         match state.get_object(object_id) {
             Some(o) if o.zone == Zone::Battlefield => {}
             _ => return vec![],
-        };
+        }
 
         vec![ActivatedAbilityDef {
             ability_index: 0,

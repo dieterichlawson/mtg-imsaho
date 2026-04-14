@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry, TriggeredAbilityDef, TriggerKind};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope};
 
 /// Claustrophobia — {1}{U}{U} aura enchantment. When Claustrophobia enters the battlefield,
 /// tap enchanted creature. Enchanted creature doesn't untap during its controller's untap step.
@@ -54,7 +54,7 @@ impl CardBehavior for Claustrophobia {
                 target.tapped = true;
             }
             state.log(crate::state::LogLevel::Event,
-                format!("Claustrophobia taps enchanted creature"));
+                "Claustrophobia taps enchanted creature".to_string());
         }
     }
 }

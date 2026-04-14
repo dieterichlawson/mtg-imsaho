@@ -113,7 +113,7 @@ fn multiple_cards_creates_resolution_choice() {
         Some(mtg_engine::state::AwaitingAction::ResolutionChoice { player, .. }) => {
             assert_eq!(*player, P1, "Targeted player (P1) should choose which card to exile");
         }
-        other => panic!("Expected ResolutionChoice, got {:?}", other),
+        other => panic!("Expected ResolutionChoice, got {other:?}"),
     }
 }
 

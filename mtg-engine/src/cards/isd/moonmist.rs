@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Moonmist — {1}{G} Instant.
 /// Transform all Humans. Prevent all combat damage that would be dealt this turn
@@ -44,17 +44,15 @@ impl CardBehavior for Moonmist {
                     true
                 } else if o.is_transformed {
                     registry.get(o.card_id)
-                        .and_then(|b| b.back_face_data())
-                        .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        .unwrap_or(false)
+                        .and_then(super::super::CardBehavior::back_face_data)
+                        .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                 } else {
                     registry.card_data(o.card_id)
-                        .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                 };
                 // Must be a DFC (has a back face).
                 let has_back_face = registry.get(o.card_id)
-                    .and_then(|b| b.back_face_data())
+                    .and_then(super::super::CardBehavior::back_face_data)
                     .is_some();
                 has_human_subtype && has_back_face
             })
@@ -71,25 +69,25 @@ impl CardBehavior for Moonmist {
                     // Was on back face → transform to front face. Restore front face data.
                     let front = behavior.card_data();
                     if let Some(obj) = state.get_object_mut(*hid) {
-                        obj.name = front.name.clone();
+                        obj.name.clone_from(&front.name);
                         obj.power = front.power;
                         obj.toughness = front.toughness;
-                        obj.keywords = front.keywords.clone();
-                        obj.subtypes = front.subtypes.clone();
+                        obj.keywords.clone_from(&front.keywords);
+                        obj.subtypes.clone_from(&front.subtypes);
                     }
                 } else {
                     // Was on front face → transform to back face. Apply back face data.
                     if let Some(back) = behavior.back_face_data() {
                         if let Some(obj) = state.get_object_mut(*hid) {
-                            obj.name = back.name.clone();
+                            obj.name.clone_from(&back.name);
                             if let Some(p) = back.power {
                                 obj.power = Some(p);
                             }
                             if let Some(t) = back.toughness {
                                 obj.toughness = Some(t);
                             }
-                            obj.keywords = back.keywords.clone();
-                            obj.subtypes = back.subtypes.clone();
+                            obj.keywords.clone_from(&back.keywords);
+                            obj.subtypes.clone_from(&back.subtypes);
                         }
                     }
                 }
@@ -98,7 +96,7 @@ impl CardBehavior for Moonmist {
 
         if count > 0 {
             state.log(crate::state::LogLevel::Event,
-                format!("Moonmist transformed {} Human(s)", count));
+                format!("Moonmist transformed {count} Human(s)"));
         }
         // Prevent all combat damage from non-Wolf/non-Werewolf creatures this turn.
         state.until_end_of_turn.push(crate::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);

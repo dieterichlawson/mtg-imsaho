@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{Zone, CardType, ManaType};
 
 /// Woodland Cemetery — Land.
 /// This land enters tapped unless you control a Swamp or a Forest.
@@ -23,7 +23,7 @@ impl WoodlandCemetery {
                 let has_subtype = |name: &str| {
                     o.subtypes.iter().any(|s| s == name)
                         || registry.card_data(o.card_id)
-                            .map_or(false, |d| d.subtypes.iter().any(|s| s == name))
+                            .is_some_and(|d| d.subtypes.iter().any(|s| s == name))
                 };
                 has_subtype("Swamp") || has_subtype("Forest")
             })
@@ -64,10 +64,7 @@ impl CardBehavior for WoodlandCemetery {
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![
                 ManaAbilityDef {

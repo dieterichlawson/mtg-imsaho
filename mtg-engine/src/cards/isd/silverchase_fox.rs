@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, ActivatedAbilityDef, SacrificeCost, TargetRequirement, TargetFilter};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Silverchase Fox — {1}{W} 2/2 Fox.
 /// {1}{W}, Sacrifice Silverchase Fox: Exile target enchantment.
@@ -44,10 +44,10 @@ impl CardBehavior for SilverchaseFox {
 
     fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 let exiled_name = state.obj_name(*target_id);
                 state.move_object(*target_id, Zone::Exile, registry);
-                state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {}", exiled_name));
+                state.log(crate::state::LogLevel::Event, format!("Silverchase Fox exiled {exiled_name}"));
             }
         }
     }

@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Typhoid Rats — 1/1 for {B}. Deathtouch.
 pub struct TyphoidRats;

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Angel of Flight Alabaster — {4}{W} 4/4 flying Angel.
 /// At the beginning of your upkeep, return target Spirit card from your graveyard to your hand.
@@ -48,8 +48,7 @@ impl CardBehavior for AngelOfFlightAlabaster {
             .iter()
             .filter(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Spirit"))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Spirit"))
                 || o.subtypes.iter().any(|s| s == "Spirit")
             })
             .map(|o| Target::Object(o.id))

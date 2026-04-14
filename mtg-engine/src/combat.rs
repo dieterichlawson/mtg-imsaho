@@ -62,7 +62,7 @@ pub fn declare_blockers_with_registry(
 ) {
     let valid: Vec<_> = assignments.iter()
         .filter(|&&(blocker, attacker)| can_block_attacker(state, blocker, attacker, registry))
-        .cloned()
+        .copied()
         .collect();
 
     // Minimum blocker enforcement: for attackers with menace or MinimumBlockers
@@ -74,7 +74,7 @@ pub fn declare_blockers_with_registry(
     }
 
     // Determine minimum blocker requirement for each attacker.
-    let attacker_ids: Vec<ObjectId> = blocker_counts.keys().cloned().collect();
+    let attacker_ids: Vec<ObjectId> = blocker_counts.keys().copied().collect();
     let mut min_blockers: std::collections::HashMap<ObjectId, u32> = std::collections::HashMap::new();
     for &att_id in &attacker_ids {
         let mut min_req: u32 = 1; // default: any single creature can block
@@ -221,7 +221,7 @@ fn deal_damage_step(
     first_strike_only: bool,
 ) {
     for (&attacker_id, &defending_player) in &combat.attackers {
-        if state.get_object(attacker_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+        if state.get_object(attacker_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             continue;
         }
 
@@ -256,7 +256,7 @@ fn deal_damage_step(
             let mut remaining_power = attacker_power;
 
             for &blocker_id in &blockers {
-                if state.get_object(blocker_id).map(|o| o.zone != Zone::Battlefield).unwrap_or(true) {
+                if state.get_object(blocker_id).is_none_or(|o| o.zone != Zone::Battlefield) {
                     continue;
                 }
 
@@ -279,7 +279,7 @@ fn deal_damage_step(
                 // Attacker deals damage to blocker.
                 if remaining_power > 0 {
                     let blocker_toughness = state.effective_toughness(blocker_id, registry).unwrap_or(0);
-                    let blocker_damage = state.get_object(blocker_id).map(|o| o.damage_marked).unwrap_or(0);
+                    let blocker_damage = state.get_object(blocker_id).map_or(0, |o| o.damage_marked);
                     let lethal = if has_deathtouch_attacker {
                         1 // deathtouch: 1 damage is lethal
                     } else {
@@ -331,7 +331,7 @@ fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, 
             }
             let name = state.get_object(target).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event,
-                format!("{}: damage prevented, removed a +1/+1 counter", name));
+                format!("{name}: damage prevented, removed a +1/+1 counter"));
         }
         // Damage is always prevented even if no counters remain.
         true
@@ -453,10 +453,10 @@ fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker
         };
         for effect in &effects {
             if let crate::types::ContinuousEffect::ProtectionFrom { filter, scope } = effect {
-                if state.effect_applies_to(protected, scope, source.id, source.controller, registry) {
-                    if state.matches_filter(attacker, filter, source.controller, registry) {
-                        return true;
-                    }
+                if state.effect_applies_to(protected, scope, source.id, source.controller, registry)
+                    && state.matches_filter(attacker, filter, source.controller, registry)
+                {
+                    return true;
                 }
             }
         }
@@ -466,17 +466,18 @@ fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker
     for effect in &state.until_end_of_turn {
         match effect {
             crate::state::TemporaryEffect::GrantProtection { target, filter } if *target == protected => {
-                let controller = state.get_object(protected).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+                let controller = state.get_object(protected).map_or(crate::ids::PlayerId(0), |o| o.controller);
                 if state.matches_filter(attacker, filter, controller, registry) {
                     return true;
                 }
             }
             crate::state::TemporaryEffect::GrantProtectionAll { controller, protection_filter } => {
                 if let Some(obj) = state.get_object(protected) {
-                    if obj.controller == *controller && obj.zone == crate::types::Zone::Battlefield {
-                        if state.matches_filter(attacker, protection_filter, *controller, registry) {
-                            return true;
-                        }
+                    if obj.controller == *controller
+                        && obj.zone == crate::types::Zone::Battlefield
+                        && state.matches_filter(attacker, protection_filter, *controller, registry)
+                    {
+                        return true;
                     }
                 }
             }
@@ -629,7 +630,7 @@ pub fn end_combat(state: &mut GameState, registry: &crate::cards::CardRegistry) 
     // These fire independently of the source permanent's presence on the battlefield.
     let exiles: Vec<_> = state.end_of_combat_exiles.drain(..).collect();
     for exile_id in exiles {
-        if state.get_object(exile_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(exile_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.move_object(exile_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
                 "Token exiled at end of combat (delayed trigger)".into());
@@ -692,27 +693,20 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardReg
 /// Enforces flying (only blocked by flying/reach) and intimidate (only by artifact/same color).
 pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: ObjectId, registry: &CardRegistry) -> bool {
     // Flying: can only be blocked by creatures with flying or reach.
-    if state.has_keyword(attacker_id, Keyword::Flying, registry) {
-        if !state.has_keyword(blocker_id, Keyword::Flying, registry)
-            && !state.has_keyword(blocker_id, Keyword::Reach, registry) {
-            return false;
-        }
+    if state.has_keyword(attacker_id, Keyword::Flying, registry)
+        && !state.has_keyword(blocker_id, Keyword::Flying, registry)
+        && !state.has_keyword(blocker_id, Keyword::Reach, registry)
+    {
+        return false;
     }
 
     // Intimidate: can only be blocked by artifact creatures or creatures that share a color.
     if state.has_keyword(attacker_id, Keyword::Intimidate, registry) {
-        let blocker = match state.get_object(blocker_id) {
-            Some(o) => o,
-            None => return false,
-        };
+        let Some(blocker) = state.get_object(blocker_id) else { return false };
         let is_artifact = registry.card_data(blocker.card_id)
-            .map(|d| d.card_types.contains(&crate::types::CardType::Artifact))
-            .unwrap_or(false);
+            .is_some_and(|d| d.card_types.contains(&crate::types::CardType::Artifact));
         if !is_artifact {
-            let attacker = match state.get_object(attacker_id) {
-                Some(o) => o,
-                None => return false,
-            };
+            let Some(attacker) = state.get_object(attacker_id) else { return false };
             let shares_color = attacker.colors.iter().any(|c| blocker.colors.contains(c));
             if !shares_color {
                 return false;
@@ -731,10 +725,10 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
         if let Some(ref instance_effects) = source.instance_continuous_effects {
             for effect in instance_effects {
                 if let crate::types::ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, scope } = effect {
-                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
-                        if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
-                            return false;
-                        }
+                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry)
+                        && !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry)
+                    {
+                        return false;
                     }
                 }
             }
@@ -747,11 +741,11 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
             };
             for effect in &effects {
                 if let crate::types::ContinuousEffect::CanOnlyBeBlockedBy { allowed_blockers, scope } = effect {
-                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry) {
-                        // This attacker has a block restriction. Check if the blocker passes the filter.
-                        if !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry) {
-                            return false;
-                        }
+                    // This attacker has a block restriction. Check if the blocker passes the filter.
+                    if state.effect_applies_to(attacker_id, scope, source.id, source.controller, registry)
+                        && !state.matches_filter(blocker_id, allowed_blockers, source.controller, registry)
+                    {
+                        return false;
                     }
                 }
             }

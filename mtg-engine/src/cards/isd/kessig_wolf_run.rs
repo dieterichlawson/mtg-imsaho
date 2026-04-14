@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, ManaAbilityDef, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{CardType, Zone, ManaType, ManaCost, ManaSymbol, Color, Keyword};
 
 /// Kessig Wolf Run — Land.
 /// {T}: Add {C}.
@@ -26,10 +26,7 @@ impl CardBehavior for KessigWolfRun {
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ManaAbilityDef {
                 ability_index: 0,
@@ -44,10 +41,7 @@ impl CardBehavior for KessigWolfRun {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ActivatedAbilityDef {
                 ability_index: 1,
@@ -71,7 +65,7 @@ impl CardBehavior for KessigWolfRun {
     fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         let x = state.last_activated_x_value.unwrap_or(0) as i32;
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 // Grant +X/+0 until end of turn.
                 state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
                     target: *target_id,
@@ -85,7 +79,7 @@ impl CardBehavior for KessigWolfRun {
                 });
                 let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Kessig Wolf Run gives {} +{}/+0 and trample until end of turn", name, x));
+                    format!("Kessig Wolf Run gives {name} +{x}/+0 and trample until end of turn"));
             }
         }
     }

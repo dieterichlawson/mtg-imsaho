@@ -3,7 +3,7 @@ use rand::seq::SliceRandom;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Charmbreaker Devils — {5}{R} 4/4 Devil.
 /// At the beginning of your upkeep, return an instant or sorcery card at random
@@ -56,8 +56,7 @@ impl CardBehavior for CharmbreakerDevils {
             .iter()
             .filter(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Instant | CardType::Sorcery)))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Instant | CardType::Sorcery)))
             })
             .map(|o| o.id)
             .collect();
@@ -68,7 +67,7 @@ impl CardBehavior for CharmbreakerDevils {
             let name = state.get_object(chosen).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(chosen, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Charmbreaker Devils: returned {} to hand", name));
+                format!("Charmbreaker Devils: returned {name} to hand"));
         }
     }
 
@@ -84,8 +83,7 @@ impl CardBehavior for CharmbreakerDevils {
         // Only trigger on instant or sorcery spells.
         let is_instant_or_sorcery = state.get_object(spell_id)
             .and_then(|o| registry.card_data(o.card_id))
-            .map(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
-            .unwrap_or(false);
+            .is_some_and(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery));
         if !is_instant_or_sorcery {
             return;
         }

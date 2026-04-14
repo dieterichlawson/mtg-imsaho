@@ -10,3 +10,6 @@ mtg-draft = { path = "../mtg-draft" }
 serde_json = "1"
 rand = "0.8"
 reqwest = { version = "0.12", features = ["blocking", "json"] }
+
+[lints]
+workspace = true

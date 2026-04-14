@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Gnaw to the Bone — {2}{G} instant. You gain 2 life for each creature card in your graveyard.
 pub struct GnawToTheBone;
@@ -29,7 +29,7 @@ impl CardBehavior for GnawToTheBone {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         // Count creature cards in controller's graveyard (the spell is still on the stack, not in graveyard).
         let creature_count = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.power.is_some() && o.id != object_id)

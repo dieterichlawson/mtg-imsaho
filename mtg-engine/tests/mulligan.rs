@@ -163,7 +163,7 @@ fn mull_to_cap_forces_keep_and_bottoms_three() {
                     let has_mull = legal.actions.iter()
                         .any(|a| matches!(a, Action::MulliganMull));
                     if p0_mulls_taken < LONDON_MULLIGAN_CAP as usize {
-                        assert!(has_mull, "mull should be legal at count {}", p0_mulls_taken);
+                        assert!(has_mull, "mull should be legal at count {p0_mulls_taken}");
                         p0_mulls_taken += 1;
                         return Action::MulliganMull;
                     }

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, Keyword, EffectScope};
 
 /// Ghostly Possession — {2}{W} aura enchantment. Enchanted creature has flying.
 /// Grants flying and prevents all combat damage to and from the enchanted creature.

@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, Zone, CounterType};
 
 /// Bloodcrazed Neonate — {1}{R} 2/1 Vampire.
 /// Bloodcrazed Neonate attacks each combat if able.
@@ -38,7 +38,7 @@ impl CardBehavior for BloodcrazedNeonate {
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        if state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }
     }

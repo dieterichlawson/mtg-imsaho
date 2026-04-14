@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Scourge of Geier Reach — {3}{R}{R} 3/3 Elemental.
 /// Scourge of Geier Reach gets +1/+1 for each creature your opponents control.

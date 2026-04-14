@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Frightful Delusion — {2}{U} instant. Counter target spell unless its controller pays {1}.
 /// That player discards a card.
@@ -35,8 +35,7 @@ impl CardBehavior for FrightfulDelusion {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Stack)
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Stack)
             }
             Target::Player(_) => false,
         }
@@ -56,7 +55,7 @@ impl CardBehavior for FrightfulDelusion {
                             player: controller,
                             source: object_id,
                             choice: ResolutionChoiceKind::PayOrNot {
-                                description: format!("Pay {{1}} to prevent {} from being countered?", spell_name),
+                                description: format!("Pay {{1}} to prevent {spell_name} from being countered?"),
                                 spell_id: *target_id,
                                 source_spell_id: object_id,
                             },
@@ -68,7 +67,7 @@ impl CardBehavior for FrightfulDelusion {
                     let countered_name = state.obj_name(*target_id);
                     state.stack.retain(|e| e.as_spell() != Some(*target_id));
                     state.move_spell_after_resolve(*target_id, registry);
-                    state.log(LogLevel::Event, format!("{} was countered", countered_name));
+                    state.log(LogLevel::Event, format!("{countered_name} was countered"));
 
                     // Force discard — player chooses which card.
                     let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)

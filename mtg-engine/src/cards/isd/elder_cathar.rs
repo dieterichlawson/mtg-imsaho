@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Elder Cathar — {2}{W} 2/2 Human Soldier.
 /// When Elder Cathar dies, put a +1/+1 counter on target creature you control.
@@ -35,7 +35,7 @@ impl CardBehavior for ElderCathar {
     }
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         // Find creatures we control on the battlefield.
         let targets: Vec<Target> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some() && o.id != object_id)
@@ -48,21 +48,18 @@ impl CardBehavior for ElderCathar {
             // Auto-add counters to the only creature.
             if let Target::Object(id) = targets[0] {
                 let is_human = state.get_object(id)
-                    .map(|o| {
+                    .is_some_and(|o| {
                         if o.subtypes.iter().any(|s| s == "Human") {
                             true
                         } else if o.is_transformed {
                             registry.get(o.card_id)
-                                .and_then(|b| b.back_face_data())
-                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                                .unwrap_or(false)
+                                .and_then(super::super::CardBehavior::back_face_data)
+                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                         } else {
                             registry.card_data(o.card_id)
-                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                                .unwrap_or(false)
+                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                         }
-                    })
-                    .unwrap_or(false);
+                    });
                 let count = if is_human { 2 } else { 1 };
                 state.add_counters(id, CounterType::PlusOnePlusOne, count);
                 state.log(LogLevel::Event,

@@ -1,17 +1,17 @@
-/// Test to reproduce mana tapping bug:
-/// User had Falkenrath Marauders {3}{R}{R} in hand.
-/// Tapped a Swamp and Stensia Bloodhall but mana did not appear in pool.
-/// Then tapped two more Swamps and mana DID appear.
-///
-/// Board state from Turn 19:
-/// - P0 (player): 4x Swamp, 4x Mountain (2 tapped), 1x Stensia Bloodhall
-///   Creatures: Vampire Interloper, Falkenrath Marauders [summoning sick]
-///   Enchantment: Curse of Stalked Prey (attached to opponent)
-///   Hand: empty (drew Falkenrath Marauders which was just cast)
-///   Graveyard: 4 cards
-///
-/// The issue was after playing the land and casting Falkenrath Marauders.
-/// Let's reproduce the state right at precombat main with the spell in hand.
+//! Test to reproduce mana tapping bug:
+//! User had Falkenrath Marauders {3}{R}{R} in hand.
+//! Tapped a Swamp and Stensia Bloodhall but mana did not appear in pool.
+//! Then tapped two more Swamps and mana DID appear.
+//!
+//! Board state from Turn 19:
+//! - P0 (player): 4x Swamp, 4x Mountain (2 tapped), 1x Stensia Bloodhall
+//!   Creatures: Vampire Interloper, Falkenrath Marauders [summoning sick]
+//!   Enchantment: Curse of Stalked Prey (attached to opponent)
+//!   Hand: empty (drew Falkenrath Marauders which was just cast)
+//!   Graveyard: 4 cards
+//!
+//! The issue was after playing the land and casting Falkenrath Marauders.
+//! Let's reproduce the state right at precombat main with the spell in hand.
 
 mod common;
 use common::*;
@@ -93,8 +93,7 @@ fn tapping_swamp_adds_black_mana() {
     ) && {
         if let Action::ActivateManaAbility { object_id, .. } = a {
             state.get_object(*object_id)
-                .map(|o| o.name == "Swamp" || registry.card_data(o.card_id).map(|d| d.name == "Swamp").unwrap_or(false))
-                .unwrap_or(false)
+                .is_some_and(|o| o.name == "Swamp" || registry.card_data(o.card_id).is_some_and(|d| d.name == "Swamp"))
         } else { false }
     });
     assert!(tap_swamp.is_some(), "Should have a Tap Swamp action available");
@@ -118,8 +117,7 @@ fn tapping_stensia_bloodhall_adds_colorless() {
     let tap_bloodhall = legal.actions.iter().find(|a| {
         if let Action::ActivateManaAbility { object_id, .. } = a {
             state.get_object(*object_id)
-                .map(|o| registry.card_data(o.card_id).map(|d| d.name == "Stensia Bloodhall").unwrap_or(false))
-                .unwrap_or(false)
+                .is_some_and(|o| registry.card_data(o.card_id).is_some_and(|d| d.name == "Stensia Bloodhall"))
         } else { false }
     });
     assert!(tap_bloodhall.is_some(), "Should have a Tap Stensia Bloodhall action available");
@@ -142,8 +140,7 @@ fn sequential_taps_accumulate_mana() {
         if let Action::ActivateManaAbility { object_id, .. } = a {
             state.get_object(*object_id)
                 .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| d.name == "Swamp")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name == "Swamp")
         } else { false }
     }).expect("Should have Tap Swamp");
 
@@ -151,7 +148,7 @@ fn sequential_taps_accumulate_mana() {
 
     // Verify mana pool after first tap
     let black1 = state2.get_player(P0).mana_pool.mana.get(&ManaType::Black).copied().unwrap_or(0);
-    assert_eq!(black1, 1, "After first Swamp tap: expected 1 Black, got {}", black1);
+    assert_eq!(black1, 1, "After first Swamp tap: expected 1 Black, got {black1}");
 
     // Now tap Stensia Bloodhall
     let legal2 = engine::legal_actions(&state2, &registry);
@@ -159,8 +156,7 @@ fn sequential_taps_accumulate_mana() {
         if let Action::ActivateManaAbility { object_id, .. } = a {
             state2.get_object(*object_id)
                 .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| d.name == "Stensia Bloodhall")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name == "Stensia Bloodhall")
         } else { false }
     }).expect("Should have Tap Stensia Bloodhall");
 
@@ -169,8 +165,8 @@ fn sequential_taps_accumulate_mana() {
     // Verify both mana types present
     let black2 = state3.get_player(P0).mana_pool.mana.get(&ManaType::Black).copied().unwrap_or(0);
     let colorless = state3.get_player(P0).mana_pool.mana.get(&ManaType::Colorless).copied().unwrap_or(0);
-    assert_eq!(black2, 1, "After Bloodhall tap: expected 1 Black, got {}", black2);
-    assert_eq!(colorless, 1, "After Bloodhall tap: expected 1 Colorless, got {}", colorless);
+    assert_eq!(black2, 1, "After Bloodhall tap: expected 1 Black, got {black2}");
+    assert_eq!(colorless, 1, "After Bloodhall tap: expected 1 Colorless, got {colorless}");
 }
 
 /// Test: The deduplication of mana abilities should not prevent tapping
@@ -186,8 +182,7 @@ fn can_tap_multiple_swamps_sequentially() {
             if let Action::ActivateManaAbility { object_id, .. } = a {
                 current.get_object(*object_id)
                     .and_then(|o| registry.card_data(o.card_id))
-                    .map(|d| d.name == "Swamp")
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.name == "Swamp")
             } else { false }
         });
 
@@ -215,8 +210,7 @@ fn meaningful_action_detected_after_partial_taps() {
         if let Action::ActivateManaAbility { object_id, .. } = a {
             state.get_object(*object_id)
                 .and_then(|o| registry.card_data(o.card_id))
-                .map(|d| d.name == "Swamp")
-                .unwrap_or(false)
+                .is_some_and(|d| d.name == "Swamp")
         } else { false }
     }).expect("Should have Tap Swamp");
 

@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, Trig
 use crate::engine::draw_cards;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Curiosity — {U} Aura. Enchant creature.
 /// Whenever enchanted creature deals damage to an opponent, you may draw a card.
@@ -49,10 +49,7 @@ impl CardBehavior for Curiosity {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => return,
         };
-        let attached_to = match aura.attached_to {
-            Some(id) => id,
-            None => return,
-        };
+        let Some(attached_to) = aura.attached_to else { return; };
         // Only trigger if the source is the enchanted creature.
         if source_id != attached_to {
             return;
@@ -78,7 +75,7 @@ impl CardBehavior for Curiosity {
             return;
         }
         let controller = state.get_object(self_id)
-            .map(|o| o.controller).unwrap_or(PlayerId(0));
+            .map_or(PlayerId(0), |o| o.controller);
         draw_cards(state, controller, 1, registry);
         state.log(LogLevel::Event, "Curiosity: drew a card".into());
     }

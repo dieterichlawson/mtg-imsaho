@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Ghoulcaller's Chant — {B} Sorcery.
 /// Choose one — Return target creature card from your graveyard to your hand;
@@ -47,10 +47,9 @@ impl CardBehavior for GhoulcallersChant {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Graveyard && o.owner == caster)
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Graveyard && o.owner == caster)
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
@@ -62,7 +61,7 @@ impl CardBehavior for GhoulcallersChant {
                         let name = obj.name.clone();
                         state.move_object(*card_id, Zone::Hand, registry);
                         state.log(crate::state::LogLevel::Event,
-                            format!("Ghoulcaller's Chant returned {} to hand", name));
+                            format!("Ghoulcaller's Chant returned {name} to hand"));
                     }
                 }
             }

@@ -15,7 +15,7 @@ fn land_on_battlefield(
 ) -> mtg_engine::ids::ObjectId {
     let card_id = registry
         .get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {}", name));
+        .unwrap_or_else(|| panic!("Unknown card: {name}"));
     let id = state.create_object(card_id, owner, mtg_engine::types::Zone::Battlefield, None, None);
     let obj = state.get_object_mut(id).unwrap();
     obj.name = name.into();
@@ -104,7 +104,6 @@ fn test_x_cost_spell_correct_x_value() {
         .iter()
         .find(|o| o.name == "Devil's Play")
         .expect("Devil's Play should be on the stack");
-    let _spell_id = spell_obj.id;
     let x_val = spell_obj.x_value;
 
     // X should be total mana (5) minus non-X cost (1 for {R}) = 4

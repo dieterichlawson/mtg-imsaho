@@ -71,8 +71,8 @@ impl SetData {
     pub fn run(&self, name: &str) -> Result<&[String], String> {
         self.runs
             .get(name)
-            .map(|v| v.as_slice())
-            .ok_or_else(|| format!("Run '{}' not found in set data", name))
+            .map(std::vec::Vec::as_slice)
+            .ok_or_else(|| format!("Run '{name}' not found in set data"))
     }
 
     /// Build the combined rare sheet 1 sequence (concatenation of its runs).
@@ -189,12 +189,10 @@ mod tests {
         let removed = data.filter_implemented(&registry);
         // ISD has all cards implemented, so nothing should be removed
         // (DFC names use "Front // Back" format; front face should be in registry)
-        if !removed.is_empty() {
-            panic!(
-                "Expected all ISD cards to be implemented, but {} were not found: {:?}",
-                removed.len(),
-                &removed[..removed.len().min(10)]
-            );
-        }
+        assert!(removed.is_empty(),
+            "Expected all ISD cards to be implemented, but {} were not found: {:?}",
+            removed.len(),
+            &removed[..removed.len().min(10)]
+        );
     }
 }

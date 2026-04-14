@@ -10,6 +10,7 @@ use crate::Player;
 /// Per-model token usage tracking for LlmPlayer game calls.
 use std::sync::Mutex;
 use std::collections::HashMap;
+use std::fmt::Write;
 
 #[derive(Default, Debug, Clone)]
 pub struct LlmModelUsage {
@@ -483,7 +484,7 @@ impl AnthropicBackend {
             client: Client::new(),
             api_key,
             model: model.to_string(),
-            system_prompt: format!("{}{}", ANTHROPIC_RESPONSE_FORMAT, GAME_RULES),
+            system_prompt: format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}"),
             conversation: Vec::new(),
             last_thinking: None,
         }
@@ -500,7 +501,7 @@ impl AnthropicBackend {
         let mut msgs = messages.to_vec();
         if msgs.len() >= 2 {
             let idx = msgs.len() - 2;
-            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(|s| s.to_string()) {
+            if let Some(content) = msgs[idx].get("content").and_then(|c| c.as_str()).map(std::string::ToString::to_string) {
                 msgs[idx] = serde_json::json!({
                     "role": msgs[idx]["role"],
                     "content": [{
@@ -570,7 +571,7 @@ impl AnthropicBackend {
                             "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
                             code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                         );
-                        eprintln!("{}", msg);
+                        eprintln!("{msg}");
                         crate::game_log::write(file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
@@ -578,7 +579,7 @@ impl AnthropicBackend {
                         "Anthropic HTTP {} (attempt {}/{}, {}ms): {}",
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
-                    eprintln!("{}", msg);
+                    eprintln!("{msg}");
                     crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                     return "0".to_string();
                 }
@@ -587,15 +588,14 @@ impl AnthropicBackend {
                         "Anthropic request failed (attempt {}/{}, {}ms): {}",
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
-                    eprintln!("{}", msg);
+                    eprintln!("{msg}");
                     crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
-                    continue;
                 }
             }
         }
-        let msg = format!("Anthropic game API exhausted all {} retries", MAX_ATTEMPTS);
+        let msg = format!("Anthropic game API exhausted all {MAX_ATTEMPTS} retries");
         crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
-        eprintln!("{}", msg);
+        eprintln!("{msg}");
         "0".to_string()
     }
 
@@ -710,7 +710,7 @@ impl LlmBackend for AnthropicBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{}{}{}", ANTHROPIC_RESPONSE_FORMAT, GAME_RULES, deck_info);
+        self.system_prompt = format!("{ANTHROPIC_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
         self.conversation.clear();
     }
 
@@ -759,7 +759,7 @@ impl GeminiBackend {
             api_key,
             model: model.to_string(),
             thinking_level: None,
-            system_prompt: format!("{}{}", GEMINI_RESPONSE_FORMAT, GAME_RULES),
+            system_prompt: format!("{GEMINI_RESPONSE_FORMAT}{GAME_RULES}"),
             interaction_id: None,
             last_thinking: None,
         }
@@ -780,8 +780,8 @@ impl GeminiBackend {
         }
 
         // Only chain if we have a non-empty previous interaction ID.
-        if let Some(ref prev_id) = self.interaction_id.as_ref().filter(|s| !s.is_empty()) {
-            body["previous_interaction_id"] = serde_json::json!(prev_id);
+        if let Some(prev_id) = self.interaction_id.as_ref().filter(|s| !s.is_empty()) {
+            body["previous_interaction_id"] = serde_json::json!(&prev_id);
         } else {
             body["system_instruction"] = serde_json::json!(&self.system_prompt);
         }
@@ -816,7 +816,7 @@ impl GeminiBackend {
 
                         self.interaction_id = json["id"].as_str()
                             .filter(|s| !s.is_empty())
-                            .map(|s| s.to_string());
+                            .map(std::string::ToString::to_string);
 
                         let mut output_text = String::new();
                         if let Some(outputs) = json["outputs"].as_array() {
@@ -830,12 +830,12 @@ impl GeminiBackend {
                         }
 
                         if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&output_text) {
-                            self.last_thinking = parsed["thoughts"].as_str().map(|s| s.to_string());
+                            self.last_thinking = parsed["thoughts"].as_str().map(std::string::ToString::to_string);
                             return parsed;
                         }
 
                         let msg = format!("Gemini returned non-JSON response: {:?}", &output_text[..output_text.len().min(100)]);
-                        eprintln!("WARN: {}", msg);
+                        eprintln!("WARN: {msg}");
                         crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                         return serde_json::json!({});
                     }
@@ -848,14 +848,14 @@ impl GeminiBackend {
                             "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
                             code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                         );
-                        eprintln!("{}", msg);
+                        eprintln!("{msg}");
                         crate::game_log::write(file!(), line!(), "API_RETRY", &msg);
                         continue;
                     }
                     // If the interaction ID is invalid, fall back to a fresh conversation.
                     if code == 400 && text.contains("previous_interaction_id") && !fresh_retry {
                         let msg = "Invalid interaction ID, falling back to fresh conversation";
-                        eprintln!("WARN: {}", msg);
+                        eprintln!("WARN: {msg}");
                         crate::game_log::write(file!(), line!(), "API_WARN", msg);
                         body.as_object_mut().unwrap().remove("previous_interaction_id");
                         body["system_instruction"] = serde_json::json!(&self.system_prompt);
@@ -866,7 +866,7 @@ impl GeminiBackend {
                     // Fatal config errors — abort loudly so we don't silently produce garbage.
                     if code == 400 && (text.contains("thinking level") || text.contains("not a supported")) {
                         let msg = format!("Gemini config error: {}", &text[..text.len().min(300)]);
-                        eprintln!("FATAL: {}", msg);
+                        eprintln!("FATAL: {msg}");
                         crate::game_log::write(file!(), line!(), "API_FATAL", &msg);
                         std::process::exit(1);
                     }
@@ -874,7 +874,7 @@ impl GeminiBackend {
                         "Gemini HTTP {} (attempt {}/{}, {}ms): {}",
                         code, attempt + 1, MAX_ATTEMPTS, elapsed_ms, snippet
                     );
-                    eprintln!("{}", msg);
+                    eprintln!("{msg}");
                     crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
                     return serde_json::json!({});
                 }
@@ -883,14 +883,13 @@ impl GeminiBackend {
                         "Gemini request failed (attempt {}/{}, {}ms): {}",
                         attempt + 1, MAX_ATTEMPTS, elapsed_ms, format_reqwest_error(&e)
                     );
-                    eprintln!("{}", msg);
+                    eprintln!("{msg}");
                     crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
-                    continue;
                 }
             }
         }
-        let msg = format!("Gemini API exhausted all {} retries", MAX_ATTEMPTS);
-        eprintln!("WARN: {}", msg);
+        let msg = format!("Gemini API exhausted all {MAX_ATTEMPTS} retries");
+        eprintln!("WARN: {msg}");
         crate::game_log::write(file!(), line!(), "API_ERROR", &msg);
         serde_json::json!({})
     }
@@ -907,7 +906,7 @@ impl GeminiBackend {
             "required": ["thoughts", "action"]
         });
         let parsed = self.call_interactions_structured(user_message, &schema);
-        parsed["action"].as_u64().map(|n| n.to_string()).unwrap_or_else(|| "0".to_string())
+        parsed["action"].as_u64().map_or_else(|| "0".to_string(), |n| n.to_string())
     }
 }
 
@@ -921,7 +920,7 @@ impl LlmBackend for GeminiBackend {
     }
 
     fn init(&mut self, deck_info: &str) {
-        self.system_prompt = format!("{}{}{}", GEMINI_RESPONSE_FORMAT, GAME_RULES, deck_info);
+        self.system_prompt = format!("{GEMINI_RESPONSE_FORMAT}{GAME_RULES}{deck_info}");
         self.interaction_id = None;
     }
 
@@ -1052,12 +1051,12 @@ impl LlmPlayer {
         let mut s = String::new();
         let mut seen = std::collections::HashSet::new();
         for (name, count) in entries {
-            s.push_str(&format!("{}x {}\n", count, name));
+            writeln!(s, "{count}x {name}").unwrap();
             if !seen.contains(name) {
                 seen.insert(name.clone());
                 if let Some(id) = registry.get_id_by_name(name) {
                     if let Some(data) = registry.card_data(id) {
-                        let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+                        let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
                         let types: Vec<&str> = data.card_types.iter().map(|t| match t {
                             CardType::Creature => "Creature",
                             CardType::Instant => "Instant",
@@ -1070,12 +1069,12 @@ impl LlmPlayer {
                         let subtypes = if data.subtypes.is_empty() { String::new() }
                             else { format!(" — {}", data.subtypes.join(" ")) };
                         let pt = match (data.power, data.toughness) {
-                            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                            (Some(p), Some(t)) => format!(" {p}/{t}"),
                             _ => String::new(),
                         };
-                        s.push_str(&format!("  {}{} {}{}{}\n", name, cost, types.join(" "), subtypes, pt));
+                        writeln!(s, "  {}{} {}{}{}", name, cost, types.join(" "), subtypes, pt).unwrap();
                         if !data.oracle_text.is_empty() {
-                            s.push_str(&format!("  {}\n", data.oracle_text.replace('\n', "\n  ")));
+                            writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
                         }
                     }
                 }
@@ -1186,7 +1185,7 @@ impl LlmPlayer {
         let rest = rest.strip_prefix('(')?.strip_suffix(')')?;
         let id: u8 = rest.strip_prefix('p')?.parse().ok()?;
         let whose = if id == you.0 { "your turn" } else { "opp's turn" };
-        Some(format!("── Turn {} ({}) ──", num_str, whose))
+        Some(format!("── Turn {num_str} ({whose}) ──"))
     }
 
     /// Rewrite `Game started (pX on the play)` →
@@ -1198,7 +1197,7 @@ impl LlmPlayer {
             .strip_suffix(" on the play)")?;
         let id: u8 = stripped.parse().ok()?;
         let phrase = if id == you.0 { "you are on the play" } else { "opp is on the play" };
-        Some(format!("Game started ({})", phrase))
+        Some(format!("Game started ({phrase})"))
     }
 
     /// Scan an entry for `p\d+` tokens (word-boundary aware) and rewrite
@@ -1209,7 +1208,7 @@ impl LlmPlayer {
         let mut remaining = entry;
         while !remaining.is_empty() {
             let prev_is_word = out.as_bytes().last()
-                .map_or(false, |c| c.is_ascii_alphanumeric() || *c == b'_');
+                .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_');
             if !prev_is_word && remaining.starts_with('p') {
                 if let Some((rewritten, consumed)) = Self::try_rewrite_player_token(remaining, you) {
                     out.push_str(&rewritten);
@@ -1264,7 +1263,7 @@ impl LlmPlayer {
                         Some(c) => !c.is_ascii_alphabetic(),
                     };
                     if word_end {
-                        return Some((format!("You{}", to), end + from.len()));
+                        return Some((format!("You{to}"), end + from.len()));
                     }
                 }
             }
@@ -1279,7 +1278,7 @@ impl LlmPlayer {
     /// phase override is given (mulligan/bottoming), it's used verbatim.
     fn format_turn_header(view: &GameView, header_override: Option<&str>) -> String {
         if let Some(h) = header_override {
-            return format!("{}\n", h);
+            return format!("{h}\n");
         }
         let step_name = match view.step {
             Step::PrecombatMain => "Main Phase 1",
@@ -1315,21 +1314,21 @@ impl LlmPlayer {
             .map(|(_, cards)| cards.len()).sum();
         let opp_exile_count = view.exile.iter().filter(|c| c.owner != view.you).count();
 
-        s.push_str(&format!("You: {}hp, {}cards, {}lib, {}gy, {}exile\n",
+        writeln!(s, "You: {}hp, {}cards, {}lib, {}gy, {}exile",
             view.your_life, view.your_hand.len(), view.your_library_size,
-            your_gy_count, your_exile_count));
+            your_gy_count, your_exile_count).unwrap();
         for opp in &view.opponents {
-            s.push_str(&format!("Opp: {}hp, {}cards, {}lib, {}gy, {}exile\n",
+            writeln!(s, "Opp: {}hp, {}cards, {}lib, {}gy, {}exile",
                 opp.life, opp.hand_size, opp.library_size,
-                opp_gy_count, opp_exile_count));
+                opp_gy_count, opp_exile_count).unwrap();
         }
 
         if !view.your_mana_pool.is_empty() {
             let pool_parts: Vec<String> = view.your_mana_pool.mana.iter()
                 .filter(|(_, &v)| v > 0)
-                .map(|(t, v)| format!("{:?}:{}", t, v))
+                .map(|(t, v)| format!("{t:?}:{v}"))
                 .collect();
-            s.push_str(&format!("Mana pool: {}\n", pool_parts.join(", ")));
+            writeln!(s, "Mana pool: {}", pool_parts.join(", ")).unwrap();
         }
 
         // Battlefield — compact
@@ -1366,7 +1365,7 @@ impl LlmPlayer {
                         .collect();
                     format!(" targeting {}", target_names.join(", "))
                 };
-                s.push_str(&format!("  {}{} ({})\n", i.name, targets_str, who));
+                writeln!(s, "  {}{} ({})", i.name, targets_str, who).unwrap();
             }
         }
 
@@ -1374,12 +1373,12 @@ impl LlmPlayer {
         if !view.your_hand.is_empty() {
             s.push_str("Hand:\n");
             for c in &view.your_hand {
-                let cost = c.cost.as_ref().map(|co| format!(" {}", co)).unwrap_or_default();
+                let cost = c.cost.as_ref().map(|co| format!(" {co}")).unwrap_or_default();
                 let pt = match (c.power, c.toughness) {
-                    (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                    (Some(p), Some(t)) => format!(" {p}/{t}"),
                     _ => String::new(),
                 };
-                s.push_str(&format!("  {}{}{}\n", c.name, cost, pt));
+                writeln!(s, "  {}{}{}", c.name, cost, pt).unwrap();
             }
         }
 
@@ -1387,13 +1386,13 @@ impl LlmPlayer {
         for (pid, cards) in &view.graveyards {
             if !cards.is_empty() {
                 let whose = if *pid == view.you { "Your" } else { "Opp" };
-                s.push_str(&format!("{} graveyard:\n", whose));
+                writeln!(s, "{whose} graveyard:").unwrap();
                 for c in cards {
                     let pt = match (c.power, c.toughness) {
-                        (Some(p), Some(t)) => format!(" {}/{}", p, t),
+                        (Some(p), Some(t)) => format!(" {p}/{t}"),
                         _ => String::new(),
                     };
-                    s.push_str(&format!("  {}{}\n", c.name, pt));
+                    writeln!(s, "  {}{}", c.name, pt).unwrap();
                 }
             }
         }
@@ -1410,7 +1409,7 @@ impl LlmPlayer {
                 s.push_str("Flashback available:\n");
                 for c in &fb_cards {
                     let fb = c.flashback_cost.as_ref().unwrap();
-                    s.push_str(&format!("  {} (flashback {})\n", c.name, fb));
+                    writeln!(s, "  {} (flashback {})", c.name, fb).unwrap();
                 }
             }
         }
@@ -1485,11 +1484,11 @@ impl LlmPlayer {
             for (name, untapped, tapped) in &land_groups {
                 let total = untapped + tapped;
                 if *tapped == 0 {
-                    parts.push(format!("{}x {}", total, name));
+                    parts.push(format!("{total}x {name}"));
                 } else if *untapped == 0 {
-                    parts.push(format!("{}x {} (tapped)", total, name));
+                    parts.push(format!("{total}x {name} (tapped)"));
                 } else {
-                    parts.push(format!("{}x {} ({} tapped)", total, name, tapped));
+                    parts.push(format!("{total}x {name} ({tapped} tapped)"));
                 }
             }
         }
@@ -1516,7 +1515,7 @@ impl LlmPlayer {
             let power = c.effective_power.or(c.power).unwrap_or(0);
             let toughness = c.effective_toughness.or(c.toughness).unwrap_or(0);
             let kw = Self::format_keywords(&c.keywords);
-            let kw_str = if kw.is_empty() { String::new() } else { format!(" {}", kw) };
+            let kw_str = if kw.is_empty() { String::new() } else { format!(" {kw}") };
             let mut flag_parts: Vec<String> = Vec::new();
             if c.tapped { flag_parts.push("T".into()); }
             if c.summoning_sick { flag_parts.push("S".into()); }
@@ -1571,17 +1570,17 @@ impl LlmPlayer {
         use mtg_engine::types::CounterType;
         let mut bits: Vec<String> = Vec::new();
         if let Some(&n) = counters.get(&CounterType::PlusOnePlusOne) {
-            if n > 0 { bits.push(format!("+1+1x{}", n)); }
+            if n > 0 { bits.push(format!("+1+1x{n}")); }
         }
         if let Some(&n) = counters.get(&CounterType::MinusOneMinusOne) {
-            if n > 0 { bits.push(format!("-1-1x{}", n)); }
+            if n > 0 { bits.push(format!("-1-1x{n}")); }
         }
         if let Some(&n) = counters.get(&CounterType::Loyalty) {
-            if n > 0 { bits.push(format!("LOYx{}", n)); }
+            if n > 0 { bits.push(format!("LOYx{n}")); }
         }
         for (ct, &n) in counters {
             if n > 0 && !matches!(ct, CounterType::PlusOnePlusOne | CounterType::MinusOneMinusOne | CounterType::Loyalty) {
-                bits.push(format!("{:?}x{}", ct, n));
+                bits.push(format!("{ct:?}x{n}"));
             }
         }
         if bits.is_empty() { None } else { Some(bits.join(",")) }
@@ -1625,10 +1624,10 @@ impl LlmPlayer {
                             .collect();
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
-                    ResolvedChoice::ChosenXValue(x) => format!("X = {}", x),
+                    ResolvedChoice::ChosenXValue(x) => format!("X = {x}"),
                 }
             }
-            other => format!("{}", other),
+            other => format!("{other}"),
         }
     }
 
@@ -1686,7 +1685,7 @@ impl LlmPlayer {
                             Target::Object(id) => Self::obj_name(view, *id),
                             Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
                         };
-                        format!("{}:{}", i, desc)
+                        format!("{i}:{desc}")
                     })
                     .collect::<Vec<_>>()
                     .join(" ");
@@ -1729,21 +1728,21 @@ impl LlmPlayer {
         // Step 2: Choose sacrifice if the spell has a sacrifice additional cost.
         // NOTE: If you change this, also update the "Spells with sacrifice costs"
         // bullet in GAME_RULES so the agent's system prompt stays accurate.
-        let chosen_sacrifice = if spell.sacrifice_options.len() == 1 {
-            Some(spell.sacrifice_options[0])
-        } else if spell.sacrifice_options.len() > 1 {
-            let labels: Vec<String> = spell.sacrifice_options.iter()
-                .map(|id| Self::obj_name(view, *id))
-                .collect();
-            let prompt = format!(
-                "{}: choose a creature to sacrifice as additional cost\n{}",
-                spell.name,
-                labels.iter().enumerate().map(|(i, l)| format!("{}: {}", i, l)).collect::<Vec<_>>().join("\n"),
-            );
-            let idx = self.pick_action_index(&prompt, spell.sacrifice_options.len(), &[]);
-            Some(spell.sacrifice_options[idx.min(spell.sacrifice_options.len() - 1)])
-        } else {
-            None
+        let chosen_sacrifice = match spell.sacrifice_options.len() {
+            0 => None,
+            1 => Some(spell.sacrifice_options[0]),
+            _ => {
+                let labels: Vec<String> = spell.sacrifice_options.iter()
+                    .map(|id| Self::obj_name(view, *id))
+                    .collect();
+                let prompt = format!(
+                    "{}: choose a creature to sacrifice as additional cost\n{}",
+                    spell.name,
+                    labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
+                );
+                let idx = self.pick_action_index(&prompt, spell.sacrifice_options.len(), &[]);
+                Some(spell.sacrifice_options[idx.min(spell.sacrifice_options.len() - 1)])
+            }
         };
 
         Action::CastSpell {
@@ -1805,7 +1804,7 @@ impl LlmPlayer {
                 "{}: choose a target for {}\n{}",
                 ab.name,
                 ab.description,
-                labels.iter().enumerate().map(|(i, l)| format!("{}: {}", i, l)).collect::<Vec<_>>().join("\n"),
+                labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
             );
             let idx = self.pick_action_index(&prompt, unique_target_sets.len(), &[]);
             unique_target_sets[idx.min(unique_target_sets.len() - 1)].clone()
@@ -1836,7 +1835,7 @@ impl LlmPlayer {
             let prompt = format!(
                 "{}: choose a creature to sacrifice\n{}",
                 ab.name,
-                labels.iter().enumerate().map(|(i, l)| format!("{}: {}", i, l)).collect::<Vec<_>>().join("\n"),
+                labels.iter().enumerate().map(|(i, l)| format!("{i}: {l}")).collect::<Vec<_>>().join("\n"),
             );
             let idx = self.pick_action_index(&prompt, unique_valid_sacs.len(), &[]);
             unique_valid_sacs[idx.min(unique_valid_sacs.len() - 1)]
@@ -1854,21 +1853,19 @@ impl LlmPlayer {
 
     /// Make a second API call to select one target from a list.
     fn prompt_target_selection(&mut self, view: &GameView, spell_name: &str, options: &[mtg_engine::actions::Target]) -> mtg_engine::actions::Target {
-        assert!(!options.is_empty(), "prompt_target_selection called with no options for {}", spell_name);
+        assert!(!options.is_empty(), "prompt_target_selection called with no options for {spell_name}");
         let target_list: String = options.iter().enumerate()
             .map(|(i, t)| {
                 let desc = match t {
                     mtg_engine::actions::Target::Object(id) => Self::obj_name(view, *id),
                     mtg_engine::actions::Target::Player(pid) => if *pid == view.you { "you".into() } else { "opponent".into() },
                 };
-                format!("{}: {}", i, desc)
+                format!("{i}: {desc}")
             })
             .collect::<Vec<_>>()
             .join(", ");
         let prompt = format!(
-            "{}:\n{}",
-            spell_name,
-            target_list,
+            "{spell_name}:\n{target_list}",
         );
         let idx = self.pick_action_index(&prompt, options.len(), &[]);
         options[idx.min(options.len() - 1)].clone()
@@ -1897,7 +1894,7 @@ impl LlmPlayer {
         }
         name_counts.iter()
             .map(|(name, count)| {
-                if *count > 1 { format!("{}x {}", count, name) } else { name.clone() }
+                if *count > 1 { format!("{count}x {name}") } else { name.clone() }
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -1929,7 +1926,7 @@ impl LlmPlayer {
                 .find(|c| c.object_id == id)
                 .map(|c| c.name.clone()))
             .or_else(|| view.revealed_names.get(&id).cloned())
-            .unwrap_or_else(|| format!("{}", id))
+            .unwrap_or_else(|| format!("{id}"))
     }
 
     /// Log thinking from the last backend call, if any, at info level.
@@ -2022,14 +2019,13 @@ impl LlmPlayer {
         let mut perm_list = String::new();
         let labels = Self::format_combat_creature_list(view, &all_ids);
         for (i, label) in labels.iter().enumerate() {
-            perm_list.push_str(&format!("- {}\n", label));
+            writeln!(perm_list, "- {label}").unwrap();
             let _ = i; // labels are pre-disambiguated
         }
 
         let action_text = format!(
-            "{}\nFor each permanent, set true to put it in pile 1 or false for pile 2.\n\n\
-             Permanents:\n{}",
-            context_desc, perm_list
+            "{context_desc}\nFor each permanent, set true to put it in pile 1 or false for pile 2.\n\n\
+             Permanents:\n{perm_list}"
         );
         let prompt = self.build_prompt(view, &action_text);
 
@@ -2063,10 +2059,10 @@ impl LlmPlayer {
         let mut pile_1_ids: Vec<mtg_engine::ids::ObjectId> = Vec::new();
         if let Some(pile_obj) = response["pile_1"].as_object() {
             for (i, label) in labels.iter().enumerate() {
-                if pile_obj.get(label).and_then(|v| v.as_bool()).unwrap_or(false) {
-                    if i < all_ids.len() {
-                        pile_1_ids.push(all_ids[i]);
-                    }
+                if pile_obj.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false)
+                    && i < all_ids.len()
+                {
+                    pile_1_ids.push(all_ids[i]);
                 }
             }
         }
@@ -2113,10 +2109,10 @@ impl LlmPlayer {
         let prompt = "You chose to CONCEDE the game. Are you sure? Confirm true to concede, false to cancel.".to_string();
         let response = self.send_message_structured(&prompt, &schema);
         let confirmed = response["confirm"].as_bool().unwrap_or(false);
-        if !confirmed {
-            self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
-        } else {
+        if confirmed {
             self.log("CONCEDE-CHECK", "Concede confirmed");
+        } else {
+            self.log("CONCEDE-CHECK", "Concede cancelled, passing instead");
         }
         confirmed
     }
@@ -2153,15 +2149,15 @@ impl LlmPlayer {
         let idx = response["action"].as_u64().map(|n| n as usize)
             .filter(|n| *n < max)
             .unwrap_or_else(|| {
-                self.log("MALFORMED", &format!("response missing valid 'action' field ({}), defaulting to 0", response));
+                self.log("MALFORMED", &format!("response missing valid 'action' field ({response}), defaulting to 0"));
                 0
             });
-        if matches!(actions.get(idx), Some(Action::Concede)) {
-            if !self.confirm_concede() {
-                return 0;
-            }
+        if matches!(actions.get(idx), Some(Action::Concede))
+            && !self.confirm_concede()
+        {
+            return 0;
         }
-        self.log("CHOSE", &format!("action {}", idx));
+        self.log("CHOSE", &format!("action {idx}"));
         idx
     }
 }
@@ -2225,12 +2221,12 @@ impl Player for LlmPlayer {
                             // the resulting damage, so the LLM doesn't waste the spell
                             // on an empty graveyard.
                             let x_suffix = cs.exile_x_from_gy_max
-                                .map(|n| format!(" X={} ({} damage)", n, n))
+                                .map(|n| format!(" X={n} ({n} damage)"))
                                 .unwrap_or_default();
                             let cost_note = cs.additional_cost_label.as_deref().unwrap_or("");
                             let mut extras = Vec::new();
                             if !cost_note.is_empty() { extras.push(cost_note.to_string()); }
-                            if !tap_str.is_empty() { extras.push(format!("tap {}", tap_str)); }
+                            if !tap_str.is_empty() { extras.push(format!("tap {tap_str}")); }
                             let label = if extras.is_empty() {
                                 format!("{} {}{}", verb, cs.name, x_suffix)
                             } else {
@@ -2271,15 +2267,14 @@ impl Player for LlmPlayer {
         }
 
         let actions_str: String = display_labels.iter().enumerate()
-            .map(|(i, label)| format!("{}: {}", i, label))
+            .map(|(i, label)| format!("{i}: {label}"))
             .collect::<Vec<_>>()
             .join(", ");
         let context_line = legal.context.as_deref()
-            .map(|c| format!("[{}]\n", c))
+            .map(|c| format!("[{c}]\n"))
             .unwrap_or_default();
         let action_prompt = format!(
-            "{}Available actions:\n{}\n",
-            context_line, actions_str,
+            "{context_line}Available actions:\n{actions_str}\n",
         );
         let prompt = self.build_prompt(view, &action_prompt);
 
@@ -2311,9 +2306,9 @@ impl Player for LlmPlayer {
 impl LlmPlayer {
     /// Format a card for the mulligan prompt: `Name {cost}[ P/T]`.
     fn format_hand_card(c: &mtg_engine::view::CardView) -> String {
-        let cost = c.cost.as_ref().map(|co| format!(" {}", co)).unwrap_or_default();
+        let cost = c.cost.as_ref().map(|co| format!(" {co}")).unwrap_or_default();
         let pt = match (c.power, c.toughness) {
-            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
             _ => String::new(),
         };
         format!("{}{}{}", c.name, cost, pt)
@@ -2419,7 +2414,7 @@ impl LlmPlayer {
                 Action::MulliganKeep
             }
             None => {
-                self.log("MALFORMED", &format!("Mulligan response missing 'mull' bool ({}), defaulting to keep", response));
+                self.log("MALFORMED", &format!("Mulligan response missing 'mull' bool ({response}), defaulting to keep"));
                 Action::MulliganKeep
             }
         }
@@ -2432,12 +2427,11 @@ impl LlmPlayer {
     fn choose_mulligan_bottom(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
         // Determine N from the legal actions (every option has the same
         // length — enumerated combinations).
-        let n = match legal_actions.iter().find_map(|a| match a {
+        let Some(n) = legal_actions.iter().find_map(|a| match a {
             Action::BottomCards { cards } => Some(cards.len()),
             _ => None,
-        }) {
-            Some(n) => n,
-            None => return legal_actions[0].clone(),
+        }) else {
+            return legal_actions[0].clone();
         };
 
         let hand_text = Self::format_numbered_hand(view);
@@ -2490,7 +2484,7 @@ impl LlmPlayer {
         // Parse and validate bottom_indices.
         let indices: Option<Vec<usize>> = response["bottom_indices"].as_array().map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_i64())
+                .filter_map(serde_json::Value::as_i64)
                 .filter(|i| *i >= 0)
                 .map(|i| i as usize)
                 .collect()
@@ -2514,7 +2508,7 @@ impl LlmPlayer {
         let cards: Vec<ObjectId> = indices.iter()
             .map(|&i| view.your_hand[i].object_id)
             .collect();
-        self.log("CHOSE", &format!("bottom indices {:?}", indices));
+        self.log("CHOSE", &format!("bottom indices {indices:?}"));
         Action::BottomCards { cards }
     }
 
@@ -2593,9 +2587,9 @@ impl LlmPlayer {
                 let mut combat_text = String::new();
                 if !must_attack.is_empty() {
                     combat_text.push_str("MUST ATTACK: ");
-                    for &id in must_attack.iter() {
+                    for &id in must_attack {
                         if let Some(idx) = eligible.iter().position(|&e| e == id) {
-                            combat_text.push_str(&format!("{}:{} ", idx, labels[idx]));
+                            write!(combat_text, "{}:{} ", idx, labels[idx]).unwrap();
                         }
                     }
                     combat_text.push('\n');
@@ -2603,12 +2597,12 @@ impl LlmPlayer {
                 combat_text.push_str("Choose attackers: ");
                 for (i, &id) in eligible.iter().enumerate() {
                     let forced = if must_attack.contains(&id) { " [MUST]" } else { "" };
-                    combat_text.push_str(&format!("{}:{}{} ", i, labels[i], forced));
+                    write!(combat_text, "{}:{}{} ", i, labels[i], forced).unwrap();
                 }
-                combat_text.push_str(&format!(
+                write!(combat_text,
                     "\nPick indices in 0-{} to attack with, or empty list for no attacks. Forced attackers are auto-included.",
                     eligible.len() - 1
-                ));
+                ).unwrap();
 
                 let full_prompt = self.build_prompt(view, &combat_text);
 
@@ -2718,7 +2712,7 @@ impl LlmPlayer {
             let mut legal_indices: Vec<serde_json::Value> = attackers.iter()
                 .enumerate()
                 .filter(|(_, &att_id)| {
-                    blocker_legal.map_or(false, |legal| legal.contains(&att_id))
+                    blocker_legal.is_some_and(|legal| legal.contains(&att_id))
                 })
                 .map(|(idx, _)| serde_json::json!(idx))
                 .collect();
@@ -2747,21 +2741,21 @@ impl LlmPlayer {
         let mut combat_text = String::from("Attackers: ");
         for (i, &id) in attackers.iter().enumerate() {
             let perm = view.battlefield.iter().find(|p| p.object_id == id);
-            let menace = perm.map_or(false, |p| p.keywords.contains(&mtg_engine::types::Keyword::Menace));
+            let menace = perm.is_some_and(|p| p.keywords.contains(&mtg_engine::types::Keyword::Menace));
             if menace {
-                combat_text.push_str(&format!("{}:{} (MENACE) ", i, attacker_labels[i]));
+                write!(combat_text, "{}:{} (MENACE) ", i, attacker_labels[i]).unwrap();
             } else {
-                combat_text.push_str(&format!("{}:{} ", i, attacker_labels[i]));
+                write!(combat_text, "{}:{} ", i, attacker_labels[i]).unwrap();
             }
         }
         combat_text.push_str("\nYour blockers: ");
         for (i, _id) in eligible_blockers.iter().enumerate() {
-            combat_text.push_str(&format!("{}:{} ", i, blocker_labels[i]));
+            write!(combat_text, "{}:{} ", i, blocker_labels[i]).unwrap();
         }
-        combat_text.push_str(&format!(
+        write!(combat_text,
             "\nAssign each blocker (0..{}) to an attacker index, or -1 for no block.",
             eligible_blockers.len().saturating_sub(1)
-        ));
+        ).unwrap();
 
         let base_prompt = self.build_prompt(view, &combat_text);
 
@@ -2770,7 +2764,7 @@ impl LlmPlayer {
         let mut retry_message: Option<String> = None;
         for attempt in 0..max_retries {
             let prompt = if let Some(ref msg) = retry_message {
-                format!("{}\n\nPREVIOUS RESPONSE WAS INVALID:\n{}\nPlease try again.", base_prompt, msg)
+                format!("{base_prompt}\n\nPREVIOUS RESPONSE WAS INVALID:\n{msg}\nPlease try again.")
             } else {
                 base_prompt.clone()
             };
@@ -2888,15 +2882,13 @@ mod tests {
             "format_counters should surface Slime counters so the LLM can \
              see Gutter Grime's stockpile. Bug 37-001: the helper drops \
              every counter type other than +1/+1, -1/-1, and Loyalty. \
-             Got: {:?}",
-            formatted,
+             Got: {formatted:?}",
         );
         assert!(
             formatted_str.contains("Study") || formatted_str.contains("STUDY"),
             "format_counters should surface Study counters so the LLM can \
              see Grimoire of the Dead's progress. Bug 37-001: dropped. \
-             Got: {:?}",
-            formatted,
+             Got: {formatted:?}",
         );
     }
 
@@ -3112,8 +3104,7 @@ mod tests {
             "Board-state display uses comma as both the keyword \
              separator within a creature and the creature separator \
              between entries — 'Flying, Grizzly Bears' is ambiguous. \
-             Bug H10. Got: {:?}",
-            output,
+             Bug H10. Got: {output:?}",
         );
     }
 
@@ -3139,8 +3130,7 @@ mod tests {
 
         assert!(
             label.to_lowercase().contains("exile"),
-            "Cast label should mention the additional cost. label = {:?}",
-            label,
+            "Cast label should mention the additional cost. label = {label:?}",
         );
     }
 
@@ -3158,7 +3148,7 @@ mod tests {
     /// This test asserts the EXPECTED CORRECT behavior, so it currently
     /// fails. It will start passing as soon as Bug H8 is fixed.
     #[test]
-    #[ignore] // Tabled — requires X-cost casting rework
+    #[ignore = "Tabled — requires X-cost casting rework"]
     fn bug_h8_x_cost_spell_label_shows_x() {
         use mtg_engine::actions::{CastTargetSpec, CastableSpell};
 
@@ -3176,7 +3166,7 @@ mod tests {
 
         // Today's label generation path:
         let x_suffix = cs.exile_x_from_gy_max
-            .map(|n| format!(" X={} ({} damage)", n, n))
+            .map(|n| format!(" X={n} ({n} damage)"))
             .unwrap_or_default();
         let label = format!("Cast {}{}", cs.name, x_suffix);
 
@@ -3185,8 +3175,7 @@ mod tests {
             "X-cost spell labels should show the X value so the LLM \
              can see how much damage Devil's Play would deal. Bug H8: \
              the label generator only consults `exile_x_from_gy_max`, \
-             which is None for ManaSymbol::X spells. label = {:?}",
-            label,
+             which is None for ManaSymbol::X spells. label = {label:?}",
         );
     }
 
@@ -3220,7 +3209,7 @@ mod tests {
     /// This test asserts the EXPECTED CORRECT behavior, so it currently
     /// fails. It will start passing as soon as Bug J is fixed.
     #[test]
-    #[ignore] // Tabled — requires X-cost casting rework
+    #[ignore = "Tabled — requires X-cost casting rework"]
     fn bug_j_harvest_pyre_exposes_x_range_not_just_max() {
         use mtg_engine::actions::{CastTargetSpec, CastableSpell};
 
@@ -3245,7 +3234,7 @@ mod tests {
         let view = empty_view();
         let _ = &view;
         let x_suffix = cs.exile_x_from_gy_max
-            .map(|n| format!(" X={} ({} damage)", n, n))
+            .map(|n| format!(" X={n} ({n} damage)"))
             .unwrap_or_default();
         let label = format!("Cast {}{}", cs.name, x_suffix);
 
@@ -3256,8 +3245,7 @@ mod tests {
              preserve creatures by picking X<max. Bug J: the display \
              collapses to a single max-X entry via \
              `exile_x_from_gy_max.map(|n| ...)` which only emits one \
-             value. label = {:?}",
-            label,
+             value. label = {label:?}",
         );
     }
 

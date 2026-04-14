@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Rotting Fensnake — 5/1 for {3}{B}. Vanilla creature.
 pub struct RottingFensnake;

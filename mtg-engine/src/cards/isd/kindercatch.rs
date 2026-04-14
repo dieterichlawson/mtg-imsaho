@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Kindercatch — 6/6 for {3}{G}{G}{G}. Vanilla creature.
 pub struct Kindercatch;

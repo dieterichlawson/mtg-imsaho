@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Abattoir Ghoul — {3}{B} 3/2 Zombie. First strike.
 /// Whenever a creature dealt damage by Abattoir Ghoul this turn dies,
@@ -55,7 +55,7 @@ impl CardBehavior for AbattoirGhoul {
             state.get_player_mut(controller).life = new_life;
             state.events.push(crate::events::GameEvent::LifeChanged { player: controller, old, new_life });
             state.log(crate::state::LogLevel::Event,
-                format!("Abattoir Ghoul: gained {} life from creature death", toughness));
+                format!("Abattoir Ghoul: gained {toughness} life from creature death"));
         }
     }
 }

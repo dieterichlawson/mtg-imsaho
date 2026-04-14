@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope};
 
 /// Elite Inquisitor — {W}{W} 2/2 Human Soldier.
 /// First strike, vigilance.

@@ -1,4 +1,5 @@
 use std::path::Path;
+use std::fmt::Write;
 
 /// A streaming log writer that writes through the global game_log.
 /// Thread-safe because game_log uses a single Mutex internally.
@@ -17,14 +18,14 @@ impl DraftLogger {
         let all_same = models.iter().all(|m| m == &models[0]);
 
         let mut lines: Vec<String> = Vec::new();
-        lines.push(format!("{} Draft", set_name));
-        lines.push(format!("{} players", players));
-        lines.push(format!("best-of-{}", best_of));
+        lines.push(format!("{set_name} Draft"));
+        lines.push(format!("{players} players"));
+        lines.push(format!("best-of-{best_of}"));
         if all_same {
             lines.push(format!("model: {}", models[0]));
         } else {
             for (seat, model) in models.iter().enumerate() {
-                lines.push(format!("Seat {}: {}", seat, model));
+                lines.push(format!("Seat {seat}: {model}"));
             }
         }
 
@@ -32,24 +33,24 @@ impl DraftLogger {
         let inner_width = lines.iter().map(|l| l.chars().count()).max().unwrap_or(0) + 4;
         let bar = "═".repeat(inner_width);
 
-        let mut content = format!("╔{}╗\n", bar);
+        let mut content = format!("╔{bar}╗\n");
         for line_text in &lines {
             let pad = inner_width - line_text.chars().count() - 4;
-            content.push_str(&format!("║  {}{}  ║\n", line_text, " ".repeat(pad)));
+            writeln!(content, "║  {}{}  ║", line_text, " ".repeat(pad)).unwrap();
         }
-        content.push_str(&format!("╚{}╝", bar));
+        write!(content, "╚{bar}╝").unwrap();
 
         mtg_player::game_log::write(file, line, "HEADER", &content);
     }
 
     pub fn section(&self, title: &str, file: &str, line: u32) {
         let bar = "═".repeat(60);
-        let content = format!("{}\n  {}\n{}", bar, title, bar);
+        let content = format!("{bar}\n  {title}\n{bar}");
         mtg_player::game_log::write(file, line, "SECTION", &content);
     }
 
     pub fn subsection(&self, title: &str, file: &str, line: u32) {
-        mtg_player::game_log::write(file, line, &format!("--- {} ---", title), "");
+        mtg_player::game_log::write(file, line, &format!("--- {title} ---"), "");
     }
 
     pub fn system_prompt(&self, prompt: &str, file: &str, line: u32) {
@@ -60,7 +61,7 @@ impl DraftLogger {
         let mut content = String::new();
         for (i, card) in cards.iter().enumerate() {
             let name = card.split(" // ").next().unwrap_or(card);
-            content.push_str(&format!("{:2}. {}\n", i, name));
+            writeln!(content, "{i:2}. {name}").unwrap();
         }
         mtg_player::game_log::write(
             file, line,
@@ -87,12 +88,12 @@ impl DraftLogger {
         // per-line prefix.
         mtg_player::game_log::write(
             file, line,
-            &format!("[Seat {}] PROMPT Pack {} Pick {}", seat, pack, pick),
+            &format!("[Seat {seat}] PROMPT Pack {pack} Pick {pick}"),
             prompt,
         );
         mtg_player::game_log::write(
             file, line,
-            &format!("[Seat {}] RESPONSE Pack {} Pick {}", seat, pack, pick),
+            &format!("[Seat {seat}] RESPONSE Pack {pack} Pick {pick}"),
             response,
         );
         mtg_player::game_log::write(
@@ -107,7 +108,7 @@ impl DraftLogger {
         let mut content = String::new();
         for card in pool {
             let name = card.split(" // ").next().unwrap_or(card);
-            content.push_str(&format!("- {}\n", name));
+            writeln!(content, "- {name}").unwrap();
         }
         mtg_player::game_log::write(
             file, line,
@@ -147,24 +148,24 @@ impl DraftLogger {
         // Final structured deck summary.
         let mut content = String::from("Maindeck:\n");
         for card in maindeck {
-            content.push_str(&format!("  {}\n", card));
+            writeln!(content, "  {card}").unwrap();
         }
         content.push_str("Lands:\n");
         let mut lands_sorted: Vec<_> = lands.iter().collect();
         lands_sorted.sort_by_key(|(name, _)| (*name).clone());
         for (name, count) in lands_sorted {
-            content.push_str(&format!("  {} {}\n", count, name));
+            writeln!(content, "  {count} {name}").unwrap();
         }
         if !sideboard.is_empty() {
-            content.push_str(&format!("Sideboard ({} cards):\n", sideboard.len()));
+            writeln!(content, "Sideboard ({} cards):", sideboard.len()).unwrap();
             for card in sideboard {
                 let name = card.split(" // ").next().unwrap_or(card);
-                content.push_str(&format!("  {}\n", name));
+                writeln!(content, "  {name}").unwrap();
             }
         }
         mtg_player::game_log::write(
             file, line,
-            &format!("[Seat {}] DECK ({} cards, {} retries)", seat, total, retries),
+            &format!("[Seat {seat}] DECK ({total} cards, {retries} retries)"),
             &content,
         );
     }
@@ -180,13 +181,10 @@ impl DraftLogger {
         file: &str,
         line: u32,
     ) {
-        let winner_str = winner
-            .map(|w| format!("Seat {} wins", w))
-            .unwrap_or_else(|| "Draw".to_string());
+        let winner_str = winner.map_or_else(|| "Draw".to_string(), |w| format!("Seat {w} wins"));
         mtg_player::game_log::write(
             file, line,
-            &format!("MATCH Round {} — Seat {} vs Seat {}: {}-{} ({})",
-                round, seat_a, seat_b, wins_a, wins_b, winner_str),
+            &format!("MATCH Round {round} — Seat {seat_a} vs Seat {seat_b}: {wins_a}-{wins_b} ({winner_str})"),
             "",
         );
     }
@@ -195,7 +193,7 @@ impl DraftLogger {
         let content = log.join("\n");
         mtg_player::game_log::write(
             file, line,
-            &format!("GAME {} (Seat {} vs Seat {})", game_num, seat_a, seat_b),
+            &format!("GAME {game_num} (Seat {seat_a} vs Seat {seat_b})"),
             &content,
         );
     }
@@ -203,7 +201,7 @@ impl DraftLogger {
     pub fn bye(&self, round: usize, seat: usize, file: &str, line: u32) {
         mtg_player::game_log::write(
             file, line,
-            &format!("BYE Round {} — Seat {} gets a bye", round, seat),
+            &format!("BYE Round {round} — Seat {seat} gets a bye"),
             "",
         );
     }
@@ -211,10 +209,9 @@ impl DraftLogger {
     pub fn standings(&self, standings: &[(usize, usize, usize, usize)], file: &str, line: u32) {
         let mut content = String::new();
         for (rank, &(seat, match_wins, match_losses, game_wins)) in standings.iter().enumerate() {
-            content.push_str(&format!(
-                "{}. Seat {} — {}-{} ({} game wins)\n",
+            writeln!(content, "{}. Seat {} — {}-{} ({} game wins)",
                 rank + 1, seat, match_wins, match_losses, game_wins
-            ));
+            ).unwrap();
         }
         mtg_player::game_log::write(file, line, "FINAL STANDINGS", &content);
     }

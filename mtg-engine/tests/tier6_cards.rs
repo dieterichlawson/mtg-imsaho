@@ -234,7 +234,7 @@ fn rakish_heir_counter_on_other_vampire_combat_damage() {
     let vamp_counters = *state.get_object(other_vamp).unwrap()
         .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
     // Stromkirk Noble gets +1/+1 from its own trigger AND +1/+1 from Rakish Heir.
-    assert!(vamp_counters >= 2, "Other Vampire should get counters from both itself and Rakish Heir, got {}", vamp_counters);
+    assert!(vamp_counters >= 2, "Other Vampire should get counters from both itself and Rakish Heir, got {vamp_counters}");
 }
 
 /// Rakish Heir does NOT give +1/+1 to non-Vampire creatures.

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, ManaAbilityDef, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{CardType, Zone, ManaType, ManaCost, ManaSymbol, Color, Keyword};
 
 /// Moorland Haunt — Land.
 /// {T}: Add {C}.
@@ -27,10 +27,7 @@ impl CardBehavior for MoorlandHaunt {
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ManaAbilityDef {
                 ability_index: 0,
@@ -45,10 +42,7 @@ impl CardBehavior for MoorlandHaunt {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone != Zone::Battlefield || obj.tapped {
             return vec![];
         }
@@ -80,7 +74,7 @@ impl CardBehavior for MoorlandHaunt {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Exile a creature card from graveyard — player chooses which one.
         let creatures_in_gy: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
@@ -94,7 +88,7 @@ impl CardBehavior for MoorlandHaunt {
             let name = state.get_object(exile_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(exile_id, Zone::Exile, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Moorland Haunt exiled {} from graveyard", name));
+                format!("Moorland Haunt exiled {name} from graveyard"));
             state.create_token_with_subtypes(
                 "Spirit Token", controller, 1, 1,
                 vec![Color::White], vec![CardType::Creature],

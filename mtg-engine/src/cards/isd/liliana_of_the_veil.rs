@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, LoyaltyAbilityDef, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, Zone};
 
 /// Liliana of the Veil {1}{B}{B} Legendary Planeswalker — Liliana (3 loyalty).
 /// +1: Each player discards a card.
@@ -121,7 +121,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     obj.card_state.insert("liliana_discard_count".into(),
                         crate::ids::ObjectId(remaining.len() as u64));
                     for (i, pid) in remaining.iter().enumerate() {
-                        obj.card_state.insert(format!("liliana_discard_{}", i),
+                        obj.card_state.insert(format!("liliana_discard_{i}"),
                             crate::ids::ObjectId(pid.0 as u64));
                     }
                 }
@@ -141,7 +141,7 @@ impl CardBehavior for LilianaOfTheVeil {
                     state.log(crate::state::LogLevel::Event,
                         format!("Liliana +1: p{} discarded {}", first_player.0, name));
                     // Chain to next player.
-                    self.chain_next_discard(state, self_id, registry);
+                    Self::chain_next_discard(state, self_id, registry);
                 } else {
                     // Present choice to the first player.
                     state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -222,19 +222,18 @@ impl CardBehavior for LilianaOfTheVeil {
 
     fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, registry: &CardRegistry) {
         // After a player discards for Liliana +1, chain to the next player.
-        self.chain_next_discard(state, self_id, registry);
+        Self::chain_next_discard(state, self_id, registry);
     }
 }
 
 impl LilianaOfTheVeil {
     /// After one player has discarded for the +1, check if more players need to discard
     /// and present the choice to the next one.
-    fn chain_next_discard(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn chain_next_discard(state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         // Read remaining player count from card_state.
         let count = state.get_object(self_id)
             .and_then(|o| o.card_state.get("liliana_discard_count").copied())
-            .map(|id| id.0 as usize)
-            .unwrap_or(0);
+            .map_or(0, |id| id.0 as usize);
 
         if count == 0 {
             // All players have discarded. Clean up card_state.
@@ -247,15 +246,14 @@ impl LilianaOfTheVeil {
         // Pop the next player from the remaining list.
         let next_player_id = state.get_object(self_id)
             .and_then(|o| o.card_state.get("liliana_discard_0").copied())
-            .map(|id| PlayerId(id.0 as u8))
-            .unwrap_or(PlayerId(0));
+            .map_or(PlayerId(0), |id| PlayerId(id.0 as u8));
 
         // Shift remaining players down and decrement count.
         if let Some(obj) = state.get_object_mut(self_id) {
             for i in 0..(count - 1) {
                 let next_key = format!("liliana_discard_{}", i + 1);
                 let val = obj.card_state.get(&next_key).copied().unwrap_or(crate::ids::ObjectId(0));
-                obj.card_state.insert(format!("liliana_discard_{}", i), val);
+                obj.card_state.insert(format!("liliana_discard_{i}"), val);
             }
             obj.card_state.remove(&format!("liliana_discard_{}", count - 1));
             obj.card_state.insert("liliana_discard_count".into(),
@@ -269,7 +267,7 @@ impl LilianaOfTheVeil {
             // This player has no cards — skip and chain to next.
             state.log(crate::state::LogLevel::Event,
                 format!("Liliana +1: p{} has no cards to discard", next_player_id.0));
-            self.chain_next_discard(state, self_id, registry);
+            Self::chain_next_discard(state, self_id, registry);
             return;
         }
 
@@ -284,7 +282,7 @@ impl LilianaOfTheVeil {
             });
             state.log(crate::state::LogLevel::Event,
                 format!("Liliana +1: p{} discarded {}", next_player_id.0, name));
-            self.chain_next_discard(state, self_id, registry);
+            Self::chain_next_discard(state, self_id, registry);
             return;
         }
 

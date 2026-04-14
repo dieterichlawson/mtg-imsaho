@@ -48,7 +48,7 @@ use mtg_engine::types::*;
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug I is fixed.
 #[test]
-#[ignore] // Tabled — requires X-cost/autotap overhaul
+#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn bug_i_devils_play_flashback_appears_in_legal_actions() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -116,7 +116,7 @@ fn bug_i_devils_play_flashback_appears_in_legal_actions() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 17-001 is fixed.
 #[test]
-#[ignore] // Tabled — requires X-cost/autotap overhaul
+#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature() {
     use mtg_engine::actions::Target;
 
@@ -160,15 +160,14 @@ fn bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature() {
     state = new_state;
     mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
 
-    let damage = state.get_object(victim).map(|o| o.damage_marked).unwrap_or(0);
+    let damage = state.get_object(victim).map_or(0, |o| o.damage_marked);
     assert!(
         damage >= 1,
         "Corpse Lunge exiling a Boneyard Wurm with effective_power 1 \
          should deal 1 damage (per CR 208.2, CDAs 'work in all \
          zones'). Bug 17-001: the additional-cost handler reads base \
          o.power (0), stores exiled_power=0, and Corpse Lunge deals 0 \
-         damage. damage_marked = {}",
-        damage,
+         damage. damage_marked = {damage}",
     );
 }
 
@@ -198,7 +197,7 @@ fn bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug Y is fixed.
 #[test]
-#[ignore] // Tabled — requires autotap/special cost overhaul
+#[ignore = "Tabled — requires autotap/special cost overhaul"]
 fn bug_y_screeching_bat_transform_offered_with_untapped_lands() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::Upkeep, P0);

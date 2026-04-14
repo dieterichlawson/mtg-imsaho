@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TargetFilter};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Into the Maw of Hell — {4}{R}{R} Sorcery.
 /// Destroy target land. Into the Maw of Hell deals 13 damage to target creature.
@@ -46,23 +46,22 @@ impl CardBehavior for IntoTheMawOfHell {
                 };
                 // Valid if it's a land or a creature.
                 let is_land = registry.card_data(obj.card_id)
-                    .map(|d| d.card_types.contains(&CardType::Land))
-                    .unwrap_or(false);
+                    .is_some_and(|d| d.card_types.contains(&CardType::Land));
                 let is_creature = obj.power.is_some();
                 is_land || is_creature
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // targets[0] = land, targets[1] = creature
         if let Some(Target::Object(land_id)) = targets.first() {
-            if state.get_object(*land_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*land_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
                 crate::destruction::try_destroy(state, *land_id, registry);
                 state.log(crate::state::LogLevel::Event,
-                    format!("Into the Maw of Hell destroyed {}", name));
+                    format!("Into the Maw of Hell destroyed {name}"));
             }
         }
         if let Some(Target::Object(creature_id)) = targets.get(1) {
@@ -77,7 +76,7 @@ impl CardBehavior for IntoTheMawOfHell {
                         amount: 13,
                     });
                     state.log(crate::state::LogLevel::Event,
-                        format!("Into the Maw of Hell dealt 13 damage to {}", name));
+                        format!("Into the Maw of Hell dealt 13 damage to {name}"));
                 }
             }
         }

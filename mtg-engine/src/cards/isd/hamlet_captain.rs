@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Hamlet Captain — {1}{G} 2/2 Human Warrior.
 /// Whenever this creature attacks or blocks, other Humans you control
@@ -66,8 +66,7 @@ impl HamletCaptain {
             .filter(|o| {
                 o.subtypes.iter().any(|s| s == "Human")
                 || registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
             })
             .map(|o| o.id)
             .collect();

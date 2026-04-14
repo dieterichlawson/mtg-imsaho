@@ -58,15 +58,14 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             let effective_t = state.effective_toughness(id, registry)
                 .or_else(|| state.get_object(id).and_then(|o| o.toughness));
             let obj = state.get_object(id);
-            let damage = obj.map(|o| o.damage_marked).unwrap_or(0);
-            let deathtouch = obj.map(|o| o.dealt_deathtouch_damage).unwrap_or(false);
+            let damage = obj.map_or(0, |o| o.damage_marked);
+            let deathtouch = obj.is_some_and(|o| o.dealt_deathtouch_damage);
             // Skip creatures with a pending copy-replacement effect (CR 614.1d)
             // — their 0/0 base P/T will be replaced once the copy resolves.
-            let entering_copy = state.get_object(id).map(|o| o.entering_copy_source).unwrap_or(false)
+            let entering_copy = state.get_object(id).is_some_and(|o| o.entering_copy_source)
                 || state.get_object(id)
                     .and_then(|o| registry.get(o.card_id))
-                    .map(|b| b.enters_as_copy())
-                    .unwrap_or(false);
+                    .is_some_and(super::cards::CardBehavior::enters_as_copy);
             match effective_t {
                 Some(t) if t <= 0 && !entering_copy => {
                     // Rule 704.5f: 0 or less toughness — not destruction,
@@ -85,8 +84,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         // Rule 704.5f: zero toughness goes directly to graveyard.
         for id in zero_toughness_ids {
             let (cid, ctrl, damaged_by) = state.get_object(id)
-                .map(|o| (o.card_id, o.controller, o.damaged_by.clone()))
-                .unwrap_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()));
+                .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()), |o| (o.card_id, o.controller, o.damaged_by.clone()));
             let last_known_toughness = state.effective_toughness(id, registry)
                 .or_else(|| state.get_object(id).and_then(|o| o.toughness))
                 .unwrap_or(0);
@@ -112,7 +110,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                 continue;
             }
             // Still need regeneration check.
-            let shields = state.get_object(id).map(|o| o.regeneration_shields).unwrap_or(0);
+            let shields = state.get_object(id).map_or(0, |o| o.regeneration_shields);
             if shields > 0 {
                 crate::destruction::regenerate_sba(state, id);
                 took_action = true;
@@ -134,8 +132,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                     && {
                         let target_id = o.attached_to.expect("aura must have attached_to");
                         state.get_object(target_id)
-                            .map(|t| t.zone != Zone::Battlefield)
-                            .unwrap_or(true) // target doesn't exist
+                            .is_none_or(|t| t.zone != Zone::Battlefield) // target doesn't exist
                     }
             })
             .map(|o| o.id)
@@ -150,8 +147,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                     && {
                         let target_id = o.attached_to.expect("equipment must have attached_to");
                         state.get_object(target_id)
-                            .map(|t| t.zone != Zone::Battlefield)
-                            .unwrap_or(true)
+                            .is_none_or(|t| t.zone != Zone::Battlefield)
                     }
             })
             .map(|o| o.id)
@@ -205,7 +201,8 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                     })
                     .map(|o| (o.id, o.controller))
                     .collect();
-                for (id, controller) in garruk_to_trigger {
+                let any_garruk_triggered = !garruk_to_trigger.is_empty();
+                if let Some((id, controller)) = garruk_to_trigger.into_iter().next() {
                     if let Some(obj) = state.get_object_mut(id) {
                         obj.state_trigger_on_stack = true;
                     }
@@ -219,8 +216,10 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                     );
                     state.log(LogLevel::Event,
                         "Garruk Relentless's state-triggered ability triggers (transform)".into());
-                    // Return immediately so the state trigger goes on the stack
-                    // before any further SBA processing (e.g. zero-loyalty death).
+                }
+                // Return immediately so the state trigger(s) go on the stack
+                // before any further SBA processing (e.g. zero-loyalty death).
+                if any_garruk_triggered {
                     return true;
                 }
             }
@@ -241,8 +240,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                 o.zone == Zone::Battlefield
                     && !o.card_types.contains(&crate::types::CardType::Planeswalker)
                     && registry.card_data(o.card_id)
-                        .map(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
-                        .unwrap_or(false)
+                        .is_some_and(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
                     && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
             })
             .map(|o| o.id)
@@ -282,7 +280,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                             player,
                             legend_name: name.clone(),
                         },
-                        &format!("Legend rule: choose which {} to keep", name),
+                        &format!("Legend rule: choose which {name} to keep"),
                         false,
                     );
                     // Don't set took_action — we need to break out of the SBA

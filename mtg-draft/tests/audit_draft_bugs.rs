@@ -40,13 +40,13 @@ use mtg_draft::deckbuilding::validate_deck;
 fn bug_17_004_validate_deck_rejects_more_copies_than_drafted() {
     // Pool has exactly ONE Dearly Departed alongside 40 fillers.
     let mut pool: Vec<String> = (0..40)
-        .map(|i| format!("Filler Card {}", i))
+        .map(|i| format!("Filler Card {i}"))
         .collect();
     pool.push("Dearly Departed".into());
 
     // Maindeck tries to use TWO Dearly Departed + 38 fillers.
     let mut maindeck: Vec<String> = (0..38)
-        .map(|i| format!("Filler Card {}", i))
+        .map(|i| format!("Filler Card {i}"))
         .collect();
     maindeck.push("Dearly Departed".into());
     maindeck.push("Dearly Departed".into());
@@ -65,8 +65,7 @@ fn bug_17_004_validate_deck_rejects_more_copies_than_drafted() {
         "validate_deck should reject a maindeck that uses more copies \
          of a card than were drafted. Bug 17-004: the no-op DFC \
          fallback accepts any number of copies once the card is in \
-         the pool. Got: {:?}",
-        result,
+         the pool. Got: {result:?}",
     );
 }
 
@@ -88,12 +87,12 @@ fn bug_17_004_validate_deck_rejects_more_copies_than_drafted() {
 #[test]
 fn bug_h9_deckbuilder_error_names_the_actual_problem() {
     let mut pool: Vec<String> = (0..40)
-        .map(|i| format!("Filler Card {}", i))
+        .map(|i| format!("Filler Card {i}"))
         .collect();
     pool.push("Dearly Departed".into());
 
     let mut maindeck: Vec<String> = (0..38)
-        .map(|i| format!("Filler Card {}", i))
+        .map(|i| format!("Filler Card {i}"))
         .collect();
     // 4 Dearly Departed → 40 cards total.
     for _ in 0..4 {
@@ -107,7 +106,7 @@ fn bug_h9_deckbuilder_error_names_the_actual_problem() {
 
     // The message should mention the count (4) or the available
     // number (1) — something more actionable than "not in pool".
-    let has_count_info = msg.contains("4") || msg.contains("1 copy") || msg.contains("only");
+    let has_count_info = msg.contains('4') || msg.contains("1 copy") || msg.contains("only");
     assert!(
         has_count_info,
         "validate_deck's error message for over-quota cards should \
@@ -115,7 +114,6 @@ fn bug_h9_deckbuilder_error_names_the_actual_problem() {
          allowed vs requested, so it can fix the delta. Bug H9: \
          today the error says 'not in your drafted pool' — \
          misleading because the card IS in the pool, just not \
-         enough times. msg = {:?}",
-        msg,
+         enough times. msg = {msg:?}",
     );
 }

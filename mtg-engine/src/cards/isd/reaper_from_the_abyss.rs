@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Reaper from the Abyss — {3}{B}{B}{B} 6/6 flying Demon.
 /// Morbid — At the beginning of each end step, if a creature died this turn,
@@ -52,8 +52,7 @@ impl CardBehavior for ReaperFromTheAbyss {
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != self_id)
             .filter(|o| {
                 let is_demon = registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Demon"))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Demon"))
                     || o.subtypes.iter().any(|s| s == "Demon");
                 !is_demon
             })

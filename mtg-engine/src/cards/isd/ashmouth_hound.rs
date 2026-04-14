@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Ashmouth Hound — {1}{R} 2/1 Elemental Hound.
 /// Whenever this creature blocks or becomes blocked by a creature,
@@ -62,7 +62,7 @@ fn deal_1_damage(state: &mut GameState, source: ObjectId, target: ObjectId) {
                 amount: 1,
             });
             state.log(crate::state::LogLevel::Event,
-                format!("Ashmouth Hound deals 1 damage to {}", name));
+                format!("Ashmouth Hound deals 1 damage to {name}"));
         }
     }
 }

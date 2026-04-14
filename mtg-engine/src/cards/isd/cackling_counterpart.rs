@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, TargetFilter, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Cackling Counterpart — {1}{U}{U} Instant.
 /// Create a token that's a copy of target creature you control.
@@ -42,12 +42,12 @@ impl CardBehavior for CacklingCounterpart {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+                let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
                 let token_id = state.create_token_copy(*target_id, controller, registry);
                 let name = state.get_object(token_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Cackling Counterpart creates a token copy of {}", name));
+                    format!("Cackling Counterpart creates a token copy of {name}"));
             }
         }
         state.move_spell_after_resolve(object_id, registry);

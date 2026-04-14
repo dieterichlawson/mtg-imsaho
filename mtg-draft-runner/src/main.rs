@@ -17,9 +17,21 @@ use mtg_engine::view::GameView;
 
 use mtg_player::llm::LlmPlayer;
 use mtg_player::Player;
+use std::fmt::Write;
 
 mod draft_log;
 mod llm_client;
+
+/// Per-seat configuration used by [`play_match`].
+struct PlayerSpec<'a> {
+    seat: usize,
+    deck: &'a Decklist,
+    model_spec: &'a str,
+    guide: Option<&'a str>,
+}
+
+/// (seat, pack, pool, picks) for a single player at a single pick step.
+type PickInput = (usize, Vec<String>, Vec<String>, Vec<mtg_draft::draft::DraftPick>);
 
 // ─── CLI Argument Parsing ────────────────────────────────────────────
 
@@ -40,8 +52,7 @@ fn parse_args() -> Args {
     let get = |flag: &str| -> Option<String> {
         args.iter()
             .position(|a| a == flag)
-            .and_then(|i| args.get(i + 1))
-            .map(|s| s.to_string())
+            .and_then(|i| args.get(i + 1)).cloned()
     };
 
     let set = get("--set").unwrap_or_else(|| "isd".to_string());
@@ -57,21 +68,21 @@ fn parse_args() -> Args {
 
     // Load per-player models: --model sets default, --model-N overrides for player N
     let mut models: Vec<String> = vec![default_model; players];
-    for i in 0..players {
-        let flag = format!("--model-{}", i);
+    for (i, model) in models.iter_mut().enumerate().take(players) {
+        let flag = format!("--model-{i}");
         if let Some(m) = get(&flag) {
-            models[i] = m;
+            *model = m;
         }
     }
 
     // Load guides: --guide applies to all, --guide-N overrides for player N
     let global_guide = get("--guide").and_then(|path| fs::read_to_string(&path).ok());
     let mut guides: Vec<Option<String>> = vec![global_guide.clone(); players];
-    for i in 0..players {
-        let flag = format!("--guide-{}", i);
+    for (i, guide) in guides.iter_mut().enumerate().take(players) {
+        let flag = format!("--guide-{i}");
         if let Some(path) = get(&flag) {
             if let Ok(contents) = fs::read_to_string(&path) {
-                guides[i] = Some(contents);
+                *guide = Some(contents);
             }
         }
     }
@@ -152,7 +163,7 @@ fn main() {
     // Load set data
     let set_path = PathBuf::from(format!("data/sets/{}.json", args.set));
     let mut set_data = SetData::load(&set_path).unwrap_or_else(|e| {
-        eprintln!("Failed to load set data: {}", e);
+        eprintln!("Failed to load set data: {e}");
         std::process::exit(1);
     });
 
@@ -166,7 +177,7 @@ fn main() {
     }
 
     let sheets = SheetData::from_set_data(&set_data).unwrap_or_else(|e| {
-        eprintln!("Failed to build sheet data: {}", e);
+        eprintln!("Failed to build sheet data: {e}");
         std::process::exit(1);
     });
 
@@ -201,7 +212,7 @@ fn main() {
     if !args.quiet {
         eprintln!("Starting draft...");
     }
-    let mut draft = DraftState::new(packs);
+    let mut draft = DraftState::new(&packs);
 
     // Build card reference with oracle text for all cards in the set
     let card_reference = llm_client::build_card_reference(&set_data.all_card_names(), &registry);
@@ -237,7 +248,7 @@ fn main() {
             }
 
             // Gather inputs for each player before spawning threads
-            let pick_inputs: Vec<(usize, Vec<String>, Vec<String>, Vec<mtg_draft::draft::DraftPick>)> =
+            let pick_inputs: Vec<PickInput> =
                 (0..args.players)
                     .map(|seat| {
                         (
@@ -284,7 +295,7 @@ fn main() {
                 let available = draft.current_pack_for(seat).to_vec();
 
                 draft.make_pick(seat, &chosen).unwrap_or_else(|e| {
-                    eprintln!("\nDraft pick error for seat {}: {}", seat, e);
+                    eprintln!("\nDraft pick error for seat {seat}: {e}");
                     let first = draft.current_pack_for(seat)[0].clone();
                     draft.make_pick(seat, &first).unwrap();
                 });
@@ -390,13 +401,13 @@ fn main() {
 
         for &(a, _) in pairings.iter().filter(|&&(_, b)| b == usize::MAX) {
             if !args.quiet {
-                eprintln!("  Seat {} gets a bye", a);
+                eprintln!("  Seat {a} gets a bye");
             }
         }
 
         if !args.quiet {
             for &(a, b) in &real_matches {
-                eprintln!("  Seat {} vs Seat {}", a, b);
+                eprintln!("  Seat {a} vs Seat {b}");
             }
         }
 
@@ -415,7 +426,14 @@ fn main() {
                     let card_ref = &card_reference;
                     let best_of = args.best_of;
                     let quiet = args.quiet;
-                    s.spawn(move || play_match(a, b, deck_a, deck_b, reg, model_a, model_b, best_of, quiet, guide_a, guide_b, card_ref))
+                    s.spawn(move || play_match(
+                        &PlayerSpec { seat: a, deck: deck_a, model_spec: model_a, guide: guide_a },
+                        &PlayerSpec { seat: b, deck: deck_b, model_spec: model_b, guide: guide_b },
+                        reg,
+                        best_of,
+                        quiet,
+                        card_ref,
+                    ))
                 })
                 .collect();
 
@@ -456,7 +474,7 @@ fn main() {
                     result.player_b,
                     result.wins_a,
                     result.wins_b,
-                    result.winner().map(|w| w.to_string()).unwrap_or("draw".to_string())
+                    result.winner().map_or("draw".to_string(), |w| w.to_string())
                 );
             }
         }
@@ -564,8 +582,7 @@ fn build_deck_with_llm(
             prompt.clone()
         } else {
             format!(
-                "Your previous deck was invalid: {}. Please try again.\n\n{}",
-                last_error, prompt
+                "Your previous deck was invalid: {last_error}. Please try again.\n\n{prompt}"
             )
         };
 
@@ -591,7 +608,7 @@ fn build_deck_with_llm(
     }
 
     // Fallback: include all cards, add 17 lands split by color
-    eprintln!("Warning: deck building failed after {} attempts, using fallback", max_retries);
+    eprintln!("Warning: deck building failed after {max_retries} attempts, using fallback");
     let mut lands = HashMap::new();
     lands.insert("Island".to_string(), 9);
     lands.insert("Swamp".to_string(), 8);
@@ -623,7 +640,7 @@ fn build_deck_prompt(pool: &[String]) -> String {
          Your pool:\n",
     );
     for (name, count) in &sorted {
-        prompt.push_str(&format!("{}x {}\n", count, name));
+        writeln!(prompt, "{count}x {name}").unwrap();
     }
     prompt
 }
@@ -631,17 +648,11 @@ fn build_deck_prompt(pool: &[String]) -> String {
 // ─── Tournament Game Execution ───────────────────────────────────────
 
 fn play_match(
-    seat_a: usize,
-    seat_b: usize,
-    deck_a: &Decklist,
-    deck_b: &Decklist,
+    a: &PlayerSpec<'_>,
+    b: &PlayerSpec<'_>,
     registry: &CardRegistry,
-    model_spec_a: &str,
-    model_spec_b: &str,
     best_of: usize,
     _quiet: bool,
-    guide_a: Option<&str>,
-    guide_b: Option<&str>,
     card_reference: &str,
 ) -> MatchResult {
     let wins_needed = best_of / 2 + 1;
@@ -649,12 +660,17 @@ fn play_match(
     let mut wins_b = 0;
     let mut games = Vec::new();
 
+    let seat_a = a.seat;
+    let seat_b = b.seat;
+    let deck_a = a.deck;
+    let deck_b = b.deck;
+
     // Create LLM players once per match, reuse across games.
     // Set log file so all API prompts/responses are written to the draft log.
-    let name_a = format!("Seat{}", seat_a);
-    let name_b = format!("Seat{}", seat_b);
-    let mut p1 = make_game_player(model_spec_a, &name_a, guide_a);
-    let mut p2 = make_game_player(model_spec_b, &name_b, guide_b);
+    let name_a = format!("Seat{seat_a}");
+    let name_b = format!("Seat{seat_b}");
+    let mut p1 = make_game_player(a.model_spec, &name_a, a.guide);
+    let mut p2 = make_game_player(b.model_spec, &name_b, b.guide);
 
     // Play/draw per MTG tournament rules, delegated to the engine helpers:
     //   Game 1: engine::random_starting_player() — fair coin flip.
@@ -814,7 +830,7 @@ fn make_game_player(model_spec: &str, name: &str, guide: Option<&str>) -> LlmPla
             p
         }
         _ => {
-            eprintln!("Unknown model provider '{}', defaulting to claude", provider);
+            eprintln!("Unknown model provider '{provider}', defaulting to claude");
             LlmPlayer::new(name)
         }
     };

@@ -1,8 +1,8 @@
-/// Regression test for Bug B (BUG_REPORT_8SEAT.md): the PermanentView
-/// built from a transformed DFC was reading the name and card_types
-/// from registry.card_data() which unconditionally returns the front
-/// face, so a transformed Villagers of Estwald would render as
-/// "Villagers of Estwald" with back-face stats (4/6).
+//! Regression test for Bug B (BUG_REPORT_8SEAT.md): the PermanentView
+//! built from a transformed DFC was reading the name and card_types
+//! from registry.card_data() which unconditionally returns the front
+//! face, so a transformed Villagers of Estwald would render as
+//! "Villagers of Estwald" with back-face stats (4/6).
 
 mod common;
 use common::*;

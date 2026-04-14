@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, TemporaryEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 
 /// Traitorous Blood — {1}{R}{R} Sorcery.
 /// Gain control of target creature until end of turn. Untap it.
@@ -38,10 +38,10 @@ impl CardBehavior for TraiterousBlood {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(creature_id)) = targets.first() {
-            if state.get_object(*creature_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
-                let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+            if state.get_object(*creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+                let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
                 // Save original controller for revert at end of turn.
-                let original = state.get_object(*creature_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+                let original = state.get_object(*creature_id).map_or(PlayerId(0), |o| o.controller);
                 state.until_end_of_turn.push(TemporaryEffect::ChangeControl { target: *creature_id, original_controller: original });
                 // Change controller and untap.
                 if let Some(obj) = state.get_object_mut(*creature_id) {
@@ -59,7 +59,7 @@ impl CardBehavior for TraiterousBlood {
                 });
                 let name = state.get_object(*creature_id).map(|o| o.name.clone()).unwrap_or_default();
                 state.log(crate::state::LogLevel::Event,
-                    format!("Traitorous Blood steals {}, untaps it, grants haste and trample", name));
+                    format!("Traitorous Blood steals {name}, untaps it, grants haste and trample"));
             }
         }
         state.move_spell_after_resolve(object_id, registry);

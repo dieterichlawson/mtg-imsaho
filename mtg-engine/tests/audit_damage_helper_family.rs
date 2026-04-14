@@ -127,17 +127,14 @@ fn bug_t_rolling_temblor_pushes_damaged_by() {
     for (id, damage, damaged_by) in &creatures {
         assert!(
             *damage >= 2,
-            "Test setup: creature {:?} should have damage_marked >= 2",
-            id
+            "Test setup: creature {id:?} should have damage_marked >= 2"
         );
         assert!(
             damaged_by.contains(&temblor),
-            "Rolling Temblor should push itself onto creature {:?}'s \
+            "Rolling Temblor should push itself onto creature {id:?}'s \
              damaged_by vector when dealing damage. Bug T: the on_resolve \
              handler increments damage_marked directly without touching \
-             damaged_by. damaged_by = {:?}",
-            id,
-            damaged_by,
+             damaged_by. damaged_by = {damaged_by:?}",
         );
     }
 }
@@ -328,7 +325,6 @@ fn bug_br_olivia_damage_decrements_planeswalker_loyalty() {
          the planeswalker's loyalty counters, not write to damage_marked. \
          Bug BR: the handler inline-writes obj.damage_marked without \
          checking if the target is a planeswalker. \
-         loyalty={}, damage_marked={}",
-        loyalty, damage_marked,
+         loyalty={loyalty}, damage_marked={damage_marked}",
     );
 }

@@ -95,8 +95,7 @@ fn bug_d_moorland_haunt_does_not_auto_pick_creature_to_exile() {
         "Moorland Haunt's activation cost should NOT auto-pick a \
          graveyard creature to exile when multiple are eligible — the \
          player chooses. Bug D: the handler picks the first matching \
-         creature with `iter().filter(...).next()`. zones: a={:?}, b={:?}",
-        a_zone, b_zone,
+         creature with `iter().filter(...).next()`. zones: a={a_zone:?}, b={b_zone:?}",
     );
 }
 
@@ -158,8 +157,7 @@ fn bug_p_caravan_vigil_does_not_auto_pick_basic_land() {
         "Caravan Vigil should not auto-tutor a basic land — the player \
          chooses which basic to fetch (this matters for splash decks). \
          Bug P: the implementation walks library_order and picks the \
-         first matching basic. zones: forest={:?}, swamp={:?}",
-        forest_zone, swamp_zone,
+         first matching basic. zones: forest={forest_zone:?}, swamp={swamp_zone:?}",
     );
 }
 
@@ -210,8 +208,7 @@ fn bug_w_legend_rule_pauses_for_player_choice() {
          'that player chooses one of them'). Both Olivia Voldarens \
          should still be on the battlefield until the player picks one \
          to keep. Bug W: SBA auto-picks ids[0] and silently moves the \
-         other to graveyard. zones: a={:?}, b={:?}",
-        a_zone, b_zone,
+         other to graveyard. zones: a={a_zone:?}, b={b_zone:?}",
     );
 }
 
@@ -266,8 +263,7 @@ fn bug_76_003_travelers_amulet_does_not_auto_pick_basic_land() {
         "Traveler's Amulet should not auto-tutor a basic land — the \
          player chooses (Bug P sibling). Bug 76-003: the implementation \
          walks library_order and picks the first matching basic. zones: \
-         forest={:?}, swamp={:?}",
-        forest_zone, swamp_zone,
+         forest={forest_zone:?}, swamp={swamp_zone:?}",
     );
 }
 
@@ -315,14 +311,13 @@ fn bug_e_nevermore_does_not_read_opponent_hand() {
     // leave it unset (pending a choice) or not equal the hand card.
     let leaked_name_chosen = state
         .get_object(nevermore)
-        .and_then(|o| o.instance_continuous_effects.as_ref().cloned())
-        .map(|effects| {
+        .and_then(|o| o.instance_continuous_effects.clone())
+        .is_some_and(|effects| {
             effects.iter().any(|e| matches!(
                 e,
                 ContinuousEffect::PreventCastingNamed { name } if name == "Grizzly Bears"
             ))
-        })
-        .unwrap_or(false);
+        });
 
     assert!(
         !leaked_name_chosen,
@@ -386,8 +381,7 @@ fn bug_f_stitched_drake_enumerates_exile_choices() {
          exile choice (exile Bears, exile Traveler) — the player \
          chooses, not the engine. Bug F: the additional-cost handler \
          auto-picks the highest-power candidate at apply time and emits \
-         a single CastSpell entry. Got {} entries.",
-        distinct_drake_casts,
+         a single CastSpell entry. Got {distinct_drake_casts} entries.",
     );
 }
 
@@ -451,8 +445,7 @@ fn bug_o_memorys_journey_only_shuffles_targeted_players_graveyard() {
         "Memory's Journey targeting P1 should NOT be allowed to pull a \
          card from P0's graveyard. Bug O: the on_resolve loop shuffles \
          every Target::Object in the target list regardless of which \
-         player owns the card. P0's Grizzly Bears ended up in zone {:?}.",
-        p0_zone,
+         player owns the card. P0's Grizzly Bears ended up in zone {p0_zone:?}.",
     );
 }
 

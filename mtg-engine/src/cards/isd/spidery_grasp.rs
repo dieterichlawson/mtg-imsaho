@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::{GameState, TemporaryEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 
 /// Spidery Grasp — {2}{G} instant. Untap target creature. It gets +2/+4 and gains reach until end of turn.
 pub struct SpideryGrasp;
@@ -32,7 +32,7 @@ impl CardBehavior for SpideryGrasp {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 // Untap the target creature.
                 if let Some(target) = state.get_object_mut(*target_id) {
                     target.tapped = false;

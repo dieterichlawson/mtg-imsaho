@@ -76,8 +76,7 @@ fn bug_ap_rally_the_peasants_buffs_creatures_entering_later() {
          'Creatures you control get +2/+0 until end of turn'). \
          Bug AP: Rally snapshots its targets at resolution time and \
          pushes per-creature ModifyPT effects, so newcomers are missed. \
-         Got effective_power = {}, expected 4 (2 base + 2 anthem).",
-        eff_p,
+         Got effective_power = {eff_p}, expected 4 (2 base + 2 anthem).",
     );
 }
 
@@ -116,8 +115,7 @@ fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
         "A Vampire entering after Vampiric Fury resolves should still \
          get +2/+0 (1 base + 2 anthem = 3). Bug AP: the snapshot \
          walks the battlefield at resolution time and pushes per-target \
-         ModifyPT, so newcomers are missed. effective_power = {}",
-        eff_p,
+         ModifyPT, so newcomers are missed. effective_power = {eff_p}",
     );
 }
 
@@ -189,9 +187,8 @@ fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
          base 2/2 — the +1/+0 was a static ability that should turn off \
          when its source leaves the battlefield. Bug BK: the buff is \
          baked into until_end_of_turn at trigger time and stays there \
-         past Instigator Gang's death. Got effective_power = {}, \
+         past Instigator Gang's death. Got effective_power = {after_p}, \
          expected 2.",
-        after_p,
     );
 }
 

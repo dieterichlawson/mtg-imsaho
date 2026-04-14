@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Champion of the Parish — {W} 1/1 Human Soldier.
 /// Whenever another Human you control enters, put a +1/+1 counter on this creature.
@@ -46,11 +46,9 @@ impl CardBehavior for ChampionOfTheParish {
         let card_id = state.get_object(entered_id).map(|o| o.card_id);
         let is_human = card_id
             .and_then(|cid| registry.card_data(cid))
-            .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-            .unwrap_or(false)
+            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
             || state.get_object(entered_id)
-                .map(|o| o.subtypes.iter().any(|s| s == "Human"))
-                .unwrap_or(false);
+                .is_some_and(|o| o.subtypes.iter().any(|s| s == "Human"));
         if is_human {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }

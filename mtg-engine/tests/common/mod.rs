@@ -41,7 +41,7 @@ pub fn sick_creature(state: &mut GameState, owner: PlayerId, power: i32, toughne
 /// Put a named card into a player's hand. Returns the object ID.
 pub fn spell_in_hand(state: &mut GameState, registry: &CardRegistry, name: &str, player: PlayerId) -> ObjectId {
     let card_id = registry.get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {}", name));
+        .unwrap_or_else(|| panic!("Unknown card: {name}"));
     let data = registry.card_data(card_id);
     let power = data.as_ref().and_then(|d| d.power);
     let toughness = data.as_ref().and_then(|d| d.toughness);
@@ -53,9 +53,9 @@ pub fn spell_in_hand(state: &mut GameState, registry: &CardRegistry, name: &str,
 /// Add exactly enough mana to a player's pool to pay for a card by name.
 pub fn add_mana_for(state: &mut GameState, registry: &CardRegistry, name: &str, player: PlayerId) {
     let card_id = registry.get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {}", name));
+        .unwrap_or_else(|| panic!("Unknown card: {name}"));
     let data = registry.card_data(card_id)
-        .unwrap_or_else(|| panic!("No card data for: {}", name));
+        .unwrap_or_else(|| panic!("No card data for: {name}"));
     if let Some(ref cost) = data.cost {
         for sym in &cost.symbols {
             match sym {
@@ -110,9 +110,9 @@ pub fn named_creature(
     owner: PlayerId,
 ) -> ObjectId {
     let card_id = registry.get_id_by_name(name)
-        .unwrap_or_else(|| panic!("Unknown card: {}", name));
+        .unwrap_or_else(|| panic!("Unknown card: {name}"));
     let data = registry.card_data(card_id)
-        .unwrap_or_else(|| panic!("No card data for: {}", name));
+        .unwrap_or_else(|| panic!("No card data for: {name}"));
     let is_legendary = data.supertypes.contains(&Supertype::Legendary);
     let id = state.create_object(card_id, owner, Zone::Battlefield, data.power, data.toughness);
     let obj = state.get_object_mut(id).unwrap();

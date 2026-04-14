@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Voiceless Spirit — 2/1 for {2}{W}. Flying.
 pub struct VoicelessSpirit;

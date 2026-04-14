@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Moan of the Unhallowed — {2}{B}{B} sorcery. Create two 2/2 black Zombie tokens.
 pub struct MoanOfTheUnhallowed;
@@ -29,7 +29,7 @@ impl CardBehavior for MoanOfTheUnhallowed {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         for _ in 0..2 {
             state.create_token_with_subtypes("Zombie", controller, 2, 2, vec![Color::Black], vec![CardType::Creature], vec![], vec!["Zombie".into()], registry);
         }

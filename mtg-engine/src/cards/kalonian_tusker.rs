@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Kalonian Tusker — 3/3 for {G}{G}. Vanilla creature.
 pub struct KalonianTusker;

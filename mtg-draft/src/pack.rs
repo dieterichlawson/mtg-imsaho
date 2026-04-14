@@ -29,7 +29,7 @@ impl BoosterPack {
                     // DFC foil replaces the normal DFC, which is already in `dfc`.
                     // The foil DFC replaces it, so swap.
                     let len = cards.len();
-                    cards[len - 1] = card.clone();
+                    cards[len - 1].clone_from(card);
                 }
             }
         }
@@ -178,7 +178,7 @@ impl SheetData {
         // All other cards on rare sheets are rares
         let all_rare_sheets = [&rare_sheet1, &rare_sheet2];
         for sheet in &all_rare_sheets {
-            for card in sheet.iter() {
+            for card in *sheet {
                 if !mythic_set.contains(card) {
                     rare_set.insert(card.clone());
                 }
@@ -263,8 +263,8 @@ pub fn generate_pack(
     state: &mut CollationState,
     rng: &mut impl Rng,
 ) -> BoosterPack {
-    let is_c1 = state.pack_index % 2 == 0;
-    let use_rare_sheet1 = state.pack_index % 2 == 0;
+    let is_c1 = state.pack_index.is_multiple_of(2);
+    let use_rare_sheet1 = state.pack_index.is_multiple_of(2);
 
     // 1. Draw commons
     let (n_a, n_b, n_c) = if is_c1 {
@@ -402,7 +402,7 @@ fn generate_foil(
 
 /// Remove one common from the beginning of the commons list (A-run cards are first,
 /// then B-run, then C-run in the pack assembly order).
-fn remove_from_run(commons: &mut Vec<String>, _run: &str) {
+fn remove_from_run(commons: &mut Vec<String>, run: &str) {
     // In pack assembly, commons are ordered: A cards first, then B, then C.
     // Displacing an A common means removing from the front.
     // Displacing a B common means removing from after the A cards.
@@ -410,7 +410,7 @@ fn remove_from_run(commons: &mut Vec<String>, _run: &str) {
     // a middle card (B displacement). The exact position matters less than
     // the count being correct.
     if !commons.is_empty() {
-        match _run {
+        match run {
             "a" => {
                 commons.remove(0);
             }
@@ -500,8 +500,7 @@ mod tests {
         let total = pack.all_cards().len();
         assert!(
             total == 14 || total == 15,
-            "Pack should have 14-15 cards, got {}",
-            total
+            "Pack should have 14-15 cards, got {total}"
         );
 
         // Should have 3 uncommons always

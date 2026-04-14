@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetFilter, TargetRequirement, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Victim of Night — {B}{B} instant. Destroy target non-Vampire, non-Werewolf, non-Zombie creature.
 pub struct VictimOfNight;
@@ -33,20 +33,16 @@ impl CardBehavior for VictimOfNight {
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
-                let obj = match state.get_object(*id) {
-                    Some(o) => o,
-                    None => return false,
-                };
+                let Some(obj) = state.get_object(*id) else { return false; };
                 if obj.zone != Zone::Battlefield || obj.power.is_none() { return false; }
                 // Check both registry subtypes (regular cards) and object subtypes (tokens).
                 let excluded = ["Vampire", "Werewolf", "Zombie"];
                 let has_excluded_registry = registry.card_data(obj.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| excluded.contains(&s.as_str())))
-                    .unwrap_or(false);
+                    .is_some_and(|d| d.subtypes.iter().any(|s| excluded.contains(&s.as_str())));
                 let has_excluded_obj = obj.subtypes.iter().any(|s| excluded.contains(&s.as_str()));
                 !has_excluded_registry && !has_excluded_obj
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 

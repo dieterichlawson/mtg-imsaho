@@ -36,14 +36,14 @@ pub struct DraftState {
 impl DraftState {
     /// Create a new draft from generated packs.
     /// `packs` is indexed as packs[player][pack_round].
-    pub fn new(packs: Vec<Vec<BoosterPack>>) -> Self {
+    pub fn new(packs: &[Vec<BoosterPack>]) -> Self {
         let pod_size = packs.len();
 
         // Store original pack contents for logging
         let original_packs: Vec<Vec<Vec<String>>> = packs
             .iter()
             .map(|player_packs| {
-                player_packs.iter().map(|p| p.all_cards()).collect()
+                player_packs.iter().map(super::pack::BoosterPack::all_cards).collect()
             })
             .collect();
 
@@ -73,7 +73,7 @@ impl DraftState {
 
         // Store remaining pack data for rounds 1 and 2
         // We'll reconstruct current_packs when starting a new round
-        state.store_future_packs(&packs);
+        state.store_future_packs(packs);
 
         state
     }
@@ -100,7 +100,7 @@ impl DraftState {
         let pos = pack
             .iter()
             .position(|c| c == card_name)
-            .ok_or_else(|| format!("Card '{}' not in pack for seat {}", card_name, seat))?;
+            .ok_or_else(|| format!("Card '{card_name}' not in pack for seat {seat}"))?;
 
         let available = pack.clone();
         let chosen = pack.remove(pos);
@@ -122,7 +122,7 @@ impl DraftState {
     /// Pack 2: pass right (seat N -> seat N-1)
     /// Pack 3: pass left
     pub fn rotate_packs(&mut self) {
-        let direction: isize = if self.current_pack_round % 2 == 0 {
+        let direction: isize = if self.current_pack_round.is_multiple_of(2) {
             1 // left
         } else {
             -1 // right
@@ -142,7 +142,7 @@ impl DraftState {
 
     /// Check if the current pack round is complete (all cards picked).
     pub fn is_pack_round_complete(&self) -> bool {
-        self.current_packs.iter().all(|p| p.is_empty())
+        self.current_packs.iter().all(std::vec::Vec::is_empty)
     }
 
     /// Start the next pack round. Returns false if the draft is complete.
@@ -191,7 +191,7 @@ mod tests {
         let sheets = load_sheets();
         let mut rng = rand::thread_rng();
         let packs = generate_draft_packs(&sheets, 4, &mut rng);
-        let mut draft = DraftState::new(packs);
+        let mut draft = DraftState::new(&packs);
 
         // Run all 3 pack rounds
         for round in 0..3 {
@@ -232,7 +232,7 @@ mod tests {
         let sheets = load_sheets();
         let mut rng = rand::thread_rng();
         let packs = generate_draft_packs(&sheets, 4, &mut rng);
-        let mut draft = DraftState::new(packs);
+        let mut draft = DraftState::new(&packs);
 
         // After all players pick from pack 1, packs should pass left
         // Player 0's pack should go to player 1
@@ -258,7 +258,7 @@ mod tests {
         let sheets = load_sheets();
         let mut rng = rand::thread_rng();
         let packs = generate_draft_packs(&sheets, 4, &mut rng);
-        let mut draft = DraftState::new(packs);
+        let mut draft = DraftState::new(&packs);
 
         let result = draft.make_pick(0, "Nonexistent Card");
         assert!(result.is_err());

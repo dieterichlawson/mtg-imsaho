@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, Keyword};
 
 /// Spider Spawning — {4}{G} sorcery. Create a 1/2 green Spider creature token with reach
 /// for each creature card in your graveyard. Flashback {6}{B}.
@@ -32,7 +32,7 @@ impl CardBehavior for SpiderSpawning {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         // Count creature cards in controller's graveyard (excluding this spell which is still on the stack).
         let creature_count = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.power.is_some() && o.id != object_id)
@@ -41,7 +41,7 @@ impl CardBehavior for SpiderSpawning {
             state.create_token_with_subtypes("Spider", controller, 1, 2, vec![Color::Green], vec![CardType::Creature], vec![Keyword::Reach], vec!["Spider".into()], registry);
         }
         if creature_count > 0 {
-            state.log(crate::state::LogLevel::Event, format!("Spider Spawning created {} Spider tokens", creature_count));
+            state.log(crate::state::LogLevel::Event, format!("Spider Spawning created {creature_count} Spider tokens"));
         }
         state.move_spell_after_resolve(object_id, registry);
     }

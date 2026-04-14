@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone, CounterType};
 
 /// Falkenrath Marauders — {3}{R}{R} 2/2 Vampire Warrior with flying and haste.
 /// Whenever Falkenrath Marauders deals combat damage to a player, put two +1/+1 counters on it.
@@ -36,7 +36,7 @@ impl CardBehavior for FalkenrathMarauders {
     }
 
     fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        if state.get_object(self_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 2);
         }
     }

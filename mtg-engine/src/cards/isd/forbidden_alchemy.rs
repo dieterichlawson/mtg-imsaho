@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Forbidden Alchemy — {2}{U} instant. Look at the top four cards of your library.
 /// Put one into your hand and the rest into your graveyard.
@@ -29,7 +29,7 @@ impl CardBehavior for ForbiddenAlchemy {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         // Remove top 4 cards from library_order (they stay in Zone::Library but aren't drawable).
         let player = state.get_player_mut(controller);
         let count = std::cmp::min(4, player.library_order.len());
@@ -43,7 +43,7 @@ impl CardBehavior for ForbiddenAlchemy {
             let card_id = revealed[0];
             let chosen_name = state.obj_name(card_id);
             state.move_object(card_id, Zone::Hand, registry);
-            state.log(LogLevel::Event, format!("Forbidden Alchemy: {} put into hand", chosen_name));
+            state.log(LogLevel::Event, format!("Forbidden Alchemy: {chosen_name} put into hand"));
             state.move_spell_after_resolve(object_id, registry);
         } else {
             // 2+ cards -- ask the player which one to keep.

@@ -1,4 +1,4 @@
-/// Tests for the LLM player's multi-turn conversation and decklist formatting.
+//! Tests for the LLM player's multi-turn conversation and decklist formatting.
 
 use mtg_engine::cards::CardRegistry;
 
@@ -13,15 +13,15 @@ fn format_decklist_includes_oracle_text() {
     let result = mtg_player::llm::LlmPlayer::format_decklist_for_test(&entries, &registry);
 
     // Should include card count
-    assert!(result.contains("2x Victim of Night"), "Should list card count: {}", result);
-    assert!(result.contains("10x Swamp"), "Should list land count: {}", result);
+    assert!(result.contains("2x Victim of Night"), "Should list card count: {result}");
+    assert!(result.contains("10x Swamp"), "Should list land count: {result}");
 
     // Should include oracle text
     assert!(result.contains("Destroy target non-Vampire"),
-        "Should include oracle text for Victim of Night: {}", result);
+        "Should include oracle text for Victim of Night: {result}");
 
     // Should include cost
-    assert!(result.contains("{B}{B}"), "Should include mana cost: {}", result);
+    assert!(result.contains("{B}{B}"), "Should include mana cost: {result}");
 
     // Should NOT duplicate card info for same-name entries
     let occurrences = result.matches("Destroy target non-Vampire").count();
@@ -37,10 +37,8 @@ fn init_conversation_sets_system_prompt_with_decklists() {
         ("Lightning Bolt".to_string(), 4),
         ("Mountain".to_string(), 16),
     ];
-    let _opp_deck = vec![
-        ("Grizzly Bears".to_string(), 4),
-        ("Forest".to_string(), 16),
-    ];
+    let _opp_deck = [("Grizzly Bears".to_string(), 4),
+        ("Forest".to_string(), 16)];
 
     player.init_conversation(&your_deck, "Grizzly Bears {1}{G} | Creature — Bear 2/2\nForest | Land", &registry);
 
@@ -149,27 +147,27 @@ fn short_effect_summary_drops_enchant_line_and_reminder_text() {
                    Prevent all combat damage that would be dealt to and dealt by enchanted creature.";
     let summary = LlmPlayer::short_effect_summary_for_test(ghostly);
     assert!(!summary.to_lowercase().starts_with("enchant creature"),
-        "Should drop leading 'Enchant creature' line: {}", summary);
-    assert!(summary.contains("flying"), "Should include flying: {}", summary);
+        "Should drop leading 'Enchant creature' line: {summary}");
+    assert!(summary.contains("flying"), "Should include flying: {summary}");
     assert!(summary.contains("Prevent all combat damage"),
-        "Should mention combat damage prevention: {}", summary);
+        "Should mention combat damage prevention: {summary}");
 
     // Bonds of Faith — ensure the conditional gets through.
     let bonds = "Enchant creature\n\
                  Enchanted creature gets +2/+2 as long as it's a Human. \
                  Otherwise, it can't attack or block.";
     let summary = LlmPlayer::short_effect_summary_for_test(bonds);
-    assert!(summary.contains("+2/+2"), "Should include the bonus: {}", summary);
+    assert!(summary.contains("+2/+2"), "Should include the bonus: {summary}");
     assert!(summary.contains("can't attack or block"),
-        "Should include the penalty clause: {}", summary);
+        "Should include the penalty clause: {summary}");
 
     // Butcher's Cleaver — equipment, should include the equip cost and bonus.
     let cleaver = "Equipped creature gets +3/+0.\n\
                    As long as equipped creature is a Human, it has lifelink.\n\
                    Equip {3}";
     let summary = LlmPlayer::short_effect_summary_for_test(cleaver);
-    assert!(summary.contains("+3/+0"), "Should include bonus: {}", summary);
-    assert!(summary.contains("Equip {3}"), "Should include equip cost: {}", summary);
+    assert!(summary.contains("+3/+0"), "Should include bonus: {summary}");
+    assert!(summary.contains("Equip {3}"), "Should include equip cost: {summary}");
 
     // Reminder text in parentheses should be stripped.
     let with_reminder = "Equipped creature gets +1/+2 and has hexproof. \
@@ -177,8 +175,8 @@ fn short_effect_summary_drops_enchant_line_and_reminder_text() {
                          Equip {3}";
     let summary = LlmPlayer::short_effect_summary_for_test(with_reminder);
     assert!(!summary.contains("It can't be the target"),
-        "Should strip parenthesized reminder text: {}", summary);
-    assert!(summary.contains("hexproof"), "Should keep main text: {}", summary);
+        "Should strip parenthesized reminder text: {summary}");
+    assert!(summary.contains("hexproof"), "Should keep main text: {summary}");
 
     // Empty input stays empty.
     assert_eq!(LlmPlayer::short_effect_summary_for_test(""), "");

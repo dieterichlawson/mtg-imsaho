@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Village Bell-Ringer — {2}{W} 1/4 Human Scout. Flash. When this creature enters, untap all creatures you control.
 pub struct VillageBellRinger;
@@ -34,7 +34,7 @@ impl CardBehavior for VillageBellRinger {
     fn has_etb_handler(&self) -> bool { true }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         let to_untap: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some() && o.tapped)
             .map(|o| o.id)

@@ -41,7 +41,7 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
         .trim_end_matches("```")
         .trim();
     let v: serde_json::Value = serde_json::from_str(stripped)
-        .map_err(|e| format!("Failed to parse JSON: {}", e))?;
+        .map_err(|e| format!("Failed to parse JSON: {e}"))?;
 
     // Parse maindeck — either object {name: count} or legacy array [name, ...]
     let maindeck: Vec<String> = if let Some(obj) = v["maindeck"].as_object() {
@@ -57,7 +57,7 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
     } else if let Some(arr) = v["maindeck"].as_array() {
         // Legacy array format
         arr.iter()
-            .filter_map(|c| c.as_str().map(|s| s.to_string()))
+            .filter_map(|c| c.as_str().map(std::string::ToString::to_string))
             .collect()
     } else {
         return Err("JSON response missing \"maindeck\" (expected object or array).".to_string());
@@ -94,15 +94,15 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
 /// - Lands must be basic lands only
 ///
 /// Returns a `DraftDeck` with the sideboard computed, or an error message.
-pub fn validate_deck(
+pub fn validate_deck<S: std::hash::BuildHasher>(
     pool: &[String],
     maindeck: &[String],
-    lands: &HashMap<String, u32>,
+    lands: &HashMap<String, u32, S>,
 ) -> Result<DraftDeck, String> {
     // Check lands are basic
     for land_name in lands.keys() {
         if !BASIC_LANDS.contains(&land_name.as_str()) {
-            return Err(format!("'{}' is not a basic land. Only Plains, Island, Swamp, Mountain, Forest are allowed.", land_name));
+            return Err(format!("'{land_name}' is not a basic land. Only Plains, Island, Swamp, Mountain, Forest are allowed."));
         }
     }
 
@@ -123,15 +123,13 @@ pub fn validate_deck(
         if used_counts[name] > available {
             if available == 0 {
                 return Err(format!(
-                    "'{}' is not in your drafted pool.",
-                    name
-                ));
-            } else {
-                return Err(format!(
-                    "'{}' appears {} time(s) in your maindeck but you only drafted {} copy/copies.",
-                    name, used_counts[name], available
+                    "'{name}' is not in your drafted pool."
                 ));
             }
+            return Err(format!(
+                "'{}' appears {} time(s) in your maindeck but you only drafted {} copy/copies.",
+                name, used_counts[name], available
+            ));
         }
     }
 
@@ -147,8 +145,7 @@ pub fn validate_deck(
         // real upper bound. 200 is a generous hallucination guard.
         if *count > 200 {
             return Err(format!(
-                "{} count is {} — that's clearly a hallucinated number. A typical limited deck has 16-18 total lands.",
-                name, count
+                "{name} count is {count} — that's clearly a hallucinated number. A typical limited deck has 16-18 total lands."
             ));
         }
     }
@@ -159,8 +156,7 @@ pub fn validate_deck(
     let total = maindeck.len() + land_count as usize;
     if total < 40 {
         return Err(format!(
-            "Deck has {} cards (need at least 40). Add more cards or basic lands.",
-            total
+            "Deck has {total} cards (need at least 40). Add more cards or basic lands."
         ));
     }
 
@@ -177,7 +173,7 @@ pub fn validate_deck(
 
     Ok(DraftDeck {
         maindeck: maindeck.to_vec(),
-        lands: lands.clone(),
+        lands: lands.iter().map(|(k, v)| (k.clone(), *v)).collect(),
         sideboard: remaining_pool,
     })
 }
@@ -239,8 +235,8 @@ mod tests {
 
     #[test]
     fn test_validate_valid_deck() {
-        let pool: Vec<String> = (0..45).map(|i| format!("Card {}", i)).collect();
-        let maindeck: Vec<String> = (0..23).map(|i| format!("Card {}", i)).collect();
+        let pool: Vec<String> = (0..45).map(|i| format!("Card {i}")).collect();
+        let maindeck: Vec<String> = (0..23).map(|i| format!("Card {i}")).collect();
         let mut lands = HashMap::new();
         lands.insert("Island".to_string(), 9);
         lands.insert("Swamp".to_string(), 8);
@@ -252,8 +248,8 @@ mod tests {
 
     #[test]
     fn test_validate_too_few_cards() {
-        let pool: Vec<String> = (0..45).map(|i| format!("Card {}", i)).collect();
-        let maindeck: Vec<String> = (0..10).map(|i| format!("Card {}", i)).collect();
+        let pool: Vec<String> = (0..45).map(|i| format!("Card {i}")).collect();
+        let maindeck: Vec<String> = (0..10).map(|i| format!("Card {i}")).collect();
         let mut lands = HashMap::new();
         lands.insert("Island".to_string(), 5);
 
@@ -265,8 +261,8 @@ mod tests {
     #[test]
     fn test_validate_no_max_deck_size() {
         // MTG rule 100.2b: no maximum deck size in limited
-        let pool: Vec<String> = (0..80).map(|i| format!("Card {}", i)).collect();
-        let maindeck: Vec<String> = (0..80).map(|i| format!("Card {}", i)).collect();
+        let pool: Vec<String> = (0..80).map(|i| format!("Card {i}")).collect();
+        let maindeck: Vec<String> = (0..80).map(|i| format!("Card {i}")).collect();
         let mut lands = HashMap::new();
         lands.insert("Island".to_string(), 9);
 

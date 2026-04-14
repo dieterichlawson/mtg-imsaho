@@ -3,7 +3,7 @@ use crate::cards::helpers;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Ludevic's Test Subject {1}{U} 0/3 Lizard Egg // Ludevic's Abomination 13/13 Lizard Horror
 /// with Trample.
@@ -54,7 +54,7 @@ impl CardBehavior for LudevicsTestSubject {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((13, 13))
         } else {
             None
@@ -84,14 +84,13 @@ impl CardBehavior for LudevicsTestSubject {
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         // If already transformed, this ability shouldn't do anything (back face has no activated abilities).
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             return;
         }
         // Add a hatchling counter.
         let current = state.get_object(object_id)
             .and_then(|o| o.card_state.get("hatchling_counters"))
-            .map(|id| id.0 as u32)
-            .unwrap_or(0);
+            .map_or(0, |id| id.0 as u32);
         let new_count = current + 1;
 
         if new_count >= 5 {
@@ -107,7 +106,7 @@ impl CardBehavior for LudevicsTestSubject {
                 obj.card_state.insert("hatchling_counters".into(), ObjectId(new_count as u64));
             }
             state.log(crate::state::LogLevel::Event,
-                format!("Ludevic's Test Subject: hatchling counter added ({}/5)", new_count));
+                format!("Ludevic's Test Subject: hatchling counter added ({new_count}/5)"));
         }
     }
 

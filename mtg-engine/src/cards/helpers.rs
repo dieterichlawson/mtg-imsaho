@@ -17,7 +17,7 @@ use crate::types::Zone;
 /// Returns true if the aura was successfully attached.
 pub fn resolve_aura(state: &mut GameState, aura_id: ObjectId, targets: &[Target], registry: &CardRegistry) -> bool {
     if let Some(Target::Object(target_id)) = targets.first() {
-        if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             state.move_object(aura_id, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(aura_id) {
                 obj.attached_to = Some(*target_id);
@@ -235,7 +235,7 @@ pub fn opponent_player(state: &GameState, controller: PlayerId) -> Target {
 
 /// Get the controller of a permanent, with a fallback.
 pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
-    state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0))
+    state.get_object(object_id).map_or(PlayerId(0), |o| o.controller)
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -258,10 +258,7 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
         _ => return,
     };
 
-    let behavior = match registry.get(card_id) {
-        Some(b) => b,
-        None => return,
-    };
+    let Some(behavior) = registry.get(card_id) else { return; };
 
     // Flip the transform flag.
     if let Some(obj) = state.get_object_mut(object_id) {
@@ -272,17 +269,17 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
         // Was on back face -> now front face. Restore front face data.
         let front = behavior.card_data();
         if let Some(obj) = state.get_object_mut(object_id) {
-            obj.name = front.name.clone();
-            obj.keywords = front.keywords.clone();
-            obj.subtypes = front.subtypes.clone();
+            obj.name.clone_from(&front.name);
+            obj.keywords.clone_from(&front.keywords);
+            obj.subtypes.clone_from(&front.subtypes);
         }
     } else {
         // Was on front face -> now back face. Apply back face data.
         if let Some(back) = behavior.back_face_data() {
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.name = back.name.clone();
-                obj.keywords = back.keywords.clone();
-                obj.subtypes = back.subtypes.clone();
+                obj.name.clone_from(&back.name);
+                obj.keywords.clone_from(&back.keywords);
+                obj.subtypes.clone_from(&back.subtypes);
             }
         }
     }

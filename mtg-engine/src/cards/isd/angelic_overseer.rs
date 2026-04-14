@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectCondition, EffectScope};
 
 /// Angelic Overseer — {3}{W}{W} 5/3 Angel.
 /// Flying.

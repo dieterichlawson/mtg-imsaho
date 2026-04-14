@@ -36,7 +36,7 @@ fn registry() -> CardRegistry {
 }
 
 fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: mtg_engine::ids::PlayerId) -> ObjectId {
-    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {}", name));
+    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
     let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
     let obj = state.get_object_mut(id).unwrap();
     obj.name = name.into();

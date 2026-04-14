@@ -119,8 +119,7 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
          creature it dealt damage to (CR 603.6d: triggered ability \
          continues to resolve even if its source has left the \
          battlefield). Bug BT: the handler early-returns because the \
-         Ghoul is no longer on the battlefield. Life: {} -> {}",
-        life_before, life_after,
+         Ghoul is no longer on the battlefield. Life: {life_before} -> {life_after}",
     );
 }
 
@@ -169,8 +168,7 @@ fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
         "Charmbreaker Devils' +4/+0 should NOT trigger when the \
          controller casts a creature spell — its oracle text restricts \
          the trigger to instants and sorceries. Bug L: the handler \
-         doesn't filter by spell type. effective_power: {} -> {}",
-        base_power, after_power,
+         doesn't filter by spell type. effective_power: {base_power} -> {after_power}",
     );
 }
 
@@ -229,8 +227,7 @@ fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
         "Moldgraf Monstrosity (controlled by P0 via theft) should return \
          creatures from P0's graveyard, not from P1's owner-graveyard. \
          Bug CA: the handler reads o.owner (P1, who has nothing in \
-         graveyard) instead of o.controller (P0). Grizzly Bears zone: {:?}",
-        bears_zone,
+         graveyard) instead of o.controller (P0). Grizzly Bears zone: {bears_zone:?}",
     );
 }
 
@@ -288,8 +285,7 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
         "Burning Vengeance should not log 'deals 2 damage to opponent' \
          before the target is chosen — the player might pick a \
          creature, themselves, or a planeswalker. Bug BU: the handler \
-         unconditionally logs the stale text. new_log_lines = {:?}",
-        new_log_lines,
+         unconditionally logs the stale text. new_log_lines = {new_log_lines:?}",
     );
 }
 
@@ -318,7 +314,7 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug K is fixed.
 #[test]
-#[ignore] // Tabled — requires autotap/special cost overhaul
+#[ignore = "Tabled — requires autotap/special cost overhaul"]
 fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -423,15 +419,13 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
          Bug 17-002: the ability isn't wired as a separate trigger, \
          so only Undead Alchemist's own mill-instead path can \
          observe the mill — Dream Twist / Nephalia Drownyard / etc. \
-         bypass it entirely. milled_zone = {:?}",
-        milled_zone,
+         bypass it entirely. milled_zone = {milled_zone:?}",
     );
     assert!(
         zombie_tokens_after > zombie_tokens_before,
         "Undead Alchemist should create a Zombie token for each \
          creature card milled from an opponent's library. Bug 17-002. \
-         zombie tokens: {} -> {}",
-        zombie_tokens_before, zombie_tokens_after,
+         zombie tokens: {zombie_tokens_before} -> {zombie_tokens_after}",
     );
 }
 
@@ -518,8 +512,7 @@ fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
          mill, leaving the player's life unchanged. Bug AE: the \
          handler ADDS `amount` to life as an after-the-fact restore, \
          so a fresh harness call nets +amount life (revealing that \
-         the code treats damage as already-applied). life: {} -> {}",
-        life_before, life_after,
+         the code treats damage as already-applied). life: {life_before} -> {life_after}",
     );
 }
 
@@ -632,8 +625,7 @@ fn bug_n_apnap_ordering_prompt_for_simultaneous_triggers() {
     }).count();
     assert!(
         ap_count >= 2,
-        "Test setup: expected 2+ simultaneous P0 triggers, got {}",
-        ap_count,
+        "Test setup: expected 2+ simultaneous P0 triggers, got {ap_count}",
     );
 
     // CR 603.3b: the player should be prompted to choose the order.

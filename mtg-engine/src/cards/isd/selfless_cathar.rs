@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, ActivatedAbilityDef, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Selfless Cathar — {W} 1/1 Human Soldier.
 /// {1}{W}, Sacrifice Selfless Cathar: Creatures you control get +1/+1 until end of turn.

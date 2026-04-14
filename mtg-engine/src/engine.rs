@@ -10,7 +10,7 @@ use crate::sba::check_state_based_actions;
 use crate::stack;
 use crate::state::{AwaitingAction, GameState, LogLevel};
 use crate::triggers;
-use crate::types::*;
+use crate::types::{Zone, CardType, Supertype, ManaCost, ManaSymbol, ContinuousEffect, Keyword, CounterType, Step, Color};
 
 /// A decklist: card name -> count.
 #[derive(Clone)]
@@ -62,8 +62,7 @@ fn gather_mana_sources(
         // Stony Silence: skip mana abilities from artifacts.
         if prevent_artifact_abilities {
             let is_artifact = registry.card_data(obj.card_id)
-                .map(|d| d.card_types.contains(&CardType::Artifact))
-                .unwrap_or(false)
+                .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
                 || obj.card_types.contains(&CardType::Artifact);
             if is_artifact { continue; }
         }
@@ -75,12 +74,10 @@ fn gather_mana_sources(
             let has_side_effects = abilities.iter().any(|a| a.has_side_effects);
             let is_creature = obj.power.is_some()
                 || registry.card_data(obj.card_id)
-                    .map(|d| d.card_types.contains(&CardType::Creature))
-                    .unwrap_or(false);
+                    .is_some_and(|d| d.card_types.contains(&CardType::Creature));
             let has_utility = !behavior.activated_abilities(state, obj.id, registry).is_empty();
             let is_basic = registry.card_data(obj.card_id)
-                .map(|d| d.supertypes.contains(&Supertype::Basic))
-                .unwrap_or(false);
+                .is_some_and(|d| d.supertypes.contains(&Supertype::Basic));
 
             let source_kind = if has_side_effects {
                 ManaSourceKind::HasSideEffects
@@ -139,7 +136,7 @@ fn activate_mana_source(
     let pool = &state.get_player(controller).mana_pool;
     let pool_str: Vec<String> = pool.mana.iter()
         .filter(|(_, &v)| v > 0)
-        .map(|(t, v)| format!("{:?}:{}", t, v))
+        .map(|(t, v)| format!("{t:?}:{v}"))
         .collect();
     state.log(LogLevel::Info, format!("p{} tapped {} for mana (pool: {})",
         controller.0, name, if pool_str.is_empty() { "empty".into() } else { pool_str.join(" ") }));
@@ -152,8 +149,7 @@ fn alternative_costs_from_effects(state: &GameState, registry: &CardRegistry, ca
 
     let card_data = registry.card_data(card_id);
     let is_creature = card_data.as_ref()
-        .map(|d| d.card_types.contains(&CardType::Creature))
-        .unwrap_or(false);
+        .is_some_and(|d| d.card_types.contains(&CardType::Creature));
     let subtypes: Vec<String> = card_data.as_ref()
         .map(|d| d.subtypes.clone())
         .unwrap_or_default();
@@ -196,8 +192,7 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
 
     let card_data = registry.card_data(card_id);
     let is_creature = card_data.as_ref()
-        .map(|d| d.card_types.contains(&CardType::Creature))
-        .unwrap_or(false);
+        .is_some_and(|d| d.card_types.contains(&CardType::Creature));
     let subtypes: Vec<String> = card_data.as_ref()
         .map(|d| d.subtypes.clone())
         .unwrap_or_default();
@@ -443,18 +438,18 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 let context = match choice {
                     ResolutionChoiceKind::ChooseTarget { description, .. } => description.clone(),
                     ResolutionChoiceKind::PayOrNot { description, .. } => description.clone(),
-                    ResolutionChoiceKind::YesNo { .. } => format!("{}: choose yes or no", source_name),
+                    ResolutionChoiceKind::YesNo { .. } => format!("{source_name}: choose yes or no"),
                     ResolutionChoiceKind::ChooseCardFromHand { description, .. } => description.clone(),
-                    ResolutionChoiceKind::ChooseFromRevealed { .. } => format!("{}: choose a card", source_name),
-                    ResolutionChoiceKind::ChooseFromLibrary { .. } => format!("{}: search library", source_name),
+                    ResolutionChoiceKind::ChooseFromRevealed { .. } => format!("{source_name}: choose a card"),
+                    ResolutionChoiceKind::ChooseFromLibrary { .. } => format!("{source_name}: search library"),
                     ResolutionChoiceKind::ChooseCardType { options, .. } => {
                         let opts = options.iter().enumerate()
-                            .map(|(i, name)| format!("{}: {}", i, name))
+                            .map(|(i, name)| format!("{i}: {name}"))
                             .collect::<Vec<_>>()
                             .join(", ");
-                        format!("{}: choose a card type ({})", source_name, opts)
+                        format!("{source_name}: choose a card type ({opts})")
                     }
-                    ResolutionChoiceKind::DividePermanentsIntoPiles { .. } => format!("{}: divide into piles", source_name),
+                    ResolutionChoiceKind::DividePermanentsIntoPiles { .. } => format!("{source_name}: divide into piles"),
                     ResolutionChoiceKind::ChoosePile { pile_1, pile_2, .. } => {
                         let fmt_pile = |ids: &[ObjectId]| -> String {
                             if ids.is_empty() { return "empty".to_string(); }
@@ -472,9 +467,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         };
     }
 
-    let player = match state.priority_player {
-        Some(p) => p,
-        None => return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None },
+    let Some(player) = state.priority_player else {
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None };
     };
 
     let mut actions = Vec::new();
@@ -495,9 +489,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         }
         // Check card data effects.
         registry.get(o.card_id)
-            .map(|b| b.card_data().continuous_effects.iter()
+            .is_some_and(|b| b.card_data().continuous_effects.iter()
                 .any(|e| matches!(e, ContinuousEffect::PreventArtifactAbilities)))
-            .unwrap_or(false)
     });
 
     // Mana abilities: can activate anytime you have priority.
@@ -507,8 +500,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         // Stony Silence: skip mana abilities from artifacts.
         if prevent_artifact_abilities {
             let is_artifact = registry.card_data(obj.card_id)
-                .map(|d| d.card_types.contains(&CardType::Artifact))
-                .unwrap_or(false)
+                .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
                 || obj.card_types.contains(&CardType::Artifact);
             if is_artifact { continue; }
         }
@@ -548,8 +540,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         // Stony Silence: skip artifact activated abilities.
         if prevent_artifact_abilities {
             let is_artifact = registry.card_data(obj_card_id)
-                .map(|d| d.card_types.contains(&CardType::Artifact))
-                .unwrap_or(false)
+                .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
                 || obj.card_types.contains(&CardType::Artifact);
             if is_artifact { continue; }
         }
@@ -565,8 +556,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         // points to the copied creature. We must also invoke Evil Twin's own behavior
         // to surface the "{U}{B}, {T}: Destroy" ability stored there.
         let is_evil_twin_copy = state.get_object(obj_id)
-            .map(|o| o.card_state.contains_key("is_evil_twin"))
-            .unwrap_or(false);
+            .is_some_and(|o| o.card_state.contains_key("is_evil_twin"));
         if is_evil_twin_copy {
             if let Some(evil_twin_card_id) = registry.get_id_by_name("Evil Twin") {
                 if evil_twin_card_id != obj_card_id {
@@ -629,14 +619,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         None => continue,
                     }
                 }
+            } else if mana::can_pay(mana_pool, &ab.cost) {
+                Vec::new()
             } else {
-                if mana::can_pay(mana_pool, &ab.cost) {
-                    Vec::new()
-                } else {
-                    match mana::compute_autotap(&ab.cost, mana_pool, &early_mana_sources, &[]) {
-                        Some(plan) => plan,
-                        None => continue,
-                    }
+                match mana::compute_autotap(&ab.cost, mana_pool, &early_mana_sources, &[]) {
+                    Some(plan) => plan,
+                    None => continue,
                 }
             };
             // Check tap cost and summoning sickness.
@@ -697,7 +685,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     for target in targets {
                         let target_obj_id = match &target {
                             crate::actions::Target::Object(id) => Some(*id),
-                            _ => None,
+                            crate::actions::Target::Player(_) => None,
                         };
                         let sacrifices_for_target: Vec<&Option<ObjectId>> = eligible_sacrifices.iter()
                             .filter(|sac| match (sac, target_obj_id) {
@@ -761,7 +749,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     }
                     if let Some(ref target_req) = ab.target_requirement {
                         // Targeted loyalty ability: generate one action per valid target.
-                        let targets = valid_targets_for_req(state, player, obj_id, target_req, &*behavior, registry);
+                        let targets = valid_targets_for_req(state, player, obj_id, target_req, behavior, registry);
                         for target in targets {
                             actions.push(Action::ActivateLoyaltyAbility {
                                 object_id: obj_id,
@@ -805,8 +793,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     let casting_banned: Vec<String> = state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield)
         .flat_map(|o| {
-            o.instance_continuous_effects.as_ref()
-                .map(|v| v.as_slice())
+            o.instance_continuous_effects.as_deref()
                 .unwrap_or(&[])
                 .iter()
                 .filter_map(|e| {
@@ -843,7 +830,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             let data = behavior.card_data();
 
             // Check PreventCastingNamed: spells with the banned name can't be cast.
-            if casting_banned.iter().any(|n| *n == data.name) {
+            if casting_banned.contains(&data.name) {
                 continue;
             }
 
@@ -887,8 +874,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             // Compute autotap plan for the normal cost (if not X-cost).
             let has_x = data.cost.as_ref()
-                .map(|c| c.symbols.iter().any(|s| matches!(s, ManaSymbol::X)))
-                .unwrap_or(false);
+                .is_some_and(|c| c.symbols.iter().any(|s| matches!(s, ManaSymbol::X)));
             let (can_pay_normal, normal_tap_plan) = if has_x {
                 // X-cost spells: only autotap for the non-X portion. After the
                 // agent chooses X, a second autotap pass covers the X generic.
@@ -953,8 +939,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         .filter(|o| {
                             o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
                                 && (o.power.is_some() || registry.card_data(o.card_id)
-                                    .map(|d| d.card_types.contains(&CardType::Creature))
-                                    .unwrap_or(false))
+                                    .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
                         })
                         .count();
                     if creature_count < *n { continue; } // Not enough creatures to exile
@@ -982,7 +967,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             if !normal_tap_plan.is_empty() {
                 for action in &mut cast_actions {
                     if let Action::CastSpell { tap_plan, .. } = action {
-                        *tap_plan = normal_tap_plan.clone();
+                        tap_plan.clone_from(&normal_tap_plan);
                     }
                 }
             }
@@ -1050,8 +1035,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     .filter(|o| {
                         o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
                             && (o.power.is_some() || registry.card_data(o.card_id)
-                                .map(|d| d.card_types.contains(&CardType::Creature))
-                                .unwrap_or(false))
+                                .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
                     })
                     .map(|o| o.id)
                     .collect();
@@ -1104,7 +1088,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     for action in &mut cast_actions {
                         if let Action::CastSpell { alternative_cost, tap_plan, .. } = action {
                             *alternative_cost = Some(alt_mana.clone());
-                            *tap_plan = alt_tap_plan.clone();
+                            tap_plan.clone_from(&alt_tap_plan);
                         }
                     }
                 }
@@ -1158,7 +1142,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             let data = behavior.card_data();
 
             // Check PreventCastingNamed: banned spells can't be cast, even via flashback.
-            if casting_banned.iter().any(|n| *n == data.name) {
+            if casting_banned.contains(&data.name) {
                 continue;
             }
 
@@ -1214,8 +1198,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         .filter(|o| {
                             o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
                                 && (o.power.is_some() || registry.card_data(o.card_id)
-                                    .map(|d| d.card_types.contains(&CardType::Creature))
-                                    .unwrap_or(false))
+                                    .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
                         })
                         .count();
                     if creature_count < *n { continue; }
@@ -1236,7 +1219,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             if !fb_tap_plan.is_empty() {
                 for action in &mut cast_actions {
                     if let Action::CastSpell { tap_plan, .. } = action {
-                        *tap_plan = fb_tap_plan.clone();
+                        tap_plan.clone_from(&fb_tap_plan);
                     }
                 }
             }
@@ -1261,26 +1244,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     actions.push(Action::Concede);
 
     // Build context string based on game state.
-    let context = if !state.stack.is_empty() {
-        // Responding to something on the stack.
-        let top_name = match state.stack.last() {
-            Some(crate::state::StackEntry::Spell(id)) => card_name(state, registry, *id),
-            Some(crate::state::StackEntry::Trigger(t)) => t.display_name_with_state(registry, Some(state)),
-            None => "?".into(),
-        };
-        let caster = match state.stack.last() {
-            Some(crate::state::StackEntry::Spell(id)) =>
-                state.get_object(*id).map(|o| o.controller),
-            Some(crate::state::StackEntry::Trigger(t)) => Some(t.controller()),
-            None => None,
-        };
-        let who = match caster {
-            Some(p) if p == player => "your".into(),
-            Some(p) => format!("p{}'s", p.0),
-            None => "?".into(),
-        };
-        format!("RESPOND TO {} {}", who, top_name)
-    } else {
+    let context = if state.stack.is_empty() {
         // Normal priority — show the phase, with context for opponent's turn.
         let is_your_turn = state.active_player == player;
         let step_name = match state.step {
@@ -1300,8 +1264,27 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         if is_your_turn {
             step_name.into()
         } else {
-            format!("OPPONENT'S TURN: {}", step_name)
+            format!("OPPONENT'S TURN: {step_name}")
         }
+    } else {
+        // Responding to something on the stack.
+        let top_name = match state.stack.last() {
+            Some(crate::state::StackEntry::Spell(id)) => card_name(state, registry, *id),
+            Some(crate::state::StackEntry::Trigger(t)) => t.display_name_with_state(registry, Some(state)),
+            None => "?".into(),
+        };
+        let caster = match state.stack.last() {
+            Some(crate::state::StackEntry::Spell(id)) =>
+                state.get_object(*id).map(|o| o.controller),
+            Some(crate::state::StackEntry::Trigger(t)) => Some(t.controller()),
+            None => None,
+        };
+        let who = match caster {
+            Some(p) if p == player => "your".into(),
+            Some(p) => format!("p{}'s", p.0),
+            None => "?".into(),
+        };
+        format!("RESPOND TO {who} {top_name}")
     };
 
     // Build collapsed activatable abilities from the expanded ActivateAbility actions.
@@ -1324,7 +1307,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             let entry = ability_map.entry((*object_id, *ability_index)).or_insert_with(|| {
                 let name = state.obj_name(*object_id);
                 let desc = registry.get(
-                    state.get_object(*object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
+                    state.get_object(*object_id).map_or(crate::ids::CardId(0), |o| o.card_id)
                 ).and_then(|b| {
                     b.activated_abilities(state, *object_id, registry)
                         .into_iter()
@@ -1379,8 +1362,7 @@ fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, reg
 pub fn can_be_targeted_by(state: &GameState, target_id: ObjectId, caster: PlayerId, source_id: Option<ObjectId>, registry: &CardRegistry) -> bool {
     if state.has_keyword(target_id, Keyword::Hexproof, registry) {
         let controller = state.get_object(target_id)
-            .map(|o| o.controller)
-            .unwrap_or(PlayerId(255));
+            .map_or(PlayerId(255), |o| o.controller);
         if controller != caster {
             return false; // hexproof: can't be targeted by opponents
         }
@@ -1544,8 +1526,7 @@ fn generate_cast_actions_with_targets(
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 let is_pw = obj.card_types.contains(&CardType::Planeswalker)
                     || registry.card_data(obj.card_id)
-                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
-                        .unwrap_or(false);
+                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
                 if is_pw {
                     if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
                     let target = Target::Object(obj.id);
@@ -1563,9 +1544,8 @@ fn generate_cast_actions_with_targets(
         TargetRequirement::Spell => {
             let mut actions = Vec::new();
             for entry in &state.stack {
-                let stack_obj_id = match entry.as_spell() {
-                    Some(id) => id,
-                    None => continue, // Skip triggers — can't target with Counterspell
+                let Some(stack_obj_id) = entry.as_spell() else {
+                    continue; // Skip triggers — can't target with Counterspell
                 };
                 // Don't let a spell target itself on the stack.
                 if stack_obj_id == spell_id { continue; }
@@ -1696,9 +1676,9 @@ fn valid_targets_for_req(
         TargetRequirement::Spell => {
             // Only spells on the stack can be targeted (not triggered abilities).
             state.stack.iter()
-                .filter_map(|e| e.as_spell())
+                .filter_map(super::state::StackEntry::as_spell)
                 .filter(|&id| id != spell_id)
-                .map(|id| Target::Object(id))
+                .map(Target::Object)
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect()
         }
@@ -1745,8 +1725,7 @@ fn valid_targets_for_req(
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 let is_pw = obj.card_types.contains(&CardType::Planeswalker)
                     || registry.card_data(obj.card_id)
-                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
-                        .unwrap_or(false);
+                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
                 if is_pw && can_be_targeted(state, obj.id, caster, registry) {
                     let t = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &t, registry) {
@@ -1772,8 +1751,7 @@ fn valid_targets_for_req(
                         && o.owner == caster
                         && (o.power.is_some()
                             || registry.card_data(o.card_id)
-                                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                                .unwrap_or(false))
+                                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature))))
                 })
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1787,12 +1765,10 @@ fn valid_targets_for_req(
                     o.zone == Zone::Graveyard
                         && (o.power.is_some()
                             || registry.card_data(o.card_id)
-                                .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                                .unwrap_or(false))
+                                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature))))
                         && (o.subtypes.iter().any(|s| s == subtype)
                             || registry.card_data(o.card_id)
-                                .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                                .unwrap_or(false))
+                                .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype)))
                 })
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1901,13 +1877,12 @@ fn matches_ability_target_filter(
             state.effective_power(obj.id, registry).unwrap_or(0) >= *n
         }
         TargetFilter::Attacking => {
-            state.combat.as_ref().map(|c| c.attackers.contains_key(&obj.id)).unwrap_or(false)
+            state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&obj.id))
         }
         TargetFilter::HasSubtype(subtype) => {
             obj.subtypes.contains(subtype)
                 || registry.card_data(obj.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
         }
         TargetFilter::HasKeyword(keyword) => {
             state.has_keyword(obj.id, *keyword, registry)
@@ -1915,8 +1890,7 @@ fn matches_ability_target_filter(
         TargetFilter::SameNameAsSource => {
             // Only target creatures with the same name as the source permanent.
             state.get_object(source_id)
-                .map(|source| source.name == obj.name)
-                .unwrap_or(false)
+                .is_some_and(|source| source.name == obj.name)
         }
         _ => true, // Other filters not commonly used for ability targeting
     }
@@ -1934,10 +1908,7 @@ fn generate_ability_targets(
     use crate::actions::Target;
     use crate::cards::TargetRequirement;
 
-    let target_req = match &ab.target_requirement {
-        Some(req) => req,
-        None => return vec![],
-    };
+    let Some(target_req) = &ab.target_requirement else { return vec![]; };
 
     match target_req {
         TargetRequirement::Creature => {
@@ -1957,7 +1928,7 @@ fn generate_ability_targets(
                 .filter(|o| o.power.is_some())
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .filter(|o| matches_ability_target_filter(state, o, filter, controller, source_id, registry))
-                .filter(|o| already_attached.map(|a| a != o.id).unwrap_or(true))
+                .filter(|o| already_attached != Some(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
@@ -1980,8 +1951,7 @@ fn generate_ability_targets(
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 let is_pw = obj.card_types.contains(&CardType::Planeswalker)
                     || registry.card_data(obj.card_id)
-                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
-                        .unwrap_or(false);
+                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
                 if is_pw && can_be_targeted(state, obj.id, controller, registry) {
                     let t = Target::Object(obj.id);
                     if behavior.is_valid_target(state, controller, &t, registry) {
@@ -2048,8 +2018,7 @@ fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::
         TargetFilter::HasSubtype(subtype) => {
             obj.subtypes.iter().any(|s| s == subtype)
                 || registry.card_data(obj.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == subtype))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
         }
         _ => true, // Other filters not yet needed for abilities.
     }
@@ -2145,8 +2114,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let data = registry.get(card_id).expect("card must be in registry").card_data();
             let behavior = registry.get(card_id).expect("card must be in registry");
             let in_graveyard = new_state.get_object(*object_id)
-                .map(|o| o.zone == Zone::Graveyard)
-                .unwrap_or(false);
+                .is_some_and(|o| o.zone == Zone::Graveyard);
             let is_cast_from_graveyard = in_graveyard && behavior.can_cast_from_graveyard();
             let is_flashback = in_graveyard && !is_cast_from_graveyard;
 
@@ -2207,14 +2175,13 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 let sac_name = card_name(&new_state, registry, *sac_id);
                 crate::destruction::sacrifice(&mut new_state, *sac_id, registry);
                 new_state.log(LogLevel::Event,
-                    format!("Sacrificed {} as additional cost", sac_name));
+                    format!("Sacrificed {sac_name} as additional cost"));
             } else {
                 // Backward compatibility: if sacrifice is None but the spell has
                 // AdditionalCost::SacrificeCreature, auto-sacrifice the first creature.
                 use crate::cards::AdditionalCost;
                 let needs_sac = registry.get(card_id)
-                    .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::SacrificeCreature)))
-                    .unwrap_or(false);
+                    .is_some_and(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::SacrificeCreature)));
                 if needs_sac {
                     let creature = new_state.objects_in_zone(Zone::Battlefield, player)
                         .iter()
@@ -2224,7 +2191,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let sac_name = card_name(&new_state, registry, cid);
                         crate::destruction::sacrifice(&mut new_state, cid, registry);
                         new_state.log(LogLevel::Event,
-                            format!("Sacrificed {} as additional cost", sac_name));
+                            format!("Sacrificed {sac_name} as additional cost"));
                     }
                 }
             }
@@ -2233,23 +2200,22 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             {
                 use crate::cards::AdditionalCost;
                 if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = registry.get(card_id)
-                    .map(|b| b.card_data().additional_cost).flatten()
+                    .and_then(|b| b.card_data().additional_cost)
                 {
                     // Use player-chosen exile_ids if provided, otherwise fall back to auto-pick.
-                    let to_exile: Vec<ObjectId> = if !exile_ids.is_empty() {
-                        exile_ids.clone()
-                    } else {
+                    let to_exile: Vec<ObjectId> = if exile_ids.is_empty() {
                         let mut exile_candidates: Vec<(ObjectId, i32)> = new_state.objects.values()
                             .filter(|o| {
                                 o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
                                     && (o.power.is_some() || registry.card_data(o.card_id)
-                                        .map(|d| d.card_types.contains(&CardType::Creature))
-                                        .unwrap_or(false))
+                                        .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
                             })
                             .map(|o| (o.id, o.power.unwrap_or(0)))
                             .collect();
                         exile_candidates.sort_by(|a, b| b.1.cmp(&a.1));
                         exile_candidates.into_iter().take(n).map(|(id, _)| id).collect()
+                    } else {
+                        exile_ids.clone()
                     };
 
                     // Store the first exiled creature's power for cards that need it
@@ -2265,7 +2231,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let name = card_name(&new_state, registry, *exile_id);
                         new_state.move_object(*exile_id, Zone::Exile, registry);
                         new_state.log(LogLevel::Event,
-                            format!("Exiled {} from graveyard as additional cost", name));
+                            format!("Exiled {name} from graveyard as additional cost"));
                     }
                 }
             }
@@ -2275,20 +2241,19 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             {
                 use crate::cards::AdditionalCost;
                 let needs_exile_x = registry.get(card_id)
-                    .map(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::ExileXFromGraveyard)))
-                    .unwrap_or(false);
+                    .is_some_and(|b| matches!(b.card_data().additional_cost, Some(AdditionalCost::ExileXFromGraveyard)));
                 if needs_exile_x {
                     // If specific cards were chosen (via exile_ids), exile those exactly.
                     // Otherwise fall back to auto-selecting the first exile_count cards (legacy behavior).
-                    let graveyard_cards: Vec<ObjectId> = if !exile_ids.is_empty() {
-                        exile_ids.clone()
-                    } else {
+                    let graveyard_cards: Vec<ObjectId> = if exile_ids.is_empty() {
                         let x = exile_count.unwrap_or(0) as usize;
                         new_state.objects.values()
                             .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id)
                             .map(|o| o.id)
                             .take(x)
                             .collect()
+                    } else {
+                        exile_ids.clone()
                     };
                     let count = graveyard_cards.len() as u32;
                     for gid in &graveyard_cards {
@@ -2299,7 +2264,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         obj.card_state.insert("exile_count".into(), ObjectId(count as u64));
                     }
                     new_state.log(LogLevel::Event,
-                        format!("Exiled {} cards from graveyard as additional cost", count));
+                        format!("Exiled {count} cards from graveyard as additional cost"));
                 }
             }
 
@@ -2307,7 +2272,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.move_object(*object_id, Zone::Stack, registry);
             {
                 let obj = new_state.get_object_mut(*object_id).expect("spell must exist after moving to stack");
-                obj.targets = targets.clone();
+                obj.targets.clone_from(targets);
                 if is_flashback {
                     obj.cast_with_flashback = true;
                 }
@@ -2363,7 +2328,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         player,
                         source: *object_id,
                         choice: crate::state::ResolutionChoiceKind::ChooseXValue {
-                            description: format!("{}: choose X (0-{})", spell_name, max_x),
+                            description: format!("{spell_name}: choose X (0-{max_x})"),
                             max_x,
                             source_id: *object_id,
                             is_ability: false,
@@ -2391,8 +2356,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             // Find the ability — check the permanent's own card, Evil Twin override, then attached auras.
             let is_evil_twin_copy = new_state.get_object(*object_id)
-                .map(|o| o.card_state.contains_key("is_evil_twin"))
-                .unwrap_or(false);
+                .is_some_and(|o| o.card_state.contains_key("is_evil_twin"));
             let ability = registry.get(card_id)
                 .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
                     .into_iter().find(|a| a.ability_index == *ability_index))
@@ -2479,8 +2443,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
                 // Find which behavior to call (card itself, Evil Twin override, or attached aura).
                 let behavior_card_id = if registry.get(card_id)
-                    .map(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
-                    .unwrap_or(false)
+                    .is_some_and(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
                 {
                     card_id
                 } else if is_evil_twin_copy {
@@ -2494,11 +2457,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         .filter(|a| a.zone == Zone::Battlefield && a.attached_to == Some(*object_id))
                         .find(|a| {
                             registry.get(a.card_id)
-                                .map(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
-                                .unwrap_or(false)
+                                .is_some_and(|b| !b.activated_abilities(&new_state, *object_id, registry).is_empty())
                         })
-                        .map(|a| a.card_id)
-                        .unwrap_or(card_id)
+                        .map_or(card_id, |a| a.card_id)
                 };
 
                 if let Some(behavior) = registry.get(behavior_card_id) {
@@ -2522,7 +2483,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             player,
                             source: *object_id,
                             choice: crate::state::ResolutionChoiceKind::ChooseXValue {
-                                description: format!("{}: choose X (0-{})", name, max_x),
+                                description: format!("{name}: choose X (0-{max_x})"),
                                 max_x,
                                 source_id: *object_id,
                                 is_ability: true,
@@ -2553,7 +2514,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         || creature.power.is_none() || creature.tapped || creature.summoning_sick {
                         continue;
                     }
-                    if new_state.combat.as_ref().map(|c| c.attackers.contains_key(&creature.id)).unwrap_or(false) {
+                    if new_state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature.id)) {
                         continue; // already attacking
                     }
                     // Check for Defender — can't be forced to attack.
@@ -2677,9 +2638,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 Some(AwaitingAction::MulliganDecision { player }) => *player,
                 _ => panic!("MulliganMull without MulliganDecision awaiting"),
             };
-            if new_state.get_player(player).mulligan_count >= crate::state::LONDON_MULLIGAN_CAP {
-                panic!("MulliganMull attempted after reaching the mulligan cap");
-            }
+            assert!(new_state.get_player(player).mulligan_count < crate::state::LONDON_MULLIGAN_CAP, "MulliganMull attempted after reaching the mulligan cap");
             // Put the entire hand on the bottom of the library (temporarily;
             // it will be shuffled immediately) and draw seven fresh cards.
             let hand_ids: Vec<ObjectId> = new_state.objects_in_zone(Zone::Hand, player)
@@ -2725,7 +2684,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 assert!(hand_ids.contains(id),
                     "BottomCards: card {:?} not in p{}'s hand", id, player.0);
                 assert!(seen.insert(*id),
-                    "BottomCards: duplicate card {:?}", id);
+                    "BottomCards: duplicate card {id:?}");
             }
             // Move each card from hand to library and append to the bottom, in
             // the order given (so `cards[0]` ends up bottom-most of the group).
@@ -2759,7 +2718,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         Action::ActivateLoyaltyAbility { object_id, ability_index, targets } => {
             let player = new_state.priority_player.expect("ActivateLoyaltyAbility requires priority");
             if let Some(behavior) = registry.get(
-                new_state.get_object(*object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
+                new_state.get_object(*object_id).map_or(crate::ids::CardId(0), |o| o.card_id)
             ) {
                 let abilities = behavior.loyalty_abilities(&new_state, *object_id);
                 if let Some(ab) = abilities.iter().find(|a| a.ability_index == *ability_index) {
@@ -2793,20 +2752,20 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 match (&kind, resolved) {
                     (ResolutionChoiceKind::PayOrNot { spell_id, source_spell_id, .. },
                      ResolvedChoice::PayDecision(pay)) => {
-                        if !*pay {
-                            let name = new_state.obj_name(*spell_id);
-                            new_state.stack.retain(|e| e.as_spell() != Some(*spell_id));
-                            new_state.move_spell_after_resolve(*spell_id, registry);
-                            new_state.log(LogLevel::Event, format!("{} was countered", name));
-                        } else {
+                        if *pay {
                             // Deduct {1} from the player's mana pool.
-                            let controller = new_state.get_object(*spell_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+                            let controller = new_state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);
                             let cost = ManaCost::new(vec![ManaSymbol::Generic(1)]);
                             let _ = mana::auto_pay(&mut new_state.get_player_mut(controller).mana_pool, &cost);
                             new_state.log(LogLevel::Event, "Paid {1} to prevent counter".into());
+                        } else {
+                            let name = new_state.obj_name(*spell_id);
+                            new_state.stack.retain(|e| e.as_spell() != Some(*spell_id));
+                            new_state.move_spell_after_resolve(*spell_id, registry);
+                            new_state.log(LogLevel::Event, format!("{name} was countered"));
                         }
                         // Controller discards a card — player chooses which.
-                        let controller = new_state.get_object(*spell_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+                        let controller = new_state.get_object(*spell_id).map_or(PlayerId(0), |o| o.controller);
                         let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
                             .iter().map(|o| o.id).collect();
                         if hand.len() == 1 {
@@ -2838,20 +2797,20 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         }
                     }
                     (ResolutionChoiceKind::ChooseTarget { effect, .. },
-                     ResolvedChoice::ChosenTarget(target)) => {
-                        if let Some(t) = target {
-                            apply_pending_effect(&mut new_state, t, effect, registry);
-                        }
+                     ResolvedChoice::ChosenTarget(Some(t))) => {
+                        apply_pending_effect(&mut new_state, t, effect, registry);
                     }
+                    (ResolutionChoiceKind::ChooseTarget { .. },
+                     ResolvedChoice::ChosenTarget(None)) => {}
                     (ResolutionChoiceKind::ChooseCardFromHand { .. },
                      ResolvedChoice::ChosenCard(discard_id)) => {
                         let name = new_state.obj_name(*discard_id);
                         new_state.move_object(*discard_id, Zone::Graveyard, registry);
                         new_state.events.push(GameEvent::Discarded {
-                            player: new_state.get_object(*discard_id).map(|o| o.owner).unwrap_or(PlayerId(0)),
+                            player: new_state.get_object(*discard_id).map_or(PlayerId(0), |o| o.owner),
                             object: *discard_id,
                         });
-                        new_state.log(LogLevel::Event, format!("Discarded {}", name));
+                        new_state.log(LogLevel::Event, format!("Discarded {name}"));
                         // Notify the source card about the discard (e.g., Civilized Scholar
                         // checks if the discarded card was a creature to trigger transform).
                         let source_card_id = new_state.get_object(choice_source).map(|o| o.card_id);
@@ -2868,7 +2827,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                 new_state.move_object(card_id, Zone::Graveyard, registry);
                             }
                         }
-                        new_state.log(LogLevel::Event, format!("Kept {}", keep_name));
+                        new_state.log(LogLevel::Event, format!("Kept {keep_name}"));
                         new_state.move_spell_after_resolve(*spell_id, registry);
                     }
                     (ResolutionChoiceKind::ChooseFromLibrary { searcher, .. },
@@ -2877,7 +2836,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let player = new_state.get_player_mut(*searcher);
                         player.library_order.retain(|&id| id != *chosen_id);
                         new_state.move_object(*chosen_id, Zone::Hand, registry);
-                        new_state.log(LogLevel::Event, format!("Searched library and found {}", chosen_name));
+                        new_state.log(LogLevel::Event, format!("Searched library and found {chosen_name}"));
                         // Shuffle library after searching.
                         {
                             use rand::seq::SliceRandom;
@@ -2900,12 +2859,11 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             .iter()
                             .filter(|o| {
                                 // Check object's own card_types first, fall back to registry
-                                if !o.card_types.is_empty() {
-                                    o.card_types.contains(&card_type)
-                                } else {
+                                if o.card_types.is_empty() {
                                     registry.card_data(o.card_id)
-                                        .map(|d| d.card_types.contains(&card_type))
-                                        .unwrap_or(false)
+                                        .is_some_and(|d| d.card_types.contains(&card_type))
+                                } else {
+                                    o.card_types.contains(&card_type)
                                 }
                             })
                             .map(|o| o.id)
@@ -2915,8 +2873,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             new_state.move_object(id, Zone::Hand, registry);
                         }
                         new_state.log(LogLevel::Event,
-                            format!("Creeping Renaissance: chose {}. Returned {} cards from graveyard to hand",
-                                chosen_type, count));
+                            format!("Creeping Renaissance: chose {chosen_type}. Returned {count} cards from graveyard to hand"));
                         new_state.move_spell_after_resolve(*spell_id, registry);
                     }
                     (ResolutionChoiceKind::DividePermanentsIntoPiles { permanents, target_player, source_id, .. },
@@ -2962,13 +2919,13 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let chosen_pile = if *index == 0 { pile_1 } else { pile_2 };
                         let pile_label = if *index == 0 { "Pile 1" } else { "Pile 2" };
                         new_state.log(LogLevel::Event,
-                            format!("Liliana -6: chose to sacrifice {}", pile_label));
+                            format!("Liliana -6: chose to sacrifice {pile_label}"));
                         for &perm_id in chosen_pile {
                             let name = new_state.obj_name(perm_id);
-                            if new_state.get_object(perm_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                            if new_state.get_object(perm_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                                 crate::destruction::sacrifice(&mut new_state, perm_id, registry);
                                 new_state.log(LogLevel::Event,
-                                    format!("Liliana -6: sacrificed {}", name));
+                                    format!("Liliana -6: sacrificed {name}"));
                             }
                         }
                     }
@@ -2981,7 +2938,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             obj.instance_continuous_effects = Some(vec![effect]);
                         }
                         new_state.log(LogLevel::Event,
-                            format!("Nevermore names \"{}\"", chosen_name));
+                            format!("Nevermore names \"{chosen_name}\""));
                     }
                     // Step 3 of X-cost flow: player chose X, now autotap to pay it.
                     // NOTE: If you change this, also update the "X-cost spells" bullet
@@ -2989,8 +2946,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     (ResolutionChoiceKind::ChooseXValue { source_id, is_ability, .. },
                      ResolvedChoice::ChosenXValue(x)) => {
                         let player = new_state.priority_player
-                            .or(Some(new_state.active_player))
-                            .unwrap();
+                            .unwrap_or(new_state.active_player);
                         // Pay X generic mana: first try the pool, then autotap for the remainder.
                         if *x > 0 {
                             let x_cost = ManaCost::new(vec![ManaSymbol::Generic(*x)]);
@@ -3021,7 +2977,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             }
                         }
                         new_state.log(LogLevel::Event,
-                            format!("Chose X = {}", x));
+                            format!("Chose X = {x}"));
                     }
                     _ => {}
                 }
@@ -3061,20 +3017,19 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                     }
                     let name = state.obj_name(*id);
                     state.log(LogLevel::Event,
-                        format!("{}: damage prevented, removed a +1/+1 counter", name));
+                        format!("{name}: damage prevented, removed a +1/+1 counter"));
                 }
                 // Damage prevented — skip normal damage application.
             } else if state.has_protection_from(*id, *source_id, registry) {
                 // Protection prevents damage from the source.
                 let name = state.obj_name(*id);
                 state.log(LogLevel::Event,
-                    format!("{}: damage from {} prevented by protection", name, source_name));
+                    format!("{name}: damage from {source_name} prevented by protection"));
             } else if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
                     // Check if target is a planeswalker — damage removes loyalty counters.
                     let is_planeswalker = registry.card_data(obj.card_id)
-                        .map(|d| d.card_types.contains(&CardType::Planeswalker))
-                        .unwrap_or(false);
+                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
 
                     if is_planeswalker {
                         // Remove loyalty counters equal to damage.
@@ -3111,33 +3066,30 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::Destroy { source_name }) => {
             let name = state.obj_name(*id);
             crate::destruction::try_destroy(state, *id, registry);
-            state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
         }
         (Target::Object(id), PendingEffect::ReturnToBattlefield { spell_id }) => {
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Battlefield, registry);
-            state.log(LogLevel::Event, format!("{} returned to the battlefield", name));
+            state.log(LogLevel::Event, format!("{name} returned to the battlefield"));
             state.move_spell_after_resolve(*spell_id, registry);
         }
         (Target::Object(id), PendingEffect::AddCounters { count, human_bonus }) => {
             let mut final_count = *count;
             if *human_bonus {
                 let is_human = state.get_object(*id)
-                    .map(|o| {
+                    .is_some_and(|o| {
                         if o.subtypes.iter().any(|s| s == "Human") {
                             true
                         } else if o.is_transformed {
                             registry.get(o.card_id)
-                                .and_then(|b| b.back_face_data())
-                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                                .unwrap_or(false)
+                                .and_then(super::cards::CardBehavior::back_face_data)
+                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                         } else {
                             registry.card_data(o.card_id)
-                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                                .unwrap_or(false)
+                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                         }
-                    })
-                    .unwrap_or(false);
+                    });
                 if is_human {
                     final_count = count * 2;
                 }
@@ -3154,12 +3106,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 power_mod: *power,
                 toughness_mod: *toughness,
             });
-            state.log(LogLevel::Event, format!("{} gave {} {}/{} until end of turn", source_name, name, power, toughness));
+            state.log(LogLevel::Event, format!("{source_name} gave {name} {power}/{toughness} until end of turn"));
         }
         (Target::Object(id), PendingEffect::CantBlockThisTurn { source_name }) => {
             let name = state.obj_name(*id);
             state.until_end_of_turn.push(crate::state::TemporaryEffect::CantBlock { target: *id });
-            state.log(LogLevel::Event, format!("{} prevents {} from blocking this turn", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name} prevents {name} from blocking this turn"));
         }
         (Target::Player(pid), PendingEffect::Mill { count, source_name }) => {
             mill_cards(state, *pid, *count as usize, registry);
@@ -3172,12 +3124,12 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             if let Some(source_obj) = state.get_object_mut(*source_id) {
                 source_obj.card_state.insert("exiled_creature".into(), *id);
             }
-            state.log(LogLevel::Event, format!("{} exiled {}", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name} exiled {name}"));
         }
         (Target::Object(id), PendingEffect::ExileCardAndCleanup { spell_id, source_name }) => {
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Exile, registry);
-            state.log(LogLevel::Event, format!("{} exiled {} from hand", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name} exiled {name} from hand"));
             state.move_spell_after_resolve(*spell_id, registry);
         }
         (Target::Player(pid), PendingEffect::DrawAndLoseLife { source_name }) => {
@@ -3204,10 +3156,10 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::DestroyCreature { source_name }) => {
             let name = state.obj_name(*id);
             crate::destruction::try_destroy(state, *id, registry);
-            state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
         }
         (Target::Object(id), PendingEffect::ExileCurseOfOblivion { remaining }) => {
-            let owner = state.get_object(*id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
+            let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
             state.move_object(*id, Zone::Exile, registry);
             state.log(LogLevel::Event, format!("Curse of Oblivion: exiled a card from p{}'s graveyard", owner.0));
             // If more cards to exile, present another choice.
@@ -3233,15 +3185,15 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Hand, registry);
-            state.log(LogLevel::Event, format!("{}: returned {} to hand", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name}: returned {name} to hand"));
         }
         (Target::Object(id), PendingEffect::PutOnTopOfLibrary { source_name }) => {
             let name = state.obj_name(*id);
-            let owner = state.get_object(*id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
+            let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
             state.move_object(*id, Zone::Library, registry);
             // Insert at position 0 (top of library).
             state.get_player_mut(owner).library_order.insert(0, *id);
-            state.log(LogLevel::Event, format!("{}: put {} on top of library", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name}: put {name} on top of library"));
         }
         (Target::Object(id), PendingEffect::SacrificeAndGainLife { beneficiary, spell_id }) => {
             // Get the creature's toughness before sacrificing.
@@ -3261,22 +3213,20 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {}, p{} gained {} life",
                     name, beneficiary.0, toughness));
             } else {
-                state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {}", name));
+                state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {name}"));
             }
 
             state.move_spell_after_resolve(*spell_id, registry);
         }
         (Target::Object(id), PendingEffect::ExileFromGraveyardGainLife { controller }) => {
             let is_creature = state.get_object(*id)
-                .map(|o| {
+                .is_some_and(|o| {
                     registry.card_data(o.card_id)
-                        .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                        .unwrap_or(o.power.is_some())
-                })
-                .unwrap_or(false);
+                        .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                });
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Exile, registry);
-            state.log(LogLevel::Event, format!("Graveyard Shovel: exiled {} from graveyard", name));
+            state.log(LogLevel::Event, format!("Graveyard Shovel: exiled {name} from graveyard"));
 
             if is_creature {
                 let old_life = state.get_player(*controller).life;
@@ -3295,21 +3245,20 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             use crate::state::ResolutionChoiceKind;
             // Garruk -1: sacrifice the chosen creature, then search library for a creature card.
             let sac_name = state.obj_name(*id);
-            let controller = state.get_object(*garruk_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+            let controller = state.get_object(*garruk_id).map_or(PlayerId(0), |o| o.controller);
             crate::destruction::sacrifice(state, *id, registry);
             state.log(LogLevel::Event,
-                format!("Garruk, the Veil-Cursed: sacrificed {}", sac_name));
+                format!("Garruk, the Veil-Cursed: sacrificed {sac_name}"));
 
             // Find all creature cards in library for the player to choose from.
             let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
                 .filter(|&&lib_id| {
                     if let Some(obj) = state.get_object(lib_id) {
-                        if !obj.card_types.is_empty() {
-                            obj.card_types.contains(&CardType::Creature)
-                        } else {
+                        if obj.card_types.is_empty() {
                             registry.card_data(obj.card_id)
-                                .map(|d| d.card_types.contains(&CardType::Creature))
-                                .unwrap_or(false)
+                                .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+                        } else {
+                            obj.card_types.contains(&CardType::Creature)
                         }
                     } else {
                         false
@@ -3333,7 +3282,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 player.library_order.retain(|&lid| lid != found_id);
                 state.move_object(found_id, Zone::Hand, registry);
                 state.log(LogLevel::Event,
-                    format!("Garruk, the Veil-Cursed: searched and found {}", found_name));
+                    format!("Garruk, the Veil-Cursed: searched and found {found_name}"));
                 use rand::seq::SliceRandom;
                 let mut rng = rand::thread_rng();
                 state.get_player_mut(controller).library_order.shuffle(&mut rng);
@@ -3354,7 +3303,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::SacrificeCreature { source_name }) => {
             let name = state.obj_name(*id);
             crate::destruction::sacrifice(state, *id, registry);
-            state.log(LogLevel::Event, format!("{}: sacrificed {}", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name}: sacrificed {name}"));
         }
         (Target::Object(id), PendingEffect::DestroyThenCounter { source_id, source_name }) => {
             // Destroy the target creature, then add a +1/+1 counter to the source.
@@ -3362,11 +3311,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // (e.g. indestructible/regenerate), per MTG rules.
             let name = state.obj_name(*id);
             crate::destruction::try_destroy(state, *id, registry);
-            state.log(LogLevel::Event, format!("{} destroyed {}", source_name, name));
+            state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
             // Add +1/+1 counter to the source permanent.
             state.add_counters(*source_id, crate::types::CounterType::PlusOnePlusOne, 1);
             state.log(LogLevel::Event,
-                format!("{}: +1/+1 counter from attack trigger", source_name));
+                format!("{source_name}: +1/+1 counter from attack trigger"));
         }
         (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
             // Copy the target creature's characteristics onto the source permanent.
@@ -3384,7 +3333,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 };
 
             if let Some(obj) = state.get_object_mut(*source_id) {
-                obj.name = name.clone();
+                obj.name.clone_from(&name);
                 obj.power = power;
                 obj.toughness = toughness;
                 obj.card_id = card_id;
@@ -3410,7 +3359,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let mut kept = kept_so_far.clone();
             kept.push(*id);
             let chosen_name = state.obj_name(*id);
-            let chooser = state.get_object(*id).map(|o| o.controller).unwrap_or(PlayerId(0));
+            let chooser = state.get_object(*id).map_or(PlayerId(0), |o| o.controller);
             state.log(LogLevel::Event, format!("{}: p{} keeps {}", source_name, chooser.0, chosen_name));
 
             if remaining_players.is_empty() {
@@ -3477,7 +3426,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                                 player: np,
                                 source: ObjectId(0),
                                 choice: crate::state::ResolutionChoiceKind::ChooseTarget {
-                                    description: format!("{}: choose a creature you control to keep", source_name),
+                                    description: format!("{source_name}: choose a creature you control to keep"),
                                     options: np_options,
                                     optional: false,
                                     effect: PendingEffect::KeepOneDestroyRest {
@@ -3496,7 +3445,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         player: next_player,
                         source: ObjectId(0),
                         choice: crate::state::ResolutionChoiceKind::ChooseTarget {
-                            description: format!("{}: choose a creature you control to keep", source_name),
+                            description: format!("{source_name}: choose a creature you control to keep"),
                             options,
                             optional: false,
                             effect: PendingEffect::KeepOneDestroyRest {
@@ -3515,7 +3464,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
                 .map(|i| PlayerId(i as u8))
                 .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == *searcher)
-                .map(|pid| crate::actions::Target::Player(pid))
+                .map(crate::actions::Target::Player)
                 .collect();
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: *searcher,
@@ -3580,7 +3529,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::ExileFromGraveyardAndCreateToken { controller }) => {
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Exile, registry);
-            state.log(LogLevel::Event, format!("Moorland Haunt exiled {} from graveyard", name));
+            state.log(LogLevel::Event, format!("Moorland Haunt exiled {name} from graveyard"));
             state.create_token_with_subtypes(
                 "Spirit Token", *controller, 1, 1,
                 vec![crate::types::Color::White],
@@ -3604,7 +3553,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             for id in to_remove {
                 state.move_object(id, crate::types::Zone::Graveyard, registry);
             }
-            state.log(LogLevel::Event, format!("Legend rule: kept {}", legend_name));
+            state.log(LogLevel::Event, format!("Legend rule: kept {legend_name}"));
         }
         _ => {}
     }
@@ -3666,9 +3615,8 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     // per MTG tournament rules.
     if let Some(starting) = config.starting_player {
         assert!(
-            (starting.0 as u8) < num_players,
-            "starting_player {:?} out of range for {}-player game",
-            starting, num_players,
+            starting.0 < num_players,
+            "starting_player {starting:?} out of range for {num_players}-player game",
         );
         state.active_player = starting;
     }
@@ -3681,7 +3629,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 
         for (card_name, count) in &decklist.entries {
             let card_id = registry.get_id_by_name(card_name)
-                .unwrap_or_else(|| panic!("Unknown card: {}", card_name));
+                .unwrap_or_else(|| panic!("Unknown card: {card_name}"));
 
             let card_data = registry.card_data(card_id).expect("card must be in registry");
 
@@ -3709,11 +3657,11 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
                     card_data.toughness,
                 );
                 let obj = state.get_object_mut(obj_id).expect("object must exist for library draw");
-                obj.colors = colors.clone();
-                obj.name = card_name.clone();
-                obj.keywords = card_data.keywords.clone();
-                obj.card_types = card_data.card_types.clone();
-                obj.subtypes = card_data.subtypes.clone();
+                obj.colors.clone_from(&colors);
+                obj.name.clone_from(card_name);
+                obj.keywords.clone_from(&card_data.keywords);
+                obj.card_types.clone_from(&card_data.card_types);
+                obj.subtypes.clone_from(&card_data.subtypes);
                 library_ids.push(obj_id);
             }
         }
@@ -3767,38 +3715,41 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
     let num_players = state.players.len() as u8;
 
-    // Sub-phase 1: keep/mull. Find the next not-yet-kept player in this
-    // round (skipping over players who have already kept). If no such
-    // player exists in this round, check end-of-round.
-    while state.mulligan_round_position < num_players {
-        let pos = state.mulligan_round_position;
-        let player = PlayerId((state.active_player.0 + pos) % num_players);
-        if state.get_player(player).mulligan_kept {
-            // Already kept (in a previous round). Skip and try the next
-            // position.
-            state.mulligan_round_position += 1;
+    loop {
+        // Sub-phase 1: keep/mull. Find the next not-yet-kept player in this
+        // round (skipping over players who have already kept). If no such
+        // player exists in this round, check end-of-round.
+        while state.mulligan_round_position < num_players {
+            let pos = state.mulligan_round_position;
+            let player = PlayerId((state.active_player.0 + pos) % num_players);
+            if state.get_player(player).mulligan_kept {
+                // Already kept (in a previous round). Skip and try the next
+                // position.
+                state.mulligan_round_position += 1;
+                continue;
+            }
+            // Ask this player.
+            state.awaiting_action = Some(AwaitingAction::MulliganDecision { player });
+            return;
+        }
+
+        // End of round. If anyone mulled this round, start a new round and
+        // reset the within-round flags. Otherwise (everyone in this round
+        // chose to keep — or there was nobody left to ask) every player is
+        // now kept and we proceed to bottoming.
+        if state.mulligan_round_mulled {
+            state.mulligan_round_position = 0;
+            state.mulligan_round_mulled = false;
             continue;
         }
-        // Ask this player.
-        state.awaiting_action = Some(AwaitingAction::MulliganDecision { player });
-        return;
-    }
-
-    // End of round. If anyone mulled this round, start a new round and
-    // reset the within-round flags. Otherwise (everyone in this round
-    // chose to keep — or there was nobody left to ask) every player is
-    // now kept and we proceed to bottoming.
-    if state.mulligan_round_mulled {
-        state.mulligan_round_position = 0;
-        state.mulligan_round_mulled = false;
-        return advance_mulligan_phase(state, _registry);
+        break;
     }
 
     // Sub-phase 2: bottoming. Drain pending_mulligan_bottoms in turn
     // order. Players with count 0 are skipped. The pending list was
     // populated as each player chose to keep, so iterating it preserves
     // turn order.
-    while let Some((player, count)) = state.pending_mulligan_bottoms.first().cloned() {
+    while let Some((player, count)) = state.pending_mulligan_bottoms.first().copied() {
         if count == 0 {
             state.pending_mulligan_bottoms.remove(0);
             continue;
@@ -3816,8 +3767,8 @@ fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
 /// True if the state is in the opening-hand mulligan phase.
 pub fn in_mulligan_phase(state: &GameState) -> bool {
     matches!(state.awaiting_action,
-        Some(AwaitingAction::MulliganDecision { .. })
-            | Some(AwaitingAction::BottomAfterMulligan { .. }))
+        Some(AwaitingAction::MulliganDecision { .. } |
+AwaitingAction::BottomAfterMulligan { .. }))
         || !state.pending_mulligan_bottoms.is_empty()
 }
 
@@ -3829,46 +3780,41 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
             let player_state = state.get_player_mut(player);
             player_state.draw_top_card()
         };
-        match card_id {
-            Some(id) => {
-                state.move_object(id, Zone::Hand, registry);
-                state.events.push(GameEvent::CardDrawn { player, object: id });
-                drawn += 1;
-            }
-            None => {
-                // Check for ReplaceEmptyDraw replacement effect (e.g. Laboratory Maniac):
-                // if the player controls a permanent with this effect, they win instead.
-                let has_replace_empty_draw = state.objects.values().any(|o| {
-                    o.zone == Zone::Battlefield
-                        && o.controller == player
-                        && registry.get(o.card_id)
-                            .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw))
-                            .unwrap_or(false)
+        if let Some(id) = card_id {
+            state.move_object(id, Zone::Hand, registry);
+            state.events.push(GameEvent::CardDrawn { player, object: id });
+            drawn += 1;
+        } else {
+            // Check for ReplaceEmptyDraw replacement effect (e.g. Laboratory Maniac):
+            // if the player controls a permanent with this effect, they win instead.
+            let has_replace_empty_draw = state.objects.values().any(|o| {
+                o.zone == Zone::Battlefield
+                    && o.controller == player
+                    && registry.get(o.card_id)
+                        .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw))
+            });
+            if has_replace_empty_draw {
+                // Player wins the game instead of drawing from empty library.
+                // Clear the has_drawn_from_empty flag so SBA doesn't kill them.
+                state.get_player_mut(player).has_drawn_from_empty = false;
+                let opponent = state.opponent(player);
+                state.players[opponent.0 as usize].lost = true;
+                state.events.push(GameEvent::PlayerLost {
+                    player: opponent,
+                    reason: crate::events::LossReason::LifeReachedZero, // closest reason
                 });
-                if has_replace_empty_draw {
-                    // Player wins the game instead of drawing from empty library.
-                    // Clear the has_drawn_from_empty flag so SBA doesn't kill them.
-                    state.get_player_mut(player).has_drawn_from_empty = false;
-                    let opponent = state.opponent(player);
-                    state.players[opponent.0 as usize].lost = true;
-                    state.events.push(GameEvent::PlayerLost {
-                        player: opponent,
-                        reason: crate::events::LossReason::LifeReachedZero, // closest reason
-                    });
-                    state.result = Some(crate::state::GameResult::Winner(player));
-                    let source_name = state.objects.values()
-                        .find(|o| o.zone == Zone::Battlefield && o.controller == player
-                            && registry.get(o.card_id)
-                                .map(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw))
-                                .unwrap_or(false))
-                        .map(|o| o.name.clone())
-                        .unwrap_or_default();
-                    state.log(LogLevel::Milestone,
-                        format!("p{} wins the game with {}!", player.0, source_name));
-                }
-                // Otherwise SBA will catch the empty library draw.
-                break;
+                state.result = Some(crate::state::GameResult::Winner(player));
+                let source_name = state.objects.values()
+                    .find(|o| o.zone == Zone::Battlefield && o.controller == player
+                        && registry.get(o.card_id)
+                            .is_some_and(|b| b.replacement_effects().contains(&crate::types::ReplacementEffect::ReplaceEmptyDraw)))
+                    .map(|o| o.name.clone())
+                    .unwrap_or_default();
+                state.log(LogLevel::Milestone,
+                    format!("p{} wins the game with {}!", player.0, source_name));
             }
+            // Otherwise SBA will catch the empty library draw.
+            break;
         }
     }
     if drawn > 0 {
@@ -3893,12 +3839,10 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registr
         };
         // Check if it's a creature card before moving (for mill-watcher triggers).
         let is_creature = state.get_object(obj_id)
-            .map(|o| {
+            .is_some_and(|o| {
                 registry.card_data(o.card_id)
-                    .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
-                    .unwrap_or(o.power.is_some())
-            })
-            .unwrap_or(false);
+                    .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+            });
         state.move_object(obj_id, Zone::Graveyard, registry);
         if is_creature {
             state.events.push(crate::events::GameEvent::CreatureCardMilled {
@@ -3946,8 +3890,7 @@ fn has_castable_with_potential_mana(
     // Instants are relevant during Declare Attackers / Declare Blockers
     // (key combat trick windows), but not during Combat Damage / End Combat.
     let in_key_combat_step = state.combat.as_ref()
-        .map(|c| !c.attackers.is_empty())
-        .unwrap_or(false)
+        .is_some_and(|c| !c.attackers.is_empty())
         && matches!(state.step, Step::DeclareAttackers | Step::DeclareBlockers);
     let instants_relevant = stack_has_items || in_key_combat_step;
 
@@ -3994,10 +3937,8 @@ fn has_castable_with_potential_mana(
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
             for ab in behavior.activated_abilities(state, obj.id, registry) {
-                if mana::can_pay(&potential, &ab.cost) {
-                    if !ab.requires_tap || !obj.tapped {
-                        return true;
-                    }
+                if mana::can_pay(&potential, &ab.cost) && (!ab.requires_tap || !obj.tapped) {
+                    return true;
                 }
             }
         }
@@ -4018,32 +3959,29 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
     }
 
     let next = state.step.next();
-    match next {
-        Some(next_step) => {
-            state.step = next_step;
+    if let Some(next_step) = next {
+        state.step = next_step;
+    } else {
+        // End of turn: advance to next player's turn.
+        let next_player = state.next_player(state.active_player);
+        state.active_player = next_player;
+        state.turn_number += 1;
+        state.step = Step::Untap;
+        state.is_first_turn = false;
+        state.creature_died_this_turn = false;
+        // Copy this turn's spell counts to last_turn, then clear for next turn.
+        state.num_spells_cast_last_turn = state.num_spells_cast_this_turn.clone();
+        state.num_spells_cast_this_turn.clear();
+        // Clear once-per-turn ability tracking for all permanents.
+        for obj in state.objects.values_mut() {
+            obj.abilities_activated_this_turn.clear();
         }
-        None => {
-            // End of turn: advance to next player's turn.
-            let next_player = state.next_player(state.active_player);
-            state.active_player = next_player;
-            state.turn_number += 1;
-            state.step = Step::Untap;
-            state.is_first_turn = false;
-            state.creature_died_this_turn = false;
-            // Copy this turn's spell counts to last_turn, then clear for next turn.
-            state.num_spells_cast_last_turn = state.num_spells_cast_this_turn.clone();
-            state.num_spells_cast_this_turn.clear();
-            // Clear once-per-turn ability tracking for all permanents.
-            for obj in state.objects.values_mut() {
-                obj.abilities_activated_this_turn.clear();
-            }
 
-            state.events.push(GameEvent::TurnStarted {
-                player: next_player,
-                turn: state.turn_number,
-            });
-            state.log(LogLevel::Milestone, format!("── Turn {} (p{}) ──", state.turn_number, next_player.0));
-        }
+        state.events.push(GameEvent::TurnStarted {
+            player: next_player,
+            turn: state.turn_number,
+        });
+        state.log(LogLevel::Milestone, format!("── Turn {} (p{}) ──", state.turn_number, next_player.0));
     }
 
     state.events.push(GameEvent::StepStarted { step: state.step });
@@ -4121,8 +4059,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         Step::DeclareBlockers => {
             // Check if there are any attackers.
             let has_attackers = state.combat.as_ref()
-                .map(|c| !c.attackers.is_empty())
-                .unwrap_or(false);
+                .is_some_and(|c| !c.attackers.is_empty());
 
             if has_attackers {
                 let defending = state.opponent(active);
@@ -4138,8 +4075,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
 
         Step::CombatDamage => {
             let has_attackers = state.combat.as_ref()
-                .map(|c| !c.attackers.is_empty())
-                .unwrap_or(false);
+                .is_some_and(|c| !c.attackers.is_empty());
 
             if has_attackers {
                 combat::deal_combat_damage(state, registry);
@@ -4380,14 +4316,9 @@ fn run_game_loop_inner<F>(
             *player
         } else if let Some(AwaitingAction::ResolutionChoice { player, .. }) = &state.awaiting_action {
             *player
-        } else {
-            match state.priority_player {
-                Some(p) => p,
-                None => {
-                    advance_step(state, registry);
-                    continue;
-                }
-            }
+        } else if let Some(p) = state.priority_player { p } else {
+            advance_step(state, registry);
+            continue;
         };
 
         let legal = legal_actions(state, registry);
@@ -4441,16 +4372,16 @@ fn run_game_loop_inner<F>(
             Action::PassPriority => {
                 if state.consecutive_passes >= num_players {
                     // All players passed in succession.
-                    if !state.stack.is_empty() {
+                    if state.stack.is_empty() {
+                        // Stack empty, advance step.
+                        state.priority_player = None;
+                        advance_step(state, registry);
+                    } else {
                         let mut new_state = state.clone();
                         stack::resolve_top_of_stack(&mut new_state, registry);
                         *state = new_state;
                         state.consecutive_passes = 0;
                         state.priority_player = Some(state.active_player);
-                    } else {
-                        // Stack empty, advance step.
-                        state.priority_player = None;
-                        advance_step(state, registry);
                     }
                 } else if let Some(current) = state.priority_player {
                     // Pass to next player.

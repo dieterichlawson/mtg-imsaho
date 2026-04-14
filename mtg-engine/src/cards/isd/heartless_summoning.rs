@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, CreatureFilter, SpellFilter};
 
 /// Heartless Summoning — {1}{B} Enchantment.
 /// Creature spells you cast cost {2} less to cast.

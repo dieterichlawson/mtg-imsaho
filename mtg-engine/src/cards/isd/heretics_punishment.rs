@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Heretic's Punishment — {4}{R} Enchantment.
 /// {3}{R}: Mill three cards, then Heretic's Punishment deals damage to any target
@@ -32,7 +32,7 @@ impl CardBehavior for HereticsPunishment {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{3}{R}: Mill three cards, deal damage equal to highest mana value".into(),
@@ -62,8 +62,7 @@ impl CardBehavior for HereticsPunishment {
             let target_legal = match target {
                 Target::Object(target_id) => {
                     state.get_object(*target_id)
-                        .map(|o| o.zone == Zone::Battlefield)
-                        .unwrap_or(false)
+                        .is_some_and(|o| o.zone == Zone::Battlefield)
                 }
                 Target::Player(_) => true,
             };
@@ -84,7 +83,7 @@ impl CardBehavior for HereticsPunishment {
         // Compute highest mana value among cards to be milled before moving them.
         let mut max_mv: u32 = 0;
         for &card_obj_id in &to_mill {
-            let card_id = state.get_object(card_obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
+            let card_id = state.get_object(card_obj_id).map_or(crate::ids::CardId(0), |o| o.card_id);
             let mv = registry.card_data(card_id)
                 .and_then(|d| d.cost.map(|c| c.mana_value()))
                 .unwrap_or(0);
@@ -136,6 +135,6 @@ impl CardBehavior for HereticsPunishment {
         }
 
         state.log(crate::state::LogLevel::Event,
-            format!("Heretic's Punishment milled {} cards, dealt {} damage", mill_count, max_mv));
+            format!("Heretic's Punishment milled {mill_count} cards, dealt {max_mv} damage"));
     }
 }

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Mulch — {1}{G} Sorcery.
 /// Reveal the top four cards of your library. Put all land cards revealed this way
@@ -32,7 +32,7 @@ impl CardBehavior for Mulch {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Reveal the top four cards.
         let player = state.get_player_mut(controller);
@@ -44,10 +44,9 @@ impl CardBehavior for Mulch {
 
         for &card_id in &revealed {
             let is_land = registry.card_data(
-                state.get_object(card_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
+                state.get_object(card_id).map_or(crate::ids::CardId(0), |o| o.card_id)
             )
-            .map(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)))
-            .unwrap_or(false);
+            .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
 
             if is_land {
                 lands.push(card_id);
@@ -68,7 +67,7 @@ impl CardBehavior for Mulch {
             let name = state.get_object(land_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(land_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Mulch: {} put into hand", name));
+                format!("Mulch: {name} put into hand"));
         }
 
         // Non-lands go to graveyard.

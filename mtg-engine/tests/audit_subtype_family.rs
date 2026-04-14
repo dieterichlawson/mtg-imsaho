@@ -346,8 +346,7 @@ fn bug_at_vampiric_fury_buffs_vampire_token() {
          buff = 4). Bug AT: the registry-only subtype filter calls \
          registry.card_data(CardId(0)) for tokens → returns None → \
          token is excluded from the Vampire filter. Got effective_power \
-         = {}",
-        eff_p,
+         = {eff_p}",
     );
 }
 
@@ -780,7 +779,6 @@ fn bug_ao_get_subtypes_excludes_dropped_front_face_subtype() {
          include 'Human' (the front-face-only subtype). Bug AO: \
          get_subtypes unions instance subtypes with the front-face \
          registry data, so 'Human' persists even though the live back \
-         face is Horror only. subtypes = {:?}",
-        subtypes,
+         face is Horror only. subtypes = {subtypes:?}",
     );
 }

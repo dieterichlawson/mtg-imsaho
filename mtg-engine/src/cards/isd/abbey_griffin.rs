@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Abbey Griffin — 2/2 for {3}{W}. Flying, vigilance.
 pub struct AbbeyGriffin;

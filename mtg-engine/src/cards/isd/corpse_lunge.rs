@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::{GameState, LogLevel};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Corpse Lunge — {2}{B} Instant.
 /// As an additional cost to cast Corpse Lunge, exile a creature card from your graveyard.
@@ -39,8 +39,7 @@ impl CardBehavior for CorpseLunge {
         // The creature was exiled at cast time (additional cost). Read the stored power.
         let power = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exiled_power").copied())
-            .map(|id| id.0 as i32)
-            .unwrap_or(0);
+            .map_or(0, |id| id.0 as i32);
 
         {
             let damage = power.max(0) as u32;
@@ -53,7 +52,7 @@ impl CardBehavior for CorpseLunge {
                             obj.damaged_by.push(object_id);
                         }
                     }
-                    if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                    if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                         state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                             source: object_id,
                             target: crate::events::DamageTarget::Object(*target_id),

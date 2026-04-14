@@ -1,4 +1,5 @@
 use std::env;
+use std::fmt::Write;
 use std::fs;
 
 use mtg_engine::cards::CardRegistry;
@@ -39,17 +40,15 @@ fn main() {
     //   gemini:gemini-2.5-flash      — Gemini with specific model
     let p1_spec = args.iter().position(|a| a == "--p1")
         .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str())
-        .unwrap_or("cli");
+        .map_or("cli", std::string::String::as_str);
 
     let p2_spec = args.iter().position(|a| a == "--p2")
         .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str())
-        .unwrap_or("random");
+        .map_or("random", std::string::String::as_str);
 
     let log_file = args.iter().position(|a| a == "--log")
         .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str());
+        .map(std::string::String::as_str);
 
     // Deck specs: --deck1 <name-or-file> --deck2 <name-or-file>
     // Built-in deck names: red-green, white-black, blue-white,
@@ -57,13 +56,11 @@ fn main() {
     // Or a path to a deck file (one "COUNT CARD NAME" per line).
     let deck1_spec = args.iter().position(|a| a == "--deck1")
         .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str())
-        .unwrap_or("red-green");
+        .map_or("red-green", std::string::String::as_str);
 
     let deck2_spec = args.iter().position(|a| a == "--deck2")
         .and_then(|i| args.get(i + 1))
-        .map(|s| s.as_str())
-        .unwrap_or("white-black");
+        .map_or("white-black", std::string::String::as_str);
 
     let save_file = args.iter().position(|a| a == "--save")
         .and_then(|i| args.get(i + 1))
@@ -79,9 +76,9 @@ fn main() {
 
     let (player_names, mut state) = if let Some(ref path) = resume_file {
         let data = fs::read_to_string(path)
-            .unwrap_or_else(|e| panic!("Failed to read save file '{}': {}", path, e));
+            .unwrap_or_else(|e| panic!("Failed to read save file '{path}': {e}"));
         let save: SaveData = serde_json::from_str(&data)
-            .unwrap_or_else(|e| panic!("Failed to parse save file '{}': {}", path, e));
+            .unwrap_or_else(|e| panic!("Failed to parse save file '{path}': {e}"));
         if !quiet {
             println!("MTG Engine — resuming from {} (turn {}, {} vs {})",
                 path, save.state.turn_number, save.player_names[0], save.player_names[1]);
@@ -95,7 +92,7 @@ fn main() {
         let name2 = deck_display_name(deck2_spec);
 
         if !quiet {
-            println!("MTG Engine — {} ({}) vs {} ({})", p1_spec, name1, p2_spec, name2);
+            println!("MTG Engine — {p1_spec} ({name1}) vs {p2_spec} ({name2})");
             println!();
         }
 
@@ -253,16 +250,16 @@ fn main() {
                 let err = std::process::Command::new(&exe)
                     .args(&new_args[1..]) // skip argv[0]
                     .exec();
-                eprintln!("Failed to exec: {}", err);
+                eprintln!("Failed to exec: {err}");
                 std::process::exit(1);
             }
             Ok(s) => {
                 eprintln!("Build failed (exit code {:?}). Continuing with save at {}",
                     s.code(), hot_reload_path);
-                eprintln!("Resume manually with: cargo run --release -- --resume {}", hot_reload_path);
+                eprintln!("Resume manually with: cargo run --release -- --resume {hot_reload_path}");
             }
             Err(e) => {
-                eprintln!("Failed to run cargo build: {}. Save at {}", e, hot_reload_path);
+                eprintln!("Failed to run cargo build: {e}. Save at {hot_reload_path}");
             }
         }
         return;
@@ -277,7 +274,7 @@ fn main() {
     let result_msg = match &state.result {
         Some(mtg_engine::state::GameResult::Winner(id)) => {
             let name = &player_names[id.0 as usize];
-            format!("Game over! {} wins!", name)
+            format!("Game over! {name} wins!")
         }
         Some(mtg_engine::state::GameResult::Draw) => {
             "Game over! It's a draw!".to_string()
@@ -287,7 +284,7 @@ fn main() {
         }
     };
     let summary = format!("{}\nTotal actions: {}\nFinal turn: {}", result_msg, action_count, state.turn_number);
-    println!("\n{}", summary);
+    println!("\n{summary}");
     mtg_player::game_log::write(file!(), line!(), "RESULT", &summary);
 
     // Log token usage per model.
@@ -295,10 +292,10 @@ fn main() {
     if !usage.is_empty() {
         let mut usage_lines = String::new();
         for (model, stats) in &usage {
-            usage_lines.push_str(&format!(
-                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create\n",
+            writeln!(usage_lines,
+                "{}: {} calls, {} input, {} output, {} cache_read, {} cache_create",
                 model, stats.calls, stats.input, stats.output, stats.cache_read, stats.cache_create
-            ));
+            ).unwrap();
         }
         println!("{}", usage_lines.trim());
         mtg_player::game_log::write(file!(), line!(), "TOKEN_USAGE", usage_lines.trim());
@@ -329,7 +326,7 @@ fn make_player(spec: &str, name: &str) -> PlayerKind {
         }
         "random" => PlayerKind::Random(RandomPlayer::new(name)),
         other => {
-            eprintln!("Unknown player type '{}', using random", other);
+            eprintln!("Unknown player type '{other}', using random");
             PlayerKind::Random(RandomPlayer::new(name))
         }
     }
@@ -367,7 +364,7 @@ fn build_card_reference(
         let lookup = name.split(" // ").next().unwrap_or(name);
         let Some(id) = registry.get_id_by_name(lookup) else { continue };
         let Some(data) = registry.card_data(id) else { continue };
-        let cost = data.cost.as_ref().map(|c| format!(" {}", c)).unwrap_or_default();
+        let cost = data.cost.as_ref().map(|c| format!(" {c}")).unwrap_or_default();
         let types: Vec<&str> = data.card_types.iter().map(|t| match t {
             CardType::Creature => "Creature", CardType::Instant => "Instant",
             CardType::Sorcery => "Sorcery", CardType::Enchantment => "Enchantment",
@@ -377,12 +374,12 @@ fn build_card_reference(
         let subtypes = if data.subtypes.is_empty() { String::new() }
             else { format!(" — {}", data.subtypes.join(" ")) };
         let pt = match (data.power, data.toughness) {
-            (Some(p), Some(t)) => format!(" {}/{}", p, t),
+            (Some(p), Some(t)) => format!(" {p}/{t}"),
             _ => String::new(),
         };
-        s.push_str(&format!("{}{} | {}{}{}\n", name, cost, types.join(" "), subtypes, pt));
+        writeln!(s, "{}{} | {}{}{}", name, cost, types.join(" "), subtypes, pt).unwrap();
         if !data.oracle_text.is_empty() {
-            s.push_str(&format!("  {}\n", data.oracle_text.replace('\n', "\n  ")));
+            writeln!(s, "  {}", data.oracle_text.replace('\n', "\n  ")).unwrap();
         }
     }
     s
@@ -501,7 +498,7 @@ fn builtin_deck(name: &str) -> Option<Decklist> {
 ///   10 Mountain
 fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
     let content = fs::read_to_string(path)
-        .unwrap_or_else(|e| panic!("Failed to read deck file '{}': {}", path, e));
+        .unwrap_or_else(|e| panic!("Failed to read deck file '{path}': {e}"));
 
     let mut entries = Vec::new();
     for (line_num, line) in content.lines().enumerate() {
@@ -514,15 +511,11 @@ fn load_deck_file(path: &str, registry: &CardRegistry) -> Decklist {
         let count: u32 = count_str.parse()
             .unwrap_or_else(|_| panic!("{}:{}: invalid count '{}'", path, line_num + 1, count_str));
         let card_name = card_name.trim();
-        if registry.get_id_by_name(card_name).is_none() {
-            panic!("{}:{}: unknown card '{}'", path, line_num + 1, card_name);
-        }
+        assert!(registry.get_id_by_name(card_name).is_some(), "{}:{}: unknown card '{}'", path, line_num + 1, card_name);
         entries.push((card_name.to_string(), count));
     }
 
-    if entries.is_empty() {
-        panic!("Deck file '{}' is empty", path);
-    }
+    assert!(!entries.is_empty(), "Deck file '{path}' is empty");
 
     Decklist { entries }
 }

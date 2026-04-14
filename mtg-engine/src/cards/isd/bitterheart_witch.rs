@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Bitterheart Witch — {4}{B} 1/2 Human Shaman with Deathtouch.
 /// When Bitterheart Witch dies, you may search your library for a Curse card,
@@ -14,7 +14,7 @@ impl BitterheartWitch {
         let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
             .map(|i| PlayerId(i as u8))
             .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == controller)
-            .map(|pid| crate::actions::Target::Player(pid))
+            .map(crate::actions::Target::Player)
             .collect();
 
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -61,7 +61,7 @@ impl CardBehavior for BitterheartWitch {
     }
 
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
 
         // "you may" — present a yes/no choice before searching.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -79,15 +79,14 @@ impl CardBehavior for BitterheartWitch {
             return;
         }
 
-        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(self_id).map_or(PlayerId(0), |o| o.controller);
 
         // Search library for Curse cards.
         let curse_ids: Vec<ObjectId> = state.get_player(controller).library_order.iter()
             .filter(|&&obj_id| {
-                let card_id = state.get_object(obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
+                let card_id = state.get_object(obj_id).map_or(crate::ids::CardId(0), |o| o.card_id);
                 registry.card_data(card_id)
-                    .map(|d| d.subtypes.iter().any(|s| s == "Curse"))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Curse"))
             })
             .copied()
             .collect();

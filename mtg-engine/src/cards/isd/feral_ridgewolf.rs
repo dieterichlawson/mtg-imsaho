@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::{GameState, TemporaryEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Feral Ridgewolf — {2}{R} 1/2 Wolf with Trample. {1}{R}: Feral Ridgewolf gets +2/+0 until end of turn.
 pub struct FeralRidgewolf;
@@ -30,7 +30,7 @@ impl CardBehavior for FeralRidgewolf {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{1}{R}: +2/+0 until end of turn".into(),

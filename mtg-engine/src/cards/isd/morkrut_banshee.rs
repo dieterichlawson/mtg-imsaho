@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Morkrut Banshee — 4/4 for {3}{B}{B}. Spirit.
 /// Morbid — When Morkrut Banshee enters the battlefield, if a creature died this turn,

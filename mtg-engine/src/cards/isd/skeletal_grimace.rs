@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, ActivatedAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, Zone};
 
 /// Skeletal Grimace — {1}{B} aura enchantment. Enchanted creature gets +1/+1 and has "{B}: Regenerate this creature."
 pub struct SkeletalGrimace;
@@ -43,7 +43,7 @@ impl CardBehavior for SkeletalGrimace {
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
         // Only grant regenerate to the enchanted creature (must have power, i.e. be a creature),
         // not to the aura itself.
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield && o.power.is_some()).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some()) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{B}: Regenerate".into(),

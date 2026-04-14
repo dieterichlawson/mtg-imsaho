@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Fiend Hunter — {1}{W}{W} 1/3 Human Cleric.
 /// When Fiend Hunter enters the battlefield, you may exile another target creature.
@@ -58,14 +58,14 @@ impl CardBehavior for FiendHunter {
         let exiled_id = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exiled_creature").copied());
         if let Some(target_id) = exiled_id {
-            if state.get_object(target_id).map(|o| o.zone == Zone::Exile).unwrap_or(false) {
+            if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Exile) {
                 let returned_name = state.obj_name(target_id);
                 state.move_object(target_id, Zone::Battlefield, registry);
                 // "under its owner's control" — reset controller to owner
                 if let Some(obj) = state.get_object_mut(target_id) {
                     obj.controller = obj.owner;
                 }
-                state.log(crate::state::LogLevel::Event, format!("{} returned to the battlefield", returned_name));
+                state.log(crate::state::LogLevel::Event, format!("{returned_name} returned to the battlefield"));
             }
         }
     }

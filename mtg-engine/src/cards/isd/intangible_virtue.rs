@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, CreatureFilter, Keyword};
 
 /// Intangible Virtue — {1}{W} enchantment. Creature tokens you control get +1/+1 and have vigilance.
 pub struct IntangibleVirtue;

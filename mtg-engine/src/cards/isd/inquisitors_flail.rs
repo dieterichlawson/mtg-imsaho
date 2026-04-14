@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope, Zone};
 
 /// Inquisitor's Flail — {2} Artifact — Equipment.
 /// If equipped creature would deal combat damage, it deals double that damage instead.
@@ -45,18 +45,14 @@ impl CardBehavior for InquisitorsFlail {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && obj.power.is_none() {
             vec![ActivatedAbilityDef {
                 ability_index: 0,

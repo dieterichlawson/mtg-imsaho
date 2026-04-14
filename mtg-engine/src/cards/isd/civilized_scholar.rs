@@ -3,7 +3,7 @@ use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, Sa
                    TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Civilized Scholar {2}{U} 0/1 Human Advisor // Homicidal Brute 5/1 Human Mutant.
 /// {T}: Draw a card, then discard a card. If a creature card is discarded this way,
@@ -80,7 +80,7 @@ impl CardBehavior for CivilizedScholar {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 1))
         } else {
             None
@@ -124,12 +124,10 @@ impl CardBehavior for CivilizedScholar {
             // Only one card — auto-discard and check creature.
             let discard_id = hand[0];
             let is_creature = state.get_object(discard_id)
-                .map(|o| {
+                .is_some_and(|o| {
                     o.power.is_some() || registry.card_data(o.card_id)
-                        .map(|d| d.card_types.contains(&CardType::Creature))
-                        .unwrap_or(false)
-                })
-                .unwrap_or(false);
+                        .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+                });
             state.move_object(discard_id, Zone::Graveyard, registry);
             state.events.push(crate::events::GameEvent::Discarded {
                 player: controller,
@@ -163,12 +161,10 @@ impl CardBehavior for CivilizedScholar {
     fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, registry: &CardRegistry) {
         // Check if the discarded card was a creature (via power or registry).
         let is_creature = state.get_object(discarded_id)
-            .map(|o| {
+            .is_some_and(|o| {
                 o.power.is_some() || registry.card_data(o.card_id)
-                    .map(|d| d.card_types.contains(&CardType::Creature))
-                    .unwrap_or(false)
-            })
-            .unwrap_or(false);
+                    .is_some_and(|d| d.card_types.contains(&CardType::Creature))
+            });
         if is_creature {
             crate::cards::helpers::apply_transform(state, self_id, registry);
             if let Some(obj) = state.get_object_mut(self_id) {
@@ -196,8 +192,7 @@ impl CardBehavior for CivilizedScholar {
         }
         // Check if Homicidal Brute attacked this turn.
         let attacked = state.get_object(self_id)
-            .map(|o| o.card_state.contains_key("attacked_this_turn"))
-            .unwrap_or(false);
+            .is_some_and(|o| o.card_state.contains_key("attacked_this_turn"));
         if !attacked {
             if let Some(obj) = state.get_object_mut(self_id) {
                 obj.tapped = true; // "tap Homicidal Brute, then transform it"

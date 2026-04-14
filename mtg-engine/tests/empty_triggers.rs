@@ -1,7 +1,7 @@
-/// Regression tests for Bug A (BUG_REPORT_8SEAT.md): cards without a
-/// SelfDies or LeavesBattlefield TriggeredAbilityDef were pushing empty
-/// triggers onto the stack whenever they left the battlefield, polluting
-/// the LLM prompt with no-op [RESPOND TO ...] cycles.
+//! Regression tests for Bug A (BUG_REPORT_8SEAT.md): cards without a
+//! SelfDies or LeavesBattlefield TriggeredAbilityDef were pushing empty
+//! triggers onto the stack whenever they left the battlefield, polluting
+//! the LLM prompt with no-op [RESPOND TO ...] cycles.
 
 mod common;
 use common::*;

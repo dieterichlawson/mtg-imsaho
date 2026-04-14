@@ -149,6 +149,6 @@ fn olivia_ability_1_target_filter_requires_vampire() {
         )) => {
             assert_eq!(s, "Vampire", "Ability 1 should filter for Vampires");
         }
-        other => panic!("Expected HasSubtype(Vampire) filter, got {:?}", other),
+        other => panic!("Expected HasSubtype(Vampire) filter, got {other:?}"),
     }
 }

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope};
 
 /// Furor of the Bitten — {R} aura enchantment. Enchanted creature gets +2/+2 and attacks each combat if able.
 pub struct FurorOfTheBitten;

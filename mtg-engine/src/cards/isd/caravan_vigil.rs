@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{Zone, ManaCost, ManaSymbol, Color, CardType, Supertype};
 
 /// Caravan Vigil — {G} Sorcery.
 /// Search your library for a basic land card, reveal it, put it into your hand,
@@ -28,8 +28,7 @@ impl CaravanVigil {
                 source: spell_id,
                 choice: ResolutionChoiceKind::YesNo {
                     description: format!(
-                        "Caravan Vigil (morbid): put {} onto the battlefield? (No = put into hand)",
-                        land_name
+                        "Caravan Vigil (morbid): put {land_name} onto the battlefield? (No = put into hand)"
                     ),
                     source_card: spell_id,
                 },
@@ -38,7 +37,7 @@ impl CaravanVigil {
         } else {
             state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil: {} put into hand", land_name));
+                format!("Caravan Vigil: {land_name} put into hand"));
 
             // Shuffle library.
             use rand::seq::SliceRandom;
@@ -72,19 +71,18 @@ impl CardBehavior for CaravanVigil {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Search library for all basic land cards.
         let basic_lands: Vec<ObjectId> = state.get_player(controller).library_order.iter()
             .filter(|&&obj_id| {
                 registry.card_data(
-                    state.get_object(obj_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0))
+                    state.get_object(obj_id).map_or(crate::ids::CardId(0), |o| o.card_id)
                 )
-                .map(|d| {
+                .is_some_and(|d| {
                     d.card_types.iter().any(|ct| matches!(ct, CardType::Land))
                         && d.supertypes.iter().any(|st| matches!(st, Supertype::Basic))
                 })
-                .unwrap_or(false)
             })
             .copied()
             .collect();
@@ -122,24 +120,21 @@ impl CardBehavior for CaravanVigil {
     }
 
     fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
-        let land_id = match state.get_object(self_id).and_then(|o| o.card_state.get("morbid_land").copied()) {
-            Some(id) => id,
-            None => {
-                state.move_spell_after_resolve(self_id, registry);
-                return;
-            }
+        let Some(land_id) = state.get_object(self_id).and_then(|o| o.card_state.get("morbid_land").copied()) else {
+            state.move_spell_after_resolve(self_id, registry);
+            return;
         };
-        let controller = state.get_object(self_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         let land_name = state.obj_name(land_id);
 
         if yes {
             state.move_object(land_id, Zone::Battlefield, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil (morbid): {} enters the battlefield", land_name));
+                format!("Caravan Vigil (morbid): {land_name} enters the battlefield"));
         } else {
             state.move_object(land_id, Zone::Hand, registry);
             state.log(LogLevel::Event,
-                format!("Caravan Vigil: {} put into hand", land_name));
+                format!("Caravan Vigil: {land_name} put into hand"));
         }
 
         // Shuffle library.

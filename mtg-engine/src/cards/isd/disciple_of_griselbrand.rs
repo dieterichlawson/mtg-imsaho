@@ -3,7 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, ActivatedAbilityDef, Sa
 use crate::events::GameEvent;
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Disciple of Griselbrand — {1}{B} 1/1 Human Cleric.
 /// {1}, Sacrifice a creature: You gain life equal to that creature's toughness.
@@ -60,7 +60,7 @@ impl CardBehavior for DiscipleOfGriselbrand {
             state.get_player_mut(controller).life = new_life;
             state.events.push(GameEvent::LifeChanged { player: controller, old, new_life });
             state.log(crate::state::LogLevel::Event,
-                format!("Disciple of Griselbrand: gained {} life", toughness));
+                format!("Disciple of Griselbrand: gained {toughness} life"));
         }
     }
 }

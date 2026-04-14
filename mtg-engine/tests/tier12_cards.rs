@@ -304,12 +304,10 @@ fn burning_vengeance_triggers_on_flashback() {
     if let Some(ref choice) = state.awaiting_action {
         // Apply the effect directly for the test.
         let effect = match choice {
-            mtg_engine::state::AwaitingAction::ResolutionChoice { choice, .. } => {
-                match choice {
-                    mtg_engine::state::ResolutionChoiceKind::ChooseTarget { effect, .. } => Some(effect.clone()),
-                    _ => None,
-                }
-            }
+            mtg_engine::state::AwaitingAction::ResolutionChoice {
+                choice: mtg_engine::state::ResolutionChoiceKind::ChooseTarget { effect, .. },
+                ..
+            } => Some(effect.clone()),
             _ => None,
         };
         state.awaiting_action = None;

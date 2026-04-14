@@ -4,7 +4,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Desperate Ravings — {1}{R} instant. Draw two cards, then discard a card at random.
 pub struct DesperateRavings;
@@ -30,7 +30,7 @@ impl CardBehavior for DesperateRavings {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         crate::engine::draw_cards(state, controller, 2, registry);
         // Discard a card at random.
         let hand: Vec<ObjectId> = state.objects.values()
@@ -39,7 +39,7 @@ impl CardBehavior for DesperateRavings {
             .collect();
         let to_discard = hand.choose(&mut rand::thread_rng()).copied();
         if let Some(discard_id) = to_discard {
-            let owner = state.get_object(discard_id).map(|o| o.owner).unwrap_or(crate::ids::PlayerId(0));
+            let owner = state.get_object(discard_id).map_or(crate::ids::PlayerId(0), |o| o.owner);
             state.move_object(discard_id, Zone::Graveyard, registry);
             state.events.push(crate::events::GameEvent::Discarded { player: owner, object: discard_id });
         }

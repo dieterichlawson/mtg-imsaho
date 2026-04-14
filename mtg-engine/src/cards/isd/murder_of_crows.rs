@@ -3,7 +3,7 @@ use crate::engine::draw_cards;
 use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Murder of Crows — {3}{U}{U} 4/4 Bird. Flying.
 /// Whenever another creature dies, you may draw a card. If you do, discard a card.
@@ -59,14 +59,14 @@ impl CardBehavior for MurderOfCrows {
         }
         // "You may draw a card. If you do, discard a card."
         let controller = state.get_object(self_id)
-            .map(|o| o.controller).unwrap_or(PlayerId(0));
+            .map_or(PlayerId(0), |o| o.controller);
         draw_cards(state, controller, 1, registry);
         let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
             .iter().map(|o| o.id).collect();
         if hand.len() == 1 {
             state.move_object(hand[0], Zone::Graveyard, registry);
             state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
-            state.log(LogLevel::Event, format!("Drew and discarded a card"));
+            state.log(LogLevel::Event, "Drew and discarded a card".to_string());
         } else if !hand.is_empty() {
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: controller,

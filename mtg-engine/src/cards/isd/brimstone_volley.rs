@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Brimstone Volley — {2}{R} instant. Deal 3 damage to any target.
 /// Morbid — Brimstone Volley deals 5 damage instead if a creature died this turn.

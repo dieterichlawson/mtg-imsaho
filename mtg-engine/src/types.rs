@@ -105,7 +105,7 @@ impl std::fmt::Display for ManaCost {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for sym in &self.symbols {
             match sym {
-                ManaSymbol::Generic(n) => write!(f, "{{{}}}", n)?,
+                ManaSymbol::Generic(n) => write!(f, "{{{n}}}")?,
                 ManaSymbol::Colored(c) => write!(f, "{{{}}}", match c {
                     Color::White => "W",
                     Color::Blue => "U",
@@ -471,7 +471,7 @@ mod tests {
             ManaSymbol::Generic(2),
             ManaSymbol::Colored(Color::Red),
         ]);
-        assert_eq!(format!("{}", cost), "{2}{R}");
+        assert_eq!(format!("{cost}"), "{2}{R}");
     }
 
     #[test]

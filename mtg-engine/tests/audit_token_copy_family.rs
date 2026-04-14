@@ -210,9 +210,8 @@ fn bug_0f_001_parallel_lives_token_copies_share_card_id() {
              carry Splinterfright's card_id so registry lookups succeed \
              and the copy retains Splinterfright's dynamic_pt / triggered \
              abilities. Bug 0F-001: create_token_copy patches only the \
-             FIRST returned token's card_id. Token {:?} has card_id {:?}, \
-             expected {:?}.",
-            id, card_id, splinter_card_id,
+             FIRST returned token's card_id. Token {id:?} has card_id {card_id:?}, \
+             expected {splinter_card_id:?}.",
         );
     }
 }
@@ -344,7 +343,6 @@ fn bug_by_geist_angel_token_defender_matches_geist() {
         "Geist of Saint Traft's Angel token should be inserted into \
          combat.attackers with the same defender as Geist (P1). Bug BY: \
          the handler reads state.opponent(controller) instead of \
-         consulting combat.attackers.get(&self_id). defender={:?}",
-        angel_defender,
+         consulting combat.attackers.get(&self_id). defender={angel_defender:?}",
     );
 }

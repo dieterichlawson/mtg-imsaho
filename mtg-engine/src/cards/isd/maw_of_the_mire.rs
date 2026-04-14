@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TargetFilter};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Maw of the Mire — {4}{B} Sorcery.
 /// Destroy target land. You gain 4 life.
@@ -41,26 +41,25 @@ impl CardBehavior for MawOfTheMire {
                     _ => return false,
                 };
                 registry.card_data(obj.card_id)
-                    .map(|d| d.card_types.contains(&CardType::Land))
-                    .unwrap_or(false)
+                    .is_some_and(|d| d.card_types.contains(&CardType::Land))
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         if let Some(Target::Object(land_id)) = targets.first() {
             // If the target is illegal (not on battlefield), the spell fizzles — no effects.
-            if !state.get_object(*land_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if !state.get_object(*land_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.move_spell_after_resolve(object_id, registry);
                 return;
             }
             let name = state.get_object(*land_id).map(|o| o.name.clone()).unwrap_or_default();
             crate::destruction::try_destroy(state, *land_id, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Maw of the Mire destroyed {}", name));
+                format!("Maw of the Mire destroyed {name}"));
 
             // Gain 4 life (only if target was valid).
             let old_life = state.get_player(controller).life;

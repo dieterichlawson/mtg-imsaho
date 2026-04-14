@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Boneyard Wurm — {1}{G} */* Wurm.
 /// Boneyard Wurm's power and toughness are each equal to the number of

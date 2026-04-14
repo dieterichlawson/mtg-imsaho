@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Avacynian Priest — {1}{W} 1/2 Human Cleric. {1}, {T}: Tap target non-Human creature.
 pub struct AvacynianPriest;
@@ -30,7 +30,7 @@ impl CardBehavior for AvacynianPriest {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{1}, {T}: Tap target non-Human creature".into(),
@@ -53,24 +53,21 @@ impl CardBehavior for AvacynianPriest {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| {
+                    .is_some_and(|o| {
                         let is_human = if o.subtypes.iter().any(|s| s == "Human") {
                             true
                         } else if o.is_transformed {
                             registry.get(o.card_id)
-                                .and_then(|b| b.back_face_data())
-                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                                .unwrap_or(false)
+                                .and_then(super::super::CardBehavior::back_face_data)
+                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                         } else {
                             registry.card_data(o.card_id)
-                                .map(|d| d.subtypes.iter().any(|s| s == "Human"))
-                                .unwrap_or(false)
+                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
                         };
                         o.zone == Zone::Battlefield
                             && o.power.is_some()
                             && !is_human
                     })
-                    .unwrap_or(false)
             }
             Target::Player(_) => false,
         }

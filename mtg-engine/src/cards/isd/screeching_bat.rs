@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::cards::helpers;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Screeching Bat {2}{B} 2/2 Bat with Flying // Stalking Vampire 5/5 Vampire.
 /// Both faces: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform."
@@ -69,7 +69,7 @@ impl CardBehavior for ScreechingBat {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 5))
         } else {
             None
@@ -98,7 +98,7 @@ impl CardBehavior for ScreechingBat {
             player: controller,
             source: self_id,
             choice: ResolutionChoiceKind::YesNo {
-                description: format!("{}: pay {{2}}{{B}}{{B}} to transform?", current_name),
+                description: format!("{current_name}: pay {{2}}{{B}}{{B}} to transform?"),
                 source_card: self_id,
             },
         });

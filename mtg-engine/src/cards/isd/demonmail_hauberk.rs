@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope, Zone};
 
 /// Demonmail Hauberk — {4} Artifact — Equipment.
 /// Equipped creature gets +4/+2.
@@ -43,18 +43,14 @@ impl CardBehavior for DemonmailHauberk {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
-                    .map(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
-                    .unwrap_or(false)
+                    .is_some_and(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == caster)
             }
-            _ => false,
+            Target::Player(_) => false,
         }
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         // Equip ability is on the equipment itself (no power = not a creature).
         if obj.zone == Zone::Battlefield && obj.power.is_none() {
             let controller = obj.controller;

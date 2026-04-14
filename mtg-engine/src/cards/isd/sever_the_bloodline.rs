@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, TargetRequirement, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Sever the Bloodline — {3}{B} Sorcery.
 /// Exile target creature and all other creatures with the same name as that creature.
@@ -41,7 +41,7 @@ impl CardBehavior for SeverTheBloodline {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
-            if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+            if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 // Get the name of the target creature.
                 let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
 

@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect};
 
 /// Stony Silence — {1}{W} Enchantment.
 /// Activated abilities of artifacts can't be activated.

@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::actions::Target;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Diregraf Ghoul — 2/2 for {B}. Enters the battlefield tapped.
 /// Note: "enters tapped" is a static/replacement ability, NOT a triggered ability.

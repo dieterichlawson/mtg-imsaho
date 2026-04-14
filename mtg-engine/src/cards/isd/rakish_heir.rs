@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Rakish Heir — {2}{R} 2/2 Vampire.
 /// Whenever a Vampire you control deals combat damage to a player, put a +1/+1 counter on that Vampire.
@@ -46,8 +46,7 @@ impl CardBehavior for RakishHeir {
             _ => return,
         };
         let is_vampire = registry.card_data(source.card_id)
-            .map(|d| d.subtypes.iter().any(|s| s == "Vampire"))
-            .unwrap_or(false)
+            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Vampire"))
             || source.subtypes.iter().any(|s| s == "Vampire");
         if is_vampire {
             // Put a +1/+1 counter on THAT Vampire (the source).

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::{GameState, LogLevel};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Harvest Pyre — {1}{R} Instant.
 /// As an additional cost to cast this spell, exile X cards from your graveyard.
@@ -39,8 +39,7 @@ impl CardBehavior for HarvestPyre {
         // The exile happened at cast time (additional cost). Read the count.
         let count = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exile_count").copied())
-            .map(|id| id.0 as u32)
-            .unwrap_or(0);
+            .map_or(0, |id| id.0 as u32);
 
         if count > 0 {
             if let Some(Target::Object(target_id)) = targets.first() {
@@ -50,7 +49,7 @@ impl CardBehavior for HarvestPyre {
                         obj.damaged_by.push(object_id);
                     }
                 }
-                if state.get_object(*target_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+                if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                     state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                         source: object_id,
                         target: crate::events::DamageTarget::Object(*target_id),

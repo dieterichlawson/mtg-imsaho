@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost};
 use crate::ids::ObjectId;
 use crate::state::{GameState, LogLevel, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Stitcher's Apprentice — {1}{U} 1/2 Homunculus.
 /// {1}{U}, {T}: Create a 2/2 blue Homunculus creature token, then sacrifice a creature.
@@ -28,7 +28,7 @@ impl CardBehavior for StitchersApprentice {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        if state.get_object(object_id).map(|o| o.zone == Zone::Battlefield).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             vec![ActivatedAbilityDef {
                 ability_index: 0,
                 description: "{1}{U}, {T}: Create a 2/2 blue Homunculus token, then sacrifice a creature".into(),
@@ -47,8 +47,8 @@ impl CardBehavior for StitchersApprentice {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(_object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Create a 2/2 blue Homunculus creature token.
         let _token_ids = state.create_token_with_subtypes(
@@ -57,7 +57,7 @@ impl CardBehavior for StitchersApprentice {
             vec![], vec!["Homunculus".into()],
             registry,
         );
-        state.log(LogLevel::Event, format!("Stitcher's Apprentice created a 2/2 Homunculus token"));
+        state.log(LogLevel::Event, "Stitcher's Apprentice created a 2/2 Homunculus token".to_string());
 
         // Then sacrifice a creature you control.
         // The controller chooses which creature to sacrifice.
@@ -70,7 +70,7 @@ impl CardBehavior for StitchersApprentice {
 
         crate::cards::helpers::present_target_choice(
             state,
-            _object_id,
+            object_id,
             controller,
             creatures,
             PendingEffect::SacrificeCreature {

@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, ManaAbilityDef, SacrificeCost, TargetRequirement, TargetFilter};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{CardType, Zone, ManaType, ManaCost, Supertype};
 
 /// Ghost Quarter — Land.
 /// {T}: Add {C}.
@@ -27,10 +27,7 @@ impl CardBehavior for GhostQuarter {
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ManaAbilityDef {
                 ability_index: 0,
@@ -45,10 +42,7 @@ impl CardBehavior for GhostQuarter {
     }
 
     fn activated_abilities(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Vec<ActivatedAbilityDef> {
-        let obj = match state.get_object(object_id) {
-            Some(o) => o,
-            None => return vec![],
-        };
+        let Some(obj) = state.get_object(object_id) else { return vec![]; };
         if obj.zone == Zone::Battlefield && !obj.tapped {
             vec![ActivatedAbilityDef {
                 ability_index: 1,
@@ -67,7 +61,7 @@ impl CardBehavior for GhostQuarter {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             let (target_controller, target_name) = match state.get_object(*target_id) {
                 Some(o) if o.zone == Zone::Battlefield => (o.controller, o.name.clone()),
@@ -77,7 +71,7 @@ impl CardBehavior for GhostQuarter {
             // Destroy target land.
             crate::destruction::try_destroy(state, *target_id, registry);
             state.log(crate::state::LogLevel::Event,
-                format!("Ghost Quarter destroyed {}", target_name));
+                format!("Ghost Quarter destroyed {target_name}"));
 
             // "Its controller may search their library for a basic land card,
             // put it onto the battlefield, then shuffle."
@@ -86,11 +80,10 @@ impl CardBehavior for GhostQuarter {
                 .filter(|&&lib_id| {
                     state.get_object(lib_id)
                         .and_then(|o| registry.card_data(o.card_id))
-                        .map(|d| {
+                        .is_some_and(|d| {
                             d.card_types.contains(&CardType::Land)
                                 && d.supertypes.contains(&Supertype::Basic)
                         })
-                        .unwrap_or(false)
                 })
                 .copied()
                 .collect();
@@ -107,7 +100,7 @@ impl CardBehavior for GhostQuarter {
             let targets: Vec<Target> = basic_lands.iter().map(|&id| Target::Object(id)).collect();
             state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                 player: target_controller,
-                source: _object_id,
+                source: object_id,
                 choice: crate::state::ResolutionChoiceKind::ChooseTarget {
                     description: "Ghost Quarter: you may search for a basic land card".into(),
                     options: targets,

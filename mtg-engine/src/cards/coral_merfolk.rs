@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Coral Merfolk — 2/1 for {1}{U}. Vanilla creature.
 pub struct CoralMerfolk;

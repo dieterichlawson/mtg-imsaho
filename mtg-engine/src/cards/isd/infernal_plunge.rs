@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{AdditionalCost, CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ManaType};
 
 /// Infernal Plunge — {R} Sorcery.
 /// As an additional cost to cast Infernal Plunge, sacrifice a creature.
@@ -32,8 +32,7 @@ impl CardBehavior for InfernalPlunge {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id)
-            .map(|o| o.controller)
-            .unwrap_or(crate::ids::PlayerId(0));
+            .map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // The creature sacrifice happens at cast time (as an additional cost).
         // On resolution, just add {R}{R}{R}.

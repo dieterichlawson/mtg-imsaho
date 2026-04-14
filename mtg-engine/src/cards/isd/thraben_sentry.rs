@@ -2,7 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::cards::helpers;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
 /// Thraben Sentry {3}{W} 2/2 Human Soldier with Vigilance // Thraben Militia 5/4 Human Soldier.
 /// Whenever another creature you control dies, you may transform Thraben Sentry.
@@ -54,7 +54,7 @@ impl CardBehavior for ThrabenSentry {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
-        if state.get_object(object_id).map(|o| o.is_transformed).unwrap_or(false) {
+        if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 4))
         } else {
             None

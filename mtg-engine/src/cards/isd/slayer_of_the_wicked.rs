@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Slayer of the Wicked — {3}{W} 3/2 Human Soldier. ETB: destroy target Vampire, Werewolf, or Zombie.
 pub struct SlayerOfTheWicked;
@@ -42,8 +42,7 @@ impl CardBehavior for SlayerOfTheWicked {
             .filter(|o| {
                 let target_subtypes = ["Vampire", "Werewolf", "Zombie"];
                 let registry_has = registry.card_data(o.card_id)
-                    .map(|d| d.subtypes.iter().any(|s| target_subtypes.contains(&s.as_str())))
-                    .unwrap_or(false);
+                    .is_some_and(|d| d.subtypes.iter().any(|s| target_subtypes.contains(&s.as_str())));
                 let instance_has = o.subtypes.iter().any(|s| target_subtypes.contains(&s.as_str()));
                 registry_has || instance_has
             })

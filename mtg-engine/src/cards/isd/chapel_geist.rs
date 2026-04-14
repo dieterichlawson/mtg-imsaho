@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Chapel Geist — 2/3 for {1}{W}{W}. Flying.
 pub struct ChapelGeist;

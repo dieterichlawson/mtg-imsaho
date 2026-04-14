@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, CreatureFilter};
 
 /// Glorious Anthem — {1}{W}{W} enchantment. Creatures you control get +1/+1.
 /// The bonus is computed dynamically by GameState::anthem_power_bonus/anthem_toughness_bonus.

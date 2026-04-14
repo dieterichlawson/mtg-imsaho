@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Falkenrath Noble — {3}{B} 2/2 Vampire Noble. Flying.
 /// Whenever this creature or another creature dies, target player loses 1 life
@@ -40,7 +40,7 @@ impl CardBehavior for FalkenrathNoble {
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
         // "This creature dies" — trigger fires even when Noble itself dies.
         // Use controller (last known information from when it was on the battlefield).
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(PlayerId(0));
+        let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         drain(state, controller, object_id, registry);
     }
 

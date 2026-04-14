@@ -71,7 +71,6 @@ fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
          shows 'Rampaging Werewolf' post-transform, and the stack \
          label should match. Bug 31-001: the `card_name` closure calls \
          registry.card_data() which always returns the front face. \
-         label = {:?}",
-        label,
+         label = {label:?}",
     );
 }

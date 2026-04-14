@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Past in Flames — {3}{R} Sorcery.
 /// Each instant and sorcery card in your graveyard gains flashback until end of turn.
@@ -36,7 +36,7 @@ impl CardBehavior for PastInFlames {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Move Past in Flames itself to graveyard/exile first, so it's in the graveyard
         // and can also get flashback if we want (but it already has flashback printed).
@@ -71,7 +71,7 @@ impl CardBehavior for PastInFlames {
 
         if count > 0 {
             state.log(crate::state::LogLevel::Event,
-                format!("Past in Flames grants flashback to {} instant/sorcery cards", count));
+                format!("Past in Flames grants flashback to {count} instant/sorcery cards"));
         }
     }
 }

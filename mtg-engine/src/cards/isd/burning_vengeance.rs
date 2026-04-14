@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Burning Vengeance — {2}{R} enchantment.
 /// Whenever you cast a spell from your graveyard, this enchantment deals 2 damage
@@ -46,8 +46,7 @@ impl CardBehavior for BurningVengeance {
         }
         // Only trigger on spells cast from graveyard (flashback).
         let cast_from_gy = state.get_object(spell_id)
-            .map(|o| o.cast_with_flashback)
-            .unwrap_or(false);
+            .is_some_and(|o| o.cast_with_flashback);
         if !cast_from_gy {
             return;
         }

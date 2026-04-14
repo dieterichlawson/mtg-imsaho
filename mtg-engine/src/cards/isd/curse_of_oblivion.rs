@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Curse of Oblivion — {3}{B} Enchantment — Aura Curse.
 /// Enchant player.
@@ -50,10 +50,7 @@ impl CardBehavior for CurseOfOblivion {
             Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,
             _ => return,
         };
-        let cursed_player = match cursed_player {
-            Some(p) => p,
-            None => return,
-        };
+        let Some(cursed_player) = cursed_player else { return; };
         if state.active_player != cursed_player {
             return;
         }
@@ -69,7 +66,7 @@ impl CardBehavior for CurseOfOblivion {
         // If 2 or fewer cards, just exile them all — no choice needed.
         if gy_cards.len() <= 2 {
             let to_exile: Vec<ObjectId> = gy_cards.iter()
-                .map(|t| match t { Target::Object(id) => *id, _ => unreachable!() })
+                .map(|t| match t { Target::Object(id) => *id, Target::Player(_) => unreachable!() })
                 .collect();
             let count = to_exile.len();
             for id in to_exile {

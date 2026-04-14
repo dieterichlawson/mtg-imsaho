@@ -1,5 +1,5 @@
 use crate::cards::{CardBehavior, CardData};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Fortress Crab — 1/6 for {3}{U}. Vanilla creature.
 pub struct FortressCrab;

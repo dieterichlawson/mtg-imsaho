@@ -81,8 +81,7 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
         "A 5-power non-trample attacker blocked by two 2/2s should be \
          able to kill both (2+2 split). Bug 17-005: combat.rs hard-codes \
          'assign all damage to the first blocker', so the first blocker \
-         takes 5 damage and the second survives. zones: a={:?}, b={:?}",
-        a_zone, b_zone,
+         takes 5 damage and the second survives. zones: a={a_zone:?}, b={b_zone:?}",
     );
 }
 
@@ -101,7 +100,7 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
 /// attacking. It does NOT call `state.can_attack`, which is the
 /// function that consults `PreventAttack` / `ConditionalPreventAttack`
 /// continuous effects. So a non-Human creature under Bonds of Faith
-/// + Furor of the Bitten gets force-added to `combat.attackers`,
+/// plus Furor of the Bitten gets force-added to `combat.attackers`,
 /// despite Bonds of Faith's "it can't attack" clause.
 ///
 /// We put a non-Human creature with Furor of the Bitten (ForceAttack)
@@ -160,8 +159,7 @@ fn bug_bp_forced_attack_respects_cant_attack() {
     let force_attacked = new_state
         .combat
         .as_ref()
-        .map(|c| c.attackers.contains_key(&bears))
-        .unwrap_or(false);
+        .is_some_and(|c| c.attackers.contains_key(&bears));
 
     assert!(
         !force_attacked,

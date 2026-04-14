@@ -34,7 +34,7 @@ fn registry() -> CardRegistry {
 }
 
 fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: PlayerId) -> ObjectId {
-    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {}", name));
+    let card_id = reg.get_id_by_name(name).unwrap_or_else(|| panic!("unknown card {name}"));
     let id = state.create_object(card_id, owner, Zone::Battlefield, None, None);
     let obj = state.get_object_mut(id).unwrap();
     obj.name = name.into();
@@ -64,14 +64,14 @@ fn hauberk_legal_actions_enumerate_target_sacrifice_combos() {
             if *object_id != hauberk { return None; }
             let target_id = match targets.first()? {
                 Target::Object(id) => *id,
-                _ => return None,
+                Target::Player(_) => return None,
             };
             let sac_id = (*sacrifice)?;
             Some((target_id, sac_id))
         } else { None }
     }).collect();
 
-    assert_eq!(combos.len(), 6, "should enumerate 3 targets × 2 sacrifices = 6 combos, got {:?}", combos);
+    assert_eq!(combos.len(), 6, "should enumerate 3 targets × 2 sacrifices = 6 combos, got {combos:?}");
 
     // Check no combo has target == sacrifice.
     for (t, s) in &combos {

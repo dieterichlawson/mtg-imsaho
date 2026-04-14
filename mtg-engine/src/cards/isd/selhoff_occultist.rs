@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
-use crate::types::*;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Selhoff Occultist — {2}{U} 2/3 Human Rogue.
 /// Whenever this creature or another creature dies, target player mills a card.
@@ -39,7 +39,7 @@ impl CardBehavior for SelhoffOccultist {
 
     /// When Selhoff Occultist itself dies, target player mills a card.
     fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map(|o| o.controller).unwrap_or(crate::ids::PlayerId(0));
+        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         present_mill_choice(state, object_id, controller, registry);
     }
 

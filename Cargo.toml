@@ -1,3 +1,28 @@
 [workspace]
 members = ["mtg-engine", "mtg-player", "mtg-runner", "mtg-draft", "mtg-draft-runner"]
 resolver = "2"
+
+[workspace.lints.rust]
+warnings = "deny" # Treat all compiler warnings as errors
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+# Pedantic lints that require major refactoring — allow for now
+too_many_lines = "allow"
+too_many_arguments = "allow"
+must_use_candidate = "allow"
+return_self_not_must_use = "allow"
+missing_panics_doc = "allow"
+missing_errors_doc = "allow"
+doc_markdown = "allow"
+module_name_repetitions = "allow"
+cast_possible_truncation = "allow"
+cast_sign_loss = "allow"
+cast_possible_wrap = "allow"
+cast_lossless = "allow"
+similar_names = "allow"
+items_after_statements = "allow"
+struct_excessive_bools = "allow"
+unused_self = "allow"
+match_same_arms = "allow"

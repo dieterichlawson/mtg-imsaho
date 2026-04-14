@@ -60,7 +60,7 @@ fn cannot_activate_without_rg() {
 
 /// X=3 with 5 mana gives +3/+0 and trample.
 #[test]
-#[ignore] // Tabled — requires X-cost/autotap overhaul
+#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn x_equals_3_gives_plus_3() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -87,7 +87,7 @@ fn x_equals_3_gives_plus_3() {
     // Check +3/+0 effect.
     let power = state.effective_power(creature, &reg).unwrap_or(0);
     assert_eq!(power, 5,
-        "Creature should have 2 + 3 = 5 power (got {})", power);
+        "Creature should have 2 + 3 = 5 power (got {power})");
 
     // Check trample keyword.
     let has_trample = state.until_end_of_turn.iter()

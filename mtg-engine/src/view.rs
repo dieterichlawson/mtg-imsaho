@@ -1,7 +1,7 @@
 use crate::ids::{ObjectId, PlayerId, CardId};
 use crate::state::GameState;
 use crate::cards::CardRegistry;
-use crate::types::*;
+use crate::types::{ManaPool, Step, ManaCost, CardType, Keyword, CounterType, Zone};
 
 /// A player's view of the game — hidden info filtered out.
 #[derive(Debug, Clone)]
@@ -144,14 +144,14 @@ impl GameView {
             .map(|obj| {
                 let keywords: Vec<Keyword> = all_keywords.iter()
                     .filter(|kw| state.has_keyword(obj.id, **kw, registry))
-                    .cloned()
+                    .copied()
                     .collect();
                 // For transformed DFCs, show the back-face name and card types
                 // so the display matches the active face. Without this, a
                 // transformed Villagers of Estwald shows as "Villagers of
                 // Estwald 4/6" (front name, back P/T), misleading the LLM.
                 let face_data = if obj.is_transformed {
-                    registry.get(obj.card_id).and_then(|b| b.back_face_data())
+                    registry.get(obj.card_id).and_then(super::cards::CardBehavior::back_face_data)
                 } else {
                     registry.card_data(obj.card_id)
                 };
@@ -159,11 +159,9 @@ impl GameView {
                     object_id: obj.id,
                     card_id: obj.card_id,
                     name: face_data.as_ref()
-                        .map(|d| d.name.clone())
-                        .unwrap_or_else(|| obj.name.clone()),
+                        .map_or_else(|| obj.name.clone(), |d| d.name.clone()),
                     card_types: face_data.as_ref()
-                        .map(|d| d.card_types.clone())
-                        .unwrap_or_else(|| obj.card_types.clone()),
+                        .map_or_else(|| obj.card_types.clone(), |d| d.card_types.clone()),
                     controller: obj.controller,
                     owner: obj.owner,
                     tapped: obj.tapped,
@@ -205,8 +203,7 @@ impl GameView {
                             object_id: obj.id,
                             card_id: obj.card_id,
                             name: registry.card_data(obj.card_id)
-                                .map(|d| d.name)
-                                .unwrap_or_else(|| "Unknown".into()),
+                                .map_or_else(|| "Unknown".into(), |d| d.name),
                             controller: obj.controller,
                             targets: obj.targets.clone(),
                         })
@@ -241,7 +238,7 @@ impl GameView {
                         ResolutionChoiceKind::ChooseTarget { options, .. } => {
                             options.iter().filter_map(|t| match t {
                                 crate::actions::Target::Object(id) => Some(*id),
-                                _ => None,
+                                crate::actions::Target::Player(_) => None,
                             }).collect()
                         }
                         ResolutionChoiceKind::ChooseCardFromHand { cards, .. } => cards.clone(),
@@ -255,8 +252,7 @@ impl GameView {
             for id in ids_to_resolve {
                 if let Some(obj) = state.get_object(id) {
                     let name = registry.card_data(obj.card_id)
-                        .map(|d| d.name.clone())
-                        .unwrap_or_else(|| obj.name.clone());
+                        .map_or_else(|| obj.name.clone(), |d| d.name.clone());
                     revealed_names.insert(id, name);
                 }
             }
@@ -296,13 +292,13 @@ fn card_view(obj: &crate::state::GameObject, registry: &CardRegistry) -> CardVie
     CardView {
         object_id: obj.id,
         card_id: obj.card_id,
-        name: data.as_ref().map(|d| d.name.clone()).unwrap_or_else(|| "Unknown".into()),
+        name: data.as_ref().map_or_else(|| "Unknown".into(), |d| d.name.clone()),
         cost: data.as_ref().and_then(|d| d.cost.clone()),
         card_types: data.as_ref().map(|d| d.card_types.clone()).unwrap_or_default(),
         power: obj.power,
         toughness: obj.toughness,
         oracle_text: data.as_ref().map(|d| d.oracle_text.clone()).unwrap_or_default(),
         owner: obj.owner,
-        flashback_cost: data.map(|d| d.flashback_cost).unwrap_or(None),
+        flashback_cost: data.and_then(|d| d.flashback_cost),
     }
 }
