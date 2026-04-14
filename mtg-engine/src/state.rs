@@ -551,6 +551,13 @@ impl GameState {
                 obj.instance_oracle_text = None;
             }
 
+            // Clear cast_with_flashback when moving back to hand or library
+            // (e.g. Runic Repetition returns an exiled flashback card to hand).
+            // The flag is set during cast and would otherwise persist.
+            if matches!(to, Zone::Hand | Zone::Library) {
+                obj.cast_with_flashback = false;
+            }
+
             // Set summoning sickness and clear stale state when entering the battlefield.
             if to == Zone::Battlefield && from != Zone::Battlefield {
                 obj.card_state.clear();

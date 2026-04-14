@@ -255,10 +255,12 @@ fn deal_damage_step(
             // Blocked: distribute damage to blockers, with trample overflow.
             let mut remaining_power = attacker_power;
 
-            for &blocker_id in &blockers {
+            let blocker_count = blockers.len();
+            for (idx, &blocker_id) in blockers.iter().enumerate() {
                 if state.get_object(blocker_id).is_none_or(|o| o.zone != Zone::Battlefield) {
                     continue;
                 }
+                let is_last_blocker = idx == blocker_count - 1;
 
                 // Blocker deals damage to attacker.
                 let blocker_has_first_strike = state.has_keyword(blocker_id, Keyword::FirstStrike, registry);
@@ -286,10 +288,14 @@ fn deal_damage_step(
                         u32::try_from((blocker_toughness - i32::try_from(blocker_damage).unwrap_or(i32::MAX)).max(0)).unwrap_or(0)
                     };
 
-                    let assigned = if has_trample {
-                        remaining_power.min(lethal) // assign minimum lethal, save rest for trample
+                    // CR 510.1c/d: at least lethal damage to each blocker in
+                    // damage assignment order. Excess damage goes to the next
+                    // blocker (or to player if trample). For the last blocker,
+                    // dump all remaining damage on it (no point holding back).
+                    let assigned = if is_last_blocker && !has_trample {
+                        remaining_power
                     } else {
-                        remaining_power // assign all to this blocker
+                        remaining_power.min(lethal)
                     };
 
                     if assigned > 0 {

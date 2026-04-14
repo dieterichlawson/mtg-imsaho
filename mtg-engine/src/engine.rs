@@ -2538,6 +2538,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     if new_state.has_keyword(creature.id, crate::types::Keyword::Defender, registry) {
                         continue;
                     }
+                    // Respect "can't attack" effects (e.g. Bonds of Faith).
+                    if !new_state.can_attack(creature.id, registry) {
+                        continue;
+                    }
                     // Check for forced attack effects (e.g., Furor of the Bitten).
                     let must_attack = new_state.has_continuous_effect(creature.id, &|e| {
                         match e {

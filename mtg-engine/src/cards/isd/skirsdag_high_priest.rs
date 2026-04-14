@@ -57,11 +57,12 @@ impl CardBehavior for SkirsdagHighPriest {
         let mut combo_index = 0usize;
         for i in 0..n {
             for j in (i + 1)..n {
+                let name_i = state.get_object(candidates[i]).map_or_else(|| "?".to_string(), |o| o.name.clone());
+                let name_j = state.get_object(candidates[j]).map_or_else(|| "?".to_string(), |o| o.name.clone());
                 abilities.push(ActivatedAbilityDef {
                     ability_index: combo_index,
                     description: format!(
-                        "Morbid — {{T}}, Tap two creatures: Create a 5/5 Demon with flying (tap {:?} & {:?})",
-                        candidates[i], candidates[j]
+                        "Morbid — {{T}}, Tap two creatures: Create a 5/5 Demon with flying (tap {name_i} & {name_j})",
                     ),
                     cost: ManaCost::new(vec![]),
                     requires_tap: true,
