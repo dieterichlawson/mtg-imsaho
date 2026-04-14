@@ -108,8 +108,9 @@ pub enum ResolvedChoice {
     ChosenIndex(usize, String),
     /// Choose a subset of objects (e.g., pile division — chosen objects form pile 1, rest form pile 2).
     ChosenSubset(Vec<ObjectId>),
-    /// Choose X for an X-cost spell or ability.
-    ChosenXValue(u32),
+    /// Funding choices for an X-cost spell or ability. Contains the player's
+    /// pool drain + tap allocations; the engine derives X from the sum.
+    XFunding(crate::funding::FundingResponse),
 }
 
 /// Prompt returned by `legal_actions` for combat.

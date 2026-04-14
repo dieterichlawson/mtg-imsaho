@@ -113,6 +113,15 @@ pub struct GameState {
     #[serde(default)]
     pub last_activated_x_value: Option<u32>,
 
+    /// Context stashed between the `ActivateAbility` handler and the follow-up
+    /// `ChooseXFunding` resolution for X-cost activated abilities. Unlike
+    /// spells (whose targets/flashback flag are persisted on the stack object
+    /// itself), activated abilities don't use the stack in this engine, so we
+    /// need a side channel to remember what to fire once the player has
+    /// funded X.
+    #[serde(default)]
+    pub pending_ability_effect: Option<PendingAbilityEffect>,
+
     /// Index for trigger processing resumption after a resolution choice.
     #[serde(default)]
     pub trigger_event_index: usize,
@@ -253,6 +262,7 @@ impl GameState {
             num_spells_cast_this_turn: HashMap::new(),
             num_spells_cast_last_turn: HashMap::new(),
             last_activated_x_value: None,
+            pending_ability_effect: None,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
             pending_trigger_pushes_ap: Vec::new(),
@@ -1687,6 +1697,28 @@ impl CombatState {
     }
 }
 
+/// Context for an X-cost activated ability whose effect is deferred until
+/// the player completes the funding choice. Populated when the
+/// `ActivateAbility` handler sets up a `ChooseXFunding` prompt; consumed
+/// when that prompt resolves to fire the ability's effect with the
+/// now-known X value.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingAbilityEffect {
+    /// The permanent that owns the ability.
+    pub source_id: ObjectId,
+    /// Which of its activated abilities was activated.
+    pub ability_index: usize,
+    /// The card whose behavior contributed this ability (may differ from
+    /// the source permanent for aura-granted abilities / Evil Twin).
+    pub behavior_card_id: CardId,
+    /// Targets chosen at activation time.
+    pub targets: Vec<crate::actions::Target>,
+    /// Human-readable description of the ability (for log message).
+    pub description: String,
+    /// Player who activated the ability.
+    pub activator: PlayerId,
+}
+
 /// What the engine is waiting for the player to do.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum AwaitingAction {
@@ -1794,17 +1826,26 @@ pub enum ResolutionChoiceKind {
         /// The source permanent that needs the chosen name.
         source_id: ObjectId,
     },
-    /// Choose X for an X-cost spell or activated ability.
-    /// The player picks a value from `0..=max_x`, then that much mana is
-    /// drained from the pool and stored on the spell/ability.
-    ChooseXValue {
+    /// Choose how to fund X for an X-cost spell or activated ability.
+    ///
+    /// The player picks specific mana sources to tap plus amounts to drain
+    /// from each color in their pool; the sum determines X. This replaces
+    /// the older `ChooseXValue` flow which only let the player pick X as a
+    /// single number and auto-selected sources.
+    ///
+    /// Rules ordering: this prompt runs BEFORE the spell is placed on the
+    /// stack and before `SpellCast`-style triggers fire, matching CR 601.2b
+    /// (announce X) → 601.2h (pay total cost) → 601.2i (spell becomes cast).
+    ChooseXFunding {
         description: String,
-        /// Maximum X the player can afford.
-        max_x: u32,
-        /// The spell on the stack (for spells) or the source permanent (for abilities).
+        /// All available funding options (pool mana + tap sources).
+        options: crate::funding::FundingOptions,
+        /// For spells: the object being cast (currently in `Zone::Stack` as a
+        /// staging area with `x_value = None` until funding completes).
+        /// For abilities: the source permanent.
         source_id: ObjectId,
-        /// True if this is for an activated ability (uses `last_activated_x_value`),
-        /// false for a spell (uses `obj.x_value` on the stack object).
+        /// True for activated abilities (sets `last_activated_x_value`),
+        /// false for spells (sets `obj.x_value` on the stack object).
         is_ability: bool,
     },
 }

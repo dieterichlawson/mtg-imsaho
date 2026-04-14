@@ -46,6 +46,12 @@ pub struct LegalActions {
     pub activatable_abilities: Vec<crate::actions::ActivatableAbility>,
     /// Human-readable description of why the player has priority or needs to act.
     pub context: Option<String>,
+    /// Set when the engine is waiting on a structured mid-resolution choice
+    /// (e.g. X-cost funding). Player implementations inspect this to produce
+    /// a tailored prompt + response. When present, `actions` is empty —
+    /// the only legal response is an `Action::ResolveChoice` constructed by
+    /// the player based on this prompt's payload.
+    pub resolution_prompt: Option<crate::state::ResolutionChoiceKind>,
 }
 
 /// Gather all available mana sources for a player, classified by opportunity cost.
@@ -101,9 +107,44 @@ fn gather_mana_sources(
     sources
 }
 
+/// Finalize a spell cast: fire `SpellCast`, bump the per-turn counter, and
+/// emit the cast log message. Called either immediately (non-X spell) or
+/// after X-funding completes (X-cost spell). This corresponds to CR 601.2i —
+/// the point at which "the spell becomes cast" and triggers watching the
+/// cast go on the stack.
+pub(crate) fn finalize_spell_cast(
+    state: &mut GameState,
+    player: PlayerId,
+    object_id: ObjectId,
+    is_flashback: bool,
+    targets: &[crate::actions::Target],
+    registry: &CardRegistry,
+) {
+    state.events.push(GameEvent::SpellCast {
+        player,
+        object: object_id,
+    });
+
+    *state.num_spells_cast_this_turn.entry(player).or_insert(0) += 1;
+
+    let name = card_name(state, registry, object_id);
+    let suffix = if is_flashback { " (flashback)" } else { "" };
+    let target_str = if targets.is_empty() {
+        String::new()
+    } else {
+        let names: Vec<String> = targets.iter().map(|t| match t {
+            crate::actions::Target::Object(id) => card_name(state, registry, *id),
+            crate::actions::Target::Player(pid) => format!("p{}", pid.0),
+        }).collect();
+        format!(" targeting {}", names.join(", "))
+    };
+    state.log(LogLevel::Event, format!("p{} cast {}{}{}", player.0, name, suffix, target_str));
+    state.consecutive_passes = 0;
+}
+
 /// Activate a single mana source (tap + add mana + side effects).
 /// Shared by both `ActivateManaAbility` and `CastSpell` `tap_plan` execution.
-fn activate_mana_source(
+pub(crate) fn activate_mana_source(
     state: &mut GameState,
     source_id: ObjectId,
     ability_index: usize,
@@ -265,7 +306,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     if state.is_game_over() {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None };
     }
 
     // If we're waiting for a specific action (attackers, blockers, discard).
@@ -296,6 +337,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     }),
                     castable_spells: vec![],
                     activatable_abilities: vec![], context: Some("DECLARE ATTACKERS".into()),
+                    resolution_prompt: None,
                 }
             }
             AwaitingAction::DeclareBlockers { defending_player } => {
@@ -321,6 +363,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     castable_spells: vec![],
                     activatable_abilities: vec![],
                     context: Some("DECLARE BLOCKERS".into()),
+                    resolution_prompt: None,
                 }
             }
             AwaitingAction::DiscardToHandSize { player, discard_count } => {
@@ -331,6 +374,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     activatable_abilities: vec![],
                     context: Some(format!("DISCARD {} CARD{}", discard_count,
                         if *discard_count == 1 { "" } else { "S" })),
+                    resolution_prompt: None,
                 }
             }
             AwaitingAction::MulliganDecision { player } => {
@@ -347,6 +391,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     context: Some(format!(
                         "MULLIGAN DECISION (mulligans taken: {}/{})",
                         mull_count, crate::state::LONDON_MULLIGAN_CAP)),
+                    resolution_prompt: None,
                 }
             }
             AwaitingAction::BottomAfterMulligan { player, count } => {
@@ -368,6 +413,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     activatable_abilities: vec![],
                     context: Some(format!("BOTTOM {} CARD{} AFTER MULLIGAN",
                         count, if *count == 1 { "" } else { "s" })),
+                    resolution_prompt: None,
                 }
             }
             AwaitingAction::ResolutionChoice { choice, source, .. } => {
@@ -447,10 +493,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, name.clone()) })
                             .collect()
                     }
-                    ResolutionChoiceKind::ChooseXValue { max_x, .. } => {
-                        (0..=*max_x)
-                            .map(|x| Action::ResolveChoice { choice: ResolvedChoice::ChosenXValue(x) })
-                            .collect()
+                    ResolutionChoiceKind::ChooseXFunding { .. } => {
+                        // Structured prompt — can't be enumerated as a flat
+                        // action list. Player implementations see the
+                        // `resolution_prompt` field and construct a
+                        // `ResolvedChoice::XFunding(response)` directly.
+                        vec![]
                     }
                 };
                 let context = match choice {
@@ -458,7 +506,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     | ResolutionChoiceKind::PayOrNot { description, .. }
                     | ResolutionChoiceKind::ChooseCardFromHand { description, .. }
                     | ResolutionChoiceKind::ChooseCardName { description, .. }
-                    | ResolutionChoiceKind::ChooseXValue { description, .. } => description.clone(),
+                    | ResolutionChoiceKind::ChooseXFunding { description, .. } => description.clone(),
                     ResolutionChoiceKind::YesNo { .. } => format!("{source_name}: choose yes or no"),
                     ResolutionChoiceKind::ChooseFromRevealed { .. } => format!("{source_name}: choose a card"),
                     ResolutionChoiceKind::ChooseFromLibrary { .. } => format!("{source_name}: search library"),
@@ -480,13 +528,20 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             source_name, fmt_pile(pile_1), fmt_pile(pile_2))
                     }
                 };
-                LegalActions { actions, combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: Some(context) }
+                LegalActions {
+                    actions,
+                    combat_prompt: None,
+                    castable_spells: vec![],
+                    activatable_abilities: vec![],
+                    context: Some(context),
+                    resolution_prompt: Some(choice.clone()),
+                }
             }
         };
     }
 
     let Some(player) = state.priority_player else {
-        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None };
+        return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None, resolution_prompt: None };
     };
 
     let mut actions = Vec::new();
@@ -602,20 +657,41 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // appear as legal actions in main phase even when no mana is currently floating —
             // the resulting tap plan is bundled into the action and executed at apply time.
             //
-            // EXCEPTION: abilities with a sacrifice cost don't get auto-tap. The player has
-            // to manually tap their lands and float the mana before activating. Otherwise
-            // the planner can pick a creature mana source as part of the tap plan and then
-            // the player sacrifices that same creature for the cost — the orderings get
-            // weird and lead to bugs. Requiring manual mana for these abilities is rare
-            // enough (mostly Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist)
-            // that the tradeoff is acceptable.
+            // EXCEPTION: abilities with `SacrificeCreature` / `SacrificeAnotherCreature`
+            // don't get auto-tap. The player has to manually tap their lands and float
+            // the mana before activating. Otherwise the planner can pick a creature
+            // mana source as part of the tap plan and then the player sacrifices that
+            // same creature for the cost — the orderings get weird and lead to bugs.
+            // Requiring manual mana for these abilities is rare enough (mostly
+            // Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist) that the
+            // tradeoff is acceptable.
+            //
+            // `SacrificeThis` DOES get auto-tap: the sacrifice target is fixed (the
+            // source permanent itself), so there's no "which creature to sac" conflict.
+            // We just exclude the source from the autotap plan's source pool so it
+            // can't be used as a mana source for its own activation.
+            //
             // NOTE: If you change this behavior, also update the "Sacrifice-cost activated
             // abilities" bullet in GAME_RULES in mtg-player/src/llm.rs.
             use crate::cards::SacrificeCost;
-            let ability_has_sac_cost = !matches!(ab.sacrifice_cost, SacrificeCost::None);
+            let ability_has_free_sac_cost = matches!(
+                ab.sacrifice_cost,
+                SacrificeCost::SacrificeCreature | SacrificeCost::SacrificeAnotherCreature
+            );
+            let ability_has_sac_this = matches!(ab.sacrifice_cost, SacrificeCost::SacrificeThis);
             let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
-            let ability_tap_plan: Vec<(ObjectId, usize)> = if ability_has_sac_cost {
-                // No auto-tap for sacrifice abilities — require mana already in the pool.
+            // Autotap sources to consider for this specific ability.
+            let ability_sources: Vec<_> = if ability_has_sac_this {
+                early_mana_sources.iter()
+                    .filter(|s| s.object_id != obj_id)
+                    .cloned()
+                    .collect()
+            } else {
+                early_mana_sources.clone()
+            };
+            let ability_tap_plan: Vec<(ObjectId, usize)> = if ability_has_free_sac_cost {
+                // No auto-tap for "sacrifice a creature" abilities — require mana
+                // already in the pool (see comment above).
                 let cost_to_check = if has_x_cost {
                     ManaCost::new(
                         ab.cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
@@ -632,7 +708,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 if mana::can_pay(mana_pool, &non_x_cost) {
                     Vec::new()
                 } else {
-                    match mana::compute_autotap(&non_x_cost, mana_pool, &early_mana_sources, &[]) {
+                    match mana::compute_autotap(&non_x_cost, mana_pool, &ability_sources, &[]) {
                         Some(plan) => plan,
                         None => continue,
                     }
@@ -640,7 +716,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             } else if mana::can_pay(mana_pool, &ab.cost) {
                 Vec::new()
             } else {
-                match mana::compute_autotap(&ab.cost, mana_pool, &early_mana_sources, &[]) {
+                match mana::compute_autotap(&ab.cost, mana_pool, &ability_sources, &[]) {
                     Some(plan) => plan,
                     None => continue,
                 }
@@ -1203,8 +1279,22 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             if !can_cast_timing { continue; }
 
-            // Compute autotap for flashback cost.
-            let fb_tap_plan = mana::compute_autotap(fb_cost, &player_state.mana_pool, &mana_sources, &hand_costs);
+            // Compute autotap for the non-X portion of the flashback cost.
+            // X-cost flashback spells (Devil's Play's {X}{R}{R}{R} flashback)
+            // are funded via a ChooseXFunding prompt after the spell is
+            // cast, exactly like non-flashback X casts — so here we only
+            // need to verify the non-X portion is payable.
+            let fb_has_x = fb_cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
+            let fb_non_x_cost;
+            let fb_cost_for_autotap: &ManaCost = if fb_has_x {
+                fb_non_x_cost = ManaCost::new(
+                    fb_cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                );
+                &fb_non_x_cost
+            } else {
+                fb_cost
+            };
+            let fb_tap_plan = mana::compute_autotap(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &hand_costs);
             if fb_tap_plan.is_none() { continue; }
             let fb_tap_plan = fb_tap_plan.unwrap();
 
@@ -1366,7 +1456,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         })
         .collect();
 
-    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context) }
+    LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None }
 }
 
 /// Check if a permanent can be targeted by a spell from the given caster.
@@ -2163,35 +2253,29 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 effective_spell_cost(&new_state, registry, card_id, &base_cost, player)
             };
 
-            // Handle X-cost spells: pay non-X portion, then prompt the player to choose X.
-            // Flow: (1) autotap for non-X cost, (2) ChooseXValue prompt with max from
-            // pool + untapped sources, (3) on choice, autotap for X generic.
-            // NOTE: If you change this flow, also update the "X-cost spells" bullet in
-            // GAME_RULES in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
+            // Handle X-cost spells: pay non-X portion, then (after the spell is
+            // placed on the stack below) prompt the player with ChooseXFunding
+            // to pick specific sources to tap and pool mana to spend for X.
+            //
+            // Rules ordering (CR 601.2): X is announced as part of casting and
+            // the total cost is paid before the spell becomes cast. This flow
+            // defers the `SpellCast` event and the "spell becomes cast"
+            // bookkeeping (cast log, `num_spells_cast_this_turn`, triggers)
+            // until AFTER funding completes — see the ChooseXFunding handler.
+            //
+            // NOTE: If you change this flow, also update the "X-cost spells"
+            // bullet in GAME_RULES in mtg-player/src/llm.rs so the agent's
+            // system prompt stays accurate.
             let has_x = cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
 
             if has_x {
-                // Pay non-X cost first.
+                // Pay non-X cost first. Autotap has already filled the pool
+                // for the non-X portion via `tap_plan` above.
                 let non_x_cost = ManaCost::new(
                     cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
                 );
                 mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
                     .expect("legal_actions should have verified mana availability");
-                // Max X = floating mana + total mana from untapped sources.
-                let pool_remaining = new_state.get_player(player).mana_pool.total();
-                let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
-                    .iter()
-                    .flat_map(|ms| ms.abilities.iter())
-                    .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
-                    .sum();
-                let max_x = pool_remaining + untapped_mana;
-                if max_x == 0 {
-                    if let Some(obj) = new_state.get_object_mut(*object_id) {
-                        obj.x_value = Some(0);
-                    }
-                }
-                // If max_x > 0, we'll set up the ChooseXValue prompt AFTER
-                // the spell is on the stack (below, after move_object).
             } else {
                 mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &cost)
                     .expect("legal_actions should have verified mana availability");
@@ -2247,8 +2331,12 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
                     // Store the first exiled creature's power for cards that need it
                     // (Corpse Lunge uses the power to determine damage).
+                    // Use `effective_power` so characteristic-defining-ability creatures
+                    // (Boneyard Wurm, Splinterfright, etc.) whose P/T is a function of
+                    // graveyard state — which CR 208.2 says "works in all zones" —
+                    // store their CDA-computed power instead of the base 0.
                     if let Some(&first_exile) = to_exile.first() {
-                        let power = new_state.get_object(first_exile).and_then(|o| o.power).unwrap_or(0);
+                        let power = new_state.effective_power(first_exile, registry).unwrap_or(0);
                         if let Some(obj) = new_state.get_object_mut(*object_id) {
                             obj.card_state.insert("exiled_power".into(), ObjectId(u64::try_from(power).unwrap_or(0)));
                         }
@@ -2318,50 +2406,35 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             new_state.stack.push(crate::state::StackEntry::Spell(*object_id));
 
-            new_state.events.push(GameEvent::SpellCast {
-                player,
-                object: *object_id,
-            });
-
-            // Track spells cast this turn (for werewolf transform conditions etc.)
-            *new_state.num_spells_cast_this_turn.entry(player).or_insert(0) += 1;
-
-            let name = card_name(&new_state, registry, *object_id);
-            let suffix = if is_flashback { " (flashback)" } else { "" };
-            let target_str = if targets.is_empty() {
-                String::new()
-            } else {
-                let names: Vec<String> = targets.iter().map(|t| match t {
-                    crate::actions::Target::Object(id) => card_name(&new_state, registry, *id),
-                    crate::actions::Target::Player(pid) => format!("p{}", pid.0),
-                }).collect();
-                format!(" targeting {}", names.join(", "))
-            };
-            new_state.log(LogLevel::Event, format!("p{} cast {}{}{}", player.0, name, suffix, target_str));
-            new_state.consecutive_passes = 0;
-
-            // For X-cost spells, prompt the player to choose X (if max_x > 0).
             if has_x {
-                let pool_remaining = new_state.get_player(player).mana_pool.total();
-                let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
-                    .iter()
-                    .flat_map(|ms| ms.abilities.iter())
-                    .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
-                    .sum();
-                let max_x = pool_remaining + untapped_mana;
-                if max_x > 0 {
-                    let spell_name = card_name(&new_state, registry, *object_id);
+                // Set x_value tentatively to None — funding handler will set
+                // it to the chosen X and then fire SpellCast + logging +
+                // the spells-cast-this-turn counter.
+                if let Some(obj) = new_state.get_object_mut(*object_id) {
+                    obj.x_value = None;
+                }
+                let options = crate::funding::build_options(&new_state, player, registry);
+                let spell_name = card_name(&new_state, registry, *object_id);
+                if options.max_x > 0 {
                     new_state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                         player,
                         source: *object_id,
-                        choice: crate::state::ResolutionChoiceKind::ChooseXValue {
-                            description: format!("{spell_name}: choose X (0-{max_x})"),
-                            max_x,
+                        choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
+                            description: format!("{spell_name}: choose X funding (0-{})", options.max_x),
+                            options,
                             source_id: *object_id,
                             is_ability: false,
                         },
                     });
+                } else {
+                    // No mana available for X — X is forced to 0.
+                    if let Some(obj) = new_state.get_object_mut(*object_id) {
+                        obj.x_value = Some(0);
+                    }
+                    finalize_spell_cast(&mut new_state, player, *object_id, is_flashback, targets, registry);
                 }
+            } else {
+                finalize_spell_cast(&mut new_state, player, *object_id, is_flashback, targets, registry);
             }
         }
 
@@ -2444,7 +2517,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             };
 
             if let Some(ab) = ability {
-                // Pay mana cost (with X-cost support).
+                // Pay mana cost (with X-cost support). For X-cost abilities
+                // we pay only the non-X portion here; the X generic is paid
+                // later via the ChooseXFunding flow (CR 602.1: the cost is
+                // announced & paid before the ability resolves).
                 let has_x_cost = ab.cost.symbols.iter().any(|s| matches!(s, ManaSymbol::X));
                 if has_x_cost {
                     let non_x_cost = ManaCost::new(
@@ -2452,17 +2528,6 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     );
                     mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &non_x_cost)
                         .expect("legal_actions should have verified mana availability");
-                    let pool_remaining = new_state.get_player(player).mana_pool.total();
-                    let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
-                        .iter()
-                        .flat_map(|ms| ms.abilities.iter())
-                        .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
-                        .sum();
-                    let max_x = pool_remaining + untapped_mana;
-                    if max_x == 0 {
-                        new_state.last_activated_x_value = Some(0);
-                    }
-                    // If max_x > 0, the prompt is set up after the ability fires (below).
                 } else {
                     mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &ab.cost)
                         .expect("legal_actions should have verified mana availability");
@@ -2497,35 +2562,50 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                 }
 
-                // behavior_card_id was already resolved when we looked up the ability above.
-                if let Some(behavior) = registry.get(behavior_card_id) {
-                    behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, targets, registry);
-                }
-
-                let name = card_name(&new_state, registry, *object_id);
-                new_state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
-
-                // For X-cost abilities, prompt the player to choose X.
                 if has_x_cost {
-                    let pool_remaining = new_state.get_player(player).mana_pool.total();
-                    let untapped_mana: u32 = gather_mana_sources(&new_state, player, registry, false)
-                        .iter()
-                        .flat_map(|ms| ms.abilities.iter())
-                        .map(|ab| ab.produced.iter().map(|(_, n)| *n).sum::<u32>())
-                        .sum();
-                    let max_x = pool_remaining + untapped_mana;
-                    if max_x > 0 {
+                    // Defer on_activate_ability and the activation log until
+                    // funding completes — the ability's effect reads
+                    // `last_activated_x_value`, which isn't set until then.
+                    // See the ChooseXFunding handler for the continuation.
+                    let options = crate::funding::build_options(&new_state, player, registry);
+                    let name = card_name(&new_state, registry, *object_id);
+                    if options.max_x > 0 {
                         new_state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                             player,
                             source: *object_id,
-                            choice: crate::state::ResolutionChoiceKind::ChooseXValue {
-                                description: format!("{name}: choose X (0-{max_x})"),
-                                max_x,
+                            choice: crate::state::ResolutionChoiceKind::ChooseXFunding {
+                                description: format!("{name}: choose X funding (0-{})", options.max_x),
+                                options,
                                 source_id: *object_id,
                                 is_ability: true,
                             },
                         });
+                        // Store context needed to fire the ability's effect
+                        // once funding completes.
+                        new_state.pending_ability_effect = Some(crate::state::PendingAbilityEffect {
+                            source_id: *object_id,
+                            ability_index: *ability_index,
+                            behavior_card_id,
+                            targets: targets.clone(),
+                            description: ab.description.clone(),
+                            activator: player,
+                        });
+                    } else {
+                        // No mana available; force X = 0 and fire the effect.
+                        new_state.last_activated_x_value = Some(0);
+                        if let Some(behavior) = registry.get(behavior_card_id) {
+                            behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, targets, registry);
+                        }
+                        let name = card_name(&new_state, registry, *object_id);
+                        new_state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
                     }
+                } else {
+                    // Non-X ability: fire the effect immediately.
+                    if let Some(behavior) = registry.get(behavior_card_id) {
+                        behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, targets, registry);
+                    }
+                    let name = card_name(&new_state, registry, *object_id);
+                    new_state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
                 }
             }
         }
@@ -2977,44 +3057,58 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.log(LogLevel::Event,
                             format!("Nevermore names \"{chosen_name}\""));
                     }
-                    // Step 3 of X-cost flow: player chose X, now autotap to pay it.
-                    // NOTE: If you change this, also update the "X-cost spells" bullet
-                    // in GAME_RULES in mtg-player/src/llm.rs.
-                    (ResolutionChoiceKind::ChooseXValue { source_id, is_ability, .. },
-                     ResolvedChoice::ChosenXValue(x)) => {
+                    // X-cost funding resolution: apply the player's chosen
+                    // allocation (drain pool, tap sources), set X on the
+                    // spell/ability, and fire the deferred `SpellCast`
+                    // event (for spells) or `on_activate_ability` effect
+                    // (for abilities). This is the continuation of the
+                    // CR 601.2b → 601.2i ordering.
+                    //
+                    // NOTE: If you change this, also update the "X-cost
+                    // spells" bullet in GAME_RULES in mtg-player/src/llm.rs.
+                    (ResolutionChoiceKind::ChooseXFunding { options, source_id, is_ability, .. },
+                     ResolvedChoice::XFunding(response)) => {
                         let player = new_state.priority_player
                             .unwrap_or(new_state.active_player);
-                        // Pay X generic mana: first try the pool, then autotap for the remainder.
-                        if *x > 0 {
-                            let x_cost = ManaCost::new(vec![ManaSymbol::Generic(*x)]);
-                            let pool_total = new_state.get_player(player).mana_pool.total();
-                            if pool_total >= *x {
-                                // Pool covers it.
-                                let _ = mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &x_cost);
-                            } else {
-                                // Need to tap additional sources for the shortfall.
-                                let shortfall = *x - pool_total;
-                                let shortfall_cost = ManaCost::new(vec![ManaSymbol::Generic(shortfall)]);
-                                let sources = gather_mana_sources(&new_state, player, registry, false);
-                                if let Some(plan) = mana::compute_autotap(&shortfall_cost, &new_state.get_player(player).mana_pool, &sources, &[]) {
-                                    for &(source_id, ability_index) in &plan {
-                                        activate_mana_source(&mut new_state, source_id, ability_index, registry);
-                                    }
-                                }
-                                // Now pay from pool (which has floating + freshly tapped).
-                                let _ = mana::auto_pay(&mut new_state.get_player_mut(player).mana_pool, &x_cost);
-                            }
-                        }
+                        // Validate once more at apply time (belt-and-braces —
+                        // players should have validated against the schema).
+                        crate::funding::validate(response, options)
+                            .expect("ChooseXFunding response must be valid (player implementations should pre-validate)");
+                        let x = crate::funding::apply(&mut new_state, player, options, response, registry);
+                        new_state.log(LogLevel::Event, format!("Funded X = {x}"));
                         if *is_ability {
-                            new_state.last_activated_x_value = Some(*x);
-                        } else {
-                            // Spell: set x_value on the stack object.
-                            if let Some(obj) = new_state.get_object_mut(*source_id) {
-                                obj.x_value = Some(*x);
+                            new_state.last_activated_x_value = Some(x);
+                            // Fire the deferred ability effect.
+                            let pending = new_state.pending_ability_effect.take()
+                                .expect("pending_ability_effect must be set for X-cost ability funding");
+                            if let Some(behavior) = registry.get(pending.behavior_card_id) {
+                                behavior.on_activate_ability(
+                                    &mut new_state,
+                                    pending.source_id,
+                                    pending.ability_index,
+                                    &pending.targets,
+                                    registry,
+                                );
                             }
+                            let name = card_name(&new_state, registry, pending.source_id);
+                            new_state.log(
+                                LogLevel::Event,
+                                format!(
+                                    "p{} activated ability on {}: {}",
+                                    pending.activator.0, name, pending.description
+                                ),
+                            );
+                        } else {
+                            // Spell: set x_value and fire SpellCast now that
+                            // the spell has formally "become cast".
+                            if let Some(obj) = new_state.get_object_mut(*source_id) {
+                                obj.x_value = Some(x);
+                            }
+                            let (targets, is_flashback) = new_state.get_object(*source_id)
+                                .map(|o| (o.targets.clone(), o.cast_with_flashback))
+                                .unwrap_or_default();
+                            finalize_spell_cast(&mut new_state, player, *source_id, is_flashback, &targets, registry);
                         }
-                        new_state.log(LogLevel::Event,
-                            format!("Chose X = {x}"));
                     }
                     _ => {}
                 }
