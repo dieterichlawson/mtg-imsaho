@@ -17,6 +17,7 @@ pub struct BoosterPack {
 
 impl BoosterPack {
     /// All draft-relevant cards in this pack.
+    #[must_use]
     pub fn all_cards(&self) -> Vec<String> {
         let mut cards = self.commons.clone();
         cards.extend(self.uncommons.iter().cloned());
@@ -126,6 +127,12 @@ pub struct SheetData {
 
 impl SheetData {
     /// Build sheet data from loaded set data.
+    ///
+    /// # Errors
+    /// Returns an error string if any required run (e.g. `common_a`,
+    /// `common_b`, `common_c1`, `common_c2`, `uncommon_a`, `uncommon_b`,
+    /// `rare_a`) or any rare/DFC sheet run referenced in the collation is
+    /// missing from `data`.
     pub fn from_set_data(data: &SetData) -> Result<Self, String> {
         let c1v = &data.collation.common_pack_variants.c1_variants;
         let c2v = &data.collation.common_pack_variants.c2_variants;
@@ -258,6 +265,10 @@ fn weighted_pick(rng: &mut impl Rng, weights: &[u32]) -> usize {
 }
 
 /// Generate one booster pack using sequential collation.
+///
+/// # Panics
+/// Panics if any of the sheets required for this pack (rare sheet 1 or 2, or
+/// the DFC sheet) is empty, since the function requires one card from each.
 pub fn generate_pack(
     sheets: &SheetData,
     state: &mut CollationState,
@@ -432,7 +443,7 @@ fn remove_from_run(commons: &mut Vec<String>, run: &str) {
 }
 
 /// Generate all packs for a draft pod.
-/// Returns packs grouped by player: packs[player_seat][pack_number].
+/// Returns packs grouped by player: packs[`player_seat`][pack_number].
 pub fn generate_draft_packs(
     sheets: &SheetData,
     pod_size: usize,

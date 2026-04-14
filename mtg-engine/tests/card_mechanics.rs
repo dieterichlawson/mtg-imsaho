@@ -23,7 +23,7 @@ fn registry() -> CardRegistry {
 // Morbid
 // ══════════════════════════════════════════════════════════════════
 
-/// creature_died_this_turn is set when a creature dies via SBA.
+/// `creature_died_this_turn` is set when a creature dies via SBA.
 #[test]
 fn morbid_flag_set_on_creature_death() {
     let reg = registry();
@@ -38,7 +38,7 @@ fn morbid_flag_set_on_creature_death() {
         "Morbid flag should be set after creature dies");
 }
 
-/// creature_died_this_turn resets at start of new turn.
+/// `creature_died_this_turn` resets at start of new turn.
 #[test]
 fn morbid_flag_resets_on_new_turn() {
     let reg = registry();
@@ -840,7 +840,7 @@ fn regeneration_shields_expire_at_cleanup() {
         "Unused regeneration shields should expire at cleanup");
 }
 
-/// try_destroy respects regeneration.
+/// `try_destroy` respects regeneration.
 #[test]
 fn try_destroy_respects_regeneration() {
     use mtg_engine::destruction::DestroyResult;
@@ -858,7 +858,7 @@ fn try_destroy_respects_regeneration() {
     assert_eq!(state.get_object(creature).unwrap().regeneration_shields, 0);
 }
 
-/// try_destroy without shields actually destroys.
+/// `try_destroy` without shields actually destroys.
 #[test]
 fn try_destroy_without_shield_kills() {
     use mtg_engine::destruction::DestroyResult;
@@ -874,7 +874,7 @@ fn try_destroy_without_shield_kills() {
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
 }
 
-/// Indestructible prevents destruction from try_destroy (spell effects).
+/// Indestructible prevents destruction from `try_destroy` (spell effects).
 #[test]
 fn indestructible_prevents_spell_destruction() {
     use mtg_engine::destruction::DestroyResult;
@@ -972,7 +972,7 @@ fn sacrifice_bypasses_regeneration() {
         "Shields should be cleared when leaving battlefield");
 }
 
-/// Sacrifice sets creature_died_this_turn for morbid.
+/// Sacrifice sets `creature_died_this_turn` for morbid.
 #[test]
 fn sacrifice_triggers_morbid() {
     let reg = CardRegistry::with_all_cards();

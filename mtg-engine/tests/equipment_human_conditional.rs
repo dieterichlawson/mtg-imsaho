@@ -47,7 +47,7 @@ fn equipment(state: &mut GameState, reg: &CardRegistry, name: &str, owner: mtg_e
 /// Equip the equipment to the creature, paying mana from the pool.
 fn equip(state: &GameState, reg: &CardRegistry, equipment_id: ObjectId, creature_id: ObjectId, equip_cost: i32) -> GameState {
     let mut s = state.clone();
-    s.get_player_mut(P0).mana_pool.add(ManaType::Colorless, equip_cost as u32);
+    s.get_player_mut(P0).mana_pool.add(ManaType::Colorless, u32::try_from(equip_cost).unwrap_or(0));
     let legal = engine::legal_actions(&s, reg);
     let action = legal.actions.iter()
         .find(|a| matches!(a, Action::ActivateAbility { object_id, targets, .. }

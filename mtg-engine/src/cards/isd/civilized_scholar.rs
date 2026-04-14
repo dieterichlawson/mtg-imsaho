@@ -14,7 +14,7 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// The draw-discard is implemented as an activated ability. After drawing, the player
 /// chooses which card to discard. If the discarded card is a creature, Civilized Scholar
 /// untaps and transforms into Homicidal Brute. The end-step transform-back checks
-/// card_state for whether it attacked.
+/// `card_state` for whether it attacked.
 pub struct CivilizedScholar;
 
 impl CardBehavior for CivilizedScholar {

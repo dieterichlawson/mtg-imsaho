@@ -30,7 +30,7 @@ pub struct GameConfig {
     pub starting_player: Option<PlayerId>,
 }
 
-/// Result of legal_actions: a list of actions plus an optional combat prompt.
+/// Result of `legal_actions`: a list of actions plus an optional combat prompt.
 /// When a combat prompt is present, the player should construct a
 /// DeclareAttackers/DeclareBlockers action from it (not pick from the actions list).
 pub struct LegalActions {
@@ -38,11 +38,11 @@ pub struct LegalActions {
     pub combat_prompt: Option<crate::actions::CombatPrompt>,
     /// Castable spells with valid target options, for interactive target selection.
     /// Each entry is one castable spell (collapsed view). The `actions` list still
-    /// contains the fully-expanded CastSpell entries for LLM/random players.
+    /// contains the fully-expanded `CastSpell` entries for LLM/random players.
     pub castable_spells: Vec<crate::actions::CastableSpell>,
     /// Activated abilities with valid target options, for interactive target selection.
     /// Each entry is one ability (collapsed view). The `actions` list still
-    /// contains the fully-expanded ActivateAbility entries.
+    /// contains the fully-expanded `ActivateAbility` entries.
     pub activatable_abilities: Vec<crate::actions::ActivatableAbility>,
     /// Human-readable description of why the player has priority or needs to act.
     pub context: Option<String>,
@@ -102,7 +102,7 @@ fn gather_mana_sources(
 }
 
 /// Activate a single mana source (tap + add mana + side effects).
-/// Shared by both ActivateManaAbility and CastSpell tap_plan execution.
+/// Shared by both `ActivateManaAbility` and `CastSpell` `tap_plan` execution.
 fn activate_mana_source(
     state: &mut GameState,
     source_id: ObjectId,
@@ -143,7 +143,7 @@ fn activate_mana_source(
 }
 
 /// Find alternative costs provided by continuous effects on permanents the caster controls.
-/// Returns a list of alternative ManaCosts that the caster may use for the given spell.
+/// Returns a list of alternative `ManaCosts` that the caster may use for the given spell.
 fn alternative_costs_from_effects(state: &GameState, registry: &CardRegistry, card_id: CardId, caster: PlayerId) -> Vec<ManaCost> {
     use crate::types::{ContinuousEffect, SpellFilter};
 
@@ -179,7 +179,8 @@ fn alternative_costs_from_effects(state: &GameState, registry: &CardRegistry, ca
 }
 
 /// Compute the effective mana cost of a spell after applying cost reduction effects.
-/// Returns a reduced ManaCost (generic portion lowered, colored requirements unchanged).
+/// Returns a reduced `ManaCost` (generic portion lowered, colored requirements unchanged).
+#[must_use]
 pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id: CardId, base_cost: &ManaCost, caster: PlayerId) -> ManaCost {
     use crate::types::{ContinuousEffect, SpellFilter};
 
@@ -245,6 +246,12 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
 }
 
 /// Compute all legal actions for the player who currently needs to act.
+///
+/// # Panics
+/// Panics if internal invariants are violated while enumerating actions — for
+/// example, if a just-confirmed-affordable flashback cost suddenly fails its
+/// autotap lookup, or if other object/registry lookups that were checked
+/// earlier in the function disagree with themselves later on.
 pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions {
     use crate::actions::ActivatableAbilityOption;
     use crate::cards::AdditionalCost;
@@ -1361,6 +1368,7 @@ fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, reg
 
 /// Check targeting legality, including protection from the source.
 /// `source_id` is the spell or permanent whose ability is targeting.
+#[must_use]
 pub fn can_be_targeted_by(state: &GameState, target_id: ObjectId, caster: PlayerId, source_id: Option<ObjectId>, registry: &CardRegistry) -> bool {
     if state.has_keyword(target_id, Keyword::Hexproof, registry) {
         let controller = state.get_object(target_id)
@@ -1387,7 +1395,7 @@ fn can_target_player(state: &GameState, target_player: PlayerId, caster: PlayerI
     true
 }
 
-/// Determine which mode of a ModalChoice was selected, based on the chosen targets.
+/// Determine which mode of a `ModalChoice` was selected, based on the chosen targets.
 /// For each mode, checks if all chosen targets are valid. Returns the first matching
 /// mode index, defaulting to 0 if ambiguous (e.g. empty targets valid for all modes).
 fn detect_modal_choice_mode(
@@ -1412,7 +1420,7 @@ fn detect_modal_choice_mode(
     0
 }
 
-/// Get valid targets for a single mode requirement, unwrapping UpToTargets.
+/// Get valid targets for a single mode requirement, unwrapping `UpToTargets`.
 fn valid_targets_for_mode(
     state: &GameState,
     caster: PlayerId,
@@ -1428,7 +1436,7 @@ fn valid_targets_for_mode(
     }
 }
 
-/// Generate CastSpell actions with all valid target combinations.
+/// Generate `CastSpell` actions with all valid target combinations.
 fn generate_cast_actions_with_targets(
     state: &GameState,
     caster: PlayerId,
@@ -1804,7 +1812,7 @@ fn valid_targets_for_req(
     }
 }
 
-/// Build a CastTargetSpec for a spell, describing what targets the player needs to choose.
+/// Build a `CastTargetSpec` for a spell, describing what targets the player needs to choose.
 fn build_cast_target_spec(
     state: &GameState,
     caster: PlayerId,
@@ -1844,7 +1852,7 @@ fn build_cast_target_spec(
     }
 }
 
-/// Check if a creature matches a TargetFilter for ability targeting.
+/// Check if a creature matches a `TargetFilter` for ability targeting.
 fn matches_ability_target_filter(
     state: &GameState,
     obj: &crate::state::GameObject,
@@ -2005,8 +2013,8 @@ fn generate_ability_targets(
     }
 }
 
-/// Check if a battlefield object matches a TargetFilter.
-/// Used by generate_ability_targets to filter targets for activated abilities.
+/// Check if a battlefield object matches a `TargetFilter`.
+/// Used by `generate_ability_targets` to filter targets for activated abilities.
 fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter, registry: &CardRegistry) -> bool {
     use crate::cards::TargetFilter;
     match filter {
@@ -2067,6 +2075,14 @@ fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: ObjectId) -> S
 }
 
 /// Apply an action to the game state and return the new state.
+///
+/// # Panics
+/// Panics if the action requires preconditions that are not met in `state` —
+/// for example, submitting `PlayLand` when no player currently has priority,
+/// submitting an action that references an object or registry id that does
+/// not exist, or otherwise violating invariants that `legal_actions` would
+/// have filtered out.
+#[must_use]
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
     use crate::cards::SacrificeCost;
 
@@ -3553,6 +3569,10 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
 /// (uniform over `num_players`). Per MTG tournament rules, the player
 /// chosen always elects to play first in this implementation — declining
 /// to play is a legal choice but is almost never strategically correct.
+///
+/// # Panics
+/// Panics if `num_players` is 0.
+#[must_use]
 pub fn random_starting_player(num_players: u8) -> PlayerId {
     use rand::Rng;
     assert!(num_players >= 1, "random_starting_player needs at least 1 player");
@@ -3576,6 +3596,10 @@ pub fn random_starting_player(num_players: u8) -> PlayerId {
 ///
 /// On a drawn game there is no loser, so the previous starter stays on
 /// the play (per MTR §2.3 — the pre-game choice simply persists).
+///
+/// # Panics
+/// Panics if `num_players` is not 2; only 2-player matches are supported.
+#[must_use]
 pub fn next_starter_loser_plays(
     previous_starter: PlayerId,
     previous_winner: Option<PlayerId>,
@@ -3590,6 +3614,12 @@ pub fn next_starter_loser_plays(
 }
 
 /// Set up a new game: create objects, shuffle libraries, draw opening hands.
+///
+/// # Panics
+/// Panics if `config.starting_player` is set to a `PlayerId` outside the
+/// range of players in the config, or if any card name in a decklist is not
+/// present in `registry`.
+#[must_use]
 pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     let num_players = u8::try_from(config.player_names.len()).unwrap_or(u8::MAX);
     let mut state = GameState::new(num_players);
@@ -3755,6 +3785,7 @@ fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
 }
 
 /// True if the state is in the opening-hand mulligan phase.
+#[must_use]
 pub fn in_mulligan_phase(state: &GameState) -> bool {
     matches!(state.awaiting_action,
         Some(AwaitingAction::MulliganDecision { .. } |

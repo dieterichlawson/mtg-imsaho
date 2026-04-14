@@ -11,7 +11,7 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, Effe
 ///
 /// "Enters with" is a replacement effect (CR 614.1c). Per Scryfall ruling:
 /// "If Unbreathing Horde enters from a graveyard, it will count itself."
-/// The entering_with_counters callback is called BEFORE the zone change,
+/// The `entering_with_counters` callback is called BEFORE the zone change,
 /// so graveyard counts naturally include the Horde when entering from GY.
 pub struct UnbreathingHorde;
 

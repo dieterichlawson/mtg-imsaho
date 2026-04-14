@@ -450,7 +450,7 @@ fn festerhide_boar_gets_morbid_counters_when_reanimated() {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Lava Axe's oracle text says "target player or planeswalker" but the
-/// implementation uses PlayerOnly targeting, so the engine won't even
+/// implementation uses `PlayerOnly` targeting, so the engine won't even
 /// present planeswalkers as options during targeting.
 /// Oracle: "Lava Axe deals 5 damage to target player or planeswalker."
 #[test]
@@ -475,7 +475,7 @@ fn lava_axe_target_requirement_includes_planeswalkers() {
 // ────────────────────────────────────────────────────────────────────────────
 
 /// Civilized Scholar's discard trigger should check the registry to determine
-/// if the discarded card is a creature, not just obj.power.is_some().
+/// if the discarded card is a creature, not just `obj.power.is_some()`.
 /// A creature card in hand might not have power set on the object.
 #[test]
 fn civilized_scholar_detects_creature_via_registry() {

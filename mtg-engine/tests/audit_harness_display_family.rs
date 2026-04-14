@@ -1,5 +1,5 @@
 //! Failing tests for harness / display bugs documented in
-//! audits/AUDIT_BUGS.md. These bugs are about the labels and prompts
+//! `audits/AUDIT_BUGS.md`. These bugs are about the labels and prompts
 //! the LLM player sees, not the underlying game state.
 //!
 //! Bugs covered in this file:
@@ -15,7 +15,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::triggers::PendingTrigger;
 use mtg_engine::types::*;
 
-/// Bug 31-001 (audits/AUDIT_BUGS.md): `PendingTrigger::display_name`
+/// Bug 31-001 (`audits/AUDIT_BUGS.md)`: `PendingTrigger::display_name`
 /// at `triggers.rs:193-260` builds its labels with a closure that
 /// calls `registry.card_data(card_id)` — which always returns the
 /// FRONT face. So a transformed DFC's trigger label includes the

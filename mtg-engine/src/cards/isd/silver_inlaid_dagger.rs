@@ -11,7 +11,7 @@ use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope
 ///
 /// Implementation notes:
 /// The Human bonus is a *continuous* conditional effect, not a snapshot taken
-/// at equip time. We use ContinuousEffect::ConditionalModifyPT (the same pattern
+/// at equip time. We use `ContinuousEffect::ConditionalModifyPT` (the same pattern
 /// Bonds of Faith uses) so that if the equipped creature transforms (e.g. a
 /// Human Werewolf flips into its non-Human back face via Moonmist or via a
 /// no-spells-last-turn upkeep trigger), the +1/+0 drops in real time. Likewise

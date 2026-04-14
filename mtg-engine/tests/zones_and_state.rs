@@ -44,7 +44,7 @@ fn hand_filters_by_owner() {
     assert_eq!(state.objects_in_zone(Zone::Hand, P1).len(), 1);
 }
 
-/// Verify that submit_action returns a new state without modifying the original.
+/// Verify that `submit_action` returns a new state without modifying the original.
 #[test]
 fn submit_action_preserves_original_state() {
     let registry = CardRegistry::with_all_cards();

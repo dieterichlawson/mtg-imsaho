@@ -15,6 +15,7 @@ pub struct MatchResult {
 }
 
 impl MatchResult {
+    #[must_use]
     pub fn winner(&self) -> Option<usize> {
         match self.wins_a.cmp(&self.wins_b) {
             std::cmp::Ordering::Greater => Some(self.player_a),
@@ -43,6 +44,7 @@ pub struct Standing {
 }
 
 impl Standing {
+    #[must_use]
     pub fn match_points(&self) -> usize {
         self.match_wins * 3 + self.match_draws
     }
@@ -66,6 +68,7 @@ pub struct Tournament {
 }
 
 impl Tournament {
+    #[must_use]
     pub fn new(num_players: usize, config: TournamentConfig) -> Self {
         let standings = (0..num_players)
             .map(|seat| Standing {
@@ -87,7 +90,8 @@ impl Tournament {
         }
     }
 
-    /// Number of Swiss rounds: ceil(log2(num_players)).
+    /// Number of Swiss rounds: `ceil(log2(num_players))`.
+    #[must_use]
     pub fn total_rounds(&self) -> usize {
         if self.num_players <= 1 {
             return 0;
@@ -104,6 +108,7 @@ impl Tournament {
     /// Generate pairings for the next round.
     /// Swiss: sort by match points descending, pair adjacent players.
     /// Avoid rematches when possible. Lowest-ranked odd player gets a bye.
+    #[must_use]
     pub fn generate_pairings(&self) -> Vec<(usize, usize)> {
         // Sort players by match points (descending), then by seat (tiebreak)
         let mut ranked: Vec<usize> = (0..self.num_players).collect();
@@ -212,11 +217,13 @@ impl Tournament {
     }
 
     /// Check if the tournament is complete.
+    #[must_use]
     pub fn is_complete(&self) -> bool {
         self.rounds.len() >= self.total_rounds()
     }
 
     /// Return standings sorted by match points (descending).
+    #[must_use]
     pub fn sorted_standings(&self) -> Vec<Standing> {
         let mut sorted = self.standings.clone();
         sorted.sort_by(|a, b| {

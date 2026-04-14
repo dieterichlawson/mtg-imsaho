@@ -1,12 +1,12 @@
-//! Regression test for Bug E (BUG_REPORT_8SEAT.md): Civilized Scholar's
+//! Regression test for Bug E (`BUG_REPORT_8SEAT.md)`: Civilized Scholar's
 //! end-step transform-back trigger was defined on the front face and
 //! fired every end step even when the creature was in its front face.
-//! The trigger resolved as a no-op (on_end_step bails if !is_transformed)
+//! The trigger resolved as a no-op (`on_end_step` bails if !`is_transformed`)
 //! but it still polluted the stack and consumed an LLM prompt every turn.
 //!
 //! The fix: triggered abilities are now looked up only on the currently
 //! visible face (face-aware trigger collection), and Civilized Scholar's
-//! EndStep trigger moved to the back-face (Homicidal Brute) where it
+//! `EndStep` trigger moved to the back-face (Homicidal Brute) where it
 //! belongs per oracle.
 
 mod common;

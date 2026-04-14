@@ -1,6 +1,6 @@
 //! Tests for phantom trigger bugs:
 //! 1. Creatures without ETB abilities should not create self-ETB triggers.
-//! 2. ETB-watch triggers should only fire from zones declared by trigger_zones().
+//! 2. ETB-watch triggers should only fire from zones declared by `trigger_zones()`.
 //!    E.g., Champion of the Parish in the graveyard should NOT trigger.
 
 use mtg_engine::cards::CardRegistry;

@@ -57,8 +57,8 @@ fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards
 
 /// Resolve the top item on the stack (spell or trigger).
 ///
-/// For spells: checks target legality (CR 608.2b fizzle), calls on_resolve.
-/// For triggers: delegates to triggers::resolve_next_trigger.
+/// For spells: checks target legality (CR 608.2b fizzle), calls `on_resolve`.
+/// For triggers: delegates to `triggers::resolve_next_trigger`.
 pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
     let entry = match state.stack.last() {
         Some(e) => e.clone(),

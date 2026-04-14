@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -25,7 +25,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Bug I (audits/AUDIT_BUGS.md): Devil's Play can't be flashback-cast
+/// Bug I (`audits/AUDIT_BUGS.md)`: Devil's Play can't be flashback-cast
 /// via autotap because `compute_autotap` doesn't understand X-cost
 /// spells on the flashback path.
 ///
@@ -89,12 +89,12 @@ fn bug_i_devils_play_flashback_appears_in_legal_actions() {
     );
 }
 
-/// Bug 17-001 (audits/AUDIT_BUGS.md): Corpse Lunge's
+/// Bug 17-001 (`audits/AUDIT_BUGS.md)`: Corpse Lunge's
 /// `ExileCreaturesFromGraveyard` additional-cost handler reads base
 /// `o.power` instead of `state.effective_power`. For a Boneyard
 /// Wurm / Splinterfright / Sturmgeist / Geist-Honored Monk — whose
 /// P/T is a CDA (CR 208.2, works in all zones) — the stored
-/// exiled_power ends up at the base 0 instead of the live CDA value.
+/// `exiled_power` ends up at the base 0 instead of the live CDA value.
 ///
 /// Oracle (Corpse Lunge): "As an additional cost to cast this spell,
 /// exile a creature card from your graveyard. Corpse Lunge deals
@@ -105,7 +105,7 @@ fn bug_i_devils_play_flashback_appears_in_legal_actions() {
 /// Failure mode: `engine.rs:2119-2152` builds
 /// `exile_candidates: Vec<(ObjectId, i32)>` from `o.power.unwrap_or(0)`.
 /// For a graveyard containing only Boneyard Wurm (base power 0),
-/// `exiled_power` is stored as 0 — so Corpse Lunge's on_resolve
+/// `exiled_power` is stored as 0 — so Corpse Lunge's `on_resolve`
 /// reads 0 and deals 0 damage, even though the Wurm's effective
 /// power at cost time is ≥1.
 ///
@@ -171,7 +171,7 @@ fn bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature() {
     );
 }
 
-/// Bug Y (audits/AUDIT_BUGS.md): pay-mana-during-resolution prompts
+/// Bug Y (`audits/AUDIT_BUGS.md)`: pay-mana-during-resolution prompts
 /// (Screeching Bat, Mentor of the Meek, Frightful Delusion) check the
 /// controller's current `mana_pool` only. Mana pools empty between
 /// phases and steps (CR 106.4), so the upkeep trigger never sees

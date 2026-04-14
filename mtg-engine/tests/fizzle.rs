@@ -1,8 +1,8 @@
 //! Tests for proper spell fizzle implementation (CR 608.2b).
 //!
 //! A spell whose targets are all illegal when it tries to resolve should
-//! be countered by game rules BEFORE on_resolve is called. This is different
-//! from on_resolve checking targets and doing nothing — the spell should
+//! be countered by game rules BEFORE `on_resolve` is called. This is different
+//! from `on_resolve` checking targets and doing nothing — the spell should
 //! never resolve at all.
 //!
 //! These tests verify the mechanism, not just the outcome.
@@ -24,7 +24,7 @@ fn registry() -> CardRegistry {
 // Mechanism test: SpellResolved event should NOT be emitted for fizzle
 // ════════════════════════════════════════════════════════════════════
 
-/// When a spell fizzles, the engine should NOT emit SpellResolved.
+/// When a spell fizzles, the engine should NOT emit `SpellResolved`.
 /// A fizzled spell was countered by game rules — it did not resolve.
 #[test]
 fn fizzled_spell_does_not_emit_resolved_event() {
@@ -54,7 +54,7 @@ fn fizzled_spell_does_not_emit_resolved_event() {
         "Fizzled spell should NOT emit SpellResolved — it was countered by game rules, not resolved (CR 608.2b)");
 }
 
-/// A spell that resolves normally SHOULD emit SpellResolved.
+/// A spell that resolves normally SHOULD emit `SpellResolved`.
 #[test]
 fn resolved_spell_emits_resolved_event() {
     let reg = registry();
@@ -93,7 +93,7 @@ fn resolved_spell_emits_resolved_event() {
 // prevent BOTH effects. We simulate this with a two-part test.
 // ════════════════════════════════════════════════════════════════════
 
-/// Swords to Plowshares fizzle: no exile, no life gain, no SpellResolved.
+/// Swords to Plowshares fizzle: no exile, no life gain, no `SpellResolved`.
 #[test]
 fn swords_fizzle_no_side_effects() {
     let reg = registry();
@@ -167,9 +167,9 @@ fn flashback_spell_fizzle_goes_to_exile() {
         "Flashback spell that fizzles should still go to exile, not graveyard");
 }
 
-/// A flashback spell that fizzles should NOT emit SpellResolved.
-/// Before the fizzle fix, this would have emitted SpellResolved because
-/// on_resolve was always called — it just happened to not deal damage
+/// A flashback spell that fizzles should NOT emit `SpellResolved`.
+/// Before the fizzle fix, this would have emitted `SpellResolved` because
+/// `on_resolve` was always called — it just happened to not deal damage
 /// because the target was gone. The spell was treated as "resolved" when
 /// it should have been "countered by game rules."
 #[test]
@@ -218,7 +218,7 @@ fn flashback_spell_fizzle_no_resolved_event() {
 // ════════════════════════════════════════════════════════════════════
 
 /// Counterspell targeting a spell that's already been removed from the stack.
-/// The Counterspell should fizzle — no SpellResolved event.
+/// The Counterspell should fizzle — no `SpellResolved` event.
 #[test]
 fn counterspell_fizzle_no_resolved_event() {
     let reg = registry();

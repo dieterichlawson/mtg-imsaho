@@ -5,8 +5,8 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, ReplacementEffect};
 /// Creatures you control enter as a copy of Essence of the Wild.
 ///
 /// This is a replacement effect (CR 614.1d): the creature never exists in its
-/// original form on the battlefield. The engine checks for EnterAsCopy via
-/// the card registry in apply_entering_copy_replacement.
+/// original form on the battlefield. The engine checks for `EnterAsCopy` via
+/// the card registry in `apply_entering_copy_replacement`.
 pub struct EssenceOfTheWild;
 
 impl CardBehavior for EssenceOfTheWild {

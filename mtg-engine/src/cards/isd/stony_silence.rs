@@ -4,8 +4,8 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect};
 /// Stony Silence — {1}{W} Enchantment.
 /// Activated abilities of artifacts can't be activated.
 ///
-/// Declares PreventArtifactAbilities as a continuous effect. The engine
-/// checks for this effect in legal_actions() to exclude artifact abilities.
+/// Declares `PreventArtifactAbilities` as a continuous effect. The engine
+/// checks for this effect in `legal_actions()` to exclude artifact abilities.
 pub struct StonySilence;
 
 impl CardBehavior for StonySilence {

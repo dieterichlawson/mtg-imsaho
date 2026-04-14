@@ -17,7 +17,7 @@ fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
 }
 
-/// Creepy Doll should have DealsCombatDamageToCreature trigger, not Blocks/BecomesBlocked.
+/// Creepy Doll should have `DealsCombatDamageToCreature` trigger, not Blocks/BecomesBlocked.
 #[test]
 fn has_correct_trigger_kind() {
     let reg = registry();
@@ -45,7 +45,7 @@ fn has_indestructible() {
     assert!(data.keywords.contains(&Keyword::Indestructible));
 }
 
-/// The trigger should fire when CombatDamageDealt event targets a creature.
+/// The trigger should fire when `CombatDamageDealt` event targets a creature.
 #[test]
 fn trigger_fires_on_combat_damage_to_creature() {
     let reg = registry();
@@ -74,7 +74,7 @@ fn trigger_fires_on_combat_damage_to_creature() {
         "Should have a trigger on the stack for Creepy Doll's combat damage to creature");
 }
 
-/// The trigger should NOT fire when CombatDamageDealt targets a player.
+/// The trigger should NOT fire when `CombatDamageDealt` targets a player.
 #[test]
 fn trigger_does_not_fire_on_combat_damage_to_player() {
     let reg = registry();
@@ -100,7 +100,7 @@ fn trigger_does_not_fire_on_combat_damage_to_player() {
         "Should NOT trigger on combat damage to player");
 }
 
-/// The on_deals_combat_damage_to_creature hook calls try_destroy on win.
+/// The `on_deals_combat_damage_to_creature` hook calls `try_destroy` on win.
 #[test]
 fn on_deals_combat_damage_to_creature_calls_destroy() {
     let reg = registry();

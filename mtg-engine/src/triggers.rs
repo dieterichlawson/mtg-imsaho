@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::Zone;
 
 /// A triggered ability that has been collected but not yet resolved.
-/// These are placed on pending_triggers in APNAP order, then resolved
+/// These are placed on `pending_triggers` in APNAP order, then resolved
 /// LIFO (non-active player's triggers resolve first).
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum PendingTrigger {
@@ -175,6 +175,7 @@ pub enum PendingTrigger {
 
 impl PendingTrigger {
     /// The player who controls this trigger.
+    #[must_use]
     pub fn controller(&self) -> PlayerId {
         match self {
             PendingTrigger::SelfDies { controller, .. }
@@ -201,11 +202,13 @@ impl PendingTrigger {
 
     /// Display name for the stack view, including what the trigger does.
     /// Uses the object's current transform state to show the correct face name.
+    #[must_use]
     pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
         self.display_name_with_state(registry, None)
     }
 
     /// Display name with optional game state for transform-aware name lookup.
+    #[must_use]
     pub fn display_name_with_state(&self, registry: &crate::cards::CardRegistry, state: Option<&crate::state::GameState>) -> String {
         let face_name = |card_id: CardId, object_id: Option<ObjectId>| {
             // Check if the object is transformed and use back-face name if so.
@@ -321,7 +324,7 @@ impl PendingTrigger {
     }
 }
 
-/// Look up the description for a trigger from the card's TriggeredAbilityDef.
+/// Look up the description for a trigger from the card's `TriggeredAbilityDef`.
 /// For transformed DFCs, also check the back face's triggered abilities.
 fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind, is_transformed: bool) -> String {
     if let Some(behavior) = registry.get(card_id) {
@@ -341,11 +344,11 @@ fn trigger_description(registry: &CardRegistry, card_id: CardId, kind: &crate::c
     String::new()
 }
 
-/// True if this card has a TriggeredAbilityDef for `kind` on either face.
+/// True if this card has a `TriggeredAbilityDef` for `kind` on either face.
 /// Used to gate empty trigger creation — only cards with a declared ability of
 /// this kind should put a trigger on the stack. Checks both front and back
 /// face because (a) by the time SelfDies/LeftBattlefield is collected the
-/// creature may have already been reset to front face by move_object, and
+/// creature may have already been reset to front face by `move_object`, and
 /// (b) either face having the ability means the card legitimately cares about
 /// the event.
 fn card_has_trigger(registry: &CardRegistry, card_id: CardId, kind: &crate::cards::TriggerKind) -> bool {
@@ -1001,6 +1004,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
 
 /// Resolve the top trigger from the stack.
 /// Returns true if a trigger was resolved, false if the top of stack is not a trigger.
+///
+/// # Panics
+/// Panics if the stack is mutated between the top-of-stack check and the pop
+/// such that the popped entry is missing or not a trigger. Under normal
+/// single-threaded use this cannot happen.
 pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> bool {
     // Check if the top of stack is a trigger.
     let is_trigger = state.stack.last()

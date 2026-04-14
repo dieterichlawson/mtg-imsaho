@@ -1,4 +1,4 @@
-//! Regression tests for the SacrificeCost auto-pick bug (audit finding).
+//! Regression tests for the `SacrificeCost` auto-pick bug (audit finding).
 //!
 //! Background: in earlier versions, when an activated ability with
 //! `SacrificeCost::SacrificeCreature` resolved, the engine auto-picked the
@@ -8,11 +8,11 @@
 //! equip — fizzling the ability. The player lost a creature for nothing.
 //!
 //! Same bug applied to Disciple of Griselbrand and Skirsdag Cultist (both use
-//! SacrificeCreature). The auto-pick also gave Disciple a non-optimal sacrifice
+//! `SacrificeCreature`). The auto-pick also gave Disciple a non-optimal sacrifice
 //! since the player couldn't pick the highest-toughness creature.
 //!
-//! The fix: legal_actions enumerates one Action::ActivateAbility per
-//! (target, sacrifice) combo, mirroring how CastSpell handles spell-side
+//! The fix: `legal_actions` enumerates one `Action::ActivateAbility` per
+//! (target, sacrifice) combo, mirroring how `CastSpell` handles spell-side
 //! sacrifice costs. The apply path uses the explicit sacrifice rather than
 //! auto-picking. The (target, sacrifice) pairs where sacrifice == target are
 //! filtered out so the player can never accidentally pick a fizzling combo.

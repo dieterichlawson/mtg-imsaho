@@ -315,10 +315,10 @@ fn wooden_stake_grants_power() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2
-    let stake = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
+    let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state = equip(&state, &reg, stake, creature);
+    state = equip(&state, &reg, stake_obj, creature);
 
     // +1/+0 -> 3/2.
     assert_eq!(state.effective_power(creature, &reg), Some(3));
@@ -332,11 +332,11 @@ fn wooden_stake_destroys_vampire_on_block() {
 
     // Set up: P0 has a creature with Wooden Stake, P1 has a Vampire attacker.
     let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0); // 2/2
-    let stake = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
+    let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
 
     // Equip.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state = equip(&state, &reg, stake, creature);
+    state = equip(&state, &reg, stake_obj, creature);
 
     // P1 has a Vampire attacker (Markov Patrician is a 3/1 Vampire with no evasion).
     let vampire = named_creature(&mut state, &reg, "Markov Patrician", P1);
@@ -367,10 +367,10 @@ fn wooden_stake_does_not_destroy_non_vampire() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     let creature = named_creature(&mut state, &reg, "Grizzly Bears", P0);
-    let stake = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
+    let stake_obj = equipment_on_battlefield(&mut state, &reg, "Wooden Stake", P0);
 
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
-    state = equip(&state, &reg, stake, creature);
+    state = equip(&state, &reg, stake_obj, creature);
 
     // P1 has a non-Vampire attacker.
     let bear = named_creature(&mut state, &reg, "Grizzly Bears", P1);

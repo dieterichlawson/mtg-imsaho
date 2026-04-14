@@ -55,15 +55,18 @@ pub struct ManaCost {
 }
 
 impl ManaCost {
+    #[must_use]
     pub fn new(symbols: Vec<ManaSymbol>) -> Self {
         Self { symbols }
     }
 
+    #[must_use]
     pub fn free() -> Self {
         Self { symbols: vec![] }
     }
 
     /// Converted mana cost (now called "mana value").
+    #[must_use]
     pub fn mana_value(&self) -> u32 {
         self.symbols.iter().map(|s| match s {
             ManaSymbol::Colored(_) => 1,
@@ -73,6 +76,7 @@ impl ManaCost {
     }
 
     /// How much colored mana of each color is required.
+    #[must_use]
     pub fn colored_requirements(&self) -> HashMap<Color, u32> {
         let mut reqs = HashMap::new();
         for sym in &self.symbols {
@@ -84,6 +88,7 @@ impl ManaCost {
     }
 
     /// Total generic mana required.
+    #[must_use]
     pub fn generic_amount(&self) -> u32 {
         self.symbols.iter().map(|s| match s {
             ManaSymbol::Generic(n) => *n,
@@ -92,6 +97,7 @@ impl ManaCost {
     }
 
     /// Total colorless mana specifically required.
+    #[must_use]
     pub fn colorless_amount(&self) -> u32 {
         self.symbols.iter().map(|s| match s {
             ManaSymbol::Colorless(n) => *n,
@@ -131,6 +137,7 @@ pub struct ManaPool {
 }
 
 impl ManaPool {
+    #[must_use]
     pub fn new() -> Self {
         Self { mana: HashMap::new() }
     }
@@ -139,10 +146,12 @@ impl ManaPool {
         *self.mana.entry(mana_type).or_insert(0) += amount;
     }
 
+    #[must_use]
     pub fn get(&self, mana_type: ManaType) -> u32 {
         *self.mana.get(&mana_type).unwrap_or(&0)
     }
 
+    #[must_use]
     pub fn total(&self) -> u32 {
         self.mana.values().sum()
     }
@@ -151,6 +160,7 @@ impl ManaPool {
         self.mana.clear();
     }
 
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.total() == 0
     }
@@ -175,6 +185,7 @@ pub enum CardType {
 }
 
 impl CardType {
+    #[must_use]
     pub fn is_permanent(&self) -> bool {
         matches!(self, CardType::Land | CardType::Creature | CardType::Enchantment
             | CardType::Artifact | CardType::Planeswalker)
@@ -229,6 +240,7 @@ pub enum Step {
 }
 
 impl Step {
+    #[must_use]
     pub fn phase(&self) -> Phase {
         match self {
             Step::Untap | Step::Upkeep | Step::Draw => Phase::Beginning,
@@ -240,6 +252,7 @@ impl Step {
         }
     }
 
+    #[must_use]
     pub fn next(&self) -> Option<Step> {
         match self {
             Step::Untap => Some(Step::Upkeep),
@@ -258,6 +271,7 @@ impl Step {
     }
 
     /// Does this step normally grant priority to players?
+    #[must_use]
     pub fn has_priority(&self) -> bool {
         match self {
             Step::Untap | Step::Cleanup => false, // normally no priority unless triggered abilities fire
@@ -266,6 +280,7 @@ impl Step {
     }
 
     /// Is this a main phase step where sorcery-speed actions are allowed?
+    #[must_use]
     pub fn is_main_phase(&self) -> bool {
         matches!(self, Step::PrecombatMain | Step::PostcombatMain)
     }

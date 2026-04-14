@@ -67,7 +67,7 @@ impl Clone for ModelUsage {
     }
 }
 
-/// Known model pricing ($/MTok). (input, output, cache_read, cache_write)
+/// Known model pricing ($/`MTok`). (input, output, `cache_read`, `cache_write`)
 /// Anthropic: platform.claude.com/docs/en/about-claude/pricing (verified 2026-04-08)
 /// Gemini: ai.google.dev/pricing (verified 2026-04-08)
 fn model_pricing(model: &str) -> (f64, f64, f64, f64) {
@@ -202,7 +202,7 @@ trait DraftBackend: Send {
 }
 
 /// Build a pick schema with the `pick` field constrained to the valid
-/// 0..num_cards range via an enum. This means the model cannot emit an
+/// `0..num_cards` range via an enum. This means the model cannot emit an
 /// out-of-range index under constrained decoding.
 fn pick_schema_for(num_cards: usize) -> serde_json::Value {
     let valid_indices: Vec<serde_json::Value> = (0..num_cards)
@@ -718,8 +718,8 @@ pub struct DraftLlmClient {
 }
 
 impl DraftLlmClient {
-    /// Create a new DraftLlmClient.
-    /// Model spec format: "provider:model:draft_thinking:game_thinking"
+    /// Create a new `DraftLlmClient`.
+    /// Model spec format: "`provider:model:draft_thinking:game_thinking`"
     pub fn new(model_spec: &str, set_name: &str, guide: Option<&str>, card_reference: &str) -> Self {
         let parts: Vec<&str> = model_spec.split(':').collect();
         let provider_name = parts[0];
@@ -769,7 +769,7 @@ impl DraftLlmClient {
     }
 
     /// Whether this client's backend expects thoughts in the JSON payload.
-    /// Exposed so the caller (main.rs::build_deck_prompt) can render the
+    /// Exposed so the caller (`main.rs::build_deck_prompt`) can render the
     /// deck-building response-format hint with or without the thoughts
     /// prefix.
     /// Send a pick message with the pack size, so the backend can build

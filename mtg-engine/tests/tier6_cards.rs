@@ -261,7 +261,7 @@ fn rakish_heir_no_counter_on_non_vampire() {
 
 // ── Bloodcrazed Neonate ───────────────────────────────────────────
 
-/// Bloodcrazed Neonate must attack each combat (ForceAttack).
+/// Bloodcrazed Neonate must attack each combat (`ForceAttack`).
 #[test]
 fn bloodcrazed_neonate_forced_to_attack() {
     let reg = registry();

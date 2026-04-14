@@ -1,5 +1,5 @@
 //! Additional failing tests for bugs found in the Sonnet 4.6 audit.
-//! These cover the 28 issues not covered by audit_bugs.rs.
+//! These cover the 28 issues not covered by `audit_bugs.rs`.
 
 mod common;
 use common::*;
@@ -14,7 +14,7 @@ use mtg_engine::types::*;
 // ═══════════════════════════════════════════════════════════════
 
 /// Bug: Brain Weevil says "Target player discards two cards" but only
-/// forces 1 discard when the player has 3+ cards (missing on_discard_choice chain).
+/// forces 1 discard when the player has 3+ cards (missing `on_discard_choice` chain).
 #[test]
 fn bug_brain_weevil_incomplete_discard() {
     let registry = CardRegistry::with_all_cards();
@@ -64,8 +64,8 @@ fn bug_brain_weevil_incomplete_discard() {
 // BURNING VENGEANCE — SPELLCAST FILTER
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: The SpellCast trigger dispatch in triggers.rs only creates
-/// SpellCastWatch for instant/sorcery spells. Oracle says "a spell"
+/// Bug: The `SpellCast` trigger dispatch in triggers.rs only creates
+/// `SpellCastWatch` for instant/sorcery spells. Oracle says "a spell"
 /// with no type restriction. Creature spells from graveyard should trigger.
 #[test]
 fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
@@ -135,7 +135,7 @@ fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
 // ═══════════════════════════════════════════════════════════════
 
 /// Bug: Dearly Departed's ability works from the graveyard, but the
-/// AnyCreatureEnters watcher scan only checks Zone::Battlefield.
+/// `AnyCreatureEnters` watcher scan only checks `Zone::Battlefield`.
 /// Dearly Departed in the graveyard is never found as a watcher.
 #[test]
 fn bug_dearly_departed_graveyard_watcher_ignored() {
@@ -302,7 +302,7 @@ fn bug_moonmist_second_cast_fails() {
 // GARRUK RELENTLESS — is_legendary NOT SET
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Garruk Relentless doesn't set is_legendary in on_resolve,
+/// Bug: Garruk Relentless doesn't set `is_legendary` in `on_resolve`,
 /// so the legend rule may not apply to it.
 #[test]
 fn bug_garruk_relentless_not_legendary_on_battlefield() {
@@ -412,8 +412,8 @@ fn bug_woodland_sleuth_intervening_if_not_at_collection() {
 /// Bug: After Evil Twin copies a creature, the destroy ability
 /// ("{U}{B}, {T}: Destroy target creature with the same name")
 /// may not be accessible because the engine looks up abilities
-/// from the registry using card_id, which changed to the copied
-/// creature's card_id.
+/// from the registry using `card_id`, which changed to the copied
+/// creature's `card_id`.
 #[test]
 fn bug_evil_twin_ability_inaccessible_after_copy() {
     let registry = CardRegistry::with_all_cards();
@@ -560,8 +560,8 @@ fn bug_liliana_sequential_discard() {
 // NIGHT TERRORS — WRONG PENDING EFFECT
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Night Terrors uses ExileAndStore as its PendingEffect, but
-/// it should just exile (not store). ExileAndStore is for Fiend Hunter-
+/// Bug: Night Terrors uses `ExileAndStore` as its `PendingEffect`, but
+/// it should just exile (not store). `ExileAndStore` is for Fiend Hunter-
 /// style effects that need to track what was exiled for later return.
 #[test]
 fn bug_night_terrors_wrong_pending_effect() {
@@ -873,8 +873,8 @@ fn bug_undead_alchemist_trigger_only_from_own_mill() {
 // ═══════════════════════════════════════════════════════════════
 
 /// Bug: Ghoulcaller's Chant is modal with two modes. The engine's
-/// build_cast_target_spec may not handle modal spells containing
-/// TwoTargets correctly, causing incorrect action generation.
+/// `build_cast_target_spec` may not handle modal spells containing
+/// `TwoTargets` correctly, causing incorrect action generation.
 #[test]
 fn bug_ghoulcallers_chant_modal_targeting() {
     let registry = CardRegistry::with_all_cards();

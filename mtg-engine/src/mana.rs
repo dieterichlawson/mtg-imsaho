@@ -11,7 +11,7 @@ pub enum ManaError {
 /// Lower ordinal = lower opportunity cost = prefer tapping first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 /// NOTE: If you change these priorities, also update the "Auto-tap" bullet in
-/// GAME_RULES in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
+/// `GAME_RULES` in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
 pub enum ManaSourceKind {
     /// Basic land or mana-only artifact (zero opportunity cost).
     BasicMana = 0,
@@ -82,13 +82,13 @@ fn hand_demand_score(source: &ManaSource, hand_demand: &std::collections::HashMa
 /// Lower = prefer tapping first. Within a tier, mono-color sources are preferred over
 /// dual/multi-color (to preserve flexibility), and sources whose colors are less demanded
 /// by other spells in hand are preferred.
-/// NOTE: If you change this logic, also update the "Auto-tap" bullet in GAME_RULES
+/// NOTE: If you change this logic, also update the "Auto-tap" bullet in `GAME_RULES`
 /// in mtg-player/src/llm.rs so the agent's system prompt stays accurate.
 fn source_sort_key(source: &ManaSource, hand_demand: &std::collections::HashMap<Color, u32>) -> (ManaSourceKind, usize, u32) {
     (source.source_kind, source_flexibility(source), hand_demand_score(source, hand_demand))
 }
 
-/// Build hand demand map: for each color, how many colored pips across all hand_costs.
+/// Build hand demand map: for each color, how many colored pips across all `hand_costs`.
 fn build_hand_demand(hand_costs: &[ManaCost]) -> std::collections::HashMap<Color, u32> {
     let mut demand = std::collections::HashMap::new();
     for cost in hand_costs {
@@ -99,7 +99,7 @@ fn build_hand_demand(hand_costs: &[ManaCost]) -> std::collections::HashMap<Color
     demand
 }
 
-/// Check if a source can produce a specific mana type, and return the ability_index if so.
+/// Check if a source can produce a specific mana type, and return the `ability_index` if so.
 fn ability_producing(source: &ManaSource, mana_type: ManaType) -> Option<usize> {
     for ability in &source.abilities {
         for &(mt, amount) in &ability.produced {
@@ -135,11 +135,17 @@ fn ability_total_mana(ability: &ManaAbilityDef) -> u32 {
 
 /// Compute the optimal set of mana sources to tap in order to pay a cost.
 ///
-/// Returns `Some(tap_plan)` with (object_id, ability_index) pairs, or `None` if
+/// Returns `Some(tap_plan)` with (`object_id`, `ability_index`) pairs, or `None` if
 /// the cost cannot be paid with available sources + floating mana.
 ///
 /// `hand_costs` are the mana costs of OTHER castable spells in the player's hand,
 /// used for color preservation (prefer not tapping sources needed by other spells).
+///
+/// # Panics
+/// Panics if a source selected to pay a colorless requirement does not actually
+/// have an ability producing colorless mana (an internal inconsistency between
+/// source filtering and ability lookup).
+#[must_use]
 pub fn compute_autotap(
     cost: &ManaCost,
     pool: &ManaPool,
@@ -338,6 +344,7 @@ pub fn compute_autotap(
 }
 
 /// Check if a mana pool can pay a given cost.
+#[must_use]
 pub fn can_pay(pool: &ManaPool, cost: &ManaCost) -> bool {
     // Clone pool to simulate payment.
     let mut sim = pool.clone();
@@ -349,6 +356,9 @@ pub fn can_pay(pool: &ManaPool, cost: &ManaCost) -> bool {
 ///
 /// Strategy: pay colored requirements first, then colorless requirements,
 /// then generic from whatever remains.
+///
+/// # Errors
+/// Returns [`ManaError`] if the pool doesn't have enough mana to pay `cost`.
 pub fn auto_pay(pool: &mut ManaPool, cost: &ManaCost) -> Result<(), ManaError> {
     try_auto_pay(pool, cost)
 }

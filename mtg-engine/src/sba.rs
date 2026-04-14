@@ -6,6 +6,11 @@ use crate::types::Zone;
 
 /// Perform state-based actions. Returns true if any were performed.
 /// Per rule 704.3, this is called repeatedly until no actions are taken.
+///
+/// # Panics
+/// Panics if an Aura object on the battlefield has no `attached_to` value, which
+/// would indicate a malformed game state (Auras must always be attached to
+/// something while on the battlefield).
 pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry) -> bool {
     let mut any_action = false;
 

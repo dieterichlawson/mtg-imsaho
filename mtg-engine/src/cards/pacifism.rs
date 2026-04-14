@@ -5,7 +5,7 @@ use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope};
 
 /// Pacifism — {1}{W} aura enchantment. Enchanted creature can't attack or block.
-/// The restriction is checked by GameState::can_attack/can_block.
+/// The restriction is checked by `GameState::can_attack/can_block`.
 pub struct Pacifism;
 
 impl CardBehavior for Pacifism {

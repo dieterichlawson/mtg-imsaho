@@ -7,7 +7,7 @@ use reqwest::blocking::Client;
 
 use crate::Player;
 
-/// Per-model token usage tracking for LlmPlayer game calls.
+/// Per-model token usage tracking for `LlmPlayer` game calls.
 use std::sync::Mutex;
 use std::collections::HashMap;
 use std::fmt::Write;
@@ -59,11 +59,15 @@ fn record_gemini_llm_usage(model: &str, usage: &serde_json::Value) {
 }
 
 /// Get the per-model usage map.
+///
+/// # Panics
+/// Panics if the global `LLM_MODEL_USAGE` mutex is poisoned (i.e. another
+/// thread panicked while holding the lock).
 pub fn get_llm_model_usage() -> HashMap<String, LlmModelUsage> {
     LLM_MODEL_USAGE.lock().unwrap().clone()
 }
 
-/// Format a reqwest::Error with kind tags and the underlying source chain.
+/// Format a `reqwest::Error` with kind tags and the underlying source chain.
 /// Produces something like: "[timeout,connect] error sending request: ... → Connection refused"
 fn format_reqwest_error(e: &reqwest::Error) -> String {
     let mut tags = Vec::new();
@@ -352,7 +356,7 @@ trait LlmBackend {
     /// Send a message and get a response. Manages conversation state internally.
     fn send(&mut self, message: &str) -> String;
     /// Send a message with a custom JSON response schema. Returns the parsed JSON.
-    /// Default implementation: calls send() and wraps the text in a JSON string.
+    /// Default implementation: calls `send()` and wraps the text in a JSON string.
     fn send_with_schema(&mut self, message: &str, _schema: &serde_json::Value) -> serde_json::Value {
         let text = self.send(message);
         serde_json::Value::String(text)
@@ -957,6 +961,7 @@ pub struct LlmPlayer {
 }
 
 impl LlmPlayer {
+    #[must_use]
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -966,6 +971,7 @@ impl LlmPlayer {
         }
     }
 
+    #[must_use]
     pub fn new_gemini(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -975,11 +981,13 @@ impl LlmPlayer {
         }
     }
 
+    #[must_use]
     pub fn with_guide(mut self, guide: String) -> Self {
         self.guide = Some(guide);
         self
     }
 
+    #[must_use]
     pub fn with_model(mut self, model: &str) -> Self {
         // Recreate the backend with the new model name.
         // We check the current backend type by trying to downcast.
@@ -991,6 +999,7 @@ impl LlmPlayer {
         self
     }
 
+    #[must_use]
     pub fn with_thinking_level(mut self, level: &str) -> Self {
         // Only affects Gemini — set on the backend if it's a GeminiBackend.
         // We need to recreate since we can't downcast through Box<dyn>.
@@ -1086,37 +1095,44 @@ impl LlmPlayer {
 
     // ── Test helpers ──────────────────────────────────────────────
 
-    /// Expose format_decklist for testing.
+    /// Expose `format_decklist` for testing.
+    #[must_use]
     pub fn format_decklist_for_test(entries: &[(String, u32)], registry: &mtg_engine::cards::CardRegistry) -> String {
         Self::format_decklist(entries, registry)
     }
 
-    /// Expose short_effect_summary for testing.
+    /// Expose `short_effect_summary` for testing.
+    #[must_use]
     pub fn short_effect_summary_for_test(oracle_text: &str) -> String {
         Self::short_effect_summary(oracle_text)
     }
 
     /// Expose the player-relative log rewriter for testing.
+    #[must_use]
     pub fn rewrite_log_entry_for_test(entry: &str, you: mtg_engine::ids::PlayerId) -> String {
         Self::rewrite_log_entry(entry, you)
     }
 
     /// Expose system prompt for testing.
+    #[must_use]
     pub fn system_prompt_for_test(&self) -> &str {
         self.backend.system_prompt()
     }
 
     /// Expose conversation length for testing.
+    #[must_use]
     pub fn conversation_len_for_test(&self) -> usize {
         self.backend.conversation_len()
     }
 
-    /// Expose last_log_index for testing.
+    /// Expose `last_log_index` for testing.
+    #[must_use]
     pub fn last_log_index_for_test(&self) -> usize {
         self.last_log_index
     }
 
     /// Get the model identifier (e.g. "claude-sonnet-4-6", "gemini-2.5-flash").
+    #[must_use]
     pub fn model_name(&self) -> &str {
         self.backend.model_name()
     }
@@ -1137,7 +1153,7 @@ impl LlmPlayer {
         self.log_at(crate::game_log::LogLevel::Error, label, content);
     }
 
-    /// #[track_caller] propagates the source location from the caller of
+    /// #[`track_caller`] propagates the source location from the caller of
     /// `log`/`log_debug`/`log_error`, not from inside this function — so
     /// `Location::caller()` reports the original call site.
     #[track_caller]
@@ -1418,7 +1434,7 @@ impl LlmPlayer {
         s
     }
 
-    /// Compact a card's oracle_text into a short inline effect summary for the
+    /// Compact a card's `oracle_text` into a short inline effect summary for the
     /// board display. Drops the leading "Enchant <type>" targeting line (not
     /// useful once the aura is attached), strips reminder text in parentheses,
     /// collapses whitespace, and joins remaining lines with "; ". Returns an
@@ -2350,9 +2366,9 @@ impl LlmPlayer {
 
     /// Decide keep or mulligan for the London opening-hand phase.
     /// Sends a structured-JSON prompt with the current hand and the
-    /// mulligan count. Falls back to MulliganKeep on malformed responses.
+    /// mulligan count. Falls back to `MulliganKeep` on malformed responses.
     /// When the mulligan cap has been reached and keep is the only legal
-    /// action, returns MulliganKeep directly without round-tripping the LLM.
+    /// action, returns `MulliganKeep` directly without round-tripping the LLM.
     fn choose_mulligan(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
         let mull_allowed = legal_actions.iter().any(|a| matches!(a, Action::MulliganMull));
         if !mull_allowed {
@@ -2425,7 +2441,7 @@ impl LlmPlayer {
 
     /// Decide which cards to put on the bottom after all mulligans.
     /// Sends a structured-JSON prompt with the numbered hand and expected
-    /// count. Falls back to the first enumerated legal BottomCards option
+    /// count. Falls back to the first enumerated legal `BottomCards` option
     /// if the response is malformed.
     fn choose_mulligan_bottom(&mut self, view: &GameView, legal_actions: &[Action]) -> Action {
         // Determine N from the legal actions (every option has the same
@@ -2866,7 +2882,7 @@ mod tests {
         );
     }
 
-    /// Bug 37-001 (audits/AUDIT_BUGS.md): `format_counters` only
+    /// Bug 37-001 (`audits/AUDIT_BUGS.md)`: `format_counters` only
     /// surfaces +1/+1, -1/-1, and Loyalty counters. Slime counters
     /// (Gutter Grime's stockpile) and Study counters (Grimoire of the
     /// Dead's progress) are stripped from the display, so the LLM has
@@ -3047,21 +3063,21 @@ mod tests {
     // Audit failing tests — harness prompts
     // ─────────────────────────────────────────────────────────────────
 
-    /// Bug 37-002 (audits/AUDIT_BUGS.md): target-selection prompts use
+    /// Bug 37-002 (`audits/AUDIT_BUGS.md)`: target-selection prompts use
     /// `obj_name`, which returns the raw object name with a
     /// controller suffix but no per-collision disambiguator. Two
     /// same-named creatures under the same controller collapse to
     /// identical strings — the LLM can't tell them apart.
     ///
     /// The fix is to create a `format_object_labels` helper modeled
-    /// on `format_combat_creature_list` and route prompt_target_selection
+    /// on `format_combat_creature_list` and route `prompt_target_selection`
     /// through it. For now, we assert the symptom: `obj_name` returns
     /// the same string for two distinct same-named creatures.
     ///
     /// This test asserts the EXPECTED CORRECT behavior, so it currently
     /// fails. It will start passing as soon as Bug 37-002 is fixed
     /// (either by `obj_name` gaining collision awareness, or by
-    /// prompt_target_selection routing through a new disambiguator).
+    /// `prompt_target_selection` routing through a new disambiguator).
     #[test]
     fn bug_37_002_target_selection_disambiguates_identical_creatures() {
         let mut view = empty_view();
@@ -3082,7 +3098,7 @@ mod tests {
         );
     }
 
-    /// Bug H10 (audits/AUDIT_BUGS.md): The board-state display uses
+    /// Bug H10 (`audits/AUDIT_BUGS.md)`: The board-state display uses
     /// comma as both the keyword separator within a creature and the
     /// creature separator in a list, so a creature with multiple
     /// keywords runs into the next creature's name. Example:
@@ -3140,13 +3156,13 @@ mod tests {
         );
     }
 
-    /// Bug H8 (audits/AUDIT_BUGS.md): X-cost spell labels don't show
+    /// Bug H8 (`audits/AUDIT_BUGS.md)`: X-cost spell labels don't show
     /// what X will be. Only `ExileXFromGraveyard` spells currently
     /// set `exile_x_from_gy_max` and get an `X=N` suffix. Mana-cost
     /// X spells (Devil's Play via `ManaSymbol::X`) render as a bare
     /// `Cast Devil's Play`.
     ///
-    /// We synthesize a CastableSpell for Devil's Play and check that
+    /// We synthesize a `CastableSpell` for Devil's Play and check that
     /// the rendered label has an X marker. Today it doesn't because
     /// `CastableSpell` has no `x_value` field — only
     /// `exile_x_from_gy_max`.
@@ -3185,7 +3201,7 @@ mod tests {
         );
     }
 
-    /// ChosenIndex labels are always provided (not optional) so the
+    /// `ChosenIndex` labels are always provided (not optional) so the
     /// LLM always sees a descriptive label for indexed choices.
     #[test]
     fn chosen_index_label_is_required() {
@@ -3199,9 +3215,9 @@ mod tests {
         assert_eq!(label, "Creature");
     }
 
-    /// Bug J (audits/AUDIT_BUGS.md): Harvest Pyre's X-cost cast
+    /// Bug J (`audits/AUDIT_BUGS.md)`: Harvest Pyre's X-cost cast
     /// options collapse to a single max-X entry in the LLM player's
-    /// display. The engine emits one CastSpell per (X, subset of
+    /// display. The engine emits one `CastSpell` per (X, subset of
     /// graveyard) combination, but `seen_spell_objects` dedups by
     /// `object_id`, so only the first (max X) entry is shown. A
     /// graveyard-care deck can never cast Harvest Pyre with X<max.

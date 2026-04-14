@@ -11,7 +11,7 @@ use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope
 ///
 /// Implementation notes:
 /// The Human-conditional lifelink is a *continuous* conditional effect, not a
-/// snapshot taken at equip time. We use ContinuousEffect::ConditionalKeyword
+/// snapshot taken at equip time. We use `ContinuousEffect::ConditionalKeyword`
 /// (the same pattern Bonds of Faith uses for its conditional bonuses) so that
 /// if the equipped creature transforms (e.g. a Human Werewolf flips into its
 /// non-Human back face via Moonmist), lifelink drops in real time.

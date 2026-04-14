@@ -17,6 +17,7 @@ pub struct ScriptedPlayer {
 
 impl ScriptedPlayer {
     /// Create a new scripted player with the given name and action queue.
+    #[must_use]
     pub fn new(name: &str, actions: Vec<Action>) -> Self {
         Self {
             name: name.to_string(),
@@ -30,13 +31,18 @@ impl ScriptedPlayer {
     }
 
     /// How many actions remain in the queue.
+    #[must_use]
     pub fn remaining(&self) -> usize {
         self.actions.len()
     }
 
     /// Choose a combat action from a combat prompt using the next action in the queue.
     ///
-    /// The next action must be a DeclareAttackers or DeclareBlockers.
+    /// The next action must be a `DeclareAttackers` or `DeclareBlockers`.
+    ///
+    /// # Panics
+    /// Panics if the scripted action queue is empty when a combat decision is
+    /// required.
     pub fn choose_combat(&mut self, _prompt: &CombatPrompt) -> Action {
         self.actions.pop_front().unwrap_or_else(|| {
             panic!(

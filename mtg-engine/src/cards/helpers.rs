@@ -1,9 +1,9 @@
 //! Shared helper functions for common card resolution patterns.
 //!
 //! Includes:
-//! - Spell resolution helpers (resolve_aura, resolve_damage, resolve_destroy)
-//! - Choice presentation helpers (present_target_choice, present_yes_no, etc.)
-//! - Target collection helpers (any_targets, creature_targets, etc.)
+//! - Spell resolution helpers (`resolve_aura`, `resolve_damage`, `resolve_destroy`)
+//! - Choice presentation helpers (`present_target_choice`, `present_yes_no`, etc.)
+//! - Target collection helpers (`any_targets`, `creature_targets`, etc.)
 
 use crate::actions::Target;
 use crate::cards::CardRegistry;
@@ -113,7 +113,7 @@ pub fn resolve_destroy(
 ///
 /// - If `targets` is empty, does nothing.
 /// - If mandatory (`optional == false`) and exactly 1 target, auto-applies the effect.
-/// - Otherwise, sets up a ResolutionChoice for the player to pick.
+/// - Otherwise, sets up a `ResolutionChoice` for the player to pick.
 pub fn present_target_choice(
     state: &mut GameState,
     source_id: ObjectId,
@@ -163,6 +163,7 @@ pub fn present_optional_target_choice(
 // ═══════════════════════════════════════════════════════════════════
 
 /// All targetable creatures on the battlefield (respects hexproof/protection).
+#[must_use]
 pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
@@ -172,6 +173,7 @@ pub fn creature_targets(state: &GameState, source_id: ObjectId, controller: Play
 }
 
 /// All targetable creatures on the battlefield except a specific one.
+#[must_use]
 pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != exclude)
@@ -181,6 +183,7 @@ pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: 
 }
 
 /// All targetable creatures + planeswalkers + all players ("any target").
+#[must_use]
 pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     let mut targets = creature_targets(state, source_id, controller, registry);
     // Add planeswalkers (which have power = None, so creature_targets misses them)
@@ -201,6 +204,7 @@ pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId,
 }
 
 /// All targetable creatures + planeswalkers + all players, excluding a specific object.
+#[must_use]
 pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {
     let mut targets = creature_targets_except(state, exclude, source_id, controller, registry);
     // Add planeswalkers (which have power = None, so creature_targets misses them)
@@ -221,6 +225,7 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
 }
 
 /// All creatures controlled by a specific player.
+#[must_use]
 pub fn creatures_controlled_by(state: &GameState, player: PlayerId) -> Vec<Target> {
     state.objects.values()
         .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == player)
@@ -229,11 +234,13 @@ pub fn creatures_controlled_by(state: &GameState, player: PlayerId) -> Vec<Targe
 }
 
 /// The single opponent in a 2-player game (auto-target convenience).
+#[must_use]
 pub fn opponent_player(state: &GameState, controller: PlayerId) -> Target {
     Target::Player(state.opponent(controller))
 }
 
 /// Get the controller of a permanent, with a fallback.
+#[must_use]
 pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
     state.get_object(object_id).map_or(PlayerId(0), |o| o.controller)
 }

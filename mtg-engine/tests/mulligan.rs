@@ -14,7 +14,7 @@ use mtg_engine::engine::{self, Decklist, GameConfig};
 use mtg_engine::state::{AwaitingAction, GameState, LONDON_MULLIGAN_CAP};
 use mtg_engine::types::*;
 
-/// Build a minimal 40-card decklist for each player so that setup_game
+/// Build a minimal 40-card decklist for each player so that `setup_game`
 /// has enough cards to deal seven and still leave a library.
 fn test_decklist() -> Decklist {
     Decklist {
@@ -103,7 +103,7 @@ fn both_players_keep_first_hand_no_bottoming() {
 // ── Single mulligan path ────────────────────────────────────────────
 
 /// P0 mulls once, then keeps (and bottoms one); P1 keeps first hand.
-/// Verifies: mulligan_count==1 for P0, hand size stays 7 during the
+/// Verifies: `mulligan_count==1` for P0, hand size stays 7 during the
 /// bottoming prompt, library size drops by 1 after bottoming, the
 /// bottomed card lands at the bottom of the library.
 #[test]
@@ -255,7 +255,7 @@ fn keep_mull_decisions_alternate_round_by_round() {
     engine::run_mulligan_phase(&mut state, &reg, |gs, player, _legal| {
         match &gs.awaiting_action {
             Some(AwaitingAction::MulliganDecision { .. }) => {
-                let round = decisions.iter().filter(|(_, p)| *p == player).count() as u32 + 1;
+                let round = u32::try_from(decisions.iter().filter(|(_, p)| *p == player).count()).unwrap_or(0) + 1;
                 decisions.push((round, player));
                 // P0: mull rounds 1 and 2, keep round 3.
                 // P1: mull round 1, keep round 2.

@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -34,7 +34,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Bug D (audits/AUDIT_BUGS.md): Moorland Haunt's `{W}{U}, {T}, Exile
+/// Bug D (`audits/AUDIT_BUGS.md)`: Moorland Haunt's `{W}{U}, {T}, Exile
 /// a creature from your graveyard` cost auto-picks the first matching
 /// creature card in the controller's graveyard. The player should be
 /// the one choosing which creature to exile.
@@ -99,7 +99,7 @@ fn bug_d_moorland_haunt_does_not_auto_pick_creature_to_exile() {
     );
 }
 
-/// Bug P (audits/AUDIT_BUGS.md): Caravan Vigil's "search your library
+/// Bug P (`audits/AUDIT_BUGS.md)`: Caravan Vigil's "search your library
 /// for a basic land card" auto-picks the first basic land in
 /// `library_order`, so a splash deck cannot specifically tutor the
 /// splash colour.
@@ -117,7 +117,7 @@ fn bug_d_moorland_haunt_does_not_auto_pick_creature_to_exile() {
 /// We put a Forest and a Swamp in P0's library (in that order) and
 /// resolve Caravan Vigil. The bug auto-picks the Forest. The fix
 /// should pause for a player choice instead, so neither basic land
-/// has moved to hand yet when on_resolve returns.
+/// has moved to hand yet when `on_resolve` returns.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug P is fixed.
@@ -161,7 +161,7 @@ fn bug_p_caravan_vigil_does_not_auto_pick_basic_land() {
     );
 }
 
-/// Bug W (audits/AUDIT_BUGS.md): The legend-rule SBA in `sba.rs:248-269`
+/// Bug W (`audits/AUDIT_BUGS.md)`: The legend-rule SBA in `sba.rs:248-269`
 /// auto-picks which copy to keep when a player controls two legendary
 /// permanents with the same name. CR 704.5j explicitly says the player
 /// chooses.
@@ -170,10 +170,10 @@ fn bug_p_caravan_vigil_does_not_auto_pick_basic_land() {
 /// permanents with the same name, that player chooses one of them, and
 /// the rest are put into their owners' graveyards."
 ///
-/// Failure mode: `sba.rs:251-269` builds a `legend_groups` HashMap and
+/// Failure mode: `sba.rs:251-269` builds a `legend_groups` `HashMap` and
 /// for each group of size > 1 keeps `ids[0]` and moves the rest to
 /// graveyard. There's no `awaiting_action` prompt and no player input
-/// — the kept permanent is whichever HashMap iteration surfaced
+/// — the kept permanent is whichever `HashMap` iteration surfaced
 /// first (which is also nondeterministic across runs).
 ///
 /// We put two Olivia Voldarens on P0's battlefield (e.g. by
@@ -212,7 +212,7 @@ fn bug_w_legend_rule_pauses_for_player_choice() {
     );
 }
 
-/// Bug 76-003 (audits/AUDIT_BUGS.md): Traveler's Amulet's
+/// Bug 76-003 (`audits/AUDIT_BUGS.md)`: Traveler's Amulet's
 /// `{1}, Sacrifice: search your library for a basic land card` auto-
 /// picks the first matching basic in `library_order`, with exactly
 /// the same shape as Bug P (Caravan Vigil).
@@ -267,7 +267,7 @@ fn bug_76_003_travelers_amulet_does_not_auto_pick_basic_land() {
     );
 }
 
-/// Bug E (audits/AUDIT_BUGS.md): Nevermore auto-picks a name by
+/// Bug E (`audits/AUDIT_BUGS.md)`: Nevermore auto-picks a name by
 /// reading the opponent's hand. Doubly wrong: (1) Nevermore's name
 /// choice is independent of any player's hand, and (2) the
 /// implementation leaks opponent hand information into the decision.
@@ -328,7 +328,7 @@ fn bug_e_nevermore_does_not_read_opponent_hand() {
     );
 }
 
-/// Bug F (audits/AUDIT_BUGS.md): `AdditionalCost::ExileCreaturesFromGraveyard`
+/// Bug F (`audits/AUDIT_BUGS.md)`: `AdditionalCost::ExileCreaturesFromGraveyard`
 /// auto-picks the highest-power creature at apply time. For Corpse
 /// Lunge that's accidentally fine, but for Stitched Drake / Makeshift
 /// Mauler / Skaab Goliath / Skaab Ruinator the player should choose.
@@ -342,8 +342,8 @@ fn bug_e_nevermore_does_not_read_opponent_hand() {
 /// alternative exile subsets in `legal_actions`.
 ///
 /// We put two distinct-power creatures in P0's graveyard and cast
-/// Stitched Drake. `legal_actions` should enumerate one CastSpell
-/// entry per exile choice (mirroring how SacrificeCost is handled
+/// Stitched Drake. `legal_actions` should enumerate one `CastSpell`
+/// entry per exile choice (mirroring how `SacrificeCost` is handled
 /// post-Bug-C fix). Today there's only one entry and the exile is
 /// determined at apply time.
 ///
@@ -385,7 +385,7 @@ fn bug_f_stitched_drake_enumerates_exile_choices() {
     );
 }
 
-/// Bug O (audits/AUDIT_BUGS.md): Memory's Journey's `GraveyardCard`
+/// Bug O (`audits/AUDIT_BUGS.md)`: Memory's Journey's `GraveyardCard`
 /// enumerator returns cards from ALL graveyards — even when a
 /// specific player was chosen as the first target. Per oracle the
 /// graveyard cards must come from THAT player's graveyard.
@@ -395,13 +395,13 @@ fn bug_f_stitched_drake_enumerates_exile_choices() {
 ///
 /// Failure mode: `engine.rs::valid_targets_for_req`'s `GraveyardCard`
 /// arm iterates `state.objects.values().filter(zone == Graveyard)`
-/// without constraining to the chosen player. The TwoTargets
+/// without constraining to the chosen player. The `TwoTargets`
 /// Cartesian product then emits combos where the player target is
 /// P1 but the graveyard card belongs to P0, which is wrong.
 ///
 /// We put one card in each player's graveyard and cast Memory's
-/// Journey as P0 targeting P1. The legal_actions list should contain
-/// no CastSpell where the player target is P1 and a graveyard card
+/// Journey as P0 targeting P1. The `legal_actions` list should contain
+/// no `CastSpell` where the player target is P1 and a graveyard card
 /// target is owned by P0.
 ///
 /// We exercise the bug at resolution time: given `targets = [Player(P1),
@@ -449,7 +449,7 @@ fn bug_o_memorys_journey_only_shuffles_targeted_players_graveyard() {
     );
 }
 
-/// Bug U (audits/AUDIT_BUGS.md): Kessig Wolf Run's
+/// Bug U (`audits/AUDIT_BUGS.md)`: Kessig Wolf Run's
 /// `{X}{R}{G}, {T}: Target creature gets +X/+0 and gains trample
 /// until end of turn` is offered as a single legal-actions entry.
 /// The effective X is determined at apply time by reading whatever
@@ -459,7 +459,7 @@ fn bug_o_memorys_journey_only_shuffles_targeted_players_graveyard() {
 /// Oracle (Kessig Wolf Run): "{X}{R}{G}, {T}: Target creature gets
 /// +X/+0 and gains trample until end of turn."
 ///
-/// Failure mode: `engine.rs:588-599` (legal_actions for activated
+/// Failure mode: `engine.rs:588-599` (`legal_actions` for activated
 /// abilities) and `engine.rs:2288-2305` (apply path) treat the X-cost
 /// ability as a single entry. There's no `X` dimension in
 /// `Action::ActivateAbility`, and the only way to set X is to
@@ -526,7 +526,7 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
     );
 }
 
-/// Bug BF (audits/AUDIT_BUGS.md): Traveler's Amulet's
+/// Bug BF (`audits/AUDIT_BUGS.md)`: Traveler's Amulet's
 /// `on_activate_ability` searches the library for a basic land but
 /// does NOT shuffle the library afterwards. Per oracle: "{1},
 /// Sacrifice this artifact: Search your library for a basic land card,

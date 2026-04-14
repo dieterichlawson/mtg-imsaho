@@ -10,6 +10,7 @@ pub struct DraftDeck {
 }
 
 impl DraftDeck {
+    #[must_use]
     pub fn total_cards(&self) -> usize {
         self.maindeck.len() + self.lands.values().sum::<u32>() as usize
     }
@@ -32,6 +33,11 @@ const BASIC_LANDS: &[&str] = &["Plains", "Island", "Swamp", "Mountain", "Forest"
 /// ```json
 /// {"maindeck": ["Card Name", "Card Name", ...], "lands": {...}}
 /// ```
+///
+/// # Errors
+/// Returns an error string if `response` is not valid JSON, if the
+/// `maindeck` field is missing or not an object/array, if the resulting
+/// maindeck is empty, or if the `lands` field is empty or missing.
 pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<String, u32>), String> {
     // Strip optional ```json code fences.
     let stripped = response
@@ -94,6 +100,12 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
 /// - Lands must be basic lands only
 ///
 /// Returns a `DraftDeck` with the sideboard computed, or an error message.
+///
+/// # Errors
+/// Returns an error string if `lands` contains any non-basic land, if a
+/// card in `maindeck` is not present in `pool` (or appears more times in
+/// the maindeck than in the pool), if any single land count is implausibly
+/// large (> 200), or if the total deck size is fewer than 40 cards.
 pub fn validate_deck<S: std::hash::BuildHasher>(
     pool: &[String],
     maindeck: &[String],
@@ -178,7 +190,8 @@ pub fn validate_deck<S: std::hash::BuildHasher>(
     })
 }
 
-/// Convert a DraftDeck to a Decklist for the game engine.
+/// Convert a `DraftDeck` to a Decklist for the game engine.
+#[must_use]
 pub fn to_decklist(deck: &DraftDeck) -> Vec<(String, u32)> {
     let mut counts: HashMap<String, u32> = HashMap::new();
     for name in &deck.maindeck {

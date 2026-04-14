@@ -1,4 +1,4 @@
-//! Regression test for Bug C (BUG_REPORT_8SEAT.md): LTB triggers were
+//! Regression test for Bug C (`BUG_REPORT_8SEAT.md)`: LTB triggers were
 //! displaying controller as PlayerId(255) because the collector had no
 //! way to recover the last controller of a permanent after it had moved
 //! off the battlefield. Per CR 603.10c, the controller must be whoever

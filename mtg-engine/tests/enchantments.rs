@@ -161,7 +161,7 @@ fn aura_toughness_bonus_prevents_death() {
         "3/4 creature with 4 damage should die");
 }
 
-/// GameView should show effective P/T for creatures with auras.
+/// `GameView` should show effective P/T for creatures with auras.
 #[test]
 fn view_shows_effective_pt_with_aura() {
     let registry = CardRegistry::with_all_cards();
@@ -181,7 +181,7 @@ fn view_shows_effective_pt_with_aura() {
     assert_eq!(perm.effective_toughness, Some(3), "Effective toughness should be 3 with Holy Strength");
 }
 
-/// GameView should show aura attachment on the PermanentView.
+/// `GameView` should show aura attachment on the `PermanentView`.
 #[test]
 fn view_shows_aura_attached_to_creature() {
     let registry = CardRegistry::with_all_cards();
@@ -199,7 +199,7 @@ fn view_shows_aura_attached_to_creature() {
         "Aura should show as attached to the creature in the view");
 }
 
-/// GameView shows effective P/T with Glorious Anthem.
+/// `GameView` shows effective P/T with Glorious Anthem.
 #[test]
 fn view_shows_effective_pt_with_anthem() {
     let registry = CardRegistry::with_all_cards();

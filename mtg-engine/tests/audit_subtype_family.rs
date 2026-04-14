@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -9,10 +9,10 @@
 //! call sites that break because of it.
 //!
 //! Bugs covered in this file:
-//! - Bug BD: setup_game doesn't copy card_data.subtypes into obj.subtypes
+//! - Bug BD: `setup_game` doesn't copy `card_data.subtypes` into obj.subtypes
 //! - Bug AX: ISD dual lands always enter tapped (instance-only subtype check)
 //! - Bug AT: registry-only subtype filters miss tokens (Slayer of the Wicked)
-//! - Bug AY: TargetFilter::HasSubtype is instance-only (Olivia Voldaren's
+//! - Bug AY: `TargetFilter::HasSubtype` is instance-only (Olivia Voldaren's
 //!   {3}{B}{B}: Gain control of target Vampire can't see cast-from-hand Vampires)
 //! - Bug AU: Moonmist's "instance subtypes non-empty" branch ignores the
 //!   registry, so Olivia-bitten Humans can't be transformed by Moonmist
@@ -36,7 +36,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
 use mtg_engine::types::*;
 
-/// Bug BD (audits/AUDIT_BUGS.md): `setup_game` doesn't initialize
+/// Bug BD (`audits/AUDIT_BUGS.md)`: `setup_game` doesn't initialize
 /// `obj.subtypes` from registry data.
 ///
 /// Oracle (Swamp): "Basic Land — Swamp" — the card's subtype is "Swamp"
@@ -48,7 +48,7 @@ use mtg_engine::types::*;
 /// freshly-created library object, but does NOT copy `card_data.subtypes`.
 /// So every normal card object starts the game with `obj.subtypes = []`,
 /// which is the root cause of Bug AX (dual lands), Bug AT (token
-/// subtype filters), and Bug AY (HasSubtype target filter).
+/// subtype filters), and Bug AY (`HasSubtype` target filter).
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug BD is fixed.
@@ -93,7 +93,7 @@ fn bug_bd_setup_game_populates_obj_subtypes_from_registry() {
     }
 }
 
-/// Bug AX (audits/AUDIT_BUGS.md): Four ISD dual lands always enter
+/// Bug AX (`audits/AUDIT_BUGS.md)`: Four ISD dual lands always enter
 /// tapped because their "unless you control a <basic>" check reads
 /// only instance subtypes.
 ///
@@ -145,7 +145,7 @@ fn bug_ax_woodland_cemetery_untapped_with_swamp_in_play() {
     );
 }
 
-/// Bug AT (audits/AUDIT_BUGS.md): Slayer of the Wicked's ETB destroy
+/// Bug AT (`audits/AUDIT_BUGS.md)`: Slayer of the Wicked's ETB destroy
 /// filter is registry-only, so it can't see Vampire/Werewolf/Zombie
 /// tokens.
 ///
@@ -237,7 +237,7 @@ fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
     );
 }
 
-/// Bug AY (audits/AUDIT_BUGS.md): `TargetFilter::HasSubtype` reads
+/// Bug AY (`audits/AUDIT_BUGS.md)`: `TargetFilter::HasSubtype` reads
 /// `obj.subtypes` only, missing registry-subtype Vampires like Stromkirk
 /// Noble or Bloodcrazed Neonate.
 ///
@@ -305,7 +305,7 @@ fn bug_ay_olivia_vampire_steal_can_target_registry_vampire() {
     );
 }
 
-/// Bug AT — Vampiric Fury aspect (audits/AUDIT_BUGS.md): Vampiric
+/// Bug AT — Vampiric Fury aspect (`audits/AUDIT_BUGS.md)`: Vampiric
 /// Fury's "Vampire creatures you control get +2/+0" filter uses the
 /// same registry-only pattern as Slayer of the Wicked. A Vampire
 /// TOKEN (Bloodline Keeper's 2/2 Vampire) should receive the buff
@@ -350,7 +350,7 @@ fn bug_at_vampiric_fury_buffs_vampire_token() {
     );
 }
 
-/// Bug AU (audits/AUDIT_BUGS.md): Moonmist's Human filter takes the
+/// Bug AU (`audits/AUDIT_BUGS.md)`: Moonmist's Human filter takes the
 /// "instance subtypes non-empty" branch when a creature's `obj.subtypes`
 /// has been mutated (e.g. Olivia bit it) and then ignores the registry
 /// completely — so a Gatstaf Shepherd that Olivia turned into a Vampire
@@ -430,7 +430,7 @@ fn bug_au_moonmist_transforms_olivia_bitten_human_dfc() {
     );
 }
 
-/// Bug 31-003 (audits/AUDIT_BUGS.md): Urgent Exorcism's
+/// Bug 31-003 (`audits/AUDIT_BUGS.md)`: Urgent Exorcism's
 /// `is_valid_target` is registry-only, so Spirit tokens (Midnight
 /// Haunting, Doomed Traveler, Mausoleum Guard, Geist-Honored Monk) are
 /// untargetable.
@@ -494,7 +494,7 @@ fn bug_31_003_urgent_exorcism_targets_spirit_token() {
     );
 }
 
-/// Bug 31-002 (audits/AUDIT_BUGS.md): Avacynian Priest's `is_valid_target`
+/// Bug 31-002 (`audits/AUDIT_BUGS.md)`: Avacynian Priest's `is_valid_target`
 /// reads front-face registry subtypes, so it refuses to tap a transformed
 /// werewolf (which is no longer a Human on its live face).
 ///
@@ -553,7 +553,7 @@ fn bug_31_002_avacynian_priest_can_tap_transformed_werewolf() {
     );
 }
 
-/// Bug 31-004 (audits/AUDIT_BUGS.md): Elder Cathar's "if Human, +2
+/// Bug 31-004 (`audits/AUDIT_BUGS.md)`: Elder Cathar's "if Human, +2
 /// counters instead" check reads front-face registry subtypes, so a
 /// transformed werewolf (whose live face is non-Human) wrongly gets the
 /// Human bonus.
@@ -638,7 +638,7 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
     );
 }
 
-/// Bug 99-002 (audits/AUDIT_BUGS.md): Delver of Secrets hand-rolls its
+/// Bug 99-002 (`audits/AUDIT_BUGS.md)`: Delver of Secrets hand-rolls its
 /// transform without going through `crate::cards::helpers::apply_transform`,
 /// so `obj.subtypes` is stale after the transform fires.
 ///
@@ -733,7 +733,7 @@ fn bug_99_002_delver_transform_updates_obj_subtypes() {
     );
 }
 
-/// Bug AO (audits/AUDIT_BUGS.md): `combat::get_subtypes` is not
+/// Bug AO (`audits/AUDIT_BUGS.md)`: `combat::get_subtypes` is not
 /// face-aware for transformed DFCs. It unions the instance
 /// `obj.subtypes` (set by `apply_transform` to the back-face
 /// subtypes) with `registry.card_data(obj.card_id).subtypes` (always

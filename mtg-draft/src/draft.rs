@@ -36,6 +36,7 @@ pub struct DraftState {
 impl DraftState {
     /// Create a new draft from generated packs.
     /// `packs` is indexed as packs[player][pack_round].
+    #[must_use]
     pub fn new(packs: &[Vec<BoosterPack>]) -> Self {
         let pod_size = packs.len();
 
@@ -85,16 +86,22 @@ impl DraftState {
     }
 
     /// Get the current pack contents for a player.
+    #[must_use]
     pub fn current_pack_for(&self, seat: usize) -> &[String] {
         &self.current_packs[seat]
     }
 
     /// How many cards are in the current pack for a player.
+    #[must_use]
     pub fn cards_remaining(&self, seat: usize) -> usize {
         self.current_packs[seat].len()
     }
 
     /// Make a pick for a player. The `card_name` must be in their current pack.
+    ///
+    /// # Errors
+    /// Returns an error string if `card_name` is not present in the current
+    /// pack for `seat`.
     pub fn make_pick(&mut self, seat: usize, card_name: &str) -> Result<(), String> {
         let pack = &mut self.current_packs[seat];
         let pos = pack
@@ -165,6 +172,7 @@ impl DraftState {
     }
 
     /// Check if the entire draft is complete (all 3 rounds done).
+    #[must_use]
     pub fn is_draft_complete(&self) -> bool {
         self.current_pack_round >= 2 && self.is_pack_round_complete()
     }

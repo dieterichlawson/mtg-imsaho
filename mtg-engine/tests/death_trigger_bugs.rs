@@ -1,5 +1,5 @@
 //! Tests for death trigger bugs:
-//! 1. Spurious death-watch triggers from permanents without AnyCreatureDies triggers
+//! 1. Spurious death-watch triggers from permanents without `AnyCreatureDies` triggers
 //! 2. Duplicate death log entries
 
 mod common;

@@ -4,7 +4,7 @@
 mod common;
 use common::*;
 
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
@@ -64,7 +64,7 @@ fn bug_summoning_sickness_not_enforced_for_tap_abilities() {
 
 /// Bug: Victim of Night can target Vampire tokens.
 /// Oracle: "Destroy target non-Vampire, non-Werewolf, non-Zombie creature."
-/// The is_valid_target check uses registry.card_data() which returns None for
+/// The `is_valid_target` check uses `registry.card_data()` which returns None for
 /// tokens, so the subtype exclusion fails and tokens are targetable.
 #[test]
 fn bug_victim_of_night_can_target_vampire_token() {
@@ -274,7 +274,7 @@ fn bug_simultaneous_death_triggers_only_fire_once() {
 
 /// Bug: Ghost Quarter doesn't shuffle the library after the land search.
 /// Oracle: "put it onto the battlefield, then shuffle."
-/// The code finds and places the land but never calls library_order.shuffle().
+/// The code finds and places the land but never calls `library_order.shuffle()`.
 /// We verify by checking the library has NO basic lands removed (search happens)
 /// but the remaining order is unchanged (no shuffle).
 #[test]
@@ -468,7 +468,7 @@ fn bug_ghost_quarter_may_search_is_mandatory() {
 /// Bug: Bonds of Faith snapshots the Human check at ETB.
 /// Oracle: "gets +2/+2 as long as it's a Human. Otherwise, it can't attack or block."
 /// If the creature later stops being a Human (e.g., transforms), the effect
-/// should switch, but it doesn't because instance_continuous_effects is set once.
+/// should switch, but it doesn't because `instance_continuous_effects` is set once.
 #[test]
 fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
     let registry = CardRegistry::with_all_cards();
@@ -507,9 +507,9 @@ fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
 // ENGINE: PLANESWALKER DAMAGE
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: PendingEffect::DealDamage marks damage_marked on planeswalkers
+/// Bug: `PendingEffect::DealDamage` marks `damage_marked` on planeswalkers
 /// instead of removing loyalty counters.
-/// Planeswalkers take damage as loyalty counter removal, not as damage_marked.
+/// Planeswalkers take damage as loyalty counter removal, not as `damage_marked`.
 #[test]
 fn bug_planeswalker_damage_uses_damage_marked_not_loyalty() {
     let registry = CardRegistry::with_all_cards();
@@ -594,8 +594,8 @@ fn bug_control_change_not_reverted_at_eot() {
 // ENGINE: SPELL CAST COUNTING FOR WEREWOLF TRANSFORM
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: num_spells_cast_this_turn is never incremented when spells are cast.
-/// This breaks werewolf transform conditions which check num_spells_cast_last_turn.
+/// Bug: `num_spells_cast_this_turn` is never incremented when spells are cast.
+/// This breaks werewolf transform conditions which check `num_spells_cast_last_turn`.
 /// If no spells are ever counted, the "no spells cast last turn" condition
 /// is always true and werewolves would transform every upkeep.
 #[test]
@@ -657,7 +657,7 @@ fn bug_delver_reveal_suppressed_for_non_instant_sorcery() {
         "Delver should present 'you may reveal' choice even for non-instant/sorcery top card");
 }
 
-/// Bug: abilities_activated_this_turn is never cleared between turns.
+/// Bug: `abilities_activated_this_turn` is never cleared between turns.
 /// This causes once-per-turn abilities (Darkthicket Wolf's {2}{G}: +2/+2)
 /// to be permanently locked after first use.
 #[test]
@@ -738,7 +738,7 @@ fn bug_spurious_upkeep_trigger_for_opponent() {
 
 /// Bug: A spell targeting a creature that gains hexproof in response
 /// should fizzle, but the engine doesn't re-check hexproof at resolution.
-/// (Already documented in spell_fizzle.rs but confirming here.)
+/// (Already documented in `spell_fizzle.rs` but confirming here.)
 #[test]
 fn bug_hexproof_not_rechecked_at_resolution() {
     let registry = CardRegistry::with_all_cards();
@@ -778,7 +778,7 @@ fn bug_hexproof_not_rechecked_at_resolution() {
 // is_transformed should be reset.
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: card_state (like hatchling counters) persists through zone changes.
+/// Bug: `card_state` (like hatchling counters) persists through zone changes.
 /// When Ludevic's Test Subject dies and is reanimated, it should start fresh
 /// but keeps its old counter state.
 #[test]
@@ -814,7 +814,7 @@ fn bug_card_state_not_reset_on_zone_change() {
 // CARD-SPECIFIC: PREY UPON — WRONG DAMAGE TYPE
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Prey Upon uses CombatDamageDealt instead of NonCombatDamageDealt.
+/// Bug: Prey Upon uses `CombatDamageDealt` instead of `NonCombatDamageDealt`.
 /// Fight damage is NOT combat damage per MTG rules.
 #[test]
 fn bug_prey_upon_uses_combat_damage_for_fight() {
@@ -926,7 +926,7 @@ fn bug_nevermore_not_enforced_for_flashback() {
 // CARD-SPECIFIC: TRIBUTE TO HUNGER — MISSING TARGET RESTRICTION
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Tribute to Hunger says "target opponent" but has no is_valid_target
+/// Bug: Tribute to Hunger says "target opponent" but has no `is_valid_target`
 /// override, so it can target any player including self.
 #[test]
 fn bug_tribute_to_hunger_can_target_self() {
@@ -951,8 +951,8 @@ fn bug_tribute_to_hunger_can_target_self() {
 // CARD-SPECIFIC: MIRROR-MAD PHANTASM — INCORRECT DRAW FLAG
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Mirror-Mad Phantasm's ability uses draw_top_card for the reveal loop,
-/// which sets has_drawn_from_empty=true if library runs out. This causes the
+/// Bug: Mirror-Mad Phantasm's ability uses `draw_top_card` for the reveal loop,
+/// which sets `has_drawn_from_empty=true` if library runs out. This causes the
 /// player to lose via SBA even though they didn't actually draw from empty.
 #[test]
 fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
@@ -1014,7 +1014,7 @@ fn bug_mirror_mad_phantasm_sets_draw_flag_incorrectly() {
 
 /// Bug: Hinterland Harbor's checkland logic only checks obj.subtypes (runtime),
 /// which is empty for regular non-token lands. Forest/Island subtypes are stored
-/// in CardData via the registry, not on the object.
+/// in `CardData` via the registry, not on the object.
 #[test]
 fn bug_hinterland_harbor_misses_real_basic_lands() {
     let registry = CardRegistry::with_all_cards();
@@ -1060,7 +1060,7 @@ fn bug_hinterland_harbor_misses_real_basic_lands() {
 // CARD-SPECIFIC: UNBURIAL RITES — NO TARGET REQUIREMENT
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Unburial Rites has no target_requirement override, so the engine
+/// Bug: Unburial Rites has no `target_requirement` override, so the engine
 /// treats it as an untargeted spell. It can be cast with no creatures
 /// in any graveyard, and targets are selected at resolution not cast.
 #[test]
@@ -1203,7 +1203,7 @@ fn bug_unbreathing_horde_no_counters_via_reanimation() {
 // CARD-SPECIFIC: INTO THE MAW OF HELL — TARGET VALIDATION
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Into the Maw of Hell's is_valid_target accepts creatures for
+/// Bug: Into the Maw of Hell's `is_valid_target` accepts creatures for
 /// the land target slot. Oracle says "Destroy target land" — the first
 /// target must be a land, not a creature.
 #[test]
@@ -1229,7 +1229,7 @@ fn bug_into_the_maw_accepts_creatures_as_land_target() {
 // ═══════════════════════════════════════════════════════════════
 
 /// Bug: Past in Flames gives flashback equal to a card's mana cost,
-/// but cards with no mana cost get ManaCost::free(), making them
+/// but cards with no mana cost get `ManaCost::free()`, making them
 /// castable for free from the graveyard.
 #[test]
 fn bug_past_in_flames_free_flashback_for_no_cost_cards() {
@@ -1340,7 +1340,7 @@ fn bug_woodland_sleuth_can_return_itself_from_graveyard() {
 /// Bug: Grave Bramble has protection from Zombies, but Grimgrin's attack
 /// trigger ("destroy target creature defending player controls") can still
 /// target it. Protection should prevent targeting by Zombie sources.
-/// The engine's can_be_targeted doesn't consider the source's subtypes.
+/// The engine's `can_be_targeted` doesn't consider the source's subtypes.
 #[test]
 fn bug_protection_doesnt_prevent_zombie_source_targeting() {
     let registry = CardRegistry::with_all_cards();
@@ -1444,7 +1444,7 @@ fn bug_night_terrors_stuck_on_stack() {
 
 /// Bug: Rooftop Storm's alternative cost ({0} for Zombie spells) isn't
 /// offered when casting Zombie creatures from the graveyard via flashback
-/// or can_cast_from_graveyard.
+/// or `can_cast_from_graveyard`.
 #[test]
 fn bug_rooftop_storm_not_offered_from_graveyard() {
     let registry = CardRegistry::with_all_cards();
@@ -1517,7 +1517,7 @@ fn bug_mentor_of_the_meek_auto_pays() {
     // BUG: Auto-draws without presenting the pay choice
     assert!(has_choice || hand_after == hand_before,
         "Mentor should present 'you may pay' choice. Drew {} cards without asking.",
-        hand_after as i32 - hand_before as i32);
+        hand_after.saturating_sub(hand_before));
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1561,7 +1561,7 @@ fn bug_reaper_intervening_if_not_checked_at_trigger() {
 // CARD-SPECIFIC: EVIL TWIN — MARKER SET BEFORE CHOICE
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Evil Twin sets is_evil_twin before the copy choice. The destroy ability
+/// Bug: Evil Twin sets `is_evil_twin` before the copy choice. The destroy ability
 /// comes from the "except it has..." clause, which only applies when a copy is made.
 /// Per ruling: "You can choose not to copy anything. In that case, Evil Twin enters
 /// as a 0/0 creature." A 0/0 that didn't copy anything should NOT have the destroy
@@ -1637,7 +1637,6 @@ fn bug_grimoire_legend_rule_not_applied() {
         "Legend rule SBA should present a choice for which Grimgrin to keep");
 
     // Resolve the choice: keep the existing one.
-    use mtg_engine::actions::{Action, ResolvedChoice, Target};
     let new_state = mtg_engine::engine::submit_action(
         &state,
         &Action::ResolveChoice {
@@ -1708,8 +1707,8 @@ fn bug_undead_alchemist_multiple_copies_double_mill() {
 // ═══════════════════════════════════════════════════════════════
 
 /// Bug: Boneyard Wurm's power/toughness is dynamic (= creature cards in
-/// your graveyard), but the GameView shows base P/T (0/0) from obj.power.
-/// The view should use effective_power/effective_toughness.
+/// your graveyard), but the `GameView` shows base P/T (0/0) from obj.power.
+/// The view should use `effective_power/effective_toughness`.
 #[test]
 fn bug_boneyard_wurm_view_shows_base_pt() {
     let registry = CardRegistry::with_all_cards();
@@ -1861,7 +1860,7 @@ fn bug_demonmail_hauberk_sacrifice_check_too_loose() {
 
 /// Bug: Civilized Scholar transforms to Homicidal Brute. Brute's end step
 /// trigger says "if it didn't attack, tap and transform back." The
-/// attacked_this_turn flag persists through transformation, so if
+/// `attacked_this_turn` flag persists through transformation, so if
 /// Scholar attacked then transformed, Brute's end step check sees it
 /// as having attacked and doesn't transform back.
 /// Per MTG rules, Homicidal Brute is a new entity after transform —
@@ -1901,7 +1900,7 @@ fn bug_civilized_scholar_stale_attacked_flag() {
 // ═══════════════════════════════════════════════════════════════
 
 /// Bug: Essence of the Wild's replacement effect (creatures you control
-/// enter as copies) only works through on_resolve. Creatures entering
+/// enter as copies) only works through `on_resolve`. Creatures entering
 /// via other means (reanimation, token creation) skip the replacement.
 #[test]
 fn bug_essence_of_wild_replacement_not_applied_for_tokens() {
@@ -1967,9 +1966,9 @@ fn bug_galvanic_juggernaut_force_attack_when_unable() {
 // ═══════════════════════════════════════════════════════════════
 
 /// Bug: When Stitcher's Apprentice creates a token and the controller
-/// must sacrifice a creature, the trigger_event_index gets desynced,
+/// must sacrifice a creature, the `trigger_event_index` gets desynced,
 /// causing ETB watchers (like Champion of the Parish) to miss the
-/// token's CreatureDied event from the sacrifice.
+/// token's `CreatureDied` event from the sacrifice.
 /// This is a complex engine timing issue — testing by checking if
 /// Champion gets a +1/+1 counter from a Human token entering AND
 /// triggers properly when the sacrificed creature dies.

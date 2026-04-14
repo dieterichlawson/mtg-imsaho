@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 /// Unique identity for a game object (card instance, token, stack entry).
-/// Assigned by a monotonic counter on GameState. Never recycled.
+/// Assigned by a monotonic counter on `GameState`. Never recycled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ObjectId(pub u64);
 
@@ -9,7 +9,7 @@ pub struct ObjectId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct PlayerId(pub u8);
 
-/// Card definition identity. Maps to a CardBehavior in the registry.
+/// Card definition identity. Maps to a `CardBehavior` in the registry.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct CardId(pub u32);
 

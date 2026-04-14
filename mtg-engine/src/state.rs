@@ -15,7 +15,8 @@ pub enum StackEntry {
 }
 
 impl StackEntry {
-    /// Get the ObjectId if this is a spell.
+    /// Get the `ObjectId` if this is a spell.
+    #[must_use]
     pub fn as_spell(&self) -> Option<ObjectId> {
         match self {
             StackEntry::Spell(id) => Some(*id),
@@ -24,6 +25,7 @@ impl StackEntry {
     }
 
     /// Get the trigger if this is a triggered ability.
+    #[must_use]
     pub fn as_trigger(&self) -> Option<&crate::triggers::PendingTrigger> {
         match self {
             StackEntry::Trigger(t) => Some(t),
@@ -32,6 +34,7 @@ impl StackEntry {
     }
 
     /// Description for display purposes.
+    #[must_use]
     pub fn display_name(&self, registry: &crate::cards::CardRegistry) -> String {
         match self {
             StackEntry::Spell(id) => format!("Spell({})", id.0),
@@ -45,7 +48,7 @@ impl StackEntry {
 pub struct GameState {
     /// All game objects keyed by their unique ID.
     pub objects: HashMap<ObjectId, GameObject>,
-    /// Monotonic counter for generating unique ObjectIds.
+    /// Monotonic counter for generating unique `ObjectIds`.
     pub next_object_id: u64,
 
     /// Player states, indexed by PlayerId.0.
@@ -106,7 +109,7 @@ pub struct GameState {
     pub num_spells_cast_last_turn: HashMap<PlayerId, u32>,
 
     /// X value chosen for the most recently activated X-cost ability.
-    /// Set by the engine before calling on_activate_ability; cards read this.
+    /// Set by the engine before calling `on_activate_ability`; cards read this.
     #[serde(default)]
     pub last_activated_x_value: Option<u32>,
 
@@ -120,7 +123,7 @@ pub struct GameState {
     #[serde(default)]
     pub pending_triggers: Vec<crate::triggers::PendingTrigger>,
 
-    /// Queue of (player, bottom_count) pairs waiting for the London-mulligan
+    /// Queue of (player, `bottom_count`) pairs waiting for the London-mulligan
     /// bottoming sub-phase. Populated as each player finishes their keep/mull
     /// decision. Drained by `advance_mulligan_phase`.
     #[serde(default)]
@@ -212,6 +215,7 @@ pub enum TemporaryEffect {
 
 impl GameState {
     /// Create a new game state for a given number of players.
+    #[must_use]
     pub fn new(num_players: u8) -> Self {
         let players = (0..num_players)
             .map(|i| PlayerState::new(PlayerId(i)))
@@ -248,7 +252,7 @@ impl GameState {
         }
     }
 
-    /// Allocate a fresh ObjectId.
+    /// Allocate a fresh `ObjectId`.
     pub fn next_id(&mut self) -> ObjectId {
         let id = ObjectId(self.next_object_id);
         self.next_object_id += 1;
@@ -323,7 +327,7 @@ impl GameState {
     }
 
     /// Create a token on the battlefield with specific creature subtypes.
-    /// If a permanent with ReplacementEffect::DoubleTokens is on the battlefield
+    /// If a permanent with `ReplacementEffect::DoubleTokens` is on the battlefield
     /// under the same controller, extra copies of the token are created.
     pub fn create_token_with_subtypes(
         &mut self,
@@ -492,7 +496,7 @@ impl GameState {
     }
 
     /// Move an object to a new zone.
-    /// Per MTG rules, changing zones makes it a "new object" — we increment zone_change_count.
+    /// Per MTG rules, changing zones makes it a "new object" — we increment `zone_change_count`.
     pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) {
         // Collect log info before mutating.
         let log_msg = self.objects.get(&id).and_then(|obj| {
@@ -585,7 +589,7 @@ impl GameState {
     /// If any permanent with `ReplacementEffect::EnterAsCopy` is on the battlefield
     /// under the same controller as `entering_id`, the entering creature's characteristics
     /// are replaced with those of the copy source. The entering creature keeps its own
-    /// identity (ObjectId, owner, controller) but gains the source's copiable values.
+    /// identity (`ObjectId`, owner, controller) but gains the source's copiable values.
     fn apply_entering_copy_replacement(&mut self, entering_id: ObjectId, registry: &crate::cards::CardRegistry) {
         // Get the entering creature's controller and check it's a creature.
         let (controller, is_creature) = match self.get_object(entering_id) {
@@ -694,11 +698,13 @@ impl GameState {
     }
 
     /// Get an object by ID.
+    #[must_use]
     pub fn get_object(&self, id: ObjectId) -> Option<&GameObject> {
         self.objects.get(&id)
     }
 
-    /// Return "CardName (#id)" for use in log messages.
+    /// Return "`CardName` (#id)" for use in log messages.
+    #[must_use]
     pub fn obj_name(&self, id: ObjectId) -> String {
         let name = self.get_object(id).map_or_else(|| "?".into(), |o| o.name.clone());
         format!("{} (#{})", name, id.0)
@@ -710,6 +716,7 @@ impl GameState {
     }
 
     /// Get a player by ID.
+    #[must_use]
     pub fn get_player(&self, id: PlayerId) -> &PlayerState {
         &self.players[id.0 as usize]
     }
@@ -722,6 +729,7 @@ impl GameState {
     /// Get all objects in a zone owned/controlled by a player.
     /// For Library/Hand/Graveyard: filter by owner (per rule 400.3).
     /// For Battlefield: filter by controller.
+    #[must_use]
     pub fn objects_in_zone(&self, zone: Zone, player: PlayerId) -> Vec<&GameObject> {
         let mut result: Vec<_> = self.objects.values().filter(|obj| {
             obj.zone == zone && match zone {
@@ -735,6 +743,7 @@ impl GameState {
     }
 
     /// Get all objects in a zone (regardless of player).
+    #[must_use]
     pub fn all_objects_in_zone(&self, zone: Zone) -> Vec<&GameObject> {
         let mut result: Vec<_> = self.objects.values().filter(|obj| obj.zone == zone).collect();
         result.sort_by_key(|o| o.id);
@@ -742,17 +751,20 @@ impl GameState {
     }
 
     /// Get the next player after the given player (turn order).
+    #[must_use]
     pub fn next_player(&self, player: PlayerId) -> PlayerId {
         let next = (player.0 + 1) % u8::try_from(self.players.len()).unwrap_or(u8::MAX);
         PlayerId(next)
     }
 
     /// Get the opponent in a 2-player game.
+    #[must_use]
     pub fn opponent(&self, player: PlayerId) -> PlayerId {
         self.next_player(player)
     }
 
     /// Number of alive players.
+    #[must_use]
     pub fn alive_player_count(&self) -> usize {
         self.players.iter().filter(|p| !p.lost).count()
     }
@@ -762,8 +774,9 @@ impl GameState {
         self.game_log.push(LogEntry { level, message: msg });
     }
 
-    /// Check if a creature matches a CreatureFilter, evaluated from the perspective
+    /// Check if a creature matches a `CreatureFilter`, evaluated from the perspective
     /// of the effect's source permanent.
+    #[must_use]
     pub fn matches_filter(
         &self,
         creature_id: ObjectId,
@@ -811,6 +824,7 @@ impl GameState {
     }
 
     /// Check if a continuous effect applies to a given creature.
+    #[must_use]
     pub fn effect_applies_to(
         &self,
         creature_id: ObjectId,
@@ -846,7 +860,7 @@ impl GameState {
         }
     }
 
-    /// Collect all (power_mod, toughness_mod) from continuous effects that apply to a creature.
+    /// Collect all (`power_mod`, `toughness_mod`) from continuous effects that apply to a creature.
     fn continuous_pt_mods(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> (i32, i32) {
         use crate::types::ContinuousEffect;
         let mut power = 0;
@@ -942,7 +956,7 @@ impl GameState {
     }
 
     /// Count how many sources apply a matching continuous effect to a creature.
-    /// Similar to has_continuous_effect but returns the count instead of a boolean.
+    /// Similar to `has_continuous_effect` but returns the count instead of a boolean.
     pub fn count_continuous_effect(
         &self,
         creature_id: ObjectId,
@@ -982,6 +996,7 @@ impl GameState {
 
     /// Get the effective power of a creature, including continuous effects,
     /// dynamic P/T, counters, and "until end of turn" effects.
+    #[must_use]
     pub fn effective_power(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
@@ -1043,6 +1058,7 @@ impl GameState {
     }
 
     /// Get the effective toughness of a creature.
+    #[must_use]
     pub fn effective_toughness(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<i32> {
         let obj = self.get_object(id)?;
 
@@ -1101,6 +1117,7 @@ impl GameState {
     }
 
     /// Check if a creature is prevented from attacking (e.g., by Pacifism).
+    #[must_use]
     pub fn can_attack(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
         if self.has_continuous_effect(creature_id, &|e| {
             use crate::types::ContinuousEffect;
@@ -1119,6 +1136,7 @@ impl GameState {
     }
 
     /// Check if a creature is prevented from blocking.
+    #[must_use]
     pub fn can_block(&self, creature_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
         if self.has_continuous_effect(creature_id, &|e| {
             use crate::types::ContinuousEffect;
@@ -1138,6 +1156,7 @@ impl GameState {
 
     /// Check if a creature on the battlefield has a given keyword ability.
     /// Checks static card keywords, continuous effect grants, aura grants, and until-EOT grants.
+    #[must_use]
     pub fn has_keyword(&self, creature_id: ObjectId, keyword: crate::types::Keyword, registry: &crate::cards::CardRegistry) -> bool {
         let obj = match self.get_object(creature_id) {
             Some(o) if o.zone == Zone::Battlefield => o,
@@ -1218,7 +1237,8 @@ impl GameState {
 
     /// Check if a creature has protection from a given source.
     /// Returns true if the target has protection from the source's subtypes or matches
-    /// a ProtectionFrom filter. Used for targeting, blocking, and damage prevention.
+    /// a `ProtectionFrom` filter. Used for targeting, blocking, and damage prevention.
+    #[must_use]
     pub fn has_protection_from(&self, target_id: ObjectId, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
         use crate::types::ContinuousEffect;
 
@@ -1352,7 +1372,7 @@ impl GameState {
         false
     }
 
-    /// Evaluate an EffectCondition for a given controller.
+    /// Evaluate an `EffectCondition` for a given controller.
     fn check_condition(&self, condition: &crate::types::EffectCondition, source_id: ObjectId, controller: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
         use crate::types::EffectCondition;
         match condition {
@@ -1430,6 +1450,7 @@ impl GameState {
     }
 
     /// Check if a player has hexproof (e.g., from Witchbane Orb).
+    #[must_use]
     pub fn player_has_hexproof(&self, player: PlayerId, registry: &crate::cards::CardRegistry) -> bool {
         self.objects.values().any(|o| {
             o.zone == Zone::Battlefield
@@ -1447,6 +1468,7 @@ impl GameState {
     }
 
     /// Get the number of counters of a type on a permanent.
+    #[must_use]
     pub fn get_counter_count(&self, id: ObjectId, counter_type: crate::types::CounterType) -> u32 {
         self.get_object(id)
             .and_then(|o| o.counters.get(&counter_type))
@@ -1455,6 +1477,7 @@ impl GameState {
     }
 
     /// Is the game over?
+    #[must_use]
     pub fn is_game_over(&self) -> bool {
         self.result.is_some()
     }
@@ -1486,9 +1509,9 @@ pub struct GameObject {
     pub power: Option<i32>,
     pub toughness: Option<i32>,
     pub colors: Vec<crate::types::Color>,
-    /// Keywords on this object (populated from card_data for real cards, set directly for tokens).
+    /// Keywords on this object (populated from `card_data` for real cards, set directly for tokens).
     pub keywords: Vec<crate::types::Keyword>,
-    /// Card types on this object (populated from card_data, set directly for tokens).
+    /// Card types on this object (populated from `card_data`, set directly for tokens).
     pub card_types: Vec<crate::types::CardType>,
     /// Subtypes on this object (for tokens — regular cards use CardData.subtypes via registry).
     #[serde(default)]
@@ -1521,12 +1544,12 @@ pub struct GameObject {
     pub instance_oracle_text: Option<String>,
 
     /// Per-instance continuous effects that override the card's static effects.
-    /// Set by on_enter_battlefield for conditional cards (e.g., Bonds of Faith).
+    /// Set by `on_enter_battlefield` for conditional cards (e.g., Bonds of Faith).
     #[serde(default)]
     pub instance_continuous_effects: Option<Vec<crate::types::ContinuousEffect>>,
 
     /// Card-specific persistent state (e.g., Fiend Hunter stores the exiled creature ID).
-    /// Keyed by purpose string, value is an ObjectId.
+    /// Keyed by purpose string, value is an `ObjectId`.
     #[serde(default)]
     pub card_state: HashMap<String, ObjectId>,
 
@@ -1554,8 +1577,8 @@ pub struct GameObject {
     #[serde(default)]
     pub x_value: Option<u32>,
 
-    /// Chosen mode index for ModalChoice spells (stored while on the stack).
-    /// Set when a spell with a ModalChoice target requirement is cast.
+    /// Chosen mode index for `ModalChoice` spells (stored while on the stack).
+    /// Set when a spell with a `ModalChoice` target requirement is cast.
     #[serde(default)]
     pub chosen_mode: Option<usize>,
 
@@ -1594,6 +1617,7 @@ pub struct PlayerState {
 }
 
 impl PlayerState {
+    #[must_use]
     pub fn new(id: PlayerId) -> Self {
         Self {
             id,
@@ -1618,7 +1642,7 @@ impl PlayerState {
         }
     }
 
-    /// Remove the top card from the library without setting has_drawn_from_empty.
+    /// Remove the top card from the library without setting `has_drawn_from_empty`.
     /// Used for reveal/search loops that are NOT drawing (e.g., Mirror-Mad Phantasm).
     pub fn reveal_top_card(&mut self) -> Option<ObjectId> {
         if self.library_order.is_empty() {
@@ -1632,13 +1656,14 @@ impl PlayerState {
 /// Combat state, tracking attackers and blockers.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CombatState {
-    /// Map of attacker ObjectId -> defending PlayerId.
+    /// Map of attacker `ObjectId` -> defending `PlayerId`.
     pub attackers: HashMap<ObjectId, PlayerId>,
-    /// Map of attacker ObjectId -> list of blockers assigned to it.
+    /// Map of attacker `ObjectId` -> list of blockers assigned to it.
     pub blocker_assignments: HashMap<ObjectId, Vec<ObjectId>>,
 }
 
 impl CombatState {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -1752,7 +1777,7 @@ pub enum ResolutionChoiceKind {
         source_id: ObjectId,
     },
     /// Choose X for an X-cost spell or activated ability.
-    /// The player picks a value from 0..=max_x, then that much mana is
+    /// The player picks a value from `0..=max_x`, then that much mana is
     /// drained from the pool and stored on the spell/ability.
     ChooseXValue {
         description: String,
@@ -1760,13 +1785,13 @@ pub enum ResolutionChoiceKind {
         max_x: u32,
         /// The spell on the stack (for spells) or the source permanent (for abilities).
         source_id: ObjectId,
-        /// True if this is for an activated ability (uses last_activated_x_value),
-        /// false for a spell (uses obj.x_value on the stack object).
+        /// True if this is for an activated ability (uses `last_activated_x_value`),
+        /// false for a spell (uses `obj.x_value` on the stack object).
         is_ability: bool,
     },
 }
 
-/// What happens to the chosen target when a ResolutionChoice is resolved.
+/// What happens to the chosen target when a `ResolutionChoice` is resolved.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PendingEffect {
     /// Deal N damage to the chosen target.
@@ -1811,7 +1836,7 @@ pub enum PendingEffect {
     SacrificeCreature { source_name: String },
     /// Copy the chosen creature onto the source permanent (Evil Twin clone effect).
     /// The source becomes a copy of the target, except it retains any extra abilities
-    /// stored via card_state markers.
+    /// stored via `card_state` markers.
     CopyCreature { source_id: ObjectId },
     /// "Each player chooses a creature they control. Destroy the rest."
     /// The chosen creature is added to `kept_so_far`. If `remaining_players` is non-empty,
@@ -1826,7 +1851,7 @@ pub enum PendingEffect {
         source_name: String,
     },
     /// Attach a Curse card from library onto the battlefield attached to the chosen player
-    /// (Bitterheart Witch). The curse_id is the library object to move; searcher is the
+    /// (Bitterheart Witch). The `curse_id` is the library object to move; searcher is the
     /// controller whose library is shuffled afterwards.
     AttachCurseToPlayer { curse_id: ObjectId, searcher: PlayerId },
     /// Two-step Curse selection: player chose a Curse from library, now need to choose a player.

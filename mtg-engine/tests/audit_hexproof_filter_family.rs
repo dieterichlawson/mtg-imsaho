@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -20,12 +20,12 @@
 //! - Bug H: Into the Maw of Hell's first-target enumeration drops the
 //!   `PermanentWithFilter(land)` filter, so creatures appear as
 //!   first-target options
-//! - Bug AD: Unburial Rites' GraveyardCreature enumerator returns
+//! - Bug AD: Unburial Rites' `GraveyardCreature` enumerator returns
 //!   creature cards from any graveyard (not just the caster's)
 //! - Bug 9F-001: Snapcaster Mage excludes graveyard cards that already
 //!   have printed flashback
-//! - Bug AW: Prey Upon's TwoTargets path ignores YouControl /
-//!   YouDontControl filters, so the model can fight two of its own
+//! - Bug AW: Prey Upon's `TwoTargets` path ignores `YouControl` /
+//!   `YouDontControl` filters, so the model can fight two of its own
 //!   creatures
 
 mod common;
@@ -36,7 +36,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Bug 17-003 (audits/AUDIT_BUGS.md): the shared `creature_targets` /
+/// Bug 17-003 (`audits/AUDIT_BUGS.md)`: the shared `creature_targets` /
 /// `any_targets` helpers in `cards/helpers.rs` don't filter out hexproof
 /// creatures the trigger's controller doesn't control.
 ///
@@ -92,7 +92,7 @@ fn bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature() {
     );
 }
 
-/// Bug 17-003 — creature_targets path (audits/AUDIT_BUGS.md):
+/// Bug 17-003 — `creature_targets` path (`audits/AUDIT_BUGS.md)`:
 /// Crossway Vampire's ETB "target creature can't block" uses the
 /// `creature_targets` helper (not `any_targets`), which also lacks
 /// a hexproof filter. This is a DIFFERENT helper from the one
@@ -134,7 +134,7 @@ fn bug_17_003_crossway_vampire_creature_targets_excludes_hexproof() {
     );
 }
 
-/// Bug 17-003 — creature_targets_except path (audits/AUDIT_BUGS.md):
+/// Bug 17-003 — `creature_targets_except` path (`audits/AUDIT_BUGS.md)`:
 /// Fiend Hunter's ETB "you may exile another target creature" uses
 /// the `creature_targets_except` helper, which also lacks a hexproof
 /// filter. This is the third distinct helper in this bug family.
@@ -173,7 +173,7 @@ fn bug_17_003_fiend_hunter_creature_targets_except_excludes_hexproof() {
     );
 }
 
-/// Bug E1-001 (audits/AUDIT_BUGS.md): Grimgrin, Corpse-Born's attack
+/// Bug E1-001 (`audits/AUDIT_BUGS.md)`: Grimgrin, Corpse-Born's attack
 /// trigger inline-enumerates the defender's creatures and only filters
 /// protection — not hexproof.
 ///
@@ -234,7 +234,7 @@ fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
     );
 }
 
-/// Bug 0F-003 (audits/AUDIT_BUGS.md): Falkenrath Noble's death-trigger
+/// Bug 0F-003 (`audits/AUDIT_BUGS.md)`: Falkenrath Noble's death-trigger
 /// drain enumerates `state.players` directly, ignoring Witchbane Orb's
 /// player-hexproof.
 ///
@@ -300,7 +300,7 @@ fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
     );
 }
 
-/// Bug H (audits/AUDIT_BUGS.md): Into the Maw of Hell's first-target
+/// Bug H (`audits/AUDIT_BUGS.md)`: Into the Maw of Hell's first-target
 /// enumeration drops the `PermanentWithFilter(HasCardType(Land))` filter,
 /// so creatures appear as legal first-target options.
 ///
@@ -371,7 +371,7 @@ fn bug_h_maw_of_hell_first_target_must_be_a_land() {
     );
 }
 
-/// Bug AD (audits/AUDIT_BUGS.md): Unburial Rites' `GraveyardCreature`
+/// Bug AD (`audits/AUDIT_BUGS.md)`: Unburial Rites' `GraveyardCreature`
 /// enumerator returns creature cards from any graveyard, not just the
 /// caster's.
 ///
@@ -428,7 +428,7 @@ fn bug_ad_unburial_rites_only_targets_casters_graveyard() {
     );
 }
 
-/// Bug 9F-001 (audits/AUDIT_BUGS.md): Snapcaster Mage excludes graveyard
+/// Bug 9F-001 (`audits/AUDIT_BUGS.md)`: Snapcaster Mage excludes graveyard
 /// cards whose registry data has a `flashback_cost`, refusing to grant
 /// flashback to cards that already have printed flashback.
 ///
@@ -489,8 +489,8 @@ fn bug_9f_001_snapcaster_can_grant_flashback_to_card_with_printed_flashback() {
     );
 }
 
-/// Bug AW (audits/AUDIT_BUGS.md): Prey Upon's TwoTargets path ignores
-/// the inner YouControl / YouDontControl filters, so the model can
+/// Bug AW (`audits/AUDIT_BUGS.md)`: Prey Upon's `TwoTargets` path ignores
+/// the inner `YouControl` / `YouDontControl` filters, so the model can
 /// pick two of its own creatures and have them fight each other.
 ///
 /// Oracle (Prey Upon): "Target creature you control fights target
@@ -501,7 +501,7 @@ fn bug_9f_001_snapcaster_can_grant_flashback_to_card_with_printed_flashback() {
 /// inner filter and returns every battlefield creature, deferring to
 /// `behavior.is_valid_target` for refinement. Prey Upon doesn't
 /// override `is_valid_target`, so the YouControl/YouDontControl
-/// constraints are never checked. The Cartesian-product TwoTargets
+/// constraints are never checked. The Cartesian-product `TwoTargets`
 /// enumeration in `generate_cast_actions_with_targets` then emits
 /// `(your, your)`, `(your, opp)`, `(opp, your)`, `(opp, opp)` pairs
 /// — none of which are filtered.

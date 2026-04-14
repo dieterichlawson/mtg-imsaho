@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -17,7 +17,7 @@
 //!   ETB copy trigger resolves
 //! - Bug 0F-001: `create_token_copy` only patches the `card_id` of
 //!   the FIRST token, so Parallel Lives copies lose their
-//!   CardBehavior.
+//!   `CardBehavior`.
 //! - Bug 4D-001: `create_token_with_subtypes` returns only the
 //!   primary id, so callers that post-mutate (tap the token,
 //!   insert into combat, etc.) silently miss the doubled copies
@@ -32,7 +32,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
-/// Bug 0F-002 (audits/AUDIT_BUGS.md): `state.create_token_copy` never
+/// Bug 0F-002 (`audits/AUDIT_BUGS.md)`: `state.create_token_copy` never
 /// reads `card_data.supertypes` and therefore leaves `obj.is_legendary
 /// = false` on the token, even when copying a legendary creature.
 /// The legend rule (CR 704.5j) keys on `obj.is_legendary && obj.name`,
@@ -79,7 +79,7 @@ fn bug_0f_002_token_copy_of_legendary_creature_is_legendary() {
     );
 }
 
-/// Bug BJ (audits/AUDIT_BUGS.md): Evil Twin's "enter as a copy"
+/// Bug BJ (`audits/AUDIT_BUGS.md)`: Evil Twin's "enter as a copy"
 /// effect is implemented as an ETB triggered ability rather than as a
 /// CR 614.1d replacement effect. Evil Twin's `card_data` declares
 /// `power: Some(0), toughness: Some(0)`, and SBA 704.5f runs before
@@ -91,7 +91,7 @@ fn bug_0f_002_token_copy_of_legendary_creature_is_legendary() {
 /// target creature with the same name as this creature.'" (CR 614.1d
 /// "enter as a copy" — replacement, not trigger.)
 ///
-/// Failure mode: `evil_twin.rs:43-61` builds an EntersBattlefield
+/// Failure mode: `evil_twin.rs:43-61` builds an `EntersBattlefield`
 /// trigger that calls `present_optional_target_choice`. The priority
 /// loop at `engine.rs:4085-4096` runs SBA *before* `collect_triggers`
 /// pushes the ETB trigger onto the stack, and SBA 704.5f kills any
@@ -144,9 +144,9 @@ fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
     );
 }
 
-/// Bug 0F-001 (audits/AUDIT_BUGS.md): `create_token_copy` only patches
+/// Bug 0F-001 (`audits/AUDIT_BUGS.md)`: `create_token_copy` only patches
 /// the `card_id` of the FIRST token, so Parallel Lives copies lose
-/// their CardBehavior.
+/// their `CardBehavior`.
 ///
 /// Oracle (Parallel Lives): "If an effect would create one or more
 /// tokens under your control, it creates twice that many of those
@@ -158,13 +158,13 @@ fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
 /// (which generates primary + extras under Parallel Lives), then
 /// patches ONLY the returned primary's `card_id`. The extras stay at
 /// `CardId(0)`. `registry.get(CardId(0))` returns None, so the
-/// doubled copies have no CardBehavior and miss every trigger, static
-/// effect, or dynamic_pt their source has.
+/// doubled copies have no `CardBehavior` and miss every trigger, static
+/// effect, or `dynamic_pt` their source has.
 ///
 /// We put Parallel Lives in play and Cackling-Counterpart-copy a
 /// Splinterfright, then look at all Splinterfright-named tokens on
 /// the battlefield. Every token copy should have the source's
-/// card_id patched — but only the primary does.
+/// `card_id` patched — but only the primary does.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug 0F-001 is fixed.
@@ -216,7 +216,7 @@ fn bug_0f_001_parallel_lives_token_copies_share_card_id() {
     }
 }
 
-/// Bug 4D-001 (audits/AUDIT_BUGS.md): `create_token_with_subtypes`
+/// Bug 4D-001 (`audits/AUDIT_BUGS.md)`: `create_token_with_subtypes`
 /// returns only the primary token id, so callers that post-mutate
 /// the returned id (to tap the token, insert it into combat, or
 /// link it to a source via `card_state`) silently miss the doubled
@@ -271,7 +271,7 @@ fn bug_4d_001_parallel_lives_army_of_the_damned_tokens_are_all_tapped() {
     }
 }
 
-/// Bug BY (audits/AUDIT_BUGS.md): Geist of Saint Traft's attack
+/// Bug BY (`audits/AUDIT_BUGS.md)`: Geist of Saint Traft's attack
 /// trigger spawns an Angel token and inserts it into combat with
 /// defender = `state.opponent(controller)`. This happens to coincide
 /// with Geist's actual defender in 1v1 ISD, but the correct source

@@ -352,7 +352,7 @@ fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &
     !subtypes.iter().any(|s| s == "Wolf" || s == "Werewolf")
 }
 
-/// Compute the combat damage multiplier from DoubleCombatDamage effects (e.g., Inquisitor's Flail).
+/// Compute the combat damage multiplier from `DoubleCombatDamage` effects (e.g., Inquisitor's Flail).
 /// Each source doubles independently: 1 Flail = x2, 2 Flails = x4, 3 = x8, etc.
 fn combat_damage_multiplier(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> u32 {
     let count = state.count_continuous_effect(creature_id, &|e| {
@@ -400,6 +400,7 @@ fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, 
 
 /// Get all subtypes of a creature (from both card data and object-level subtypes).
 /// Transform-aware: uses back-face data for transformed DFCs.
+#[must_use]
 pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
     let mut subtypes = Vec::new();
     if let Some(obj) = state.get_object(creature_id) {
@@ -427,7 +428,7 @@ pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardReg
     subtypes
 }
 
-/// Check if creature_a has protection from creature_b.
+/// Check if `creature_a` has protection from `creature_b`.
 /// Checks all protection-from-subtype effects and until-EOT protection grants.
 fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker: ObjectId, registry: &CardRegistry) -> bool {
     let attacker_subtypes = get_subtypes(state, attacker, registry);
@@ -641,6 +642,7 @@ pub fn end_combat(state: &mut GameState, registry: &crate::cards::CardRegistry) 
 
 /// Get all creatures a player controls that are eligible to attack.
 /// Checks keywords (defender, haste) and continuous effects (Pacifism).
+#[must_use]
 pub fn eligible_attackers(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
     state.objects.values()
         .filter(|o| {
@@ -661,6 +663,7 @@ pub fn eligible_attackers(state: &GameState, player: PlayerId, registry: &CardRe
 
 /// Get all creatures a player controls that are eligible to block.
 /// Checks continuous effects (Pacifism, can't block, etc.).
+#[must_use]
 pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Vec<ObjectId> {
     state.objects.values()
         .filter(|o| {
@@ -691,6 +694,7 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardReg
 
 /// Check if a blocker can legally block a specific attacker.
 /// Enforces flying (only blocked by flying/reach) and intimidate (only by artifact/same color).
+#[must_use]
 pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: ObjectId, registry: &CardRegistry) -> bool {
     // Flying: can only be blocked by creatures with flying or reach.
     if state.has_keyword(attacker_id, Keyword::Flying, registry)

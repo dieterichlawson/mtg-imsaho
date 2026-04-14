@@ -10,7 +10,7 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 /// slime counters on Gutter Grime."
 ///
 /// Tokens have dynamic P/T that tracks the current slime counter count
-/// on the source Gutter Grime enchantment (via card_state "pt_source_counter").
+/// on the source Gutter Grime enchantment (via `card_state` "`pt_source_counter`").
 pub struct GutterGrime;
 
 impl CardBehavior for GutterGrime {

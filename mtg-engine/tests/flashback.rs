@@ -17,7 +17,7 @@ fn registry() -> CardRegistry {
 
 // ── System tests: flashback mechanics ──────────────────────────────
 
-/// Flashback is offered when a card with flashback_cost is in the graveyard
+/// Flashback is offered when a card with `flashback_cost` is in the graveyard
 /// and the player has enough mana.
 #[test]
 fn flashback_offered_from_graveyard() {
@@ -161,7 +161,7 @@ fn flashback_spell_countered_is_exiled() {
         "Counterspell itself goes to graveyard normally");
 }
 
-/// mill_cards moves cards from library to graveyard.
+/// `mill_cards` moves cards from library to graveyard.
 #[test]
 fn mill_cards_moves_to_graveyard() {
     let reg = registry();

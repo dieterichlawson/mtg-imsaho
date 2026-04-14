@@ -10,7 +10,7 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 /// {1}{U}: Put a hatchling counter on this creature. Then if there are five or more hatchling counters
 /// on it, remove all of them and transform it.
 ///
-/// Implementation: Uses card_state to track hatchling counters. We store the count as ObjectId(count).
+/// Implementation: Uses `card_state` to track hatchling counters. We store the count as ObjectId(count).
 pub struct LudevicsTestSubject;
 
 impl CardBehavior for LudevicsTestSubject {

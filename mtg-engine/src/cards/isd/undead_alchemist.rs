@@ -10,7 +10,7 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 /// black Zombie creature token.
 ///
 /// Ability 1 is a replacement effect: combat damage from Zombies is replaced
-/// with milling. Implemented via replace_combat_damage_to_player.
+/// with milling. Implemented via `replace_combat_damage_to_player`.
 ///
 /// Ability 2 (mill-watcher trigger for non-combat mill sources) is not yet
 /// implemented as a standalone trigger — currently the exile-and-token logic

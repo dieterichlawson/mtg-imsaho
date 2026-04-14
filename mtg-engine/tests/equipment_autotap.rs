@@ -76,7 +76,7 @@ fn find_equip_action(state: &GameState, reg: &CardRegistry, equipment_id: Object
 }
 
 /// Set up a baseline: empty mana pool, equipment + creature + N untapped Forests.
-/// Returns (state, equipment_id, creature_id, lands).
+/// Returns (state, `equipment_id`, `creature_id`, lands).
 fn setup_with_lands(
     reg: &CardRegistry,
     equipment_name: &str,
@@ -271,10 +271,10 @@ fn sharpened_pitchfork_equip_offered_with_one_untapped_land() {
 #[test]
 fn wooden_stake_equip_offered_with_one_untapped_land() {
     let reg = registry();
-    let (state, stake, bears, _) = setup_with_lands(&reg, "Wooden Stake", "Grizzly Bears", 1);
-    let action = find_equip_action(&state, &reg, stake, bears);
+    let (state, equip, bears, _) = setup_with_lands(&reg, "Wooden Stake", "Grizzly Bears", 1);
+    let action = find_equip_action(&state, &reg, equip, bears);
     let new_state = engine::submit_action(&state, &action, &reg);
-    assert_eq!(new_state.get_object(stake).unwrap().attached_to, Some(bears));
+    assert_eq!(new_state.get_object(equip).unwrap().attached_to, Some(bears));
 }
 
 // ════════════════════════════════════════════════════════════════════

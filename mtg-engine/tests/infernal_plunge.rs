@@ -116,7 +116,7 @@ fn adds_three_red_mana() {
         "Infernal Plunge should add RRR on resolution");
 }
 
-/// Legal actions show one CastSpell per eligible creature to sacrifice.
+/// Legal actions show one `CastSpell` per eligible creature to sacrifice.
 #[test]
 fn one_action_per_sacrifice_target() {
     let reg = registry();

@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -12,14 +12,14 @@
 //! - Bug BT: `on_any_creature_dies` handlers zone-gate on Battlefield,
 //!   silently dropping triggers when the watcher dies simultaneously
 //!   with its target (Abattoir Ghoul mutual first-strike trade)
-//! - Bug L: Charmbreaker Devils' SpellCast trigger fires for every
+//! - Bug L: Charmbreaker Devils' `SpellCast` trigger fires for every
 //!   spell type instead of only instants/sorceries
 //! - Bug CA: Moldgraf Monstrosity reads `o.owner` instead of
 //!   `o.controller`, returning creatures from the wrong player's
 //!   graveyard when stolen
 //! - Bug BU: Burning Vengeance logs "deals 2 damage to opponent"
 //!   before the target is chosen.
-//! - Bug K: SacrificeThis activated abilities got the no-autotap
+//! - Bug K: `SacrificeThis` activated abilities got the no-autotap
 //!   restriction regression from the Bug C fix — Selfless Cathar's
 //!   ability isn't offered unless the player has pre-floated mana.
 //! - Bug 17-002: Undead Alchemist's second ability (watcher for
@@ -38,8 +38,8 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Bug BT (audits/AUDIT_BUGS.md): Abattoir Ghoul's
-/// `on_any_creature_dies` handler early-returns when its self_id is
+/// Bug BT (`audits/AUDIT_BUGS.md)`: Abattoir Ghoul's
+/// `on_any_creature_dies` handler early-returns when its `self_id` is
 /// not on the battlefield. In a mutual first-strike trade where the
 /// Ghoul and a creature it dealt damage to die simultaneously, the
 /// trigger queue still picks up the death (the dispatcher correctly
@@ -123,7 +123,7 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
     );
 }
 
-/// Bug L (audits/AUDIT_BUGS.md): Charmbreaker Devils' `on_spell_cast`
+/// Bug L (`audits/AUDIT_BUGS.md)`: Charmbreaker Devils' `on_spell_cast`
 /// triggered ability fires for every spell type, not just
 /// instants/sorceries.
 ///
@@ -132,7 +132,7 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
 ///
 /// Failure mode: `charmbreaker_devils.rs:75-92` filters by `caster ==
 /// controller` but does NOT filter by spell type. The dispatcher
-/// (`triggers.rs:727`) explicitly says "Dispatch SpellCast triggers
+/// (`triggers.rs:727`) explicitly says "Dispatch `SpellCast` triggers
 /// for ALL spell types... Individual card handlers can filter by
 /// spell type if needed" — Charmbreaker doesn't.
 ///
@@ -140,7 +140,7 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
 /// handler directly with a creature spell as the trigger source. The
 /// handler should be a no-op (Grizzly Bears is a creature, not an
 /// instant or sorcery). Today the handler unconditionally pushes a
-/// `+4/+0` ModifyPT into `until_end_of_turn`.
+/// `+4/+0` `ModifyPT` into `until_end_of_turn`.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug L is fixed.
@@ -172,7 +172,7 @@ fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
     );
 }
 
-/// Bug CA (audits/AUDIT_BUGS.md): Moldgraf Monstrosity reads
+/// Bug CA (`audits/AUDIT_BUGS.md)`: Moldgraf Monstrosity reads
 /// `o.owner` instead of `o.controller` for its "your graveyard"
 /// reference, so when stolen via Traitorous Blood and dying that
 /// turn, it returns creatures from the WRONG player's graveyard.
@@ -231,7 +231,7 @@ fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
     );
 }
 
-/// Bug BU (audits/AUDIT_BUGS.md): Burning Vengeance's `on_spell_cast`
+/// Bug BU (`audits/AUDIT_BUGS.md)`: Burning Vengeance's `on_spell_cast`
 /// handler logs "deals 2 damage to opponent" BEFORE the controller
 /// picks a target. The log line is stale — the player may choose a
 /// creature, themselves, etc., and the hard-coded "opponent" text
@@ -241,7 +241,7 @@ fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
 /// graveyard, this enchantment deals 2 damage to any target."
 ///
 /// Failure mode: `burning_vengeance.rs:55-68` calls
-/// `present_target_choice(...)` to set up the awaiting_action, then
+/// `present_target_choice(...)` to set up the `awaiting_action`, then
 /// unconditionally logs "deals 2 damage to opponent (flashback spell
 /// cast)". The actual target hasn't been picked yet.
 ///
@@ -289,7 +289,7 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
     );
 }
 
-/// Bug K (audits/AUDIT_BUGS.md): The Bug C fix added a blanket
+/// Bug K (`audits/AUDIT_BUGS.md)`: The Bug C fix added a blanket
 /// "no-autotap for sacrifice abilities" restriction keyed on
 /// `ab.sacrifice_cost != SacrificeCost::None`. This was too
 /// aggressive: it includes `SacrificeCost::SacrificeThis`, where the
@@ -353,7 +353,7 @@ fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
     );
 }
 
-/// Bug 17-002 (audits/AUDIT_BUGS.md): Undead Alchemist's second
+/// Bug 17-002 (`audits/AUDIT_BUGS.md)`: Undead Alchemist's second
 /// ability ("Whenever a creature card is put into an opponent's
 /// graveyard from their library, exile that card and create a 2/2
 /// black Zombie creature token") is entirely missing. The card
@@ -371,7 +371,7 @@ fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
 /// — `TriggerKind::AnyCombatDamageToPlayer` — with no mill-watcher
 /// trigger. `engine::mill_cards` moves cards library → graveyard
 /// via `move_object`, but there's no dispatch to a
-/// "CreatureMilledFromLibrary" watcher.
+/// "`CreatureMilledFromLibrary`" watcher.
 ///
 /// We put Undead Alchemist + a P1 creature on top of P1's library,
 /// call `mill_cards` on P1, and check that the milled creature
@@ -429,9 +429,9 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
     );
 }
 
-/// Bug AE (audits/AUDIT_BUGS.md): Undead Alchemist implements the
+/// Bug AE (`audits/AUDIT_BUGS.md)`: Undead Alchemist implements the
 /// "if a Zombie you control would deal combat damage to a player,
-/// instead that player mills" clause as an AnyCombatDamageToPlayer
+/// instead that player mills" clause as an `AnyCombatDamageToPlayer`
 /// triggered ability — a post-damage handler that restores life
 /// after the fact. CR 614 says this is a replacement effect: the
 /// player should never take the damage in the first place.
@@ -453,7 +453,7 @@ fn bug_17_002_undead_alchemist_exiles_milled_opponent_creatures() {
 /// correct replacement-effect behavior), i.e. it should NOT dip
 /// below the starting life — even transiently — because the damage
 /// should never have been dealt in the first place. Practically
-/// this manifests as: the player's life stays at starting_life
+/// this manifests as: the player's life stays at `starting_life`
 /// throughout, never drops.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
@@ -516,7 +516,7 @@ fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
     );
 }
 
-/// Bug M (audits/AUDIT_BUGS.md): Snapcaster Mage's ETB trigger
+/// Bug M (`audits/AUDIT_BUGS.md)`: Snapcaster Mage's ETB trigger
 /// ("target instant or sorcery in your graveyard gains flashback")
 /// should choose its target when the trigger is PUT ON THE STACK
 /// (CR 603.3d), not when the trigger resolves. Today the target
@@ -534,7 +534,7 @@ fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
 /// with no target — opponents couldn't respond to "Snapcaster
 /// targets Ancient Grudge" because the target wasn't locked in yet.
 ///
-/// We put Snapcaster on the battlefield, push an EnteredBattlefield
+/// We put Snapcaster on the battlefield, push an `EnteredBattlefield`
 /// event, call `collect_triggers` (NOT `process_triggers`), and
 /// assert that `state.awaiting_action` is already set for the
 /// target choice. Today it's None because the choice is deferred
@@ -578,7 +578,7 @@ fn bug_m_snapcaster_target_chosen_at_stack_time() {
     );
 }
 
-/// Bug N (audits/AUDIT_BUGS.md): When multiple triggered abilities
+/// Bug N (`audits/AUDIT_BUGS.md)`: When multiple triggered abilities
 /// controlled by the same player trigger simultaneously, CR 603.3b
 /// says that player chooses the order they go on the stack. The engine
 /// pushes them in collection order without ever asking.
@@ -639,7 +639,7 @@ fn bug_n_apnap_ordering_prompt_for_simultaneous_triggers() {
     );
 }
 
-/// Bug Q (audits/AUDIT_BUGS.md): Dearly Departed's "each Human
+/// Bug Q (`audits/AUDIT_BUGS.md)`: Dearly Departed's "each Human
 /// creature you control enters with an additional +1/+1 counter" is
 /// implemented as a `TriggerKind::AnyCreatureEnters` triggered
 /// ability instead of a CR 614.1c static replacement effect. As a
@@ -655,7 +655,7 @@ fn bug_n_apnap_ordering_prompt_for_simultaneous_triggers() {
 /// The fix replaces this with a `ReplacementEffect`-style entry
 /// that's consulted during the entry event.
 ///
-/// We check the card_data's triggered_abilities list is empty
+/// We check the `card_data`'s `triggered_abilities` list is empty
 /// (i.e., the trigger has been removed) — the fingerprint of the
 /// fix.
 ///
@@ -679,8 +679,8 @@ fn bug_q_dearly_departed_is_not_a_trigger() {
     );
 }
 
-/// Bug X (audits/AUDIT_BUGS.md): Aura-granted activated abilities
-/// collide with the enchanted creature's native ability_index. The
+/// Bug X (`audits/AUDIT_BUGS.md)`: Aura-granted activated abilities
+/// collide with the enchanted creature's native `ability_index`. The
 /// engine collects activated abilities for a creature by walking
 /// its own behavior AND all attached auras, but
 /// `Action::ActivateAbility` keys on `(object_id, ability_index)`

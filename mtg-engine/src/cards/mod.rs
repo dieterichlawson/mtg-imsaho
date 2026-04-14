@@ -46,7 +46,7 @@ pub struct CardData {
     pub keywords: Vec<Keyword>,
     pub flashback_cost: Option<ManaCost>,
     /// Declarative continuous effects this card has while on the battlefield.
-    /// The engine reads these instead of parsing oracle_text.
+    /// The engine reads these instead of parsing `oracle_text`.
     pub continuous_effects: Vec<ContinuousEffect>,
     /// Triggered abilities this card has. The engine uses these to know which
     /// events this card cares about and to display trigger descriptions on the stack.
@@ -89,7 +89,7 @@ pub enum AdditionalCost {
     ExileCreaturesFromGraveyard(usize),
     /// Exile X cards from your graveyard (Harvest Pyre), where X is chosen by
     /// the player at cast time. The engine generates one cast action per possible X.
-    /// The count is stored on the spell object's card_state as "exile_count".
+    /// The count is stored on the spell object's `card_state` as "`exile_count`".
     ExileXFromGraveyard,
 }
 
@@ -148,7 +148,7 @@ pub enum TriggerKind {
     Blocks,
     /// When this creature becomes blocked (attacked and something blocked it).
     BecomesBlocked,
-    /// Whenever any creature attacks — watcher on other permanents (like AnyCreatureDies).
+    /// Whenever any creature attacks — watcher on other permanents (like `AnyCreatureDies`).
     AnyCreatureAttacks,
     /// When this creature deals combat damage to a creature.
     DealsCombatDamageToCreature,
@@ -334,7 +334,7 @@ pub trait CardBehavior: Send + Sync {
 
     /// Dynamic power/toughness for cards whose P/T depends on game state.
     /// Returns Some((power, toughness)) to override base P/T, or None for normal P/T.
-    /// Called by effective_power/effective_toughness during P/T computation.
+    /// Called by `effective_power/effective_toughness` during P/T computation.
     /// Examples: Geist-Honored Monk (creatures you control), Wreath of Geists (creatures in graveyard).
     fn dynamic_pt(&self, _state: &GameState, _object_id: ObjectId) -> Option<(i32, i32)> {
         None
@@ -362,7 +362,7 @@ pub trait CardBehavior: Send + Sync {
     fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {}
 
     /// Called when ANY creature enters the battlefield. `self_id` is this permanent, `entered_id` is the new creature.
-    /// Similar to on_any_creature_dies but for ETB. Used by Champion of the Parish.
+    /// Similar to `on_any_creature_dies` but for ETB. Used by Champion of the Parish.
     fn on_any_creature_enters(&self, _state: &mut GameState, _self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) {}
 
     /// Which zones a given triggered ability fires from.
@@ -469,12 +469,12 @@ pub trait CardBehavior: Send + Sync {
     /// `targets` contains targets chosen by the player (empty if untargeted).
     fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
 
-    /// Called after the player chooses and discards a card via ChooseCardFromHand
+    /// Called after the player chooses and discards a card via `ChooseCardFromHand`
     /// that was initiated by this permanent. Used by Civilized Scholar to check
     /// if the discarded card was a creature and trigger untap/transform.
     fn on_discard_choice(&self, _state: &mut GameState, _self_id: ObjectId, _discarded_id: ObjectId, _registry: &CardRegistry) {}
 
-    /// Called after the player answers a YesNo resolution choice initiated by this permanent.
+    /// Called after the player answers a `YesNo` resolution choice initiated by this permanent.
     /// `yes` is true if the player chose yes, false if they declined.
     fn on_yes_no_choice(&self, _state: &mut GameState, _self_id: ObjectId, _yes: bool, _registry: &CardRegistry) {}
 
@@ -509,7 +509,7 @@ pub trait CardBehavior: Send + Sync {
     }
 }
 
-/// Registry mapping CardIds to their behavior implementations.
+/// Registry mapping `CardIds` to their behavior implementations.
 pub struct CardRegistry {
     cards: HashMap<CardId, Box<dyn CardBehavior>>,
     next_id: u32,
@@ -527,11 +527,12 @@ impl Default for CardRegistry {
 }
 
 impl CardRegistry {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Register a card and return its assigned CardId.
+    /// Register a card and return its assigned `CardId`.
     pub fn register(&mut self, card: Box<dyn CardBehavior>) -> CardId {
         let id = CardId(self.next_id);
         self.next_id += 1;
@@ -549,6 +550,7 @@ impl CardRegistry {
     /// Look up a card ID by name.
     /// Handles DFC names like "Front // Back" by trying the full name first,
     /// then falling back to just the front face.
+    #[must_use]
     pub fn get_id_by_name(&self, name: &str) -> Option<CardId> {
         self.name_to_id.get(name).copied().or_else(|| {
             let front = name.split(" // ").next()?;
@@ -571,6 +573,7 @@ impl CardRegistry {
     }
 
     /// Build a registry with all built-in cards.
+    #[must_use]
     pub fn with_all_cards() -> Self {
         let mut reg = Self::new();
         // Lands

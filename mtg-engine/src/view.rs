@@ -103,6 +103,7 @@ pub struct OpponentView {
 
 impl GameView {
     /// Build a view of the game state for a specific player.
+    #[must_use]
     pub fn for_player(state: &GameState, player: PlayerId, registry: &CardRegistry) -> Self {
         let player_state = state.get_player(player);
 

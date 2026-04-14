@@ -1,12 +1,12 @@
-//! Regression test for Bug D (BUG_REPORT_8SEAT.md): werewolf on_upkeep
+//! Regression test for Bug D (`BUG_REPORT_8SEAT.md)`: werewolf `on_upkeep`
 //! transforms were flipping `is_transformed` and updating `obj.name` but
 //! NOT `obj.subtypes` or `obj.keywords`. Cards that read obj.subtypes
-//! (like Bonds of Faith's AttachedHasSubtype condition) misbehaved on
+//! (like Bonds of Faith's `AttachedHasSubtype` condition) misbehaved on
 //! transformed werewolves — they were still treated as Humans, so Bonds
 //! of Faith buffed them (+2/+2) and did not restrict their attacks.
 //!
 //! This test exercises the transform path via the shared
-//! helpers::apply_transform helper (which is what the werewolf on_upkeep
+//! `helpers::apply_transform` helper (which is what the werewolf `on_upkeep`
 //! code now uses) and verifies that obj.subtypes and obj.keywords are
 //! correctly switched to the back face.
 

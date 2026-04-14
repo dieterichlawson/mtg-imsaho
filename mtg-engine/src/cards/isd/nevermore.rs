@@ -8,8 +8,8 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 /// Spells with the chosen name can't be cast.
 ///
 /// Presents the player with a choice of all implemented nonland card names.
-/// The chosen name is stored as a PreventCastingNamed instance continuous
-/// effect. The engine checks for this effect in legal_actions.
+/// The chosen name is stored as a `PreventCastingNamed` instance continuous
+/// effect. The engine checks for this effect in `legal_actions`.
 pub struct Nevermore;
 
 impl CardBehavior for Nevermore {

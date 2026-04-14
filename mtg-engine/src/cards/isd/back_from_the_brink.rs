@@ -10,8 +10,8 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 ///
 /// Implementation: generates one activated ability per creature card in the
 /// controller's graveyard. Each ability's mana cost matches the creature's
-/// mana cost, and the ability_index encodes the creature's ObjectId so that
-/// on_activate_ability can identify which creature to exile.
+/// mana cost, and the `ability_index` encodes the creature's `ObjectId` so that
+/// `on_activate_ability` can identify which creature to exile.
 pub struct BackFromTheBrink;
 
 impl CardBehavior for BackFromTheBrink {

@@ -16,7 +16,7 @@ fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
 }
 
-/// After SBAs kill a creature, collect_triggers places the death trigger
+/// After SBAs kill a creature, `collect_triggers` places the death trigger
 /// on the stack but does NOT resolve it. The trigger waits for the
 /// priority cycle to resolve it.
 #[test]
@@ -53,7 +53,7 @@ fn triggers_placed_on_stack_not_immediately_resolved() {
     );
 }
 
-/// After collect_triggers, resolving the trigger via resolve_top_of_stack
+/// After `collect_triggers`, resolving the trigger via `resolve_top_of_stack`
 /// processes exactly one trigger and removes it from the stack.
 #[test]
 fn resolve_top_of_stack_handles_single_trigger() {
@@ -94,7 +94,7 @@ fn resolve_top_of_stack_handles_single_trigger() {
 
 /// When neither player has meaningful actions (no instants, no abilities),
 /// triggers auto-resolve through the priority cycle without the
-/// choose_action callback being invoked while triggers are on the stack.
+/// `choose_action` callback being invoked while triggers are on the stack.
 #[test]
 fn auto_pass_resolves_triggers_without_callback() {
     let reg = registry();

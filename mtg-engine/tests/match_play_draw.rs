@@ -95,5 +95,5 @@ fn drawn_game_keeps_previous_starter() {
 #[test]
 #[should_panic(expected = "only supports 2-player matches")]
 fn next_starting_player_panics_for_multiplayer() {
-    engine::next_starter_loser_plays(PlayerId(0), Some(PlayerId(0)), 3);
+    let _ = engine::next_starter_loser_plays(PlayerId(0), Some(PlayerId(0)), 3);
 }

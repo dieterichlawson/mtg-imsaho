@@ -41,6 +41,7 @@ pub struct CommonVariant {
 }
 
 impl CommonVariant {
+    #[must_use]
     pub fn c_count(&self) -> usize {
         self.c1 + self.c2
     }
@@ -61,6 +62,10 @@ pub struct RareSheets {
 
 impl SetData {
     /// Load set data from a JSON file.
+    ///
+    /// # Errors
+    /// Returns an error string if the file at `path` cannot be read or if its
+    /// contents cannot be parsed as valid `SetData` JSON.
     pub fn load(path: &Path) -> Result<Self, String> {
         let contents =
             std::fs::read_to_string(path).map_err(|e| format!("Failed to read {}: {}", path.display(), e))?;
@@ -68,6 +73,9 @@ impl SetData {
     }
 
     /// Get a run by name, returning an error if it doesn't exist.
+    ///
+    /// # Errors
+    /// Returns an error string if no run with `name` exists in the set data.
     pub fn run(&self, name: &str) -> Result<&[String], String> {
         self.runs
             .get(name)
@@ -76,6 +84,10 @@ impl SetData {
     }
 
     /// Build the combined rare sheet 1 sequence (concatenation of its runs).
+    ///
+    /// # Errors
+    /// Returns an error string if any run listed in
+    /// `collation.rare_sheets.sheet_1_runs` is not present in the set data.
     pub fn rare_sheet_1(&self) -> Result<Vec<String>, String> {
         let mut sheet = Vec::new();
         for run_name in &self.collation.rare_sheets.sheet_1_runs {
@@ -85,6 +97,10 @@ impl SetData {
     }
 
     /// Build the combined rare sheet 2 sequence.
+    ///
+    /// # Errors
+    /// Returns an error string if any run listed in
+    /// `collation.rare_sheets.sheet_2_runs` is not present in the set data.
     pub fn rare_sheet_2(&self) -> Result<Vec<String>, String> {
         let mut sheet = Vec::new();
         for run_name in &self.collation.rare_sheets.sheet_2_runs {
@@ -94,6 +110,10 @@ impl SetData {
     }
 
     /// Build the combined DFC sheet sequence.
+    ///
+    /// # Errors
+    /// Returns an error string if any run listed in
+    /// `collation.dfc_sheet_runs` is not present in the set data.
     pub fn dfc_sheet(&self) -> Result<Vec<String>, String> {
         let mut sheet = Vec::new();
         for run_name in &self.collation.dfc_sheet_runs {
@@ -103,6 +123,7 @@ impl SetData {
     }
 
     /// Return all unique card names across all runs.
+    #[must_use]
     pub fn all_card_names(&self) -> Vec<String> {
         let mut names: Vec<String> = self
             .runs

@@ -7,7 +7,7 @@
 mod common;
 
 use common::*;
-use mtg_engine::actions::{Action, Target};
+use mtg_engine::actions::{Action, ResolvedChoice, Target};
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::events::GameEvent;
@@ -30,7 +30,7 @@ fn registry() -> CardRegistry {
 /// Two legendary creatures with the same name — one should be removed by SBAs.
 /// Uses the registry to check legendary status via CardData.supertypes.
 /// Since no legendary cards exist in the registry yet, we simulate by
-/// setting the `is_legendary` flag directly on the GameObject.
+/// setting the `is_legendary` flag directly on the `GameObject`.
 #[test]
 fn legend_rule_removes_duplicate() {
     let reg = registry();
@@ -55,7 +55,6 @@ fn legend_rule_removes_duplicate() {
         "Legend rule SBA should present a choice for which legendary to keep");
 
     // Resolve the choice: keep legend1.
-    use mtg_engine::actions::{Action, ResolvedChoice, Target};
     let new_state = mtg_engine::engine::submit_action(
         &state,
         &Action::ResolveChoice {
@@ -343,9 +342,9 @@ fn counterspell_fizzles_when_target_already_countered() {
 // Per rules 507-510, all steps should execute in sequence.
 // ════════════════════════════════════════════════════════════════════
 
-/// After declaring zero attackers, the game loop skips to EndCombat.
-/// This tests the game loop code path (not submit_action, which doesn't skip).
-/// The bug is in run_game_loop_inner's post-action handler for DeclareAttackers.
+/// After declaring zero attackers, the game loop skips to `EndCombat`.
+/// This tests the game loop code path (not `submit_action`, which doesn't skip).
+/// The bug is in `run_game_loop_inner`'s post-action handler for `DeclareAttackers`.
 ///
 /// We test this by running the game loop with a callback that records what
 /// steps the game passes through.

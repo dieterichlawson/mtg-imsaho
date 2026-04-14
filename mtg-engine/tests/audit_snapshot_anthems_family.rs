@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -16,10 +16,10 @@
 //!   get +2/+0.
 //! - Bug AZ: Spare from Evil's "creatures you control gain protection
 //!   from non-Human creatures" is snapshotted at resolution (Bug AP
-//!   sibling for GrantProtection).
+//!   sibling for `GrantProtection`).
 //! - Bug BK: Instigator Gang's static "attacking creatures you control
-//!   get +1/+0" is implemented as an AnyCreatureAttacks trigger that
-//!   pushes a per-attacker ModifyPT into `until_end_of_turn`. The buff
+//!   get +1/+0" is implemented as an `AnyCreatureAttacks` trigger that
+//!   pushes a per-attacker `ModifyPT` into `until_end_of_turn`. The buff
 //!   then persists after Instigator Gang dies, contrary to its static
 //!   nature.
 
@@ -29,7 +29,7 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
-/// Bug AP (audits/AUDIT_BUGS.md): Rally the Peasants' "+2/+0 until end
+/// Bug AP (`audits/AUDIT_BUGS.md)`: Rally the Peasants' "+2/+0 until end
 /// of turn" anthem snapshots the controller's creatures at resolution
 /// time. A creature entering the battlefield after Rally resolves
 /// doesn't get the buff, contrary to the continuous wording of the
@@ -40,10 +40,10 @@ use mtg_engine::types::*;
 ///
 /// Failure mode: `rally_the_peasants.rs:30-51` collects creature ids
 /// at resolution, then pushes one `TemporaryEffect::ModifyPT` per
-/// existing target into `state.until_end_of_turn`. The effective_power
+/// existing target into `state.until_end_of_turn`. The `effective_power`
 /// machinery only walks `until_end_of_turn` for matches against the
 /// queried object's id, so a creature entering after Rally resolved
-/// has no matching ModifyPT and doesn't get the +2/+0.
+/// has no matching `ModifyPT` and doesn't get the +2/+0.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug AP is fixed.
@@ -80,7 +80,7 @@ fn bug_ap_rally_the_peasants_buffs_creatures_entering_later() {
     );
 }
 
-/// Bug AP — Vampiric Fury subtype-filtered aspect (audits/AUDIT_BUGS.md):
+/// Bug AP — Vampiric Fury subtype-filtered aspect (`audits/AUDIT_BUGS.md)`:
 /// Vampiric Fury combines the snapshot-anthem defect (Bug AP) with a
 /// subtype filter. A Bloodline Keeper Vampire TOKEN entering after
 /// Vampiric Fury resolves should get +2/+0 but doesn't — the token
@@ -119,7 +119,7 @@ fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
     );
 }
 
-/// Bug BK (audits/AUDIT_BUGS.md): Instigator Gang's "Attacking
+/// Bug BK (`audits/AUDIT_BUGS.md)`: Instigator Gang's "Attacking
 /// creatures you control get +1/+0" is modeled as an
 /// `AnyCreatureAttacks` triggered ability that pushes a per-attacker
 /// `TemporaryEffect::ModifyPT` into `until_end_of_turn`. Once
@@ -134,7 +134,7 @@ fn bug_ap_vampiric_fury_buffs_vampire_entering_later() {
 /// `on_any_creature_attacks` and writes a `ModifyPT { target,
 /// power_mod: 1, ... }` into `until_end_of_turn`. The effect is keyed
 /// to the attacker (not the source Instigator Gang), so the
-/// effective_power machinery keeps reporting +1 power for the attacker
+/// `effective_power` machinery keeps reporting +1 power for the attacker
 /// even after Instigator Gang has been removed from the battlefield.
 ///
 /// We simulate the trigger firing by manually pushing the same
@@ -192,7 +192,7 @@ fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
     );
 }
 
-/// Bug AZ (audits/AUDIT_BUGS.md): Spare from Evil's protection anthem
+/// Bug AZ (`audits/AUDIT_BUGS.md)`: Spare from Evil's protection anthem
 /// is snapshotted at resolution time: the implementation iterates the
 /// controller's creatures at resolution and pushes one
 /// `TemporaryEffect::GrantProtection` per creature. Creatures that
@@ -204,9 +204,9 @@ fn bug_bk_instigator_gang_anthem_drops_when_source_leaves() {
 ///
 /// Failure mode: `spare_from_evil.rs:36-55` does the same
 /// snapshot-at-resolution shape as Rally the Peasants — collect
-/// creature ids, push one GrantProtection effect per target. A
+/// creature ids, push one `GrantProtection` effect per target. A
 /// Mausoleum Guard death-trigger spirit that enters after Spare
-/// resolves has no GrantProtection entry, so `has_protection_from`
+/// resolves has no `GrantProtection` entry, so `has_protection_from`
 /// returns false for a non-Human attacker targeting the spirit.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently

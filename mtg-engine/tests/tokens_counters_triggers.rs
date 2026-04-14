@@ -103,7 +103,7 @@ fn multiple_tokens_created() {
     assert_eq!(state.objects_in_zone(Zone::Battlefield, P0).len(), 2);
 }
 
-/// Token shows up correctly in has_keyword.
+/// Token shows up correctly in `has_keyword`.
 #[test]
 fn token_keyword_check_works() {
     let reg = registry();
@@ -115,7 +115,7 @@ fn token_keyword_check_works() {
     assert!(!state.has_keyword(token, Keyword::Trample, &reg));
 }
 
-/// Token emits EnteredBattlefield event.
+/// Token emits `EnteredBattlefield` event.
 #[test]
 fn token_creation_emits_etb_event() {
     let reg = registry();
@@ -213,7 +213,7 @@ fn counters_stack_with_auras() {
 // Note: These test the trigger system infrastructure directly.
 // Card-specific trigger tests are in the card test files.
 
-/// EnteredBattlefield events are emitted when objects move to the battlefield.
+/// `EnteredBattlefield` events are emitted when objects move to the battlefield.
 #[test]
 fn etb_event_emitted_on_zone_change() {
     let reg = registry();
@@ -245,7 +245,7 @@ fn no_etb_for_non_battlefield_moves() {
     assert!(!has_etb, "Moving to graveyard should not emit ETB");
 }
 
-/// CreatureDied events trigger process_triggers (smoke test with no cards).
+/// `CreatureDied` events trigger `process_triggers` (smoke test with no cards).
 #[test]
 fn trigger_processing_doesnt_crash_without_cards() {
     let reg = registry();
@@ -262,7 +262,7 @@ fn trigger_processing_doesnt_crash_without_cards() {
     triggers::process_triggers(&mut state, &reg);
 }
 
-/// Tokens interact with triggers — a dying token emits CreatureDied.
+/// Tokens interact with triggers — a dying token emits `CreatureDied`.
 #[test]
 fn dying_token_emits_creature_died() {
     let reg = registry();

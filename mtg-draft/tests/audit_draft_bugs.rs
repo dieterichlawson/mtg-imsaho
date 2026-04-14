@@ -1,5 +1,5 @@
 //! Failing tests for draft-related bugs documented in
-//! audits/AUDIT_BUGS.md.
+//! `audits/AUDIT_BUGS.md`.
 //!
 //! Bugs covered in this file:
 //! - Bug 17-004: `validate_deck` has a no-op DFC fallback that
@@ -13,7 +13,7 @@ use std::collections::HashMap;
 
 use mtg_draft::deckbuilding::validate_deck;
 
-/// Bug 17-004 (audits/AUDIT_BUGS.md): `validate_deck` counts
+/// Bug 17-004 (`audits/AUDIT_BUGS.md)`: `validate_deck` counts
 /// `pool_counts[name]` but then, if `used_counts[name] > available`,
 /// checks a no-op DFC fallback:
 ///
@@ -69,7 +69,7 @@ fn bug_17_004_validate_deck_rejects_more_copies_than_drafted() {
     );
 }
 
-/// Bug H9 (audits/AUDIT_BUGS.md): The deck-builder validator's error
+/// Bug H9 (`audits/AUDIT_BUGS.md)`: The deck-builder validator's error
 /// messages don't help the retry loop converge. The model repeats
 /// the same invalid deck because the error text doesn't say "here's
 /// the specific delta to fix".

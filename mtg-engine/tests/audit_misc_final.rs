@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -8,7 +8,7 @@
 //!
 //! Bugs covered in this file:
 //! - Bug 76-001: Skirsdag High Priest's activation labels render
-//!   ObjectIds with Rust's `{:?}` debug format, leaking ObjectId(N)
+//!   `ObjectIds` with Rust's `{:?}` debug format, leaking ObjectId(N)
 //!   into the prompt.
 //! - Bug 76-002: Ludevic's Test Subject stores hatchling counters in
 //!   `obj.card_state` instead of using `state.add_counters` so
@@ -33,10 +33,10 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
-/// Bug 76-001 (audits/AUDIT_BUGS.md): Skirsdag High Priest's
-/// `activated_abilities` formats the candidate creature ObjectIds
+/// Bug 76-001 (`audits/AUDIT_BUGS.md)`: Skirsdag High Priest's
+/// `activated_abilities` formats the candidate creature `ObjectIds`
 /// with Rust's `{:?}` debug format, so the LLM player sees labels
-/// like `... (tap ObjectId(5) & ObjectId(12))`. ObjectIds are
+/// like `... (tap ObjectId(5) & ObjectId(12))`. `ObjectIds` are
 /// internal handles — the model has no way to map them to creature
 /// names.
 ///
@@ -94,7 +94,7 @@ fn bug_76_001_skirsdag_high_priest_label_has_no_object_id_debug() {
     }
 }
 
-/// Bug 76-002 (audits/AUDIT_BUGS.md): Ludevic's Test Subject stores
+/// Bug 76-002 (`audits/AUDIT_BUGS.md)`: Ludevic's Test Subject stores
 /// its hatchling counters in `obj.card_state` (abused as an `ObjectId`)
 /// instead of using `state.add_counters`. Per CR 122 these are real
 /// counters; proliferate (CR 701.24) and counter-removal effects
@@ -143,7 +143,7 @@ fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
     );
 }
 
-/// Bug 99-001 (audits/AUDIT_BUGS.md): Gutter Grime's `on_any_creature_dies`
+/// Bug 99-001 (`audits/AUDIT_BUGS.md)`: Gutter Grime's `on_any_creature_dies`
 /// checks `state.get_object(dead_id).is_token` to enforce the
 /// "nontoken" oracle requirement. By the time this handler runs, SBA
 /// 704.5d has already removed the dead token from `state.objects`, so
@@ -159,11 +159,11 @@ fn bug_76_002_ludevic_hatchling_counters_not_in_card_state() {
 /// queues the trigger, the controller filter passes, then
 /// `state.get_object(dead_id).map(|o| o.is_token).unwrap_or(false)`
 /// returns `false` for an already-cleaned-up token. The fix needs the
-/// dispatcher to thread `is_token` (or the dead card_id) into
+/// dispatcher to thread `is_token` (or the dead `card_id`) into
 /// `on_any_creature_dies` so the handler can check it from captured
 /// state.
 ///
-/// We simulate the post-cleanup state by passing a dead_id that's not
+/// We simulate the post-cleanup state by passing a `dead_id` that's not
 /// in `state.objects` and observing whether Gutter Grime's slime
 /// counter was incremented.
 ///
@@ -222,7 +222,7 @@ fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
     );
 }
 
-/// Bug AC (audits/AUDIT_BUGS.md): Unbreathing Horde under-counts when
+/// Bug AC (`audits/AUDIT_BUGS.md)`: Unbreathing Horde under-counts when
 /// reanimated from a graveyard. Per Scryfall ruling: "If Unbreathing
 /// Horde enters from a graveyard, it counts itself for its enter-with-
 /// counters ability."
@@ -293,7 +293,7 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
     );
 }
 
-/// Bug BS (audits/AUDIT_BUGS.md): `cast_with_flashback` persists on
+/// Bug BS (`audits/AUDIT_BUGS.md)`: `cast_with_flashback` persists on
 /// the object when Runic Repetition returns an exiled flashback
 /// card to hand. The next time that card is cast normally,
 /// `move_spell_after_resolve` sees the stale flag and sends the
@@ -308,7 +308,7 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
 /// on a normal cast.
 ///
 /// We put a Devil's Play in exile with `cast_with_flashback = true`,
-/// move it back to hand via the engine's move_object (simulating
+/// move it back to hand via the engine's `move_object` (simulating
 /// Runic Repetition), and assert the flag is now false.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
@@ -340,7 +340,7 @@ fn bug_bs_runic_repetition_resets_cast_with_flashback() {
     );
 }
 
-/// Bug E1-002 (audits/AUDIT_BUGS.md): The `CardView` projection in
+/// Bug E1-002 (`audits/AUDIT_BUGS.md)`: The `CardView` projection in
 /// `mtg-engine/src/view.rs` reads `obj.power` / `obj.toughness`
 /// directly when building hand/graveyard/library views, so CDA
 /// creatures like Geist-Honored Monk render as their printed base
@@ -356,7 +356,7 @@ fn bug_bs_runic_repetition_resets_cast_with_flashback() {
 ///
 /// We put Geist-Honored Monk in P0's graveyard with another creature
 /// on P0's battlefield (so Monk's CDA value ≥1), then build a
-/// GameView and check the CardView for the Monk's effective P/T.
+/// `GameView` and check the `CardView` for the Monk's effective P/T.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug E1-002 is fixed.

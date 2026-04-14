@@ -840,7 +840,7 @@ fn back_from_the_brink_creates_token_copy() {
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
 
     // The ability_index encodes the creature's ObjectId.
-    let ability_index = dead.0 as usize;
+    let ability_index = usize::try_from(dead.0).unwrap();
     behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
 
     // The creature should be exiled.
@@ -934,7 +934,7 @@ fn back_from_the_brink_uses_creature_mana_cost() {
     assert!(ability.sorcery_speed_only, "Activate only as a sorcery");
 
     // Activate the ability — use the creature's ObjectId as the ability index.
-    let ability_index = lions.0 as usize;
+    let ability_index = usize::try_from(lions.0).unwrap();
     behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
 
     assert_eq!(state.get_object(lions).unwrap().zone, Zone::Exile,

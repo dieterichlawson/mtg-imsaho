@@ -24,7 +24,7 @@ pub enum Action {
     /// For targeted spells, targets must be chosen at cast time.
     /// If the spell has an additional cost (e.g. sacrifice a creature), `sacrifice` holds the chosen creature.
     /// `exile_count` is used for "exile X cards from graveyard" costs (Harvest Pyre).
-    /// `exile_ids` holds the specific graveyard cards chosen to exile (populated by legal_actions for ExileXFromGraveyard).
+    /// `exile_ids` holds the specific graveyard cards chosen to exile (populated by `legal_actions` for `ExileXFromGraveyard`).
     ///   When non-empty, these exact cards are exiled; `exile_count` is derived from the length.
     ///   When empty and `exile_count` is set, the engine falls back to auto-selecting the first N cards (legacy behavior).
     /// `alternative_cost` is an optional alternative mana cost (e.g. Rooftop Storm's {0}).
@@ -40,8 +40,8 @@ pub enum Action {
     /// Empty for free abilities or abilities whose cost is already in the mana pool.
     /// `sacrifice` is the creature the player chose to sacrifice when paying the
     /// `Sacrifice a creature` cost. `None` for abilities without that cost.
-    /// `legal_actions` enumerates one ActivateAbility per (target, sacrifice) combo
-    /// so the player picks both up front, mirroring how CastSpell handles it.
+    /// `legal_actions` enumerates one `ActivateAbility` per (target, sacrifice) combo
+    /// so the player picks both up front, mirroring how `CastSpell` handles it.
     ActivateAbility {
         object_id: ObjectId,
         ability_index: usize,
@@ -106,7 +106,7 @@ pub enum ResolvedChoice {
     ChosenXValue(u32),
 }
 
-/// Prompt returned by legal_actions for combat.
+/// Prompt returned by `legal_actions` for combat.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum CombatPrompt {
     /// Choose a subset of these creatures to attack with.
@@ -121,7 +121,7 @@ pub enum CombatPrompt {
         eligible_blockers: Vec<ObjectId>,
         attackers: Vec<ObjectId>,
         /// For each blocker, the set of attackers it can legally block.
-        /// Accounts for flying/reach, intimidate, protection, CanOnlyBeBlockedBy, etc.
+        /// Accounts for flying/reach, intimidate, protection, `CanOnlyBeBlockedBy`, etc.
         legal_blocks: std::collections::HashMap<ObjectId, Vec<ObjectId>>,
     },
 }
@@ -160,8 +160,8 @@ pub struct CastableSpell {
 /// player can pick from. Each entry corresponds to exactly one underlying
 /// `Action::ActivateAbility` in the legal action list. `target_options` is kept
 /// for backwards compatibility with simple targeted abilities (no sacrifice
-/// cost) — for those, target_options is the list of legal targets and each
-/// option_combos entry is `(vec![target], None)`.
+/// cost) — for those, `target_options` is the list of legal targets and each
+/// `option_combos` entry is `(vec![target], None)`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActivatableAbility {
     pub object_id: ObjectId,
@@ -173,7 +173,7 @@ pub struct ActivatableAbility {
     /// Empty if the cost is already in the mana pool, or if the ability has no mana cost.
     pub tap_plan: Vec<(ObjectId, usize)>,
     /// All player-chooseable (targets, sacrifice) combinations for this ability.
-    /// One entry per legal `Action::ActivateAbility` for this (object_id, ability_index).
+    /// One entry per legal `Action::ActivateAbility` for this (`object_id`, `ability_index`).
     /// For abilities with no sacrifice cost the sacrifice is None; for untargeted
     /// abilities the targets vector is empty.
     pub option_combos: Vec<ActivatableAbilityOption>,

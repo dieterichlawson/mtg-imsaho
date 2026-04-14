@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -32,7 +32,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Bug T (audits/AUDIT_BUGS.md): Skirsdag Cultist's activated-ability
+/// Bug T (`audits/AUDIT_BUGS.md)`: Skirsdag Cultist's activated-ability
 /// damage doesn't push the source onto the target's `damaged_by` vector.
 ///
 /// Oracle (Skirsdag Cultist): "{R}, {T}, Sacrifice a creature: Skirsdag
@@ -87,7 +87,7 @@ fn bug_t_skirsdag_cultist_pushes_damaged_by() {
     );
 }
 
-/// Bug T (audits/AUDIT_BUGS.md): Rolling Temblor doesn't push itself
+/// Bug T (`audits/AUDIT_BUGS.md)`: Rolling Temblor doesn't push itself
 /// onto each affected creature's `damaged_by` vector.
 ///
 /// Oracle (Rolling Temblor): "Rolling Temblor deals 2 damage to each
@@ -139,7 +139,7 @@ fn bug_t_rolling_temblor_pushes_damaged_by() {
     }
 }
 
-/// Bug BQ (audits/AUDIT_BUGS.md): `TargetRequirement::AnyTarget`
+/// Bug BQ (`audits/AUDIT_BUGS.md)`: `TargetRequirement::AnyTarget`
 /// filters battlefield objects with `o.power.is_some()`, which
 /// excludes planeswalkers. So Brimstone Volley, Devil's Play,
 /// Geistflame, Skirsdag Cultist, Blazing Torch, and Heretic's
@@ -201,7 +201,7 @@ fn bug_bq_brimstone_volley_can_target_planeswalker() {
     );
 }
 
-/// Bug BZ (audits/AUDIT_BUGS.md): `cards/helpers.rs::any_targets`
+/// Bug BZ (`audits/AUDIT_BUGS.md)`: `cards/helpers.rs::any_targets`
 /// builds its target list from `creature_targets` + players, omitting
 /// planeswalkers. This is the on-resolve sibling of Bug BQ — Pitchburn
 /// Devils' on-death trigger uses this helper to enumerate targets, so
@@ -217,7 +217,7 @@ fn bug_bq_brimstone_volley_can_target_planeswalker() {
 /// `o.power.is_some()`. Planeswalkers are dropped. Pitchburn Devils'
 /// `on_dies` (at `pitchburn_devils.rs:37`) calls `any_targets(state)`
 /// and feeds the result into `present_target_choice` — the
-/// awaiting_action's options end up missing the planeswalker.
+/// `awaiting_action`'s options end up missing the planeswalker.
 ///
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug BZ is fixed.
@@ -264,7 +264,7 @@ fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
     );
 }
 
-/// Bug BR (audits/AUDIT_BUGS.md): Olivia Voldaren's first ability
+/// Bug BR (`audits/AUDIT_BUGS.md)`: Olivia Voldaren's first ability
 /// (`obj.damage_marked += 1`) bypasses the central damage helper. If
 /// Olivia is pointed at a planeswalker, the code writes
 /// `damage_marked` instead of decrementing the planeswalker's

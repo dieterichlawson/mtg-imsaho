@@ -54,7 +54,7 @@ fn indestructible_creature_with_zero_toughness_still_dies() {
 }
 
 /// Indestructible creature survives lethal damage — the SBA for lethal
-/// damage uses try_destroy, which is blocked by indestructible.
+/// damage uses `try_destroy`, which is blocked by indestructible.
 #[test]
 fn indestructible_creature_survives_lethal_damage() {
     let reg = registry();
@@ -102,7 +102,7 @@ fn sacrifice_bypasses_indestructible() {
     );
 }
 
-/// try_destroy does NOT destroy an indestructible creature.
+/// `try_destroy` does NOT destroy an indestructible creature.
 #[test]
 fn try_destroy_blocked_by_indestructible() {
     let reg = registry();
@@ -307,8 +307,8 @@ fn zone_change_clears_damage() {
 
 // ── "Dies" triggers see correct information ────────────────────────
 
-/// When a creature dies, the CreatureDied event should contain the
-/// correct card_id and controller from when it was on the battlefield.
+/// When a creature dies, the `CreatureDied` event should contain the
+/// correct `card_id` and controller from when it was on the battlefield.
 #[test]
 fn dies_trigger_has_correct_info() {
     let reg = registry();

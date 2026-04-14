@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::fmt::Write;
 
-/// A streaming log writer that writes through the global game_log.
-/// Thread-safe because game_log uses a single Mutex internally.
+/// A streaming log writer that writes through the global `game_log`.
+/// Thread-safe because `game_log` uses a single Mutex internally.
 ///
 /// Use the `log_*!` macros instead of calling methods directly — they automatically
 /// capture file and line number at the call site.

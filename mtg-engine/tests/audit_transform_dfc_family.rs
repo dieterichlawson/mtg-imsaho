@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed. Once the fix lands the test transitions from "proves the
 //! bug exists" to "regression-protects against the bug coming back".
@@ -22,7 +22,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
-/// Bug 99-003 (audits/AUDIT_BUGS.md): Daybreak Ranger's
+/// Bug 99-003 (`audits/AUDIT_BUGS.md)`: Daybreak Ranger's
 /// `is_valid_target` scans `state.objects.values()` for *any*
 /// Daybreak Ranger the caster controls and uses THAT ranger's
 /// `is_transformed` flag to decide which branch to apply. With two
@@ -54,7 +54,7 @@ use mtg_engine::types::*;
 /// flying" ability should NOT appear with a non-flying target, but
 /// today it does (when `ranger_b` is also in play and transformed).
 ///
-/// Note: because the buggy handler uses `.find()` over a HashMap,
+/// Note: because the buggy handler uses `.find()` over a `HashMap`,
 /// the failure is non-deterministic per-run. We construct fresh
 /// states in a loop and run the check multiple times to defeat the
 /// flakiness — a correct implementation returns the same (negative)
@@ -110,7 +110,7 @@ fn bug_99_003_daybreak_ranger_no_cross_contamination() {
     );
 }
 
-/// Bug BE (audits/AUDIT_BUGS.md): Garruk Relentless dies before
+/// Bug BE (`audits/AUDIT_BUGS.md)`: Garruk Relentless dies before
 /// transforming when damage takes him from 3+ loyalty straight to 0.
 /// The SBA loop processes planeswalker zero-loyalty BEFORE the
 /// Garruk state trigger, so SBA 704.5i graveyards Garruk before his

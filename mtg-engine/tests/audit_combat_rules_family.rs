@@ -1,4 +1,4 @@
-//! Failing tests for bugs documented in audits/AUDIT_BUGS.md.
+//! Failing tests for bugs documented in `audits/AUDIT_BUGS.md`.
 //! Each test is expected to FAIL until the corresponding bug is
 //! fixed.
 //!
@@ -21,7 +21,7 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 use std::collections::HashMap;
 
-/// Bug 17-005 (audits/AUDIT_BUGS.md): A 5-power non-trample attacker
+/// Bug 17-005 (`audits/AUDIT_BUGS.md)`: A 5-power non-trample attacker
 /// blocked by two 2/2s dumps all 5 damage on the first blocker in
 /// iteration order, leaving the second alive. Per CR 510.1c the
 /// attacking player divides damage among blockers — with two 2/2
@@ -85,7 +85,7 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
     );
 }
 
-/// Bug BP (audits/AUDIT_BUGS.md): Forced-attack effects iterate
+/// Bug BP (`audits/AUDIT_BUGS.md)`: Forced-attack effects iterate
 /// candidate attackers without calling `state.can_attack`, so a
 /// creature under Bonds of Faith's `ConditionalPreventAttack` gets
 /// forced to attack despite the "can't attack" clause.
@@ -103,8 +103,8 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
 /// plus Furor of the Bitten gets force-added to `combat.attackers`,
 /// despite Bonds of Faith's "it can't attack" clause.
 ///
-/// We put a non-Human creature with Furor of the Bitten (ForceAttack)
-/// AND Bonds of Faith (ConditionalPreventAttack) attached. We submit
+/// We put a non-Human creature with Furor of the Bitten (`ForceAttack`)
+/// AND Bonds of Faith (`ConditionalPreventAttack`) attached. We submit
 /// an empty `DeclareAttackers` action; the engine's forced-attack
 /// loop should NOT add the locked creature to `combat.attackers`.
 ///

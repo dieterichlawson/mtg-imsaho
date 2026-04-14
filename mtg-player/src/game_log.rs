@@ -49,6 +49,10 @@ static LOG: Mutex<Option<LogState>> = Mutex::new(None);
 
 /// Initialize the global log writer. Call once at startup.
 /// If already initialized, replaces the previous log file.
+///
+/// # Panics
+/// Panics if the log file at `path` cannot be created or opened for writing,
+/// or if the global log mutex is poisoned.
 pub fn init(path: &str) {
     let file = OpenOptions::new()
         .create(true)

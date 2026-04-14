@@ -50,6 +50,7 @@ pub struct CliPlayer {
 }
 
 impl CliPlayer {
+    #[must_use]
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -2240,6 +2241,7 @@ impl Player for CliPlayer {
 impl CliPlayer {
     /// Show the game state with a spinning indicator on the opponent's
     /// caret while the AI thinks. Drop the returned handle to stop.
+    #[must_use]
     pub fn start_thinking(view: &GameView) -> SpinnerHandle {
         Self::render(view, None, None, &view.display_log, "", None);
 

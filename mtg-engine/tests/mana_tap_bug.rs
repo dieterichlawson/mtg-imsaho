@@ -192,13 +192,13 @@ fn can_tap_multiple_swamps_sequentially() {
         current = engine::submit_action(&current, tap_swamp.unwrap(), &registry);
 
         let black = current.get_player(P0).mana_pool.mana.get(&ManaType::Black).copied().unwrap_or(0);
-        assert_eq!(black, (i + 1) as u32,
+        assert_eq!(black, u32::try_from(i + 1).unwrap_or(0),
             "After tapping {} Swamps, expected {} Black mana, got {}",
             i + 1, i + 1, black);
     }
 }
 
-/// Test: After tapping mana, has_meaningful_action should still be true
+/// Test: After tapping mana, `has_meaningful_action` should still be true
 /// if we can cast something with the accumulated mana.
 #[test]
 fn meaningful_action_detected_after_partial_taps() {
