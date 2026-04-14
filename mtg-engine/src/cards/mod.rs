@@ -167,6 +167,20 @@ pub struct TriggeredAbilityDef {
     pub kind: TriggerKind,
     /// Human-readable description of what the trigger does (for stack/log display).
     pub description: String,
+    /// CR 603.3d: if the triggered ability has targets, they're chosen as the
+    /// trigger is put on the stack (not at resolution). `None` for untargeted
+    /// triggers; `Some(req)` causes the engine to enumerate targets and prompt
+    /// the player at collection time. The chosen target is stored on the
+    /// `PendingTrigger` and read by the trigger handler at resolution.
+    pub target_requirement: Option<TargetRequirement>,
+}
+
+impl TriggeredAbilityDef {
+    /// Convenience constructor for untargeted triggers (the common case).
+    #[must_use]
+    pub fn new(kind: TriggerKind, description: impl Into<String>) -> Self {
+        Self { kind, description: description.into(), target_requirement: None }
+    }
 }
 
 /// Typed filter for creature or permanent targeting restrictions.
@@ -341,7 +355,7 @@ pub trait CardBehavior: Send + Sync {
     }
 
     /// Called when this permanent enters the battlefield (ETB trigger).
-    fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_enter_battlefield(&self, _state: &mut GameState, _object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Whether this card has any ETB behavior (handler or replacement-style "enters with" effect).
     /// Cards that override `on_enter_battlefield` MUST also override this to return true,
@@ -354,12 +368,12 @@ pub trait CardBehavior: Send + Sync {
     fn enters_as_copy(&self) -> bool { false }
 
     /// Called when this creature dies (moves from battlefield to graveyard).
-    fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called when ANY creature dies. `self_id` is this permanent, `dead_id` is the deceased.
     /// `dead_damaged_by`, `dead_toughness`, and `dead_is_token` are last-known information
     /// captured before the zone change (and SBA 704.5d token cleanup) clears battlefield state.
-    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) {}
+    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called when ANY creature enters the battlefield. `self_id` is this permanent, `entered_id` is the new creature.
     /// Similar to `on_any_creature_dies` but for ETB. Used by Champion of the Parish.
@@ -390,17 +404,17 @@ pub trait CardBehavior: Send + Sync {
     fn on_any_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
 
     /// Called at the beginning of the upkeep step for each permanent with an upkeep trigger.
-    fn on_upkeep(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_upkeep(&self, _state: &mut GameState, _self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called at the beginning of the end step for each permanent with an end-step trigger.
-    fn on_end_step(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_end_step(&self, _state: &mut GameState, _self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called at the beginning of the end of combat step.
     fn on_end_combat(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Called when a player casts an instant or sorcery spell.
     /// `caster` is the player who cast the spell, `spell_id` is the spell object.
-    fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Loyalty abilities for planeswalkers.
     fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
@@ -412,7 +426,7 @@ pub trait CardBehavior: Send + Sync {
     fn starting_loyalty(&self) -> Option<u32> { None }
 
     /// Called when this creature attacks (declared as an attacker).
-    fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _registry: &CardRegistry) {}
+    fn on_attacks(&self, _state: &mut GameState, _self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called when this creature blocks (declared as a blocker).
     fn on_blocks(&self, _state: &mut GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) {}

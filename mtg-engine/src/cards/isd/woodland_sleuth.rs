@@ -4,6 +4,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Woodland Sleuth — {3}{G} 2/3 Human Scout.
 /// Morbid — When this creature enters, if a creature died this turn,
@@ -32,6 +33,7 @@ impl CardBehavior for WoodlandSleuth {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "if morbid, return a random creature from graveyard to hand".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -39,7 +41,7 @@ impl CardBehavior for WoodlandSleuth {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if !state.creature_died_this_turn {
             return;
         }

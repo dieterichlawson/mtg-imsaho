@@ -3,6 +3,7 @@ use crate::cards::helpers;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Cloistered Youth {1}{W} 1/1 Human // Unholy Fiend 3/3 Horror.
 /// Front: At the beginning of your upkeep, you may transform Cloistered Youth.
@@ -31,6 +32,7 @@ impl CardBehavior for CloisteredYouth {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "you may transform Cloistered Youth".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -54,6 +56,7 @@ impl CardBehavior for CloisteredYouth {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
                     description: "lose 1 life".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -67,7 +70,7 @@ impl CardBehavior for CloisteredYouth {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,
@@ -101,7 +104,7 @@ impl CardBehavior for CloisteredYouth {
             format!("Cloistered Youth transforms into {}", state.obj_name(self_id)));
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,

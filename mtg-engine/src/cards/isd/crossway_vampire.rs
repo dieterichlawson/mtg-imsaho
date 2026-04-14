@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
+use crate::actions::Target;
 
 /// Crossway Vampire — 3/2 for {1}{R}{R}. Vampire.
 /// When this creature enters, target creature can't block this turn.
@@ -28,6 +29,7 @@ impl CardBehavior for CrosswayVampire {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "target creature can't block this turn".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -35,7 +37,7 @@ impl CardBehavior for CrosswayVampire {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Target creature" — any creature, including self (Oracle doesn't say "another").
         let targets = crate::cards::helpers::creature_targets(state, object_id, controller, registry);

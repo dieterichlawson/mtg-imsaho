@@ -1,3 +1,4 @@
+use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{CardId, ObjectId, PlayerId};
@@ -15,6 +16,10 @@ pub enum PendingTrigger {
         dead_card_id: CardId,
         controller: PlayerId,
         description: String,
+        /// CR 603.3d: targets chosen as the trigger goes on the stack. Empty
+        /// for untargeted triggers.
+        #[serde(default)]
+        chosen_targets: Vec<Target>,
     },
     /// A "whenever a creature dies" death-watch trigger on another permanent.
     DeathWatch {
@@ -28,6 +33,8 @@ pub enum PendingTrigger {
         dead_toughness: i32,
         dead_is_token: bool,
         description: String,
+        #[serde(default)]
+        chosen_targets: Vec<Target>,
     },
     /// A creature entering the battlefield trigger.
     EnteredBattlefield {
@@ -35,6 +42,8 @@ pub enum PendingTrigger {
         card_id: CardId,
         controller: PlayerId,
         description: String,
+        #[serde(default)]
+        chosen_targets: Vec<Target>,
     },
     /// A "whenever a creature enters the battlefield" ETB-watch trigger on another permanent.
     EnterWatch {
@@ -82,6 +91,8 @@ pub enum PendingTrigger {
         caster: PlayerId,
         spell_id: ObjectId,
         description: String,
+        #[serde(default)]
+        chosen_targets: Vec<Target>,
     },
     /// An end-of-combat trigger on a permanent.
     EndCombatTrigger {
@@ -96,6 +107,8 @@ pub enum PendingTrigger {
         card_id: CardId,
         controller: PlayerId,
         description: String,
+        #[serde(default)]
+        chosen_targets: Vec<Target>,
     },
     /// An end-step trigger on a permanent.
     EndStepTrigger {
@@ -103,6 +116,8 @@ pub enum PendingTrigger {
         card_id: CardId,
         controller: PlayerId,
         description: String,
+        #[serde(default)]
+        chosen_targets: Vec<Target>,
     },
     /// A permanent leaving the battlefield trigger. Per CR 603.10c, the
     /// controller is the player who controlled the permanent immediately
@@ -119,6 +134,8 @@ pub enum PendingTrigger {
         card_id: CardId,
         controller: PlayerId,
         description: String,
+        #[serde(default)]
+        chosen_targets: Vec<Target>,
     },
     /// A creature's "when this blocks" trigger.
     BlocksTrigger {
@@ -419,6 +436,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                             card_id,
                             controller,
                             description: desc,
+                            chosen_targets: Vec::new(),
                         };
                         if controller == active_player {
                             ap_triggers.push(trigger);
@@ -480,6 +498,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         dead_card_id,
                         controller: dead_controller,
                         description: desc,
+                        chosen_targets: Vec::new(),
                     };
                     if dead_controller == active_player {
                         ap_triggers.push(trigger);
@@ -521,6 +540,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                             dead_toughness,
                             dead_is_token,
                             description: desc,
+                            chosen_targets: Vec::new(),
                         };
                         if watcher_controller == active_player {
                             ap_triggers.push(trigger);
@@ -717,6 +737,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                         card_id,
                                         controller,
                                         description: desc,
+                                        chosen_targets: Vec::new(),
                                     },
                                     crate::cards::TriggerKind::EndCombat => PendingTrigger::EndCombatTrigger {
                                         object_id: obj_id,
@@ -729,6 +750,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                         card_id,
                                         controller,
                                         description: desc,
+                                        chosen_targets: Vec::new(),
                                     },
                                     _ => unreachable!(),
                                 };
@@ -761,6 +783,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                     caster: *caster,
                                     spell_id: *spell_id,
                                     description: desc,
+                                    chosen_targets: Vec::new(),
                                 };
                                 if watcher_controller == active_player {
                                     ap_triggers.push(trigger);
@@ -786,6 +809,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                 card_id,
                                 controller,
                                 description: desc,
+                                chosen_targets: Vec::new(),
                             };
                             if controller == active_player {
                                 ap_triggers.push(trigger);
@@ -808,6 +832,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                     card_id: eq_card_id,
                                     controller: eq_controller,
                                     description: desc,
+                                    chosen_targets: Vec::new(),
                                 };
                                 if eq_controller == active_player {
                                     ap_triggers.push(trigger);
@@ -1023,25 +1048,25 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     let crate::state::StackEntry::Trigger(trigger) = entry else { unreachable!() };
 
     match trigger {
-        PendingTrigger::EnteredBattlefield { object_id, card_id, .. } => {
+        PendingTrigger::EnteredBattlefield { object_id, card_id, chosen_targets, .. } => {
             // Per MTG rules, ETB triggers resolve even if the source has left
             // the battlefield. The trigger was already on the stack when the
             // creature entered. Individual handlers can check zone if needed.
             if let Some(behavior) = registry.get(card_id) {
-                behavior.on_enter_battlefield(state, object_id, registry);
+                behavior.on_enter_battlefield(state, object_id, &chosen_targets, registry);
             }
         }
-        PendingTrigger::SelfDies { dead_id, dead_card_id, .. } => {
+        PendingTrigger::SelfDies { dead_id, dead_card_id, chosen_targets, .. } => {
             if let Some(behavior) = registry.get(dead_card_id) {
-                behavior.on_dies(state, dead_id, registry);
+                behavior.on_dies(state, dead_id, &chosen_targets, registry);
             }
         }
-        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, dead_toughness, dead_is_token, .. } => {
+        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, dead_toughness, dead_is_token, chosen_targets, .. } => {
             // Per MTG rules, death triggers fire even if the watcher died
             // simultaneously (e.g., Falkenrath Noble + board wipe). The trigger
             // was created when the watcher was last known to be on the battlefield.
             if let Some(behavior) = registry.get(watcher_card_id) {
-                behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, dead_is_token, registry);
+                behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, dead_is_token, &chosen_targets, registry);
             }
         }
         PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {
@@ -1086,24 +1111,24 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 }
             }
         }
-        PendingTrigger::UpkeepTrigger { object_id, card_id, .. } => {
+        PendingTrigger::UpkeepTrigger { object_id, card_id, chosen_targets, .. } => {
             if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_upkeep(state, object_id, registry);
+                    behavior.on_upkeep(state, object_id, &chosen_targets, registry);
                 }
             }
         }
-        PendingTrigger::EndStepTrigger { object_id, card_id, .. } => {
+        PendingTrigger::EndStepTrigger { object_id, card_id, chosen_targets, .. } => {
             if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_end_step(state, object_id, registry);
+                    behavior.on_end_step(state, object_id, &chosen_targets, registry);
                 }
             }
         }
-        PendingTrigger::SpellCastWatch { watcher_id, watcher_card_id, caster, spell_id, .. } => {
+        PendingTrigger::SpellCastWatch { watcher_id, watcher_card_id, caster, spell_id, chosen_targets, .. } => {
             if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_spell_cast(state, watcher_id, caster, spell_id, registry);
+                    behavior.on_spell_cast(state, watcher_id, caster, spell_id, &chosen_targets, registry);
                 }
             }
         }
@@ -1112,10 +1137,10 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 behavior.on_leave_battlefield(state, object_id, registry);
             }
         }
-        PendingTrigger::AttacksTrigger { object_id, card_id, .. } => {
+        PendingTrigger::AttacksTrigger { object_id, card_id, chosen_targets, .. } => {
             if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_attacks(state, object_id, registry);
+                    behavior.on_attacks(state, object_id, &chosen_targets, registry);
                 }
             }
         }

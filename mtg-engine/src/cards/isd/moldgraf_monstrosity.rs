@@ -4,6 +4,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Moldgraf Monstrosity {4}{G}{G}{G} 8/8 Insect with Trample.
 /// When Moldgraf Monstrosity dies, exile it, then return two creature cards at random
@@ -34,12 +35,13 @@ impl CardBehavior for MoldgrafMonstrosity {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "exile, return two random creatures from graveyard".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 603.10c: "your" means last-known controller, not owner.
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,

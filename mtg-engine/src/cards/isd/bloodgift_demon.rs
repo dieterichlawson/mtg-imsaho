@@ -31,12 +31,13 @@ impl CardBehavior for BloodgiftDemon {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "target player draws a card and loses 1 life".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

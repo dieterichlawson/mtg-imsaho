@@ -242,7 +242,7 @@ fn bug_bz_pitchburn_devils_offers_planeswalker_as_target() {
     let pd = named_creature(&mut state, &registry, "Pitchburn Devils", P0);
     let pd_card_id = state.get_object(pd).unwrap().card_id;
     let behavior = registry.get(pd_card_id).unwrap();
-    behavior.on_dies(&mut state, pd, &registry);
+    behavior.on_dies(&mut state, pd, &[], &registry);
 
     let garruk_in_options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {

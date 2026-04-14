@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
+use crate::actions::Target;
 
 /// Pitchburn Devils — {4}{R} 3/3 Devil. When it dies, deal 3 damage to any target.
 pub struct PitchburnDevils;
@@ -26,12 +27,13 @@ impl CardBehavior for PitchburnDevils {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "deal 3 damage to any target".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Any target" — all creatures + all players.
         let targets = crate::cards::helpers::any_targets(state, object_id, controller, registry);

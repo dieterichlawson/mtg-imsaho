@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Snapcaster Mage — {1}{U} 2/1 Human Wizard. Flash.
 /// When this creature enters, target instant or sorcery card in your graveyard
@@ -30,6 +31,7 @@ impl CardBehavior for SnapcasterMage {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "grant flashback to instant or sorcery in graveyard".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -37,7 +39,7 @@ impl CardBehavior for SnapcasterMage {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Find all eligible instant/sorcery cards in graveyard.

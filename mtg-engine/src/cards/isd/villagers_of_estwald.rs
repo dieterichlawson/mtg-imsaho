@@ -3,6 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Villagers of Estwald {2}{G} 2/3 Human Werewolf // Howlpack of Estwald 4/6 Werewolf
 pub struct VillagersOfEstwald;
@@ -41,6 +42,7 @@ impl CardBehavior for VillagersOfEstwald {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -64,6 +66,7 @@ impl CardBehavior for VillagersOfEstwald {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform back if 2+ spells cast".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -81,7 +84,7 @@ impl CardBehavior for VillagersOfEstwald {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }

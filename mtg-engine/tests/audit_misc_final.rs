@@ -201,6 +201,7 @@ fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
         &[],
         2, // dead_toughness
         true, // dead_is_token — this is the whole point of the bug
+        &[],
         &registry,
     );
 
@@ -273,7 +274,7 @@ fn bug_ac_unbreathing_horde_counts_itself_when_reanimated() {
     // handler (this mirrors what Unburial Rites does).
     state.move_object(horde, Zone::Battlefield, &registry);
     let behavior = registry.get(horde_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, horde, &registry);
+    behavior.on_enter_battlefield(&mut state, horde, &[], &registry);
 
     let counters = state
         .get_object(horde)

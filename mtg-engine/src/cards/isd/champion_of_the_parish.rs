@@ -28,6 +28,7 @@ impl CardBehavior for ChampionOfTheParish {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureEnters,
                     description: "put a +1/+1 counter on Champion of the Parish".into(),
+                target_requirement: None,
                 },
             ],
         }

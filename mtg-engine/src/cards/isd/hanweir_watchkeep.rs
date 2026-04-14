@@ -3,6 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope, Zone};
+use crate::actions::Target;
 
 /// Hanweir Watchkeep {2}{R} 1/5 Human Warrior with Defender // Bane of Hanweir 5/5 Werewolf that attacks each combat
 pub struct HanweirWatchkeep;
@@ -41,6 +42,7 @@ impl CardBehavior for HanweirWatchkeep {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -66,6 +68,7 @@ impl CardBehavior for HanweirWatchkeep {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform back if 2+ spells cast".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -83,7 +86,7 @@ impl CardBehavior for HanweirWatchkeep {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }

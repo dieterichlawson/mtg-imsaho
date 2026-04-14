@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Kessig Cagebreakers — {4}{G} 3/4 Human Rogue.
 /// Whenever Kessig Cagebreakers attacks, create a 2/2 green Wolf creature token
@@ -30,12 +31,13 @@ impl CardBehavior for KessigCagebreakers {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "create Wolf tokens tapped and attacking".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

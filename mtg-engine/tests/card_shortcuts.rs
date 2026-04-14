@@ -35,7 +35,7 @@ fn charmbreaker_devils_no_pump_on_creature_spell() {
 
     // Fire the on_spell_cast trigger with this creature spell.
     let behavior = reg.get(state.get_object(devils).unwrap().card_id).unwrap();
-    behavior.on_spell_cast(&mut state, devils, P0, creature_spell, &reg);
+    behavior.on_spell_cast(&mut state, devils, P0, creature_spell, &[], &reg);
 
     // The Devils should NOT have gotten +4/+0 because it's a creature, not
     // an instant or sorcery.
@@ -60,7 +60,7 @@ fn charmbreaker_devils_does_pump_on_instant_spell() {
     state.get_object_mut(instant_spell).unwrap().name = "Think Twice".into();
 
     let behavior = reg.get(state.get_object(devils).unwrap().card_id).unwrap();
-    behavior.on_spell_cast(&mut state, devils, P0, instant_spell, &reg);
+    behavior.on_spell_cast(&mut state, devils, P0, instant_spell, &[], &reg);
 
     let has_pump = state.until_end_of_turn.iter().any(|e| {
         matches!(e, mtg_engine::state::TemporaryEffect::ModifyPT { target, power_mod: 4, .. } if *target == devils)
@@ -91,7 +91,7 @@ fn snapcaster_targets_card_with_printed_flashback() {
 
     // Fire ETB.
     let behavior = reg.get(state.get_object(snapcaster).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, snapcaster, &reg);
+    behavior.on_enter_battlefield(&mut state, snapcaster, &[], &reg);
 
     // Snapcaster should have granted flashback (or at least presented the
     // choice). Since Think Twice is the only card, it should auto-select.
@@ -152,7 +152,7 @@ fn trepanation_blade_stops_on_land() {
 
     // Fire the attack trigger.
     let behavior = reg.get(state.get_object(blade).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, blade, &reg);
+    behavior.on_attacks(&mut state, blade, &[], &reg);
 
     // Should have milled exactly 2 cards (nonland + land), leaving 2 in library.
     let lib_size = state.get_player(P1).library_order.len();
@@ -336,7 +336,7 @@ fn slayer_of_the_wicked_sees_instance_vampire() {
 
     // Fire ETB.
     let behavior = reg.get(state.get_object(slayer).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, slayer, &reg);
+    behavior.on_enter_battlefield(&mut state, slayer, &[], &reg);
 
     // The ETB should present the instance-Vampire as a valid target.
     let has_target = matches!(&state.awaiting_action,

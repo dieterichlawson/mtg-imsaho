@@ -33,6 +33,7 @@ impl CardBehavior for Claustrophobia {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "tap enchanted creature".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -48,7 +49,7 @@ impl CardBehavior for Claustrophobia {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         if let Some(target_id) = state.get_object(object_id).and_then(|o| o.attached_to) {
             if let Some(target) = state.get_object_mut(target_id) {
                 target.tapped = true;

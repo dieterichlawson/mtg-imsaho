@@ -3,6 +3,7 @@ use crate::cards::helpers;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Thraben Sentry {3}{W} 2/2 Human Soldier with Vigilance // Thraben Militia 5/4 Human Soldier.
 /// Whenever another creature you control dies, you may transform Thraben Sentry.
@@ -30,6 +31,7 @@ impl CardBehavior for ThrabenSentry {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "may transform Thraben Sentry".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -61,7 +63,7 @@ impl CardBehavior for ThrabenSentry {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,

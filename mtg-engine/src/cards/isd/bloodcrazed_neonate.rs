@@ -32,6 +32,7 @@ impl CardBehavior for BloodcrazedNeonate {
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
                     description: "put a +1/+1 counter on Bloodcrazed Neonate".into(),
+                target_requirement: None,
                 },
             ],
         }

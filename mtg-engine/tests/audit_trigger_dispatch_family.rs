@@ -109,6 +109,7 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
         &dead_damaged_by,
         dead_toughness,
         false,
+        &[],
         &registry,
     );
 
@@ -161,7 +162,7 @@ fn bug_l_charmbreaker_devils_does_not_buff_on_creature_spell() {
 
     let devils_card_id = registry.get_id_by_name("Charmbreaker Devils").unwrap();
     let behavior = registry.get(devils_card_id).unwrap();
-    behavior.on_spell_cast(&mut state, devils, P0, bears_spell, &registry);
+    behavior.on_spell_cast(&mut state, devils, P0, bears_spell, &[], &registry);
 
     let after_power = state.effective_power(devils, &registry).unwrap_or(0);
     assert_eq!(
@@ -219,7 +220,7 @@ fn bug_ca_moldgraf_monstrosity_uses_controller_not_owner() {
 
     // Fire Moldgraf's death trigger directly.
     let behavior = registry.get(mold_card_id).unwrap();
-    behavior.on_dies(&mut state, mold, &registry);
+    behavior.on_dies(&mut state, mold, &[], &registry);
 
     let bears_zone = state.get_object(p0_bears).map(|o| o.zone);
     assert_eq!(
@@ -271,7 +272,7 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
     let log_before = state.game_log.len();
     let vengeance_card_id = state.get_object(vengeance).unwrap().card_id;
     let behavior = registry.get(vengeance_card_id).unwrap();
-    behavior.on_spell_cast(&mut state, vengeance, P0, flashback_spell, &registry);
+    behavior.on_spell_cast(&mut state, vengeance, P0, flashback_spell, &[], &registry);
 
     let new_log_lines: Vec<_> = state.game_log[log_before..]
         .iter()

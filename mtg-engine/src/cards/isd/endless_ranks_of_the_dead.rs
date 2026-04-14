@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Endless Ranks of the Dead — {2}{B}{B} Enchantment.
 /// At the beginning of your upkeep, create X 2/2 black Zombie creature tokens,
@@ -31,12 +32,13 @@ impl CardBehavior for EndlessRanksOfTheDead {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "create Zombie tokens".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

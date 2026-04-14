@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Splinterfright — {2}{G} */* Elemental. Trample.
 /// Splinterfright's power and toughness are each equal to the number of
@@ -33,6 +34,7 @@ impl CardBehavior for Splinterfright {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "mill two cards".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -47,7 +49,7 @@ impl CardBehavior for Splinterfright {
         Some((creature_cards_in_gy, creature_cards_in_gy))
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

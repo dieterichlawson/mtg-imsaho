@@ -30,12 +30,13 @@ impl CardBehavior for AngelOfFlightAlabaster {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "return target Spirit card from your graveyard to your hand".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

@@ -33,6 +33,7 @@ impl CardBehavior for OliviaVoldaren {
                 TriggeredAbilityDef {
                     kind: TriggerKind::LeavesBattlefield,
                     description: "return stolen creatures to their owners".into(),
+                target_requirement: None,
                 },
             ],
         }

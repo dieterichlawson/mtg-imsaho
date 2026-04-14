@@ -4,6 +4,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Charmbreaker Devils — {5}{R} 4/4 Devil.
 /// At the beginning of your upkeep, return an instant or sorcery card at random
@@ -34,16 +35,18 @@ impl CardBehavior for CharmbreakerDevils {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "return a random instant or sorcery from graveyard to hand".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::SpellCast,
                     description: "Charmbreaker Devils gets +4/+0 until end of turn".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -71,7 +74,7 @@ impl CardBehavior for CharmbreakerDevils {
         }
     }
 
-    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, registry: &CardRegistry) {
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

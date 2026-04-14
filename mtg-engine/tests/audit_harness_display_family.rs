@@ -61,6 +61,7 @@ fn bug_31_001_pending_trigger_label_uses_back_face_name_for_transformed_dfc() {
         card_id: pariah_card_id,
         controller: P0,
         description: "transform back if 2+ spells cast".into(),
+        chosen_targets: Vec::new(),
     };
     let label = trigger.display_name_with_state(&registry, Some(&state));
 

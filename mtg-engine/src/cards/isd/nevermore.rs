@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType};
+use crate::actions::Target;
 
 /// Nevermore — {1}{W}{W} Enchantment.
 /// As this enchantment enters, choose a nonland card name.
@@ -33,6 +34,7 @@ impl CardBehavior for Nevermore {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "choose a nonland card name".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -40,7 +42,7 @@ impl CardBehavior for Nevermore {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Collect all implemented nonland card names.

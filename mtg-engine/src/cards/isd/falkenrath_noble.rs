@@ -1,3 +1,4 @@
+use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
@@ -28,23 +29,25 @@ impl CardBehavior for FalkenrathNoble {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "target player loses 1 life, you gain 1 life".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "target player loses 1 life, you gain 1 life".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // "This creature dies" — trigger fires even when Noble itself dies.
         // Use controller (last known information from when it was on the battlefield).
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         drain(state, controller, object_id, registry);
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
         // "Another creature dies" — triggers on ANY creature death (any controller).
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,

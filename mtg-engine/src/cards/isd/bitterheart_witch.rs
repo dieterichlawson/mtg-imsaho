@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
+use crate::actions::Target;
 
 /// Bitterheart Witch — {4}{B} 1/2 Human Shaman with Deathtouch.
 /// When Bitterheart Witch dies, you may search your library for a Curse card,
@@ -55,12 +56,13 @@ impl CardBehavior for BitterheartWitch {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "search library for a Curse card".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
 
         // "you may" — present a yes/no choice before searching.

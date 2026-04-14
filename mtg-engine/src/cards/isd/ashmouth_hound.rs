@@ -30,10 +30,12 @@ impl CardBehavior for AshmouthHound {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Blocks,
                     description: "deal 1 damage to blocked creature".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::BecomesBlocked,
                     description: "deal 1 damage to blocking creature".into(),
+                target_requirement: None,
                 },
             ],
         }

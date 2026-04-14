@@ -31,6 +31,7 @@ impl CardBehavior for BalefireDragon {
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
                     description: "deal that much damage to each creature that player controls".into(),
+                target_requirement: None,
                 },
             ],
         }

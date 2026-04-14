@@ -28,6 +28,7 @@ impl CardBehavior for GeistcatchersRig {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "deal 4 damage to target creature with flying".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -35,7 +36,7 @@ impl CardBehavior for GeistcatchersRig {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Find all creatures with flying (any controller — can target any creature with flying).

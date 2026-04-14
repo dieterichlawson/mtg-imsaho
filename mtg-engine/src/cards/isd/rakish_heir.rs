@@ -29,6 +29,7 @@ impl CardBehavior for RakishHeir {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCombatDamageToPlayer,
                     description: "put a +1/+1 counter on that Vampire".into(),
+                target_requirement: None,
                 },
             ],
         }

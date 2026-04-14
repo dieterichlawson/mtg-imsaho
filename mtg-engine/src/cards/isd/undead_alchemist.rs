@@ -39,6 +39,7 @@ impl CardBehavior for UndeadAlchemist {
                 crate::cards::TriggeredAbilityDef {
                     kind: crate::cards::TriggerKind::CreatureCardMilled,
                     description: "exile milled creature, create Zombie token".into(),
+                target_requirement: None,
                 },
             ],
         }

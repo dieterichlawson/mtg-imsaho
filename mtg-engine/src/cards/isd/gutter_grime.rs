@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
+use crate::actions::Target;
 
 /// Gutter Grime — {4}{G} Enchantment.
 /// Whenever a nontoken creature you control dies, put a slime counter on
@@ -35,12 +36,13 @@ impl CardBehavior for GutterGrime {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "put a slime counter, create Ooze token".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

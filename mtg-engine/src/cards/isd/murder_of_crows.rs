@@ -4,6 +4,7 @@ use crate::events::GameEvent;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Murder of Crows — {3}{U}{U} 4/4 Bird. Flying.
 /// Whenever another creature dies, you may draw a card. If you do, discard a card.
@@ -30,12 +31,13 @@ impl CardBehavior for MurderOfCrows {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "you may draw a card, then discard a card".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

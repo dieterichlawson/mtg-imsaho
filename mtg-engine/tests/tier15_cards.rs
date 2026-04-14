@@ -130,7 +130,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     }
 
     let behavior = reg.get(state.get_object(cage).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, cage, &reg);
+    behavior.on_attacks(&mut state, cage, &[], &reg);
 
     // Should have 3 Wolf tokens on the battlefield.
     let wolves = state.objects.values()
@@ -161,7 +161,7 @@ fn galvanic_juggernaut_untaps_when_creature_dies() {
     // A creature dies.
     let dead = ready_creature(&mut state, P1, 1, 1);
     let behavior = reg.get(state.get_object(jug).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, jug, dead, P1, &[], 1, false, &reg);
+    behavior.on_any_creature_dies(&mut state, jug, dead, P1, &[], 1, false, &[], &reg);
 
     assert!(!state.get_object(jug).unwrap().tapped, "Galvanic Juggernaut should untap when a creature dies");
 }
@@ -197,7 +197,7 @@ fn bitterheart_witch_finds_curse_on_death() {
 
     // Trigger death — should present a YesNo choice ("you may").
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &reg);
+    behavior.on_dies(&mut state, witch, &[], &reg);
     assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
 
     // Player chooses yes to search.
@@ -238,7 +238,7 @@ fn bitterheart_witch_can_attach_curse_to_self() {
 
     // Trigger death and accept search.
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &reg);
+    behavior.on_dies(&mut state, witch, &[], &reg);
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
@@ -273,7 +273,7 @@ fn bitterheart_witch_decline_search() {
 
     // Trigger death.
     let behavior = reg.get(state.get_object(witch).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, witch, &reg);
+    behavior.on_dies(&mut state, witch, &[], &reg);
     assert!(state.awaiting_action.is_some(), "Should be awaiting yes/no choice");
 
     // Player declines to search.
@@ -306,7 +306,7 @@ fn gutter_grime_creates_ooze_on_creature_death() {
     let dead = ready_creature(&mut state, P0, 2, 2);
 
     let behavior = reg.get(state.get_object(grime).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &reg);
+    behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &[], &reg);
 
     // Should have a slime counter on Gutter Grime.
     let counters = state.get_object(grime).unwrap()
@@ -963,7 +963,7 @@ fn delver_transforms_when_player_reveals_instant() {
 
     // Trigger upkeep — should present a YesNo choice.
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, delver, &reg);
+    behavior.on_upkeep(&mut state, delver, &[], &reg);
 
     // Should NOT be transformed yet — awaiting player choice.
     assert!(!state.get_object(delver).unwrap().is_transformed);
@@ -1000,7 +1000,7 @@ fn delver_does_not_transform_when_player_declines_reveal() {
 
     // Trigger upkeep — should present a YesNo choice.
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, delver, &reg);
+    behavior.on_upkeep(&mut state, delver, &[], &reg);
 
     assert!(state.awaiting_action.is_some(), "Should be awaiting reveal choice");
 
@@ -1032,7 +1032,7 @@ fn delver_does_not_transform_when_top_card_is_creature() {
     state.players[0].library_order.insert(0, creature);
 
     let behavior = reg.get(state.get_object(delver).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, delver, &reg);
+    behavior.on_upkeep(&mut state, delver, &[], &reg);
 
     // Per oracle ruling: "You may reveal the card even if it's not an instant or sorcery."
     // A choice should be presented. If the player reveals, Delver does NOT transform
@@ -1061,7 +1061,7 @@ fn cloistered_youth_presents_transform_choice_at_upkeep() {
     let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
 
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, youth, &reg);
+    behavior.on_upkeep(&mut state, youth, &[], &reg);
 
     // Should NOT be transformed yet — awaiting player choice.
     assert!(!state.get_object(youth).unwrap().is_transformed);
@@ -1088,7 +1088,7 @@ fn cloistered_youth_can_decline_transform() {
     let youth = named_creature(&mut state, &reg, "Cloistered Youth", P0);
 
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, youth, &reg);
+    behavior.on_upkeep(&mut state, youth, &[], &reg);
 
     // Should be awaiting player choice.
     assert!(state.awaiting_action.is_some());
@@ -1117,7 +1117,7 @@ fn unholy_fiend_drains_life_at_end_step() {
 
     let life_before = state.players[0].life;
     let behavior = reg.get(state.get_object(youth).unwrap().card_id).unwrap();
-    behavior.on_end_step(&mut state, youth, &reg);
+    behavior.on_end_step(&mut state, youth, &[], &reg);
 
     assert_eq!(state.players[0].life, life_before - 1);
 }
@@ -1161,7 +1161,7 @@ fn screeching_bat_transforms_at_upkeep_when_player_pays() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &reg);
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
 
     // Should NOT be transformed yet — awaiting player choice.
     assert!(!state.get_object(bat).unwrap().is_transformed);
@@ -1196,7 +1196,7 @@ fn screeching_bat_does_not_transform_when_player_declines() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &reg);
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
 
     assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
 
@@ -1224,7 +1224,7 @@ fn screeching_bat_no_choice_without_mana() {
 
     // No mana in pool — choice should not be presented.
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &reg);
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
 
     assert!(!state.get_object(bat).unwrap().is_transformed);
     assert!(state.awaiting_action.is_none(), "No choice should be presented without mana");
@@ -1248,7 +1248,7 @@ fn stalking_vampire_transforms_back_when_player_pays() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &reg);
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
 
     // Should be awaiting choice.
     assert!(state.awaiting_action.is_some(), "Should be awaiting pay choice");
@@ -1285,7 +1285,7 @@ fn stalking_vampire_does_not_have_flying() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &reg);
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
@@ -1328,7 +1328,7 @@ fn screeching_bat_regains_flying_on_transform_back() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &reg);
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
@@ -1365,7 +1365,7 @@ fn screeching_bat_transform_updates_subtypes() {
     state.get_player_mut(P0).mana_pool.add(ManaType::Black, 2);
 
     let behavior = reg.get(state.get_object(bat).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, bat, &reg);
+    behavior.on_upkeep(&mut state, bat, &[], &reg);
     state = engine::submit_action(
         &state,
         &Action::ResolveChoice { choice: ResolvedChoice::YesNoDecision(true) },
@@ -1425,7 +1425,7 @@ fn thraben_sentry_transforms_when_creature_dies() {
 
     // Simulate another creature dying — presents "you may transform" choice.
     let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, sentry, other, P0, &[], 1, false, &reg);
+    behavior.on_any_creature_dies(&mut state, sentry, other, P0, &[], 1, false, &[], &reg);
 
     // Oracle: "you may transform" — choice should be presented.
     assert!(state.awaiting_action.is_some(), "Should present 'you may transform' choice");
@@ -1451,7 +1451,7 @@ fn thraben_sentry_does_not_transform_when_opponent_creature_dies() {
     let opp_creature = ready_creature(&mut state, P1, 1, 1);
 
     let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, sentry, opp_creature, P1, &[], 1, false, &reg);
+    behavior.on_any_creature_dies(&mut state, sentry, opp_creature, P1, &[], 1, false, &[], &reg);
 
     // Should NOT transform.
     assert!(!state.get_object(sentry).unwrap().is_transformed);
@@ -1605,7 +1605,7 @@ fn grimgrin_attack_trigger_destroys_and_adds_counter() {
 
     // Call on_attacks directly (simulating trigger resolution).
     let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &reg);
+    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
 
     // With only one defender creature, the choice auto-applies (mandatory + 1 target).
     // The target should be destroyed and Grimgrin should get a +1/+1 counter.
@@ -1633,7 +1633,7 @@ fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
     });
 
     let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &reg);
+    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
 
     // With multiple targets, the controller should be presented a choice.
     assert!(state.awaiting_action.is_some(),
@@ -1672,7 +1672,7 @@ fn grimgrin_attack_no_targets_no_counter() {
     });
 
     let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &reg);
+    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
 
     // No valid targets — ability does nothing, no +1/+1 counter.
     assert_eq!(state.get_counter_count(grimgrin, CounterType::PlusOnePlusOne), 0,
@@ -1699,7 +1699,7 @@ fn grimgrin_attack_indestructible_target_still_gets_counter() {
     });
 
     let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &reg);
+    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
 
     // The indestructible creature should still be on the battlefield.
     assert_eq!(state.get_object(indestructible).unwrap().zone, Zone::Battlefield,
@@ -1729,7 +1729,7 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
     });
 
     let behavior = reg.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &reg);
+    behavior.on_attacks(&mut state, grimgrin, &[], &reg);
 
     // With only one defender creature, auto-applies. The defender's creature should
     // be destroyed, not the controller's own creature.
@@ -1751,7 +1751,7 @@ fn geist_creates_angel_on_attack() {
     state.combat.as_mut().unwrap().attackers.insert(geist, P1);
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &reg);
+    behavior.on_attacks(&mut state, geist, &[], &reg);
 
     // Should have an Angel token.
     let bf = state.objects_in_zone(Zone::Battlefield, P0);
@@ -1775,7 +1775,7 @@ fn geist_angel_exiled_at_end_of_combat() {
 
     // Attack to create the angel.
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &reg);
+    behavior.on_attacks(&mut state, geist, &[], &reg);
 
     let angel_id = state.objects_in_zone(Zone::Battlefield, P0)
         .iter()
@@ -1799,7 +1799,7 @@ fn evil_twin_copies_creature_on_etb() {
     let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
 
     let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &reg);
+    behavior.on_enter_battlefield(&mut state, twin, &[], &reg);
 
     // ETB now presents an optional choice instead of auto-copying.
     assert!(state.awaiting_action.is_some(), "Should present a copy choice");
@@ -1837,7 +1837,7 @@ fn moldgraf_monstrosity_returns_creatures_on_death() {
 
     // Trigger death.
     let behavior = reg.get(state.get_object(monstrosity).unwrap().card_id).unwrap();
-    behavior.on_dies(&mut state, monstrosity, &reg);
+    behavior.on_dies(&mut state, monstrosity, &[], &reg);
 
     // Monstrosity should be exiled.
     assert_eq!(state.get_object(monstrosity).unwrap().zone, Zone::Exile);

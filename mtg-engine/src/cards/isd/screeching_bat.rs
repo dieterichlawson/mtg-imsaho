@@ -3,6 +3,7 @@ use crate::cards::helpers;
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Screeching Bat {2}{B} 2/2 Bat with Flying // Stalking Vampire 5/5 Vampire.
 /// Both faces: "At the beginning of your upkeep, you may pay {2}{B}{B}. If you do, transform."
@@ -40,6 +41,7 @@ impl CardBehavior for ScreechingBat {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "you may pay {2}{B}{B} to transform".into(),
+                    target_requirement: None,
                 },
             ],
         }
@@ -63,6 +65,7 @@ impl CardBehavior for ScreechingBat {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "you may pay {2}{B}{B} to transform".into(),
+                    target_requirement: None,
                 },
             ],
         })
@@ -76,7 +79,7 @@ impl CardBehavior for ScreechingBat {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

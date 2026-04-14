@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Supertype, Keyword, Zone};
+use crate::actions::Target;
 
 /// Geist of Saint Traft {1}{W}{U} 2/2 Legendary Spirit Cleric with Hexproof.
 /// Whenever Geist of Saint Traft attacks, create a 4/4 white Angel creature token
@@ -31,10 +32,12 @@ impl CardBehavior for GeistOfSaintTraft {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "create a 4/4 Angel token tapped and attacking".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndCombat,
                     description: "exile the Angel token".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -47,7 +50,7 @@ impl CardBehavior for GeistOfSaintTraft {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

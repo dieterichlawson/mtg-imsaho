@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
 use crate::types::{CardType, ManaCost, ManaSymbol, Color, Keyword, Zone};
+use crate::actions::Target;
 
 /// Delver of Secrets {U} 1/1 Human Wizard // Insectile Aberration 3/2 Human Insect with Flying.
 /// At the beginning of your upkeep, look at the top card of your library. You may reveal that
@@ -47,6 +48,7 @@ impl CardBehavior for DelverOfSecrets {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "look at top card, may reveal to transform".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -78,7 +80,7 @@ impl CardBehavior for DelverOfSecrets {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,

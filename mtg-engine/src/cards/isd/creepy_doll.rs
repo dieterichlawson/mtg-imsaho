@@ -30,6 +30,7 @@ impl CardBehavior for CreepyDoll {
                 TriggeredAbilityDef {
                     kind: TriggerKind::DealsCombatDamageToCreature,
                     description: "flip a coin; if you win, destroy that creature".into(),
+                target_requirement: None,
                 },
             ],
         }

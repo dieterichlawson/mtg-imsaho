@@ -32,6 +32,7 @@ impl CardBehavior for CurseOfStalkedPrey {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCombatDamageToPlayer,
                     description: "put a +1/+1 counter on that creature".into(),
+                target_requirement: None,
                 },
             ],
         }

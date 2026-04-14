@@ -39,6 +39,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "destroy target creature defending player controls, then +1/+1 counter".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -84,7 +85,7 @@ impl CardBehavior for GrimgrinCorpseBorn {
             "Grimgrin: sacrificed creature, untapped, +1/+1 counter".into());
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

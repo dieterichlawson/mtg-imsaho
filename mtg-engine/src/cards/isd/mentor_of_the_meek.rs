@@ -30,6 +30,7 @@ impl CardBehavior for MentorOfTheMeek {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureEnters,
                     description: "you may pay {1} to draw a card".into(),
+                    target_requirement: None,
                 },
             ],
         }

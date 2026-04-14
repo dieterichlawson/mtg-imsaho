@@ -30,6 +30,7 @@ impl CardBehavior for Curiosity {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyDamageToPlayer,
                     description: "you may draw a card".into(),
+                target_requirement: None,
                 },
             ],
         }

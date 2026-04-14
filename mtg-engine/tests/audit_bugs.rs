@@ -646,7 +646,7 @@ fn bug_delver_reveal_suppressed_for_non_instant_sorcery() {
 
     // Fire upkeep trigger
     let behavior = registry.get(state.get_object(delver).unwrap().card_id).unwrap();
-    behavior.on_upkeep(&mut state, delver, &registry);
+    behavior.on_upkeep(&mut state, delver, &[], &registry);
 
     // Per the ruling, the player should STILL get a "you may reveal" choice
     // even though the top card is a creature (revealing it won't transform Delver,
@@ -1319,7 +1319,7 @@ fn bug_woodland_sleuth_can_return_itself_from_graveyard() {
 
     // Fire the ETB trigger manually (it was triggered before death)
     let behavior = registry.get(state.get_object(sleuth).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, sleuth, &registry);
+    behavior.on_enter_battlefield(&mut state, sleuth, &[], &registry);
 
     // With morbid active, the trigger should return a random creature card
     // from the graveyard. Woodland Sleuth itself is now in the graveyard,
@@ -1366,7 +1366,7 @@ fn bug_protection_doesnt_prevent_zombie_source_targeting() {
 
     // Fire the attack trigger
     let behavior = registry.get(state.get_object(grimgrin).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &registry);
+    behavior.on_attacks(&mut state, grimgrin, &[], &registry);
 
     // Check if Grave Bramble is in the target options
     let bramble_is_target = match &state.awaiting_action {
@@ -1884,7 +1884,7 @@ fn bug_civilized_scholar_stale_attacked_flag() {
     // IT (Homicidal Brute) didn't attack this turn. The attacked_this_turn
     // flag is from before the transform (when it was Scholar).
     let behavior = registry.get(state.get_object(brute).unwrap().card_id).unwrap();
-    behavior.on_end_step(&mut state, brute, &registry);
+    behavior.on_end_step(&mut state, brute, &[], &registry);
 
     // Per MTG rules 711.5, transforming doesn't make a new object.
     // If the permanent attacked this turn (even as Scholar), the Brute "knows"
@@ -1911,7 +1911,7 @@ fn bug_essence_of_wild_replacement_not_applied_for_tokens() {
     // the entering_copy_source flag (which makes other creatures enter as copies).
     let eotw = named_creature(&mut state, &registry, "Essence of the Wild", P0);
     let behavior = registry.get(state.get_object(eotw).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, eotw, &registry);
+    behavior.on_enter_battlefield(&mut state, eotw, &[], &registry);
 
     // Create a token — it should enter as a copy of Essence of the Wild
     let token = state.create_token_with_subtypes(

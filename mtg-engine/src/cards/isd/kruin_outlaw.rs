@@ -3,6 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, ContinuousEffect, EffectScope, CreatureFilter, Zone};
+use crate::actions::Target;
 
 /// Kruin Outlaw {1}{R}{R} 2/2 Human Rogue Werewolf with First Strike
 /// // Terror of Kruin Pass 3/3 Werewolf with Double Strike + menace
@@ -43,6 +44,7 @@ impl CardBehavior for KruinOutlaw {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -75,6 +77,7 @@ impl CardBehavior for KruinOutlaw {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -92,7 +95,7 @@ impl CardBehavior for KruinOutlaw {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }

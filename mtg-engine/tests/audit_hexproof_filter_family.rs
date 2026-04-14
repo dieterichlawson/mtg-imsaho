@@ -69,7 +69,7 @@ fn bug_17_003_pitchburn_devils_does_not_offer_opponent_hexproof_creature() {
     let pd = named_creature(&mut state, &registry, "Pitchburn Devils", P0);
     let pd_card_id = state.get_object(pd).unwrap().card_id;
     let behavior = registry.get(pd_card_id).unwrap();
-    behavior.on_dies(&mut state, pd, &registry);
+    behavior.on_dies(&mut state, pd, &[], &registry);
 
     let lumberknot_in_options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {
@@ -118,7 +118,7 @@ fn bug_17_003_crossway_vampire_creature_targets_excludes_hexproof() {
     let cv = named_creature(&mut state, &registry, "Crossway Vampire", P0);
     let cv_card_id = state.get_object(cv).unwrap().card_id;
     let behavior = registry.get(cv_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, cv, &registry);
+    behavior.on_enter_battlefield(&mut state, cv, &[], &registry);
 
     let lumberknot_in_options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {
@@ -157,7 +157,7 @@ fn bug_17_003_fiend_hunter_creature_targets_except_excludes_hexproof() {
     let fh = named_creature(&mut state, &registry, "Fiend Hunter", P0);
     let fh_card_id = state.get_object(fh).unwrap().card_id;
     let behavior = registry.get(fh_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, fh, &registry);
+    behavior.on_enter_battlefield(&mut state, fh, &[], &registry);
 
     let lumberknot_in_options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {
@@ -212,7 +212,7 @@ fn bug_e1_001_grimgrin_attack_trigger_excludes_opponent_hexproof_creature() {
     // want for this test.
     let grimgrin_card_id = state.get_object(grimgrin).unwrap().card_id;
     let behavior = registry.get(grimgrin_card_id).unwrap();
-    behavior.on_attacks(&mut state, grimgrin, &registry);
+    behavior.on_attacks(&mut state, grimgrin, &[], &registry);
 
     let lumberknot_in_options = match &state.awaiting_action {
         Some(AwaitingAction::ResolutionChoice {
@@ -272,7 +272,7 @@ fn bug_0f_003_falkenrath_noble_skips_player_with_witchbane_orb() {
     let noble = named_creature(&mut state, &registry, "Falkenrath Noble", P0);
     let noble_card_id = state.get_object(noble).unwrap().card_id;
     let behavior = registry.get(noble_card_id).unwrap();
-    behavior.on_dies(&mut state, noble, &registry);
+    behavior.on_dies(&mut state, noble, &[], &registry);
 
     // After firing, P0 should be the only legal "target player" — P1
     // is hexproof. Two failure modes both indicate the bug:
@@ -471,7 +471,7 @@ fn bug_9f_001_snapcaster_can_grant_flashback_to_card_with_printed_flashback() {
     let snap = state.create_object(snap_card_id, P0, Zone::Battlefield, Some(2), Some(1));
     state.get_object_mut(snap).unwrap().name = "Snapcaster Mage".into();
     let behavior = registry.get(snap_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, snap, &registry);
+    behavior.on_enter_battlefield(&mut state, snap, &[], &registry);
 
     let granted = state.until_end_of_turn.iter().any(|e| matches!(
         e,

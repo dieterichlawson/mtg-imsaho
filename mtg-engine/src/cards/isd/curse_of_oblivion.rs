@@ -32,6 +32,7 @@ impl CardBehavior for CurseOfOblivion {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "enchanted player exiles two cards from their graveyard".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -45,7 +46,7 @@ impl CardBehavior for CurseOfOblivion {
         crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let cursed_player = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,
             _ => return,

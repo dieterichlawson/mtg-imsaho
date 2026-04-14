@@ -29,12 +29,13 @@ impl CardBehavior for ElderCathar {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "put +1/+1 counters on target creature".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         // Find creatures we control on the battlefield.
         let targets: Vec<Target> = state.objects.values()

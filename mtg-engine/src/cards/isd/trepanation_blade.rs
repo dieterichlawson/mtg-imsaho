@@ -31,6 +31,7 @@ impl CardBehavior for TrepanationBlade {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "mill until land, equipped creature gets +1/+0 per card milled".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -53,7 +54,7 @@ impl CardBehavior for TrepanationBlade {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // self_id is the equipment's ID (from AttacksTrigger resolution).
         let Some(equip) = state.get_object(self_id) else { return; };
         let Some(creature_id) = equip.attached_to else { return; };

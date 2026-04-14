@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Burning Vengeance — {2}{R} enchantment.
 /// Whenever you cast a spell from your graveyard, this enchantment deals 2 damage
@@ -30,12 +31,13 @@ impl CardBehavior for BurningVengeance {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SpellCast,
                     description: "deal 2 damage to any target".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, registry: &CardRegistry) {
+    fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

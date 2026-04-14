@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Hamlet Captain — {1}{G} 2/2 Human Warrior.
 /// Whenever this creature attacks or blocks, other Humans you control
@@ -30,16 +31,18 @@ impl CardBehavior for HamletCaptain {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "other Humans get +1/+1 until end of turn".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::Blocks,
                     description: "other Humans get +1/+1 until end of turn".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         Self::buff_humans(state, self_id, registry);
     }
 

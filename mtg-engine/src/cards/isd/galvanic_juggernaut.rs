@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, EffectScope, Zone};
+use crate::actions::Target;
 
 /// Galvanic Juggernaut — {4} 5/5 Artifact Creature — Juggernaut.
 /// Galvanic Juggernaut attacks each combat if able.
@@ -37,12 +38,13 @@ impl CardBehavior for GalvanicJuggernaut {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "untap Galvanic Juggernaut".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         if let Some(obj) = state.get_object_mut(self_id) {
             if obj.zone == Zone::Battlefield && obj.tapped {
                 obj.tapped = false;

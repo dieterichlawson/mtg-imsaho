@@ -45,6 +45,7 @@ impl CardBehavior for UlvenwaldMystics {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -68,6 +69,7 @@ impl CardBehavior for UlvenwaldMystics {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform back if 2+ spells cast".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -110,7 +112,7 @@ impl CardBehavior for UlvenwaldMystics {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }

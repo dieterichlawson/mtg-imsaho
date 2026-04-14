@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
+use crate::actions::Target;
 
 /// Abattoir Ghoul — {3}{B} 3/2 Zombie. First strike.
 /// Whenever a creature dealt damage by Abattoir Ghoul this turn dies,
@@ -30,12 +31,13 @@ impl CardBehavior for AbattoirGhoul {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "gain life equal to that creature's toughness".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         // CR 603.6d: triggered ability resolves even if source has left
         // the battlefield (e.g. simultaneous death in combat).
         let controller = match state.get_object(self_id) {

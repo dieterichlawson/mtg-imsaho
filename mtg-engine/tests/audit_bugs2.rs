@@ -427,7 +427,7 @@ fn bug_evil_twin_ability_inaccessible_after_copy() {
 
     // Manually trigger the ETB and resolve the copy
     let behavior = registry.get(state.get_object(twin).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, twin, &registry);
+    behavior.on_enter_battlefield(&mut state, twin, &[], &registry);
 
     // Resolve the copy choice (choose Grizzly Bears)
     if let Some(mtg_engine::state::AwaitingAction::ResolutionChoice { .. }) = &state.awaiting_action {

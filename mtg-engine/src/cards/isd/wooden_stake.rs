@@ -31,10 +31,12 @@ impl CardBehavior for WoodenStake {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Blocks,
                     description: "destroy that Vampire".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::BecomesBlocked,
                     description: "destroy that Vampire".into(),
+                target_requirement: None,
                 },
             ],
         }

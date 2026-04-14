@@ -45,6 +45,7 @@ impl CardBehavior for CivilizedScholar {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "mark as attacked this turn".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -70,10 +71,12 @@ impl CardBehavior for CivilizedScholar {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "mark as attacked this turn".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
                     description: "transform back if didn't attack".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -175,14 +178,14 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         // Mark that we attacked this turn (so end-step doesn't transform back).
         if let Some(obj) = state.get_object_mut(self_id) {
             obj.card_state.insert("attacked_this_turn".into(), crate::ids::ObjectId(1));
         }
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,

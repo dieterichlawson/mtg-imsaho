@@ -3,6 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, EffectScope, CreatureFilter, Zone};
+use crate::actions::Target;
 
 /// Mayor of Avabruck {1}{G} 1/1 Human Advisor — other Humans +1/+1
 /// // Howlpack Alpha 3/3 Werewolf — other Werewolves and Wolves +1/+1, EOT create 2/2 Wolf
@@ -51,6 +52,7 @@ impl CardBehavior for MayorOfAvabruck {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -86,10 +88,12 @@ impl CardBehavior for MayorOfAvabruck {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform if a player cast 2+ spells last turn".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
                     description: "create a 2/2 Wolf token".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -107,7 +111,7 @@ impl CardBehavior for MayorOfAvabruck {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
@@ -120,7 +124,7 @@ impl CardBehavior for MayorOfAvabruck {
         }
     }
 
-    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let (controller, is_transformed) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.is_transformed),
             _ => return,

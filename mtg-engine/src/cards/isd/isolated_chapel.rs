@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef, Trigger
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{Zone, CardType, ManaType};
+use crate::actions::Target;
 
 /// Isolated Chapel — Land.
 /// Isolated Chapel enters the battlefield tapped unless you control a Plains or a Swamp.
@@ -47,6 +48,7 @@ impl CardBehavior for IsolatedChapel {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "enters tapped unless you control a Plains or a Swamp".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -54,7 +56,7 @@ impl CardBehavior for IsolatedChapel {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if !Self::controller_has_matching_land(state, object_id, registry) {
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.tapped = true;

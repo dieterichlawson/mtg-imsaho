@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Geist-Honored Monk — {3}{W}{W} */* Human Monk. Vigilance.
 /// Power and toughness are each equal to the number of creatures you control.
@@ -29,6 +30,7 @@ impl CardBehavior for GeistHonoredMonk {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "create two 1/1 white Spirit tokens with flying".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -44,7 +46,7 @@ impl CardBehavior for GeistHonoredMonk {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         for _ in 0..2 {
             state.create_token_with_subtypes("Spirit", controller, 1, 1, vec![Color::White], vec![CardType::Creature], vec![Keyword::Flying], vec!["Spirit".into()], registry);

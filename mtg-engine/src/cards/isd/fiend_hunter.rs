@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Fiend Hunter — {1}{W}{W} 1/3 Human Cleric.
 /// When Fiend Hunter enters the battlefield, you may exile another target creature.
@@ -30,10 +31,12 @@ impl CardBehavior for FiendHunter {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "you may exile another target creature".into(),
+                target_requirement: None,
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::LeavesBattlefield,
                     description: "return exiled card to the battlefield".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -41,7 +44,7 @@ impl CardBehavior for FiendHunter {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
         // "Another target creature" — any creature except Fiend Hunter itself.
         // Can target own creatures (Oracle doesn't restrict to opponents).

@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
+use crate::actions::Target;
 
 /// Mausoleum Guard — {3}{W} 2/2 Human Scout. When it dies, create two 1/1 white Spirit tokens with flying.
 pub struct MausoleumGuard;
@@ -26,12 +27,13 @@ impl CardBehavior for MausoleumGuard {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "create two 1/1 white Spirit tokens with flying".into(),
+                target_requirement: None,
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // Use controller (not owner) — if the creature was stolen, tokens go to the controller.
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
         for _ in 0..2 {

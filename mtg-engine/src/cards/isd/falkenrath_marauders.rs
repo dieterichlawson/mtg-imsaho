@@ -30,6 +30,7 @@ impl CardBehavior for FalkenrathMarauders {
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
                     description: "put two +1/+1 counters on Falkenrath Marauders".into(),
+                target_requirement: None,
                 },
             ],
         }

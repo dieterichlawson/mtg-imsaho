@@ -32,6 +32,7 @@ impl CardBehavior for CurseOfThePiercedHeart {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "deal 1 damage to enchanted player".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -45,7 +46,7 @@ impl CardBehavior for CurseOfThePiercedHeart {
         crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let (controller, cursed_player) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.attached_to_player),
             _ => return,

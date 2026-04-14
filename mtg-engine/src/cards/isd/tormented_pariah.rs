@@ -3,6 +3,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::actions::Target;
 
 /// Tormented Pariah {3}{R} 3/2 Human Warrior // Rampaging Werewolf 6/4 Werewolf
 pub struct TormentedPariah;
@@ -41,6 +42,7 @@ impl CardBehavior for TormentedPariah {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -64,6 +66,7 @@ impl CardBehavior for TormentedPariah {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform back if 2+ spells cast".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -81,7 +84,7 @@ impl CardBehavior for TormentedPariah {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }

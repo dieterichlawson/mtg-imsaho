@@ -2,6 +2,7 @@ use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredA
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
+use crate::actions::Target;
 
 /// Instigator Gang {3}{R} 2/3 Human Werewolf — attacking creatures you control get +1/+0
 /// // Wildblood Pack 5/5 Werewolf with Trample — attacking creatures you control get +3/+0
@@ -41,11 +42,13 @@ impl CardBehavior for InstigatorGang {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "transform".into(),
+                target_requirement: None,
                 },
                 // Watch ALL creatures attacking (not just self).
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureAttacks,
                     description: "attacking creatures you control get +1/+0".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -69,6 +72,7 @@ impl CardBehavior for InstigatorGang {
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureAttacks,
                     description: "attacking creatures you control get +3/+0".into(),
+                target_requirement: None,
                 },
             ],
         })
@@ -110,7 +114,7 @@ impl CardBehavior for InstigatorGang {
             format!("{face}: {name} gets +{bonus}/+0"));
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }

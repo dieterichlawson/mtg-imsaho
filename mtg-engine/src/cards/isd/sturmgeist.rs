@@ -31,6 +31,7 @@ impl CardBehavior for Sturmgeist {
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
                     description: "draw a card".into(),
+                target_requirement: None,
                 },
             ],
         }

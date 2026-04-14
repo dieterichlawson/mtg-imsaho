@@ -34,6 +34,7 @@ impl CardBehavior for StromkirkNoble {
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
                     description: "put a +1/+1 counter on Stromkirk Noble".into(),
+                target_requirement: None,
                 },
             ],
         }

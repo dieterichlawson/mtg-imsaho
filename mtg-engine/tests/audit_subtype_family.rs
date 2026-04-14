@@ -133,7 +133,7 @@ fn bug_ax_woodland_cemetery_untapped_with_swamp_in_play() {
     // the "enters tapped unless..." decision is made).
     state.move_object(wc, Zone::Battlefield, &registry);
     if let Some(behavior) = registry.get(wc_card_id) {
-        behavior.on_enter_battlefield(&mut state, wc, &registry);
+        behavior.on_enter_battlefield(&mut state, wc, &[], &registry);
     }
 
     let wc_obj = state.get_object(wc).unwrap();
@@ -208,7 +208,7 @@ fn bug_at_slayer_of_the_wicked_targets_vampire_token() {
     );
     state.get_object_mut(slayer).unwrap().name = "Slayer of the Wicked".into();
     let behavior = registry.get(slayer_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, slayer, &registry);
+    behavior.on_enter_battlefield(&mut state, slayer, &[], &registry);
 
     // The ETB is "you may destroy target V/W/Z", so when there's at least
     // one valid target the card sets up an awaiting_action::ChooseTarget
@@ -618,7 +618,7 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
     // Fire Elder Cathar's death trigger directly.
     let cathar_card_id = registry.get_id_by_name("Elder Cathar").unwrap();
     let behavior = registry.get(cathar_card_id).unwrap();
-    behavior.on_dies(&mut state, cathar, &registry);
+    behavior.on_dies(&mut state, cathar, &[], &registry);
 
     let counters_after = state
         .get_object(pariah)

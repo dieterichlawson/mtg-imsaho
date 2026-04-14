@@ -29,6 +29,7 @@ impl CardBehavior for StromkirkPatrol {
                 TriggeredAbilityDef {
                     kind: TriggerKind::CombatDamageToPlayer,
                     description: "put a +1/+1 counter on Stromkirk Patrol".into(),
+                target_requirement: None,
                 },
             ],
         }

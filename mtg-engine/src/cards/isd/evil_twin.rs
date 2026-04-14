@@ -33,6 +33,7 @@ impl CardBehavior for EvilTwin {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "you may copy a creature".into(),
+                target_requirement: None,
                 },
             ],
         }
@@ -41,7 +42,7 @@ impl CardBehavior for EvilTwin {
     fn has_etb_handler(&self) -> bool { true }
     fn enters_as_copy(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
         // Mark as entering with a pending copy effect (CR 614.1d) so SBA

@@ -29,7 +29,7 @@ fn geist_creates_angel_on_attack() {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
     });
-    behavior.on_attacks(&mut state, geist, &reg);
+    behavior.on_attacks(&mut state, geist, &[], &reg);
 
     // Should have created an Angel token on the battlefield, tapped and attacking.
     let angel = state.objects.values()
@@ -52,7 +52,7 @@ fn angel_exiled_at_end_of_combat() {
     });
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &reg);
+    behavior.on_attacks(&mut state, geist, &[], &reg);
 
     let angel_id = state.objects.values()
         .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)
@@ -80,7 +80,7 @@ fn angel_exiled_even_if_geist_dies() {
     });
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
-    behavior.on_attacks(&mut state, geist, &reg);
+    behavior.on_attacks(&mut state, geist, &[], &reg);
 
     let angel_id = state.objects.values()
         .find(|o| o.name == "Angel" && o.zone == Zone::Battlefield)

@@ -303,7 +303,7 @@ fn bug_e_nevermore_does_not_read_opponent_hand() {
     let nevermore = state.create_object(nevermore_card_id, P0, Zone::Battlefield, None, None);
     state.get_object_mut(nevermore).unwrap().name = "Nevermore".into();
     let behavior = registry.get(nevermore_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, nevermore, &registry);
+    behavior.on_enter_battlefield(&mut state, nevermore, &[], &registry);
 
     // If the bug fires, Nevermore's instance continuous effects
     // include a `PreventCastingNamed { name: "Grizzly Bears" }` entry
