@@ -357,9 +357,9 @@ pub trait CardBehavior: Send + Sync {
     fn on_dies(&self, _state: &mut GameState, _object_id: ObjectId, _registry: &CardRegistry) {}
 
     /// Called when ANY creature dies. `self_id` is this permanent, `dead_id` is the deceased.
-    /// `dead_damaged_by` and `dead_toughness` are last-known information captured before
-    /// the zone change clears battlefield state.
-    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _registry: &CardRegistry) {}
+    /// `dead_damaged_by`, `dead_toughness`, and `dead_is_token` are last-known information
+    /// captured before the zone change (and SBA 704.5d token cleanup) clears battlefield state.
+    fn on_any_creature_dies(&self, _state: &mut GameState, _self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) {}
 
     /// Called when ANY creature enters the battlefield. `self_id` is this permanent, `entered_id` is the new creature.
     /// Similar to `on_any_creature_dies` but for ETB. Used by Champion of the Parish.

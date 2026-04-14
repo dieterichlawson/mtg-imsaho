@@ -26,6 +26,7 @@ pub enum PendingTrigger {
         /// Last-known information captured before zone change clears battlefield state.
         dead_damaged_by: Vec<ObjectId>,
         dead_toughness: i32,
+        dead_is_token: bool,
         description: String,
     },
     /// A creature entering the battlefield trigger.
@@ -460,12 +461,13 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     }
                 }
             }
-            GameEvent::CreatureDied { object, card_id, controller, damaged_by, last_known_toughness } => {
+            GameEvent::CreatureDied { object, card_id, controller, damaged_by, last_known_toughness, is_token } => {
                 let dead_id = *object;
                 let dead_card_id = *card_id;
                 let dead_controller = *controller;
                 let dead_damaged_by = damaged_by.clone();
                 let dead_toughness = *last_known_toughness;
+                let dead_is_token = *is_token;
 
                 // 1. Self-dies trigger. Only fire if the card actually has a
                 // SelfDies TriggeredAbilityDef — vanilla creatures and creatures
@@ -517,6 +519,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                             dead_controller,
                             dead_damaged_by: dead_damaged_by.clone(),
                             dead_toughness,
+                            dead_is_token,
                             description: desc,
                         };
                         if watcher_controller == active_player {
@@ -1033,12 +1036,12 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
                 behavior.on_dies(state, dead_id, registry);
             }
         }
-        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, dead_toughness, .. } => {
+        PendingTrigger::DeathWatch { watcher_id, watcher_card_id, dead_id, dead_controller, dead_damaged_by, dead_toughness, dead_is_token, .. } => {
             // Per MTG rules, death triggers fire even if the watcher died
             // simultaneously (e.g., Falkenrath Noble + board wipe). The trigger
             // was created when the watcher was last known to be on the battlefield.
             if let Some(behavior) = registry.get(watcher_card_id) {
-                behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, registry);
+                behavior.on_any_creature_dies(state, watcher_id, dead_id, dead_controller, &dead_damaged_by, dead_toughness, dead_is_token, registry);
             }
         }
         PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {

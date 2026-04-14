@@ -35,7 +35,7 @@ impl CardBehavior for AbattoirGhoul {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], dead_toughness: i32, _registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, dead_damaged_by: &[ObjectId], dead_toughness: i32, _dead_is_token: bool, _registry: &CardRegistry) {
         // CR 603.6d: triggered ability resolves even if source has left
         // the battlefield (e.g. simultaneous death in combat).
         let controller = match state.get_object(self_id) {

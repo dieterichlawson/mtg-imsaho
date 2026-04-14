@@ -33,7 +33,7 @@ pub enum GameEvent {
     /// Non-combat damage dealt (e.g., triggered abilities, spells).
     NonCombatDamageDealt { source: ObjectId, target: DamageTarget, amount: u32 },
     LifeChanged { player: PlayerId, old: i32, new_life: i32 },
-    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32 },
+    CreatureDied { object: ObjectId, card_id: crate::ids::CardId, controller: PlayerId, damaged_by: Vec<ObjectId>, last_known_toughness: i32, is_token: bool },
     PlayerLost { player: PlayerId, reason: LossReason },
     GameEnded { result: GameResult },
     PriorityPassed { player: PlayerId },

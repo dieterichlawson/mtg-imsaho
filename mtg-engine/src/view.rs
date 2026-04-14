@@ -110,13 +110,13 @@ impl GameView {
         // Your hand: you can see all cards.
         let your_hand = state.objects_in_zone(Zone::Hand, player)
             .iter()
-            .map(|obj| card_view(obj, registry))
+            .map(|obj| card_view(state, obj, registry))
             .collect();
 
         // Your library cards (you know what's in your deck, not the order).
         let your_library_cards = player_state.library_order.iter()
             .filter_map(|&obj_id| state.get_object(obj_id))
-            .map(|obj| card_view(obj, registry))
+            .map(|obj| card_view(state, obj, registry))
             .collect();
 
         // Opponents.
@@ -187,7 +187,7 @@ impl GameView {
             .map(|p| {
                 let cards = state.objects_in_zone(Zone::Graveyard, p.id)
                     .iter()
-                    .map(|obj| card_view(obj, registry))
+                    .map(|obj| card_view(state, obj, registry))
                     .collect();
                 (p.id, cards)
             })
@@ -225,7 +225,7 @@ impl GameView {
         // Exile.
         let exile = state.all_objects_in_zone(Zone::Exile)
             .iter()
-            .map(|obj| card_view(obj, registry))
+            .map(|obj| card_view(state, obj, registry))
             .collect();
 
         // Collect names of objects referenced in pending resolution choices
@@ -288,16 +288,20 @@ impl GameView {
     }
 }
 
-fn card_view(obj: &crate::state::GameObject, registry: &CardRegistry) -> CardView {
+fn card_view(state: &GameState, obj: &crate::state::GameObject, registry: &CardRegistry) -> CardView {
     let data = registry.card_data(obj.card_id);
+    // CR 208.2: characteristic-defining abilities work in all zones, so use
+    // effective_power/toughness which consults dynamic_pt and continuous effects.
+    let power = state.effective_power(obj.id, registry).or(obj.power);
+    let toughness = state.effective_toughness(obj.id, registry).or(obj.toughness);
     CardView {
         object_id: obj.id,
         card_id: obj.card_id,
         name: data.as_ref().map_or_else(|| "Unknown".into(), |d| d.name.clone()),
         cost: data.as_ref().and_then(|d| d.cost.clone()),
         card_types: data.as_ref().map(|d| d.card_types.clone()).unwrap_or_default(),
-        power: obj.power,
-        toughness: obj.toughness,
+        power,
+        toughness,
         oracle_text: data.as_ref().map(|d| d.oracle_text.clone()).unwrap_or_default(),
         owner: obj.owner,
         flashback_cost: data.and_then(|d| d.flashback_cost),

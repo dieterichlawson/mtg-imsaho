@@ -200,6 +200,7 @@ fn bug_99_001_gutter_grime_does_not_count_token_deaths() {
         P0, // dead_controller (matches Gutter Grime's owner)
         &[],
         2, // dead_toughness
+        true, // dead_is_token — this is the whole point of the bug
         &registry,
     );
 

@@ -45,6 +45,7 @@ fn gutter_grime_creates_dynamic_pt_ooze() {
         controller: P0,
         damaged_by: vec![],
         last_known_toughness: 2,
+        is_token: false,
     });
 
     // Process triggers.
@@ -84,7 +85,7 @@ fn gutter_grime_ooze_tokens_grow_with_more_counters() {
     state.move_object(creature1, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: creature1, card_id: card_id1, controller: P0,
-        damaged_by: vec![], last_known_toughness: 2,
+        damaged_by: vec![], last_known_toughness: 2, is_token: false,
     });
     triggers::process_triggers(&mut state, &reg);
 
@@ -99,7 +100,7 @@ fn gutter_grime_ooze_tokens_grow_with_more_counters() {
     state.move_object(creature2, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: creature2, card_id: card_id2, controller: P0,
-        damaged_by: vec![], last_known_toughness: 3,
+        damaged_by: vec![], last_known_toughness: 3, is_token: false,
     });
     triggers::process_triggers(&mut state, &reg);
 
@@ -142,7 +143,7 @@ fn gutter_grime_ignores_token_deaths() {
     state.move_object(token_id, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: token_id, card_id, controller: P0,
-        damaged_by: vec![], last_known_toughness: 1,
+        damaged_by: vec![], last_known_toughness: 1, is_token: true,
     });
     triggers::process_triggers(&mut state, &reg);
 
@@ -167,7 +168,7 @@ fn gutter_grime_ignores_opponent_deaths() {
     state.move_object(opp_creature, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: opp_creature, card_id, controller: P1,
-        damaged_by: vec![], last_known_toughness: 2,
+        damaged_by: vec![], last_known_toughness: 2, is_token: false,
     });
     triggers::process_triggers(&mut state, &reg);
 
@@ -191,7 +192,7 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
     state.move_object(creature, Zone::Graveyard, &reg);
     state.events.push(GameEvent::CreatureDied {
         object: creature, card_id, controller: P0,
-        damaged_by: vec![], last_known_toughness: 2,
+        damaged_by: vec![], last_known_toughness: 2, is_token: false,
     });
     triggers::process_triggers(&mut state, &reg);
 

@@ -294,6 +294,7 @@ pub enum CounterType {
     Loyalty,
     Slime,
     Study,
+    Hatchling,
     // extend as needed
 }
 

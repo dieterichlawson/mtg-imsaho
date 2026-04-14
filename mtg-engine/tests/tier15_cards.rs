@@ -161,7 +161,7 @@ fn galvanic_juggernaut_untaps_when_creature_dies() {
     // A creature dies.
     let dead = ready_creature(&mut state, P1, 1, 1);
     let behavior = reg.get(state.get_object(jug).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, jug, dead, P1, &[], 1, &reg);
+    behavior.on_any_creature_dies(&mut state, jug, dead, P1, &[], 1, false, &reg);
 
     assert!(!state.get_object(jug).unwrap().tapped, "Galvanic Juggernaut should untap when a creature dies");
 }
@@ -306,7 +306,7 @@ fn gutter_grime_creates_ooze_on_creature_death() {
     let dead = ready_creature(&mut state, P0, 2, 2);
 
     let behavior = reg.get(state.get_object(grime).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, &reg);
+    behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &reg);
 
     // Should have a slime counter on Gutter Grime.
     let counters = state.get_object(grime).unwrap()
@@ -1425,7 +1425,7 @@ fn thraben_sentry_transforms_when_creature_dies() {
 
     // Simulate another creature dying — presents "you may transform" choice.
     let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, sentry, other, P0, &[], 1, &reg);
+    behavior.on_any_creature_dies(&mut state, sentry, other, P0, &[], 1, false, &reg);
 
     // Oracle: "you may transform" — choice should be presented.
     assert!(state.awaiting_action.is_some(), "Should present 'you may transform' choice");
@@ -1451,7 +1451,7 @@ fn thraben_sentry_does_not_transform_when_opponent_creature_dies() {
     let opp_creature = ready_creature(&mut state, P1, 1, 1);
 
     let behavior = reg.get(state.get_object(sentry).unwrap().card_id).unwrap();
-    behavior.on_any_creature_dies(&mut state, sentry, opp_creature, P1, &[], 1, &reg);
+    behavior.on_any_creature_dies(&mut state, sentry, opp_creature, P1, &[], 1, false, &reg);
 
     // Should NOT transform.
     assert!(!state.get_object(sentry).unwrap().is_transformed);

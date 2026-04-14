@@ -40,7 +40,7 @@ impl CardBehavior for GutterGrime {
         }
     }
 
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, registry: &CardRegistry) {
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -49,9 +49,11 @@ impl CardBehavior for GutterGrime {
         if dead_controller != controller {
             return;
         }
-        // Must be a nontoken creature.
-        let was_token = state.get_object(dead_id).is_some_and(|o| o.is_token);
-        if was_token {
+        // Must be a nontoken creature. Use the captured `dead_is_token` because
+        // by the time this trigger resolves, SBA 704.5d has already removed the
+        // dead token from `state.objects`, so we can't read `is_token` from the
+        // object any more.
+        if dead_is_token {
             return;
         }
         // Put a slime counter on Gutter Grime.

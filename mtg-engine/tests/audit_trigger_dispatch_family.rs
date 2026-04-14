@@ -108,6 +108,7 @@ fn bug_bt_abattoir_ghoul_gains_life_on_simultaneous_death() {
         P1,
         &dead_damaged_by,
         dead_toughness,
+        false,
         &registry,
     );
 

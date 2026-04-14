@@ -88,13 +88,13 @@ fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>)
     let is_creature = state.get_object(id).is_some_and(|o| o.power.is_some());
     if is_creature {
         // Capture last-known information before the zone change clears it.
-        let (cid, ctrl, damaged_by) = state.get_object(id)
-            .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new()), |o| (o.card_id, o.controller, o.damaged_by.clone()));
+        let (cid, ctrl, damaged_by, is_token) = state.get_object(id)
+            .map_or((crate::ids::CardId(0), crate::ids::PlayerId(0), Vec::new(), false), |o| (o.card_id, o.controller, o.damaged_by.clone(), o.is_token));
         let last_known_toughness = registry
             .and_then(|r| state.effective_toughness(id, r))
             .or_else(|| state.get_object(id).and_then(|o| o.toughness))
             .unwrap_or(0);
-        state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness });
+        state.events.push(GameEvent::CreatureDied { object: id, card_id: cid, controller: ctrl, damaged_by, last_known_toughness, is_token });
         state.creature_died_this_turn = true;
     }
     // move_object handles the death/graveyard log message.
