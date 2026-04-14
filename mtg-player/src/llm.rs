@@ -768,6 +768,8 @@ impl GeminiBackend {
     /// Core interactions API call. Sends a message with a custom JSON schema
     /// and returns the parsed JSON response. Handles retries, rate limits, etc.
     fn call_interactions_structured(&mut self, user_message: &str, schema: &serde_json::Value) -> serde_json::Value {
+        const MAX_ATTEMPTS: u32 = 6;
+
         let mut body = serde_json::json!({
             "model": &self.model,
             "input": user_message,
@@ -791,7 +793,6 @@ impl GeminiBackend {
             self.api_key
         );
 
-        const MAX_ATTEMPTS: u32 = 6;
         let mut fresh_retry = false;
         for attempt in 0..MAX_ATTEMPTS {
             if attempt > 0 {
@@ -1423,6 +1424,9 @@ impl LlmPlayer {
     /// collapses whitespace, and joins remaining lines with "; ". Returns an
     /// empty string for cards with no oracle text.
     fn short_effect_summary(oracle_text: &str) -> String {
+        // Hard cap so a single permanent can't blow up the board line.
+        const MAX: usize = 200;
+
         if oracle_text.is_empty() {
             return String::new();
         }
@@ -1450,8 +1454,6 @@ impl LlmPlayer {
             .collect();
 
         let joined = lines.join("; ");
-        // Hard cap so a single permanent can't blow up the board line.
-        const MAX: usize = 200;
         if joined.chars().count() > MAX {
             let mut out: String = joined.chars().take(MAX - 3).collect();
             out.push_str("...");
@@ -1673,7 +1675,7 @@ impl LlmPlayer {
                 let t1 = self.prompt_target_selection(view, &format!("{}: select first of two targets", spell.name), options1);
                 let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
                 if remaining.is_empty() {
-                    return self.fallback_to_expanded(spell.object_id, legal_actions);
+                    return Self::fallback_to_expanded(spell.object_id, legal_actions);
                 }
                 let t2 = self.prompt_target_selection(view, &format!("{}: select second of two targets", spell.name), &remaining);
                 vec![t1, t2]
@@ -1872,7 +1874,7 @@ impl LlmPlayer {
     }
 
     /// Fallback: find the first matching expanded action for this spell.
-    fn fallback_to_expanded(&self, object_id: ObjectId, legal_actions: &[Action]) -> Action {
+    fn fallback_to_expanded(object_id: ObjectId, legal_actions: &[Action]) -> Action {
         legal_actions.iter()
             .find(|a| matches!(a, Action::CastSpell { object_id: oid, .. } if *oid == object_id))
             .cloned()
@@ -2168,6 +2170,12 @@ impl Player for LlmPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        enum DisplayEntry {
+            Direct(usize),   // index into legal_actions
+            Cast(usize),     // index into legal.castable_spells
+            Ability(usize),  // index into legal.activatable_abilities
+        }
+
         let legal_actions = &legal.actions;
 
         // London mulligan keep/mull decision.
@@ -2195,11 +2203,6 @@ impl Player for LlmPlayer {
         // Build collapsed display: non-CastSpell/ActivateAbility actions + one per
         // castable spell + one per activatable ability.
         let mut display_labels = Vec::new();
-        enum DisplayEntry {
-            Direct(usize),   // index into legal_actions
-            Cast(usize),     // index into legal.castable_spells
-            Ability(usize),  // index into legal.activatable_abilities
-        }
         let mut display_entries: Vec<DisplayEntry> = Vec::new();
         let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
         let mut seen_ability_keys: Vec<(mtg_engine::ids::ObjectId, usize)> = Vec::new();
@@ -2661,10 +2664,11 @@ impl LlmPlayer {
         assignments: &[(ObjectId, ObjectId)],
         attackers: &[ObjectId],
     ) -> Vec<String> {
+        use mtg_engine::types::Keyword;
+
         let mut errors = Vec::new();
 
         // Menace: if an attacker with menace is blocked, it must have 2+ blockers.
-        use mtg_engine::types::Keyword;
         let mut blocker_counts: std::collections::HashMap<ObjectId, Vec<ObjectId>> = std::collections::HashMap::new();
         for &(blocker, attacker) in assignments {
             blocker_counts.entry(attacker).or_default().push(blocker);

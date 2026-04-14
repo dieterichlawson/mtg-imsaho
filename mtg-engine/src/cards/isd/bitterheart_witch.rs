@@ -10,7 +10,7 @@ pub struct BitterheartWitch;
 
 impl BitterheartWitch {
     /// Present the "target player" choice after a Curse has been selected.
-    fn present_player_choice(&self, state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId, registry: &CardRegistry) {
+    fn present_player_choice(state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId, registry: &CardRegistry) {
         let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
             .map(|i| PlayerId(i as u8))
             .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == controller)
@@ -75,6 +75,8 @@ impl CardBehavior for BitterheartWitch {
     }
 
     fn on_yes_no_choice(&self, state: &mut GameState, self_id: ObjectId, yes: bool, registry: &CardRegistry) {
+        use rand::seq::SliceRandom;
+
         if !yes {
             return;
         }
@@ -95,7 +97,6 @@ impl CardBehavior for BitterheartWitch {
             state.log(LogLevel::Event,
                 "Bitterheart Witch: no Curse found in library".to_string());
             // Still shuffle.
-            use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(controller).library_order.shuffle(&mut rng);
             return;
@@ -104,7 +105,7 @@ impl CardBehavior for BitterheartWitch {
         if curse_ids.len() == 1 {
             // Only one Curse — auto-select it, then choose target player.
             let chosen_curse = curse_ids[0];
-            self.present_player_choice(state, self_id, controller, chosen_curse, registry);
+            Self::present_player_choice(state, self_id, controller, chosen_curse, registry);
         } else {
             // Multiple Curses — player chooses which one via ChooseTarget.
             let curse_targets: Vec<crate::actions::Target> = curse_ids.iter()

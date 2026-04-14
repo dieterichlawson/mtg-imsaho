@@ -103,7 +103,7 @@ impl CardBehavior for LudevicsTestSubject {
                 "Ludevic's Test Subject transforms into Ludevic's Abomination (13/13 Trample)!".into());
         } else {
             if let Some(obj) = state.get_object_mut(object_id) {
-                obj.card_state.insert("hatchling_counters".into(), ObjectId(new_count as u64));
+                obj.card_state.insert("hatchling_counters".into(), ObjectId(u64::from(new_count)));
             }
             state.log(crate::state::LogLevel::Event,
                 format!("Ludevic's Test Subject: hatchling counter added ({new_count}/5)"));

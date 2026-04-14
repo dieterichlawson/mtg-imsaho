@@ -40,16 +40,16 @@ impl CardBehavior for HamletCaptain {
     }
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
-        self.buff_humans(state, self_id, registry);
+        Self::buff_humans(state, self_id, registry);
     }
 
     fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, _blocked_attacker: ObjectId, registry: &CardRegistry) {
-        self.buff_humans(state, self_id, registry);
+        Self::buff_humans(state, self_id, registry);
     }
 }
 
 impl HamletCaptain {
-    fn buff_humans(&self, state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+    fn buff_humans(state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,

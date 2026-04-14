@@ -743,7 +743,6 @@ impl DraftLlmClient {
 
     /// Build the prompt for a draft pick.
     pub fn build_pick_prompt(
-        &self,
         pack_number: usize,
         pick_number: usize,
         available: &[String],
@@ -779,7 +778,7 @@ impl DraftLlmClient {
         self.backend.send_pick(user_message, num_cards)
     }
 
-    pub fn record_pick(&mut self, _chosen: &str) {}
+    pub fn record_pick(_chosen: &str) {}
 
     /// Send a deck-building message with the player's full card pool, so
     /// the backend can build an enum-constrained `maindeck` schema that

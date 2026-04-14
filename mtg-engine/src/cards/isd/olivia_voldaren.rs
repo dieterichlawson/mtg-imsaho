@@ -150,7 +150,7 @@ impl CardBehavior for OliviaVoldaren {
                             olivia.card_state.insert(key.clone(), *target_id);
                             // Also store original controller using "orig_N" key.
                             let orig_key = format!("orig_{stolen_count}");
-                            olivia.card_state.insert(orig_key, ObjectId(original_controller.0 as u64));
+                            olivia.card_state.insert(orig_key, ObjectId(u64::from(original_controller.0)));
                         }
                     }
                 }

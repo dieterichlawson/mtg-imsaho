@@ -234,6 +234,8 @@ fn main() {
             .status();
         match build_status {
             Ok(s) if s.success() => {
+                use std::os::unix::process::CommandExt;
+
                 // Re-exec with --resume pointing to the hot-reload save.
                 let exe = env::current_exe().expect("Failed to get current exe path");
                 let mut new_args: Vec<String> = env::args().collect();
@@ -246,7 +248,6 @@ fn main() {
                 new_args.push("--resume".into());
                 new_args.push(hot_reload_path.clone());
                 // Exec replaces the current process.
-                use std::os::unix::process::CommandExt;
                 let err = std::process::Command::new(&exe)
                     .args(&new_args[1..]) // skip argv[0]
                     .exec();

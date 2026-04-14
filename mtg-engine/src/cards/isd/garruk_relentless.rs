@@ -24,7 +24,9 @@ pub struct GarrukRelentless;
 impl GarrukRelentless {
     /// Sacrifice a creature and then search library for a creature card.
     /// Used when there's only one creature to sacrifice (no choice needed).
-    fn sacrifice_and_tutor(&self, state: &mut GameState, garruk_id: ObjectId, sac_id: ObjectId, controller: crate::ids::PlayerId, registry: &CardRegistry) {
+    fn sacrifice_and_tutor(state: &mut GameState, garruk_id: ObjectId, sac_id: ObjectId, controller: crate::ids::PlayerId, registry: &CardRegistry) {
+        use rand::seq::SliceRandom;
+
         let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
         crate::destruction::sacrifice(state, sac_id, registry);
         state.log(crate::state::LogLevel::Event,
@@ -50,7 +52,6 @@ impl GarrukRelentless {
         if creature_options.is_empty() {
             state.log(crate::state::LogLevel::Event,
                 "Garruk, the Veil-Cursed: no creature card found in library".into());
-            use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(controller).library_order.shuffle(&mut rng);
         } else if creature_options.len() == 1 {
@@ -61,7 +62,6 @@ impl GarrukRelentless {
             state.move_object(found_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Garruk, the Veil-Cursed: searched and found {found_name}"));
-            use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(controller).library_order.shuffle(&mut rng);
         } else {
@@ -241,7 +241,7 @@ impl CardBehavior for GarrukRelentless {
                 } else if creatures.len() == 1 {
                     // Only one creature — auto-sacrifice and tutor.
                     if let Target::Object(sac_id) = creatures[0] {
-                        self.sacrifice_and_tutor(state, self_id, sac_id, controller, registry);
+                        Self::sacrifice_and_tutor(state, self_id, sac_id, controller, registry);
                     }
                 } else {
                     // Multiple creatures — present choice to player.

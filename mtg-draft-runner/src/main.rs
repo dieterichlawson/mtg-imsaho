@@ -269,7 +269,7 @@ fn main() {
                         .map(|((seat, available, pool, history), client)| {
                             let seat = *seat;
                             s.spawn(move || {
-                                let prompt = client.build_pick_prompt(
+                                let prompt = crate::llm_client::DraftLlmClient::build_pick_prompt(
                                     round + 1,
                                     pick_num + 1,
                                     available,
@@ -278,7 +278,7 @@ fn main() {
                                 );
                                 let response = client.send_pick_message(&prompt, available.len());
                                 let chosen = parse_pick_response(&response, available);
-                                client.record_pick(&chosen);
+                                crate::llm_client::DraftLlmClient::record_pick(&chosen);
                                 (seat, chosen, prompt, response)
                             })
                         })

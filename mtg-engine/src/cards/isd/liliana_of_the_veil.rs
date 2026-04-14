@@ -122,7 +122,7 @@ impl CardBehavior for LilianaOfTheVeil {
                         crate::ids::ObjectId(remaining.len() as u64));
                     for (i, pid) in remaining.iter().enumerate() {
                         obj.card_state.insert(format!("liliana_discard_{i}"),
-                            crate::ids::ObjectId(pid.0 as u64));
+                            crate::ids::ObjectId(u64::from(pid.0)));
                     }
                 }
 

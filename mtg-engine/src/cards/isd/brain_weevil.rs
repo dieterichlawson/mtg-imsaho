@@ -79,7 +79,7 @@ impl CardBehavior for BrainWeevil {
             // on_discard_choice can chain the second discard.
             if let Some(obj) = state.get_object_mut(object_id) {
                 obj.card_state.insert("weevil_target_player".into(),
-                    ObjectId(target_player.0 as u64));
+                    ObjectId(u64::from(target_player.0)));
             }
             state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
                 player: *target_player,

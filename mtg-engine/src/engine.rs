@@ -246,6 +246,17 @@ pub fn effective_spell_cost(state: &GameState, registry: &CardRegistry, card_id:
 
 /// Compute all legal actions for the player who currently needs to act.
 pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions {
+    use crate::actions::ActivatableAbilityOption;
+    use crate::cards::AdditionalCost;
+
+    struct AbilityGroup {
+        name: String,
+        description: String,
+        target_options: Vec<crate::actions::Target>,
+        tap_plan: Vec<(ObjectId, usize)>,
+        option_combos: Vec<ActivatableAbilityOption>,
+    }
+
     if state.is_game_over() {
         return LegalActions { actions: vec![], combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: None };
     }
@@ -436,10 +447,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     }
                 };
                 let context = match choice {
-                    ResolutionChoiceKind::ChooseTarget { description, .. } => description.clone(),
-                    ResolutionChoiceKind::PayOrNot { description, .. } => description.clone(),
+                    ResolutionChoiceKind::ChooseTarget { description, .. }
+                    | ResolutionChoiceKind::PayOrNot { description, .. }
+                    | ResolutionChoiceKind::ChooseCardFromHand { description, .. }
+                    | ResolutionChoiceKind::ChooseCardName { description, .. }
+                    | ResolutionChoiceKind::ChooseXValue { description, .. } => description.clone(),
                     ResolutionChoiceKind::YesNo { .. } => format!("{source_name}: choose yes or no"),
-                    ResolutionChoiceKind::ChooseCardFromHand { description, .. } => description.clone(),
                     ResolutionChoiceKind::ChooseFromRevealed { .. } => format!("{source_name}: choose a card"),
                     ResolutionChoiceKind::ChooseFromLibrary { .. } => format!("{source_name}: search library"),
                     ResolutionChoiceKind::ChooseCardType { options, .. } => {
@@ -459,8 +472,6 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                         format!("{}: choose which pile to sacrifice (0: [{}], 1: [{}])",
                             source_name, fmt_pile(pile_1), fmt_pile(pile_2))
                     }
-                    ResolutionChoiceKind::ChooseCardName { description, .. } => description.clone(),
-                    ResolutionChoiceKind::ChooseXValue { description, .. } => description.clone(),
                 };
                 LegalActions { actions, combat_prompt: None, castable_spells: vec![], activatable_abilities: vec![], context: Some(context) }
             }
@@ -918,7 +929,6 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
 
             // Check additional costs.
-            use crate::cards::AdditionalCost;
             let eligible_sacrifices: Vec<ObjectId> = match &data.additional_cost {
                 Some(AdditionalCost::SacrificeCreature) => {
                     let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
@@ -1292,14 +1302,6 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     // as well as the de-duplicated target list. We capture the tap_plan from the first
     // action in each group so player UIs can display "(tap Forest, Mountain)" alongside
     // the ability label, like Cast does.
-    use crate::actions::ActivatableAbilityOption;
-    struct AbilityGroup {
-        name: String,
-        description: String,
-        target_options: Vec<crate::actions::Target>,
-        tap_plan: Vec<(ObjectId, usize)>,
-        option_combos: Vec<ActivatableAbilityOption>,
-    }
     let mut ability_map: std::collections::HashMap<(ObjectId, usize), AbilityGroup> =
         std::collections::HashMap::new();
     for action in &actions {
@@ -1853,7 +1855,6 @@ fn matches_ability_target_filter(
 ) -> bool {
     use crate::cards::TargetFilter;
     match filter {
-        TargetFilter::Any => true,
         TargetFilter::Another => obj.id != source_id,
         TargetFilter::YouControl => obj.controller == controller,
         TargetFilter::YouDontControl => obj.controller != controller,
@@ -2009,7 +2010,6 @@ fn generate_ability_targets(
 fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter, registry: &CardRegistry) -> bool {
     use crate::cards::TargetFilter;
     match filter {
-        TargetFilter::Any => true,
         TargetFilter::HasCardType(types) => {
             types.iter().any(|t| obj.card_types.contains(t))
         }
@@ -2068,6 +2068,8 @@ fn card_name(state: &GameState, _registry: &CardRegistry, obj_id: ObjectId) -> S
 
 /// Apply an action to the game state and return the new state.
 pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry) -> GameState {
+    use crate::cards::SacrificeCost;
+
     let mut new_state = state.clone();
     new_state.events.clear();
     new_state.trigger_event_index = 0;
@@ -2261,7 +2263,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     }
                     // Store the count on the spell for resolution.
                     if let Some(obj) = new_state.get_object_mut(*object_id) {
-                        obj.card_state.insert("exile_count".into(), ObjectId(count as u64));
+                        obj.card_state.insert("exile_count".into(), ObjectId(u64::from(count)));
                     }
                     new_state.log(LogLevel::Event,
                         format!("Exiled {count} cards from graveyard as additional cost"));
@@ -2421,7 +2423,6 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 // when picking the action — legal_actions enumerated one
                 // ActivateAbility per (target, sacrifice) combo, so the choice is
                 // already encoded in `sacrifice`. We just sacrifice it here.
-                use crate::cards::SacrificeCost;
                 match &ab.sacrifice_cost {
                     SacrificeCost::None => {}
                     SacrificeCost::SacrificeThis => {
@@ -2800,8 +2801,6 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                      ResolvedChoice::ChosenTarget(Some(t))) => {
                         apply_pending_effect(&mut new_state, t, effect, registry);
                     }
-                    (ResolutionChoiceKind::ChooseTarget { .. },
-                     ResolvedChoice::ChosenTarget(None)) => {}
                     (ResolutionChoiceKind::ChooseCardFromHand { .. },
                      ResolvedChoice::ChosenCard(discard_id)) => {
                         let name = new_state.obj_name(*discard_id);
@@ -2848,7 +2847,6 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                      ResolvedChoice::ChosenIndex(index, _)) => {
                         let chosen_type = options.get(*index).cloned().unwrap_or_default();
                         let card_type = match chosen_type.as_str() {
-                            "Creature" => CardType::Creature,
                             "Artifact" => CardType::Artifact,
                             "Enchantment" => CardType::Enchantment,
                             "Land" => CardType::Land,
@@ -2993,6 +2991,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Target, effect: &crate::state::PendingEffect, registry: &CardRegistry) {
     use crate::actions::Target;
     use crate::state::PendingEffect;
+    use rand::seq::SliceRandom;
 
     match (target, effect) {
         (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name }) => {
@@ -3063,7 +3062,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
             state.log(LogLevel::Event, format!("{} dealt {} damage to p{}", source_name, amount, pid.0));
         }
-        (Target::Object(id), PendingEffect::Destroy { source_name }) => {
+        (Target::Object(id), PendingEffect::Destroy { source_name } | PendingEffect::DestroyCreature { source_name }) => {
             let name = state.obj_name(*id);
             crate::destruction::try_destroy(state, *id, registry);
             state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
@@ -3152,11 +3151,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.get_player_mut(*controller).life = new_self;
             state.events.push(GameEvent::LifeChanged { player: *controller, old: old_self, new_life: new_self });
             state.log(LogLevel::Event, format!("{}: p{} lost 1 life, p{} gained 1 life", source_name, pid.0, controller.0));
-        }
-        (Target::Object(id), PendingEffect::DestroyCreature { source_name }) => {
-            let name = state.obj_name(*id);
-            crate::destruction::try_destroy(state, *id, registry);
-            state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
         }
         (Target::Object(id), PendingEffect::ExileCurseOfOblivion { remaining }) => {
             let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
@@ -3271,7 +3265,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 state.log(LogLevel::Event,
                     "Garruk, the Veil-Cursed: no creature card found in library".into());
                 // Still shuffle even if nothing found.
-                use rand::seq::SliceRandom;
                 let mut rng = rand::thread_rng();
                 state.get_player_mut(controller).library_order.shuffle(&mut rng);
             } else if creature_options.len() == 1 {
@@ -3283,7 +3276,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 state.move_object(found_id, Zone::Hand, registry);
                 state.log(LogLevel::Event,
                     format!("Garruk, the Veil-Cursed: searched and found {found_name}"));
-                use rand::seq::SliceRandom;
                 let mut rng = rand::thread_rng();
                 state.get_player_mut(controller).library_order.shuffle(&mut rng);
             } else {
@@ -3493,7 +3485,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event,
                 format!("Bitterheart Witch: attached {} to p{}", name, pid.0));
             // Shuffle library.
-            use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
         }
@@ -3522,7 +3513,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event,
                 format!("Ghost Quarter: p{} searched for {}", searcher.0, name));
             // Shuffle the library.
-            use rand::seq::SliceRandom;
             let mut rng = rand::thread_rng();
             state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
         }
@@ -4208,8 +4198,7 @@ fn run_mulligan_phase_inner<F>(
         }
 
         let acting_player = match &state.awaiting_action {
-            Some(AwaitingAction::MulliganDecision { player }) => *player,
-            Some(AwaitingAction::BottomAfterMulligan { player, .. }) => *player,
+            Some(AwaitingAction::MulliganDecision { player } | AwaitingAction::BottomAfterMulligan { player, .. }) => *player,
             _ => unreachable!("in_mulligan_phase guaranteed a mulligan awaiting_action"),
         };
 
@@ -4246,9 +4235,10 @@ fn run_game_loop_inner<F>(
 ) where
     F: FnMut(&GameState, PlayerId, &LegalActions) -> Action,
 {
+    const MAX_AUTO_PASSES: u32 = 100;
+
     let num_players = state.players.len() as u32;
     let mut auto_pass_count = 0u32;
-    const MAX_AUTO_PASSES: u32 = 100;
 
     // Opening-hand mulligan phase. When present, drive it first; it will
     // clear itself by setting awaiting_action = None and draining the
@@ -4406,22 +4396,18 @@ fn run_game_loop_inner<F>(
                 state.priority_player = None;
             }
 
-            Action::MulliganKeep | Action::MulliganMull | Action::BottomCards { .. } => {
-                // Mulligan-phase actions: don't touch priority. The mulligan
-                // phase advances by updating awaiting_action; once all mulligan
-                // state is cleared, the loop will fall through to start turn 1.
-            }
-
-            Action::ActivateManaAbility { .. } | Action::ActivateAbility { .. } | Action::ActivateLoyaltyAbility { .. } => {
-                // Player retains priority. Don't change anything.
-            }
-
-            Action::Concede => {
-                // SBAs will handle the game ending.
-            }
-
-            Action::PlayLand { .. } | Action::CastSpell { .. } => {
-                // Player retains priority after these actions.
+            Action::MulliganKeep
+            | Action::MulliganMull
+            | Action::BottomCards { .. }
+            | Action::ActivateManaAbility { .. }
+            | Action::ActivateAbility { .. }
+            | Action::ActivateLoyaltyAbility { .. }
+            | Action::Concede
+            | Action::PlayLand { .. }
+            | Action::CastSpell { .. } => {
+                // Mulligan-phase actions don't touch priority (mulligan advances via
+                // awaiting_action), ability activations and spell casts leave priority
+                // with the current player, and Concede relies on SBAs to end the game.
             }
 
             Action::ResolveChoice { .. } => {

@@ -177,25 +177,25 @@ impl PendingTrigger {
     /// The player who controls this trigger.
     pub fn controller(&self) -> PlayerId {
         match self {
-            PendingTrigger::SelfDies { controller, .. } => *controller,
-            PendingTrigger::DeathWatch { controller, .. } => *controller,
-            PendingTrigger::EnteredBattlefield { controller, .. } => *controller,
-            PendingTrigger::EnterWatch { controller, .. } => *controller,
-            PendingTrigger::CombatDamageToPlayer { controller, .. } => *controller,
-            PendingTrigger::CombatDamageWatch { controller, .. } => *controller,
-            PendingTrigger::DamageToPlayerWatch { controller, .. } => *controller,
-            PendingTrigger::SpellCastWatch { controller, .. } => *controller,
-            PendingTrigger::EndCombatTrigger { controller, .. } => *controller,
-            PendingTrigger::UpkeepTrigger { controller, .. } => *controller,
-            PendingTrigger::EndStepTrigger { controller, .. } => *controller,
-            PendingTrigger::LeftBattlefield { controller, .. } => *controller,
-            PendingTrigger::AttacksTrigger { controller, .. } => *controller,
-            PendingTrigger::BlocksTrigger { controller, .. } => *controller,
-            PendingTrigger::AttackWatch { controller, .. } => *controller,
-            PendingTrigger::CombatDamageToCreature { controller, .. } => *controller,
-            PendingTrigger::BecomesBlockedTrigger { controller, .. } => *controller,
-            PendingTrigger::StateTriggered { controller, .. } => *controller,
-            PendingTrigger::CreatureCardMilledWatch { controller, .. } => *controller,
+            PendingTrigger::SelfDies { controller, .. }
+            | PendingTrigger::DeathWatch { controller, .. }
+            | PendingTrigger::EnteredBattlefield { controller, .. }
+            | PendingTrigger::EnterWatch { controller, .. }
+            | PendingTrigger::CombatDamageToPlayer { controller, .. }
+            | PendingTrigger::CombatDamageWatch { controller, .. }
+            | PendingTrigger::DamageToPlayerWatch { controller, .. }
+            | PendingTrigger::SpellCastWatch { controller, .. }
+            | PendingTrigger::EndCombatTrigger { controller, .. }
+            | PendingTrigger::UpkeepTrigger { controller, .. }
+            | PendingTrigger::EndStepTrigger { controller, .. }
+            | PendingTrigger::LeftBattlefield { controller, .. }
+            | PendingTrigger::AttacksTrigger { controller, .. }
+            | PendingTrigger::BlocksTrigger { controller, .. }
+            | PendingTrigger::AttackWatch { controller, .. }
+            | PendingTrigger::CombatDamageToCreature { controller, .. }
+            | PendingTrigger::BecomesBlockedTrigger { controller, .. }
+            | PendingTrigger::StateTriggered { controller, .. }
+            | PendingTrigger::CreatureCardMilledWatch { controller, .. } => *controller,
         }
     }
 
@@ -232,7 +232,11 @@ impl PendingTrigger {
                     format!("{}'s dies trigger ({})", card_name(*dead_card_id), description)
                 }
             }
-            PendingTrigger::DeathWatch { watcher_card_id, description, .. } => {
+            PendingTrigger::DeathWatch { watcher_card_id, description, .. }
+            | PendingTrigger::EnterWatch { watcher_card_id, description, .. }
+            | PendingTrigger::CombatDamageWatch { watcher_card_id, description, .. }
+            | PendingTrigger::DamageToPlayerWatch { watcher_card_id, description, .. }
+            | PendingTrigger::SpellCastWatch { watcher_card_id, description, .. } => {
                 if description.is_empty() {
                     format!("{}'s triggered ability", card_name(*watcher_card_id))
                 } else {
@@ -246,33 +250,12 @@ impl PendingTrigger {
                     format!("{}'s ETB trigger ({})", card_name(*card_id), description)
                 }
             }
-            PendingTrigger::EnterWatch { watcher_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s triggered ability", card_name(*watcher_card_id))
-                } else {
-                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
-                }
-            }
-            PendingTrigger::CombatDamageToPlayer { creature_card_id, description, .. } => {
+            PendingTrigger::CombatDamageToPlayer { creature_card_id, description, .. }
+            | PendingTrigger::CombatDamageToCreature { creature_card_id, description, .. } => {
                 if description.is_empty() {
                     format!("{}'s combat damage trigger", card_name(*creature_card_id))
                 } else {
                     format!("{}'s combat damage trigger ({})", card_name(*creature_card_id), description)
-                }
-            }
-            PendingTrigger::CombatDamageWatch { watcher_card_id, description, .. }
-            | PendingTrigger::DamageToPlayerWatch { watcher_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s triggered ability", card_name(*watcher_card_id))
-                } else {
-                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
-                }
-            }
-            PendingTrigger::SpellCastWatch { watcher_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s triggered ability", card_name(*watcher_card_id))
-                } else {
-                    format!("{}'s triggered ability ({})", card_name(*watcher_card_id), description)
                 }
             }
             PendingTrigger::EndCombatTrigger { card_id, description, .. } => {
@@ -310,13 +293,6 @@ impl PendingTrigger {
                     format!("{}'s attack trigger", card_name(*card_id))
                 } else {
                     format!("{}'s attack trigger ({})", card_name(*card_id), description)
-                }
-            }
-            PendingTrigger::CombatDamageToCreature { creature_card_id, description, .. } => {
-                if description.is_empty() {
-                    format!("{}'s combat damage trigger", card_name(*creature_card_id))
-                } else {
-                    format!("{}'s combat damage trigger ({})", card_name(*creature_card_id), description)
                 }
             }
             PendingTrigger::BlocksTrigger { card_id, description, .. }
@@ -409,6 +385,8 @@ fn face_trigger_description(registry: &CardRegistry, card_id: CardId, kind: &cra
 /// Does NOT resolve them — the game loop resolves them one at a time,
 /// giving players priority between each.
 pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool {
+    use crate::state::StackEntry;
+
     let events = state.events.clone();
     let start = state.trigger_event_index;
     let active_player = state.active_player;
@@ -1009,7 +987,6 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
 
     // APNAP: Active player's triggers go on stack first (bottom),
     // non-active player's go on top. LIFO = NAP resolves first.
-    use crate::state::StackEntry;
     for t in ap_triggers {
         state.stack.push(StackEntry::Trigger(t));
     }

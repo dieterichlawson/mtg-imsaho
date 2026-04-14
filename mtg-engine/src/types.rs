@@ -67,8 +67,7 @@ impl ManaCost {
     pub fn mana_value(&self) -> u32 {
         self.symbols.iter().map(|s| match s {
             ManaSymbol::Colored(_) => 1,
-            ManaSymbol::Generic(n) => *n,
-            ManaSymbol::Colorless(n) => *n,
+            ManaSymbol::Generic(n) | ManaSymbol::Colorless(n) => *n,
             ManaSymbol::X => 0,
         }).sum()
     }
@@ -261,8 +260,7 @@ impl Step {
     /// Does this step normally grant priority to players?
     pub fn has_priority(&self) -> bool {
         match self {
-            Step::Untap => false,
-            Step::Cleanup => false, // normally no priority unless triggered abilities fire
+            Step::Untap | Step::Cleanup => false, // normally no priority unless triggered abilities fire
             _ => true,
         }
     }

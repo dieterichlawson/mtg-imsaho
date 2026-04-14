@@ -28,6 +28,8 @@ impl CardBehavior for MakeAWish {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+        use rand::seq::SliceRandom;
+
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Get all cards in graveyard (excluding tokens).
@@ -38,7 +40,6 @@ impl CardBehavior for MakeAWish {
             .collect();
 
         // Pick two at random.
-        use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
         gy_cards.shuffle(&mut rng);
 

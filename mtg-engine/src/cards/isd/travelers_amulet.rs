@@ -46,6 +46,8 @@ impl CardBehavior for TravelersAmulet {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        use rand::seq::SliceRandom;
+
         // The artifact was already sacrificed by the engine.
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
@@ -66,7 +68,6 @@ impl CardBehavior for TravelersAmulet {
             state.log(crate::state::LogLevel::Event,
                 format!("Traveler's Amulet: p{} found no basic land", controller.0));
             // Still shuffle (you searched).
-            use rand::seq::SliceRandom;
             state.get_player_mut(controller).library_order.shuffle(&mut rand::thread_rng());
         } else if basic_lands.len() == 1 {
             let land_id = basic_lands[0];
@@ -75,7 +76,6 @@ impl CardBehavior for TravelersAmulet {
             let name = state.obj_name(land_id);
             state.log(crate::state::LogLevel::Event,
                 format!("Traveler's Amulet: p{} searched for {}", controller.0, name));
-            use rand::seq::SliceRandom;
             state.get_player_mut(controller).library_order.shuffle(&mut rand::thread_rng());
         } else {
             // Multiple basic lands — player chooses.

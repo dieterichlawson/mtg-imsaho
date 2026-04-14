@@ -14,7 +14,7 @@ impl DraftLogger {
         Self
     }
 
-    pub fn header(&self, set_name: &str, players: usize, best_of: usize, models: &[String], file: &str, line: u32) {
+    pub fn header(set_name: &str, players: usize, best_of: usize, models: &[String], file: &str, line: u32) {
         let all_same = models.iter().all(|m| m == &models[0]);
 
         let mut lines: Vec<String> = Vec::new();
@@ -43,21 +43,21 @@ impl DraftLogger {
         mtg_player::game_log::write(file, line, "HEADER", &content);
     }
 
-    pub fn section(&self, title: &str, file: &str, line: u32) {
+    pub fn section(title: &str, file: &str, line: u32) {
         let bar = "═".repeat(60);
         let content = format!("{bar}\n  {title}\n{bar}");
         mtg_player::game_log::write(file, line, "SECTION", &content);
     }
 
-    pub fn subsection(&self, title: &str, file: &str, line: u32) {
+    pub fn subsection(title: &str, file: &str, line: u32) {
         mtg_player::game_log::write(file, line, &format!("--- {title} ---"), "");
     }
 
-    pub fn system_prompt(&self, prompt: &str, file: &str, line: u32) {
+    pub fn system_prompt(prompt: &str, file: &str, line: u32) {
         mtg_player::game_log::write(file, line, "DRAFT SYSTEM PROMPT", prompt);
     }
 
-    pub fn pack_contents(&self, seat: usize, pack_num: usize, cards: &[String], file: &str, line: u32) {
+    pub fn pack_contents(seat: usize, pack_num: usize, cards: &[String], file: &str, line: u32) {
         let mut content = String::new();
         for (i, card) in cards.iter().enumerate() {
             let name = card.split(" // ").next().unwrap_or(card);
@@ -71,7 +71,6 @@ impl DraftLogger {
     }
 
     pub fn draft_pick(
-        &self,
         seat: usize,
         pack: usize,
         pick: usize,
@@ -104,7 +103,7 @@ impl DraftLogger {
         );
     }
 
-    pub fn pool_summary(&self, seat: usize, pool: &[String], file: &str, line: u32) {
+    pub fn pool_summary(seat: usize, pool: &[String], file: &str, line: u32) {
         let mut content = String::new();
         for card in pool {
             let name = card.split(" // ").next().unwrap_or(card);
@@ -118,7 +117,6 @@ impl DraftLogger {
     }
 
     pub fn deck_building(
-        &self,
         seat: usize,
         maindeck: &[String],
         lands: &std::collections::HashMap<String, u32>,
@@ -171,7 +169,6 @@ impl DraftLogger {
     }
 
     pub fn match_result(
-        &self,
         round: usize,
         seat_a: usize,
         seat_b: usize,
@@ -189,7 +186,7 @@ impl DraftLogger {
         );
     }
 
-    pub fn game_log(&self, _round: usize, game_num: usize, seat_a: usize, seat_b: usize, log: &[String], file: &str, line: u32) {
+    pub fn game_log(_round: usize, game_num: usize, seat_a: usize, seat_b: usize, log: &[String], file: &str, line: u32) {
         let content = log.join("\n");
         mtg_player::game_log::write(
             file, line,
@@ -198,7 +195,7 @@ impl DraftLogger {
         );
     }
 
-    pub fn bye(&self, round: usize, seat: usize, file: &str, line: u32) {
+    pub fn bye(round: usize, seat: usize, file: &str, line: u32) {
         mtg_player::game_log::write(
             file, line,
             &format!("BYE Round {round} — Seat {seat} gets a bye"),
@@ -206,7 +203,7 @@ impl DraftLogger {
         );
     }
 
-    pub fn standings(&self, standings: &[(usize, usize, usize, usize)], file: &str, line: u32) {
+    pub fn standings(standings: &[(usize, usize, usize, usize)], file: &str, line: u32) {
         let mut content = String::new();
         for (rank, &(seat, match_wins, match_losses, game_wins)) in standings.iter().enumerate() {
             writeln!(content, "{}. Seat {} — {}-{} ({} game wins)",
@@ -221,49 +218,49 @@ impl DraftLogger {
 
 #[macro_export]
 macro_rules! log_header {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.header($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::header($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_section {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.section($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::section($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_subsection {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.subsection($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::subsection($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_system_prompt {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.system_prompt($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::system_prompt($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_pack_contents {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.pack_contents($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::pack_contents($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_draft_pick {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.draft_pick($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::draft_pick($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_pool_summary {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.pool_summary($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::pool_summary($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_deck_building {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.deck_building($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::deck_building($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_match_result {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.match_result($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::match_result($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_game_log {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.game_log($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::game_log($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_bye {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.bye($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::bye($($args),+, file!(), line!()) }}
 }
 #[macro_export]
 macro_rules! log_standings {
-    ($log:expr, $($args:expr),+ $(,)?) => { $log.standings($($args),+, file!(), line!()) }
+    ($log:expr, $($args:expr),+ $(,)?) => {{ let _ = &$log; $crate::draft_log::DraftLogger::standings($($args),+, file!(), line!()) }}
 }

@@ -62,7 +62,7 @@ impl DraftState {
             .collect();
 
         // Store all packs for later rounds
-        let mut state = Self {
+        let state = Self {
             pod_size,
             players,
             current_packs,
@@ -73,12 +73,12 @@ impl DraftState {
 
         // Store remaining pack data for rounds 1 and 2
         // We'll reconstruct current_packs when starting a new round
-        state.store_future_packs(packs);
+        Self::store_future_packs(packs);
 
         state
     }
 
-    fn store_future_packs(&mut self, _packs: &[Vec<BoosterPack>]) {
+    fn store_future_packs(_packs: &[Vec<BoosterPack>]) {
         // Already loaded round 0 into current_packs.
         // Rounds 1 and 2 are stored in original_packs for logging
         // and reloaded when starting a new pack round.

@@ -63,7 +63,6 @@ impl CliPlayer {
     /// Check whether the current pass mode should break and return control
     /// to the player. Returns true if the player should be prompted.
     fn should_break_pass(
-        &self,
         view: &GameView,
         legal: &mtg_engine::engine::LegalActions,
         mode: &PassMode,
@@ -1003,11 +1002,7 @@ impl CliPlayer {
             // Read one key event
             if let Ok(Event::Key(KeyEvent { code, modifiers, .. })) = event::read() {
                 match code {
-                    KeyCode::Esc | KeyCode::Enter => {
-                        self.card_filter.clear();
-                        break;
-                    }
-                    KeyCode::Char('/') => {
+                    KeyCode::Esc | KeyCode::Enter | KeyCode::Char('/') => {
                         self.card_filter.clear();
                         break;
                     }
@@ -1031,7 +1026,7 @@ impl CliPlayer {
 
     /// Interactive target selection for a castable spell.
     /// Returns None if the user cancels (presses Escape/back).
-    fn choose_targets(&self, view: &GameView, spell: &mtg_engine::actions::CastableSpell) -> Option<Action> {
+    fn choose_targets(view: &GameView, spell: &mtg_engine::actions::CastableSpell) -> Option<Action> {
         use mtg_engine::actions::CastTargetSpec;
 
         let chosen_targets = match &spell.target_spec {
@@ -1040,17 +1035,17 @@ impl CliPlayer {
                 if options.len() == 1 {
                     vec![options[0].clone()]
                 } else {
-                    let target = self.prompt_target(view, options, &format!("{}: select a target", spell.name))?;
+                    let target = Self::prompt_target(view,options, &format!("{}: select a target", spell.name))?;
                     vec![target]
                 }
             }
             CastTargetSpec::TwoTargets(options1, options2) => {
-                let t1 = self.prompt_target(view, options1, &format!("{}: select first of two targets", spell.name))?;
+                let t1 = Self::prompt_target(view,options1, &format!("{}: select first of two targets", spell.name))?;
                 let remaining: Vec<_> = options2.iter().filter(|t| **t != t1).cloned().collect();
                 if remaining.is_empty() {
                     return None;
                 }
-                let t2 = self.prompt_target(view, &remaining, &format!("{}: select second of two targets", spell.name))?;
+                let t2 = Self::prompt_target(view,&remaining, &format!("{}: select second of two targets", spell.name))?;
                 vec![t1, t2]
             }
             CastTargetSpec::UpToTargets { max, options } => {
@@ -1060,7 +1055,7 @@ impl CliPlayer {
                     if remaining.is_empty() { break; }
                     let label = format!("{}: select target {} of up to {}",
                         spell.name, i + 1, max);
-                    match self.prompt_target_optional(view, &remaining, &label) {
+                    match Self::prompt_target_optional(view,&remaining, &label) {
                         Some(target) => {
                             remaining.retain(|t| *t != target);
                             chosen.push(target);
@@ -1080,7 +1075,7 @@ impl CliPlayer {
             0 => None,
             1 => Some(spell.sacrifice_options[0]),
             _ => {
-                let target = self.prompt_target(view,
+                let target = Self::prompt_target(view,
                     &spell.sacrifice_options.iter().map(|&id| mtg_engine::actions::Target::Object(id)).collect::<Vec<_>>(),
                     &format!("{}: choose a creature to sacrifice", spell.name))?;
                 match target {
@@ -1102,7 +1097,7 @@ impl CliPlayer {
     }
 
     /// Prompt the user to pick one target from a list. Returns None on cancel.
-    fn prompt_target(&self, view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
+    fn prompt_target(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
         let mut labels: Vec<String> = options.iter().map(|t| match t {
             mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
             mtg_engine::actions::Target::Player(pid) => {
@@ -1125,7 +1120,7 @@ impl CliPlayer {
     }
 
     /// Prompt for an optional target (for "up to N" spells). Empty = done.
-    fn prompt_target_optional(&self, view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
+    fn prompt_target_optional(view: &GameView, options: &[mtg_engine::actions::Target], label: &str) -> Option<mtg_engine::actions::Target> {
         let mut labels: Vec<String> = options.iter().map(|t| match t {
             mtg_engine::actions::Target::Object(id) => Self::perm_name(view, *id),
             mtg_engine::actions::Target::Player(pid) => {
@@ -1665,7 +1660,7 @@ impl CliPlayer {
 
     // ── Combat ─────────────────────────────────────────────────────
 
-    fn choose_attackers(&self, view: &GameView, prompt: &CombatPrompt) -> Action {
+    fn choose_attackers(view: &GameView, prompt: &CombatPrompt) -> Action {
         let CombatPrompt::ChooseAttackers { eligible, must_attack, defending_player: defending } = prompt else {
             unreachable!()
         };
@@ -1738,7 +1733,7 @@ impl CliPlayer {
         }
     }
 
-    fn choose_blockers(&self, view: &GameView, prompt: &CombatPrompt) -> Action {
+    fn choose_blockers(view: &GameView, prompt: &CombatPrompt) -> Action {
         let CombatPrompt::ChooseBlockers { eligible_blockers, attackers: attacker_ids, .. } = prompt else {
             unreachable!()
         };
@@ -1810,7 +1805,7 @@ impl CliPlayer {
 impl CliPlayer {
     /// Interactive library search UI: full-screen card browser with type-to-filter,
     /// arrow key navigation, oracle text display, and Enter to select.
-    fn library_search_ui(&self, view: &GameView, actions: &[Action]) -> Action {
+    fn library_search_ui(view: &GameView, actions: &[Action]) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
         // Collect card info for each option.
@@ -1969,6 +1964,11 @@ impl Player for CliPlayer {
     }
 
     fn choose_action(&mut self, view: &GameView, legal: &mtg_engine::engine::LegalActions) -> Action {
+        enum DisplayEntry {
+            Direct(usize),        // index into legal_actions
+            Cast(usize),          // index into legal.castable_spells
+        }
+
         let legal_actions = &legal.actions;
 
         // Special case: library search — show interactive card browser.
@@ -1980,7 +1980,7 @@ impl Player for CliPlayer {
                 Action::ResolveChoice { choice: mtg_engine::actions::ResolvedChoice::ChosenCard(_) }
             ));
             if all_chosen_cards && legal_actions.len() > 3 {
-                return self.library_search_ui(view, legal_actions);
+                return Self::library_search_ui(view, legal_actions);
             }
         }
 
@@ -1998,7 +1998,7 @@ impl Player for CliPlayer {
         // Pass mode: auto-pass until a break condition is met.
         if let Some(ref mode) = self.pass_mode.clone() {
             if has_pass {
-                let should_break = self.should_break_pass(view, legal, mode);
+                let should_break = Self::should_break_pass(view, legal, mode);
                 if should_break {
                     self.pass_mode = None;
                 } else {
@@ -2009,10 +2009,6 @@ impl Player for CliPlayer {
 
         // Build a collapsed display list: non-CastSpell actions + one entry per castable spell.
         // Each entry maps to either a direct action or an interactive casting flow.
-        enum DisplayEntry {
-            Direct(usize),        // index into legal_actions
-            Cast(usize),          // index into legal.castable_spells
-        }
         let mut display: Vec<DisplayEntry> = Vec::new();
         let mut display_labels: Vec<String> = Vec::new();
         let mut seen_spell_objects: Vec<mtg_engine::ids::ObjectId> = Vec::new();
@@ -2227,7 +2223,7 @@ impl Player for CliPlayer {
                         }
                         DisplayEntry::Cast(cs_idx) => {
                             let cs = &legal.castable_spells[*cs_idx];
-                            if let Some(action) = self.choose_targets(view, cs) {
+                            if let Some(action) = Self::choose_targets(view, cs) {
                                 return action;
                             }
                             // User cancelled target selection — re-render
@@ -2293,7 +2289,7 @@ impl CliPlayer {
                     // We have creatures to attack with — break pass mode.
                     self.pass_mode = None;
                 }
-                self.choose_attackers(view, prompt)
+                Self::choose_attackers(view, prompt)
             }
             CombatPrompt::ChooseBlockers { eligible_blockers, .. } => {
                 // Always break pass mode for blockers if we have eligible blockers.
@@ -2304,7 +2300,7 @@ impl CliPlayer {
                 if eligible_blockers.is_empty() {
                     return Action::DeclareBlockers { assignments: vec![] };
                 }
-                self.choose_blockers(view, prompt)
+                Self::choose_blockers(view, prompt)
             }
         }
     }

@@ -15,8 +15,7 @@ fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards
 
     // Unwrap nested requirements (UpToTargets, TwoTargets).
     let inner_req = match target_req {
-        TargetRequirement::UpToTargets(_, inner) => inner.as_ref(),
-        TargetRequirement::TwoTargets(inner, _) => inner.as_ref(),
+        TargetRequirement::UpToTargets(_, inner) | TargetRequirement::TwoTargets(inner, _) => inner.as_ref(),
         other => other,
     };
     match target {
