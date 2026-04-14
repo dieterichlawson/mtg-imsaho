@@ -505,13 +505,13 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
         ))
         .expect("Kessig Wolf Run ability should be available");
 
-    // Activate it — the engine should present a followup ChooseXValue prompt.
+    // Activate it — the engine should present a followup ChooseXFunding prompt.
     let new_state = engine::submit_action(&state, kessig_action, &registry);
 
-    // After activation, a ChooseXValue prompt should be pending with max_x >= 2.
+    // After activation, a ChooseXFunding prompt should be pending with max_x >= 2.
     let has_x_prompt = match &new_state.awaiting_action {
         Some(mtg_engine::state::AwaitingAction::ResolutionChoice { choice, .. }) => {
-            matches!(choice, mtg_engine::state::ResolutionChoiceKind::ChooseXValue { max_x, .. } if *max_x >= 2)
+            matches!(choice, mtg_engine::state::ResolutionChoiceKind::ChooseXFunding { options, .. } if options.max_x >= 2)
         }
         _ => false,
     };
@@ -519,7 +519,7 @@ fn bug_u_kessig_wolf_run_enumerates_x_choices() {
     assert!(
         has_x_prompt,
         "Kessig Wolf Run's X-cost activated ability should present a \
-         followup ChooseXValue prompt so the player can pick X=0, X=1, \
+         followup ChooseXFunding prompt so the player can pick X=0, X=1, \
          or X=2. Bug U: X was auto-determined from the mana pool with \
          no player input. awaiting_action: {:?}",
         new_state.awaiting_action,

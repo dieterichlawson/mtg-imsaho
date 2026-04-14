@@ -86,20 +86,50 @@ pub fn castable_spell(state: &mut GameState, registry: &CardRegistry, name: &str
 }
 
 /// Cast a spell targeting something, then resolve the top of the stack.
-/// Returns the new state after resolution.
+/// Returns the new state after resolution. For X-cost spells, funds X to
+/// the max (taps every offered source + drains pool). Tests wanting a
+/// specific X value should construct the `FundingResponse` themselves
+/// instead of calling this helper.
 pub fn cast_and_resolve(
     state: &GameState,
     registry: &CardRegistry,
     spell_id: ObjectId,
     targets: Vec<Target>,
 ) -> GameState {
-    let mut new_state = mtg_engine::engine::submit_action(
+    let new_state = mtg_engine::engine::submit_action(
         state,
         &Action::CastSpell { object_id: spell_id, targets, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         registry,
     );
+    let mut new_state = resolve_funding_max(&new_state, registry);
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, registry);
     new_state
+}
+
+/// Resolve a pending `ChooseXFunding` prompt (if any) by maxing out every
+/// offered source and draining the pool. No-op when no such prompt is
+/// pending. Used by `cast_and_resolve` and by tests that activate X-cost
+/// abilities and don't care about a specific X value.
+pub fn resolve_funding_max(state: &GameState, registry: &CardRegistry) -> GameState {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::funding::FundingResponse;
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseXFunding { options, .. },
+        ..
+    }) = state.awaiting_action.clone() else {
+        return state.clone();
+    };
+    let mut response = FundingResponse::default();
+    for (mt, amt) in &options.pool {
+        response.pool.insert(*mt, *amt);
+    }
+    for g in &options.groups {
+        response.taps.insert(g.name.clone(), g.max_contribution());
+    }
+    let action = Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
+    mtg_engine::engine::submit_action(state, &action, registry)
 }
 
 /// Place a named card on the battlefield, ready to act. Returns the object ID.

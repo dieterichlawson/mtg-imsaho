@@ -6,6 +6,33 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
 
+/// Resolve a pending `ChooseXFunding` prompt by maxing out every available
+/// source and draining the entire pool. Returns the state after resolution.
+/// No-op if there is no pending resolution prompt.
+fn resolve_max_x_funding(
+    state: &mtg_engine::state::GameState,
+    registry: &CardRegistry,
+) -> mtg_engine::state::GameState {
+    use mtg_engine::actions::{Action, ResolvedChoice};
+    use mtg_engine::funding::FundingResponse;
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let Some(AwaitingAction::ResolutionChoice { choice: ResolutionChoiceKind::ChooseXFunding { options, .. }, .. }) =
+        state.awaiting_action.clone()
+    else {
+        return state.clone();
+    };
+    let mut response = FundingResponse::default();
+    for (mt, amt) in &options.pool {
+        response.pool.insert(*mt, *amt);
+    }
+    for g in &options.groups {
+        response.taps.insert(g.name.clone(), g.max_contribution());
+    }
+    let action = Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
+    engine::submit_action(state, &action, registry)
+}
+
 /// Place a named land on the battlefield, untapped.
 fn land_on_battlefield(
     state: &mut mtg_engine::state::GameState,
@@ -89,14 +116,9 @@ fn test_x_cost_spell_correct_x_value() {
 
     let mut new_state = engine::submit_action(&state, cast_action, &registry);
 
-    // After casting, the engine should present a ChooseXValue prompt.
-    // Resolve it by picking the maximum X (which should be 4).
-    if new_state.awaiting_action.is_some() {
-        let x_actions = engine::legal_actions(&new_state, &registry);
-        // Pick the last action (highest X value).
-        let max_x_action = x_actions.actions.last().expect("should have X value options");
-        new_state = engine::submit_action(&new_state, max_x_action, &registry);
-    }
+    // After casting, the engine should present a ChooseXFunding prompt.
+    // Submit a max-X response: tap all 4 remaining Mountains.
+    new_state = resolve_max_x_funding(&new_state, &registry);
 
     // Check X value on the spell
     let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
@@ -146,12 +168,8 @@ fn test_x_cost_spell_with_mana_in_pool() {
     // Should not panic
     let mut new_state = engine::submit_action(&state, cast_action, &registry);
 
-    // Resolve the ChooseXValue prompt (pick max X).
-    if new_state.awaiting_action.is_some() {
-        let x_actions = engine::legal_actions(&new_state, &registry);
-        let max_x_action = x_actions.actions.last().expect("should have X value options");
-        new_state = engine::submit_action(&new_state, max_x_action, &registry);
-    }
+    // Resolve the ChooseXFunding prompt by funding X to the max.
+    new_state = resolve_max_x_funding(&new_state, &registry);
 
     let stack_objs = new_state.objects_in_zone(Zone::Stack, P0);
     let spell = stack_objs
