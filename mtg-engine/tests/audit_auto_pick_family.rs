@@ -329,28 +329,28 @@ fn bug_e_nevermore_does_not_read_opponent_hand() {
 }
 
 /// Bug F (`audits/AUDIT_BUGS.md)`: `AdditionalCost::ExileCreaturesFromGraveyard`
-/// auto-picks the highest-power creature at apply time. For Corpse
-/// Lunge that's accidentally fine, but for Stitched Drake / Makeshift
-/// Mauler / Skaab Goliath / Skaab Ruinator the player should choose.
+/// auto-picked the highest-power creature at apply time, so the
+/// player never chose between exile candidates (Stitched Drake /
+/// Makeshift Mauler / Skaab Goliath / Skaab Ruinator).
 ///
 /// Oracle (Stitched Drake): "As an additional cost to cast this
 /// spell, exile a creature card from your graveyard."
 ///
-/// Failure mode: the additional-cost handler in
-/// `engine.rs:2119-2152` sorts candidates by base `power` and
-/// `.take(n)`s the top entries. No player choice, no enumeration of
-/// alternative exile subsets in `legal_actions`.
+/// Fix: `legal_actions` emits a single `CastSpell` per target with
+/// `exile_ids = vec![]`; on submission the engine sets up a
+/// `ChooseExileFromGraveyard` resolution prompt listing every eligible
+/// creature in the caster's graveyard. The player picks via
+/// `ResolvedChoice::ChosenExileSet`. Subset enumeration in
+/// `legal_actions` would scale `C(graveyard_size, n)` per target, so
+/// the structured prompt replaces it.
 ///
-/// We put two distinct-power creatures in P0's graveyard and cast
-/// Stitched Drake. `legal_actions` should enumerate one `CastSpell`
-/// entry per exile choice (mirroring how `SacrificeCost` is handled
-/// post-Bug-C fix). Today there's only one entry and the exile is
-/// determined at apply time.
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug F is fixed.
+/// We put two distinct-power creatures in P0's graveyard, cast
+/// Stitched Drake, and assert the engine sets up the prompt with
+/// BOTH creatures as options.
 #[test]
 fn bug_f_stitched_drake_enumerates_exile_choices() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
@@ -368,21 +368,40 @@ fn bug_f_stitched_drake_enumerates_exile_choices() {
     // Stitched Drake in hand with mana paid.
     let drake = castable_spell(&mut state, &registry, "Stitched Drake", P0);
 
+    // legal_actions should emit exactly one CastSpell for the Drake —
+    // the subset enumeration is gone.
     let legal = engine::legal_actions(&state, &registry);
-    let distinct_drake_casts = legal
-        .actions
-        .iter()
+    let drake_casts: Vec<_> = legal.actions.iter()
         .filter(|a| matches!(a, Action::CastSpell { object_id, .. } if *object_id == drake))
-        .count();
+        .collect();
+    assert_eq!(drake_casts.len(), 1,
+        "Stitched Drake should emit exactly one CastSpell entry; the \
+         exile choice now goes through ChooseExileFromGraveyard. Got {} entries.",
+        drake_casts.len());
 
-    assert!(
-        distinct_drake_casts >= 2,
-        "Stitched Drake should expose one CastSpell entry per distinct \
-         exile choice (exile Bears, exile Traveler) — the player \
-         chooses, not the engine. Bug F: the additional-cost handler \
-         auto-picks the highest-power candidate at apply time and emits \
-         a single CastSpell entry. Got {distinct_drake_casts} entries.",
-    );
+    // Submit the cast — the engine should set up a prompt offering
+    // BOTH creatures, not auto-pick one.
+    let cast = drake_casts[0].clone();
+    let post = engine::submit_action(&state, &cast, &registry);
+
+    match post.awaiting_action.as_ref() {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseExileFromGraveyard { options, min, max, .. },
+            ..
+        }) => {
+            assert!(
+                options.contains(&bears_obj) && options.contains(&traveler_obj),
+                "Both Bears and Traveler should appear as exile options — \
+                 Bug F was the engine auto-picking max-power. options={options:?}"
+            );
+            assert_eq!((*min, *max), (1, 1),
+                "Stitched Drake exiles exactly 1 creature; got min={min} max={max}");
+        }
+        other => panic!(
+            "Submitting Cast Stitched Drake should set up a \
+             ChooseExileFromGraveyard prompt, got {other:?}"
+        ),
+    }
 }
 
 /// Bug O (`audits/AUDIT_BUGS.md)`: Memory's Journey's `GraveyardCard`

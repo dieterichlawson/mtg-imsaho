@@ -45,6 +45,18 @@ impl Player for RandomPlayer {
             return Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) };
         }
 
+        // Exile-from-graveyard additional cost: pick the minimum size subset
+        // (which is 0 for Harvest Pyre, n for Stitched Drake / Skaab Ruinator).
+        // Matches the RandomPlayer convention of "minimal action, always valid."
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
+            options, min, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            use mtg_engine::actions::ResolvedChoice;
+            let chosen: Vec<mtg_engine::ids::ObjectId> = options.iter().take(*min).copied().collect();
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
+        }
+
         // Deterministic mulligan policy: always keep the first hand, never
         // mulligan. For the bottom sub-phase (only reached via a forced keep
         // at the cap or if this player had previously mulliganed), pick the

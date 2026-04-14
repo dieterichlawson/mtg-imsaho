@@ -1274,6 +1274,17 @@ impl CliPlayer {
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
                     ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
+                    ResolvedChoice::ChosenExileSet(ids) => {
+                        if ids.is_empty() {
+                            "Exile: (none)".into()
+                        } else {
+                            let names: Vec<String> = ids.iter()
+                                .map(|id| Self::perm_name(view, *id))
+                                .collect();
+                            format!("Exile: [{}]", names.join(", "))
+                        }
+                    }
+                    ResolvedChoice::CancelCast => "Cancel cast".into(),
                 }
             }
         }
@@ -1896,6 +1907,65 @@ impl CliPlayer {
         Action::ResolveChoice { choice: ResolvedChoice::XFunding(response) }
     }
 
+    /// Ask the human which graveyard cards to exile as an additional cost.
+    /// Lists candidates with indices; accepts a space-separated list. Empty
+    /// input picks the minimum subset (typically the first `min` options).
+    fn prompt_exile_from_graveyard(
+        view: &GameView,
+        options: &[mtg_engine::ids::ObjectId],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+
+        println!("\n{description}");
+        if min == max {
+            println!("Choose exactly {min} card{}.", if min == 1 { "" } else { "s" });
+        } else {
+            println!("Choose between {min} and {max} cards.");
+        }
+        for (i, &id) in options.iter().enumerate() {
+            println!("  [{i}] {}", Self::perm_name(view, id));
+        }
+
+        loop {
+            let input = Self::read_line("indices (space-separated, blank = minimum): ");
+            let trimmed = input.trim();
+            let indices: Vec<usize> = if trimmed.is_empty() {
+                (0..min).collect()
+            } else {
+                let parsed: Result<Vec<usize>, _> = trimmed.split_whitespace()
+                    .map(str::parse::<usize>)
+                    .collect();
+                let Ok(v) = parsed else {
+                    println!("Invalid input.");
+                    continue;
+                };
+                v
+            };
+            if indices.iter().any(|&i| i >= options.len()) {
+                println!("Index out of range.");
+                continue;
+            }
+            let mut sorted = indices.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            if sorted.len() != indices.len() {
+                println!("Duplicate indices.");
+                continue;
+            }
+            if indices.len() < min || indices.len() > max {
+                println!("Need between {min} and {max} indices.");
+                continue;
+            }
+            let chosen: Vec<mtg_engine::ids::ObjectId> = indices.into_iter()
+                .map(|i| options[i])
+                .collect();
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
+        }
+    }
+
     fn library_search_ui(view: &GameView, actions: &[Action]) -> Action {
         use mtg_engine::actions::ResolvedChoice;
 
@@ -2069,6 +2139,14 @@ impl Player for CliPlayer {
             legal.resolution_prompt.as_ref()
         {
             return Self::prompt_x_funding(view, options, description);
+        }
+
+        // Exile-from-graveyard: prompt for a space-separated list of indices.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
+            options, min, max, description, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return Self::prompt_exile_from_graveyard(view, options, *min, *max, description);
         }
 
         // Special case: library search — show interactive card browser.

@@ -111,6 +111,17 @@ pub enum ResolvedChoice {
     /// Funding choices for an X-cost spell or ability. Contains the player's
     /// pool drain + tap allocations; the engine derives X from the sum.
     XFunding(crate::funding::FundingResponse),
+    /// Chosen set of graveyard cards to exile as an additional cost.
+    /// Used by `ChooseExileFromGraveyard` prompts on spells with
+    /// `ExileXFromGraveyard` (Harvest Pyre — variable count) or
+    /// `ExileCreaturesFromGraveyard(n)` (Stitched Drake / Skaab
+    /// Ruinator / etc. — fixed count).
+    ChosenExileSet(Vec<ObjectId>),
+    /// Cancel the cast in progress. Used when a fixed-count exile-choice
+    /// prompt can't be satisfied (agent returned an invalid subset twice).
+    /// The engine rolls back: spell stays in hand, no mana tapped, no
+    /// cards exiled.
+    CancelCast,
 }
 
 /// Prompt returned by `legal_actions` for combat.

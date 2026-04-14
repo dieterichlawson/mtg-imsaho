@@ -694,7 +694,11 @@ fn harvest_pyre_x_zero_deals_no_damage() {
 }
 
 #[test]
-fn harvest_pyre_legal_actions_include_different_x_values() {
+fn harvest_pyre_legal_actions_emits_single_cast_per_target() {
+    // With the ChooseExileFromGraveyard refactor, the engine emits ONE
+    // CastSpell per target for Harvest Pyre (not 2^gy_size entries per
+    // target — the old subset enumeration). The player picks which
+    // cards to exile via the resolution prompt.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.priority_player = Some(P0);
@@ -717,9 +721,11 @@ fn harvest_pyre_legal_actions_include_different_x_values() {
         })
         .collect();
 
-    // Should have actions for X=0, X=1, X=2, X=3 (4 values × 1 target = 4 actions).
-    assert!(harvest_actions.len() >= 4,
-        "Should have at least 4 cast actions (X=0,1,2,3) but got {}", harvest_actions.len());
+    // One target × one cast action = 1 (no subset enumeration).
+    assert_eq!(harvest_actions.len(), 1,
+        "Should have exactly 1 cast action (one per target; exile choice \
+         happens via the ChooseExileFromGraveyard prompt), but got {}",
+        harvest_actions.len());
 }
 #[test]
 
@@ -847,13 +853,10 @@ fn castable_spell_exile_x_from_gy_max_reports_zero_when_graveyard_empty() {
 }
 
 #[test]
-fn harvest_pyre_max_x_cast_action_matches_graveyard_size() {
-    // Integration check for the llm.rs expanded-action lookup path: for
-    // each graveyard size, the set of legal CastSpell actions for
-    // Harvest Pyre must include an entry with exile_count equal to the
-    // reported exile_x_from_gy_max. If this breaks, `pick_expanded` in
-    // llm.rs would fail to find a matching action and fall back to the
-    // old X=None behavior that caused Bug H.
+fn harvest_pyre_max_x_cast_deals_full_damage_via_exile_prompt() {
+    // Integration check for the new flow: cast Harvest Pyre, then
+    // resolve the ChooseExileFromGraveyard prompt by exiling every
+    // graveyard card (max X). Damage should equal graveyard size.
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     state.priority_player = Some(P0);
@@ -873,28 +876,11 @@ fn harvest_pyre_max_x_cast_action_matches_graveyard_size() {
     let max_x = cs.exile_x_from_gy_max.expect("max X should be Some(3)");
     assert_eq!(max_x, 3);
 
-    // Find the cast action with exile_count == Some(max_x) targeting the creature.
-    let matching: Vec<&Action> = legal.actions.iter()
-        .filter(|a| matches!(a, Action::CastSpell {
-            object_id,
-            targets,
-            exile_count: Some(x),
-            ..
-        } if *object_id == spell
-             && targets.as_slice() == [Target::Object(target)]
-             && *x == max_x))
-        .collect();
-
-    assert!(!matching.is_empty(),
-        "engine must enumerate a CastSpell action with exile_count=max_x so \
-         llm.rs::choose_cast_targets can find it; otherwise Bug H regresses");
-
-    // Submit that action and verify the full damage lands.
-    let action = matching[0].clone();
-    let mut new_state = engine::submit_action(&state, &action, &reg);
-    mtg_engine::stack::resolve_top_of_stack(&mut new_state, &reg);
+    // cast_and_resolve picks the max-power (= max count for Harvest Pyre)
+    // exile subset, then resolves the top of the stack.
+    let new_state = cast_and_resolve(&state, &reg, spell, vec![Target::Object(target)]);
 
     let target_obj = new_state.get_object(target).unwrap();
     assert_eq!(target_obj.damage_marked, max_x,
-        "casting the max-X variant must deal max_x damage (={max_x})");
+        "exiling max_x cards should deal max_x damage (={max_x})");
 }

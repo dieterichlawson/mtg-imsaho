@@ -529,11 +529,12 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                             .map(|(i, name)| Action::ResolveChoice { choice: ResolvedChoice::ChosenIndex(i, name.clone()) })
                             .collect()
                     }
-                    ResolutionChoiceKind::ChooseXFunding { .. } => {
+                    ResolutionChoiceKind::ChooseXFunding { .. }
+                    | ResolutionChoiceKind::ChooseExileFromGraveyard { .. } => {
                         // Structured prompt — can't be enumerated as a flat
                         // action list. Player implementations see the
-                        // `resolution_prompt` field and construct a
-                        // `ResolvedChoice::XFunding(response)` directly.
+                        // `resolution_prompt` field and construct the
+                        // response directly (XFunding / ChosenExileSet).
                         vec![]
                     }
                 };
@@ -542,7 +543,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     | ResolutionChoiceKind::PayOrNot { description, .. }
                     | ResolutionChoiceKind::ChooseCardFromHand { description, .. }
                     | ResolutionChoiceKind::ChooseCardName { description, .. }
-                    | ResolutionChoiceKind::ChooseXFunding { description, .. } => description.clone(),
+                    | ResolutionChoiceKind::ChooseXFunding { description, .. }
+                    | ResolutionChoiceKind::ChooseExileFromGraveyard { description, .. } => description.clone(),
                     ResolutionChoiceKind::YesNo { .. } => format!("{source_name}: choose yes or no"),
                     ResolutionChoiceKind::ChooseFromRevealed { .. } => format!("{source_name}: choose a card"),
                     ResolutionChoiceKind::ChooseFromLibrary { .. } => format!("{source_name}: search library"),
@@ -1121,72 +1123,15 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 }
             }
 
-            // For ExileXFromGraveyard, expand each cast action into one per graveyard subset.
-            // The player chooses which specific cards to exile (not just how many).
-            if matches!(&data.additional_cost, Some(AdditionalCost::ExileXFromGraveyard)) {
-                let gy_cards: Vec<ObjectId> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id)
-                    .map(|o| o.id)
-                    .collect();
-                let gy_count = gy_cards.len();
-                let base_actions = std::mem::take(&mut cast_actions);
-                for action in base_actions {
-                    if let Action::CastSpell { object_id, targets, sacrifice, tap_plan, .. } = action {
-                        // X=0: cast exiling nothing
-                        cast_actions.push(Action::CastSpell {
-                            object_id,
-                            targets: targets.clone(),
-                            sacrifice,
-                            exile_count: Some(0),
-                            exile_ids: vec![],
-                            alternative_cost: None, tap_plan: tap_plan.clone(),
-                        });
-                        // For each X from 1 to gy_count, enumerate all C(gy_count, X) subsets
-                        for x in 1..=gy_count {
-                            for combo in combinations(&gy_cards, x) {
-                                cast_actions.push(Action::CastSpell {
-                                    object_id,
-                                    targets: targets.clone(),
-                                    sacrifice,
-                                    exile_count: Some(u32::try_from(x).unwrap_or(u32::MAX)),
-                                    exile_ids: combo,
-                                    alternative_cost: None, tap_plan: tap_plan.clone(),
-                                });
-                            }
-                        }
-                    }
-                }
-            }
-
-            // For ExileCreaturesFromGraveyard(n), expand each cast action into one
-            // per combination of n creatures in the graveyard. The player picks which
-            // creatures to exile (e.g., Stitched Drake: exile Bears OR exile Traveler).
-            if let Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) = &data.additional_cost {
-                let gy_creatures: Vec<ObjectId> = state.objects.values()
-                    .filter(|o| {
-                        o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
-                            && (o.power.is_some() || registry.card_data(o.card_id)
-                                .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
-                    })
-                    .map(|o| o.id)
-                    .collect();
-                let base_actions = std::mem::take(&mut cast_actions);
-                for action in base_actions {
-                    if let Action::CastSpell { object_id, targets, sacrifice, tap_plan, .. } = action {
-                        for combo in combinations(&gy_creatures, *n) {
-                            cast_actions.push(Action::CastSpell {
-                                object_id,
-                                targets: targets.clone(),
-                                sacrifice,
-                                exile_count: Some(u32::try_from(*n).unwrap_or(u32::MAX)),
-                                exile_ids: combo,
-                                alternative_cost: None,
-                                tap_plan: tap_plan.clone(),
-                            });
-                        }
-                    }
-                }
-            }
+            // Exile-from-graveyard additional costs: emit exactly ONE
+            // CastSpell per (target, sacrifice) with exile_ids=[] and
+            // exile_count=None. The engine sets up a
+            // `ChooseExileFromGraveyard` prompt when the action is
+            // submitted, and the player picks which cards to exile
+            // via `ResolvedChoice::ChosenExileSet`. Subset enumeration
+            // here would flood the action list with C(gy,k) entries per
+            // target — 2^N for Harvest Pyre with an N-card graveyard.
+            // See `ResolutionChoiceKind::ChooseExileFromGraveyard`.
 
             // Generate alternative cost actions from continuous effects (e.g. Rooftop Storm).
             // The player chooses between the normal cost and the alternative cost.
@@ -2356,6 +2301,104 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 // Fall through to the eager path and pay as X=0.
             }
 
+            // Rules-strict exile-cost casting: for spells with an
+            // `ExileXFromGraveyard` or `ExileCreaturesFromGraveyard(n)`
+            // additional cost, set up a `ChooseExileFromGraveyard` prompt
+            // and leave the spell in hand until the player submits
+            // `ChosenExileSet`. Mirrors the ChooseXFunding flow above.
+            //
+            // The prompt is only set up if the caller left `exile_ids`
+            // empty AND hasn't specified an exile_count (for variable-X
+            // exile cost). That lets tests and other code paths submit
+            // an already-resolved `CastSpell` with specific exile_ids
+            // (or an explicit X count) and bypass the prompt.
+            {
+                use crate::cards::AdditionalCost;
+                let additional = data.additional_cost.clone();
+                let needs_exile_prompt = exile_ids.is_empty() && match &additional {
+                    Some(AdditionalCost::ExileXFromGraveyard) => exile_count.is_none(),
+                    Some(AdditionalCost::ExileCreaturesFromGraveyard(_)) => true,
+                    _ => false,
+                };
+                if needs_exile_prompt {
+                    let (gy_options, min, max) = match &additional {
+                        Some(AdditionalCost::ExileXFromGraveyard) => {
+                            // Any card in the caster's graveyard is eligible,
+                            // except the spell itself (if cast from GY).
+                            let opts: Vec<ObjectId> = new_state.objects.values()
+                                .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id)
+                                .map(|o| o.id)
+                                .collect();
+                            let n = opts.len();
+                            (opts, 0usize, n)
+                        }
+                        Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => {
+                            // Only creature cards in GY.
+                            let opts: Vec<ObjectId> = new_state.objects.values()
+                                .filter(|o| {
+                                    o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
+                                        && (o.power.is_some() || registry.card_data(o.card_id)
+                                            .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
+                                })
+                                .map(|o| o.id)
+                                .collect();
+                            (opts, *n, *n)
+                        }
+                        _ => unreachable!(),
+                    };
+
+                    let spell_name = card_name(&new_state, registry, *object_id);
+                    let description = match &additional {
+                        Some(AdditionalCost::ExileXFromGraveyard) => format!(
+                            "{spell_name}: choose 0-{} cards to exile from your graveyard (each exiled card adds to the spell's X)",
+                            gy_options.len()
+                        ),
+                        Some(AdditionalCost::ExileCreaturesFromGraveyard(n)) => format!(
+                            "{spell_name}: choose exactly {n} creature{} to exile from your graveyard",
+                            if *n == 1 { "" } else { "s" }
+                        ),
+                        _ => unreachable!(),
+                    };
+
+                    // For X-cost spells, the non_x_mana_cost is the stripped
+                    // cost. For non-X spells, use the full cost.
+                    let non_x_mana_cost = if has_x {
+                        ManaCost::new(
+                            cost.symbols.iter().filter(|s| !matches!(s, ManaSymbol::X)).cloned().collect()
+                        )
+                    } else {
+                        cost.clone()
+                    };
+
+                    new_state.pending_spell_cast = Some(crate::state::PendingSpellCast {
+                        object_id: *object_id,
+                        player,
+                        card_id,
+                        targets: targets.clone(),
+                        sacrifice: *sacrifice,
+                        exile_ids: exile_ids.clone(),
+                        exile_count: *exile_count,
+                        tap_plan: tap_plan.clone(),
+                        alternative_cost: alternative_cost.clone(),
+                        non_x_mana_cost,
+                        is_flashback,
+                    });
+                    new_state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                        player,
+                        source: *object_id,
+                        choice: crate::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
+                            description,
+                            options: gy_options,
+                            min,
+                            max,
+                            source_id: *object_id,
+                        },
+                    });
+                    // Spell stays in hand; no mana tapped or paid yet.
+                    return new_state;
+                }
+            }
+
             // Eager path: non-X spells and X-cost spells with max_x == 0.
             // Execute tap_plan, pay mana, pay additional costs, move to stack.
             for &(source_id, ability_index) in tap_plan {
@@ -3294,6 +3337,72 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                 pending.is_flashback, &pending.targets, registry,
                             );
                         }
+                    }
+                    // Exile-choice resolution: player picked a subset of
+                    // graveyard cards to exile as the additional cost.
+                    // Reconstruct the CastSpell action with exile_ids
+                    // populated and recurse through submit_action — this
+                    // re-enters the CastSpell handler, which now sees a
+                    // non-empty exile_ids and takes the eager path
+                    // (tap mana, pay mana, exile, move to stack, fire
+                    // SpellCast).
+                    (ResolutionChoiceKind::ChooseExileFromGraveyard { min, max, options, .. },
+                     ResolvedChoice::ChosenExileSet(chosen)) => {
+                        // Validate: every chosen id must be in options,
+                        // no duplicates, count in [min, max].
+                        let validation_error = {
+                            let n = chosen.len();
+                            if n < *min || n > *max {
+                                Some(format!("chose {n}, required {min}..={max}"))
+                            } else if chosen.iter().any(|id| !options.contains(id)) {
+                                Some("chosen id not in options".to_string())
+                            } else {
+                                let mut dedup = chosen.clone();
+                                dedup.sort();
+                                dedup.dedup();
+                                if dedup.len() == chosen.len() {
+                                    None
+                                } else {
+                                    Some("duplicate ids in choice".to_string())
+                                }
+                            }
+                        };
+                        if let Some(err) = validation_error {
+                            // Invalid response — cancel the cast (spell stays
+                            // in hand, no mana paid). Matches the rules-strict
+                            // "if you can't pay all costs the spell was never
+                            // cast" semantics.
+                            new_state.log(LogLevel::Event,
+                                format!("Exile-choice rejected: {err}; cast cancelled"));
+                            new_state.pending_spell_cast = None;
+                            return new_state;
+                        }
+
+                        let pending = new_state.pending_spell_cast.take()
+                            .expect("pending_spell_cast must be set for ChosenExileSet");
+                        // Reconstruct a CastSpell with exile_ids populated.
+                        // exile_count mirrors chosen.len() for ExileXFromGraveyard;
+                        // ignored for fixed-count ExileCreaturesFromGraveyard.
+                        let cast = crate::actions::Action::CastSpell {
+                            object_id: pending.object_id,
+                            targets: pending.targets.clone(),
+                            sacrifice: pending.sacrifice,
+                            exile_count: Some(u32::try_from(chosen.len()).unwrap_or(u32::MAX)),
+                            exile_ids: chosen.clone(),
+                            alternative_cost: pending.alternative_cost.clone(),
+                            tap_plan: pending.tap_plan.clone(),
+                        };
+                        // Clear awaiting_action so the recursive submit_action
+                        // doesn't treat this as another resolution choice.
+                        new_state.awaiting_action = None;
+                        return submit_action(&new_state, &cast, registry);
+                    }
+                    // Player cancelled a cast mid-prompt (rarely reached —
+                    // only when a fixed-count exile choice couldn't be
+                    // satisfied after validation retries).
+                    (_, ResolvedChoice::CancelCast) => {
+                        new_state.log(LogLevel::Event, "Cast cancelled".into());
+                        new_state.pending_spell_cast = None;
                     }
                     _ => {}
                 }

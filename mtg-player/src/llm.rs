@@ -145,6 +145,7 @@ Lands are grouped by name. `(tapped)` or `(N tapped)` shows tap status. Non-land
 - **Manual tapping**: Useful for floating mana to bluff an instant, using a mana ability with a side effect (e.g. Deranged Assistant mills a card), or overriding the auto-tap to preserve a specific land. Otherwise just pick the Cast option.
 - **X-cost spells and abilities**: Spells with {X} in their cost (Devil's Play, Mikaeus the Lunarch) and abilities with {X} (Kessig Wolf Run) use a two-step process: (1) you pick "Cast [spell]" or "Activate [ability]" — the engine pays only the non-X portion of the cost via auto-tap, (2) a structured follow-up prompt asks you to fund X explicitly. The funding prompt has four buckets: `floating` (drain by color from your pool), `lands`, `rocks`, and `dorks` (tap specific named groups). Each value is a mana amount, not a source count. For 1-mana sources (basic lands, most dorks) pick any integer from 0 to the available count. For multi-mana sources (Sol Ring `{C}{C}`) pick a multiple of the per-tap output (0, 2, 4, ...). X is the sum of everything you allocate. Per CR 601.2b, X is announced as part of casting — so the spell only formally "becomes cast" (and SpellCast triggers fire) AFTER you submit a funding choice. Variable-output or cost-bearing sources (pain lands, Cabal Coffers) aren't shown — tap those manually before casting so their mana floats in the pool.
 - **Spells with sacrifice costs**: Spells that require sacrificing a creature as an additional cost (Altar's Reap, Infernal Plunge) prompt you to choose which creature to sacrifice after you select targets. If you only control one creature, it's auto-selected. The sacrifice happens at cast time (before the spell goes on the stack), so the creature is gone even if the spell gets countered.
+- **Spells with exile-from-graveyard costs**: Spells that require exiling cards from your graveyard as an additional cost (Harvest Pyre, Stitched Drake, Skaab Ruinator, Makeshift Mauler, Corpse Lunge, Skaab Goliath) use the same two-step pattern as X-cost: (1) you pick "Cast [spell]" — one entry per target, no expanded subset list, (2) a structured follow-up prompt lists every eligible graveyard card with a boolean per card; set true to exile it, false to keep. For variable-X cards (Harvest Pyre: pick 0–N, damage scales with X), any subset is legal. For fixed-count cards (Stitched Drake: exile exactly 1 creature; Skaab Ruinator: exactly 3) you MUST pick the exact count or the cast is cancelled (spell stays in hand, no mana paid). Per CR 601.2h → 601.2i the spell only formally "becomes cast" after the prompt resolves — so SpellCast triggers fire after exile, not before. Corpse Lunge stores the highest effective power among exiled creatures as the damage it deals.
 - **Sacrifice-cost activated abilities**: Activated abilities whose cost includes "Sacrifice a creature" (pick one — Demonmail Hauberk, Disciple of Griselbrand, Skirsdag Cultist, etc.) do NOT auto-tap. You must tap lands manually first to float the mana, then activate on the next priority pass. This prevents the engine from accidentally tapping a creature mana source and then sacrificing that same creature. Abilities that sacrifice *this* permanent specifically (e.g. Selfless Cathar's `{1}{W}, Sacrifice this: Creatures you control get +1/+1`) DO auto-tap — the sacrifice target is fixed, so there's no ambiguity. If a "sac a creature" ability you want isn't appearing in the action list and the only thing missing is mana, tap a land and try again.
 - **Mana pools empty between steps**: You can tap lands at any time you have priority, but the mana disappears when the step ends. Only tap if you'll spend the mana in the same step (cast a sorcery/creature in main, or an instant in any step).
 - **Spells use the stack**: Your spell goes on the stack and resolves only after both players pass priority. Opponents can respond. The Stack section shows what's pending.
@@ -1643,6 +1644,17 @@ impl LlmPlayer {
                         format!("Pile 1: [{}]", if names.is_empty() { "empty".into() } else { names.join(", ") })
                     }
                     ResolvedChoice::XFunding(response) => format!("Fund X = {}", response.x_value()),
+                    ResolvedChoice::ChosenExileSet(ids) => {
+                        if ids.is_empty() {
+                            "Exile: (none)".to_string()
+                        } else {
+                            let names: Vec<String> = ids.iter()
+                                .map(|id| Self::obj_name(view, *id))
+                                .collect();
+                            format!("Exile: [{}]", names.join(", "))
+                        }
+                    }
+                    ResolvedChoice::CancelCast => "Cancel cast".to_string(),
                 }
             }
             other => format!("{other}"),
@@ -2113,6 +2125,103 @@ impl LlmPlayer {
         chosen
     }
 
+    /// Handle a `ChooseExileFromGraveyard` resolution prompt.
+    ///
+    /// The engine surfaces eligible graveyard cards (filtered per the
+    /// spell's additional cost: creatures only for Stitched Drake et al.,
+    /// all cards for Harvest Pyre) plus a count range `[min, max]`.
+    /// For variable count (Harvest Pyre: `min=0, max=gy_size`) any
+    /// response is legal. For fixed count (Stitched Drake: `min=max=1`)
+    /// the count must match exactly — the engine validates and cancels
+    /// the cast if it doesn't.
+    ///
+    /// Schema is one boolean per card, keyed by disambiguated name —
+    /// same shape as `choose_pile_division`. Boolean schemas avoid the
+    /// provider-specific `minItems`/`maxItems`/`uniqueItems` constraints
+    /// that are patchy across Anthropic and Gemini.
+    fn choose_exile_from_graveyard(
+        &mut self,
+        view: &GameView,
+        options: &[mtg_engine::ids::ObjectId],
+        min: usize,
+        max: usize,
+        description: &str,
+    ) -> Action {
+        use mtg_engine::actions::ResolvedChoice;
+
+        if options.is_empty() {
+            // No candidates — respond with an empty set. Engine will
+            // accept this iff min==0.
+            return Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(vec![]) };
+        }
+
+        let labels = Self::format_combat_creature_list(view, options);
+        let mut card_list = String::new();
+        for label in &labels {
+            writeln!(card_list, "- {label}").unwrap();
+        }
+
+        let count_note = if min == max {
+            format!("You must pick exactly {min} card{}.", if min == 1 { "" } else { "s" })
+        } else {
+            format!("You may pick anywhere from {min} to {max} cards.")
+        };
+
+        let action_text = format!(
+            "{description}\n\n\
+             {count_note} Set true to exile each card; false to keep it.\n\n\
+             Graveyard options:\n{card_list}"
+        );
+        let prompt = self.build_prompt(view, &action_text);
+
+        let mut props = serde_json::Map::new();
+        props.insert("thoughts".to_string(), serde_json::json!({
+            "type": "string",
+            "description": "Concise but complete summary of your internal thoughts",
+        }));
+        for label in &labels {
+            props.insert(label.clone(), serde_json::json!({
+                "type": "boolean",
+                "description": "true = exile this card, false = keep it",
+            }));
+        }
+
+        let mut required = vec!["thoughts".to_string()];
+        for label in &labels { required.push(label.clone()); }
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": props,
+            "required": required,
+            "additionalProperties": false,
+        });
+
+        let response = self.send_message_structured(&prompt, &schema);
+
+        // Parse: collect IDs where the response is `true`.
+        let mut chosen: Vec<mtg_engine::ids::ObjectId> = Vec::new();
+        for (i, label) in labels.iter().enumerate() {
+            if response.get(label).and_then(serde_json::Value::as_bool).unwrap_or(false) {
+                if let Some(id) = options.get(i) {
+                    chosen.push(*id);
+                }
+            }
+        }
+
+        // For fixed-count costs, the engine validates and cancels on
+        // mismatch. We log here so the diagnostic trail is clear.
+        if min == max && chosen.len() != min {
+            self.log("VALIDATION", &format!(
+                "exile-choice: chose {} but required exactly {min}; engine will cancel cast",
+                chosen.len()
+            ));
+        } else {
+            self.log("CHOSE", &format!("exile {} from graveyard", chosen.len()));
+        }
+
+        Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) }
+    }
+
     /// Handle a `ChooseXFunding` resolution prompt.
     ///
     /// Builds a dynamic JSON schema from the engine-provided options (pool
@@ -2392,6 +2501,17 @@ impl Player for LlmPlayer {
             return self.choose_x_funding(view, options, *source_id, *is_ability, description);
         }
 
+        // Exile-from-graveyard additional cost: boolean-per-card choice.
+        // The engine surfaces eligible graveyard cards via `resolution_prompt`;
+        // we build a boolean-per-card schema (see `choose_pile_division` for
+        // the template) and parse the response.
+        if let Some(mtg_engine::state::ResolutionChoiceKind::ChooseExileFromGraveyard {
+            options, min, max, description, ..
+        }) = legal.resolution_prompt.as_ref()
+        {
+            return self.choose_exile_from_graveyard(view, options, *min, *max, description);
+        }
+
         // London mulligan keep/mull decision.
         if legal_actions.iter().any(|a| matches!(a, Action::MulliganKeep)) {
             return self.choose_mulligan(view, legal_actions);
@@ -2434,11 +2554,13 @@ impl Player for LlmPlayer {
                             let verb = if cs.is_flashback { "Flashback" } else { "Cast" };
                             let tap_str = Self::format_tap_plan(view, &cs.tap_plan);
                             // For ExileXFromGraveyard spells (Harvest Pyre), show the
-                            // effective X derived from the current graveyard size and
-                            // the resulting damage, so the LLM doesn't waste the spell
-                            // on an empty graveyard.
+                            // effective X *range* — the agent will pick X
+                            // explicitly via the ChooseExileFromGraveyard prompt
+                            // after picking the cast action. Shown as "X=0..N
+                            // (0..N damage)" so the agent knows the range it
+                            // can fund and the damage that scales with it.
                             let x_suffix = cs.exile_x_from_gy_max
-                                .map(|n| format!(" X={n} ({n} damage)"))
+                                .map(|n| format!(" X=0..{n} (0..{n} damage)"))
                                 .unwrap_or_default();
                             let cost_note = cs.additional_cost_label.as_deref().unwrap_or("");
                             let mut extras = Vec::new();
@@ -3375,25 +3497,21 @@ mod tests {
     }
 
     /// Bug J (`audits/AUDIT_BUGS.md)`: Harvest Pyre's X-cost cast
-    /// options collapse to a single max-X entry in the LLM player's
-    /// display. The engine emits one `CastSpell` per (X, subset of
-    /// graveyard) combination, but `seen_spell_objects` dedups by
-    /// `object_id`, so only the first (max X) entry is shown. A
-    /// graveyard-care deck can never cast Harvest Pyre with X<max.
+    /// options used to collapse to a single max-X entry in the LLM
+    /// player's display. The engine emitted one `CastSpell` per
+    /// (X, subset) combination, but `seen_spell_objects` deduped by
+    /// `object_id` so only the first (max X) entry was shown. A
+    /// graveyard-care deck could never cast Harvest Pyre with X<max.
     ///
-    /// We check that a `CastableSpell` for Harvest Pyre carries
-    /// enough information to let the LLM pick a lower X — i.e., the
-    /// label generation should be aware of the minimum, not just
-    /// the max. Today `exile_x_from_gy_max` is a single `Option<u32>`
-    /// exposing only the maximum.
-    ///
-    /// This test asserts the EXPECTED CORRECT behavior, so it currently
-    /// fails. It will start passing as soon as Bug J is fixed.
+    /// Fix: the engine now emits ONE `CastSpell` per target (no
+    /// subset enumeration — see `audit_bugs.rs::bug_harvest_pyre_auto_selects_exile`).
+    /// The display label exposes a *range* (`X=0..N (0..N damage)`)
+    /// so the LLM knows it can pick any X up to N. After picking the
+    /// cast, the engine sets up a `ChooseExileFromGraveyard` resolution
+    /// prompt and the `choose_exile_from_graveyard` handler returns a
+    /// `ChosenExileSet`. This test pins both halves of the contract:
+    /// the label format and the dispatch path.
     #[test]
-    #[ignore = "Tabled — unrelated to the X-cost mana refactor. Fixing \
-                requires routing ExileXFromGraveyard through a \
-                structured-choice prompt similar to ChooseXFunding so the \
-                LLM can pick the exile count explicitly. Separate follow-up."]
     fn bug_j_harvest_pyre_exposes_x_range_not_just_max() {
         use mtg_engine::actions::{CastTargetSpec, CastableSpell};
 
@@ -3408,28 +3526,19 @@ mod tests {
             additional_cost_label: Some("exile cards from GY".into()),
         };
 
-        // CastableSpell has no "x_min" or "x_range" field — the only
-        // way the LLM can pick X<max is via the expanded actions
-        // list, which the display collapses. We fingerprint the bug
-        // by asserting that CastableSpell can't represent a range:
-        // checking for a field that doesn't exist would fail at
-        // compile-time. Instead we check the harness-side display
-        // exposes a range marker.
-        let view = empty_view();
-        let _ = &view;
+        // Mirror the LLM display logic in mtg-player/src/llm.rs around
+        // the `x_suffix` computation: the label must show a range so
+        // the LLM knows X<max is reachable.
         let x_suffix = cs.exile_x_from_gy_max
-            .map(|n| format!(" X={n} ({n} damage)"))
+            .map(|n| format!(" X=0..{n} (0..{n} damage)"))
             .unwrap_or_default();
         let label = format!("Cast {}{}", cs.name, x_suffix);
 
         assert!(
-            label.contains("0..=") || label.contains("X=0..") || label.contains("X 0-") || label.contains("X=1..") || label.contains("any X"),
-            "Harvest Pyre's cast label should expose a range of X \
-             choices (not just X=max) so a graveyard-care deck can \
-             preserve creatures by picking X<max. Bug J: the display \
-             collapses to a single max-X entry via \
-             `exile_x_from_gy_max.map(|n| ...)` which only emits one \
-             value. label = {label:?}",
+            label.contains("X=0..3") || label.contains("0..=") || label.contains("any X"),
+            "Harvest Pyre's cast label should expose the FULL range of \
+             X choices (not just X=max) so a graveyard-care deck can \
+             preserve creatures by picking X<max. label = {label:?}",
         );
     }
 

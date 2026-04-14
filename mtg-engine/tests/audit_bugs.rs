@@ -1120,49 +1120,78 @@ fn bug_thraben_sentry_vigilance_retained_after_transform() {
 // CARD-SPECIFIC: HARVEST PYRE — NO EXILE CHOICE
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: When casting Harvest Pyre, the engine auto-selects which cards
-/// to exile from the graveyard instead of letting the player choose.
+/// When casting Harvest Pyre, the engine must let the player choose
+/// WHICH cards to exile — not just a count. The original auto-pick
+/// behavior was replaced by a structured `ChooseExileFromGraveyard`
+/// prompt that lists every eligible graveyard card and lets the player
+/// pick any subset (0 ≤ k ≤ `graveyard_size`).
+///
+/// Previous incarnation of this test asserted the engine enumerated
+/// `C(gy,k)` expanded `CastSpell` actions. That was a transitional
+/// fix; the final fix is the structured prompt, which avoids the
+/// combinatorial explosion entirely (important for the LLM player:
+/// 2^N actions flood the action list for an N-card graveyard).
 #[test]
 fn bug_harvest_pyre_auto_selects_exile() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put several different cards in P0's graveyard
+    let mut gy_ids = Vec::new();
     for name in ["Grizzly Bears", "Lightning Bolt", "Giant Growth"] {
         let card_id = registry.get_id_by_name(name).unwrap();
         let id = state.create_object(card_id, P0, Zone::Graveyard, None, None);
         state.get_object_mut(id).unwrap().name = name.into();
+        gy_ids.push(id);
     }
 
-    // Place a target
-    let _target = ready_creature(&mut state, P1, 5, 5);
+    let target = ready_creature(&mut state, P1, 5, 5);
 
-    // Add mana for Harvest Pyre
     add_mana_for(&mut state, &registry, "Harvest Pyre", P0);
     let pyre = spell_in_hand(&mut state, &registry, "Harvest Pyre", P0);
 
-    // Get legal actions — there should be multiple options for different X values
-    // but the player should also choose WHICH cards to exile
+    // Engine should emit exactly ONE CastSpell action per target —
+    // no subset enumeration.
     let legal = engine::legal_actions(&state, &registry);
     let pyre_actions: Vec<_> = legal.actions.iter().filter(|a| {
         matches!(a, Action::CastSpell { object_id, .. } if *object_id == pyre)
     }).collect();
+    assert_eq!(pyre_actions.len(), 1,
+        "Harvest Pyre should emit exactly one CastSpell; exile choice goes through \
+         ChooseExileFromGraveyard prompt. Got {} entries.", pyre_actions.len());
 
-    // The engine generates actions with exile_count for different X values,
-    // but auto-selects which specific cards to exile. This is the bug —
-    // the player should choose which cards to exile.
-    // We can verify by checking if there are more actions for the same X
-    // with different exile selections.
-    let x2_actions: Vec<_> = pyre_actions.iter().filter(|a| {
-        matches!(a, Action::CastSpell { exile_count: Some(2), .. })
-    }).collect();
+    // Submitting the cast should set up a ChooseExileFromGraveyard
+    // prompt offering all three graveyard cards, with min=0 max=3.
+    let cast = Action::CastSpell {
+        object_id: pyre,
+        targets: vec![Target::Object(target)],
+        sacrifice: None, exile_count: None, exile_ids: vec![],
+        alternative_cost: None, tap_plan: vec![],
+    };
+    let post = engine::submit_action(&state, &cast, &registry);
 
-    // For X=2 with 3 graveyard cards, there should be C(3,2) = 3 different
-    // exile selections. If there's only 1, the engine auto-picked.
-    // BUG: Only 1 action for X=2 (auto-selected)
-    assert!(x2_actions.len() > 1,
-        "Should have multiple exile selections for X=2 with 3 graveyard cards, got {}",
-        x2_actions.len());
+    match post.awaiting_action.as_ref() {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::ChooseExileFromGraveyard { options, min, max, .. },
+            ..
+        }) => {
+            assert_eq!(*min, 0, "Harvest Pyre allows X=0");
+            assert_eq!(*max, 3, "Harvest Pyre max X = graveyard size (3)");
+            for id in &gy_ids {
+                assert!(options.contains(id),
+                    "all P0 graveyard cards should appear as options, missing {id:?}");
+            }
+        }
+        other => panic!(
+            "Casting Harvest Pyre should set up ChooseExileFromGraveyard, got {other:?}"
+        ),
+    }
+
+    // Harvest Pyre should still be in hand while the prompt is pending.
+    assert_eq!(post.get_object(pyre).map(|o| o.zone), Some(Zone::Hand));
+    assert!(post.stack.is_empty());
 }
 
 // ═══════════════════════════════════════════════════════════════

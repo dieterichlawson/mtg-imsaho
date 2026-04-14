@@ -1881,6 +1881,39 @@ pub enum ResolutionChoiceKind {
     /// Rules ordering: this prompt runs BEFORE the spell is placed on the
     /// stack and before `SpellCast`-style triggers fire, matching CR 601.2b
     /// (announce X) → 601.2h (pay total cost) → 601.2i (spell becomes cast).
+    /// Choose which cards to exile from the graveyard as an additional
+    /// cost to cast a spell with `AdditionalCost::ExileXFromGraveyard`
+    /// (Harvest Pyre) or `AdditionalCost::ExileCreaturesFromGraveyard(n)`
+    /// (Stitched Drake / Skaab Ruinator / Makeshift Mauler / Corpse
+    /// Lunge).
+    ///
+    /// Rules ordering: this prompt runs BEFORE the spell is placed on the
+    /// stack. Per CR 601.2h → 601.2i the total cost (including additional
+    /// costs) is paid before the spell becomes cast. The engine stashes
+    /// the partially-specified cast context on
+    /// [`GameState::pending_spell_cast`]; the resolution handler fills in
+    /// the chosen exile set and executes the cast atomically (tap mana,
+    /// pay mana, exile cards, move to stack, fire `SpellCast`).
+    ///
+    /// For `ExileXFromGraveyard` (variable count): any size `0..=options.len()`
+    /// is legal — the damage/etc. scales with X. For
+    /// `ExileCreaturesFromGraveyard(n)` (fixed count): exactly `n` must be
+    /// chosen. The count constraint is surfaced to players via `min`/`max`
+    /// and enforced at resolve time.
+    ChooseExileFromGraveyard {
+        description: String,
+        /// Graveyard cards eligible for exile — filtered per the spell's
+        /// additional cost (creatures only for Stitched Drake et al.,
+        /// all cards for Harvest Pyre).
+        options: Vec<ObjectId>,
+        /// Minimum number of cards the player must choose.
+        min: usize,
+        /// Maximum number of cards the player may choose.
+        max: usize,
+        /// The spell being cast (currently in its origin zone until the
+        /// prompt resolves).
+        source_id: ObjectId,
+    },
     ChooseXFunding {
         description: String,
         /// All available funding options (pool mana + tap sources).

@@ -20,7 +20,6 @@
 mod common;
 use common::*;
 
-use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
 use mtg_engine::types::*;
@@ -140,23 +139,11 @@ fn bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature() {
     let victim = ready_creature(&mut state, P1, 3, 3);
 
     // Cast Corpse Lunge via the full engine path so the additional
-    // cost handler fires.
+    // cost handler fires. `cast_and_resolve` handles the
+    // ChooseExileFromGraveyard prompt by picking the max-power subset —
+    // with only one creature in the graveyard, that's the Wurm.
     let lunge = castable_spell(&mut state, &registry, "Corpse Lunge", P0);
-    let new_state = engine::submit_action(
-        &state,
-        &Action::CastSpell {
-            object_id: lunge,
-            targets: vec![Target::Object(victim)],
-            sacrifice: None,
-            exile_count: None,
-            exile_ids: vec![],
-            alternative_cost: None,
-            tap_plan: vec![],
-        },
-        &registry,
-    );
-    state = new_state;
-    mtg_engine::stack::resolve_top_of_stack(&mut state, &registry);
+    state = cast_and_resolve(&state, &registry, lunge, vec![Target::Object(victim)]);
 
     let damage = state.get_object(victim).map_or(0, |o| o.damage_marked);
     assert!(

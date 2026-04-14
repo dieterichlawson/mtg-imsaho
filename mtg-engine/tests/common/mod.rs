@@ -101,9 +101,44 @@ pub fn cast_and_resolve(
         &Action::CastSpell { object_id: spell_id, targets, sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         registry,
     );
+    // Resolve any follow-up casting prompts (exile-choice, then X-funding).
+    // Order matters: exile-choice comes first since the engine sets up
+    // ChooseExileFromGraveyard from the CastSpell handler, and only after
+    // the cast recurses (via ChosenExileSet) might a ChooseXFunding
+    // appear. No current card needs both chained, but the helper handles
+    // the sequence defensively.
+    let new_state = resolve_exile_choice_max_power(&new_state, registry);
     let mut new_state = resolve_funding_max(&new_state, registry);
     mtg_engine::stack::resolve_top_of_stack(&mut new_state, registry);
     new_state
+}
+
+/// Resolve a pending `ChooseExileFromGraveyard` prompt (if any) by picking
+/// the `max` highest-`effective_power` subset. For fixed-count costs this
+/// is the count; for variable-count (Harvest Pyre) it's the maximum
+/// possible X. Matches legacy "auto-pick max" behavior so tests that
+/// previously relied on engine-side auto-pick keep working.
+pub fn resolve_exile_choice_max_power(
+    state: &GameState,
+    registry: &CardRegistry,
+) -> GameState {
+    use mtg_engine::actions::ResolvedChoice;
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
+    let Some(AwaitingAction::ResolutionChoice {
+        choice: ResolutionChoiceKind::ChooseExileFromGraveyard { options, max, .. },
+        ..
+    }) = state.awaiting_action.clone() else {
+        return state.clone();
+    };
+    // Sort by effective_power desc so Corpse Lunge et al. pick the big creature.
+    let mut ranked: Vec<(ObjectId, i32)> = options.iter()
+        .map(|&id| (id, state.effective_power(id, registry).unwrap_or(0)))
+        .collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1));
+    let chosen: Vec<ObjectId> = ranked.into_iter().take(max).map(|(id, _)| id).collect();
+    let action = Action::ResolveChoice { choice: ResolvedChoice::ChosenExileSet(chosen) };
+    mtg_engine::engine::submit_action(state, &action, registry)
 }
 
 /// Resolve a pending `ChooseXFunding` prompt (if any) by maxing out every

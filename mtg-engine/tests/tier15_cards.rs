@@ -699,12 +699,16 @@ fn skaab_ruinator_cast_from_graveyard() {
     });
     assert!(can_cast, "Skaab Ruinator should be castable from graveyard");
 
-    // Cast it.
-    let new_state = engine::submit_action(
+    // Cast it — the engine sets up a ChooseExileFromGraveyard prompt
+    // (exile 3 creatures) and leaves the spell in the graveyard until
+    // the cost is paid. Use the test helper to pick the max-power
+    // subset (all three 1/1s).
+    let mut new_state = engine::submit_action(
         &state,
         &Action::CastSpell { object_id: ruinator, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] },
         &reg,
     );
+    new_state = resolve_exile_choice_max_power(&new_state, &reg);
 
     // Should be on the stack (not panicked!).
     assert_eq!(new_state.get_object(ruinator).unwrap().zone, Zone::Stack,
