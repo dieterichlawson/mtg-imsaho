@@ -60,7 +60,6 @@ fn cannot_activate_without_rg() {
 
 /// X=3 with 5 mana gives +3/+0 and trample.
 #[test]
-#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn x_equals_3_gives_plus_3() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -68,7 +67,8 @@ fn x_equals_3_gives_plus_3() {
     let wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
     let creature = ready_creature(&mut state, P0, 2, 2);
 
-    // Add {R}{G} + 3 colorless = 5 mana total. X should be 3.
+    // Add {R}{G} + 3 colorless = 5 mana total. We'll fund X = 3 from the
+    // remaining 3 colorless after the {R}{G} non-X portion is paid.
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 3);
@@ -84,6 +84,7 @@ fn x_equals_3_gives_plus_3() {
     };
 
     state = mtg_engine::engine::submit_action(&state, &action, &reg);
+    state = resolve_funding_max(&state, &reg);
 
     // Check +3/+0 effect.
     let power = state.effective_power(creature, &reg).unwrap_or(0);

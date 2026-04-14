@@ -302,7 +302,6 @@ fn nevermore_allows_other_spells() {
 
 /// Devil's Play deals X damage.
 #[test]
-#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn devils_play_deals_x_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -340,9 +339,8 @@ fn devils_play_x_zero() {
 
 // ── Kessig Wolf Run ──────────────────────────────────────────
 
-/// Kessig Wolf Run grants +1/+0 and trample.
+/// Kessig Wolf Run with {1}{R}{G} funds X = 1, granting +1/+0 and trample.
 #[test]
-#[ignore = "Tabled — requires X-cost/autotap overhaul"]
 fn kessig_wolf_run_grants_power_and_trample() {
     let reg = registry();
     let mut state = game_at_step(Step::PrecombatMain, P0);
@@ -350,13 +348,13 @@ fn kessig_wolf_run_grants_power_and_trample() {
     let wolf_run = named_creature(&mut state, &reg, "Kessig Wolf Run", P0);
     let creature = ready_creature(&mut state, P0, 3, 3);
 
-    // Add mana for the ability: {1}{R}{G}.
+    // {1}{R}{G} in the pool: {R}{G} pays the non-X portion, leaving 1
+    // colorless that we'll allocate to X via the funding prompt.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Red, 1);
     state.get_player_mut(P0).mana_pool.add(ManaType::Green, 1);
 
-    // Activate the ability targeting the creature.
-    let new_state = engine::submit_action(
+    let activated = engine::submit_action(
         &state,
         &Action::ActivateAbility {
             object_id: wolf_run,
@@ -369,8 +367,9 @@ fn kessig_wolf_run_grants_power_and_trample() {
         },
         &reg,
     );
+    let new_state = resolve_funding_max(&activated, &reg);
 
-    // Creature should have +1/+0 until end of turn.
+    // Creature should have +1/+0 until end of turn (base 3/3 → 4/3).
     assert_eq!(new_state.effective_power(creature, &reg).unwrap(), 4);
     assert_eq!(new_state.effective_toughness(creature, &reg).unwrap(), 3);
 

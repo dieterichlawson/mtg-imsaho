@@ -316,7 +316,6 @@ fn bug_bu_burning_vengeance_no_stale_opponent_log() {
 /// This test asserts the EXPECTED CORRECT behavior, so it currently
 /// fails. It will start passing as soon as Bug K is fixed.
 #[test]
-#[ignore = "Tabled — requires autotap/special cost overhaul"]
 fn bug_k_selfless_cathar_autotaps_sacrifice_this() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
