@@ -57,12 +57,12 @@ impl CardBehavior for RunechantersPike {
             return None;
         }
         let controller = obj.controller;
-        let count = state.objects.values()
+        let count = i32::try_from(state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller)
             .filter(|o| {
                 o.card_types.contains(&CardType::Instant) || o.card_types.contains(&CardType::Sorcery)
             })
-            .count() as i32;
+            .count()).unwrap_or(i32::MAX);
         Some((count, 0))
     }
 

@@ -64,7 +64,7 @@ pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Targ
             }
             Target::Player(player_id) => {
                 let old_life = state.get_player(*player_id).life;
-                let new_life = old_life - (amount as i32);
+                let new_life = old_life - i32::try_from(amount).unwrap_or(i32::MAX);
                 state.get_player_mut(*player_id).life = new_life;
                 state.events.push(GameEvent::NonCombatDamageDealt {
                     source: spell_id,

@@ -51,23 +51,23 @@ impl CardBehavior for UnbreathingHorde {
         let controller = state.get_object(self_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Count other Zombies on the battlefield.
-        let bf_count = state.objects.values()
+        let bf_count = u32::try_from(state.objects.values()
             .filter(|o| {
                 o.zone == Zone::Battlefield
                 && o.controller == controller
                 && o.id != self_id
                 && Self::is_zombie(o, registry)
             })
-            .count() as u32;
+            .count()).unwrap_or(u32::MAX);
 
         // Count Zombie cards in graveyard. Because this callback is called
         // BEFORE the zone change, the Horde is still in its original zone.
         // If entering from graveyard, the Horde naturally appears in this
         // count (per the Scryfall ruling: "it will count itself").
-        let gy_count = state.objects_in_zone(Zone::Graveyard, controller)
+        let gy_count = u32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| o.id != self_id && Self::is_zombie(o, registry))
-            .count() as u32;
+            .count()).unwrap_or(u32::MAX);
 
         // Per ruling: count self when entering from graveyard.
         let self_in_gy = state.get_object(self_id)

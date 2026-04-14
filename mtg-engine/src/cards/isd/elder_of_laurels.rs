@@ -50,10 +50,10 @@ impl CardBehavior for ElderOfLaurels {
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
-        let creature_count = state.objects_in_zone(Zone::Battlefield, controller)
+        let creature_count = i32::try_from(state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .filter(|o| o.power.is_some())
-            .count() as i32;
+            .count()).unwrap_or(i32::MAX);
 
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {

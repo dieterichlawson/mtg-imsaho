@@ -743,7 +743,7 @@ impl GameState {
 
     /// Get the next player after the given player (turn order).
     pub fn next_player(&self, player: PlayerId) -> PlayerId {
-        let next = (player.0 + 1) % self.players.len() as u8;
+        let next = (player.0 + 1) % u8::try_from(self.players.len()).unwrap_or(u8::MAX);
         PlayerId(next)
     }
 
@@ -995,7 +995,7 @@ impl GameState {
                 _ => crate::types::CounterType::PlusOnePlusOne,
             };
             self.get_object(*source_id)
-                .map_or(0, |src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
+                .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
         } else if let Some(behavior) = registry.get(obj.card_id) {
             // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
             if let Some((p, _)) = behavior.dynamic_pt(self, id) {
@@ -1012,8 +1012,8 @@ impl GameState {
         power += p_mod;
 
         // +1/+1 and -1/-1 counter bonuses.
-        power += *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
-        power -= *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
+        power += i32::try_from(*obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0)).unwrap_or(i32::MAX);
+        power -= i32::try_from(*obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0)).unwrap_or(i32::MAX);
 
         // Until-end-of-turn effects.
         for effect in &self.until_end_of_turn {
@@ -1055,7 +1055,7 @@ impl GameState {
                 _ => crate::types::CounterType::PlusOnePlusOne,
             };
             self.get_object(*source_id)
-                .map_or(0, |src| *src.counters.get(&counter_type).unwrap_or(&0) as i32)
+                .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
         } else if let Some(behavior) = registry.get(obj.card_id) {
             // Check if this creature's own card has dynamic P/T.
             if let Some((_, t)) = behavior.dynamic_pt(self, id) {
@@ -1071,8 +1071,8 @@ impl GameState {
         toughness += t_mod;
 
         // +1/+1 and -1/-1 counter bonuses.
-        toughness += *obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0) as i32;
-        toughness -= *obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0) as i32;
+        toughness += i32::try_from(*obj.counters.get(&crate::types::CounterType::PlusOnePlusOne).unwrap_or(&0)).unwrap_or(i32::MAX);
+        toughness -= i32::try_from(*obj.counters.get(&crate::types::CounterType::MinusOneMinusOne).unwrap_or(&0)).unwrap_or(i32::MAX);
 
         for effect in &self.until_end_of_turn {
             match effect {

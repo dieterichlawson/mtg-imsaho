@@ -39,10 +39,10 @@ impl CardBehavior for CorpseLunge {
         // The creature was exiled at cast time (additional cost). Read the stored power.
         let power = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exiled_power").copied())
-            .map_or(0, |id| id.0 as i32);
+            .map_or(0, |id| i32::try_from(id.0).unwrap_or(i32::MAX));
 
         {
-            let damage = power.max(0) as u32;
+            let damage = u32::try_from(power.max(0)).unwrap_or(0);
             if damage > 0 {
                 // Deal damage to the target creature.
                 if let Some(Target::Object(target_id)) = targets.first() {

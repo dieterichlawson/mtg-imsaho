@@ -118,7 +118,7 @@ impl CardBehavior for HereticsPunishment {
                 }
                 Target::Player(player_id) => {
                     let old = state.get_player(*player_id).life;
-                    let new_life = old - max_mv as i32;
+                    let new_life = old - i32::try_from(max_mv).unwrap_or(i32::MAX);
                     state.get_player_mut(*player_id).life = new_life;
                     state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
                         source: object_id,

@@ -72,7 +72,7 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
                     // indestructible and regeneration do NOT prevent this.
                     zero_toughness_ids.push(id);
                 }
-                Some(t) if !entering_copy && ((damage as i32) >= t || (deathtouch && damage > 0)) => {
+                Some(t) if !entering_copy && (i32::try_from(damage).unwrap_or(i32::MAX) >= t || (deathtouch && damage > 0)) => {
                     // Rules 704.5g/h: lethal damage or deathtouch — destruction,
                     // checked via try_destroy (indestructible / regeneration apply).
                     destroyed_ids.push(id);

@@ -37,7 +37,7 @@ impl CardBehavior for BlasphemousAct {
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
             .count();
         let reduction = creature_count.min(8); // can't reduce below {R}
-        let generic = 8u32.saturating_sub(reduction as u32);
+        let generic = 8u32.saturating_sub(u32::try_from(reduction).unwrap_or(u32::MAX));
         if generic == 8 {
             return None; // no reduction, use normal cost
         }

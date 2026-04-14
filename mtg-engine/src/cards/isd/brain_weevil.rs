@@ -98,7 +98,7 @@ impl CardBehavior for BrainWeevil {
         let target_player_raw = state.get_object(self_id)
             .and_then(|o| o.card_state.get("weevil_target_player").copied());
         let Some(raw_id) = target_player_raw else { return };
-        let target_player = PlayerId(raw_id.0 as u8);
+        let target_player = PlayerId(u8::try_from(raw_id.0).unwrap_or(u8::MAX));
 
         // Clear the marker so we only chain once.
         if let Some(obj) = state.get_object_mut(self_id) {

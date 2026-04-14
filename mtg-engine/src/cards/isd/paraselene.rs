@@ -50,7 +50,7 @@ impl CardBehavior for Paraselene {
 
         if destroyed_count > 0 {
             let old_life = state.get_player(controller).life;
-            let new_life = old_life + destroyed_count as i32;
+            let new_life = old_life + i32::try_from(destroyed_count).unwrap_or(i32::MAX);
             state.get_player_mut(controller).life = new_life;
             state.events.push(crate::events::GameEvent::LifeChanged {
                 player: controller,

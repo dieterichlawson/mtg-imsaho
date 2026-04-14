@@ -1718,7 +1718,7 @@ impl LlmPlayer {
                 response["target_indices"]
                     .as_array()
                     .map(|arr| arr.iter()
-                        .filter_map(|v| v.as_u64().map(|n| n as usize))
+                        .filter_map(|v| v.as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX)))
                         .filter(|&i| i < options.len())
                         .take(*max)
                         .map(|i| options[i].clone())
@@ -2148,7 +2148,7 @@ impl LlmPlayer {
         assert!(max > 0, "pick_action_index requires at least one option");
         let schema = Self::enum_action_schema(max, "action", "Index of the chosen action");
         let response = self.send_message_structured(prompt, &schema);
-        let idx = response["action"].as_u64().map(|n| n as usize)
+        let idx = response["action"].as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX))
             .filter(|n| *n < max)
             .unwrap_or_else(|| {
                 self.log("MALFORMED", &format!("response missing valid 'action' field ({response}), defaulting to 0"));
@@ -2365,7 +2365,7 @@ impl LlmPlayer {
 
         let hand_text = Self::format_numbered_hand(view);
         let mulls_taken = view.your_mulligan_count;
-        let keep_size = (7_i32 - mulls_taken as i32).max(0);
+        let keep_size = (7_i32 - i32::try_from(mulls_taken).unwrap_or(i32::MAX)).max(0);
         let opp_mulls_text = Self::format_opponent_mulls(view);
         let play_draw = if view.active_player == view.you {
             "You are on the play"
@@ -2489,7 +2489,7 @@ impl LlmPlayer {
             arr.iter()
                 .filter_map(serde_json::Value::as_i64)
                 .filter(|i| *i >= 0)
-                .map(|i| i as usize)
+                .map(|i| usize::try_from(i).unwrap_or(0))
                 .collect()
         });
         let fallback = || -> Action {
@@ -2627,7 +2627,7 @@ impl LlmPlayer {
                 let mut indices: Vec<usize> = response["attacker_indices"]
                     .as_array()
                     .map(|arr| arr.iter()
-                        .filter_map(|v| v.as_u64().map(|n| n as usize))
+                        .filter_map(|v| v.as_u64().map(|n| usize::try_from(n).unwrap_or(usize::MAX)))
                         .filter(|&i| i < eligible.len())
                         .collect())
                     .unwrap_or_default();
@@ -2780,8 +2780,10 @@ impl LlmPlayer {
             for (i, &blocker_id) in eligible_blockers.iter().enumerate() {
                 let key = i.to_string();
                 if let Some(att_idx) = response[&key].as_i64() {
-                    if att_idx >= 0 && (att_idx as usize) < attackers.len() {
-                        assignments.push((blocker_id, attackers[att_idx as usize]));
+                    if let Ok(idx) = usize::try_from(att_idx) {
+                        if idx < attackers.len() {
+                            assignments.push((blocker_id, attackers[idx]));
+                        }
                     }
                 }
             }

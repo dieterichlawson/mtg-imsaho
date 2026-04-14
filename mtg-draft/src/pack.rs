@@ -286,10 +286,10 @@ pub fn generate_pack(
 
     // 2. Draw uncommons
     let unc_variant = weighted_pick(rng, &sheets.uncommon_weights);
-    let (n_ua, n_ub) = if unc_variant == 0 { (2, 1) } else { (1, 2) };
+    let (from_a, from_b) = if unc_variant == 0 { (2, 1) } else { (1, 2) };
     let mut uncommons = Vec::with_capacity(3);
-    uncommons.extend(take_from_run(&sheets.uncommon_a, &mut state.uncommon_a_cursor, n_ua));
-    uncommons.extend(take_from_run(&sheets.uncommon_b, &mut state.uncommon_b_cursor, n_ub));
+    uncommons.extend(take_from_run(&sheets.uncommon_a, &mut state.uncommon_a_cursor, from_a));
+    uncommons.extend(take_from_run(&sheets.uncommon_b, &mut state.uncommon_b_cursor, from_b));
 
     // 3. Draw rare
     let rare = if use_rare_sheet1 {

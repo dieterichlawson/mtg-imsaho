@@ -48,7 +48,7 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
         // New format: expand {name: count} into repeated names
         let mut cards = Vec::new();
         for (name, count) in obj {
-            let n = count.as_u64().unwrap_or(0) as u32;
+            let n = u32::try_from(count.as_u64().unwrap_or(0)).unwrap_or(u32::MAX);
             for _ in 0..n {
                 cards.push(name.clone());
             }
@@ -69,7 +69,7 @@ pub fn parse_deck_response(response: &str) -> Result<(Vec<String>, HashMap<Strin
         for (name, count) in lmap {
             if let Some(n) = count.as_u64() {
                 if n > 0 {
-                    lands.insert(name.clone(), n as u32);
+                    lands.insert(name.clone(), u32::try_from(n).unwrap_or(u32::MAX));
                 }
             }
         }

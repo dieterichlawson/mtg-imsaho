@@ -87,7 +87,7 @@ impl CardBehavior for LilianaOfTheVeil {
                 }
                 // Then other players in turn order.
                 for pid_idx in 0..state.players.len() {
-                    let pid = PlayerId(pid_idx as u8);
+                    let pid = PlayerId(u8::try_from(pid_idx).unwrap_or(u8::MAX));
                     if pid == active { continue; }
                     if state.get_player(pid).lost { continue; }
                     let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, pid)
@@ -233,7 +233,7 @@ impl LilianaOfTheVeil {
         // Read remaining player count from card_state.
         let count = state.get_object(self_id)
             .and_then(|o| o.card_state.get("liliana_discard_count").copied())
-            .map_or(0, |id| id.0 as usize);
+            .map_or(0, |id| usize::try_from(id.0).unwrap_or(usize::MAX));
 
         if count == 0 {
             // All players have discarded. Clean up card_state.
@@ -246,7 +246,7 @@ impl LilianaOfTheVeil {
         // Pop the next player from the remaining list.
         let next_player_id = state.get_object(self_id)
             .and_then(|o| o.card_state.get("liliana_discard_0").copied())
-            .map_or(PlayerId(0), |id| PlayerId(id.0 as u8));
+            .map_or(PlayerId(0), |id| PlayerId(u8::try_from(id.0).unwrap_or(u8::MAX)));
 
         // Shift remaining players down and decrement count.
         if let Some(obj) = state.get_object_mut(self_id) {

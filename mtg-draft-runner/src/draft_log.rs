@@ -73,7 +73,7 @@ impl DraftLogger {
     pub fn draft_pick(
         seat: usize,
         pack: usize,
-        pick: usize,
+        pick_index: usize,
         available: &[String],
         chosen: &str,
         prompt: &str,
@@ -87,18 +87,18 @@ impl DraftLogger {
         // per-line prefix.
         mtg_player::game_log::write(
             file, line,
-            &format!("[Seat {seat}] PROMPT Pack {pack} Pick {pick}"),
+            &format!("[Seat {seat}] PROMPT Pack {pack} Pick {pick_index}"),
             prompt,
         );
         mtg_player::game_log::write(
             file, line,
-            &format!("[Seat {seat}] RESPONSE Pack {pack} Pick {pick}"),
+            &format!("[Seat {seat}] RESPONSE Pack {pack} Pick {pick_index}"),
             response,
         );
         mtg_player::game_log::write(
             file, line,
             &format!("[Seat {}] PICK Pack {} Pick {} | Chose: {} (from {} cards)",
-                seat, pack, pick, chosen_name, available.len()),
+                seat, pack, pick_index, chosen_name, available.len()),
             "",
         );
     }

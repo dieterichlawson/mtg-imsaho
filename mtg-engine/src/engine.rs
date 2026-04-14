@@ -755,7 +755,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 let current_loyalty = state.get_counter_count(obj_id, CounterType::Loyalty);
                 for ab in &loyalty_abs {
                     // Check if we can pay the cost.
-                    if ab.loyalty_change < 0 && ((-ab.loyalty_change) as u32) > current_loyalty {
+                    if ab.loyalty_change < 0 && u32::try_from(-ab.loyalty_change).unwrap_or(0) > current_loyalty {
                         continue; // Not enough loyalty
                     }
                     if let Some(ref target_req) = ab.target_requirement {
@@ -1027,7 +1027,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                     object_id,
                                     targets: targets.clone(),
                                     sacrifice,
-                                    exile_count: Some(x as u32),
+                                    exile_count: Some(u32::try_from(x).unwrap_or(u32::MAX)),
                                     exile_ids: combo,
                                     alternative_cost: None, tap_plan: tap_plan.clone(),
                                 });
@@ -1057,7 +1057,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                                 object_id,
                                 targets: targets.clone(),
                                 sacrifice,
-                                exile_count: Some(*n as u32),
+                                exile_count: Some(u32::try_from(*n).unwrap_or(u32::MAX)),
                                 exile_ids: combo,
                                 alternative_cost: None,
                                 tap_plan: tap_plan.clone(),
@@ -1116,8 +1116,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 ) {
                     let n = state.objects.values()
                         .filter(|o| o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id)
-                        .count() as u32;
-                    Some(n)
+                        .count();
+                    Some(u32::try_from(n).unwrap_or(u32::MAX))
                 } else {
                     None
                 };
@@ -2225,7 +2225,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     if let Some(&first_exile) = to_exile.first() {
                         let power = new_state.get_object(first_exile).and_then(|o| o.power).unwrap_or(0);
                         if let Some(obj) = new_state.get_object_mut(*object_id) {
-                            obj.card_state.insert("exiled_power".into(), ObjectId(power as u64));
+                            obj.card_state.insert("exiled_power".into(), ObjectId(u64::try_from(power).unwrap_or(0)));
                         }
                     }
 
@@ -2257,7 +2257,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     } else {
                         exile_ids.clone()
                     };
-                    let count = graveyard_cards.len() as u32;
+                    let count = u32::try_from(graveyard_cards.len()).unwrap_or(u32::MAX);
                     for gid in &graveyard_cards {
                         new_state.move_object(*gid, Zone::Exile, registry);
                     }
@@ -2660,7 +2660,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             new_state.get_player_mut(player).mulligan_count += 1;
             let mull_count = new_state.get_player(player).mulligan_count;
             new_state.log(LogLevel::Event,
-                format!("p{} mulligans to {}", player.0, 7 - mull_count as i32));
+                format!("p{} mulligans to {}", player.0, 7 - i32::try_from(mull_count).unwrap_or(i32::MAX)));
             // Mark that this round had a mulligan, then advance past this
             // player. The next player in turn order (who hasn't already kept)
             // will be asked. The mulled player will be re-asked next round.
@@ -2726,9 +2726,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                     // Pay loyalty cost: add or remove loyalty counters.
                     let change = ab.loyalty_change;
                     if change > 0 {
-                        new_state.add_counters(*object_id, CounterType::Loyalty, change as u32);
+                        new_state.add_counters(*object_id, CounterType::Loyalty, u32::try_from(change).unwrap_or(0));
                     } else if change < 0 {
-                        let remove = (-change) as u32;
+                        let remove = u32::try_from(-change).unwrap_or(0);
                         if let Some(obj) = new_state.get_object_mut(*object_id) {
                             let current = obj.counters.entry(CounterType::Loyalty).or_insert(0);
                             *current = current.saturating_sub(remove);
@@ -3052,7 +3052,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Player(pid), PendingEffect::DealDamage { amount, source_id, source_name }) => {
             let old = state.get_player(*pid).life;
-            let new_life = old - *amount as i32;
+            let new_life = old - i32::try_from(*amount).unwrap_or(i32::MAX);
             state.get_player_mut(*pid).life = new_life;
             state.events.push(GameEvent::NonCombatDamageDealt {
                 source: *source_id,
@@ -3454,7 +3454,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // Player chose which Curse from library — now present the "target player" choice.
             // Filter out players with hexproof (e.g. Witchbane Orb); they can't be targeted.
             let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
-                .map(|i| PlayerId(i as u8))
+                .map(|i| PlayerId(u8::try_from(i).unwrap_or(u8::MAX)))
                 .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == *searcher)
                 .map(crate::actions::Target::Player)
                 .collect();
@@ -3591,7 +3591,7 @@ pub fn next_starter_loser_plays(
 
 /// Set up a new game: create objects, shuffle libraries, draw opening hands.
 pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
-    let num_players = config.player_names.len() as u8;
+    let num_players = u8::try_from(config.player_names.len()).unwrap_or(u8::MAX);
     let mut state = GameState::new(num_players);
 
     // Set starting life.
@@ -3614,7 +3614,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     // Create card objects for each player's deck.
     let mut rng = rand::thread_rng();
     for (player_idx, decklist) in config.decklists.iter().enumerate() {
-        let player_id = PlayerId(player_idx as u8);
+        let player_id = PlayerId(u8::try_from(player_idx).unwrap_or(u8::MAX));
         let mut library_ids = Vec::new();
 
         for (card_name, count) in &decklist.entries {
@@ -3703,7 +3703,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 /// just processed (or to have set `state.awaiting_action = None` for
 /// post-bottoming transitions).
 fn advance_mulligan_phase(state: &mut GameState, _registry: &CardRegistry) {
-    let num_players = state.players.len() as u8;
+    let num_players = u8::try_from(state.players.len()).unwrap_or(u8::MAX);
 
     loop {
         // Sub-phase 1: keep/mull. Find the next not-yet-kept player in this
@@ -4237,7 +4237,7 @@ fn run_game_loop_inner<F>(
 {
     const MAX_AUTO_PASSES: u32 = 100;
 
-    let num_players = state.players.len() as u32;
+    let num_players = u32::try_from(state.players.len()).unwrap_or(u32::MAX);
     let mut auto_pass_count = 0u32;
 
     // Opening-hand mulligan phase. When present, drive it first; it will

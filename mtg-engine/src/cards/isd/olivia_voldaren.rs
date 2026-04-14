@@ -183,7 +183,7 @@ impl CardBehavior for OliviaVoldaren {
         };
 
         for (target_id, orig_controller_id) in stolen_entries {
-            let orig_controller = crate::ids::PlayerId(orig_controller_id.0 as u8);
+            let orig_controller = crate::ids::PlayerId(u8::try_from(orig_controller_id.0).unwrap_or(u8::MAX));
             if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 let returned_name = state.obj_name(target_id);
                 if let Some(obj) = state.get_object_mut(target_id) {

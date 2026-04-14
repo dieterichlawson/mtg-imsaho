@@ -36,9 +36,9 @@ impl CardBehavior for GeistHonoredMonk {
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
         let controller = state.get_object(object_id)?.controller;
-        let creature_count = state.objects.values()
+        let creature_count = i32::try_from(state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some())
-            .count() as i32;
+            .count()).unwrap_or(i32::MAX);
         Some((creature_count, creature_count))
     }
 

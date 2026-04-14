@@ -95,17 +95,17 @@ fn model_pricing(model: &str) -> (f64, f64, f64, f64) {
 }
 
 fn usage_cost(u: &ModelUsage, model: &str) -> f64 {
-    let (in_p, out_p, cache_r_p, cache_w_p) = model_pricing(model);
+    let (input_price, output_price, cache_read_price, cache_write_price) = model_pricing(model);
     // Convert token counts to f64 via u32 since realistic counts fit.
     // `as u32` saturates via `min` to avoid wraparound on overflow.
     let input = u32::try_from(u.input).unwrap_or(u32::MAX);
     let output = u32::try_from(u.output).unwrap_or(u32::MAX);
     let cache_read = u32::try_from(u.cache_read).unwrap_or(u32::MAX);
     let cache_create = u32::try_from(u.cache_create).unwrap_or(u32::MAX);
-    f64::from(input) * in_p / 1_000_000.0
-        + f64::from(output) * out_p / 1_000_000.0
-        + f64::from(cache_read) * cache_r_p / 1_000_000.0
-        + f64::from(cache_create) * cache_w_p / 1_000_000.0
+    f64::from(input) * input_price / 1_000_000.0
+        + f64::from(output) * output_price / 1_000_000.0
+        + f64::from(cache_read) * cache_read_price / 1_000_000.0
+        + f64::from(cache_create) * cache_write_price / 1_000_000.0
 }
 
 /// Print a summary of all token usage and estimated cost, broken down by model and phase.
@@ -448,7 +448,7 @@ impl AnthropicDraftBackend {
 
         for attempt in 0..6 {
             if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4) as u32));
+                let delay = std::time::Duration::from_secs(2u64.pow(u32::try_from(attempt.min(4)).unwrap_or(0)));
                 std::thread::sleep(delay);
             }
             let response = self.client
@@ -600,7 +600,7 @@ impl GeminiDraftBackend {
         let mut fresh_retry = false;
         for attempt in 0..6 {
             if attempt > 0 {
-                let delay = std::time::Duration::from_secs(2u64.pow(attempt.min(4) as u32));
+                let delay = std::time::Duration::from_secs(2u64.pow(u32::try_from(attempt.min(4)).unwrap_or(0)));
                 std::thread::sleep(delay);
             }
             let response = self.client
@@ -744,7 +744,7 @@ impl DraftLlmClient {
     /// Build the prompt for a draft pick.
     pub fn build_pick_prompt(
         pack_number: usize,
-        pick_number: usize,
+        pick_index: usize,
         available: &[String],
         pool: &[String],
         _history: &[DraftPick],
@@ -752,13 +752,13 @@ impl DraftLlmClient {
         let direction = if pack_number % 2 == 1 { "LEFT" } else { "RIGHT" };
         let mut prompt = format!(
             "Pack {}, Pick {} ({} cards). Passing {}.\n\nAvailable:\n",
-            pack_number, pick_number, available.len(), direction,
+            pack_number, pick_index, available.len(), direction,
         );
         for (i, card) in available.iter().enumerate() {
             let name = card.split(" // ").next().unwrap_or(card);
             writeln!(prompt, "{i}: {name}").unwrap();
         }
-        if pick_number == 1 && !pool.is_empty() {
+        if pick_index == 1 && !pool.is_empty() {
             writeln!(prompt, "\nYour pool so far ({} cards):", pool.len()).unwrap();
             for card in pool {
                 let name = card.split(" // ").next().unwrap_or(card);

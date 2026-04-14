@@ -65,9 +65,9 @@ impl CardBehavior for Mindshrieker {
             // Look up the milled card's mana value.
             let mana_value = {
                 let card_id = state.get_object(milled_card_id).map(|o| o.card_id);
-                card_id.and_then(|cid| registry.get(cid))
+                i32::try_from(card_id.and_then(|cid| registry.get(cid))
                     .and_then(|b| b.card_data().cost.as_ref().map(crate::types::ManaCost::mana_value))
-                    .unwrap_or(0) as i32
+                    .unwrap_or(0)).unwrap_or(i32::MAX)
             };
 
             // Apply +X/+X until end of turn.

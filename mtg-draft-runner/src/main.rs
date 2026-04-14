@@ -526,7 +526,7 @@ fn parse_pick_response(response: &str, available: &[String]) -> String {
     // and retry. Last resort: fall through to a text scan for "PICK: N".
     let try_json = |s: &str| -> Option<String> {
         let v: serde_json::Value = serde_json::from_str(s).ok()?;
-        let idx = v["pick"].as_u64()? as usize;
+        let idx = usize::try_from(v["pick"].as_u64()?).unwrap_or(usize::MAX);
         (idx < available.len()).then(|| available[idx].clone())
     };
 

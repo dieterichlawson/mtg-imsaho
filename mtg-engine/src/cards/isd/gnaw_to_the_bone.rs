@@ -34,7 +34,7 @@ impl CardBehavior for GnawToTheBone {
         let creature_count = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.power.is_some() && o.id != object_id)
             .count();
-        let life_gain = (creature_count as i32) * 2;
+        let life_gain = i32::try_from(creature_count).unwrap_or(i32::MAX) * 2;
         if life_gain > 0 {
             let old_life = state.get_player(controller).life;
             let new_life = old_life + life_gain;

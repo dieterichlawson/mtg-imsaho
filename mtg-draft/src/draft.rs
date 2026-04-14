@@ -128,11 +128,11 @@ impl DraftState {
             -1 // right
         };
 
-        let n = self.pod_size as isize;
+        let n = isize::try_from(self.pod_size).unwrap_or(isize::MAX);
         let mut new_packs = vec![Vec::new(); self.pod_size];
 
         for seat in 0..self.pod_size {
-            let target = ((seat as isize + direction + n) % n) as usize;
+            let target = usize::try_from((isize::try_from(seat).unwrap_or(isize::MAX) + direction + n) % n).unwrap_or(0);
             new_packs[target] = std::mem::take(&mut self.current_packs[seat]);
         }
 

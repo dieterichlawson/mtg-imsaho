@@ -12,7 +12,7 @@ impl BitterheartWitch {
     /// Present the "target player" choice after a Curse has been selected.
     fn present_player_choice(state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId, registry: &CardRegistry) {
         let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
-            .map(|i| PlayerId(i as u8))
+            .map(|i| PlayerId(u8::try_from(i).unwrap_or(u8::MAX)))
             .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == controller)
             .map(crate::actions::Target::Player)
             .collect();

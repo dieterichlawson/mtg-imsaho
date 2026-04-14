@@ -63,7 +63,7 @@ impl CardBehavior for KessigWolfRun {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
-        let x = state.last_activated_x_value.unwrap_or(0) as i32;
+        let x = i32::try_from(state.last_activated_x_value.unwrap_or(0)).unwrap_or(i32::MAX);
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 // Grant +X/+0 until end of turn.

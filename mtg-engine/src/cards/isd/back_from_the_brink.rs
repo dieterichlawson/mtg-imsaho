@@ -64,7 +64,7 @@ impl CardBehavior for BackFromTheBrink {
 
             // Use the creature's ObjectId as the ability_index so we can
             // identify which creature to exile in on_activate_ability.
-            let ability_index = creature.id.0 as usize;
+            let ability_index = usize::try_from(creature.id.0).unwrap_or(usize::MAX);
 
             ActivatedAbilityDef {
                 ability_index,

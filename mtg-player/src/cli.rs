@@ -285,18 +285,18 @@ impl CliPlayer {
         let left_w: usize = gutter_w;
         let right_w: usize = if has_right { gutter_w } else { 0 };
         let mid_w = w.saturating_sub(left_w + right_w + if has_right { 2 } else { 1 });
-        let mid_col = (left_w + 1) as u16;
-        let right_sep_col = (left_w + 1 + mid_w) as u16;
+        let mid_col = u16::try_from(left_w + 1).unwrap_or(u16::MAX);
+        let right_sep_col = u16::try_from(left_w + 1 + mid_w).unwrap_or(u16::MAX);
         let right_col = if has_right { right_sep_col + 1 } else { 0 };
 
         // ── Draw vertical separators ──
         for r in 0..h {
-            let _ = execute!(out, cursor::MoveTo(left_w as u16, r as u16),
+            let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), u16::try_from(r).unwrap_or(u16::MAX)),
                 SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
         }
         if has_right {
             for r in 0..h {
-                let _ = execute!(out, cursor::MoveTo(right_sep_col, r as u16),
+                let _ = execute!(out, cursor::MoveTo(right_sep_col, u16::try_from(r).unwrap_or(u16::MAX)),
                     SetAttribute(Attribute::Dim), Print("│"), SetAttribute(Attribute::Reset));
             }
         }
@@ -310,7 +310,7 @@ impl CliPlayer {
         let stack_line = format!("{}{}", stack_label, "─".repeat(left_w.saturating_sub(stack_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(0, 0),
             SetAttribute(Attribute::Dim), Print(&stack_line), SetAttribute(Attribute::Reset));
-        let _ = execute!(out, cursor::MoveTo(left_w as u16, 0),
+        let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), 0),
             SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
         if view.stack.is_empty() {
             let _ = execute!(out, cursor::MoveTo(1, 1),
@@ -318,7 +318,7 @@ impl CliPlayer {
         } else {
             let mut srow: u16 = 1;
             for item in &view.stack {
-                if srow >= stack_h as u16 { break; }
+                if srow >= u16::try_from(stack_h).unwrap_or(u16::MAX) { break; }
                 let who = if item.controller == view.you { "you" } else { "opp" };
                 let text = format!("{} ({})", item.name, who);
                 // Wrap if too long for panel.
@@ -329,7 +329,7 @@ impl CliPlayer {
                     srow += 1;
                 }
                 for target in &item.targets {
-                    if srow >= stack_h as u16 { break; }
+                    if srow >= u16::try_from(stack_h).unwrap_or(u16::MAX) { break; }
                     let target_name = match target {
                         mtg_engine::actions::Target::Object(id) => {
                             view.battlefield.iter().find(|p| p.object_id == *id).map_or_else(|| " -> ?".into(), |p| format!(" -> {}", p.name))
@@ -349,9 +349,9 @@ impl CliPlayer {
         // Log separator with label
         let log_label = "─── LOG ";
         let log_line = format!("{}{}", log_label, "─".repeat(left_w.saturating_sub(log_label.chars().count())));
-        let _ = execute!(out, cursor::MoveTo(0, log_start as u16),
+        let _ = execute!(out, cursor::MoveTo(0, u16::try_from(log_start).unwrap_or(u16::MAX)),
             SetAttribute(Attribute::Dim), Print(&log_line), SetAttribute(Attribute::Reset));
-        let _ = execute!(out, cursor::MoveTo(left_w as u16, log_start as u16),
+        let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), u16::try_from(log_start).unwrap_or(u16::MAX)),
             SetAttribute(Attribute::Dim), Print("┤"), SetAttribute(Attribute::Reset));
         if !log.is_empty() {
             let log_visible = h.saturating_sub(log_start + 2);
@@ -381,7 +381,7 @@ impl CliPlayer {
             }
             let start = if wrapped.len() > log_visible { wrapped.len() - log_visible } else { 0 };
             for (i, line) in wrapped[start..].iter().enumerate() {
-                let r = (log_start + 1 + i) as u16;
+                let r = u16::try_from(log_start + 1 + i).unwrap_or(u16::MAX);
                 if r >= term_h - 1 { break; }
                 let _ = execute!(out, cursor::MoveTo(1, r),
                     SetAttribute(Attribute::Dim), Print(line), SetAttribute(Attribute::Reset));
@@ -445,7 +445,7 @@ impl CliPlayer {
         let bf_line = format!("{}{}", bf_label, "─".repeat(mid_w.saturating_sub(bf_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&bf_line), SetAttribute(Attribute::Reset));
-        let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+        let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
             SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
         row += 1;
 
@@ -483,7 +483,7 @@ impl CliPlayer {
         // Pad the divider area so the total battlefield is at least 9 lines
         // (opp_status + opp_board + divider + your_board + your_status = content)
         let min_bf_height: u16 = 9;
-        let content_rows = 2 + opp_rows + your_row_count as u16; // 2 for status lines
+        let content_rows = 2 + opp_rows + u16::try_from(your_row_count).unwrap_or(u16::MAX); // 2 for status lines
         let padding = if content_rows + 1 < min_bf_height {
             min_bf_height - content_rows
         } else {
@@ -494,7 +494,7 @@ impl CliPlayer {
         let divider_mid = row + padding / 2;
         let dots = "· · ·";
         let dots_pad = mid_w.saturating_sub(dots.chars().count()) / 2;
-        let _ = execute!(out, cursor::MoveTo(mid_col + dots_pad as u16, divider_mid),
+        let _ = execute!(out, cursor::MoveTo(mid_col + u16::try_from(dots_pad).unwrap_or(u16::MAX), divider_mid),
             SetAttribute(Attribute::Dim), Print(dots), SetAttribute(Attribute::Reset));
         row += padding;
 
@@ -517,7 +517,7 @@ impl CliPlayer {
         let hand_line = format!("{}{}", hand_label, "─".repeat(mid_w.saturating_sub(hand_label.chars().count())));
         let _ = execute!(out, cursor::MoveTo(mid_col, row),
             SetAttribute(Attribute::Dim), Print(&hand_line), SetAttribute(Attribute::Reset));
-        let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+        let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
             SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
         row += 1;
 
@@ -568,7 +568,7 @@ impl CliPlayer {
                 let _ = execute!(out, cursor::MoveTo(mid_col, row),
                     SetAttribute(Attribute::Dim), Print(&full), SetAttribute(Attribute::Reset));
                 let left_border = if i == 0 { "├" } else { "│" };
-                let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+                let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
                     SetAttribute(Attribute::Dim), Print(left_border), SetAttribute(Attribute::Reset));
                 if has_right {
                     let right_border = if i == 0 { "┤" } else { "│" };
@@ -581,7 +581,7 @@ impl CliPlayer {
             let action_line = "─".repeat(mid_w);
             let _ = execute!(out, cursor::MoveTo(mid_col, row),
                 SetAttribute(Attribute::Dim), Print(&action_line), SetAttribute(Attribute::Reset));
-            let _ = execute!(out, cursor::MoveTo(left_w as u16, row),
+            let _ = execute!(out, cursor::MoveTo(u16::try_from(left_w).unwrap_or(u16::MAX), row),
                 SetAttribute(Attribute::Dim), Print("├"), SetAttribute(Attribute::Reset));
             if has_right {
                 let _ = execute!(out, cursor::MoveTo(right_sep_col, row),
@@ -840,7 +840,7 @@ impl CliPlayer {
         let content_w = right_w.saturating_sub(1); // text margin
 
         let mut row: u16 = 2; // cards start below search box
-        let max_row = (h as u16).saturating_sub(1);
+        let max_row = u16::try_from(h).unwrap_or(u16::MAX).saturating_sub(1);
 
         for card in cards {
             if row >= max_row { break; }
@@ -994,8 +994,8 @@ impl CliPlayer {
             let w = term_w as usize;
             let gutter_w = w / 5;
             let mid_w = w.saturating_sub(gutter_w * 2 + 2);
-            let right_col = (gutter_w + 1 + mid_w + 1) as u16;
-            let cursor_x = right_col + 2 + self.card_filter.chars().count() as u16;
+            let right_col = u16::try_from(gutter_w + 1 + mid_w + 1).unwrap_or(u16::MAX);
+            let cursor_x = right_col + 2 + u16::try_from(self.card_filter.chars().count()).unwrap_or(u16::MAX);
             let _ = execute!(stdout(), cursor::MoveTo(cursor_x, 1));
             let _ = stdout().flush();
 
@@ -1675,7 +1675,7 @@ impl CliPlayer {
         // Get mid_col for positioning — action area starts where cursor was left
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
-        let col = (side + 1) as u16;
+        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
         let cur_row = cursor::position().unwrap_or((0, 20)).1;
 
         let mut out = stdout();
@@ -1747,7 +1747,7 @@ impl CliPlayer {
         // Get mid_col for positioning — action area starts where cursor was left
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
-        let col = (side + 1) as u16;
+        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
         let cur_row = cursor::position().unwrap_or((0, 20)).1;
 
         let mut out = stdout();
@@ -2080,7 +2080,7 @@ impl Player for CliPlayer {
             // Read input
             let (term_w, _) = terminal::size().unwrap_or((100, 30));
             let side = term_w as usize / 5;
-            let col = (side + 1) as u16;
+            let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
             let input = Self::read_line_with_search(col);
 
             // '/' triggers card search immediately (returns None to re-render)
@@ -2245,7 +2245,7 @@ impl CliPlayer {
 
         let (term_w, _) = terminal::size().unwrap_or((100, 30));
         let side = term_w as usize / 5;
-        let col = (side + 1) as u16;
+        let col = u16::try_from(side + 1).unwrap_or(u16::MAX);
         // Opponent stats are always at row 2 from the human's perspective
         // (row 0 = turn bar, row 1 = BATTLEFIELD label, row 2 = opp stats)
         let spinner_row: u16 = 2;

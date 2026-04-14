@@ -39,7 +39,7 @@ impl CardBehavior for HarvestPyre {
         // The exile happened at cast time (additional cost). Read the count.
         let count = state.get_object(object_id)
             .and_then(|o| o.card_state.get("exile_count").copied())
-            .map_or(0, |id| id.0 as u32);
+            .map_or(0, |id| u32::try_from(id.0).unwrap_or(u32::MAX));
 
         if count > 0 {
             if let Some(Target::Object(target_id)) = targets.first() {

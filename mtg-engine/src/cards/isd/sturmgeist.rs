@@ -38,7 +38,7 @@ impl CardBehavior for Sturmgeist {
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
         let controller = state.get_object(object_id)?.controller;
-        let hand_size = state.objects_in_zone(Zone::Hand, controller).len() as i32;
+        let hand_size = i32::try_from(state.objects_in_zone(Zone::Hand, controller).len()).unwrap_or(i32::MAX);
         Some((hand_size, hand_size))
     }
 

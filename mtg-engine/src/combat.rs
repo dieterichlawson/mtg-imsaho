@@ -156,8 +156,8 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
 /// Fight: each creature deals damage equal to its power to the other.
 /// Used by Prey Upon and similar "fight" cards.
 pub fn fight(state: &mut GameState, a: ObjectId, b: ObjectId, registry: &CardRegistry) {
-    let power_a = state.effective_power(a, registry).unwrap_or(0).max(0) as u32;
-    let power_b = state.effective_power(b, registry).unwrap_or(0).max(0) as u32;
+    let power_a = u32::try_from(state.effective_power(a, registry).unwrap_or(0).max(0)).unwrap_or(0);
+    let power_b = u32::try_from(state.effective_power(b, registry).unwrap_or(0).max(0)).unwrap_or(0);
 
     if power_a > 0 {
         deal_fight_damage(state, a, b, power_a, registry);
@@ -201,7 +201,7 @@ fn deal_fight_damage(
     if state.has_keyword(source, Keyword::Lifelink, registry) {
         let controller = state.get_object(source).expect("damage source must exist").controller;
         let old_life = state.get_player(controller).life;
-        let new_life = old_life + amount as i32;
+        let new_life = old_life + i32::try_from(amount).unwrap_or(i32::MAX);
         state.get_player_mut(controller).life = new_life;
         state.events.push(GameEvent::LifeChanged {
             player: controller,
@@ -225,16 +225,16 @@ fn deal_damage_step(
             continue;
         }
 
-        let has_fs = state.has_keyword(attacker_id, Keyword::FirstStrike, registry);
-        let has_ds = state.has_keyword(attacker_id, Keyword::DoubleStrike, registry);
+        let has_first_strike = state.has_keyword(attacker_id, Keyword::FirstStrike, registry);
+        let has_double_strike = state.has_keyword(attacker_id, Keyword::DoubleStrike, registry);
         let attacker_deals = if first_strike_only {
-            has_fs || has_ds
+            has_first_strike || has_double_strike
         } else {
-            !has_fs || has_ds // normal strikers + double strikers
+            !has_first_strike || has_double_strike // normal strikers + double strikers
         };
 
         let attacker_power = if attacker_deals {
-            state.effective_power(attacker_id, registry).unwrap_or(0).max(0) as u32
+            u32::try_from(state.effective_power(attacker_id, registry).unwrap_or(0).max(0)).unwrap_or(0)
         } else {
             0
         };
@@ -261,16 +261,16 @@ fn deal_damage_step(
                 }
 
                 // Blocker deals damage to attacker.
-                let blocker_has_fs = state.has_keyword(blocker_id, Keyword::FirstStrike, registry);
-                let blocker_has_ds = state.has_keyword(blocker_id, Keyword::DoubleStrike, registry);
+                let blocker_has_first_strike = state.has_keyword(blocker_id, Keyword::FirstStrike, registry);
+                let blocker_has_double_strike = state.has_keyword(blocker_id, Keyword::DoubleStrike, registry);
                 let blocker_deals = if first_strike_only {
-                    blocker_has_fs || blocker_has_ds
+                    blocker_has_first_strike || blocker_has_double_strike
                 } else {
-                    !blocker_has_fs || blocker_has_ds
+                    !blocker_has_first_strike || blocker_has_double_strike
                 };
 
                 if blocker_deals {
-                    let blocker_power = state.effective_power(blocker_id, registry).unwrap_or(0).max(0) as u32;
+                    let blocker_power = u32::try_from(state.effective_power(blocker_id, registry).unwrap_or(0).max(0)).unwrap_or(0);
                     if blocker_power > 0 {
                         deal_damage_to_creature(state, blocker_id, attacker_id, blocker_power, registry);
                     }
@@ -283,7 +283,7 @@ fn deal_damage_step(
                     let lethal = if has_deathtouch_attacker {
                         1 // deathtouch: 1 damage is lethal
                     } else {
-                        (blocker_toughness - blocker_damage as i32).max(0) as u32
+                        u32::try_from((blocker_toughness - i32::try_from(blocker_damage).unwrap_or(i32::MAX)).max(0)).unwrap_or(0)
                     };
 
                     let assigned = if has_trample {
@@ -544,7 +544,7 @@ fn deal_damage_to_creature(
     if state.has_keyword(source, Keyword::Lifelink, registry) {
         let controller = state.get_object(source).expect("damage source must exist").controller;
         let old_life = state.get_player(controller).life;
-        let new_life = old_life + amount as i32;
+        let new_life = old_life + i32::try_from(amount).unwrap_or(i32::MAX);
         state.get_player_mut(controller).life = new_life;
         state.events.push(GameEvent::LifeChanged {
             player: controller,
@@ -594,7 +594,7 @@ fn deal_damage_to_player(
     }
 
     let old_life = state.get_player(player).life;
-    let new_life = old_life - amount as i32;
+    let new_life = old_life - i32::try_from(amount).unwrap_or(i32::MAX);
     state.get_player_mut(player).life = new_life;
 
     state.events.push(GameEvent::CombatDamageDealt {
@@ -614,7 +614,7 @@ fn deal_damage_to_player(
     if state.has_keyword(source, Keyword::Lifelink, registry) {
         let controller = state.get_object(source).expect("damage source must exist").controller;
         let old = state.get_player(controller).life;
-        let new = old + amount as i32;
+        let new = old + i32::try_from(amount).unwrap_or(i32::MAX);
         state.get_player_mut(controller).life = new;
         state.events.push(GameEvent::LifeChanged {
             player: controller,

@@ -176,7 +176,7 @@ impl CardBehavior for GarrukRelentless {
                     });
                     // The creature deals its power as damage to Garruk (remove loyalty counters).
                     if target_power > 0 {
-                        let remove = target_power as u32;
+                        let remove = u32::try_from(target_power).unwrap_or(0);
                         if let Some(obj) = state.get_object_mut(self_id) {
                             let loyalty = obj.counters.entry(CounterType::Loyalty).or_insert(0);
                             *loyalty = loyalty.saturating_sub(remove);
@@ -260,7 +260,7 @@ impl CardBehavior for GarrukRelentless {
             12 => {
                 // -3: Creatures you control gain trample and get +X/+X until end of turn,
                 // where X is the number of creature cards in your graveyard.
-                let x = state.objects_in_zone(Zone::Graveyard, controller)
+                let x = i32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
                     .iter()
                     .filter(|o| {
                         if o.card_types.is_empty() {
@@ -270,7 +270,7 @@ impl CardBehavior for GarrukRelentless {
                             o.card_types.contains(&CardType::Creature)
                         }
                     })
-                    .count() as i32;
+                    .count()).unwrap_or(i32::MAX);
 
                 let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()
