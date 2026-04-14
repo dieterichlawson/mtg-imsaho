@@ -225,6 +225,57 @@ fn submit_action_declare_blockers_records_assignments() {
         "log should contain a 'declared blockers' message");
 }
 
+/// A creature with `ForceAttack` that the player omits from their
+/// `Action::DeclareAttackers` list is added to the attack automatically.
+/// Exercises the forced-attackers branch of the handler.
+#[test]
+fn submit_action_declare_attackers_forces_must_attack_creatures() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let neonate = named_creature(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    state.get_object_mut(neonate).unwrap().summoning_sick = false;
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+
+    // Player submits no attackers — engine must force the Neonate.
+    let new_state = engine::submit_action(
+        &state,
+        &Action::DeclareAttackers { attackers: vec![] },
+        &reg,
+    );
+
+    let combat = new_state.combat.as_ref().expect("combat state should exist");
+    assert!(combat.attackers.contains_key(&neonate),
+        "Bloodcrazed Neonate must be forced to attack");
+    assert!(new_state.get_object(neonate).unwrap().tapped,
+        "forced attacker should be tapped");
+    assert!(new_state.game_log.iter().any(|e| e.message.contains("Forced attackers")),
+        "log should record forced attackers");
+}
+
+/// When the player *does* declare the forced creature themselves, the
+/// "already attacking" shortcut fires — no double-insertion.
+#[test]
+fn submit_action_declare_attackers_skips_force_when_already_declared() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let neonate = named_creature(&mut state, &reg, "Bloodcrazed Neonate", P0);
+    state.get_object_mut(neonate).unwrap().summoning_sick = false;
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+
+    let new_state = engine::submit_action(
+        &state,
+        &Action::DeclareAttackers { attackers: vec![(neonate, P1)] },
+        &reg,
+    );
+
+    let combat = new_state.combat.as_ref().expect("combat state should exist");
+    assert_eq!(combat.attackers.get(&neonate), Some(&P1),
+        "neonate should be attacking P1, declared by the player");
+    // No "Forced attackers" log entry — the creature was already attacking.
+    assert!(!new_state.game_log.iter().any(|e| e.message.contains("Forced attackers")),
+        "no forced-attacker log when player already declared it");
+}
+
 /// Drives `Action::DeclareAttackers` through `engine::submit_action`
 /// (the player-facing path). Exercises the event-log branch other combat
 /// tests bypass by calling `combat::declare_attackers` directly.
