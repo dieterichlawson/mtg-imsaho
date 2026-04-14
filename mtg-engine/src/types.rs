@@ -12,7 +12,7 @@ pub enum Color {
 }
 
 /// What can exist in a mana pool. Includes colorless (not a color, but a mana type).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ManaType {
     White,
     Blue,
@@ -144,6 +144,19 @@ impl ManaPool {
 
     pub fn add(&mut self, mana_type: ManaType, amount: u32) {
         *self.mana.entry(mana_type).or_insert(0) += amount;
+    }
+
+    /// Subtract `amount` of `mana_type` from the pool.
+    ///
+    /// # Panics
+    /// Panics on underflow (caller is responsible for checking availability).
+    pub fn sub(&mut self, mana_type: ManaType, amount: u32) {
+        let current = self.get(mana_type);
+        assert!(
+            current >= amount,
+            "mana pool underflow: tried to remove {amount} {mana_type:?} but pool has {current}"
+        );
+        self.mana.insert(mana_type, current - amount);
     }
 
     #[must_use]
