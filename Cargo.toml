@@ -9,6 +9,8 @@ warnings = "deny" # Treat all compiler warnings as errors
 all = { level = "deny", priority = -1 }
 pedantic = { level = "warn", priority = -1 }
 # Pedantic lints that require major refactoring — allow for now
-too_many_lines = "allow"
-too_many_arguments = "allow"
 struct_excessive_bools = "allow"
+# Core engine functions (legal_actions, submit_action, etc.) are inherently
+# large match expressions — splitting them would add indirection without
+# simplification.
+too_many_lines = "allow"

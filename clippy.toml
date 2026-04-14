@@ -1,1 +1,4 @@
+# A few core APIs (create_token*, CardBehavior::on_any_creature_dies)
+# legitimately need 8-10 arguments due to the breadth of state they convey.
+# Refactoring would touch hundreds of call sites for marginal benefit.
 too-many-arguments-threshold = 11
