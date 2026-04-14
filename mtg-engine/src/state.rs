@@ -123,6 +123,15 @@ pub struct GameState {
     #[serde(default)]
     pub pending_triggers: Vec<crate::triggers::PendingTrigger>,
 
+    /// CR 603.3d: triggers collected but not yet pushed onto the stack
+    /// because they need target selection (or are queued behind one that does).
+    /// AP triggers must all be pushed before NAP triggers; within each bucket,
+    /// pop from the front and push onto `state.stack` after target choice.
+    #[serde(default)]
+    pub pending_trigger_pushes_ap: Vec<crate::triggers::PendingTrigger>,
+    #[serde(default)]
+    pub pending_trigger_pushes_nap: Vec<crate::triggers::PendingTrigger>,
+
     /// Queue of (player, `bottom_count`) pairs waiting for the London-mulligan
     /// bottoming sub-phase. Populated as each player finishes their keep/mull
     /// decision. Drained by `advance_mulligan_phase`.
@@ -246,6 +255,8 @@ impl GameState {
             last_activated_x_value: None,
             trigger_event_index: 0,
             pending_triggers: Vec::new(),
+            pending_trigger_pushes_ap: Vec::new(),
+            pending_trigger_pushes_nap: Vec::new(),
             pending_mulligan_bottoms: Vec::new(),
             mulligan_round_position: 0,
             mulligan_round_mulled: false,
@@ -1876,6 +1887,10 @@ pub enum PendingEffect {
     /// The legend rule: the chosen permanent is KEPT, all others with the same name
     /// under that player's control are sent to the graveyard.
     LegendRuleKeep { player: PlayerId, legend_name: String },
+    /// CR 603.3d: attach the chosen target to the next pending trigger
+    /// in the AP/NAP push queue, then push it onto the stack and continue
+    /// processing remaining pending triggers.
+    AttachTargetToPendingTrigger,
 }
 
 /// Game result.

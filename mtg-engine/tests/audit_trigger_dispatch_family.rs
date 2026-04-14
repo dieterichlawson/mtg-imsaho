@@ -542,8 +542,16 @@ fn bug_ae_undead_alchemist_replaces_damage_not_restores_life() {
 /// target choice. Today it's None because the choice is deferred
 /// to resolution.
 ///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug M is fixed.
+/// CR 603.3d: Snapcaster Mage's ETB trigger should choose its target
+/// when put on the stack, not at resolution. This means:
+/// - With a single legal target, the engine auto-picks at collection time
+///   and the trigger goes on the stack with `chosen_targets` populated.
+///   Opponents can then respond to the on-stack trigger before resolution.
+/// - With multiple legal targets, the engine prompts the player.
+///
+/// Either way, the target is locked in BEFORE the trigger is on the stack
+/// — opponents can't see a trigger with no target and respond to "guess
+/// which target it'll pick at resolution".
 #[test]
 fn bug_m_snapcaster_target_chosen_at_stack_time() {
     let registry = CardRegistry::with_all_cards();
@@ -551,7 +559,7 @@ fn bug_m_snapcaster_target_chosen_at_stack_time() {
 
     // A valid flashback target in P0's graveyard.
     let grudge_card_id = registry.get_id_by_name("Ancient Grudge").unwrap();
-    let _grudge = state.create_object(grudge_card_id, P0, Zone::Graveyard, None, None);
+    let grudge = state.create_object(grudge_card_id, P0, Zone::Graveyard, None, None);
 
     // Snapcaster Mage enters the battlefield — push the ETB event.
     let snap_card_id = registry.get_id_by_name("Snapcaster Mage").unwrap();
@@ -566,18 +574,54 @@ fn bug_m_snapcaster_target_chosen_at_stack_time() {
     let had_triggers = mtg_engine::triggers::collect_triggers(&mut state, &registry);
     assert!(had_triggers, "Test setup: Snapcaster ETB should produce a trigger");
 
-    // CR 603.3d: the target should be chosen NOW (at stack-queue
-    // time). awaiting_action should be set for a target choice.
-    assert!(
-        state.awaiting_action.is_some(),
-        "Snapcaster Mage's ETB trigger should prompt for a target \
-         when the trigger is put on the stack (CR 603.3d), not when \
-         it resolves. Bug M: the target choice is deferred to \
-         on_enter_battlefield at resolution time, so opponents can't \
-         respond between 'trigger goes on stack' and 'target locked in'. \
-         awaiting_action = {:?}",
-        state.awaiting_action,
-    );
+    // CR 603.3d: with a single legal target, no prompt is needed (auto-pick).
+    // The trigger should be on the stack with chosen_targets populated.
+    assert!(state.awaiting_action.is_none(),
+        "Single-target trigger should auto-pick without prompting. awaiting_action = {:?}",
+        state.awaiting_action);
+
+    let trigger_on_stack = state.stack.iter().find_map(|e| {
+        if let mtg_engine::state::StackEntry::Trigger(
+            mtg_engine::triggers::PendingTrigger::EnteredBattlefield { card_id, chosen_targets, .. }
+        ) = e {
+            if *card_id == snap_card_id {
+                return Some(chosen_targets.clone());
+            }
+        }
+        None
+    });
+    let targets = trigger_on_stack.expect("Snapcaster ETB trigger should be on the stack");
+    assert_eq!(targets, vec![mtg_engine::actions::Target::Object(grudge)],
+        "Snapcaster's ETB trigger should have Ancient Grudge locked in as the target \
+         at stack-queue time (CR 603.3d), not deferred to resolution. \
+         chosen_targets = {targets:?}");
+}
+
+/// With multiple legal targets, the player is prompted to choose at
+/// stack-queue time per CR 603.3d.
+#[test]
+fn snapcaster_prompts_for_target_with_multiple_legal_targets() {
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // Two valid flashback targets in P0's graveyard.
+    let grudge_card_id = registry.get_id_by_name("Ancient Grudge").unwrap();
+    let _grudge1 = state.create_object(grudge_card_id, P0, Zone::Graveyard, None, None);
+    let _grudge2 = state.create_object(grudge_card_id, P0, Zone::Graveyard, None, None);
+
+    let snap_card_id = registry.get_id_by_name("Snapcaster Mage").unwrap();
+    let snap = state.create_object(snap_card_id, P0, Zone::Battlefield, Some(2), Some(1));
+    state.get_object_mut(snap).unwrap().name = "Snapcaster Mage".into();
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: snap,
+        controller: P0,
+    });
+
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+
+    // Multiple legal targets → engine prompts the player.
+    assert!(state.awaiting_action.is_some(),
+        "With multiple legal targets, the engine must prompt at stack-queue time");
 }
 
 /// CR 603.3b technically requires the active player to choose the

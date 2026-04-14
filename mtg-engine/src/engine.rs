@@ -1663,7 +1663,7 @@ fn generate_cast_actions_with_targets(
 }
 
 /// Helper: collect all valid targets for a single-target requirement.
-fn valid_targets_for_req(
+pub(crate) fn valid_targets_for_req(
     state: &GameState,
     caster: PlayerId,
     spell_id: ObjectId,
@@ -3583,6 +3583,25 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 state.move_object(id, crate::types::Zone::Graveyard, registry);
             }
             state.log(LogLevel::Event, format!("Legend rule: kept {legend_name}"));
+        }
+        (chosen_target, PendingEffect::AttachTargetToPendingTrigger) => {
+            // CR 603.3d: attach the chosen target to the next pending trigger
+            // and push it onto the stack. The trigger was stashed at the front
+            // of the AP/NAP queue when the prompt was set up — pop it now.
+            let trigger = if !state.pending_trigger_pushes_ap.is_empty() {
+                Some(state.pending_trigger_pushes_ap.remove(0))
+            } else if !state.pending_trigger_pushes_nap.is_empty() {
+                Some(state.pending_trigger_pushes_nap.remove(0))
+            } else {
+                None
+            };
+            if let Some(mut t) = trigger {
+                t.set_chosen_targets(vec![chosen_target.clone()]);
+                state.stack.push(crate::state::StackEntry::Trigger(t));
+            }
+            // Continue processing the remaining pending triggers (may set up
+            // another awaiting_action prompt for the next target choice).
+            crate::triggers::process_pending_trigger_pushes(state, registry);
         }
         _ => {}
     }

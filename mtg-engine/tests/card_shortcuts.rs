@@ -89,18 +89,18 @@ fn snapcaster_targets_card_with_printed_flashback() {
     let think_twice = state.create_object(think_twice_card_id, P0, Zone::Graveyard, None, None);
     state.get_object_mut(think_twice).unwrap().name = "Think Twice".into();
 
-    // Fire ETB.
-    let behavior = reg.get(state.get_object(snapcaster).unwrap().card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, snapcaster, &[], &reg);
+    // Fire ETB via the trigger pipeline so target is chosen at stack-queue time
+    // (CR 603.3d), then resolve the trigger.
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: snapcaster, controller: P0,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &reg);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
 
-    // Snapcaster should have granted flashback (or at least presented the
-    // choice). Since Think Twice is the only card, it should auto-select.
+    // Snapcaster should have granted flashback to Think Twice.
     let has_grant = state.until_end_of_turn.iter().any(|e| {
         matches!(e, mtg_engine::state::TemporaryEffect::GrantFlashback { target, .. } if *target == think_twice)
     });
-
-    // Even though Think Twice already has flashback, Snapcaster should
-    // still be able to target it and grant the mana-cost flashback.
     assert!(has_grant,
         "Snapcaster Mage should be able to target cards with printed flashback");
 }

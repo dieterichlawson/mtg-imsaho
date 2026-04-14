@@ -470,8 +470,11 @@ fn bug_9f_001_snapcaster_can_grant_flashback_to_card_with_printed_flashback() {
     let snap_card_id = registry.get_id_by_name("Snapcaster Mage").unwrap();
     let snap = state.create_object(snap_card_id, P0, Zone::Battlefield, Some(2), Some(1));
     state.get_object_mut(snap).unwrap().name = "Snapcaster Mage".into();
-    let behavior = registry.get(snap_card_id).unwrap();
-    behavior.on_enter_battlefield(&mut state, snap, &[], &registry);
+    state.events.push(mtg_engine::events::GameEvent::EnteredBattlefield {
+        object: snap, controller: P0,
+    });
+    mtg_engine::triggers::collect_triggers(&mut state, &registry);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, &registry);
 
     let granted = state.until_end_of_turn.iter().any(|e| matches!(
         e,

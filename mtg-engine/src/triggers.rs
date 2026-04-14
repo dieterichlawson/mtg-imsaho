@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::CardRegistry;
 use crate::events::GameEvent;
 use crate::ids::{CardId, ObjectId, PlayerId};
-use crate::state::GameState;
+use crate::state::{GameState, StackEntry};
 use crate::types::Zone;
 
 /// A triggered ability that has been collected but not yet resolved.
@@ -218,6 +218,108 @@ impl PendingTrigger {
         }
     }
 
+    /// The source object that the trigger fires from. Used to look up the
+    /// trigger's target requirement and as the "source" for target validation.
+    /// Returns None for triggers without a meaningful source object.
+    #[must_use]
+    pub fn source_object(&self) -> Option<ObjectId> {
+        match self {
+            PendingTrigger::SelfDies { dead_id, .. } => Some(*dead_id),
+            PendingTrigger::DeathWatch { watcher_id, .. }
+            | PendingTrigger::EnterWatch { watcher_id, .. }
+            | PendingTrigger::CombatDamageWatch { watcher_id, .. }
+            | PendingTrigger::DamageToPlayerWatch { watcher_id, .. }
+            | PendingTrigger::SpellCastWatch { watcher_id, .. }
+            | PendingTrigger::AttackWatch { watcher_id, .. }
+            | PendingTrigger::CreatureCardMilledWatch { watcher_id, .. } => Some(*watcher_id),
+            PendingTrigger::EnteredBattlefield { object_id, .. }
+            | PendingTrigger::EndCombatTrigger { object_id, .. }
+            | PendingTrigger::UpkeepTrigger { object_id, .. }
+            | PendingTrigger::EndStepTrigger { object_id, .. }
+            | PendingTrigger::LeftBattlefield { object_id, .. }
+            | PendingTrigger::AttacksTrigger { object_id, .. }
+            | PendingTrigger::BlocksTrigger { object_id, .. }
+            | PendingTrigger::BecomesBlockedTrigger { object_id, .. }
+            | PendingTrigger::StateTriggered { object_id, .. } => Some(*object_id),
+            PendingTrigger::CombatDamageToPlayer { creature_id, .. }
+            | PendingTrigger::CombatDamageToCreature { creature_id, .. } => Some(*creature_id),
+        }
+    }
+
+    /// The card id of the behavior that owns this trigger. Used to look up
+    /// the `TriggeredAbilityDef`.
+    #[must_use]
+    pub fn behavior_card_id(&self) -> CardId {
+        match self {
+            PendingTrigger::SelfDies { dead_card_id, .. } => *dead_card_id,
+            PendingTrigger::DeathWatch { watcher_card_id, .. }
+            | PendingTrigger::EnterWatch { watcher_card_id, .. }
+            | PendingTrigger::CombatDamageWatch { watcher_card_id, .. }
+            | PendingTrigger::DamageToPlayerWatch { watcher_card_id, .. }
+            | PendingTrigger::SpellCastWatch { watcher_card_id, .. }
+            | PendingTrigger::AttackWatch { watcher_card_id, .. }
+            | PendingTrigger::CreatureCardMilledWatch { watcher_card_id, .. } => *watcher_card_id,
+            PendingTrigger::EnteredBattlefield { card_id, .. }
+            | PendingTrigger::EndCombatTrigger { card_id, .. }
+            | PendingTrigger::UpkeepTrigger { card_id, .. }
+            | PendingTrigger::EndStepTrigger { card_id, .. }
+            | PendingTrigger::LeftBattlefield { card_id, .. }
+            | PendingTrigger::AttacksTrigger { card_id, .. }
+            | PendingTrigger::BlocksTrigger { card_id, .. }
+            | PendingTrigger::BecomesBlockedTrigger { card_id, .. }
+            | PendingTrigger::StateTriggered { card_id, .. } => *card_id,
+            PendingTrigger::CombatDamageToPlayer { creature_card_id, .. }
+            | PendingTrigger::CombatDamageToCreature { creature_card_id, .. } => *creature_card_id,
+        }
+    }
+
+    /// The trigger kind, used to look up the matching `TriggeredAbilityDef`.
+    /// Returns `None` for triggers without a corresponding `TriggerKind`
+    /// (currently just `StateTriggered`, which has its own dispatch).
+    #[must_use]
+    pub fn kind(&self) -> Option<crate::cards::TriggerKind> {
+        use crate::cards::TriggerKind;
+        Some(match self {
+            PendingTrigger::SelfDies { .. } => TriggerKind::SelfDies,
+            PendingTrigger::DeathWatch { .. } => TriggerKind::AnyCreatureDies,
+            PendingTrigger::EnteredBattlefield { .. } => TriggerKind::EntersBattlefield,
+            PendingTrigger::EnterWatch { .. } => TriggerKind::AnyCreatureEnters,
+            PendingTrigger::CombatDamageToPlayer { .. } => TriggerKind::CombatDamageToPlayer,
+            PendingTrigger::CombatDamageWatch { .. } => TriggerKind::AnyCombatDamageToPlayer,
+            PendingTrigger::DamageToPlayerWatch { .. } => TriggerKind::AnyDamageToPlayer,
+            PendingTrigger::SpellCastWatch { .. } => TriggerKind::SpellCast,
+            PendingTrigger::EndCombatTrigger { .. } => TriggerKind::EndCombat,
+            PendingTrigger::UpkeepTrigger { .. } => TriggerKind::Upkeep,
+            PendingTrigger::EndStepTrigger { .. } => TriggerKind::EndStep,
+            PendingTrigger::LeftBattlefield { .. } => TriggerKind::LeavesBattlefield,
+            PendingTrigger::AttacksTrigger { .. } => TriggerKind::Attacks,
+            PendingTrigger::BlocksTrigger { .. } => TriggerKind::Blocks,
+            PendingTrigger::AttackWatch { .. } => TriggerKind::AnyCreatureAttacks,
+            PendingTrigger::CombatDamageToCreature { .. } => TriggerKind::DealsCombatDamageToCreature,
+            PendingTrigger::BecomesBlockedTrigger { .. } => TriggerKind::BecomesBlocked,
+            PendingTrigger::CreatureCardMilledWatch { .. } => TriggerKind::CreatureCardMilled,
+            PendingTrigger::StateTriggered { .. } => return None,
+        })
+    }
+
+    /// Mutate the trigger's `chosen_targets` field. Returns false if this
+    /// variant doesn't carry chosen targets.
+    pub fn set_chosen_targets(&mut self, targets: Vec<Target>) -> bool {
+        match self {
+            PendingTrigger::SelfDies { chosen_targets, .. }
+            | PendingTrigger::DeathWatch { chosen_targets, .. }
+            | PendingTrigger::EnteredBattlefield { chosen_targets, .. }
+            | PendingTrigger::SpellCastWatch { chosen_targets, .. }
+            | PendingTrigger::UpkeepTrigger { chosen_targets, .. }
+            | PendingTrigger::EndStepTrigger { chosen_targets, .. }
+            | PendingTrigger::AttacksTrigger { chosen_targets, .. } => {
+                *chosen_targets = targets;
+                true
+            }
+            _ => false,
+        }
+    }
+
     /// Display name for the stack view, including what the trigger does.
     /// Uses the object's current transform state to show the correct face name.
     #[must_use]
@@ -406,8 +508,6 @@ fn face_trigger_description(registry: &CardRegistry, card_id: CardId, kind: &cra
 /// Does NOT resolve them — the game loop resolves them one at a time,
 /// giving players priority between each.
 pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool {
-    use crate::state::StackEntry;
-
     let events = state.events.clone();
     let start = state.trigger_event_index;
     let active_player = state.active_player;
@@ -1016,18 +1116,110 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
 
     let had_triggers = !ap_triggers.is_empty() || !nap_triggers.is_empty();
 
-    // APNAP: Active player's triggers go on stack first (bottom),
-    // non-active player's go on top. LIFO = NAP resolves first.
-    for t in ap_triggers {
-        state.stack.push(StackEntry::Trigger(t));
-    }
-    for t in nap_triggers {
-        state.stack.push(StackEntry::Trigger(t));
-    }
+    // CR 603.3d: triggers go on the stack in APNAP order — AP first, then NAP.
+    // For each trigger, if it has a target requirement, the player chooses the
+    // target as it goes on the stack (handled by process_pending_trigger_pushes).
+    state.pending_trigger_pushes_ap.extend(ap_triggers);
+    state.pending_trigger_pushes_nap.extend(nap_triggers);
 
     // Mark all events as processed.
     state.trigger_event_index = events.len();
+
+    // Process the queue: push triggers onto the stack one at a time, prompting
+    // for targets where needed. Returns early if a prompt is set up.
+    process_pending_trigger_pushes(state, registry);
+
     had_triggers
+}
+
+/// CR 603.3d: process the queue of triggers waiting to be pushed onto the
+/// stack. For each trigger, if it has a target requirement, prompt the player
+/// to choose targets (or auto-pick if there's exactly one legal target).
+///
+/// Returns when the queue is empty or when a prompt has been set up
+/// (`state.awaiting_action.is_some()`). The caller (or `Action::ResolveChoice`
+/// handler) will re-enter this function to continue processing the queue
+/// after the player has made their choice.
+pub fn process_pending_trigger_pushes(state: &mut GameState, registry: &CardRegistry) {
+    while state.awaiting_action.is_none() {
+        // Process AP queue first, then NAP.
+        let trigger = if !state.pending_trigger_pushes_ap.is_empty() {
+            state.pending_trigger_pushes_ap.remove(0)
+        } else if !state.pending_trigger_pushes_nap.is_empty() {
+            state.pending_trigger_pushes_nap.remove(0)
+        } else {
+            return;
+        };
+
+        // Look up the target requirement for this trigger.
+        let card_id = trigger.behavior_card_id();
+        let target_req = trigger.kind().and_then(|kind| {
+            registry.get(card_id)
+                .and_then(|b| b.card_data().triggered_abilities.into_iter()
+                    .find(|t| t.kind == kind)
+                    .and_then(|t| t.target_requirement))
+        });
+
+        let Some(req) = target_req else {
+            // Untargeted: push directly onto the stack.
+            state.stack.push(StackEntry::Trigger(trigger));
+            continue;
+        };
+
+        // Compute valid targets via the same helper as spell casting.
+        let source_id = trigger.source_object().unwrap_or(crate::ids::ObjectId(0));
+        let controller = trigger.controller();
+        let Some(behavior) = registry.get(card_id) else {
+            // Card behavior not found — skip the trigger (shouldn't happen).
+            continue;
+        };
+        let valid_targets = crate::engine::valid_targets_for_req(
+            state, controller, source_id, &req, behavior, registry,
+        );
+
+        match valid_targets.len() {
+            0 => {
+                // CR 603.3c: a triggered ability with no legal targets is
+                // removed from the stack (i.e., never goes on it).
+                state.log(crate::state::LogLevel::Event,
+                    format!("Trigger removed: no legal targets ({})", trigger.display_name(registry)));
+            }
+            1 => {
+                // Auto-pick the single legal target.
+                let target = valid_targets[0].clone();
+                let mut t = trigger;
+                t.set_chosen_targets(vec![target]);
+                state.stack.push(StackEntry::Trigger(t));
+            }
+            _ => {
+                // Multiple legal targets: prompt the player. Stash the trigger
+                // back at the front of its queue, set up awaiting_action, and
+                // return. When the player chooses, AttachTargetToPendingTrigger
+                // will pop the trigger, attach the target, and re-enter here.
+                let is_ap = controller == state.active_player;
+                if is_ap {
+                    state.pending_trigger_pushes_ap.insert(0, trigger.clone());
+                } else {
+                    state.pending_trigger_pushes_nap.insert(0, trigger.clone());
+                }
+                let description = format!(
+                    "{}: choose target",
+                    trigger.display_name_with_state(registry, Some(state))
+                );
+                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                    player: controller,
+                    source: source_id,
+                    choice: crate::state::ResolutionChoiceKind::ChooseTarget {
+                        description,
+                        options: valid_targets,
+                        optional: false,
+                        effect: crate::state::PendingEffect::AttachTargetToPendingTrigger,
+                    },
+                });
+                return;
+            }
+        }
+    }
 }
 
 /// Resolve the top trigger from the stack.
