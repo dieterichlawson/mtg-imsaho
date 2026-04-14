@@ -158,6 +158,68 @@ fn discard_to_hand_size_during_cleanup() {
     ));
 }
 
+/// Submits `Action::DiscardCards` through `engine::submit_action` during
+/// the cleanup discard step. Exercises the hand-size-cleanup branch of
+/// the handler (is_hand_size=true), including the aggregated log message.
+#[test]
+fn submit_action_discard_cards_for_cleanup_moves_cards_to_graveyard() {
+    use mtg_engine::actions::Action;
+    use mtg_engine::state::AwaitingAction;
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::Cleanup, P0);
+    let mut hand = Vec::new();
+    for _ in 0..9 {
+        hand.push(state.create_object(CardId(1), P0, Zone::Hand, None, None));
+    }
+    state.awaiting_action = Some(AwaitingAction::DiscardToHandSize { player: P0, discard_count: 2 });
+
+    let to_discard = vec![hand[0], hand[1]];
+    let new_state = engine::submit_action(
+        &state,
+        &Action::DiscardCards { cards: to_discard.clone() },
+        &registry,
+    );
+
+    assert!(new_state.awaiting_action.is_none());
+    for id in &to_discard {
+        assert_eq!(new_state.get_object(*id).unwrap().zone, Zone::Graveyard,
+            "discarded card should be in graveyard");
+    }
+    let remaining_hand = new_state.objects_in_zone(Zone::Hand, P0).len();
+    assert_eq!(remaining_hand, 7, "hand size should be 7 after discarding 2 of 9");
+    assert!(new_state.game_log.iter().any(|e| e.message.contains("cleanup")),
+        "log should annotate the discard as cleanup-driven");
+}
+
+/// Submits `Action::DiscardCards` without a `DiscardToHandSize`
+/// awaiting-action (e.g. from a spell like Lay Bare or an activated
+/// ability that discards). Exercises the non-cleanup branch and the
+/// per-card log messages.
+#[test]
+fn submit_action_discard_cards_without_awaiting_logs_per_card() {
+    use mtg_engine::actions::Action;
+
+    let registry = CardRegistry::with_all_cards();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+    let c1 = state.create_object(CardId(1), P0, Zone::Hand, None, None);
+    let c2 = state.create_object(CardId(1), P0, Zone::Hand, None, None);
+
+    let new_state = engine::submit_action(
+        &state,
+        &Action::DiscardCards { cards: vec![c1, c2] },
+        &registry,
+    );
+
+    assert_eq!(new_state.get_object(c1).unwrap().zone, Zone::Graveyard);
+    assert_eq!(new_state.get_object(c2).unwrap().zone, Zone::Graveyard);
+    let discard_msgs = new_state.game_log.iter()
+        .filter(|e| e.message.contains("discarded"))
+        .count();
+    assert!(discard_msgs >= 2,
+        "non-cleanup path should log one 'discarded' message per card (got {discard_msgs})");
+}
+
 /// No discard needed if hand size is 7 or less.
 #[test]
 fn no_discard_needed_at_seven_or_less() {

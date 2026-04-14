@@ -196,3 +196,96 @@ fn attacker_survives_small_blocker() {
     assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
         "1/1 should die from 5 damage");
 }
+
+/// Drives `Action::DeclareBlockers` through `engine::submit_action` (the
+/// same path a CLI/LLM player takes) rather than calling
+/// `combat::declare_blockers` directly. Exercises the blocker assignments
+/// and the event-log branch that other combat tests bypass.
+#[test]
+fn submit_action_declare_blockers_records_assignments() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+
+    let action = Action::DeclareBlockers { assignments: vec![(blocker, attacker)] };
+    let new_state = engine::submit_action(&state, &action, &reg);
+
+    assert!(new_state.awaiting_action.is_none(),
+        "awaiting_action should be cleared after submit_action");
+    let combat = new_state.combat.as_ref().expect("combat state should exist");
+    let blockers_for_attacker = combat.blocker_assignments.get(&attacker)
+        .expect("attacker should have a blocker_assignments entry");
+    assert_eq!(blockers_for_attacker, &vec![blocker],
+        "blocker should be recorded against the attacker it blocked");
+    assert!(new_state.game_log.iter().any(|e| e.message.contains("declared blockers")),
+        "log should contain a 'declared blockers' message");
+}
+
+/// Drives `Action::DeclareAttackers` through `engine::submit_action`
+/// (the player-facing path). Exercises the event-log branch other combat
+/// tests bypass by calling `combat::declare_attackers` directly.
+#[test]
+fn submit_action_declare_attackers_records_attackers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+
+    let action = Action::DeclareAttackers { attackers: vec![(attacker, P1)] };
+    let new_state = engine::submit_action(&state, &action, &reg);
+
+    assert!(new_state.awaiting_action.is_none(),
+        "awaiting_action should be cleared after submit_action");
+    let combat = new_state.combat.as_ref().expect("combat state should exist");
+    assert!(combat.attackers.contains_key(&attacker),
+        "attacker should be recorded in combat.attackers");
+    assert!(new_state.get_object(attacker).unwrap().tapped,
+        "attacker should be tapped (no vigilance)");
+    assert!(new_state.game_log.iter().any(|e| e.message.contains("declared attackers")),
+        "log should contain a 'declared attackers' message");
+}
+
+/// `Action::DeclareAttackers` with no attackers — exercises the empty
+/// branch at the top of the handler.
+#[test]
+fn submit_action_declare_attackers_with_none_is_noop() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    ready_creature(&mut state, P0, 3, 3);
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+
+    let action = Action::DeclareAttackers { attackers: vec![] };
+    let new_state = engine::submit_action(&state, &action, &reg);
+
+    assert!(new_state.awaiting_action.is_none());
+    let combat = new_state.combat.as_ref().expect("combat state should exist");
+    assert!(combat.attackers.is_empty(),
+        "no attackers should be recorded");
+}
+
+/// `Action::DeclareBlockers` with no assignments — exercises the
+/// empty-assignment log branch.
+#[test]
+fn submit_action_declare_blockers_with_none_logs_no_blockers() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 3, 3);
+    ready_creature(&mut state, P1, 2, 2);
+
+    combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    state.awaiting_action = Some(AwaitingAction::DeclareBlockers { defending_player: P1 });
+
+    let action = Action::DeclareBlockers { assignments: vec![] };
+    let new_state = engine::submit_action(&state, &action, &reg);
+
+    assert!(new_state.awaiting_action.is_none());
+    let combat = new_state.combat.as_ref().expect("combat state should exist");
+    assert!(combat.blocker_assignments.values().all(|v| v.is_empty()),
+        "no blockers should be recorded against any attacker");
+    assert!(new_state.game_log.iter().any(|e| e.message.contains("declared no blockers")),
+        "log should contain the 'declared no blockers' message");
+}
