@@ -4,6 +4,7 @@ pub mod state;
 pub mod events;
 pub mod actions;
 pub mod mana;
+pub mod funding;
 pub mod stack;
 pub mod combat;
 pub mod sba;
