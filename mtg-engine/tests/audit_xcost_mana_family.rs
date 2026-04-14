@@ -177,28 +177,30 @@ fn bug_17_001_corpse_lunge_reads_effective_power_of_cda_creature() {
 /// Bat's upkeep transform option is silently never offered.
 ///
 /// Oracle (Screeching Bat): "{2}{B}{B}: Transform this creature."
-/// (Activated at any time — but the bug entry notes that the card's
-/// handler gates this on the current mana pool, so it only surfaces
-/// if the player has already floated mana.)
+/// Screeching Bat's upkeep trigger ("At the beginning of your upkeep,
+/// you may pay {2}{B}{B}. If you do, transform this creature.") must
+/// be *offered* whenever the player has enough untapped mana, not
+/// only when the pool is already floating that much.
 ///
-/// Failure mode: `screeching_bat.rs:89-93` checks
-/// `state.get_player(controller).mana_pool.get(ManaType::Black) >= 2`
-/// or similar — if false, the transform ability isn't offered. With
-/// Screeching Bat in play and four untapped Swamps, no floated
-/// mana, the transform ability should be offerable (the engine
-/// should autotap), but today it's absent.
+/// Failure mode: `screeching_bat.rs::on_upkeep` used to check
+/// `crate::mana::can_pay(pool, &cost)` against the *current* pool.
+/// Per CR 106.4, mana pools empty at the end of each step, so the
+/// pool is empty on the upkeep trigger resolve and the `YesNo` "may
+/// pay" prompt was never shown — even when the player controlled
+/// four untapped Swamps.
 ///
-/// We put Screeching Bat + four untapped Swamps and no floated mana
-/// into state and call `activated_abilities` directly. The bug
-/// shows up as an empty list.
+/// Fix: `on_upkeep` now routes through
+/// `engine::plan_autotap_for_cost` (autotap reachability) instead of
+/// pool-floating. `on_yes_no_choice` runs the same plan and taps
+/// sources before paying.
 ///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug Y is fixed.
+/// We drive the trigger handler directly with a Screeching Bat in
+/// play, an empty pool, and four untapped Swamps, and assert that
+/// the `YesNo` prompt is set up.
 #[test]
-#[ignore = "Tabled — unrelated to X-cost: requires routing 'may-pay' upkeep \
-            prompts through autotap so they appear even when the pool is empty \
-            between phases. Separate follow-up."]
 fn bug_y_screeching_bat_transform_offered_with_untapped_lands() {
+    use mtg_engine::state::{AwaitingAction, ResolutionChoiceKind};
+
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::Upkeep, P0);
 
@@ -208,8 +210,9 @@ fn bug_y_screeching_bat_transform_offered_with_untapped_lands() {
     let swamp_card_id = registry.get_id_by_name("Swamp").unwrap();
     for _ in 0..4 {
         let s = state.create_object(swamp_card_id, P0, Zone::Battlefield, None, None);
-        state.get_object_mut(s).unwrap().name = "Swamp".into();
-        state.get_object_mut(s).unwrap().card_types = vec![CardType::Land];
+        let obj = state.get_object_mut(s).unwrap();
+        obj.name = "Swamp".into();
+        obj.card_types = vec![CardType::Land];
     }
 
     // Mana pool is empty (just entered upkeep) — the bug fires here.
@@ -219,17 +222,41 @@ fn bug_y_screeching_bat_transform_offered_with_untapped_lands() {
         "Test setup: mana pool should be empty at upkeep"
     );
 
+    // Drive the trigger handler directly (simulating trigger resolution).
     let bat_card_id = state.get_object(bat).unwrap().card_id;
     let behavior = registry.get(bat_card_id).unwrap();
-    let abilities = behavior.activated_abilities(&state, bat, &registry);
+    behavior.on_upkeep(&mut state, bat, &[], &registry);
 
+    // Expected: `YesNo` "may pay" prompt is now awaiting a response.
+    match state.awaiting_action.as_ref() {
+        Some(AwaitingAction::ResolutionChoice {
+            choice: ResolutionChoiceKind::YesNo { description, source_card },
+            ..
+        }) => {
+            assert_eq!(*source_card, bat);
+            assert!(
+                description.contains("Swamp") || description.contains("tap"),
+                "Prompt description should describe the tap plan so the \
+                 player can weigh opportunity cost, got: {description:?}"
+            );
+        }
+        other => panic!(
+            "Screeching Bat's may-pay upkeep prompt should fire when the \
+             player controls four untapped Swamps — Bug Y: the card checked \
+             the current (empty) pool instead of routing through autotap. \
+             awaiting_action={other:?}"
+        ),
+    }
+
+    // And if the player says yes, the Bat should transform and the
+    // Swamps should tap to pay the cost.
+    behavior.on_yes_no_choice(&mut state, bat, true, &registry);
     assert!(
-        !abilities.is_empty(),
-        "Screeching Bat's {{2}}{{B}}{{B}} transform ability should be \
-         offered when the player controls four untapped Swamps — the \
-         engine should autotap to pay. Bug Y: the card checks the \
-         current mana pool (empty at upkeep) and skips the ability \
-         entirely instead of routing through autotap. abilities={:?}",
-        abilities.iter().map(|a| &a.description).collect::<Vec<_>>(),
+        state.get_object(bat).unwrap().is_transformed,
+        "Screeching Bat should have transformed after saying yes"
     );
+    let tapped_swamps = state.objects.values()
+        .filter(|o| o.name == "Swamp" && o.tapped)
+        .count();
+    assert_eq!(tapped_swamps, 4, "all four Swamps should be tapped");
 }

@@ -79,7 +79,7 @@ impl CardBehavior for ScreechingBat {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
             _ => return,
@@ -88,20 +88,30 @@ impl CardBehavior for ScreechingBat {
             return;
         }
         // "You may pay {2}{B}{B}. If you do, transform."
-        // Only present the choice if the player can afford the cost.
+        //
+        // Check autotap reachability, not pool-floating. Per CR 106.4 mana
+        // pools empty between steps, so the pool is typically empty at
+        // upkeep. We need to offer the may-pay prompt whenever the player
+        // has enough untapped mana sources — the tap plan is executed in
+        // `on_yes_no_choice` below.
         let cost = Self::transform_cost();
-        let pool = &state.get_player(controller).mana_pool;
-        if !crate::mana::can_pay(pool, &cost) {
+        let Some(tap_plan) = crate::engine::plan_autotap_for_cost(state, controller, &cost, registry) else {
             return;
-        }
+        };
 
         let current_name = state.obj_name(self_id);
+        let plan_suffix = helpers::format_tap_plan_names(state, &tap_plan);
+        let description = if plan_suffix.is_empty() {
+            format!("{current_name}: pay {{2}}{{B}}{{B}} to transform?")
+        } else {
+            format!("{current_name}: pay {{2}}{{B}}{{B}} ({plan_suffix}) to transform?")
+        };
 
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
             source: self_id,
             choice: ResolutionChoiceKind::YesNo {
-                description: format!("{current_name}: pay {{2}}{{B}}{{B}} to transform?"),
+                description,
                 source_card: self_id,
             },
         });
@@ -119,10 +129,15 @@ impl CardBehavior for ScreechingBat {
             _ => return,
         };
 
-        // Pay the cost.
+        // Recompute the tap plan and execute it. State hasn't changed since
+        // `on_upkeep` set up the prompt (no intervening triggers / priority),
+        // so the plan is the same — recomputing is simpler than stashing.
         let cost = Self::transform_cost();
-        if crate::mana::auto_pay(&mut state.get_player_mut(controller).mana_pool, &cost).is_err() {
-            // Can't pay — shouldn't happen since we checked in on_upkeep, but handle gracefully.
+        let Some(tap_plan) = crate::engine::plan_autotap_for_cost(state, controller, &cost, registry) else {
+            state.log(LogLevel::Event, "Could not pay {2}{B}{B} to transform".into());
+            return;
+        };
+        if !crate::engine::execute_tap_plan_and_pay(state, controller, &cost, &tap_plan, registry) {
             state.log(LogLevel::Event, "Could not pay {2}{B}{B} to transform".into());
             return;
         }

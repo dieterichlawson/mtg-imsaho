@@ -55,7 +55,7 @@ pub struct LegalActions {
 }
 
 /// Gather all available mana sources for a player, classified by opportunity cost.
-fn gather_mana_sources(
+pub(crate) fn gather_mana_sources(
     state: &GameState,
     player: PlayerId,
     registry: &CardRegistry,
@@ -181,6 +181,42 @@ pub(crate) fn activate_mana_source(
         .collect();
     state.log(LogLevel::Info, format!("p{} tapped {} for mana (pool: {})",
         controller.0, name, if pool_str.is_empty() { "empty".into() } else { pool_str.join(" ") }));
+}
+
+/// Compute an autotap plan for paying `cost` from `player`'s pool + untapped
+/// mana sources, without modifying state. Returns `None` if the cost is not
+/// autotap-reachable. Callers pair this with [`execute_tap_plan_and_pay`] to
+/// actually commit. Used by card handlers (e.g. Screeching Bat's may-pay
+/// upkeep) that need to know whether a mid-resolution cost is affordable
+/// *before* asking the player — pool-only checks miss the common case where
+/// the pool is empty but enough untapped sources are available (CR 106.4:
+/// mana empties between steps).
+#[must_use]
+pub(crate) fn plan_autotap_for_cost(
+    state: &GameState,
+    player: PlayerId,
+    cost: &ManaCost,
+    registry: &CardRegistry,
+) -> Option<Vec<(ObjectId, usize)>> {
+    let sources = gather_mana_sources(state, player, registry, false);
+    let pool = &state.get_player(player).mana_pool;
+    mana::compute_autotap(cost, pool, &sources, &[])
+}
+
+/// Execute a tap plan and deduct `cost` from the resulting pool.
+/// Returns `true` on success, `false` if `auto_pay` fails (which shouldn't
+/// happen when `tap_plan` came from `compute_autotap` on the same `cost`).
+pub(crate) fn execute_tap_plan_and_pay(
+    state: &mut GameState,
+    player: PlayerId,
+    cost: &ManaCost,
+    tap_plan: &[(ObjectId, usize)],
+    registry: &CardRegistry,
+) -> bool {
+    for &(src_id, ability_index) in tap_plan {
+        activate_mana_source(state, src_id, ability_index, registry);
+    }
+    mana::auto_pay(&mut state.get_player_mut(player).mana_pool, cost).is_ok()
 }
 
 /// Find alternative costs provided by continuous effects on permanents the caster controls.

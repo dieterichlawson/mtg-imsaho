@@ -291,3 +291,33 @@ pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &Ca
         }
     }
 }
+
+/// Format a tap plan as a short human-readable string like `tap 2x Swamp, Sol Ring`.
+/// Groups identical names with a count prefix; returns an empty string if the
+/// tap plan is empty. Engine-side analogue of `format_tap_plan` in mtg-player,
+/// for use in resolution-prompt descriptions (e.g. Screeching Bat's may-pay).
+#[must_use]
+pub fn format_tap_plan_names(state: &GameState, tap_plan: &[(ObjectId, usize)]) -> String {
+    if tap_plan.is_empty() {
+        return String::new();
+    }
+    let names: Vec<String> = tap_plan.iter()
+        .map(|&(id, _)| state.obj_name(id))
+        .collect();
+    // Group consecutive identical names into "Nx Name" form, preserving
+    // the tap plan's order.
+    let mut groups: Vec<(String, usize)> = Vec::new();
+    for name in names {
+        if let Some(last) = groups.last_mut() {
+            if last.0 == name {
+                last.1 += 1;
+                continue;
+            }
+        }
+        groups.push((name, 1));
+    }
+    let parts: Vec<String> = groups.into_iter()
+        .map(|(n, c)| if c == 1 { n } else { format!("{c}x {n}") })
+        .collect();
+    format!("tap {}", parts.join(", "))
+}
