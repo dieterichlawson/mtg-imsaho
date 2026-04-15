@@ -1416,79 +1416,184 @@ def cmd_merge(args):
 
 # ─── Abandon command ──────────────────────────────────────────────
 
+def _next_retry_id(old_id: str) -> str:
+    """Choose an id for the retry ticket that replaces `old_id`.
+
+    For ids matching `<slug>-NN`, increment the trailing number (e.g.
+    `merged-foo-02` → `merged-foo-03`) until a free id is found. For
+    other shapes, append `-retry-NN`.
+    """
+    m = re.match(r"^(.*)-(\d+)$", old_id)
+    if m:
+        base, num = m.group(1), int(m.group(2))
+        n = num + 1
+        while (TICKETS_DIR / f"{base}-{n:02d}.md").exists():
+            n += 1
+        return f"{base}-{n:02d}"
+    n = 1
+    while (TICKETS_DIR / f"{old_id}-retry-{n:02d}.md").exists():
+        n += 1
+    return f"{old_id}-retry-{n:02d}"
+
+
+def _extract_retry_body(old_body: str) -> str:
+    """Carry only the essentials into the retry ticket body: Title,
+    Description, Engine path, and a Tests section with Implementation
+    fields cleared. Accumulated Fix/Test Result sections are dropped —
+    the old ticket retains them as the terminal record."""
+    # Title (first `# ...` heading)
+    title_m = re.search(r"^#\s+.+$", old_body, re.MULTILINE)
+    title = title_m.group(0) if title_m else "# (untitled)"
+
+    def section(name: str) -> str | None:
+        m = re.search(
+            rf"^##\s+{re.escape(name)}\n(.*?)(?=\n##\s|\Z)",
+            old_body, re.DOTALL | re.MULTILINE)
+        return m.group(1).strip() if m else None
+
+    description = section("Description") or "(no description)"
+    engine_path = section("Engine path")
+    tests_section = section("Tests") or ""
+
+    # Reset `Implementation:` lines — the retry must re-populate them.
+    tests_section = re.sub(
+        r"(?m)^Implementation:.*$",
+        "Implementation: (not yet written)",
+        tests_section)
+
+    out = [title, "", "## Description", description]
+    if engine_path:
+        out += ["", "## Engine path", engine_path]
+    out += ["", "## Tests", "", tests_section]
+    return "\n".join(out).rstrip() + "\n"
+
+
 def cmd_retry(args):
-    """Retry a failed ticket's most-recent stage.
+    """Retry a failed ticket by creating a NEW ticket for the retry
+    attempt. The old ticket is closed (closed-duplicate → new) so the
+    history of each attempt is preserved as its own ticket.
 
-    Looks at the ticket's frontmatter to decide what to re-run:
-    - If the ticket has `fix_run_id` set (a fix was attempted), reset
-      status to `confirmed` and re-run `cli.py fix`. Reuses the
-      existing worktree if present; otherwise recreates it from the
-      ticket's fix branch (assumed to contain the test commits).
-    - Otherwise (test stage failed), reset status to `new` and
-      re-run `cli.py test`. A stale worktree is removed first so the
-      test-writer starts fresh.
+    - New ticket inherits frontmatter (`source_tickets`, test metadata),
+      body essentials (Title + Description + Engine path + Tests), and
+      a `previous_attempt` pointer. `Implementation:` lines in Tests
+      are cleared — the new agent re-populates them.
+    - New ticket's phase is set so the appropriate stage runs: `new`
+      if the previous failure was test-stage, `confirmed` if fix-stage.
+    - The old worktree is preserved for inspection by the new agent.
+      A fresh worktree is created for the new ticket, with the old
+      branch's test commits cherry-picked so the new agent has the
+      Rust test file present.
+    - Old ticket transitions to `status: closed-duplicate`, with
+      `duplicate_of: <new-id>`.
 
-    Only acts on tickets currently in `status: failed` or `blocked`
-    — refuses on `new`/`confirmed`/`fixed`/`merged`/`closed-duplicate`.
+    Only runs on tickets currently `failed` or `blocked`.
     """
     tid = args.ticket_id
-    path = TICKETS_DIR / f"{tid}.md"
-    if not path.exists():
+    old_path = TICKETS_DIR / f"{tid}.md"
+    if not old_path.exists():
         print(f"Ticket not found: {tid}")
         sys.exit(1)
-    ticket = parse_ticket(path)
-    fm = ticket["frontmatter"]
-    status = fm.get("status", "")
+    old = parse_ticket(old_path)
+    old_fm = old["frontmatter"]
+    status = old_fm.get("status", "")
     if status not in ("failed", "blocked"):
         print(f"ERROR: {tid} is status={status}; retry only works on "
               f"'failed' or 'blocked' tickets")
         sys.exit(1)
 
-    had_fix = bool(fm.get("fix_run_id"))
-    wt_dir = get_worktree_dir(tid)
-    branch = get_worktree_branch(tid)
+    had_fix = bool(old_fm.get("fix_run_id"))
+    new_id = _next_retry_id(tid)
+    new_phase = "confirmed" if had_fix else "new"
 
+    print(f"[{tid}] Retrying — creating {new_id} in status={new_phase}")
+
+    # Build the new body — essentials only, with a pointer back.
+    body = _extract_retry_body(old["body"])
+    body += (
+        f"\n## Previous attempt\n\n"
+        f"This ticket is a retry of `{tid}`.\n\n"
+        f"- Read that ticket's `## Fix Result` section for the post-mortem "
+        f"of what the previous attempt tried and where it broke.\n"
+        f"- The previous attempt's worktree is preserved at "
+        f"`.worktrees/fix-{tid}/` — inspect it for partial code you may "
+        f"want to read, cherry-pick, or explicitly discard.\n"
+        f"- The test file is already committed on this ticket's branch "
+        f"(`fix/{new_id}`); you do not need to re-author the tests.\n"
+    )
+
+    # New frontmatter — inherit what's still relevant.
+    new_fm: dict = {
+        "id": new_id,
+        "status": new_phase,
+        "card": old_fm.get("card", "multiple"),
+        "created": now_iso(),
+        "kind": old_fm.get("kind", "consolidated"),
+        "previous_attempt": tid,
+    }
+    if old_fm.get("source_tickets"):
+        new_fm["source_tickets"] = old_fm["source_tickets"]
+    # Carry over test metadata so the fixer knows tests already exist
+    # and Implementation can be repopulated against the same file.
+    for k in ("test_run_id", "test_model", "test_tokens", "test_duration",
+              "test_file", "tests_confirmed", "tests_total", "confirmed_at"):
+        if k in old_fm:
+            new_fm[k] = old_fm[k]
+
+    write_ticket(new_id, new_fm, body)
+    print(f"[{new_id}] Created retry ticket")
+
+    # Close the old ticket as closed-duplicate → new. Keep all other
+    # frontmatter (status timestamps, fix_run_id) intact as the
+    # historical record.
+    old["frontmatter"]["status"] = "closed-duplicate"
+    old["frontmatter"]["duplicate_of"] = new_id
+    write_ticket(tid, old["frontmatter"], old["body"])
+    print(f"[{tid}] Closed as closed-duplicate → {new_id}")
+
+    # Prepare a fresh worktree for the new ticket. Preserve the old
+    # worktree in place for inspection. Cherry-pick the old fix branch's
+    # test commits into the new branch so the test file is present.
     if had_fix:
-        print(f"[{tid}] Last stage was fix — resetting to confirmed and "
-              f"re-running fixer")
-        if not wt_dir.exists():
-            # Try to re-attach the fix branch to a new worktree. The
-            # branch should still exist (cmd_fix preserves it) unless
-            # cli.py abandon was run; if missing, the user needs to
-            # recover manually (cherry-pick the test commits).
-            branch_check = subprocess.run(
-                ["git", "rev-parse", "--verify", branch],
-                capture_output=True, cwd=str(PROJECT_ROOT),
-            )
-            if branch_check.returncode != 0:
-                print(f"ERROR: worktree gone and branch {branch} no "
-                      f"longer exists. Manual recovery required — "
-                      f"cherry-pick the test commits onto a new branch.")
-                sys.exit(1)
-            print(f"  Re-attaching worktree to existing branch {branch}")
-            subprocess.run(
-                ["git", "worktree", "add", str(wt_dir), branch],
-                check=True, cwd=str(PROJECT_ROOT),
-            )
-        update_ticket_status(tid, "confirmed")
-        # Delegate to cmd_fix with the same model/effort
+        old_branch = get_worktree_branch(tid)
+        new_branch = get_worktree_branch(new_id)
+        new_wt = get_worktree_dir(new_id)
+
+        # Determine which commits on the old branch are not on master —
+        # those are the test-writer commits (and possibly committed but
+        # abandoned fix work). Cherry-pick them into the new branch.
+        old_commits_rev = subprocess.run(
+            ["git", "log", "--reverse", "--format=%H", f"master..{old_branch}"],
+            capture_output=True, text=True, cwd=str(PROJECT_ROOT),
+        )
+        commits = old_commits_rev.stdout.strip().split("\n") if old_commits_rev.stdout.strip() else []
+
+        subprocess.run(
+            ["git", "worktree", "add", "-b", new_branch, str(new_wt), "HEAD"],
+            check=True, cwd=str(PROJECT_ROOT),
+        )
+        if commits:
+            print(f"  Cherry-picking {len(commits)} commit(s) from {old_branch} into {new_branch}")
+            cp_rc = subprocess.run(
+                ["git", "cherry-pick"] + commits,
+                cwd=str(new_wt),
+            ).returncode
+            if cp_rc != 0:
+                print(f"  WARNING: cherry-pick exited {cp_rc}. Resolve manually "
+                      f"in {new_wt} and then `./pipeline/cli.py fix --ticket {new_id}`.")
+                return
+
+    # Kick off the appropriate stage on the new ticket.
+    if had_fix:
         fix_args = argparse.Namespace(
-            ticket=tid, model=args.model, effort=args.effort, dry_run=False,
+            ticket=new_id, model=args.model, effort=args.effort, dry_run=False,
         )
         cmd_fix(fix_args)
-        return
-
-    print(f"[{tid}] No fix_run_id recorded — treating as test-stage failure")
-    # Start fresh: nuke any stale worktree
-    if wt_dir.exists():
-        print(f"  Removing stale worktree before fresh test run")
-        remove_worktree(tid)
-    update_ticket_status(tid, "new")
-    test_args = argparse.Namespace(
-        tickets=tid, parallelism=1,
-        model=args.model, effort=args.effort, dry_run=False,
-    )
-    cmd_test(test_args)
+    else:
+        test_args = argparse.Namespace(
+            tickets=new_id, parallelism=1,
+            model=args.model, effort=args.effort, dry_run=False,
+        )
+        cmd_test(test_args)
 
 
 def cmd_abandon(args):
