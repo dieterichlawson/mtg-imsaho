@@ -768,6 +768,7 @@ fn tree_of_redemption_swaps_life_and_toughness() {
 
     let behavior = reg.get(state.get_object(tree).unwrap().card_id).unwrap();
     behavior.on_activate_ability(&mut state, tree, 0, &[], &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // Life should now be 13 (Tree's toughness).
     assert_eq!(state.get_player(P0).life, 13, "Life should become Tree's toughness (13)");
@@ -827,6 +828,7 @@ fn back_from_the_brink_creates_token_copy() {
     // The ability_index encodes the creature's ObjectId.
     let ability_index = usize::try_from(dead.0).unwrap();
     behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     // The creature should be exiled.
     assert_eq!(state.get_object(dead).unwrap().zone, Zone::Exile,
@@ -916,6 +918,7 @@ fn back_from_the_brink_uses_creature_mana_cost() {
     // Activate the ability — use the creature's ObjectId as the ability index.
     let ability_index = usize::try_from(lions.0).unwrap();
     behavior.on_activate_ability(&mut state, enchant, ability_index, &[], &reg);
+    mtg_engine::stack::resolve_top_of_stack(&mut state, &reg);
 
     assert_eq!(state.get_object(lions).unwrap().zone, Zone::Exile,
         "Lions should be exiled");

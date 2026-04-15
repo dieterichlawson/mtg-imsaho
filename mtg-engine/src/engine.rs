@@ -1361,12 +1361,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
         let top_name = match state.stack.last() {
             Some(crate::state::StackEntry::Spell(id)) => card_name(state, registry, *id),
             Some(crate::state::StackEntry::Trigger(t)) => t.display_name_with_state(registry, Some(state)),
+            Some(crate::state::StackEntry::Ability { source_id, .. }) => card_name(state, registry, *source_id),
             None => "?".into(),
         };
         let caster = match state.stack.last() {
             Some(crate::state::StackEntry::Spell(id)) =>
                 state.get_object(*id).map(|o| o.controller),
             Some(crate::state::StackEntry::Trigger(t)) => Some(t.controller()),
+            Some(crate::state::StackEntry::Ability { activator, .. }) => Some(*activator),
             None => None,
         };
         let who = match caster {
@@ -2710,13 +2712,18 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         if let Some(behavior) = registry.get(behavior_card_id) {
                             behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, targets, registry);
                         }
+                        if new_state.stack.last().is_some_and(|e| matches!(e, crate::state::StackEntry::Ability { .. })) {
+                            crate::stack::resolve_top_of_stack(&mut new_state, registry);
+                        }
                         let name = card_name(&new_state, registry, *object_id);
                         new_state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
                     }
                 } else {
-                    // Non-X ability: fire the effect immediately.
                     if let Some(behavior) = registry.get(behavior_card_id) {
                         behavior.on_activate_ability(&mut new_state, *object_id, *ability_index, targets, registry);
+                    }
+                    if new_state.stack.last().is_some_and(|e| matches!(e, crate::state::StackEntry::Ability { .. })) {
+                        crate::stack::resolve_top_of_stack(&mut new_state, registry);
                     }
                     let name = card_name(&new_state, registry, *object_id);
                     new_state.log(LogLevel::Event, format!("p{} activated ability on {}: {}", player.0, name, ab.description));
@@ -3197,8 +3204,6 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             .expect("ChooseXFunding response must be valid (player implementations should pre-validate)");
 
                         if *is_ability {
-                            // Abilities: costs paid eagerly at activation.
-                            // Just pay X and fire the effect.
                             let x = crate::funding::apply(&mut new_state, player, options, response, registry);
                             new_state.log(LogLevel::Event, format!("Funded X = {x}"));
                             new_state.last_activated_x_value = Some(x);
@@ -3212,6 +3217,9 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                     &pending.targets,
                                     registry,
                                 );
+                            }
+                            if new_state.stack.last().is_some_and(|e| matches!(e, crate::state::StackEntry::Ability { .. })) {
+                                crate::stack::resolve_top_of_stack(&mut new_state, registry);
                             }
                             let name = card_name(&new_state, registry, pending.source_id);
                             new_state.log(

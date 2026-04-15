@@ -74,6 +74,16 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
             state.stack.pop(); // Remove the spell from the stack.
             resolve_spell(state, registry, object_id);
         }
+        StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, .. } => {
+            state.stack.pop();
+            state.last_activated_x_value = x_value;
+            let name = registry.card_data(behavior_card_id)
+                .map_or_else(|| "Unknown".into(), |d| d.name.clone());
+            state.log(LogLevel::Event, format!("{name} ability resolved"));
+            if let Some(behavior) = registry.get(behavior_card_id) {
+                behavior.resolve_activated_ability(state, source_id, ability_index, &targets, registry);
+            }
+        }
     }
 }
 

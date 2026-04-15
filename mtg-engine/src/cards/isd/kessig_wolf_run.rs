@@ -62,17 +62,15 @@ impl CardBehavior for KessigWolfRun {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, _object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         let x = i32::try_from(state.last_activated_x_value.unwrap_or(0)).unwrap_or(i32::MAX);
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                // Grant +X/+0 until end of turn.
                 state.until_end_of_turn.push(crate::state::TemporaryEffect::ModifyPT {
                     target: *target_id,
                     power_mod: x,
                     toughness_mod: 0,
                 });
-                // Grant trample until end of turn.
                 state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantKeyword {
                     target: *target_id,
                     keyword: Keyword::Trample,
