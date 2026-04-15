@@ -1099,6 +1099,24 @@ Use the format: ## Status, ## Files Changed, ## Description
         staging_file.unlink()
 
         if fix_result != "fixed":
+            # If the agent gave up, require a post-mortem. A `failed`
+            # status with no description is useless — we lose the only
+            # record of what went wrong. Retry with feedback demanding
+            # a description.
+            description = (parsed.get("description") or "").strip()
+            if not description and attempt < MAX_FIX_ATTEMPTS:
+                print(f"  Agent reported status={fix_result} with no "
+                      f"Description — retrying to get a post-mortem")
+                retry_note = (
+                    f"\n\n## Retry note (attempt {attempt} failed)\n"
+                    f"Previous attempt reported `status: failed` but "
+                    f"omitted `## Description`. If you genuinely cannot "
+                    f"fix this bug, the Description MUST explain what "
+                    f"you tried, what failed, and what engine-level "
+                    f"change would be required. That post-mortem is the "
+                    f"single most useful artifact of a failed run — "
+                    f"don't skip it.\n")
+                continue
             print(f"  Agent reported status={fix_result}; not retrying")
             break
 
@@ -1124,10 +1142,13 @@ Use the format: ## Status, ## Files Changed, ## Description
                           f"Fix the issue and try again. Remember to commit "
                           f"your changes before running validate_fix.sh.\n")
 
-    # If failed, remove worktree so test can be re-run fresh
+    # Keep the worktree around on failure so humans can inspect the
+    # agent's partial progress (uncommitted or on the fix branch) and
+    # optionally resume work manually. `cli.py abandon` removes it
+    # explicitly when we give up on the ticket.
     if fix_result == "failed":
-        remove_worktree(tid)
-        print(f"  Removed worktree (fix failed)")
+        print(f"  Worktree preserved for inspection: {wt_dir}")
+        print(f"  Run `./pipeline/cli.py abandon {tid}` to remove it.")
 
     # Build ticket section
     section = f"## Fix Result\n\n"

@@ -129,5 +129,13 @@ fixed | failed
 ```
 
 If you CANNOT fix the bug (e.g., it requires a major architectural change),
-write `## Status` as `failed` and explain what would need to change in
-the Description. Do NOT make a partial fix that leaves the test failing.
+write `## Status` as `failed` and explain in the Description:
+- What you tried (the approaches you attempted)
+- Where each approach broke (which tests still failed, which existing
+  tests regressed, which components refused to compose)
+- What engine-level change would be required to succeed — be specific
+  about files, structs, and call sites
+
+A `failed` status without a Description is rejected. The post-mortem is
+the most useful artifact of a failed run; do NOT skip it. Do NOT make a
+partial fix that leaves the test failing.
