@@ -1093,6 +1093,126 @@ def cmd_status(args):
                    cwd=str(PROJECT_ROOT))
 
 
+# ─── Report command ───────────────────────────────────────────────
+
+def _load_audit_runs() -> list[dict]:
+    path = METRICS_DIR / "runs.jsonl"
+    if not path.exists():
+        return []
+    runs = []
+    for line in path.read_text().strip().split("\n"):
+        if not line:
+            continue
+        try:
+            d = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if d.get("role") == "auditor":
+            runs.append(d)
+    return runs
+
+
+def cmd_report(args):
+    """Coverage + per-card breakdown crossing audit runs against ticket state."""
+    from collections import Counter, defaultdict
+
+    runs = _load_audit_runs()
+    tickets = list_tickets()
+
+    # ── Audit coverage section ──────────────────────────────────
+    successful_runs = [r for r in runs if r.get("validation_passed")]
+    errored_runs = [r for r in runs if not r.get("validation_passed")]
+    cards_attempted = sorted({r["card"] for r in runs})
+    cards_successful = sorted({r["card"] for r in successful_runs})
+    cards_errored_only = sorted(set(cards_attempted) - set(cards_successful))
+
+    # ── Per-card ticket state ──────────────────────────────────
+    by_card_runs = Counter(r["card"] for r in successful_runs)
+    by_card_status: dict[str, Counter] = defaultdict(Counter)
+    by_card_total_tickets: Counter = Counter()
+    for t in tickets:
+        fm = t["frontmatter"]
+        card = fm.get("card", "(unknown)")
+        status = fm.get("status", "new")
+        # Skip merged-* tickets when attributing to a card — they cover
+        # multiple cards and their `card:` frontmatter is "multiple".
+        if card == "multiple":
+            continue
+        by_card_status[card][status] += 1
+        by_card_total_tickets[card] += 1
+
+    # Count merged-* parent tickets separately
+    merged_parents = [t for t in tickets
+                      if t["frontmatter"].get("card") == "multiple"]
+
+    # ── Print audit coverage ──────────────────────────────────
+    if not args.cards_only:
+        print(f"\n{'='*60}")
+        print("AUDIT COVERAGE")
+        print(f"{'='*60}")
+        print(f"  Total audit runs:                  {len(runs)}")
+        print(f"  Successful runs:                   {len(successful_runs)}")
+        print(f"  Errored runs:                      {len(errored_runs)}")
+        print(f"  Unique cards attempted:            {len(cards_attempted)}")
+        print(f"  Unique cards successfully audited: {len(cards_successful)}")
+        if cards_errored_only:
+            print(f"\n  Cards with only errored runs ({len(cards_errored_only)}):")
+            for c in cards_errored_only:
+                errs = [r for r in errored_runs if r["card"] == c]
+                reason = errs[-1].get("rejection_reason", "") or "unknown"
+                print(f"    {c} — {reason}")
+
+    # ── Print per-card breakdown ──────────────────────────────
+    if not args.audits_only:
+        print(f"\n{'='*60}")
+        print("PER-CARD BREAKDOWN")
+        print(f"{'='*60}")
+        print(f"  {'Card':<32} {'Audits':>6} {'Tickets':>7} "
+              f"{'Open':>5} {'Deduped':>7} {'Dup':>4} {'PASS':>5}")
+        print(f"  {'-'*32} {'-'*6} {'-'*7} {'-'*5} {'-'*7} {'-'*4} {'-'*5}")
+
+        # "Open" = anything not deduped/duplicate/merged.
+        terminal = {"deduped", "duplicate", "merged"}
+
+        rows = []
+        for card in sorted(set(cards_attempted) | set(by_card_status)):
+            audits = by_card_runs.get(card, 0)
+            totals = by_card_status.get(card, Counter())
+            open_n = sum(v for s, v in totals.items() if s not in terminal)
+            deduped_n = totals.get("deduped", 0)
+            dup_n = totals.get("duplicate", 0)
+            total_tickets = by_card_total_tickets.get(card, 0)
+            pass_marker = "yes" if audits > 0 and total_tickets == 0 else ""
+            rows.append((card, audits, total_tickets, open_n,
+                         deduped_n, dup_n, pass_marker))
+
+        # Sort: most tickets first, then by name
+        rows.sort(key=lambda r: (-r[2], r[0]))
+        for card, audits, total, open_n, deduped_n, dup_n, pass_marker in rows:
+            print(f"  {card:<32} {audits:>6} {total:>7} "
+                  f"{open_n:>5} {deduped_n:>7} {dup_n:>4} {pass_marker:>5}")
+
+        clean = sum(1 for r in rows if r[6] == "yes")
+        print(f"\n  {len(rows)} cards total — {clean} PASS (no tickets)")
+
+    # ── Ticket backlog summary ───────────────────────────────
+    if not args.cards_only and not args.audits_only:
+        print(f"\n{'='*60}")
+        print("TICKET BACKLOG")
+        print(f"{'='*60}")
+        status_counts = Counter(t["frontmatter"].get("status", "new")
+                                for t in tickets)
+        primary = ["new", "confirmed", "blocked", "fixed",
+                   "failed", "rejected", "merged"]
+        other = sorted(s for s in status_counts if s not in primary)
+        for s in primary + other:
+            n = status_counts.get(s, 0)
+            if n:
+                print(f"  {s:<12} {n:>4}")
+        print(f"\n  Merged (parent) tickets: {len(merged_parents)}")
+    print()
+
+
 # ─── Consolidate command ─────────────────────────────────────────
 
 def parse_consolidation_input(text: str) -> dict:
@@ -1474,6 +1594,14 @@ def main():
     # status
     sub.add_parser("status", help="Show metrics dashboard")
 
+    # report
+    p = sub.add_parser("report",
+                       help="Audit coverage, per-card breakdown, and ticket backlog")
+    p.add_argument("--audits-only", action="store_true",
+                   help="Show only the audit coverage section")
+    p.add_argument("--cards-only", action="store_true",
+                   help="Show only the per-card breakdown")
+
     # consolidate
     p = sub.add_parser("consolidate",
                        help="Create a merged-* ticket from a consolidation input file and mark source tickets as deduped")
@@ -1513,7 +1641,7 @@ def main():
         "tickets": cmd_tickets, "show": cmd_show,
         "status": cmd_status, "consolidate": cmd_consolidate,
         "close-duplicate": cmd_close_duplicate,
-        "dedup": cmd_dedup,
+        "dedup": cmd_dedup, "report": cmd_report,
     }
     commands[args.command](args)
 
