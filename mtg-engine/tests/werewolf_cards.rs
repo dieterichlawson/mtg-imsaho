@@ -14,12 +14,6 @@ fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
 }
 
-/// Helper: set up a werewolf on the battlefield and trigger its upkeep transform.
-/// Returns the state after triggering the upkeep.
-fn trigger_upkeep(state: &mut mtg_engine::state::GameState, registry: &CardRegistry) {
-    state.events.push(GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(state, registry);
-}
 
 // ── Reckless Waif ─────────────────────────────────────────────────
 
@@ -33,7 +27,7 @@ fn reckless_waif_transforms_when_no_spells_cast() {
     assert_eq!(state.effective_power(waif, &reg).unwrap(), 1);
     assert_eq!(state.effective_toughness(waif, &reg).unwrap(), 1);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Should be transformed to Merciless Predator 3/2
     let obj = state.get_object(waif).unwrap();
@@ -50,7 +44,7 @@ fn reckless_waif_stays_human_on_first_turn() {
     state.is_first_turn = true;
     let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let obj = state.get_object(waif).unwrap();
     assert!(!obj.is_transformed, "Should not transform on first turn");
@@ -63,7 +57,7 @@ fn reckless_waif_stays_human_when_spells_cast() {
     state.num_spells_cast_last_turn.insert(P0, 1);
     let waif = named_creature(&mut state, &reg, "Reckless Waif", P0);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let obj = state.get_object(waif).unwrap();
     assert!(!obj.is_transformed, "Should not transform when spells were cast");
@@ -82,7 +76,7 @@ fn reckless_waif_transforms_back_when_two_spells_cast() {
     // Set up: a player cast 2 spells last turn
     state.num_spells_cast_last_turn.insert(P0, 2);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let obj = state.get_object(waif).unwrap();
     assert!(!obj.is_transformed, "Should transform back when 2+ spells cast");
@@ -98,7 +92,7 @@ fn gatstaf_shepherd_transforms_and_gains_intimidate() {
     let mut state = game_at_step(Step::Upkeep, P0);
     let shepherd = named_creature(&mut state, &reg, "Gatstaf Shepherd", P0);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let obj = state.get_object(shepherd).unwrap();
     assert!(obj.is_transformed);
@@ -121,7 +115,7 @@ fn gatstaf_shepherd_loses_intimidate_on_transform_back() {
 
     // Set up transform back
     state.num_spells_cast_last_turn.insert(P1, 2);
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert!(!state.get_object(shepherd).unwrap().is_transformed);
     assert!(!state.has_keyword(shepherd, Keyword::Intimidate, &reg),
@@ -139,7 +133,7 @@ fn village_ironsmith_keeps_first_strike_on_both_faces() {
     // Front face: first strike
     assert!(state.has_keyword(ironsmith, Keyword::FirstStrike, &reg));
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Back face (Ironfang): still first strike
     assert!(state.get_object(ironsmith).unwrap().is_transformed);
@@ -160,7 +154,7 @@ fn villagers_of_estwald_transforms_to_large_body() {
     assert_eq!(state.effective_power(villagers, &reg).unwrap(), 2);
     assert_eq!(state.effective_toughness(villagers, &reg).unwrap(), 3);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert_eq!(state.effective_power(villagers, &reg).unwrap(), 4);
     assert_eq!(state.effective_toughness(villagers, &reg).unwrap(), 6);
@@ -179,7 +173,7 @@ fn hanweir_watchkeep_loses_defender_gains_force_attack() {
     assert!(state.has_keyword(watchkeep, Keyword::Defender, &reg));
     assert_eq!(state.effective_power(watchkeep, &reg).unwrap(), 1);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Back face (Bane of Hanweir): 5/5, no Defender, attacks each combat
     assert!(state.get_object(watchkeep).unwrap().is_transformed);
@@ -207,7 +201,7 @@ fn tormented_pariah_transforms_to_large_werewolf() {
     assert_eq!(state.effective_power(pariah, &reg).unwrap(), 3);
     assert_eq!(state.effective_toughness(pariah, &reg).unwrap(), 2);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert_eq!(state.effective_power(pariah, &reg).unwrap(), 6);
     assert_eq!(state.effective_toughness(pariah, &reg).unwrap(), 4);
@@ -224,7 +218,7 @@ fn grizzled_outcasts_transforms_to_7_7() {
 
     assert_eq!(state.effective_power(outcasts, &reg).unwrap(), 4);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert_eq!(state.effective_power(outcasts, &reg).unwrap(), 7);
     assert_eq!(state.effective_toughness(outcasts, &reg).unwrap(), 7);
@@ -255,7 +249,7 @@ fn mayor_of_avabruck_transforms_and_buffs_werewolves() {
     let other_wolf = named_creature(&mut state, &reg, "Reckless Waif", P0);
 
     // Transform both
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Mayor is now Howlpack Alpha (3/3), gives other Werewolves/Wolves +1/+1
     assert!(state.get_object(mayor).unwrap().is_transformed);
@@ -277,8 +271,7 @@ fn howlpack_alpha_creates_wolf_token_on_end_step() {
     state.get_object_mut(mayor).unwrap().is_transformed = true;
     state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
 
-    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     // Should have created a 2/2 Wolf token
     assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Howlpack Alpha should create one Wolf token");
@@ -294,8 +287,7 @@ fn howlpack_alpha_does_not_create_token_on_front_face() {
     let _mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
     // Front face (not transformed)
 
-    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     assert_eq!(count_tokens_named(&state, "Wolf"), 0,
         "Front face Mayor should not create Wolf tokens");
@@ -311,8 +303,7 @@ fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
     state.get_object_mut(mayor).unwrap().is_transformed = true;
     state.get_object_mut(mayor).unwrap().name = "Howlpack Alpha".into();
 
-    state.events.push(GameEvent::StepStarted { step: Step::EndStep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     // Should NOT create a Wolf token on opponent's end step
     assert_eq!(count_tokens_named(&state, "Wolf"), 0,
@@ -326,7 +317,7 @@ fn mayor_of_avabruck_does_not_transform_on_first_turn() {
     state.is_first_turn = true;
     let mayor = named_creature(&mut state, &reg, "Mayor of Avabruck", P0);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let obj = state.get_object(mayor).unwrap();
     assert!(!obj.is_transformed,
@@ -373,7 +364,7 @@ fn daybreak_ranger_transforms_to_nightfall_predator() {
 
     assert_eq!(state.effective_power(ranger, &reg).unwrap(), 2);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert!(state.get_object(ranger).unwrap().is_transformed);
     assert_eq!(state.effective_power(ranger, &reg).unwrap(), 4);
@@ -454,7 +445,7 @@ fn instigator_gang_transforms_and_gains_trample() {
 
     assert!(!state.has_keyword(gang, Keyword::Trample, &reg));
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert!(state.get_object(gang).unwrap().is_transformed);
     assert_eq!(state.effective_power(gang, &reg).unwrap(), 5);
@@ -555,7 +546,7 @@ fn ulvenwald_mystics_transforms_and_gains_regenerate() {
         .activated_abilities(&state, mystics, &reg);
     assert_eq!(front_abilities.len(), 0, "Front face should have no activated abilities");
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Back face: {G}: Regenerate
     assert!(state.get_object(mystics).unwrap().is_transformed);
@@ -579,7 +570,7 @@ fn kruin_outlaw_transforms_gains_double_strike_and_menace() {
     assert!(!state.has_keyword(outlaw, Keyword::DoubleStrike, &reg));
     assert!(!state.has_keyword(outlaw, Keyword::Menace, &reg));
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Back: double strike, "can't be blocked except by two or more creatures" for
     // all Werewolves (implemented as MinimumBlockers, not as Keyword::Menace).
@@ -627,7 +618,7 @@ fn multiple_werewolves_transform_on_same_upkeep() {
     let outcasts = named_creature(&mut state, &reg, "Grizzled Outcasts", P0);
 
     // No spells cast last turn, all should transform
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert!(state.get_object(waif).unwrap().is_transformed, "Reckless Waif should transform");
     assert!(state.get_object(shepherd).unwrap().is_transformed, "Gatstaf Shepherd should transform");
@@ -648,7 +639,7 @@ fn multiple_werewolves_transform_back_together() {
     // A player cast 2 spells last turn
     state.num_spells_cast_last_turn.insert(P1, 2);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert!(!state.get_object(waif).unwrap().is_transformed, "Should transform back");
     assert!(!state.get_object(shepherd).unwrap().is_transformed, "Should transform back");
@@ -666,7 +657,7 @@ fn werewolf_side_stays_if_one_spell_cast() {
     // Only 1 spell cast last turn: not enough to transform back
     state.num_spells_cast_last_turn.insert(P0, 1);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert!(state.get_object(waif).unwrap().is_transformed,
         "Werewolf should stay transformed with only 1 spell cast");
@@ -681,7 +672,7 @@ fn human_side_stays_if_any_spell_cast() {
     // Opponent cast 1 spell last turn
     state.num_spells_cast_last_turn.insert(P1, 1);
 
-    trigger_upkeep(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert!(!state.get_object(waif).unwrap().is_transformed,
         "Human should stay on front face when any spell was cast last turn");

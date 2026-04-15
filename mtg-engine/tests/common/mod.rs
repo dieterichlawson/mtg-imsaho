@@ -227,6 +227,16 @@ pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &C
     }
 }
 
+/// Push a `StepStarted` event and process any triggers it fires. Used
+/// by tests that need to exercise an upkeep / end-step / etc. triggered
+/// ability without running the full turn-advancement machinery. The
+/// hand-rolled two-line version of this (push the event, then call
+/// `triggers::process_triggers`) appeared in ~15 tests.
+pub fn fire_step_trigger(state: &mut GameState, step: Step, registry: &CardRegistry) {
+    state.events.push(mtg_engine::events::GameEvent::StepStarted { step });
+    mtg_engine::triggers::process_triggers(state, registry);
+}
+
 /// Count tokens on the battlefield with the given name. Useful in
 /// assertions like "Gutter Grime should now have N Ooze tokens" — the
 /// filter `state.objects.values().filter(|o| o.is_token && ...).count()`

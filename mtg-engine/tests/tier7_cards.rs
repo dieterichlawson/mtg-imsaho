@@ -53,8 +53,7 @@ fn splinterfright_mills_on_upkeep() {
     }
 
     // Fire upkeep trigger.
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Should have milled 2.
     let gy_count = state.objects.values()
@@ -77,8 +76,7 @@ fn bloodgift_demon_draws_and_loses_life() {
     let lib = state.create_object(mtg_engine::ids::CardId(9999), P0, Zone::Library, None, None);
     state.get_player_mut(P0).library_order.push(lib);
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Bloodgift Demon now presents a player choice. Choose P0 (self).
     assert!(state.awaiting_action.is_some(), "Should be awaiting player choice");
@@ -117,8 +115,7 @@ fn endless_ranks_creates_zombie_tokens() {
         state.get_object_mut(z).unwrap().summoning_sick = false;
     }
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // 5 / 2 = 2 (rounded down). So 5 original + 2 new = 7 Zombies.
     let zombie_count = state.objects.values()
@@ -141,8 +138,7 @@ fn reaper_destroys_non_demon_on_morbid_end_step() {
     // Set morbid.
     state.creature_died_this_turn = true;
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::EndStep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     // SBAs to move destroyed creature to graveyard.
     check_state_based_actions(&mut state, &reg);
@@ -163,8 +159,7 @@ fn reaper_no_trigger_without_morbid() {
     // No morbid.
     state.creature_died_this_turn = false;
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::EndStep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::EndStep, &reg);
 
     assert_eq!(state.get_object(target).unwrap().zone, Zone::Battlefield,
         "Reaper should NOT trigger without morbid");
@@ -181,8 +176,7 @@ fn curse_of_pierced_heart_deals_damage_on_upkeep() {
     // P0 controls the curse attached to P1.
     let _curse = attach_curse_to_player(&mut state, &reg, "Curse of the Pierced Heart", P0, P1);
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert_eq!(state.get_player(P1).life, 19, "Curse should deal 1 damage to P1");
     assert_eq!(state.get_player(P0).life, 20, "P0 should be unaffected");
@@ -227,8 +221,7 @@ fn angel_of_flight_alabaster_returns_spirit() {
     let spirit = named_creature(&mut state, &reg, "Chapel Geist", P0);
     state.move_object(spirit, Zone::Graveyard, &reg);
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     // Single Spirit → auto-applied (mandatory with 1 target).
     assert_eq!(state.get_object(spirit).unwrap().zone, Zone::Hand,
@@ -275,8 +268,7 @@ fn curse_of_bloody_tome_mills_on_upkeep() {
         state.get_player_mut(P1).library_order.push(c);
     }
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     let gy = state.objects.values()
         .filter(|o| o.zone == Zone::Graveyard && o.owner == P1)
@@ -298,8 +290,7 @@ fn curse_of_oblivion_exiles_from_graveyard() {
     let g1 = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
     let g2 = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
 
-    state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
-    triggers::process_triggers(&mut state, &reg);
+    fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
     assert_eq!(state.get_object(g1).unwrap().zone, Zone::Exile);
     assert_eq!(state.get_object(g2).unwrap().zone, Zone::Exile);
