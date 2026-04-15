@@ -119,6 +119,13 @@ pub struct LoyaltyAbilityDef {
     pub target_requirement: Option<TargetRequirement>,
 }
 
+/// Whether a step trigger fires for all players or only the controller (CR 603.2).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TriggerScope {
+    Each,
+    Your,
+}
+
 /// What kind of event triggers an ability.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TriggerKind {
@@ -402,6 +409,12 @@ pub trait CardBehavior: Send + Sync {
     /// Called when ANY creature deals damage (combat or non-combat) to a player.
     /// Used by Curiosity (watches enchanted creature).
     fn on_any_damage_to_player(&self, _state: &mut GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {}
+
+    /// CR 603.2: whether a step trigger fires for all players or only the controller.
+    /// Default is `Each` (fires every step). Override to `Your` for "your upkeep/end step".
+    fn step_trigger_scope(&self, _kind: &TriggerKind, _is_back_face: bool) -> TriggerScope {
+        TriggerScope::Each
+    }
 
     /// Called at the beginning of the upkeep step for each permanent with an upkeep trigger.
     fn on_upkeep(&self, _state: &mut GameState, _self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}

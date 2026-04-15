@@ -82,6 +82,13 @@ impl CardBehavior for CivilizedScholar {
         })
     }
 
+    fn step_trigger_scope(&self, kind: &TriggerKind, is_back_face: bool) -> crate::cards::TriggerScope {
+        match kind {
+            TriggerKind::EndStep if is_back_face => crate::cards::TriggerScope::Your,
+            _ => crate::cards::TriggerScope::Each,
+        }
+    }
+
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
         if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 1))
