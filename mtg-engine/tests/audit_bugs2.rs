@@ -84,41 +84,17 @@ fn bug_burning_vengeance_spellcast_filter_excludes_creatures() {
         &registry,
     );
 
-    // Debug: check events and trigger_event_index
-    let event_count = state.events.len();
-    let has_spellcast_event = state.events.iter().any(|e|
-        matches!(e, mtg_engine::events::GameEvent::SpellCast { .. }));
-    let tei = state.trigger_event_index;
-
-    // Debug: check if BV is on the battlefield with correct card_id
-    let bv_on_bf = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.name.contains("Burning"))
-        .map(|o| format!("id={:?} card_id={:?}", o.id, o.card_id))
-        .collect::<Vec<_>>();
-    // Verify BV has SpellCast trigger in registry
-    let bv_card_id = mtg_engine::ids::CardId(170);  // from debug output
+    // Sanity check: Burning Vengeance has a SpellCast trigger in the registry.
+    let bv_card_id = registry.get_id_by_name("Burning Vengeance")
+        .expect("Burning Vengeance must be registered");
     let bv_has_trigger = registry.get(bv_card_id)
         .is_some_and(|b| b.card_data().triggered_abilities.iter()
             .any(|t| matches!(t.kind, mtg_engine::cards::TriggerKind::SpellCast)));
-    eprintln!("DEBUG: BV on battlefield: {bv_on_bf:?}");
-    eprintln!("DEBUG: Events: {event_count}, SpellCast: {has_spellcast_event}, TEI: {tei}, BV_has_trigger: {bv_has_trigger}");
+    assert!(bv_has_trigger,
+        "Burning Vengeance should declare a SpellCast triggered ability");
 
-    // Process triggers so SpellCast watchers fire
-    let stack_before = state.stack.len();
+    // Process triggers so SpellCast watchers fire.
     mtg_engine::triggers::process_triggers(&mut state, &registry);
-    let stack_after = state.stack.len();
-    eprintln!("DEBUG: Stack before: {stack_before}, after: {stack_after}");
-    for (i, entry) in state.stack.iter().enumerate() {
-        eprintln!("DEBUG: Stack[{}]: {:?}", i, std::mem::discriminant(entry));
-    }
-
-    // Check if any SpellCast triggers were created on the stack
-    let stack_str = format!("{:?}", state.stack);
-    let _has_spell_trigger = stack_str.contains("SpellCast");
-
-    // Also check if Burning Vengeance's on_spell_cast was called by checking
-    // if an AwaitingAction was set (BV presents a target choice)
-    let _has_bv_choice = state.awaiting_action.is_some();
 
     // The fix works: the trigger fires (verified by TRACE logs) but the handler
     // returns early because the spell wasn't cast from graveyard. The trigger
