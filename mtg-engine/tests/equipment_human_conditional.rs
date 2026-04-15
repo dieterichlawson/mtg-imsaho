@@ -58,286 +58,164 @@ fn equip(state: &GameState, reg: &CardRegistry, equipment_id: ObjectId, creature
 }
 
 // ════════════════════════════════════════════════════════════════════
-// Silver-Inlaid Dagger — +2/+0, +1/+0 if Human (continuous)
+// All three cards share the same rule shape: some unconditional
+// modifier (P/T and/or keyword) plus an extra modifier that applies
+// only while the equipped creature is a Human. The tests below are
+// table-driven over HUMAN_CONDITIONAL — one row per card, four
+// behavioral tests (Human / non-Human / subtype stripped / subtype
+// added) plus a reattachment test.
 // ════════════════════════════════════════════════════════════════════
 
-#[test]
-fn silver_inlaid_dagger_bonus_when_attached_to_human() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    // Avacyn's Pilgrim is a Human Monk.
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
-    let state = equip(&state, &reg, dagger, pilgrim, 2);
-    // 1/1 + 2 (base) + 1 (Human bonus) = 4/1.
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(4));
-    assert_eq!(state.effective_toughness(pilgrim, &reg), Some(1));
+struct HumanConditional {
+    equipment: &'static str,
+    equip_cost: i32,
+    /// Power/toughness bonus applied regardless of subtype.
+    base_p: i32,
+    base_t: i32,
+    /// Keyword granted regardless of subtype (if any).
+    base_kw: Option<Keyword>,
+    /// Additional power/toughness bonus when the creature is a Human.
+    human_p: i32,
+    human_t: i32,
+    /// Keyword granted only when the creature is a Human (if any).
+    human_kw: Option<Keyword>,
 }
 
-#[test]
-fn silver_inlaid_dagger_no_bonus_when_attached_to_non_human() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    // Walking Corpse is a Zombie, not a Human.
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
-    let state = equip(&state, &reg, dagger, zombie, 2);
-    // 2/2 + 2 (base) + 0 (no Human bonus) = 4/2.
-    assert_eq!(state.effective_power(zombie, &reg), Some(4));
-    assert_eq!(state.effective_toughness(zombie, &reg), Some(2));
-}
+const HUMAN_CONDITIONAL: &[HumanConditional] = &[
+    HumanConditional {
+        equipment: "Silver-Inlaid Dagger", equip_cost: 2,
+        base_p: 2, base_t: 0, base_kw: None,
+        human_p: 1, human_t: 0, human_kw: None,
+    },
+    HumanConditional {
+        equipment: "Butcher's Cleaver", equip_cost: 3,
+        base_p: 3, base_t: 0, base_kw: None,
+        human_p: 0, human_t: 0, human_kw: Some(Keyword::Lifelink),
+    },
+    HumanConditional {
+        equipment: "Sharpened Pitchfork", equip_cost: 1,
+        base_p: 0, base_t: 0, base_kw: Some(Keyword::FirstStrike),
+        human_p: 1, human_t: 1, human_kw: None,
+    },
+];
 
-#[test]
-fn silver_inlaid_dagger_drops_human_bonus_when_creature_loses_human_subtype() {
-    // The regression case: equip the dagger to a Human creature, then
-    // change the creature's subtypes to remove "Human", and verify the
-    // +1/+0 bonus disappears immediately.
-    //
-    // We simulate the type change directly by mutating obj.subtypes — this
-    // is exactly what a transform effect would do, and it lets the test
-    // run without depending on a specific transform card's mechanics.
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
-    let mut state = equip(&state, &reg, dagger, pilgrim, 2);
+/// Avacyn's Pilgrim is a 1/1 Human.
+const PILGRIM_BASE: (i32, i32) = (1, 1);
+/// Walking Corpse is a 2/2 Zombie (not a Human).
+const ZOMBIE_BASE: (i32, i32) = (2, 2);
 
-    // Sanity: Human bonus is active.
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(4),
-        "Human bonus should be active right after equipping a Human");
-
-    // Now strip the Human subtype (as a transform effect would).
-    {
-        let obj = state.get_object_mut(pilgrim).unwrap();
-        obj.subtypes = vec!["Werewolf".into()]; // non-Human
+/// Assert the equipped creature's effective P/T and keywords match
+/// what `case` promises for the given `is_human` status.
+fn assert_equipped_matches(
+    state: &GameState,
+    reg: &CardRegistry,
+    creature: ObjectId,
+    base: (i32, i32),
+    case: &HumanConditional,
+    is_human: bool,
+) {
+    let (bp, bt) = base;
+    let human_p = if is_human { case.human_p } else { 0 };
+    let human_t = if is_human { case.human_t } else { 0 };
+    assert_eq!(state.effective_power(creature, reg), Some(bp + case.base_p + human_p),
+        "{}: power wrong (is_human={is_human})", case.equipment);
+    assert_eq!(state.effective_toughness(creature, reg), Some(bt + case.base_t + human_t),
+        "{}: toughness wrong (is_human={is_human})", case.equipment);
+    if let Some(k) = case.base_kw {
+        assert!(state.has_keyword(creature, k, reg),
+            "{}: unconditional {k:?} should be granted", case.equipment);
     }
-
-    // Bonus should drop immediately because the effect is conditional, not snapshot.
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(3),
-        "Human bonus should drop the moment the creature stops being a Human");
-    assert_eq!(state.effective_toughness(pilgrim, &reg), Some(1));
-}
-
-#[test]
-fn silver_inlaid_dagger_gains_human_bonus_when_creature_becomes_human() {
-    // Inverse case: equip to a non-Human, then add the Human subtype,
-    // and verify the +1/+0 bonus appears.
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
-    let mut state = equip(&state, &reg, dagger, zombie, 2);
-
-    // Sanity: no Human bonus.
-    assert_eq!(state.effective_power(zombie, &reg), Some(4),
-        "non-Human zombie should be 2 + 2 = 4 power");
-
-    // Now add the Human subtype.
-    {
-        let obj = state.get_object_mut(zombie).unwrap();
-        // Walking Corpse's base subtypes are Zombie. Add Human alongside.
-        obj.subtypes = vec!["Zombie".into(), "Human".into()];
+    if let Some(k) = case.human_kw {
+        assert_eq!(state.has_keyword(creature, k, reg), is_human,
+            "{}: conditional {k:?} should match is_human={is_human}", case.equipment);
     }
-
-    assert_eq!(state.effective_power(zombie, &reg), Some(5),
-        "Human bonus should appear once the creature becomes a Human (+1 from base 4)");
-}
-
-// ════════════════════════════════════════════════════════════════════
-// Butcher's Cleaver — +3/+0, lifelink if Human (continuous)
-// ════════════════════════════════════════════════════════════════════
-
-#[test]
-fn butchers_cleaver_lifelink_when_attached_to_human() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let cleaver = equipment(&mut state, &reg, "Butcher's Cleaver", P0);
-    let state = equip(&state, &reg, cleaver, pilgrim, 3);
-    assert!(state.has_keyword(pilgrim, Keyword::Lifelink, &reg),
-        "Human-equipped Cleaver should grant lifelink");
 }
 
 #[test]
-fn butchers_cleaver_no_lifelink_when_attached_to_non_human() {
+fn human_equipment_bonuses_apply_when_attached_to_human() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let cleaver = equipment(&mut state, &reg, "Butcher's Cleaver", P0);
-    let state = equip(&state, &reg, cleaver, zombie, 3);
-    assert!(!state.has_keyword(zombie, Keyword::Lifelink, &reg),
-        "non-Human-equipped Cleaver should NOT grant lifelink");
-}
-
-#[test]
-fn butchers_cleaver_drops_lifelink_when_creature_loses_human_subtype() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let cleaver = equipment(&mut state, &reg, "Butcher's Cleaver", P0);
-    let mut state = equip(&state, &reg, cleaver, pilgrim, 3);
-
-    assert!(state.has_keyword(pilgrim, Keyword::Lifelink, &reg),
-        "lifelink should be active on the Human");
-
-    // Strip Human subtype (as a transform effect would).
-    {
-        let obj = state.get_object_mut(pilgrim).unwrap();
-        obj.subtypes = vec!["Werewolf".into()];
+    for case in HUMAN_CONDITIONAL {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let gear = equipment(&mut state, &reg, case.equipment, P0);
+        let state = equip(&state, &reg, gear, pilgrim, case.equip_cost);
+        assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, true);
     }
-
-    assert!(!state.has_keyword(pilgrim, Keyword::Lifelink, &reg),
-        "lifelink should drop the moment the creature stops being a Human");
-
-    // The +3/+0 bonus is unconditional and should still apply.
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(4),
-        "unconditional +3/+0 bonus should still apply (1 + 3 = 4 power)");
 }
 
 #[test]
-fn butchers_cleaver_gains_lifelink_when_creature_becomes_human() {
+fn human_equipment_bonuses_skip_conditional_on_non_human() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let cleaver = equipment(&mut state, &reg, "Butcher's Cleaver", P0);
-    let mut state = equip(&state, &reg, cleaver, zombie, 3);
-
-    assert!(!state.has_keyword(zombie, Keyword::Lifelink, &reg));
-
-    // Add Human subtype.
-    {
-        let obj = state.get_object_mut(zombie).unwrap();
-        obj.subtypes = vec!["Zombie".into(), "Human".into()];
+    for case in HUMAN_CONDITIONAL {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+        let gear = equipment(&mut state, &reg, case.equipment, P0);
+        let state = equip(&state, &reg, gear, zombie, case.equip_cost);
+        assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
     }
-
-    assert!(state.has_keyword(zombie, Keyword::Lifelink, &reg),
-        "lifelink should appear once the creature becomes a Human");
 }
 
-// ════════════════════════════════════════════════════════════════════
-// Reattachment: when the dagger/cleaver moves to a different creature,
-// the conditional bonus should follow the new attachment, not the old.
-// ════════════════════════════════════════════════════════════════════
-
+/// Regression: the conditional bonus must follow the creature's current
+/// subtype, not a snapshot taken at equip time. Simulate a transform by
+/// stripping the Human subtype after equipping and verify the Human-only
+/// portion disappears while the unconditional portion stays.
 #[test]
-fn silver_inlaid_dagger_human_bonus_follows_reattachment() {
+fn human_equipment_conditional_bonus_drops_when_subtype_stripped() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0); // Human
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);    // non-Human
-    let dagger = equipment(&mut state, &reg, "Silver-Inlaid Dagger", P0);
+    for case in HUMAN_CONDITIONAL {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let gear = equipment(&mut state, &reg, case.equipment, P0);
+        let mut state = equip(&state, &reg, gear, pilgrim, case.equip_cost);
+        assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, true);
 
-    // First equip → pilgrim (Human, gets +3/+0 total).
-    let state = equip(&state, &reg, dagger, pilgrim, 2);
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(4),
-        "pilgrim should be 4 power with the Human bonus");
-    // Zombie should be unaffected.
-    assert_eq!(state.effective_power(zombie, &reg), Some(2));
-
-    // Reattach to zombie → only the unconditional +2/+0 should apply.
-    let state = equip(&state, &reg, dagger, zombie, 2);
-    // Pilgrim no longer wears the dagger, back to base.
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(1),
-        "pilgrim should be back to 1 power once the dagger moves off");
-    // Zombie has the unconditional +2/+0 only — 2 + 2 = 4, no Human bonus.
-    assert_eq!(state.effective_power(zombie, &reg), Some(4));
-}
-
-#[test]
-fn butchers_cleaver_lifelink_follows_reattachment() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0); // Human
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);    // non-Human
-    let cleaver = equipment(&mut state, &reg, "Butcher's Cleaver", P0);
-
-    let state = equip(&state, &reg, cleaver, pilgrim, 3);
-    assert!(state.has_keyword(pilgrim, Keyword::Lifelink, &reg));
-    assert!(!state.has_keyword(zombie, Keyword::Lifelink, &reg));
-
-    let state = equip(&state, &reg, cleaver, zombie, 3);
-    assert!(!state.has_keyword(pilgrim, Keyword::Lifelink, &reg),
-        "lifelink should leave pilgrim once the cleaver is reattached");
-    assert!(!state.has_keyword(zombie, Keyword::Lifelink, &reg),
-        "zombie should not gain lifelink (not a Human)");
-}
-
-// ════════════════════════════════════════════════════════════════════
-// Sharpened Pitchfork — first strike, +1/+1 if Human (continuous)
-//
-// Same shape of bug as Silver-Inlaid Dagger / Butcher's Cleaver: the
-// previous implementation snapshotted `is_human` at equip time via an
-// `update_effects` helper. Fixed in commit `5294721`-ish by switching to
-// ContinuousEffect::ConditionalModifyPT.
-// ════════════════════════════════════════════════════════════════════
-
-#[test]
-fn sharpened_pitchfork_bonus_when_attached_to_human() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0); // Human
-    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
-    let state = equip(&state, &reg, fork, pilgrim, 1);
-    // 1/1 + 1/+1 (Human bonus) = 2/2 with first strike.
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(2));
-    assert_eq!(state.effective_toughness(pilgrim, &reg), Some(2));
-    assert!(state.has_keyword(pilgrim, Keyword::FirstStrike, &reg));
-}
-
-#[test]
-fn sharpened_pitchfork_no_bonus_when_attached_to_non_human() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0); // Zombie
-    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
-    let state = equip(&state, &reg, fork, zombie, 1);
-    // 2/2 + 0/0 (non-Human) = 2/2 with first strike.
-    assert_eq!(state.effective_power(zombie, &reg), Some(2));
-    assert_eq!(state.effective_toughness(zombie, &reg), Some(2));
-    assert!(state.has_keyword(zombie, Keyword::FirstStrike, &reg));
-}
-
-#[test]
-fn sharpened_pitchfork_drops_human_bonus_when_creature_loses_human_subtype() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
-    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
-    let mut state = equip(&state, &reg, fork, pilgrim, 1);
-
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(2));
-
-    // Strip the Human subtype.
-    {
-        let obj = state.get_object_mut(pilgrim).unwrap();
-        obj.subtypes = vec!["Werewolf".into()];
+        state.get_object_mut(pilgrim).unwrap().subtypes = vec!["Werewolf".into()];
+        assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, false);
     }
-
-    // Bonus should drop immediately.
-    assert_eq!(state.effective_power(pilgrim, &reg), Some(1));
-    assert_eq!(state.effective_toughness(pilgrim, &reg), Some(1));
-    // First strike is unconditional, should still be there.
-    assert!(state.has_keyword(pilgrim, Keyword::FirstStrike, &reg));
 }
 
+/// Inverse regression: bonus appears the moment a non-Human gains the
+/// Human subtype.
 #[test]
-fn sharpened_pitchfork_gains_human_bonus_when_creature_becomes_human() {
+fn human_equipment_conditional_bonus_appears_when_subtype_added() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-    let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    let fork = equipment(&mut state, &reg, "Sharpened Pitchfork", P0);
-    let mut state = equip(&state, &reg, fork, zombie, 1);
+    for case in HUMAN_CONDITIONAL {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+        let gear = equipment(&mut state, &reg, case.equipment, P0);
+        let mut state = equip(&state, &reg, gear, zombie, case.equip_cost);
+        assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
 
-    // Sanity: no Human bonus on a non-Human.
-    assert_eq!(state.effective_power(zombie, &reg), Some(2));
-
-    // Add Human subtype.
-    {
-        let obj = state.get_object_mut(zombie).unwrap();
-        obj.subtypes = vec!["Zombie".into(), "Human".into()];
+        state.get_object_mut(zombie).unwrap().subtypes = vec!["Zombie".into(), "Human".into()];
+        assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, true);
     }
+}
 
-    // Bonus should appear immediately.
-    assert_eq!(state.effective_power(zombie, &reg), Some(3));
-    assert_eq!(state.effective_toughness(zombie, &reg), Some(3));
+/// Reattachment: the bonus should follow the equipment, not stay on the
+/// previously-equipped creature.
+#[test]
+fn human_equipment_bonuses_follow_reattachment() {
+    let reg = registry();
+    for case in HUMAN_CONDITIONAL {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let zombie = named_creature(&mut state, &reg, "Walking Corpse", P0);
+        let gear = equipment(&mut state, &reg, case.equipment, P0);
+
+        // Attach to Human — full bonus on pilgrim, nothing on zombie.
+        let state = equip(&state, &reg, gear, pilgrim, case.equip_cost);
+        assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, true);
+        assert_eq!(state.effective_power(zombie, &reg), Some(ZOMBIE_BASE.0),
+            "{}: unequipped zombie should have base stats only", case.equipment);
+
+        // Reattach to zombie — bonus moves with the equipment.
+        let state = equip(&state, &reg, gear, zombie, case.equip_cost);
+        assert_eq!(state.effective_power(pilgrim, &reg), Some(PILGRIM_BASE.0),
+            "{}: pilgrim should lose all bonuses when unequipped", case.equipment);
+        if let Some(k) = case.base_kw {
+            assert!(!state.has_keyword(pilgrim, k, &reg),
+                "{}: unconditional {k:?} should follow the equipment, not stay", case.equipment);
+        }
+        assert_equipped_matches(&state, &reg, zombie, ZOMBIE_BASE, case, false);
+    }
 }
