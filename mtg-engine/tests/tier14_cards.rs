@@ -95,10 +95,8 @@ fn parallel_lives_doubles_tokens() {
     );
 
     // Should have 2 tokens (1 + 1 extra from Parallel Lives).
-    let spirits: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Spirit" && o.controller == P0)
-        .collect();
-    assert_eq!(spirits.len(), 2, "Parallel Lives should double tokens");
+    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 2,
+        "Parallel Lives should double tokens");
 }
 
 /// Without Parallel Lives, token creation is normal.
@@ -115,10 +113,8 @@ fn no_parallel_lives_single_token() {
         &reg,
     );
 
-    let spirits: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Spirit" && o.controller == P0)
-        .collect();
-    assert_eq!(spirits.len(), 1, "Without Parallel Lives, only one token");
+    assert_eq!(count_tokens_named_by(&state, "Spirit", P0), 1,
+        "Without Parallel Lives, only one token");
 }
 
 /// Parallel Lives only doubles tokens for its controller.
@@ -139,10 +135,8 @@ fn parallel_lives_only_doubles_for_controller() {
         &reg,
     );
 
-    let zombies: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Zombie" && o.controller == P1)
-        .collect();
-    assert_eq!(zombies.len(), 1, "Parallel Lives shouldn't double opponent's tokens");
+    assert_eq!(count_tokens_named_by(&state, "Zombie", P1), 1,
+        "Parallel Lives shouldn't double opponent's tokens");
 }
 
 // ── Heartless Summoning ──────────────────────────────────────

@@ -281,12 +281,10 @@ fn howlpack_alpha_creates_wolf_token_on_end_step() {
     triggers::process_triggers(&mut state, &reg);
 
     // Should have created a 2/2 Wolf token
-    let wolves: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Wolf")
-        .collect();
-    assert_eq!(wolves.len(), 1, "Howlpack Alpha should create one Wolf token");
-    assert_eq!(wolves[0].power, Some(2));
-    assert_eq!(wolves[0].toughness, Some(2));
+    assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Howlpack Alpha should create one Wolf token");
+    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(state.get_object(wolf).unwrap().power, Some(2));
+    assert_eq!(state.get_object(wolf).unwrap().toughness, Some(2));
 }
 
 #[test]
@@ -299,10 +297,8 @@ fn howlpack_alpha_does_not_create_token_on_front_face() {
     state.events.push(GameEvent::StepStarted { step: Step::EndStep });
     triggers::process_triggers(&mut state, &reg);
 
-    let wolves: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Wolf")
-        .collect();
-    assert_eq!(wolves.len(), 0, "Front face Mayor should not create Wolf tokens");
+    assert_eq!(count_tokens_named(&state, "Wolf"), 0,
+        "Front face Mayor should not create Wolf tokens");
 }
 
 #[test]
@@ -319,10 +315,7 @@ fn howlpack_alpha_does_not_create_token_on_opponents_end_step() {
     triggers::process_triggers(&mut state, &reg);
 
     // Should NOT create a Wolf token on opponent's end step
-    let wolves: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Wolf")
-        .collect();
-    assert_eq!(wolves.len(), 0,
+    assert_eq!(count_tokens_named(&state, "Wolf"), 0,
         "Howlpack Alpha should not create Wolf tokens on opponent's end step");
 }
 

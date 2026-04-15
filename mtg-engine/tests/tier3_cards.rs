@@ -33,16 +33,12 @@ fn midnight_haunting_creates_two_spirits() {
     assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard);
 
     // Two Spirit tokens on the battlefield.
-    let tokens: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
-        .into_iter()
-        .filter(|o| o.is_token && o.name == "Spirit")
-        .collect();
-    assert_eq!(tokens.len(), 2, "Should have two Spirit tokens");
+    assert_eq!(count_tokens_named(&state, "Spirit"), 2, "Should have two Spirit tokens");
 
-    for t in &tokens {
-        assert_eq!(t.power, Some(1));
-        assert_eq!(t.toughness, Some(1));
-        assert!(t.keywords.contains(&Keyword::Flying), "Spirit tokens should have flying");
+    for o in state.objects.values().filter(|o| o.is_token && o.name == "Spirit") {
+        assert_eq!(o.power, Some(1));
+        assert_eq!(o.toughness, Some(1));
+        assert!(o.keywords.contains(&Keyword::Flying), "Spirit tokens should have flying");
     }
 }
 
@@ -58,15 +54,11 @@ fn moan_creates_two_zombies() {
 
     assert_eq!(state.get_object(card).unwrap().zone, Zone::Graveyard);
 
-    let tokens: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
-        .into_iter()
-        .filter(|o| o.is_token && o.name == "Zombie")
-        .collect();
-    assert_eq!(tokens.len(), 2, "Should have two Zombie tokens");
+    assert_eq!(count_tokens_named(&state, "Zombie"), 2, "Should have two Zombie tokens");
 
-    for t in &tokens {
-        assert_eq!(t.power, Some(2));
-        assert_eq!(t.toughness, Some(2));
+    for o in state.objects.values().filter(|o| o.is_token && o.name == "Zombie") {
+        assert_eq!(o.power, Some(2));
+        assert_eq!(o.toughness, Some(2));
     }
 }
 
@@ -94,14 +86,12 @@ fn doomed_traveler_creates_spirit_on_death() {
     triggers::process_triggers(&mut state, &reg);
 
     // Should have a Spirit token.
-    let spirits: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
-        .into_iter()
-        .filter(|o| o.is_token && o.name == "Spirit")
-        .collect();
-    assert_eq!(spirits.len(), 1, "Should create one Spirit token");
-    assert_eq!(spirits[0].power, Some(1));
-    assert_eq!(spirits[0].toughness, Some(1));
-    assert!(spirits[0].keywords.contains(&Keyword::Flying));
+    assert_eq!(count_tokens_named(&state, "Spirit"), 1, "Should create one Spirit token");
+    let spirit = find_token_named(&state, "Spirit").unwrap();
+    let obj = state.get_object(spirit).unwrap();
+    assert_eq!(obj.power, Some(1));
+    assert_eq!(obj.toughness, Some(1));
+    assert!(obj.keywords.contains(&Keyword::Flying));
 }
 
 /// Mausoleum Guard creates two 1/1 Spirit tokens with flying when it dies.
@@ -121,13 +111,9 @@ fn mausoleum_guard_creates_two_spirits_on_death() {
 
     triggers::process_triggers(&mut state, &reg);
 
-    let spirits: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
-        .into_iter()
-        .filter(|o| o.is_token && o.name == "Spirit")
-        .collect();
-    assert_eq!(spirits.len(), 2, "Should create two Spirit tokens");
+    assert_eq!(count_tokens_named(&state, "Spirit"), 2, "Should create two Spirit tokens");
 
-    for s in &spirits {
+    for s in state.objects.values().filter(|o| o.is_token && o.name == "Spirit") {
         assert_eq!(s.power, Some(1));
         assert_eq!(s.toughness, Some(1));
         assert!(s.keywords.contains(&Keyword::Flying));

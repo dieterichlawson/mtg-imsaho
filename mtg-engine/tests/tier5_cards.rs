@@ -196,13 +196,10 @@ fn spider_spawning_creates_tokens() {
     state = cast_and_resolve(&state, &reg, ss, vec![]);
 
     // Should have 4 Spider tokens on the battlefield.
-    let spiders: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.name == "Spider" && o.is_token)
-        .collect();
-    assert_eq!(spiders.len(), 4, "Should create 4 Spider tokens");
+    assert_eq!(count_tokens_named(&state, "Spider"), 4, "Should create 4 Spider tokens");
 
     // Each should be 1/2 with reach.
-    for spider in &spiders {
+    for spider in state.objects.values().filter(|o| o.is_token && o.name == "Spider") {
         assert_eq!(spider.power, Some(1));
         assert_eq!(spider.toughness, Some(2));
     }

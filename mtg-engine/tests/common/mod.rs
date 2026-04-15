@@ -227,6 +227,34 @@ pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &C
     }
 }
 
+/// Count tokens on the battlefield with the given name. Useful in
+/// assertions like "Gutter Grime should now have N Ooze tokens" — the
+/// filter `state.objects.values().filter(|o| o.is_token && ...).count()`
+/// was repeated in ~25 tests; this centralises it.
+pub fn count_tokens_named(state: &GameState, name: &str) -> usize {
+    state.objects.values()
+        .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == name)
+        .count()
+}
+
+/// Count tokens on the battlefield with a given name under a specific
+/// controller. Used where tests need to distinguish "P0's Zombies" from
+/// "P1's Zombies" (e.g., Undead Alchemist).
+pub fn count_tokens_named_by(state: &GameState, name: &str, controller: PlayerId) -> usize {
+    state.objects.values()
+        .filter(|o| o.is_token && o.zone == Zone::Battlefield
+            && o.name == name && o.controller == controller)
+        .count()
+}
+
+/// Find the first token on the battlefield with the given name. Returns
+/// its object id so callers can inspect P/T, keywords, or counters.
+pub fn find_token_named(state: &GameState, name: &str) -> Option<ObjectId> {
+    state.objects.values()
+        .find(|o| o.is_token && o.zone == Zone::Battlefield && o.name == name)
+        .map(|o| o.id)
+}
+
 /// Put a curse (or any "enchant player" permanent) onto the battlefield
 /// under `controller` and attach it to `target_player`. Returns the
 /// curse's object id.

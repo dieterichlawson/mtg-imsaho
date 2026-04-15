@@ -63,18 +63,10 @@ fn army_of_the_damned_creates_13_tapped_zombies() {
     let state = cast_and_resolve(&state, &reg, spell, vec![]);
 
     // Count tokens on battlefield.
-    let zombies: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Zombie" && o.controller == P0)
-        .collect();
-    assert_eq!(zombies.len(), 13, "Should have 13 Zombie tokens");
+    assert_eq!(count_tokens_named_by(&state, "Zombie", P0), 13, "Should have 13 Zombie tokens");
 
-    // All should be tapped.
-    for z in &zombies {
+    for z in state.objects.values().filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0) {
         assert!(z.tapped, "Zombie tokens should enter tapped");
-    }
-
-    // All should be 2/2.
-    for z in &zombies {
         assert_eq!(z.power, Some(2));
         assert_eq!(z.toughness, Some(2));
     }

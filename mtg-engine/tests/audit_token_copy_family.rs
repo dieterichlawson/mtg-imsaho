@@ -247,18 +247,13 @@ fn bug_4d_001_parallel_lives_army_of_the_damned_tokens_are_all_tapped() {
     let behavior = registry.get(army_card_id).unwrap();
     behavior.on_resolve(&mut state, army, &[], &registry);
 
-    let zombie_tokens: Vec<_> = state
-        .objects
-        .values()
-        .filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0)
-        .collect();
+    let n_zombies = count_tokens_named_by(&state, "Zombie", P0);
     assert!(
-        zombie_tokens.len() >= 26,
+        n_zombies >= 26,
         "Test setup: expected ≥26 zombie tokens with Parallel Lives \
-         doubling the 13-token Army of the Damned, got {}",
-        zombie_tokens.len()
+         doubling the 13-token Army of the Damned, got {n_zombies}"
     );
-    for z in &zombie_tokens {
+    for z in state.objects.values().filter(|o| o.is_token && o.name == "Zombie" && o.controller == P0) {
         assert!(
             z.tapped,
             "Every zombie token created by Army of the Damned (including \

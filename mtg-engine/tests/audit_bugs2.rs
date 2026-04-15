@@ -619,13 +619,9 @@ fn bug_cackling_counterpart_colors_not_copied() {
     state = cast_and_resolve(&state, &registry, cc, vec![Target::Object(creature)]);
 
     // Find the token copy
-    let tokens: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Grizzly Bears")
-        .collect();
-
-    assert!(!tokens.is_empty(), "Token copy should exist");
-
-    let token_colors = &tokens[0].colors;
+    let token_id = find_token_named(&state, "Grizzly Bears")
+        .expect("Token copy should exist");
+    let token_colors = &state.get_object(token_id).unwrap().colors;
 
     // BUG: Token has no colors (empty vec) instead of copying the original's green
     assert!(!token_colors.is_empty(),

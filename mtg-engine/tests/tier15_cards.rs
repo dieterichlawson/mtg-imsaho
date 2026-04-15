@@ -129,10 +129,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     behavior.on_attacks(&mut state, cage, &[], &reg);
 
     // Should have 3 Wolf tokens on the battlefield.
-    let wolves = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.name == "Wolf" && o.is_token)
-        .count();
-    assert_eq!(wolves, 3, "Should have created 3 Wolf tokens");
+    assert_eq!(count_tokens_named(&state, "Wolf"), 3, "Should have created 3 Wolf tokens");
 
     // Wolves should be tapped and attacking.
     for wolf in state.objects.values().filter(|o| o.zone == Zone::Battlefield && o.name == "Wolf") {
@@ -309,10 +306,7 @@ fn gutter_grime_creates_ooze_on_creature_death() {
         "Gutter Grime should have 1 slime counter");
 
     // Should have created an Ooze token.
-    let oozes = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.name == "Ooze" && o.is_token)
-        .count();
-    assert_eq!(oozes, 1, "Should have created 1 Ooze token");
+    assert_eq!(count_tokens_named(&state, "Ooze"), 1, "Should have created 1 Ooze token");
 }
 
 // ── Heretic's Punishment ─────────────────────────────────────────
@@ -461,11 +455,9 @@ fn undead_alchemist_mills_instead_of_damage() {
     assert_eq!(p1_exile, 2, "Milled creature cards should be exiled");
 
     // Should have created Zombie tokens.
-    let zombie_tokens = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.name == "Zombie" && o.is_token && o.controller == P0)
-        .count();
     // 2 creature cards milled = 2 Zombie tokens + the original zombie we created.
-    assert!(zombie_tokens >= 2, "Should create Zombie tokens for each milled creature");
+    assert!(count_tokens_named_by(&state, "Zombie", P0) >= 2,
+        "Should create Zombie tokens for each milled creature");
 }
 
 // ── Creeping Renaissance ─────────────────────────────────────────
@@ -631,10 +623,8 @@ fn cellar_door_creates_zombie_when_milling_creature() {
     behavior.on_activate_ability(&mut state, door, 0, &[mtg_engine::actions::Target::Player(P1)], &reg);
 
     // Should have created a Zombie token (since a creature was milled).
-    let zombies = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.name == "Zombie" && o.is_token)
-        .count();
-    assert_eq!(zombies, 1, "Should create a Zombie token when milling a creature");
+    assert_eq!(count_tokens_named(&state, "Zombie"), 1,
+        "Should create a Zombie token when milling a creature");
 }
 
 // ── Skaab Ruinator ───────────────────────────────────────────────
@@ -846,10 +836,8 @@ fn back_from_the_brink_creates_token_copy() {
         "Original creature should be exiled");
 
     // A token copy should be on the battlefield.
-    let token_copies = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Kalonian Tusker")
-        .count();
-    assert_eq!(token_copies, 1, "Should have created a token copy");
+    assert_eq!(count_tokens_named(&state, "Kalonian Tusker"), 1,
+        "Should have created a token copy");
 }
 
 #[test]
@@ -937,10 +925,8 @@ fn back_from_the_brink_uses_creature_mana_cost() {
 
     assert_eq!(state.get_object(lions).unwrap().zone, Zone::Exile,
         "Lions should be exiled");
-    let token_copies = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Savannah Lions")
-        .count();
-    assert_eq!(token_copies, 1, "Should have created a token copy of Savannah Lions");
+    assert_eq!(count_tokens_named(&state, "Savannah Lions"), 1,
+        "Should have created a token copy of Savannah Lions");
 }
 
 // ── Delver of Secrets ──────────────────────────────────────────
@@ -1468,13 +1454,11 @@ fn bloodline_keeper_creates_vampire_token() {
     behavior.on_activate_ability(&mut state, keeper, 0, &[], &reg);
 
     // Should have a Vampire token.
-    let bf = state.objects_in_zone(Zone::Battlefield, P0);
-    let tokens: Vec<_> = bf.iter()
-        .filter(|o| o.is_token && o.name == "Vampire")
-        .collect();
-    assert_eq!(tokens.len(), 1);
-    assert_eq!(tokens[0].power, Some(2));
-    assert_eq!(tokens[0].toughness, Some(2));
+    assert_eq!(count_tokens_named(&state, "Vampire"), 1);
+    let token = find_token_named(&state, "Vampire").unwrap();
+    let obj = state.get_object(token).unwrap();
+    assert_eq!(obj.power, Some(2));
+    assert_eq!(obj.toughness, Some(2));
 }
 
 // ── Mikaeus, the Lunarch ──────────────────────────────────────────
@@ -1767,14 +1751,12 @@ fn geist_creates_angel_on_attack() {
     behavior.on_attacks(&mut state, geist, &[], &reg);
 
     // Should have an Angel token.
-    let bf = state.objects_in_zone(Zone::Battlefield, P0);
-    let angels: Vec<_> = bf.iter()
-        .filter(|o| o.is_token && o.name == "Angel")
-        .collect();
-    assert_eq!(angels.len(), 1);
-    assert_eq!(angels[0].power, Some(4));
-    assert_eq!(angels[0].toughness, Some(4));
-    assert!(angels[0].tapped);
+    assert_eq!(count_tokens_named(&state, "Angel"), 1);
+    let angel_id = find_token_named(&state, "Angel").unwrap();
+    let angel = state.get_object(angel_id).unwrap();
+    assert_eq!(angel.power, Some(4));
+    assert_eq!(angel.toughness, Some(4));
+    assert!(angel.tapped);
 }
 
 #[test]
@@ -1790,11 +1772,7 @@ fn geist_angel_exiled_at_end_of_combat() {
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(&mut state, geist, &[], &reg);
 
-    let angel_id = state.objects_in_zone(Zone::Battlefield, P0)
-        .iter()
-        .find(|o| o.is_token && o.name == "Angel")
-        .map(|o| o.id)
-        .unwrap();
+    let angel_id = find_token_named(&state, "Angel").unwrap();
 
     // End of combat — angel should be exiled via delayed trigger in end_combat.
     mtg_engine::combat::end_combat(&mut state, &reg);
@@ -2295,12 +2273,9 @@ fn garruk_creates_wolf_token() {
     let behavior = reg.get(state.get_object(garruk).unwrap().card_id).unwrap();
     behavior.on_loyalty_ability(&mut state, garruk, 1, &[], &reg);
 
-    let bf = state.objects_in_zone(Zone::Battlefield, P0);
-    let wolves: Vec<_> = bf.iter()
-        .filter(|o| o.is_token && o.name == "Wolf")
-        .collect();
-    assert_eq!(wolves.len(), 1);
-    assert_eq!(wolves[0].power, Some(2));
+    assert_eq!(count_tokens_named(&state, "Wolf"), 1);
+    let wolf = find_token_named(&state, "Wolf").unwrap();
+    assert_eq!(state.get_object(wolf).unwrap().power, Some(2));
 }
 
 #[test]
@@ -2345,15 +2320,12 @@ fn garruk_back_face_creates_deathtouch_wolf() {
     // +1: Create a 1/1 black Wolf with deathtouch (ability_index 10).
     behavior.on_loyalty_ability(&mut state, garruk, 10, &[], &reg);
 
-    let wolves: Vec<_> = state.objects_in_zone(Zone::Battlefield, P0)
-        .iter()
-        .filter(|o| o.is_token && o.name == "Wolf")
-        .copied()
-        .collect();
-    assert_eq!(wolves.len(), 1, "Should create a Wolf token");
-    assert_eq!(wolves[0].power, Some(1), "Wolf should be 1/1");
-    assert_eq!(wolves[0].toughness, Some(1), "Wolf should be 1/1");
-    assert!(wolves[0].keywords.contains(&Keyword::Deathtouch), "Wolf should have deathtouch");
+    assert_eq!(count_tokens_named(&state, "Wolf"), 1, "Should create a Wolf token");
+    let wolf = find_token_named(&state, "Wolf").unwrap();
+    let obj = state.get_object(wolf).unwrap();
+    assert_eq!(obj.power, Some(1), "Wolf should be 1/1");
+    assert_eq!(obj.toughness, Some(1), "Wolf should be 1/1");
+    assert!(obj.keywords.contains(&Keyword::Deathtouch), "Wolf should have deathtouch");
 }
 
 #[test]

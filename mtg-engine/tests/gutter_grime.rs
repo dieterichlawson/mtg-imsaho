@@ -56,17 +56,14 @@ fn gutter_grime_creates_dynamic_pt_ooze() {
         "Gutter Grime should have 1 slime counter");
 
     // Find the Ooze token.
-    let ooze_tokens: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Ooze")
-        .collect();
-    assert_eq!(ooze_tokens.len(), 1, "Should have created 1 Ooze token");
+    assert_eq!(count_tokens_named(&state, "Ooze"), 1, "Should have created 1 Ooze token");
+    let ooze_id = find_token_named(&state, "Ooze").unwrap();
 
     // The Ooze token should have dynamic P/T equal to slime counter count (1).
-    let ooze_id = ooze_tokens[0].id;
-    let eff_power = state.effective_power(ooze_id, &reg).unwrap();
-    let eff_toughness = state.effective_toughness(ooze_id, &reg).unwrap();
-    assert_eq!(eff_power, 1, "Ooze effective power should be 1 (1 slime counter)");
-    assert_eq!(eff_toughness, 1, "Ooze effective toughness should be 1 (1 slime counter)");
+    assert_eq!(state.effective_power(ooze_id, &reg), Some(1),
+        "Ooze effective power should be 1 (1 slime counter)");
+    assert_eq!(state.effective_toughness(ooze_id, &reg), Some(1),
+        "Ooze effective toughness should be 1 (1 slime counter)");
 }
 
 /// When more creatures die, all Ooze tokens should grow as slime counters increase.
@@ -108,18 +105,17 @@ fn gutter_grime_ooze_tokens_grow_with_more_counters() {
         "Gutter Grime should have 2 slime counters");
 
     // Find all Ooze tokens.
-    let ooze_tokens: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Ooze")
-        .collect();
-    assert_eq!(ooze_tokens.len(), 2, "Should have 2 Ooze tokens");
+    assert_eq!(count_tokens_named(&state, "Ooze"), 2, "Should have 2 Ooze tokens");
 
     // ALL Ooze tokens should have effective P/T = 2 (both track current slime count).
-    for ooze in &ooze_tokens {
-        let eff_power = state.effective_power(ooze.id, &reg).unwrap();
-        let eff_toughness = state.effective_toughness(ooze.id, &reg).unwrap();
-        assert_eq!(eff_power, 2,
+    let ooze_ids: Vec<_> = state.objects.values()
+        .filter(|o| o.is_token && o.zone == Zone::Battlefield && o.name == "Ooze")
+        .map(|o| o.id)
+        .collect();
+    for ooze_id in ooze_ids {
+        assert_eq!(state.effective_power(ooze_id, &reg), Some(2),
             "All Ooze tokens should have effective power 2 (2 slime counters)");
-        assert_eq!(eff_toughness, 2,
+        assert_eq!(state.effective_toughness(ooze_id, &reg), Some(2),
             "All Ooze tokens should have effective toughness 2 (2 slime counters)");
     }
 }
@@ -192,9 +188,7 @@ fn gutter_grime_ooze_tokens_become_zero_without_source() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let ooze_id = state.objects.values()
-        .find(|o| o.zone == Zone::Battlefield && o.is_token && o.name == "Ooze")
-        .unwrap().id;
+    let ooze_id = find_token_named(&state, "Ooze").unwrap();
 
     // Remove Gutter Grime from battlefield.
     state.move_object(gutter_grime, Zone::Graveyard, &reg);

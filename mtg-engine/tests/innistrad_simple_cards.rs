@@ -216,14 +216,13 @@ fn moorland_haunt_creates_spirit_token() {
 
     state = engine::submit_action(&state, activate.unwrap(), &reg);
 
-    // Check a Spirit token was created.
-    let spirits: Vec<_> = state.objects.values()
-        .filter(|o| o.zone == Zone::Battlefield && o.is_token && o.name.contains("Spirit"))
-        .collect();
-    assert_eq!(spirits.len(), 1, "Should create one Spirit token");
-    assert_eq!(spirits[0].power, Some(1));
-    assert_eq!(spirits[0].toughness, Some(1));
-    assert!(spirits[0].keywords.contains(&Keyword::Flying));
+    // Check a Spirit Token was created (Moorland Haunt creates a "Spirit Token" token).
+    assert_eq!(count_tokens_named(&state, "Spirit Token"), 1, "Should create one Spirit token");
+    let spirit = find_token_named(&state, "Spirit Token").unwrap();
+    let obj = state.get_object(spirit).unwrap();
+    assert_eq!(obj.power, Some(1));
+    assert_eq!(obj.toughness, Some(1));
+    assert!(obj.keywords.contains(&Keyword::Flying));
 
     // The creature should be exiled.
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Exile);
