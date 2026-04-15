@@ -745,7 +745,7 @@ def cmd_test(args):
         wt_staging.mkdir(parents=True, exist_ok=True)
         staging_file = wt_staging / f"{tid}-test.md"
 
-        per_agent = f"""## Ticket to test
+        per_agent_base = f"""## Ticket to test
 
 {ticket["body"]}
 
@@ -764,28 +764,56 @@ Use the multi-test format specified in the shared prompt:
 ticket's `## Tests` section (fields: Status, Test name, Assertion
 message, Explanation, Blocked by).
 
+### Commit your work
+After all tests validate, commit the test file with a descriptive
+message BEFORE writing the staging output. The worktree must be
+clean (`git status --porcelain` empty). Python will reject the run
+otherwise.
+
 ### Ticket ID: {tid}
 """
-        print(f"  [{tid}] Spawning agent in worktree...")
-        result = run_agent_in(shared_prompt + "\n\n---\n\n" + per_agent,
-                             wt_dir, args.model, args.effort)
 
-        # Parse multi-test staging
+        # Retry loop: re-spawn the agent if validation fails. Typical
+        # reason: agent forgot to commit its work, leaving the test
+        # file untracked in the worktree.
+        MAX_TEST_ATTEMPTS = 3
         parsed: dict = {"test_file": "", "tests": []}
-        if staging_file.exists():
-            parsed = parse_test_staging(staging_file)
-            staging_file.unlink()
+        aggregate = "rejected"
+        validated = False
+        impls_by_slug: dict[str, str] = {}
+        per_test: list = []
+        test_file = f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
+        retry_note = ""
 
-        test_file = parsed.get("test_file") or f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
-        per_test = parsed.get("tests", [])
+        for attempt in range(1, MAX_TEST_ATTEMPTS + 1):
+            print(f"  [{tid}] Spawning agent in worktree "
+                  f"(attempt {attempt}/{MAX_TEST_ATTEMPTS})...")
+            prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
+            result = run_agent_in(prompt, wt_dir, args.model, args.effort)
 
-        if not per_test:
-            print(f"  [{tid}] agent produced no per-test entries — treating as rejected")
-            aggregate = "rejected"
-            validated = False
-            impls_by_slug: dict[str, str] = {}
-        else:
-            # Validate each test the agent claimed confirmed
+            if result.get("is_error"):
+                err = result.get("error_message") or "unknown agent error"
+                print(f"  [{tid}] Agent error: {err}")
+                retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                              f"Previous attempt errored: {err}\n")
+                continue
+
+            # Parse multi-test staging
+            parsed = {"test_file": "", "tests": []}
+            if staging_file.exists():
+                parsed = parse_test_staging(staging_file)
+                staging_file.unlink()
+
+            test_file = parsed.get("test_file") or f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
+            per_test = parsed.get("tests", [])
+
+            if not per_test:
+                retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                              f"Previous attempt produced no staging file or no "
+                              f"`## Test: <slug>` blocks.\n")
+                continue
+
+            # Per-test validation
             impls_by_slug = {}
             for t in per_test:
                 slug = t["slug"]
@@ -794,7 +822,7 @@ message, Explanation, Blocked by).
                     test_path = wt_dir / test_file
                     if not test_path.exists():
                         t["status"] = "rejected"
-                        impls_by_slug[slug] = f"rejected: test file missing"
+                        impls_by_slug[slug] = "rejected: test file missing"
                         continue
                     val = subprocess.run(
                         [str(SCRIPTS_DIR / "validate_test.sh"),
@@ -811,17 +839,59 @@ message, Explanation, Blocked by).
                 elif status == "blocked":
                     impls_by_slug[slug] = f"blocked: {t.get('blocked_by','')[:80]}"
 
-            # Aggregate: confirmed only if ALL tests confirmed and validated
             statuses = {t["status"] for t in per_test}
             if statuses == {"confirmed"}:
                 aggregate = "confirmed"
-                validated = True
             elif "blocked" in statuses:
                 aggregate = "blocked"
-                validated = False
             else:
                 aggregate = "rejected"
-                validated = False
+
+            # Coverage check: every slug in the ticket's ## Tests section
+            # must have a `confirmed` entry in the agent's output. Catches
+            # the case where the agent silently omits a test.
+            expected_slugs = {ct["slug"] for ct in _parse_tests_section(ticket["body"])}
+            confirmed_slugs = {t["slug"] for t in per_test if t["status"] == "confirmed"}
+            missing_slugs = expected_slugs - confirmed_slugs
+            if missing_slugs:
+                print(f"  [{tid}] Missing confirmed tests for slugs: "
+                      f"{sorted(missing_slugs)}")
+                aggregate = "rejected"
+                if attempt < MAX_TEST_ATTEMPTS:
+                    retry_note = (
+                        f"\n\n## Retry note (attempt {attempt} failed)\n"
+                        f"The ticket's `## Tests` section lists "
+                        f"{len(expected_slugs)} test slug(s), but your "
+                        f"staging output does not have a confirmed entry "
+                        f"for every one. Missing: "
+                        f"{sorted(missing_slugs)}. Every slug must have a "
+                        f"corresponding failing Rust test.\n")
+                    continue
+
+            # Worktree-clean check: the agent must commit its work before
+            # writing the staging output.
+            if aggregate == "confirmed":
+                git_status = subprocess.run(
+                    ["git", "status", "--porcelain"],
+                    capture_output=True, text=True, cwd=str(wt_dir),
+                )
+                dirty = git_status.stdout.strip()
+                if dirty:
+                    print(f"  [{tid}] Worktree dirty — agent forgot to commit:")
+                    print(dirty)
+                    aggregate = "rejected"
+                    if attempt < MAX_TEST_ATTEMPTS:
+                        retry_note = (
+                            f"\n\n## Retry note (attempt {attempt} failed)\n"
+                            f"Every per-test validation succeeded, but the "
+                            f"worktree is not clean. `git status --porcelain` "
+                            f"reported:\n\n{dirty}\n\n"
+                            f"You must `git add -A && git commit` your test "
+                            f"file before writing the staging output. Do this "
+                            f"and try again.\n")
+                        continue
+            validated = (aggregate == "confirmed")
+            break
 
         # Update ticket body: fill in Implementation for each test entry
         if impls_by_slug:

@@ -153,6 +153,17 @@ If a test fails validation:
 3. Re-run validation
 4. Repeat up to 3 times per test
 
+Once every test has been validated, **commit your work** before
+writing the staging output:
+
+```bash
+git add -A && git commit -m "Add tests for {ticket_id}"
+```
+
+The commit must include the new Rust test file and nothing else (do
+not commit the staging markdown; `pipeline/staging/` is gitignored).
+Python will reject the run if the worktree is not clean.
+
 You are NOT done until every test in the ticket's `## Tests` section either
 (a) passes validation as a compiling, failing test, or (b) is explicitly
 marked rejected or blocked in your output with a specific reason.
