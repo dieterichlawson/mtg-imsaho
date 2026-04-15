@@ -227,6 +227,22 @@ pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &C
     }
 }
 
+/// Place a named card directly into `owner`'s graveyard. Equivalent to
+/// `named_creature(...)` followed by `state.move_object(..., Graveyard)`,
+/// which appeared in ~9 tests. Useful for setting up graveyard-matters
+/// scenarios (Dearly Departed in the graveyard, Unbreathing Horde
+/// counting Zombies, flashback targets, reanimation fodder).
+pub fn named_card_in_graveyard(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    name: &str,
+    owner: PlayerId,
+) -> ObjectId {
+    let id = named_creature(state, registry, name, owner);
+    state.move_object(id, Zone::Graveyard, registry);
+    id
+}
+
 /// Push a `StepStarted` event and process any triggers it fires. Used
 /// by tests that need to exercise an upkeep / end-step / etc. triggered
 /// ability without running the full turn-advancement machinery. The

@@ -48,8 +48,7 @@ fn dearly_departed_gives_counter_to_entering_humans() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // Put Dearly Departed in the graveyard.
-    let dd = named_creature(&mut state, &reg, "Dearly Departed", P0);
-    state.move_object(dd, Zone::Graveyard, &reg);
+    let _dd = named_card_in_graveyard(&mut state, &reg, "Dearly Departed", P0);
 
     // Create a Human in hand, then move to battlefield so the
     // entering-with-counters replacement effect fires.
@@ -796,8 +795,7 @@ fn unbreathing_horde_enters_with_counters_for_zombies() {
     }
 
     // Put 1 Zombie card in graveyard.
-    let gy_zombie = named_creature(&mut state, &reg, "Diregraf Ghoul", P0);
-    state.move_object(gy_zombie, Zone::Graveyard, &reg);
+    let _gy_zombie = named_card_in_graveyard(&mut state, &reg, "Diregraf Ghoul", P0);
 
     // Cast Unbreathing Horde — on_resolve counts graveyard BEFORE moving to battlefield.
     let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);
@@ -822,8 +820,7 @@ fn back_from_the_brink_creates_token_copy() {
     }
 
     // Put a creature in graveyard.
-    let dead = named_creature(&mut state, &reg, "Kalonian Tusker", P0);
-    state.move_object(dead, Zone::Graveyard, &reg);
+    let dead = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
 
@@ -852,10 +849,8 @@ fn back_from_the_brink_ability_per_creature_in_graveyard() {
     }
 
     // Put two different creatures in the graveyard.
-    let tusker = named_creature(&mut state, &reg, "Kalonian Tusker", P0);
-    state.move_object(tusker, Zone::Graveyard, &reg);
-    let piker = named_creature(&mut state, &reg, "Goblin Piker", P0);
-    state.move_object(piker, Zone::Graveyard, &reg);
+    let _tusker = named_card_in_graveyard(&mut state, &reg, "Kalonian Tusker", P0);
+    let _piker = named_card_in_graveyard(&mut state, &reg, "Goblin Piker", P0);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
     let abilities = behavior.activated_abilities(&state, enchant, &reg);
@@ -907,8 +902,7 @@ fn back_from_the_brink_uses_creature_mana_cost() {
     }
 
     // Savannah Lions costs {W}.
-    let lions = named_creature(&mut state, &reg, "Savannah Lions", P0);
-    state.move_object(lions, Zone::Graveyard, &reg);
+    let lions = named_card_in_graveyard(&mut state, &reg, "Savannah Lions", P0);
 
     let behavior = reg.get(state.get_object(enchant).unwrap().card_id).unwrap();
     let abilities = behavior.activated_abilities(&state, enchant, &reg);

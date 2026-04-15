@@ -79,8 +79,7 @@ fn enters_with_correct_counter_count() {
     let _z2 = named_creature(&mut state, &reg, "Diregraf Ghoul", P0);
 
     // Put 1 zombie in graveyard.
-    let z3 = named_creature(&mut state, &reg, "Walking Corpse", P0);
-    state.move_object(z3, Zone::Graveyard, &reg);
+    let _z3 = named_card_in_graveyard(&mut state, &reg, "Walking Corpse", P0);
 
     // Cast Unbreathing Horde — on_resolve counts graveyard before moving to battlefield.
     let horde = castable_spell(&mut state, &reg, "Unbreathing Horde", P0);

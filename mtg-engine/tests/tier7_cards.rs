@@ -218,8 +218,7 @@ fn angel_of_flight_alabaster_returns_spirit() {
     let _angel = named_creature(&mut state, &reg, "Angel of Flight Alabaster", P0);
 
     // Put a Spirit in graveyard.
-    let spirit = named_creature(&mut state, &reg, "Chapel Geist", P0);
-    state.move_object(spirit, Zone::Graveyard, &reg);
+    let spirit = named_card_in_graveyard(&mut state, &reg, "Chapel Geist", P0);
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 

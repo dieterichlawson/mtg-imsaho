@@ -1343,8 +1343,7 @@ fn bug_woodland_sleuth_can_return_itself_from_graveyard() {
     state.creature_died_this_turn = true;
 
     // Place Woodland Sleuth, then move to graveyard (died in response to own ETB)
-    let sleuth = named_creature(&mut state, &registry, "Woodland Sleuth", P0);
-    state.move_object(sleuth, Zone::Graveyard, &registry);
+    let sleuth = named_card_in_graveyard(&mut state, &registry, "Woodland Sleuth", P0);
 
     // Fire the ETB trigger manually (it was triggered before death)
     let behavior = registry.get(state.get_object(sleuth).unwrap().card_id).unwrap();
