@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, LogLevel, ResolutionChoiceKind};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, ManaType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, ManaType};
 
 /// Mentor of the Meek — {2}{W} 2/2 Human Soldier.
 /// Whenever another creature with power 2 or less enters the battlefield
@@ -37,10 +37,9 @@ impl CardBehavior for MentorOfTheMeek {
     }
 
     fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
-        // Must be on the battlefield.
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         // Must be under our control and not self.
         if entered_controller != controller || entered_id == self_id {

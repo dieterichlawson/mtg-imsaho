@@ -574,6 +574,9 @@ impl GameState {
                 obj.summoning_sick = false;
                 obj.damage_marked = 0;
                 obj.dealt_deathtouch_damage = false; obj.damaged_by.clear();
+                if let Some(att) = obj.attached_to {
+                    obj.card_state.insert("last_attached_to".into(), att);
+                }
                 obj.attached_to = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;

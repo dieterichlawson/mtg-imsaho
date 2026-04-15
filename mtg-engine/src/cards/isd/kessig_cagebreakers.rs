@@ -39,8 +39,8 @@ impl CardBehavior for KessigCagebreakers {
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         // Count creature cards in graveyard.
         let creature_count = state.objects_in_zone(Zone::Graveyard, controller)
