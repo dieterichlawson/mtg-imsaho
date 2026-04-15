@@ -3,6 +3,9 @@
 *.log
 /results.json
 /reports/coverage/
+# Agent-produced staging markdown is ephemeral transport; validate
+# scripts expect a clean worktree and ignore this directory.
+/pipeline/staging/
 # Claude Code: commit commands/skills and project settings, ignore local/personal files
 .claude/settings.local.json
 .claude/worktrees/

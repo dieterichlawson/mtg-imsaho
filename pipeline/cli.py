@@ -971,7 +971,7 @@ def cmd_fix(args):
     failing_tests_block = "\n".join(
         f"- `{name}`" for name in test_fns) or "- (see ticket `## Tests` section)"
 
-    per_agent = f"""## Ticket to fix
+    per_agent_base = f"""## Ticket to fix
 
 {ticket["body"]}
 
@@ -992,35 +992,67 @@ Use the format: ## Status, ## Files Changed, ## Description
 - EVERY test listed above must pass after your fix
 - Zero compiler warnings
 - The full `cargo test` suite must still pass (no regressions)
+- Commit your work (including the test file if untracked) before
+  writing the staging output. The worktree must be clean when
+  validate_fix.sh runs.
 """
-    print(f"  Spawning agent in worktree {wt_dir.name}...")
-    result = run_agent_in(shared_prompt + "\n\n---\n\n" + per_agent,
-                         wt_dir, args.model, args.effort)
 
+    # Agent runs with a retry loop when validation fails (typically
+    # because the agent forgot to commit its changes). On each retry
+    # we append the validator's output so the agent knows what to fix.
     fix_result = "failed"
     validated = False
+    parsed: dict = {}
+    retry_note = ""
+    MAX_FIX_ATTEMPTS = 3
+    for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
+        print(f"  Spawning agent in worktree {wt_dir.name} "
+              f"(attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
+        prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
+        result = run_agent_in(prompt, wt_dir, args.model, args.effort)
 
-    if staging_file.exists():
+        if result.get("is_error"):
+            err = result.get("error_message") or "unknown agent error"
+            print(f"  Agent error: {err}")
+            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                          f"Previous attempt errored: {err}\n")
+            continue
+
+        if not staging_file.exists():
+            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                          f"Previous attempt did not write {staging_file}. "
+                          f"Write the staging output there.\n")
+            continue
+
         parsed = parse_fix_staging(staging_file)
         fix_result = parsed.get("status", "failed")
-
-        # Validate in the worktree. validate_fix.sh's single-test arg is
-        # for one-test tickets; for multi-test tickets we skip it and
-        # rely on the full-test-suite check the script already performs
-        # (every ticket test runs as part of `cargo test`).
-        if fix_result == "fixed":
-            val = subprocess.run(
-                [str(SCRIPTS_DIR / "validate_fix.sh")],
-                capture_output=True, text=True, cwd=str(wt_dir),
-            )
-            validated = val.returncode == 0
-            if not validated:
-                fix_result = "failed"
-                print("  Validation FAILED")
-                print(val.stdout[-2000:] if val.stdout else "")
-                print(val.stderr[-500:] if val.stderr else "")
-
         staging_file.unlink()
+
+        if fix_result != "fixed":
+            print(f"  Agent reported status={fix_result}; not retrying")
+            break
+
+        # Validate — worktree must be clean + tests pass + no warnings.
+        val = subprocess.run(
+            [str(SCRIPTS_DIR / "validate_fix.sh")],
+            capture_output=True, text=True, cwd=str(wt_dir),
+        )
+        validated = val.returncode == 0
+        if validated:
+            break
+
+        # Validation failed — surface reason and retry
+        tail = (val.stdout[-1500:] if val.stdout else "") + \
+               (val.stderr[-500:] if val.stderr else "")
+        print(f"  Validation FAILED (attempt {attempt}):")
+        print(tail)
+        fix_result = "failed"
+        if attempt < MAX_FIX_ATTEMPTS:
+            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                          f"validate_fix.sh rejected your previous attempt. "
+                          f"Output (last 1500 chars):\n\n{tail}\n\n"
+                          f"Fix the issue and try again. Remember to commit "
+                          f"your changes before running validate_fix.sh.\n")
 
     # If failed, remove worktree so test can be re-run fresh
     if fix_result == "failed":
@@ -1030,9 +1062,9 @@ Use the format: ## Status, ## Files Changed, ## Description
     # Build ticket section
     section = f"## Fix Result\n\n"
     section += f"status: {fix_result}\n"
-    if 'parsed' in dir() and parsed.get("files_changed"):
+    if parsed.get("files_changed"):
         section += f"files_changed: {parsed['files_changed']}\n"
-    if 'parsed' in dir() and parsed.get("description"):
+    if parsed.get("description"):
         section += f"\n{parsed['description']}\n"
 
     append_ticket_section(tid, section)

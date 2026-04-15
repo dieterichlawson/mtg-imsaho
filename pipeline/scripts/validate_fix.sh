@@ -68,6 +68,20 @@ fi
 
 echo "Full test suite passes: OK"
 
+# 6. Worktree must be clean — all changes committed
+echo "--- Checking worktree is clean (all changes committed) ---"
+UNCOMMITTED=$(git status --porcelain)
+if [[ -n "$UNCOMMITTED" ]]; then
+    echo "REJECTED: worktree has uncommitted or untracked files:"
+    echo "$UNCOMMITTED"
+    echo ""
+    echo "Commit all of your changes (including the test file, if untracked)"
+    echo "before writing your staging output:"
+    echo "    git add -A && git commit -m '<message>'"
+    exit 1
+fi
+echo "Worktree clean: OK"
+
 echo ""
 echo "=== FIX VALIDATED ==="
 exit 0

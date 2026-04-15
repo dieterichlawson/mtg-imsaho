@@ -72,7 +72,17 @@ Your job:
    cargo test 2>&1
    ```
 
-7. **Run the validation script** (no arg — it runs the full suite):
+7. **Commit your work** before validating:
+   ```bash
+   git add -A && git commit -m "Fix {ticket_id}: <short description>"
+   ```
+   The commit MUST include every change you need to land — the Rust
+   test file (if the test-writer left it untracked), your src/ changes,
+   and nothing else. Do not commit the staging markdown; the
+   `pipeline/staging/` directory is gitignored. The worktree MUST be
+   clean (`git status --porcelain` empty) before validate will pass.
+
+8. **Run the validation script** (no arg — it runs the full suite):
    ```bash
    ./pipeline/scripts/validate_fix.sh
    ```
@@ -85,8 +95,10 @@ Your job:
    - "Compiler warnings" → fix the warnings
    - "Tests fail" → your fix broke something, investigate and fix
    - "Banned phrases" → remove TODO/FIXME/hack from your code
+   - "Worktree has uncommitted or untracked files" → run `git add -A &&
+     git commit` with a descriptive message
 
-8. **Write the result file** after validation passes.
+9. **Write the result file** after validation passes.
 
 ## Banned Phrases
 
