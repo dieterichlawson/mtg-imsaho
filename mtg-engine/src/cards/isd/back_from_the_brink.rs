@@ -82,29 +82,44 @@ impl CardBehavior for BackFromTheBrink {
         }).collect()
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
         };
 
-        // The ability_index encodes the ObjectId of the creature to exile.
         let creature_id = ObjectId(ability_index as u64);
 
-        // Verify the creature is still in the graveyard and belongs to the controller.
         let valid = state.get_object(creature_id)
             .is_some_and(|o| o.zone == Zone::Graveyard && o.owner == controller);
         if !valid {
             return;
         }
 
+        // Exile the creature card (cost — before the colon in oracle text).
+        state.move_object(creature_id, Zone::Exile, _registry);
+
+        // Push ability to stack (CR 602.2a).
+        let card_id = state.get_object(object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
+        state.stack.push(crate::state::StackEntry::Ability {
+            source_id: object_id,
+            ability_index,
+            behavior_card_id: card_id,
+            targets: targets.to_vec(),
+            activator: controller,
+            x_value: state.last_activated_x_value,
+        });
+    }
+
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        let controller = match state.get_object(object_id) {
+            Some(o) => o.controller,
+            None => return,
+        };
+
+        let creature_id = ObjectId(ability_index as u64);
         let name = state.get_object(creature_id).map(|o| o.name.clone()).unwrap_or_default();
 
-        // Exile the creature card first (part of the cost — everything before the colon).
-        // Per oracle: "Exile a creature card from your graveyard and pay its mana cost:"
-        state.move_object(creature_id, Zone::Exile, registry);
-
-        // Create a token copy (the effect — after the colon).
         state.create_token_copy(creature_id, controller, registry);
 
         state.log(crate::state::LogLevel::Event,

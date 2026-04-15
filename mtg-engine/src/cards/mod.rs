@@ -479,9 +479,27 @@ pub trait CardBehavior: Send + Sync {
         vec![]
     }
 
-    /// Called when a non-mana activated ability is activated.
-    /// `targets` contains targets chosen by the player (empty if untargeted).
-    fn on_activate_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
+    /// Called when a non-mana activated ability is activated (CR 602.2a).
+    /// Default pushes the ability onto the stack. Override to add card-specific
+    /// cost payment (e.g. tapping creatures) before the stack push.
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+        let (card_id, activator) = match state.get_object(object_id) {
+            Some(o) => (o.card_id, o.controller),
+            None => return,
+        };
+        state.stack.push(crate::state::StackEntry::Ability {
+            source_id: object_id,
+            ability_index,
+            behavior_card_id: card_id,
+            targets: targets.to_vec(),
+            activator,
+            x_value: state.last_activated_x_value,
+        });
+    }
+
+    /// Called when an activated ability resolves from the stack.
+    /// Override to implement the ability's effect.
+    fn resolve_activated_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _targets: &[Target], _registry: &CardRegistry) {}
 
     /// Called after the player chooses and discards a card via `ChooseCardFromHand`
     /// that was initiated by this permanent. Used by Civilized Scholar to check

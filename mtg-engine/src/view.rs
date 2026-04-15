@@ -218,6 +218,16 @@ impl GameView {
                             targets: vec![],
                         })
                     }
+                    crate::state::StackEntry::Ability { source_id, behavior_card_id, activator, targets, .. } => {
+                        Some(StackItemView {
+                            object_id: *source_id,
+                            card_id: *behavior_card_id,
+                            name: registry.card_data(*behavior_card_id)
+                                .map_or_else(|| "Ability".into(), |d| format!("{} ability", d.name)),
+                            controller: *activator,
+                            targets: targets.clone(),
+                        })
+                    }
                 }
             })
             .collect();

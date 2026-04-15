@@ -50,6 +50,8 @@ fn lands_should_not_trigger_on_creature_death() {
             mtg_engine::state::StackEntry::Trigger(t) => t.display_name(&registry),
             mtg_engine::state::StackEntry::Spell(id) =>
                 state.get_object(*id).map_or("?".into(), |o| o.name.clone()),
+            mtg_engine::state::StackEntry::Ability { source_id, .. } =>
+                state.get_object(*source_id).map_or("?".into(), |o| o.name.clone()),
         }
     }).collect();
 

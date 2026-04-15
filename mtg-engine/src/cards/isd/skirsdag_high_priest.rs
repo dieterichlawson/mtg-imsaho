@@ -77,16 +77,13 @@ impl CardBehavior for SkirsdagHighPriest {
         abilities
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
         };
 
-        // Reconstruct the same sorted candidate list used in activated_abilities.
-        // Note: by the time this is called the High Priest itself is already tapped
-        // (the engine pays the {T} cost before calling on_activate_ability), so we
-        // still filter on !o.tapped to find only un-tapped creatures.
+        // Tap the two chosen creatures (cost payment — happens before stack push).
         let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .filter(|o| o.id != object_id && o.power.is_some() && !o.tapped)
@@ -95,7 +92,6 @@ impl CardBehavior for SkirsdagHighPriest {
         candidates.sort_by_key(|id| id.0);
         let n = candidates.len();
 
-        // Decode ability_index back to the (i, j) combination.
         let mut combo_index = 0usize;
         let mut to_tap: Option<(ObjectId, ObjectId)> = None;
         'outer: for i in 0..n {
@@ -108,13 +104,29 @@ impl CardBehavior for SkirsdagHighPriest {
             }
         }
 
-        // Tap the chosen pair.
         if let Some((c1, c2)) = to_tap {
             if let Some(obj) = state.get_object_mut(c1) { obj.tapped = true; }
             if let Some(obj) = state.get_object_mut(c2) { obj.tapped = true; }
         }
 
-        // Create a 5/5 black Demon creature token with flying.
+        // Push ability to stack (CR 602.2a).
+        let card_id = state.get_object(object_id).map(|o| o.card_id).unwrap_or(crate::ids::CardId(0));
+        state.stack.push(crate::state::StackEntry::Ability {
+            source_id: object_id,
+            ability_index,
+            behavior_card_id: card_id,
+            targets: targets.to_vec(),
+            activator: controller,
+            x_value: state.last_activated_x_value,
+        });
+    }
+
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+        let controller = match state.get_object(object_id) {
+            Some(o) => o.controller,
+            None => return,
+        };
+
         state.create_token_with_subtypes(
             "Demon",
             controller,

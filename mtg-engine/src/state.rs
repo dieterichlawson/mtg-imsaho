@@ -5,13 +5,22 @@ use serde::{Serialize, Deserialize};
 use crate::ids::{ObjectId, PlayerId, CardId};
 use crate::types::{Zone, Step, ManaPool};
 
-/// An entry on the stack — either a spell or a triggered ability.
+/// An entry on the stack — a spell, triggered ability, or activated ability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StackEntry {
     /// A spell (instant, sorcery, creature, etc.) on the stack.
     Spell(ObjectId),
     /// A triggered ability on the stack. Resolves by calling the card behavior.
     Trigger(crate::triggers::PendingTrigger),
+    /// An activated ability on the stack (CR 602.2a).
+    Ability {
+        source_id: ObjectId,
+        ability_index: usize,
+        behavior_card_id: CardId,
+        targets: Vec<crate::actions::Target>,
+        activator: PlayerId,
+        x_value: Option<u32>,
+    },
 }
 
 impl StackEntry {
@@ -20,7 +29,7 @@ impl StackEntry {
     pub fn as_spell(&self) -> Option<ObjectId> {
         match self {
             StackEntry::Spell(id) => Some(*id),
-            StackEntry::Trigger(_) => None,
+            StackEntry::Trigger(_) | StackEntry::Ability { .. } => None,
         }
     }
 
@@ -29,7 +38,7 @@ impl StackEntry {
     pub fn as_trigger(&self) -> Option<&crate::triggers::PendingTrigger> {
         match self {
             StackEntry::Trigger(t) => Some(t),
-            StackEntry::Spell(_) => None,
+            StackEntry::Spell(_) | StackEntry::Ability { .. } => None,
         }
     }
 
@@ -39,6 +48,11 @@ impl StackEntry {
         match self {
             StackEntry::Spell(id) => format!("Spell({})", id.0),
             StackEntry::Trigger(t) => t.display_name(registry),
+            StackEntry::Ability { behavior_card_id, .. } => {
+                let name = registry.card_data(*behavior_card_id)
+                    .map_or_else(|| "Unknown".into(), |d| d.name.clone());
+                format!("{name} ability")
+            }
         }
     }
 }

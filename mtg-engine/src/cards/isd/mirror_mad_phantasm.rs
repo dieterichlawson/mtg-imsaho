@@ -58,14 +58,12 @@ impl CardBehavior for MirrorMadPhantasm {
         }]
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let owner = match state.get_object(object_id) {
-            Some(o) => o.owner,
-            None => return,
+            Some(o) if o.zone == Zone::Battlefield => o.owner,
+            _ => return,
         };
 
-        // "shuffles it into their library" — move to library zone, add to library order,
-        // then shuffle so the card is at a random position before the reveal loop.
         state.move_object(object_id, Zone::Library, registry);
         state.get_player_mut(owner).library_order.push(object_id);
         {
@@ -77,7 +75,6 @@ impl CardBehavior for MirrorMadPhantasm {
         state.log(crate::state::LogLevel::Event,
             "Mirror-Mad Phantasm shuffled into library".into());
 
-        // Reveal cards from the top until we find Mirror-Mad Phantasm.
         let mut milled = Vec::new();
         let mut found = None;
         loop {
@@ -91,16 +88,14 @@ impl CardBehavior for MirrorMadPhantasm {
                     }
                     milled.push(card_id);
                 }
-                None => break, // Library empty.
+                None => break,
             }
         }
 
-        // Put all milled cards into graveyard.
         for card_id in &milled {
             state.move_object(*card_id, Zone::Graveyard, registry);
         }
 
-        // If found, put Mirror-Mad Phantasm onto the battlefield.
         if let Some(phantasm_id) = found {
             state.move_object(phantasm_id, Zone::Battlefield, registry);
             if let Some(obj) = state.get_object_mut(phantasm_id) {

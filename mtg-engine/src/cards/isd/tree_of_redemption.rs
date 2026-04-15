@@ -48,16 +48,14 @@ impl CardBehavior for TreeOfRedemption {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
+    fn resolve_activated_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(object_id) {
             Some(o) => o.controller,
             None => return,
         };
-        // Get effective toughness (base + counters + buffs).
         let current_toughness = state.effective_toughness(object_id, registry).unwrap_or(13);
         let current_life = state.get_player(controller).life;
 
-        // Set life to Tree's toughness.
         let old_life = current_life;
         state.get_player_mut(controller).life = current_toughness;
         state.events.push(crate::events::GameEvent::LifeChanged {
@@ -66,8 +64,6 @@ impl CardBehavior for TreeOfRedemption {
             new_life: current_toughness,
         });
 
-        // Set Tree's base toughness to old life total.
-        // We adjust the base toughness by modifying the object's toughness field.
         if let Some(obj) = state.get_object_mut(object_id) {
             obj.toughness = Some(current_life);
         }
