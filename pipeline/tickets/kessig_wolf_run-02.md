@@ -1,6 +1,6 @@
 ---
 id: kessig_wolf_run-02
-status: new
+status: deduped
 card: Kessig Wolf Run
 card_file: mtg-engine/src/cards/isd/kessig_wolf_run.rs
 created: 2026-04-14T21:29:34Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-kessig_wolf_run-audit
 audit_model: opus
 audit_tokens: 14580
 audit_duration: 309
+deduped_into: merged-ability-targets-protection-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ When enumerating valid targets for Kessig Wolf Run's activated ability, `generat
 **Affected cards:**
 - Kessig Wolf Run
 - Every card with a targeted activated ability (Daybreak Ranger, Olivia Voldaren, Grimgrin, etc.)
-

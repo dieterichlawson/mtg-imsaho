@@ -1,6 +1,6 @@
 ---
 id: snapcaster_mage-03
-status: new
+status: deduped
 card: Snapcaster Mage
 card_file: mtg-engine/src/cards/isd/snapcaster_mage.rs
 created: 2026-04-14T20:56:41Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-snapcaster_mage-audit
 audit_model: opus
 audit_tokens: 19116
 audit_duration: 381
+deduped_into: merged-flashback-cost-reduction-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ The CastSpell handler has two cost-resolution branches: non-flashback calls `eff
 - Snapcaster Mage (dynamically granted flashback)
 - All cards with static flashback (Think Twice, Ancient Grudge, etc.)
 - Any card with `can_cast_from_graveyard()` if cost reduction should apply
-

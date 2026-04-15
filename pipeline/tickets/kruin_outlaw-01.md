@@ -1,6 +1,6 @@
 ---
 id: kruin_outlaw-01
-status: new
+status: deduped
 card: Kruin Outlaw
 card_file: mtg-engine/src/cards/isd/kruin_outlaw.rs
 created: 2026-04-14T20:54:55Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-kruin_outlaw-audit
 audit_model: opus
 audit_tokens: 13110
 audit_duration: 275
+deduped_into: merged-intervening-if-01
 ---
 
 ## Audit Finding
@@ -33,4 +34,3 @@ Both faces of Kruin Outlaw have intervening-if clauses ("if no spells were cast 
 - Kruin Outlaw / Terror of Kruin Pass
 - All ISD werewolves with intervening-if transform triggers (Reckless Waif, Mayor of Avabruck, Daybreak Ranger, Villagers of Estwald, etc.)
 - Any card with an intervening-if triggered ability using TriggerKind::Upkeep, EndStep, or EndCombat
-

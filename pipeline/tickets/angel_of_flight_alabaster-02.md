@@ -1,6 +1,6 @@
 ---
 id: angel_of_flight_alabaster-02
-status: new
+status: deduped
 card: Angel of Flight Alabaster
 card_file: mtg-engine/src/cards/isd/angel_of_flight_alabaster.rs
 created: 2026-04-14T21:22:40Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-angel_of_flight_alabaster-audit
 audit_model: opus
 audit_tokens: 20797
 audit_duration: 406
+deduped_into: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ If Angel of Flight Alabaster is removed from the battlefield after its upkeep tr
 **Affected cards:**
 - Angel of Flight Alabaster
 - All cards with upkeep/end-step/end-combat triggered abilities that don't reference their source: the engine applies the same zone gate pattern across all step-trigger variants (triggers.rs:1299-1318)
-

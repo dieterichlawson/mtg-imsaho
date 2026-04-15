@@ -1,6 +1,6 @@
 ---
 id: snapcaster_mage-02
-status: new
+status: deduped
 card: Snapcaster Mage
 card_file: mtg-engine/src/cards/isd/snapcaster_mage.rs
 created: 2026-04-14T20:56:41Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-snapcaster_mage-audit
 audit_model: opus
 audit_tokens: 19116
 audit_duration: 381
+deduped_into: merged-trigger-target-recheck-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ Per CR 608.2b, when a triggered ability with targets resolves, the game checks w
 **Affected cards:**
 - Snapcaster Mage
 - Every card with a targeted triggered ability that resolves through `resolve_next_trigger` (Slayer of the Wicked, Morkrut Banshee, Fiend Hunter, etc.)
-

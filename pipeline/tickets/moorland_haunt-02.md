@@ -1,6 +1,6 @@
 ---
 id: moorland_haunt-02
-status: new
+status: deduped
 card: Moorland Haunt
 card_file: mtg-engine/src/cards/isd/moorland_haunt.rs
 created: 2026-04-14T21:31:23Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-moorland_haunt-audit
 audit_model: opus
 audit_tokens: 13727
 audit_duration: 355
+deduped_into: merged-activation-cost-variants-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ The exile is a cost of the activated ability (it appears before the colon in the
 **Affected cards:**
 - Moorland Haunt
 - Any card with an exile-from-graveyard activation cost where multiple candidates exist
-

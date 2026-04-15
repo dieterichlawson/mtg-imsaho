@@ -1,6 +1,6 @@
 ---
 id: moorland_haunt-01
-status: new
+status: deduped
 card: Moorland Haunt
 card_file: mtg-engine/src/cards/isd/moorland_haunt.rs
 created: 2026-04-14T21:31:23Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-moorland_haunt-audit
 audit_model: opus
 audit_tokens: 13727
 audit_duration: 355
+deduped_into: merged-creature-type-proxy-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ The oracle text says "Exile a creature card from your graveyard." A "creature ca
 **Affected cards:**
 - Moorland Haunt
 - Any other card that uses `power.is_some()` as a proxy for "is a creature card" in a non-battlefield zone
-

@@ -1,6 +1,6 @@
 ---
 id: past_in_flames-02
-status: new
+status: deduped
 card: Past in Flames
 card_file: mtg-engine/src/cards/isd/past_in_flames.rs
 created: 2026-04-14T20:57:22Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-past_in_flames-audit
 audit_model: opus
 audit_tokens: 20370
 audit_duration: 422
+deduped_into: merged-temp-effect-zone-persist-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ The `GrantFlashback` temporary effect targets cards by `ObjectId`, but the engin
 **Affected cards:**
 - Past in Flames
 - Snapcaster Mage (same GrantFlashback mechanism)
-

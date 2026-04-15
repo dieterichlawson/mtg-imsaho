@@ -1,6 +1,6 @@
 ---
 id: hanweir_watchkeep-02
-status: new
+status: deduped
 card: Hanweir Watchkeep
 card_file: mtg-engine/src/cards/isd/hanweir_watchkeep.rs
 created: 2026-04-14T21:30:20Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-hanweir_watchkeep-audit
 audit_model: opus
 audit_tokens: 18615
 audit_duration: 468
+deduped_into: merged-intervening-if-01
 ---
 
 ## Audit Finding
@@ -34,4 +35,3 @@ Both faces of this card have intervening-if triggered abilities (CR 603.4): the 
 - Hanweir Watchkeep // Bane of Hanweir
 - All ISD werewolves with intervening-if upkeep triggers
 - Any card with an intervening-if upkeep trigger
-

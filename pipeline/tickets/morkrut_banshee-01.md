@@ -1,6 +1,6 @@
 ---
 id: morkrut_banshee-01
-status: new
+status: deduped
 card: Morkrut Banshee
 card_file: mtg-engine/src/cards/isd/morkrut_banshee.rs
 created: 2026-04-14T21:54:58Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-morkrut_banshee-audit
 audit_model: opus
 audit_tokens: 16831
 audit_duration: 1625
+deduped_into: merged-trigger-target-recheck-01
 ---
 
 ## Audit Finding
@@ -30,4 +31,3 @@ Per CR 608.2b, when a triggered ability with targets tries to resolve, all targe
 **Affected cards:**
 - Morkrut Banshee
 - All cards with targeted triggered abilities (engine-wide)
-

@@ -1,6 +1,6 @@
 ---
 id: angel_of_flight_alabaster-01
-status: new
+status: deduped
 card: Angel of Flight Alabaster
 card_file: mtg-engine/src/cards/isd/angel_of_flight_alabaster.rs
 created: 2026-04-14T21:22:40Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-angel_of_flight_alabaster-audit
 audit_model: opus
 audit_tokens: 20797
 audit_duration: 406
+deduped_into: merged-your-upkeep-scope-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ The trigger dispatch fires the Angel's upkeep trigger during every player's upke
 **Affected cards:**
 - Angel of Flight Alabaster
 - All cards with "At the beginning of your upkeep" triggers: Bloodgift Demon, Endless Ranks of the Dead, Splinterfright, Curse of Oblivion (when checking enchanted player's upkeep), and others
-

@@ -1,6 +1,6 @@
 ---
 id: grimgrin_corpse_born-01
-status: new
+status: deduped
 card: Grimgrin, Corpse-Born
 card_file: mtg-engine/src/cards/isd/grimgrin_corpse_born.rs
 created: 2026-04-14T20:55:26Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-grimgrin_corpse_born-audit
 audit_model: opus
 audit_tokens: 15240
 audit_duration: 306
+deduped_into: merged-trigger-target-recheck-01
 ---
 
 ## Audit Finding
@@ -34,4 +35,3 @@ The engine checks target legality at resolution time for spells (CR 608.2b fizzl
 **Affected cards:**
 - Grimgrin, Corpse-Born (counter added when it shouldn't be)
 - All cards with targeted triggered abilities (engine-wide: no trigger resolution fizzle check)
-

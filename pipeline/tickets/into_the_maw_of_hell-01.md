@@ -1,6 +1,6 @@
 ---
 id: into_the_maw_of_hell-01
-status: new
+status: deduped
 card: Into the Maw of Hell
 card_file: mtg-engine/src/cards/isd/into_the_maw_of_hell.rs
 created: 2026-04-14T21:28:27Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-into_the_maw_of_hell-audit
 audit_model: opus
 audit_tokens: 12222
 audit_duration: 253
+deduped_into: merged-inline-damage-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ The card inlines damage by directly writing `damage_marked += 13` instead of usi
 
 **Affected cards:**
 - Into the Maw of Hell
-

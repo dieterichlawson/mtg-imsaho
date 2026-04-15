@@ -1,6 +1,6 @@
 ---
 id: geist_honored_monk-01
-status: new
+status: deduped
 card: Geist-Honored Monk
 card_file: mtg-engine/src/cards/isd/geist_honored_monk.rs
 created: 2026-04-14T21:25:27Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-geist_honored_monk-audit
 audit_model: opus
 audit_tokens: 13619
 audit_duration: 281
+deduped_into: merged-creature-type-proxy-01
 ---
 
 ## Audit Finding
@@ -29,4 +30,3 @@ The `dynamic_pt` method identifies creatures using `o.power.is_some()` instead o
 **Affected cards:**
 - Geist-Honored Monk
 - Any card whose `dynamic_pt` or behavior uses `power.is_some()` to count/identify creatures (engine-wide pattern)
-

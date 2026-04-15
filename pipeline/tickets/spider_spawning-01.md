@@ -1,6 +1,6 @@
 ---
 id: spider_spawning-01
-status: new
+status: deduped
 card: Spider Spawning
 card_file: mtg-engine/src/cards/isd/spider_spawning.rs
 created: 2026-04-14T21:14:04Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-spider_spawning-audit
 audit_model: opus
 audit_tokens: 15129
 audit_duration: 441
+deduped_into: merged-creature-type-proxy-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ The code identifies creature cards in the graveyard by checking `o.power.is_some
 - Gnaw to the Bone (gnaw_to_the_bone.rs:35 — same `power.is_some()` pattern)
 - Wreath of Geists (wreath_of_geists.rs:37 — same pattern)
 - Any future card that counts "creature cards" in a zone
-

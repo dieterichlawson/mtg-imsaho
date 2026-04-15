@@ -1,6 +1,6 @@
 ---
 id: creeping_renaissance-01
-status: new
+status: deduped
 card: Creeping Renaissance
 card_file: mtg-engine/src/cards/isd/creeping_renaissance.rs
 created: 2026-04-14T21:24:25Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-creeping_renaissance-audit
 audit_model: opus
 audit_tokens: 25009
 audit_duration: 511
+deduped_into: merged-zone-cleanup-characteristics-01
 ---
 
 ## Audit Finding
@@ -45,4 +46,3 @@ Per CR 400.7, an object that changes zones becomes a new object with no memory o
 **Affected cards:**
 - Creeping Renaissance
 - Any future card that checks card types for objects in the graveyard
-

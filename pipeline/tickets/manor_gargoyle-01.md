@@ -1,6 +1,6 @@
 ---
 id: manor_gargoyle-01
-status: new
+status: deduped
 card: Manor Gargoyle
 card_file: mtg-engine/src/cards/isd/manor_gargoyle.rs
 created: 2026-04-14T21:30:34Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-manor_gargoyle-audit
 audit_model: opus
 audit_tokens: 17084
 audit_duration: 338
+deduped_into: merged-temp-effect-zone-persist-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ If Manor Gargoyle activates its ability (pushing RemoveKeyword(Defender) and Gra
 **Affected cards:**
 - Manor Gargoyle
 - Any card that uses TemporaryEffect entries (RemoveKeyword, GrantKeyword, ModifyPT, CantBlock, etc.) and could leave/re-enter the battlefield in the same turn — this is an engine-wide issue
-

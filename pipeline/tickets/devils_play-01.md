@@ -1,6 +1,6 @@
 ---
 id: devils_play-01
-status: new
+status: deduped
 card: Devil's Play
 card_file: mtg-engine/src/cards/isd/devils_play.rs
 created: 2026-04-14T21:24:56Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-devils_play-audit
 audit_model: opus
 audit_tokens: 12112
 audit_duration: 301
+deduped_into: merged-inline-damage-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ Devil's Play uses `resolve_damage` (helpers.rs:49-83) which inlines damage deali
 **Affected cards:**
 - Devil's Play
 - All other cards using `resolve_damage`: Lightning Bolt, Brimstone Volley, Geistflame, and any card calling `helpers::resolve_damage`
-

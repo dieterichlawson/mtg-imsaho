@@ -1,6 +1,6 @@
 ---
 id: snapcaster_mage-01
-status: new
+status: deduped
 card: Snapcaster Mage
 card_file: mtg-engine/src/cards/isd/snapcaster_mage.rs
 created: 2026-04-14T20:56:41Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-snapcaster_mage-audit
 audit_model: opus
 audit_tokens: 19116
 audit_duration: 381
+deduped_into: merged-cost-none-free-01
 ---
 
 ## Audit Finding
@@ -33,4 +34,3 @@ When the targeted card has no mana cost (`CardData.cost == None`), both the Snap
 - Snapcaster Mage
 - Past in Flames (if it uses the same `PendingEffect::GrantFlashback` path)
 - Any future card that grants flashback dynamically
-

@@ -1,6 +1,6 @@
 ---
 id: delver_of_secrets-01
-status: new
+status: deduped
 card: Delver of Secrets
 card_file: mtg-engine/src/cards/isd/delver_of_secrets.rs
 created: 2026-04-14T20:53:00Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-delver_of_secrets-audit
 audit_model: opus
 audit_tokens: 7789
 audit_duration: 160
+deduped_into: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding
@@ -34,4 +35,3 @@ When a transformed Delver of Secrets (showing Insectile Aberration) leaves the b
 **Affected cards:**
 - Delver of Secrets // Insectile Aberration
 - All DFCs that use `apply_transform` (every werewolf, Bloodline Keeper, Cloistered Youth, etc.)
-

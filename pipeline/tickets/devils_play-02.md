@@ -1,6 +1,6 @@
 ---
 id: devils_play-02
-status: new
+status: deduped
 card: Devil's Play
 card_file: mtg-engine/src/cards/isd/devils_play.rs
 created: 2026-04-14T21:24:56Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-devils_play-audit
 audit_model: opus
 audit_tokens: 12112
 audit_duration: 301
+deduped_into: merged-flashback-cost-reduction-01
 ---
 
 ## Audit Finding
@@ -42,4 +43,3 @@ Per CR 601.2f, the total cost of a spell is computed by starting with the mana c
 **Affected cards:**
 - Devil's Play
 - All cards with `flashback_cost` (every flashback card in the engine)
-

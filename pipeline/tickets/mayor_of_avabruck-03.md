@@ -1,6 +1,6 @@
 ---
 id: mayor_of_avabruck-03
-status: new
+status: deduped
 card: Mayor of Avabruck
 card_file: mtg-engine/src/cards/isd/mayor_of_avabruck.rs
 created: 2026-04-14T20:57:26Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-mayor_of_avabruck-audit
 audit_model: opus
 audit_tokens: 15497
 audit_duration: 426
+deduped_into: merged-your-upkeep-scope-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ Howlpack Alpha's wolf-token ability says "your end step," meaning it should only
 **Affected cards:**
 - Howlpack Alpha (Mayor of Avabruck back face)
 - All cards with "at the beginning of your end step/upkeep/draw step" that use `TriggerKind::EndStep`/`Upkeep` without engine-level scope filtering
-

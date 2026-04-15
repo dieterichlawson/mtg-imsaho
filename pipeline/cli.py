@@ -348,9 +348,28 @@ def parse_audit_staging(staging_path: Path) -> dict:
         if check_match:
             finding["check"] = check_match.group(1).strip()
 
-        affected_match = re.search(r"\*\*Affected cards:\*\*\n(.+?)(?=\n##|$)", block, re.DOTALL)
+        affected_match = re.search(r"\*\*Affected cards:\*\*\n(.+?)(?=\n\*\*|\n##|$)", block, re.DOTALL)
         if affected_match:
             finding["affected_cards"] = affected_match.group(1).strip()
+
+        # Parse **Tests:** block — zero or more ### {slug} / Scenario: entries
+        tests = []
+        tests_match = re.search(r"\*\*Tests:\*\*\n(.+?)(?=\n##\s|\Z)", block, re.DOTALL)
+        if tests_match:
+            tests_body = tests_match.group(1).strip()
+            for entry in re.split(r"\n(?=###\s+)", tests_body):
+                entry = entry.strip()
+                if not entry.startswith("###"):
+                    continue
+                head, _, rest = entry.partition("\n")
+                slug = head[3:].strip()
+                scenario_match = re.search(r"Scenario:\s*(.+)", rest, re.DOTALL)
+                if slug and scenario_match:
+                    tests.append({
+                        "slug": slug,
+                        "scenario": scenario_match.group(1).strip(),
+                    })
+        finding["tests"] = tests
 
         if finding.get("description"):
             findings.append(finding)
@@ -509,7 +528,26 @@ Use the format specified in the prompt (Checks Performed, Finding N sections, In
                 if finding.get("check"):
                     body += f"**Required check:** {finding['check']}\n\n"
                 if finding.get("affected_cards"):
-                    body += f"**Affected cards:**\n{finding['affected_cards']}\n"
+                    body += f"**Affected cards:**\n{finding['affected_cards']}\n\n"
+
+                # Render ## Tests section. If the auditor supplied tests,
+                # emit them verbatim; otherwise scaffold a single default
+                # entry so every ticket has a consistent tests section.
+                body += "## Tests\n\n"
+                tests = finding.get("tests") or []
+                if not tests:
+                    default_slug = f"test_{card_snake}_{next_num - 1:02d}"
+                    default_scenario = (
+                        finding.get("description", "").split(".")[0][:240]
+                        or "See description above."
+                    )
+                    tests = [{"slug": default_slug, "scenario": default_scenario}]
+                for t in tests:
+                    body += f"### {t['slug']}\n"
+                    body += "Source ticket: (new)\n"
+                    body += "Implementation: (not yet written)\n"
+                    body += f"Scenario: {t['scenario']}\n\n"
+                body = body.rstrip() + "\n"
 
                 fm = {
                     "id": ticket_id,
@@ -910,7 +948,11 @@ def cmd_tickets(args):
         s = t["frontmatter"].get("status", "unknown")
         by_status.setdefault(s, []).append(t)
 
-    for status in ["new", "confirmed", "blocked", "fixed", "failed", "rejected", "merged"]:
+    # Primary statuses display in a fixed order; any remaining statuses
+    # (e.g. "deduped", or newly-introduced states) display afterwards.
+    primary = ["new", "confirmed", "blocked", "fixed", "failed", "rejected", "merged"]
+    remainder = [s for s in by_status if s not in primary]
+    for status in primary + sorted(remainder):
         group = by_status.get(status, [])
         if not group:
             continue
@@ -919,7 +961,10 @@ def cmd_tickets(args):
             fm = t["frontmatter"]
             card = fm.get("card", "?")
             tid = fm.get("id", "?")
-            print(f"  {tid:<30} {card}")
+            extra = ""
+            if fm.get("deduped_into"):
+                extra = f" → {fm['deduped_into']}"
+            print(f"  {tid:<30} {card}{extra}")
 
 
 # ─── Show command ─────────────────────────────────────────────────
@@ -1046,6 +1091,199 @@ def cmd_status(args):
                    cwd=str(PROJECT_ROOT))
 
 
+# ─── Consolidate command ─────────────────────────────────────────
+
+def parse_consolidation_input(text: str) -> dict:
+    """Parse a consolidation input file.
+
+    Expected format:
+
+        ---
+        slug: <short-slug>
+        ---
+
+        # <Title>
+
+        ## Description
+        <multi-line>
+
+        ## Engine path
+        <multi-line, optional>
+
+        ## Tests
+
+        ### <test_slug_1>
+        Source ticket: <ticket-id-or-omitted>
+        Scenario: <multi-line>
+
+        ### <test_slug_2>
+        Source ticket: <ticket-id>
+        Scenario: <multi-line>
+
+    Returns dict with: slug, title, description, engine_path (optional),
+    tests (list of {slug, source_ticket, scenario}).
+    """
+    if not text.startswith("---"):
+        raise ValueError("consolidation file must start with --- frontmatter")
+    try:
+        end = text.index("---", 3)
+    except ValueError:
+        raise ValueError("missing closing --- of frontmatter")
+    fm = {}
+    for line in text[3:end].strip().split("\n"):
+        if ":" in line:
+            k, v = line.split(":", 1)
+            fm[k.strip()] = v.strip()
+    body = text[end + 3:].strip()
+
+    slug = fm.get("slug")
+    if not slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+        raise ValueError(f"frontmatter 'slug' must be lowercase-kebab-case, got {slug!r}")
+
+    title_match = re.match(r"#\s+(.+?)\n", body + "\n")
+    if not title_match:
+        raise ValueError("body must start with a '# <title>' heading")
+    title = title_match.group(1).strip()
+
+    def section(name: str, required: bool = False) -> str | None:
+        m = re.search(
+            rf"##\s+{re.escape(name)}\n(.*?)(?=\n##\s|\Z)",
+            body, re.DOTALL)
+        if not m:
+            if required:
+                raise ValueError(f"missing required '## {name}' section")
+            return None
+        return m.group(1).strip()
+
+    description = section("Description", required=True)
+    engine_path = section("Engine path")
+
+    tests_section = section("Tests", required=True)
+    tests = []
+    # Each test starts with '### slug'
+    for block in re.split(r"\n(?=###\s+)", tests_section):
+        block = block.strip()
+        if not block.startswith("###"):
+            continue
+        head, _, rest = block.partition("\n")
+        test_slug = head[3:].strip()
+        if not re.fullmatch(r"[a-z0-9_][a-z0-9_]*", test_slug):
+            raise ValueError(f"test slug must be snake_case, got {test_slug!r}")
+        source = None
+        scenario_lines = []
+        in_scenario = False
+        for line in rest.split("\n"):
+            if in_scenario:
+                scenario_lines.append(line)
+                continue
+            if line.startswith("Source ticket:"):
+                val = line.split(":", 1)[1].strip()
+                source = val if val and val.lower() not in ("none", "null", "(new)", "") else None
+            elif line.startswith("Scenario:"):
+                in_scenario = True
+                rest_of_line = line.split(":", 1)[1].strip()
+                if rest_of_line:
+                    scenario_lines.append(rest_of_line)
+        scenario = "\n".join(scenario_lines).strip()
+        if not scenario:
+            raise ValueError(f"test {test_slug!r} missing Scenario")
+        tests.append({"slug": test_slug, "source_ticket": source, "scenario": scenario})
+    if not tests:
+        raise ValueError("## Tests section must contain at least one ### entry")
+
+    return {
+        "slug": slug, "title": title, "description": description,
+        "engine_path": engine_path, "tests": tests,
+    }
+
+
+def render_consolidated_body(parsed: dict) -> str:
+    lines = [f"# {parsed['title']}", "", "## Description", parsed["description"]]
+    if parsed.get("engine_path"):
+        lines += ["", "## Engine path", parsed["engine_path"]]
+    lines += ["", "## Tests", ""]
+    for t in parsed["tests"]:
+        lines.append(f"### {t['slug']}")
+        lines.append(f"Source ticket: {t['source_ticket'] or '(new)'}")
+        lines.append("Implementation: (not yet written)")
+        lines.append(f"Scenario: {t['scenario']}")
+        lines.append("")
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def cmd_consolidate(args):
+    input_path = Path(args.input)
+    if not input_path.exists():
+        print(f"ERROR: input file not found: {input_path}")
+        sys.exit(1)
+
+    parsed = parse_consolidation_input(input_path.read_text())
+    slug = parsed["slug"]
+
+    # Collect source ticket ids and verify they exist
+    source_ids = [t["source_ticket"] for t in parsed["tests"] if t["source_ticket"]]
+    missing = [sid for sid in source_ids
+               if not (TICKETS_DIR / f"{sid}.md").exists()]
+    if missing:
+        print(f"ERROR: source ticket(s) not found: {missing}")
+        sys.exit(1)
+
+    # Duplicates?
+    if len(source_ids) != len(set(source_ids)):
+        dupes = [x for x in source_ids if source_ids.count(x) > 1]
+        print(f"ERROR: source ticket appears in multiple tests: {set(dupes)}")
+        sys.exit(1)
+
+    # Mint new id: merged-<slug>-NN
+    existing = sorted(TICKETS_DIR.glob(f"merged-{slug}-*.md"))
+    nums = []
+    for f in existing:
+        m = re.search(rf"merged-{re.escape(slug)}-(\d+)", f.stem)
+        if m:
+            nums.append(int(m.group(1)))
+    next_num = max(nums, default=0) + 1
+    new_id = f"merged-{slug}-{next_num:02d}"
+
+    if args.dry_run:
+        print(f"\nWould create: {new_id}")
+        print(f"Would mark {len(source_ids)} source ticket(s) as deduped:")
+        for sid in source_ids:
+            print(f"  {sid} → {new_id}")
+        return
+
+    # Write new ticket
+    fm = {
+        "id": new_id,
+        "status": "new",
+        "card": "multiple",
+        "created": now_iso(),
+        "kind": "consolidated",
+    }
+    if source_ids:
+        fm["source_tickets"] = ", ".join(source_ids)
+    body = render_consolidated_body(parsed)
+    write_ticket(new_id, fm, body)
+
+    # Mark each source ticket as deduped
+    for sid in source_ids:
+        path = TICKETS_DIR / f"{sid}.md"
+        ticket = parse_ticket(path)
+        ticket["frontmatter"]["status"] = "deduped"
+        ticket["frontmatter"]["deduped_into"] = new_id
+        write_ticket(sid, ticket["frontmatter"], ticket["body"])
+
+    print(f"Created {new_id} with {len(parsed['tests'])} test(s)")
+    print(f"Marked {len(source_ids)} source ticket(s) as status=deduped")
+
+    # Staging files are ephemeral transport; remove once consumed successfully.
+    if not args.keep_input:
+        try:
+            input_path.unlink()
+            print(f"Removed staging file: {input_path}")
+        except OSError as e:
+            print(f"WARNING: could not remove staging file {input_path}: {e}")
+
+
 # ─── Main ─────────────────────────────────────────────────────────
 
 def main():
@@ -1098,6 +1336,15 @@ def main():
     # status
     sub.add_parser("status", help="Show metrics dashboard")
 
+    # consolidate
+    p = sub.add_parser("consolidate",
+                       help="Create a merged-* ticket from a consolidation input file and mark source tickets as deduped")
+    p.add_argument("--input", required=True,
+                   help="Path to consolidation markdown input file")
+    p.add_argument("--keep-input", action="store_true",
+                   help="Do not delete the input file after successful consolidation")
+    p.add_argument("--dry-run", action="store_true")
+
     args = parser.parse_args()
 
     TICKETS_DIR.mkdir(exist_ok=True)
@@ -1107,7 +1354,7 @@ def main():
         "audit": cmd_audit, "test": cmd_test, "fix": cmd_fix,
         "merge": cmd_merge, "abandon": cmd_abandon,
         "tickets": cmd_tickets, "show": cmd_show,
-        "status": cmd_status,
+        "status": cmd_status, "consolidate": cmd_consolidate,
     }
     commands[args.command](args)
 

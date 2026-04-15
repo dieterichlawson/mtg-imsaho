@@ -1,6 +1,6 @@
 ---
 id: heartless_summoning-02
-status: new
+status: deduped
 card: Heartless Summoning
 card_file: mtg-engine/src/cards/isd/heartless_summoning.rs
 created: 2026-04-14T21:29:30Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-heartless_summoning-audit
 audit_model: opus
 audit_tokens: 19813
 audit_duration: 410
+deduped_into: merged-flashback-cost-reduction-01
 ---
 
 ## Audit Finding
@@ -43,4 +44,3 @@ When a creature with `can_cast_from_graveyard()` (e.g., Skaab Ruinator) is in th
 **Affected cards:**
 - Heartless Summoning + Skaab Ruinator (creature with can_cast_from_graveyard)
 - Any ReduceCost effect + any cast-from-graveyard creature
-

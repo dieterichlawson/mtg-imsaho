@@ -1,6 +1,6 @@
 ---
 id: back_from_the_brink-02
-status: new
+status: deduped
 card: Back from the Brink
 card_file: mtg-engine/src/cards/isd/back_from_the_brink.rs
 created: 2026-04-14T21:24:13Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-back_from_the_brink-audit
 audit_model: opus
 audit_tokens: 20377
 audit_duration: 499
+deduped_into: merged-activated-no-stack-01
 ---
 
 ## Audit Finding
@@ -29,4 +30,3 @@ Per CR 602.2a, activating an activated ability creates an instance of it on the 
 **Affected cards:**
 - Back from the Brink
 - All cards with activated abilities (engine-wide)
-

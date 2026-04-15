@@ -1,6 +1,6 @@
 ---
 id: angel_of_flight_alabaster-03
-status: new
+status: deduped
 card: Angel of Flight Alabaster
 card_file: mtg-engine/src/cards/isd/angel_of_flight_alabaster.rs
 created: 2026-04-14T21:22:40Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-angel_of_flight_alabaster-audit
 audit_model: opus
 audit_tokens: 20797
 audit_duration: 406
+deduped_into: merged-trigger-target-recheck-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ Per CR 608.2b, a triggered ability with targets must verify that all targets are
 **Affected cards:**
 - Angel of Flight Alabaster
 - All cards with targeted triggered abilities (Snapcaster Mage, etc.)
-

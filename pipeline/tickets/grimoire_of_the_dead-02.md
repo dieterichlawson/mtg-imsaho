@@ -1,6 +1,6 @@
 ---
 id: grimoire_of_the_dead-02
-status: new
+status: deduped
 card: Grimoire of the Dead
 card_file: mtg-engine/src/cards/isd/grimoire_of_the_dead.rs
 created: 2026-04-14T20:57:12Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-grimoire_of_the_dead-audit
 audit_model: opus
 audit_tokens: 16027
 audit_duration: 412
+deduped_into: merged-zone-cleanup-characteristics-01
 ---
 
 ## Audit Finding
@@ -39,4 +40,3 @@ The ability adds "Zombie" to `obj.subtypes` and `Color::Black` to `obj.colors` d
 **Affected cards:**
 - Grimoire of the Dead
 - Any card that adds subtypes or colors to objects at runtime (engine-wide: zone-change cleanup gap)
-

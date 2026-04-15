@@ -1,6 +1,6 @@
 ---
 id: bloodgift_demon-02
-status: new
+status: deduped
 card: Bloodgift Demon
 card_file: mtg-engine/src/cards/isd/bloodgift_demon.rs
 created: 2026-04-14T21:19:54Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-bloodgift_demon-audit
 audit_model: opus
 audit_tokens: 12882
 audit_duration: 241
+deduped_into: merged-your-upkeep-scope-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ The oracle says "At the beginning of **your** upkeep," meaning the trigger event
 **Affected cards:**
 - Bloodgift Demon
 - All cards using `TriggerKind::Upkeep` with "your upkeep" text (e.g., Angel of Flight Alabaster, Curse of the Pierced Heart, Curse of Oblivion, Endless Ranks of the Dead, Splinterfright, and all DFC transform-check triggers)
-

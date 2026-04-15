@@ -345,6 +345,25 @@ Rules for what qualifies:
 - Do NOT add card-specific findings — those go in the finding files
 - If nothing generalizable was found, skip this step
 
+## When to bundle tests in one finding
+
+A finding can carry multiple tests when the bugs share a single engine
+fix. The unit of a finding is "one engine change" — not "one observable
+symptom." Two triggers of the same latent bug inside the same card (e.g.,
+two activated abilities that both inline damage) belong in one finding
+with two tests, because fixing either one requires the same engine change
+and you want the test suite to exercise both angles.
+
+Emit a multi-test finding when ALL of these hold:
+- A single engine code change would fix every symptom you list
+- Each test exercises a distinct scenario (different card state,
+  different trigger path, different resolution branch) — not minor
+  parameter variants of the same assertion
+- The bugs are visible in this one card's audit (do not speculate about
+  other cards; that is for the dedup pass)
+
+Otherwise emit separate findings. When in doubt, split.
+
 ## Output
 
 Write ONE structured file to the staging path specified in your per-agent
@@ -391,6 +410,19 @@ status: correct (or note any card data issues)
 **Affected cards:**
 - {This card}
 - {Other cards with same issue, if known}
+
+**Tests:**
+### {test_slug_1}
+Scenario: {what the test should set up, do, and assert}
+
+### {test_slug_2}
+Scenario: {another distinct scenario covered by the same engine fix}
+```
+
+The `**Tests:**` block is REQUIRED on every finding. A simple bug has one
+`### {slug}` entry. A bundled bug (per "When to bundle tests in one
+finding" above) has multiple entries under a single finding. Slugs must be
+snake_case and unique within the finding.
 
 ## Finding 2
 {same format}

@@ -1,6 +1,6 @@
 ---
 id: kessig_cagebreakers-01
-status: new
+status: deduped
 card: Kessig Cagebreakers
 card_file: mtg-engine/src/cards/isd/kessig_cagebreakers.rs
 created: 2026-04-14T21:13:42Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-kessig_cagebreakers-audit
 audit_model: opus
 audit_tokens: 17473
 audit_duration: 419
+deduped_into: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding
@@ -35,4 +36,3 @@ Both the engine's attack-trigger resolution path and the card's own `on_attacks`
 - Hamlet Captain (same pattern at hamlet_captain.rs:45-47)
 - Trepanation Blade (same pattern at trepanation_blade.rs:57-60)
 - All cards using `TriggerKind::Attacks` with `on_attacks` handlers
-

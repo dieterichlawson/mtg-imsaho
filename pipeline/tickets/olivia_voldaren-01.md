@@ -1,6 +1,6 @@
 ---
 id: olivia_voldaren-01
-status: new
+status: deduped
 card: Olivia Voldaren
 card_file: mtg-engine/src/cards/isd/olivia_voldaren.rs
 created: 2026-04-14T20:44:31Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-olivia_voldaren-audit
 audit_model: opus
 audit_tokens: 17927
 audit_duration: 323
+deduped_into: merged-inline-damage-01
 ---
 
 ## Audit Finding
@@ -29,4 +30,3 @@ The first activated ability inlines damage instead of routing through the centra
 
 **Affected cards:**
 - Olivia Voldaren
-

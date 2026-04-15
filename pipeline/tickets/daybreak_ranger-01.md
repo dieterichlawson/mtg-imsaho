@@ -1,6 +1,6 @@
 ---
 id: daybreak_ranger-01
-status: new
+status: deduped
 card: Daybreak Ranger
 card_file: mtg-engine/src/cards/isd/daybreak_ranger.rs
 created: 2026-04-14T21:22:02Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-daybreak_ranger-audit
 audit_model: opus
 audit_tokens: 12078
 audit_duration: 368
+deduped_into: merged-inline-damage-01
 ---
 
 ## Audit Finding
@@ -30,4 +31,3 @@ The front face's activated ability deals damage by directly mutating `obj.damage
 **Affected cards:**
 - Daybreak Ranger (front face activated ability)
 - Any other card that inlines `damage_marked +=` instead of using `PendingEffect::DealDamage`
-

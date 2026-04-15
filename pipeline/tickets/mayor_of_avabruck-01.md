@@ -1,6 +1,6 @@
 ---
 id: mayor_of_avabruck-01
-status: new
+status: deduped
 card: Mayor of Avabruck
 card_file: mtg-engine/src/cards/isd/mayor_of_avabruck.rs
 created: 2026-04-14T20:57:26Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-mayor_of_avabruck-audit
 audit_model: opus
 audit_tokens: 15497
 audit_duration: 426
+deduped_into: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding
@@ -30,4 +31,3 @@ When Howlpack Alpha (the transformed back face) leaves the battlefield, `move_ob
 **Affected cards:**
 - Mayor of Avabruck // Howlpack Alpha
 - All double-faced cards using `helpers::apply_transform` (known engine-wide issue per auditor-insights.md)
-

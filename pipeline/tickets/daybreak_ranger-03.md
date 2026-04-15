@@ -1,6 +1,6 @@
 ---
 id: daybreak_ranger-03
-status: new
+status: deduped
 card: Daybreak Ranger
 card_file: mtg-engine/src/cards/isd/daybreak_ranger.rs
 created: 2026-04-14T21:22:02Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-daybreak_ranger-audit
 audit_model: opus
 audit_tokens: 12078
 audit_duration: 368
+deduped_into: merged-ability-targets-protection-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ The activated ability target enumeration function `generate_ability_targets` (en
 - Daybreak Ranger (front face)
 - Nightfall Predator (back face fight ability)
 - ALL cards with targeted activated abilities (engine-wide)
-

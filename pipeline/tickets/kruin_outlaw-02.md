@@ -1,6 +1,6 @@
 ---
 id: kruin_outlaw-02
-status: new
+status: deduped
 card: Kruin Outlaw
 card_file: mtg-engine/src/cards/isd/kruin_outlaw.rs
 created: 2026-04-14T20:54:55Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-kruin_outlaw-audit
 audit_model: opus
 audit_tokens: 13110
 audit_duration: 275
+deduped_into: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ When Terror of Kruin Pass (back face) leaves the battlefield (dies, is exiled, b
 **Affected cards:**
 - Kruin Outlaw / Terror of Kruin Pass
 - All DFCs that use `helpers::apply_transform` (all ISD werewolves, Bloodline Keeper, etc.)
-

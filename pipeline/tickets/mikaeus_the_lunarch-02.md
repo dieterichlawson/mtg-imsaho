@@ -1,6 +1,6 @@
 ---
 id: mikaeus_the_lunarch-02
-status: new
+status: deduped
 card: Mikaeus, the Lunarch
 card_file: mtg-engine/src/cards/isd/mikaeus_the_lunarch.rs
 created: 2026-04-14T20:45:48Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-mikaeus_the_lunarch-audit
 audit_model: opus
 audit_tokens: 19324
 audit_duration: 400
+deduped_into: merged-activation-cost-variants-01
 ---
 
 ## Audit Finding
@@ -36,4 +37,3 @@ audit_duration: 400
 **Affected cards:**
 - Mikaeus, the Lunarch
 - Any card with counter-removal activation costs (see insight "Counter-removal activation costs are not supported by the engine")
-

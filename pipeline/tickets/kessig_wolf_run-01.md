@@ -1,6 +1,6 @@
 ---
 id: kessig_wolf_run-01
-status: new
+status: deduped
 card: Kessig Wolf Run
 card_file: mtg-engine/src/cards/isd/kessig_wolf_run.rs
 created: 2026-04-14T21:29:34Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-kessig_wolf_run-audit
 audit_model: opus
 audit_tokens: 14580
 audit_duration: 309
+deduped_into: merged-temp-effect-zone-persist-01
 ---
 
 ## Audit Finding
@@ -33,4 +34,3 @@ The +X/+0 and trample effects are stored as `TemporaryEffect` entries keyed by t
 **Affected cards:**
 - Kessig Wolf Run
 - Every card that pushes TemporaryEffect entries targeting another object (Giant Growth, Fires of Undeath, Moment of Heroism, Ranger's Guile, etc.)
-

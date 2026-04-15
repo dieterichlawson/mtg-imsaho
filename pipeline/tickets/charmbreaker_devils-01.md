@@ -1,6 +1,6 @@
 ---
 id: charmbreaker_devils-01
-status: new
+status: deduped
 card: Charmbreaker Devils
 card_file: mtg-engine/src/cards/isd/charmbreaker_devils.rs
 created: 2026-04-14T21:23:50Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-charmbreaker_devils-audit
 audit_model: opus
 audit_tokens: 23951
 audit_duration: 476
+deduped_into: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ If Charmbreaker Devils' upkeep trigger is placed on the stack and the Devils the
 **Affected cards:**
 - Charmbreaker Devils
 - All cards with UpkeepTrigger whose abilities don't reference the source (engine-wide resolver gate)
-

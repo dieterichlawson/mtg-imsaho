@@ -1,6 +1,6 @@
 ---
 id: tree_of_redemption-03
-status: new
+status: deduped
 card: Tree of Redemption
 card_file: mtg-engine/src/cards/isd/tree_of_redemption.rs
 created: 2026-04-14T21:48:34Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-tree_of_redemption-audit
 audit_model: opus
 audit_tokens: 9193
 audit_duration: 1139
+deduped_into: merged-activated-no-stack-01
 ---
 
 ## Audit Finding
@@ -35,4 +36,3 @@ Per CR 602.2, activated abilities go on the stack and resolve when they receive 
 **Affected cards:**
 - Tree of Redemption
 - All cards with activated abilities (engine-wide)
-

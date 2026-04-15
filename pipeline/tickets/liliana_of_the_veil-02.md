@@ -1,6 +1,6 @@
 ---
 id: liliana_of_the_veil-02
-status: new
+status: deduped
 card: Liliana of the Veil
 card_file: mtg-engine/src/cards/isd/liliana_of_the_veil.rs
 created: 2026-04-14T20:55:10Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-liliana_of_the_veil-audit
 audit_model: opus
 audit_tokens: 11904
 audit_duration: 290
+deduped_into: merged-temp-effect-zone-persist-01
 ---
 
 ## Audit Finding
@@ -33,4 +34,3 @@ Per CR 400.7, an object that changes zones becomes a new object with no memory o
 - Liliana of the Veil
 - All planeswalkers (engine-wide bug)
 - All permanents with once-per-turn activated abilities
-

@@ -1,6 +1,6 @@
 ---
 id: mayor_of_avabruck-02
-status: new
+status: deduped
 card: Mayor of Avabruck
 card_file: mtg-engine/src/cards/isd/mayor_of_avabruck.rs
 created: 2026-04-14T20:57:26Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-mayor_of_avabruck-audit
 audit_model: opus
 audit_tokens: 15497
 audit_duration: 426
+deduped_into: merged-intervening-if-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ Both transform abilities use intervening-if clauses ("if no spells were cast las
 - Mayor of Avabruck // Howlpack Alpha
 - All Innistrad werewolves with intervening-if transform conditions
 - Any card with an intervening-if triggered ability using the engine's trigger dispatch
-

@@ -1,6 +1,6 @@
 ---
 id: instigator_gang-03
-status: new
+status: deduped
 card: Instigator Gang
 card_file: mtg-engine/src/cards/isd/instigator_gang.rs
 created: 2026-04-14T21:28:14Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-instigator_gang-audit
 audit_model: opus
 audit_tokens: 13518
 audit_duration: 264
+deduped_into: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding
@@ -30,4 +31,3 @@ When Wildblood Pack (the transformed back face) leaves the battlefield, `move_ob
 **Affected cards:**
 - Instigator Gang / Wildblood Pack
 - All DFCs that use `helpers::apply_transform`
-

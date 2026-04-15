@@ -1,6 +1,6 @@
 ---
 id: balefire_dragon-01
-status: new
+status: deduped
 card: Balefire Dragon
 card_file: mtg-engine/src/cards/isd/balefire_dragon.rs
 created: 2026-04-14T20:36:05Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-balefire_dragon-audit
 audit_model: opus
 audit_tokens: 6049
 audit_duration: 124
+deduped_into: merged-inline-damage-01
 ---
 
 ## Audit Finding
@@ -39,4 +40,3 @@ The triggered ability deals damage by directly writing `obj.damage_marked += amo
 **Affected cards:**
 - Balefire Dragon
 - Any other card using inline `obj.damage_marked += amount` for non-combat damage in a triggered/activated ability
-

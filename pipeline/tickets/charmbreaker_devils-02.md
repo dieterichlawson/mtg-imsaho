@@ -1,6 +1,6 @@
 ---
 id: charmbreaker_devils-02
-status: new
+status: deduped
 card: Charmbreaker Devils
 card_file: mtg-engine/src/cards/isd/charmbreaker_devils.rs
 created: 2026-04-14T21:23:50Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-charmbreaker_devils-audit
 audit_model: opus
 audit_tokens: 23951
 audit_duration: 476
+deduped_into: merged-temp-effect-zone-persist-01
 ---
 
 ## Audit Finding
@@ -33,4 +34,3 @@ If Charmbreaker Devils receives +4/+0 from its second ability, then leaves the b
 **Affected cards:**
 - Charmbreaker Devils
 - All cards that use `TemporaryEffect::ModifyPT` (engine-wide: any +N/+N until end of turn effect)
-

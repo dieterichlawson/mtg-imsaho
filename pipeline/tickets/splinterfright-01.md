@@ -1,6 +1,6 @@
 ---
 id: splinterfright-01
-status: new
+status: deduped
 card: Splinterfright
 card_file: mtg-engine/src/cards/isd/splinterfright.rs
 created: 2026-04-14T22:53:48Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-splinterfright-audit
 audit_model: opus
 audit_tokens: 15601
 audit_duration: 5057
+deduped_into: merged-your-upkeep-scope-01
 ---
 
 ## Audit Finding
@@ -30,4 +31,3 @@ Per CR 603.4, "at the beginning of your upkeep" means the trigger condition is "
 **Affected cards:**
 - Splinterfright
 - All cards with `TriggerKind::Upkeep` that say "your upkeep" (Angel of Flight Alabaster, Bloodgift Demon, Charmbreaker Devils, etc.)
-

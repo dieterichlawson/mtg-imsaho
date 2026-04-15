@@ -1,6 +1,6 @@
 ---
 id: unburial_rites-01
-status: new
+status: deduped
 card: Unburial Rites
 card_file: mtg-engine/src/cards/isd/unburial_rites.rs
 created: 2026-04-14T22:50:32Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-unburial_rites-audit
 audit_model: opus
 audit_tokens: 10537
 audit_duration: 4811
+deduped_into: merged-flashback-cost-reduction-01
 ---
 
 ## Audit Finding
@@ -44,4 +45,3 @@ Per CR 601.2f and the Scryfall ruling, cost reductions and increases apply to al
 **Affected cards:**
 - Unburial Rites
 - All cards with flashback costs (Think Twice, Lingering Souls, Faithless Looting, Devil's Play, Ancient Grudge, Bump in the Night, Dream Twist, etc.)
-

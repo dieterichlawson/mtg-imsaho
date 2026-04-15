@@ -1,6 +1,6 @@
 ---
 id: grimoire_of_the_dead-04
-status: new
+status: deduped
 card: Grimoire of the Dead
 card_file: mtg-engine/src/cards/isd/grimoire_of_the_dead.rs
 created: 2026-04-14T20:57:12Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-grimoire_of_the_dead-audit
 audit_model: opus
 audit_tokens: 16027
 audit_duration: 412
+deduped_into: merged-activation-cost-variants-01
 ---
 
 ## Audit Finding
@@ -38,4 +39,3 @@ audit_duration: 412
 **Affected cards:**
 - Grimoire of the Dead
 - Any card with discard-as-cost activated abilities (engine-wide: ActivatedAbilityDef lacks discard cost support)
-

@@ -1,6 +1,6 @@
 ---
 id: bloodgift_demon-01
-status: new
+status: deduped
 card: Bloodgift Demon
 card_file: mtg-engine/src/cards/isd/bloodgift_demon.rs
 created: 2026-04-14T21:19:54Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-bloodgift_demon-audit
 audit_model: opus
 audit_tokens: 12882
 audit_duration: 241
+deduped_into: merged-target-as-choose-01
 ---
 
 ## Audit Finding
@@ -35,4 +36,3 @@ The oracle text says "target player," which per CR 603.3d means the target must 
 **Affected cards:**
 - Bloodgift Demon
 - Any other card with a targeted triggered ability that uses `target_requirement: None` and implements targeting manually in its on_resolve/on_upkeep handler
-

@@ -1,6 +1,6 @@
 ---
 id: splinterfright-02
-status: new
+status: deduped
 card: Splinterfright
 card_file: mtg-engine/src/cards/isd/splinterfright.rs
 created: 2026-04-14T22:53:48Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-splinterfright-audit
 audit_model: opus
 audit_tokens: 15601
 audit_duration: 5057
+deduped_into: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ Per CR 112.7a, "Once triggered, an ability exists on the stack independently of 
 **Affected cards:**
 - Splinterfright
 - All cards with upkeep/end-step/end-combat triggers whose effects don't reference the source permanent (the zone gate at triggers.rs:1300, 1307, 1314 applies to EndCombatTrigger, UpkeepTrigger, and EndStepTrigger identically)
-

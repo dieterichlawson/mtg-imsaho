@@ -1,6 +1,6 @@
 ---
 id: back_from_the_brink-04
-status: new
+status: deduped
 card: Back from the Brink
 card_file: mtg-engine/src/cards/isd/back_from_the_brink.rs
 created: 2026-04-14T21:24:13Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-back_from_the_brink-audit
 audit_model: opus
 audit_tokens: 20377
 audit_duration: 499
+deduped_into: merged-token-copy-inconsistent-01
 ---
 
 ## Audit Finding
@@ -30,4 +31,3 @@ Per CR 712.12, a token that's a copy of a transforming double-faced card can't t
 **Affected cards:**
 - Back from the Brink (when targeting any DFC creature)
 - Any card that creates token copies of DFCs via create_token_copy (e.g., Cackling Counterpart, Rite of Replication if implemented)
-

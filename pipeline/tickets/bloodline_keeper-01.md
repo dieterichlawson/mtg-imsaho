@@ -1,6 +1,6 @@
 ---
 id: bloodline_keeper-01
-status: new
+status: deduped
 card: Bloodline Keeper
 card_file: mtg-engine/src/cards/isd/bloodline_keeper.rs
 created: 2026-04-14T20:44:07Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-bloodline_keeper-audit
 audit_model: opus
 audit_tokens: 11343
 audit_duration: 299
+deduped_into: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding
@@ -31,4 +32,3 @@ When Bloodline Keeper transforms into Lord of Lineage and then leaves the battle
 **Affected cards:**
 - Bloodline Keeper // Lord of Lineage
 - All other DFCs that set `obj.name` during transform (engine-level bug in `move_object`)
-
