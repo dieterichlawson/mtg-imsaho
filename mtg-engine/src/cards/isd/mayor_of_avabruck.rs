@@ -99,6 +99,13 @@ impl CardBehavior for MayorOfAvabruck {
         })
     }
 
+    fn step_trigger_scope(&self, kind: &TriggerKind, is_back_face: bool) -> crate::cards::TriggerScope {
+        match kind {
+            TriggerKind::EndStep if is_back_face => crate::cards::TriggerScope::Your,
+            _ => crate::cards::TriggerScope::Each,
+        }
+    }
+
     fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
         Self::werewolf_should_transform(state, object_id)
     }

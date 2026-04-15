@@ -839,12 +839,14 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
                         .collect();
                     for (obj_id, card_id, controller, is_transformed) in permanents {
-                        if registry.get(card_id).is_some() {
-                            // Use face-aware lookup: only fire if the currently visible
-                            // face has this step trigger. A front-face card must not
-                            // fire a trigger defined only on the back face (Bug E).
+                        if let Some(behavior) = registry.get(card_id) {
                             let desc = face_trigger_description(registry, card_id, &kind, is_transformed);
                             if !desc.is_empty() {
+                                if behavior.step_trigger_scope(&kind, is_transformed) == crate::cards::TriggerScope::Your
+                                    && controller != active_player
+                                {
+                                    continue;
+                                }
                                 let trigger = match kind {
                                     crate::cards::TriggerKind::Upkeep => PendingTrigger::UpkeepTrigger {
                                         object_id: obj_id,

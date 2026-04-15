@@ -37,6 +37,13 @@ impl CardBehavior for BloodgiftDemon {
         }
     }
 
+    fn step_trigger_scope(&self, kind: &TriggerKind, _is_back_face: bool) -> crate::cards::TriggerScope {
+        match kind {
+            TriggerKind::Upkeep => crate::cards::TriggerScope::Your,
+            _ => crate::cards::TriggerScope::Each,
+        }
+    }
+
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,

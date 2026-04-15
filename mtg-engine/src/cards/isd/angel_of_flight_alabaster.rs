@@ -50,6 +50,13 @@ impl CardBehavior for AngelOfFlightAlabaster {
                 .is_some_and(|d| d.subtypes.iter().any(|s| s == "Spirit"))
     }
 
+    fn step_trigger_scope(&self, kind: &TriggerKind, _is_back_face: bool) -> crate::cards::TriggerScope {
+        match kind {
+            TriggerKind::Upkeep => crate::cards::TriggerScope::Your,
+            _ => crate::cards::TriggerScope::Each,
+        }
+    }
+
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
