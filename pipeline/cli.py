@@ -964,6 +964,8 @@ def cmd_tickets(args):
             extra = ""
             if fm.get("deduped_into"):
                 extra = f" → {fm['deduped_into']}"
+            elif fm.get("duplicate_of"):
+                extra = f" → {fm['duplicate_of']}"
             print(f"  {tid:<30} {card}{extra}")
 
 
@@ -1284,6 +1286,142 @@ def cmd_consolidate(args):
             print(f"WARNING: could not remove staging file {input_path}: {e}")
 
 
+# ─── Dedup command ──────────────────────────────────────────────
+
+DEDUP_MAX_ATTEMPTS = 3
+
+
+def cmd_dedup(args):
+    """Spawn a dedup agent to draft a consolidation input file and ingest it.
+
+    Given a cluster of ticket IDs believed to share an engine root cause,
+    the dedup agent writes a `pipeline/staging/consolidation-<slug>.md`
+    file. If the output fails to parse, the agent is re-spawned with the
+    parser error appended, up to DEDUP_MAX_ATTEMPTS times.
+    """
+    ticket_ids = [t.strip() for t in args.tickets.split(",") if t.strip()]
+    if len(ticket_ids) < 2:
+        print("ERROR: dedup requires at least 2 ticket IDs")
+        sys.exit(1)
+
+    # Validate tickets exist and are not already deduped
+    ticket_bodies = []
+    for tid in ticket_ids:
+        path = TICKETS_DIR / f"{tid}.md"
+        if not path.exists():
+            print(f"ERROR: ticket not found: {tid}")
+            sys.exit(1)
+        t = parse_ticket(path)
+        status = t["frontmatter"].get("status")
+        if status in ("deduped", "duplicate", "merged"):
+            print(f"ERROR: {tid} already closed (status={status})")
+            sys.exit(1)
+        ticket_bodies.append((tid, path.read_text()))
+
+    slug = args.slug
+    if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
+        print(f"ERROR: --slug must be lowercase-kebab-case, got {slug!r}")
+        sys.exit(1)
+
+    staging_file = STAGING_DIR / f"consolidation-{slug}.md"
+    shared_prompt = (PROMPTS_DIR / "dedup.md").read_text()
+
+    tickets_section = "\n\n---\n\n".join(
+        f"## Source ticket: {tid}\n\n{body}" for tid, body in ticket_bodies
+    )
+
+    per_agent_base = f"""## Cluster to consolidate
+
+Slug for the merged ticket: `{slug}`
+Number of source tickets: {len(ticket_ids)}
+
+{tickets_section}
+
+### Output
+Write your consolidation output to `pipeline/staging/consolidation-{slug}.md`.
+Follow the format in the shared prompt exactly — Python parses it strictly.
+"""
+
+    if args.dry_run:
+        print(f"[dry-run] Would spawn dedup agent for {len(ticket_ids)} tickets "
+              f"(slug={slug}, model={args.model})")
+        return
+
+    retry_note = ""
+    last_error = None
+    for attempt in range(1, DEDUP_MAX_ATTEMPTS + 1):
+        print(f"\nSpawning dedup agent (attempt {attempt}/{DEDUP_MAX_ATTEMPTS})...")
+        prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
+        result = run_agent(prompt, args.model, args.effort)
+
+        if result.get("is_error"):
+            last_error = result.get("error_message") or "unknown agent error"
+            print(f"  Agent error: {last_error} ({result['duration']}s)")
+            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                          f"Previous attempt errored: {last_error}\n")
+            continue
+
+        if not staging_file.exists():
+            last_error = f"agent did not write {staging_file}"
+            print(f"  {last_error} ({result['duration']}s, {result['tokens']} tok)")
+            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                          f"Previous attempt did not create {staging_file}. "
+                          f"Write the consolidation markdown to that exact path.\n")
+            continue
+
+        try:
+            parse_consolidation_input(staging_file.read_text())
+        except ValueError as e:
+            last_error = str(e)
+            print(f"  Parse error: {e} ({result['duration']}s, {result['tokens']} tok)")
+            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
+                          f"Previous attempt produced invalid output. Parse error:\n"
+                          f"    {e}\n"
+                          f"The staging file at {staging_file} has been preserved. "
+                          f"Read it, fix the issue, and overwrite it.\n")
+            continue
+
+        # Parsed successfully — run consolidate
+        print(f"  Agent produced valid staging file ({result['duration']}s, {result['tokens']} tok)")
+        consolidate_args = argparse.Namespace(
+            input=str(staging_file),
+            keep_input=args.keep_input,
+            dry_run=False,
+        )
+        cmd_consolidate(consolidate_args)
+        return
+
+    print(f"\nERROR: dedup failed after {DEDUP_MAX_ATTEMPTS} attempt(s). "
+          f"Last error: {last_error}")
+    print(f"Staging file (if any) preserved at {staging_file} for inspection.")
+    sys.exit(1)
+
+
+# ─── Close-duplicate command ────────────────────────────────────
+
+def cmd_close_duplicate(args):
+    """Mark a ticket as closed because it duplicates a bug tracked elsewhere.
+
+    Unlike `consolidate`, this closes a single ticket without creating a new
+    merged-* ticket. Use it when the bug is already tracked (existing test,
+    bug ID in another system, etc.).
+    """
+    ticket_id = args.ticket
+    path = TICKETS_DIR / f"{ticket_id}.md"
+    if not path.exists():
+        print(f"ERROR: ticket not found: {ticket_id}")
+        sys.exit(1)
+
+    ticket = parse_ticket(path)
+    fm = ticket["frontmatter"]
+    fm["status"] = "duplicate"
+    fm["duplicate_of"] = args.duplicate_of
+    if args.reason:
+        fm["duplicate_reason"] = args.reason
+    write_ticket(ticket_id, fm, ticket["body"])
+    print(f"Marked {ticket_id} as status=duplicate → {args.duplicate_of}")
+
+
 # ─── Main ─────────────────────────────────────────────────────────
 
 def main():
@@ -1345,6 +1483,25 @@ def main():
                    help="Do not delete the input file after successful consolidation")
     p.add_argument("--dry-run", action="store_true")
 
+    # close-duplicate
+    p = sub.add_parser("close-duplicate",
+                       help="Close a single ticket as a duplicate of a bug tracked elsewhere")
+    p.add_argument("--ticket", required=True, help="Ticket ID to close")
+    p.add_argument("--duplicate-of", required=True,
+                   help="Reference to the tracked bug (e.g. 'Bug BK' or 'tests/audit_bugs2.rs:528')")
+    p.add_argument("--reason", help="Optional one-line reason")
+
+    # dedup
+    p = sub.add_parser("dedup",
+                       help="Spawn a dedup agent to draft a consolidation for a cluster of tickets and ingest it")
+    p.add_argument("--tickets", required=True,
+                   help="Comma-separated ticket IDs believed to share one engine root cause")
+    p.add_argument("--slug", required=True,
+                   help="Kebab-case slug for the resulting merged-<slug>-NN ticket")
+    p.add_argument("--keep-input", action="store_true",
+                   help="Do not delete the staging file after successful consolidation")
+    add_common(p)
+
     args = parser.parse_args()
 
     TICKETS_DIR.mkdir(exist_ok=True)
@@ -1355,6 +1512,8 @@ def main():
         "merge": cmd_merge, "abandon": cmd_abandon,
         "tickets": cmd_tickets, "show": cmd_show,
         "status": cmd_status, "consolidate": cmd_consolidate,
+        "close-duplicate": cmd_close_duplicate,
+        "dedup": cmd_dedup,
     }
     commands[args.command](args)
 

@@ -1,6 +1,6 @@
 ---
 id: instigator_gang-02
-status: new
+status: duplicate
 card: Instigator Gang
 card_file: mtg-engine/src/cards/isd/instigator_gang.rs
 created: 2026-04-14T21:28:14Z
@@ -8,6 +8,8 @@ audit_run_id: 2026-04-14-instigator_gang-audit
 audit_model: opus
 audit_tokens: 13518
 audit_duration: 264
+duplicate_of: audits/AUDIT_BUGS.md#Bug BK
+duplicate_reason: Static-ability-as-trigger is tracked as Bug BK
 ---
 
 ## Audit Finding
@@ -32,4 +34,3 @@ audit_duration: 264
 
 **Affected cards:**
 - Instigator Gang / Wildblood Pack
-

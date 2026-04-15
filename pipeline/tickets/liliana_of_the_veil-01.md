@@ -1,6 +1,6 @@
 ---
 id: liliana_of_the_veil-01
-status: new
+status: duplicate
 card: Liliana of the Veil
 card_file: mtg-engine/src/cards/isd/liliana_of_the_veil.rs
 created: 2026-04-14T20:55:10Z
@@ -8,6 +8,8 @@ audit_run_id: 2026-04-14-liliana_of_the_veil-audit
 audit_model: opus
 audit_tokens: 11904
 audit_duration: 290
+duplicate_of: mtg-engine/tests/audit_bugs2.rs:528
+duplicate_reason: Sequential-vs-simultaneous discard already has a test
 ---
 
 ## Audit Finding
@@ -32,4 +34,3 @@ The +1 ability discards cards sequentially rather than simultaneously. Per the r
 **Affected cards:**
 - Liliana of the Veil
 - Any future card with "each player discards" or similar simultaneous choice effects
-
