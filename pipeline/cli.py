@@ -40,6 +40,7 @@ STAGING_DIR = PIPELINE_DIR / "staging"
 PROMPTS_DIR = PIPELINE_DIR / "prompts"
 SCRIPTS_DIR = PIPELINE_DIR / "scripts"
 METRICS_DIR = PIPELINE_DIR / "metrics"
+LOGS_DIR = PIPELINE_DIR / "logs"
 CARDS_DIR = PROJECT_ROOT / "mtg-engine" / "src" / "cards" / "isd"
 ORACLE_SCRIPT = PROJECT_ROOT / "scripts" / "oracle_lookup.py"
 
@@ -130,6 +131,25 @@ def remove_worktree(ticket_id: str):
                   capture_output=True, cwd=str(PROJECT_ROOT))
 
 
+def remove_logs_for_ticket(ticket_id: str) -> int:
+    """Delete any agent-output log files whose filename mentions
+    `ticket_id`. Run at merge/abandon time — the ticket's audit/test/
+    fix history is no longer actionable and the logs were only kept
+    for replay/post-mortem debugging.
+
+    Returns the count of files removed."""
+    if not LOGS_DIR.exists():
+        return 0
+    removed = 0
+    for f in LOGS_DIR.glob(f"*{ticket_id}*"):
+        try:
+            f.unlink()
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
 def merge_worktree(ticket_id: str) -> bool:
     """Merge a ticket's worktree branch into HEAD. Returns success."""
     branch = get_worktree_branch(ticket_id)
@@ -140,44 +160,132 @@ def merge_worktree(ticket_id: str) -> bool:
     return result.returncode == 0
 
 
+def _summarize_stream_event(event: dict) -> str | None:
+    """Turn one stream-json event into a short human-readable line for
+    real-time progress. Returns None if the event isn't interesting.
+    Keep lines short so parallel-agent prefixes stay readable."""
+    et = event.get("type")
+    if et == "assistant":
+        msg = event.get("message", {})
+        for block in msg.get("content", []) or []:
+            btype = block.get("type")
+            if btype == "tool_use":
+                name = block.get("name", "tool")
+                inp = block.get("input", {}) or {}
+                # Pull out a short identifier depending on the tool
+                hint = ""
+                if name == "Bash":
+                    hint = (inp.get("command") or "")[:70]
+                elif name in ("Read", "Write"):
+                    hint = str(inp.get("file_path") or "")[-70:]
+                elif name == "Edit":
+                    hint = str(inp.get("file_path") or "")[-70:]
+                elif name == "Grep":
+                    hint = (inp.get("pattern") or "")[:70]
+                elif name == "Glob":
+                    hint = (inp.get("pattern") or "")[:70]
+                return f"[{name}] {hint}".rstrip()
+            if btype == "text":
+                text = (block.get("text") or "").strip()
+                if text:
+                    first = text.split("\n", 1)[0]
+                    return f"(agent) {first[:120]}"
+    elif et == "result":
+        if event.get("is_error"):
+            return f"(error) {(event.get('result') or '')[:120]}"
+        return "(done)"
+    return None
+
+
 def run_agent_in(prompt: str, cwd: Path, model: str = DEFAULT_MODEL,
-                 effort: str = DEFAULT_EFFORT) -> dict:
-    """Run a claude agent in a specific directory. Returns usage stats."""
+                 effort: str = DEFAULT_EFFORT,
+                 log_path: Path | None = None,
+                 progress_prefix: str = "") -> dict:
+    """Run a claude agent in a specific directory. Streams stream-json
+    events from the agent as they arrive: each event is appended to
+    `log_path` immediately and a short human-readable summary is
+    printed to stdout (prefixed with `progress_prefix` so parallel
+    runs are distinguishable). Returns usage stats accumulated from
+    the final `result` event."""
     cmd = [
         "claude", "-p", prompt,
         "--model", model,
         "--effort", effort,
-        "--output-format", "json",
+        "--output-format", "stream-json",
+        "--verbose",
         "--permission-mode", "auto",
         "--no-session-persistence",
     ]
+
+    # Open log file up front so every event hits disk as it arrives.
+    log_fh = None
+    if log_path is not None:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        log_fh = log_path.open("w")
+        log_fh.write(json.dumps({"kind": "prompt", "value": prompt}) + "\n")
+        log_fh.flush()
+
     start = time.time()
-    result = subprocess.run(
-        cmd, capture_output=True, text=True,
-        cwd=str(cwd), timeout=AGENT_TIMEOUT_SECS,
-        env=subscription_env(),
+    proc = subprocess.Popen(
+        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, cwd=str(cwd), env=subscription_env(),
+        bufsize=1,  # line-buffered
     )
-    elapsed = int(time.time() - start)
+
     tokens = 0
     tool_uses = 0
     is_error = False
     error_message = None
+    final_event: dict | None = None
+    stdout_chunks: list[str] = []
+
     try:
-        data = json.loads(result.stdout)
-        tokens = data.get("usage", {}).get("input_tokens", 0) + \
-                 data.get("usage", {}).get("output_tokens", 0)
-        tool_uses = data.get("num_turns", 0)
-        if data.get("is_error"):
+        assert proc.stdout is not None
+        for raw_line in proc.stdout:
+            line = raw_line.rstrip("\n")
+            stdout_chunks.append(raw_line)
+            if log_fh is not None:
+                log_fh.write(raw_line)
+                log_fh.flush()
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            summary = _summarize_stream_event(event)
+            if summary:
+                print(f"{progress_prefix}{summary}", flush=True)
+            if event.get("type") == "result":
+                final_event = event
+                tokens = event.get("usage", {}).get("input_tokens", 0) + \
+                         event.get("usage", {}).get("output_tokens", 0)
+                tool_uses = event.get("num_turns", 0)
+                if event.get("is_error"):
+                    is_error = True
+                    error_message = event.get("result") or "agent reported is_error=true"
+        # Enforce the wall-clock ceiling ourselves since we don't pass
+        # timeout= to Popen.
+        try:
+            rc = proc.wait(timeout=max(1, AGENT_TIMEOUT_SECS - int(time.time() - start)))
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+            rc = -9
             is_error = True
-            error_message = data.get("result") or "agent reported is_error=true"
-    except (json.JSONDecodeError, KeyError, TypeError):
-        pass
-    if result.returncode != 0 and not is_error:
+            error_message = f"agent timeout after {AGENT_TIMEOUT_SECS}s"
+    finally:
+        if log_fh is not None:
+            log_fh.close()
+
+    stderr = proc.stderr.read() if proc.stderr else ""
+    elapsed = int(time.time() - start)
+
+    if rc != 0 and not is_error:
         is_error = True
-        error_message = (result.stderr or result.stdout or "")[:200] or f"exit {result.returncode}"
-    return {"returncode": result.returncode, "tokens": tokens,
-            "tool_uses": tool_uses, "duration": elapsed,
-            "is_error": is_error, "error_message": error_message}
+        error_message = (stderr or "".join(stdout_chunks))[:200] or f"exit {rc}"
+
+    return {"returncode": rc, "tokens": tokens, "tool_uses": tool_uses,
+            "duration": elapsed, "is_error": is_error,
+            "error_message": error_message}
 
 
 def get_oracle_text(card_name: str) -> str | None:
@@ -259,56 +367,13 @@ def list_tickets(status: str = None, card: str = None) -> list[dict]:
 # ─── Agent runner ─────────────────────────────────────────────────
 
 def run_agent(prompt: str, model: str = DEFAULT_MODEL,
-              effort: str = DEFAULT_EFFORT) -> dict:
-    """Run a claude agent via CLI. Returns usage stats.
-
-    Agents get full tool access. Write restrictions enforced by post-validation.
-    """
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--effort", effort,
-        "--output-format", "json",
-        "--permission-mode", "auto",
-        "--no-session-persistence",
-    ]
-
-    start = time.time()
-    result = subprocess.run(
-        cmd, capture_output=True, text=True,
-        cwd=str(PROJECT_ROOT),
-        timeout=AGENT_TIMEOUT_SECS,
-        env=subscription_env(),
-    )
-    elapsed = int(time.time() - start)
-
-    tokens = 0
-    tool_uses = 0
-    is_error = False
-    error_message = None
-    try:
-        data = json.loads(result.stdout)
-        tokens = data.get("usage", {}).get("input_tokens", 0) + \
-                 data.get("usage", {}).get("output_tokens", 0)
-        tool_uses = data.get("num_turns", 0)
-        if data.get("is_error"):
-            is_error = True
-            error_message = data.get("result") or "agent reported is_error=true"
-    except (json.JSONDecodeError, KeyError, TypeError):
-        pass
-
-    if result.returncode != 0 and not is_error:
-        is_error = True
-        error_message = (result.stderr or result.stdout or "")[:200] or f"exit {result.returncode}"
-
-    return {
-        "returncode": result.returncode,
-        "tokens": tokens,
-        "tool_uses": tool_uses,
-        "duration": elapsed,
-        "is_error": is_error,
-        "error_message": error_message,
-    }
+              effort: str = DEFAULT_EFFORT,
+              log_path: Path | None = None,
+              progress_prefix: str = "") -> dict:
+    """Run a claude agent at PROJECT_ROOT. Thin wrapper around
+    run_agent_in for callers that don't need a worktree."""
+    return run_agent_in(prompt, PROJECT_ROOT, model, effort,
+                        log_path=log_path, progress_prefix=progress_prefix)
 
 
 # ─── Audit staging parser ────────────────────────────────────────
@@ -547,8 +612,11 @@ Write your structured audit output to `pipeline/staging/{run_id}.md`.
 Use the format specified in the prompt (Checks Performed, Finding N sections, Insights).
 """
         print(f"  [{card}] Spawning agent...")
+        log_path = LOGS_DIR / f"{run_id}.log"
         result = run_agent(shared_prompt + "\n\n---\n\n" + per_agent,
-                          args.model, args.effort)
+                          args.model, args.effort,
+                          log_path=log_path,
+                          progress_prefix=f"  [{card}] ")
 
         if result.get("is_error"):
             err = result.get("error_message") or "unknown error"
@@ -789,7 +857,10 @@ otherwise.
             print(f"  [{tid}] Spawning agent in worktree "
                   f"(attempt {attempt}/{MAX_TEST_ATTEMPTS})...")
             prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
-            result = run_agent_in(prompt, wt_dir, args.model, args.effort)
+            log_path = LOGS_DIR / f"{today()}-{tid}-test-attempt{attempt}.log"
+            result = run_agent_in(prompt, wt_dir, args.model, args.effort,
+                                  log_path=log_path,
+                                  progress_prefix=f"  [{tid}] ")
 
             if result.get("is_error"):
                 err = result.get("error_message") or "unknown agent error"
@@ -1079,7 +1150,10 @@ Use the format: ## Status, ## Files Changed, ## Description
         print(f"  Spawning agent in worktree {wt_dir.name} "
               f"(attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
         prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
-        result = run_agent_in(prompt, wt_dir, args.model, args.effort)
+        log_path = LOGS_DIR / f"{today()}-{tid}-fix-attempt{attempt}.log"
+        result = run_agent_in(prompt, wt_dir, args.model, args.effort,
+                              log_path=log_path,
+                              progress_prefix=f"  [{tid}] ")
 
         if result.get("is_error"):
             err = result.get("error_message") or "unknown agent error"
@@ -1313,8 +1387,13 @@ def cmd_merge(args):
             capture_output=True, text=True, cwd=str(PROJECT_ROOT),
         ).stdout.strip()
 
-        # Clean up worktree
+        # Clean up worktree + any agent output logs associated with
+        # this ticket (they were only useful mid-flight / for
+        # post-mortem; a shipped fix means we won't replay them).
         remove_worktree(tid)
+        n_logs = remove_logs_for_ticket(tid)
+        if n_logs:
+            print(f"  [{tid}] Removed {n_logs} agent log file(s)")
 
         # Update ticket — drop the now-stale worktree field and record
         # the merge commit in its place.
@@ -1349,6 +1428,9 @@ def cmd_abandon(args):
         print(f"Removed worktree for {tid}")
     else:
         print(f"No worktree for {tid}")
+    n_logs = remove_logs_for_ticket(tid)
+    if n_logs:
+        print(f"Removed {n_logs} agent log file(s) for {tid}")
     # Reset status back to new so it can be re-tested
     ticket = parse_ticket(path)
     status = ticket["frontmatter"].get("status", "")
@@ -1894,7 +1976,10 @@ Each file's frontmatter `slug:` must be distinct.
     for attempt in range(1, DEDUP_MAX_ATTEMPTS + 1):
         print(f"\nSpawning dedup agent (attempt {attempt}/{DEDUP_MAX_ATTEMPTS})...")
         prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
-        result = run_agent(prompt, args.model, args.effort)
+        log_path = LOGS_DIR / f"{today()}-dedup-attempt{attempt}.log"
+        result = run_agent(prompt, args.model, args.effort,
+                           log_path=log_path,
+                           progress_prefix="  [dedup] ")
 
         if result.get("is_error"):
             last_error = result.get("error_message") or "unknown agent error"
@@ -2063,6 +2148,7 @@ def main():
 
     TICKETS_DIR.mkdir(exist_ok=True)
     STAGING_DIR.mkdir(exist_ok=True)
+    LOGS_DIR.mkdir(exist_ok=True)
 
     commands = {
         "audit": cmd_audit, "test": cmd_test, "fix": cmd_fix,
