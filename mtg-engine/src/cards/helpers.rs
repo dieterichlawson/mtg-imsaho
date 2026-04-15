@@ -7,7 +7,6 @@
 
 use crate::actions::Target;
 use crate::cards::CardRegistry;
-use crate::events::{DamageTarget, GameEvent};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::types::Zone;
@@ -48,36 +47,14 @@ pub fn resolve_curse(state: &mut GameState, curse_id: ObjectId, targets: &[Targe
 /// (creature or player), then move the spell to the appropriate zone.
 pub fn resolve_damage(state: &mut GameState, spell_id: ObjectId, targets: &[Target], amount: u32, registry: &CardRegistry) {
     if let Some(target) = targets.first() {
-        match target {
-            Target::Object(target_id) => {
-                if let Some(obj) = state.get_object_mut(*target_id) {
-                    if obj.zone == Zone::Battlefield {
-                        obj.damage_marked += amount;
-                        obj.damaged_by.push(spell_id);
-                        state.events.push(GameEvent::NonCombatDamageDealt {
-                            source: spell_id,
-                            target: DamageTarget::Object(*target_id),
-                            amount,
-                        });
-                    }
-                }
-            }
-            Target::Player(player_id) => {
-                let old_life = state.get_player(*player_id).life;
-                let new_life = old_life - i32::try_from(amount).unwrap_or(i32::MAX);
-                state.get_player_mut(*player_id).life = new_life;
-                state.events.push(GameEvent::NonCombatDamageDealt {
-                    source: spell_id,
-                    target: DamageTarget::Player(*player_id),
-                    amount,
-                });
-                state.events.push(GameEvent::LifeChanged {
-                    player: *player_id,
-                    old: old_life,
-                    new_life,
-                });
-            }
-        }
+        let source_name = state.get_object(spell_id)
+            .map_or_else(|| "spell".into(), |o| o.name.clone());
+        let effect = PendingEffect::DealDamage {
+            amount,
+            source_id: spell_id,
+            source_name,
+        };
+        crate::engine::apply_pending_effect(state, target, &effect, registry);
     }
     state.move_spell_after_resolve(spell_id, registry);
 }

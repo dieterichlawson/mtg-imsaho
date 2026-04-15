@@ -3454,8 +3454,9 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             } else if let Some(obj) = state.get_object_mut(*id) {
                 if obj.zone == Zone::Battlefield {
                     // Check if target is a planeswalker — damage removes loyalty counters.
-                    let is_planeswalker = registry.card_data(obj.card_id)
-                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
+                    let is_planeswalker = obj.card_types.contains(&CardType::Planeswalker)
+                        || registry.card_data(obj.card_id)
+                            .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
 
                     if is_planeswalker {
                         // Remove loyalty counters equal to damage.

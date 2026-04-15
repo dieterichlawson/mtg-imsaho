@@ -2,7 +2,7 @@ use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, ManaAbilityDef, SacrificeCost, TargetRequirement};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{CardType, Zone, ManaType, ManaCost, ManaSymbol, Color, CounterType};
+use crate::types::{CardType, Zone, ManaType, ManaCost, ManaSymbol, Color};
 
 /// Stensia Bloodhall — Land.
 /// {T}: Add {C}.
@@ -62,43 +62,14 @@ impl CardBehavior for StensiaBloodhall {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
-        match targets.first() {
-            Some(Target::Player(player_id)) => {
-                let old_life = state.get_player(*player_id).life;
-                let new_life = old_life - 2;
-                state.get_player_mut(*player_id).life = new_life;
-                state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                    source: object_id,
-                    target: crate::events::DamageTarget::Player(*player_id),
-                    amount: 2,
-                });
-                state.events.push(crate::events::GameEvent::LifeChanged {
-                    player: *player_id,
-                    old: old_life,
-                    new_life,
-                });
-                state.log(crate::state::LogLevel::Event,
-                    format!("Stensia Bloodhall deals 2 damage to p{}", player_id.0));
-            }
-            Some(Target::Object(target_id)) => {
-                // Planeswalker: damage removes loyalty counters.
-                if let Some(obj) = state.get_object_mut(*target_id) {
-                    if obj.zone == Zone::Battlefield {
-                        let loyalty = obj.counters.entry(CounterType::Loyalty).or_insert(0);
-                        *loyalty = loyalty.saturating_sub(2);
-                    }
-                }
-                state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                    source: object_id,
-                    target: crate::events::DamageTarget::Object(*target_id),
-                    amount: 2,
-                });
-                let target_name = state.get_object(*target_id).map_or_else(|| "?".into(), |o| o.name.clone());
-                state.log(crate::state::LogLevel::Event,
-                    format!("Stensia Bloodhall deals 2 damage to {target_name}"));
-            }
-            None => {}
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
+        if let Some(target) = targets.first() {
+            let effect = crate::state::PendingEffect::DealDamage {
+                amount: 2,
+                source_id: object_id,
+                source_name: "Stensia Bloodhall".into(),
+            };
+            crate::engine::apply_pending_effect(state, target, &effect, registry);
         }
     }
 }

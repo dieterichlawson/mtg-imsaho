@@ -37,29 +37,30 @@ impl CardBehavior for BalefireDragon {
         }
     }
 
-    fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, damaged_player: PlayerId, amount: u32, _registry: &CardRegistry) {
+    fn on_combat_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, damaged_player: PlayerId, amount: u32, registry: &CardRegistry) {
         if !state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
             return;
         }
 
-        // Collect all creatures the damaged player controls
         let creatures: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.controller == damaged_player)
             .map(|o| o.id)
             .collect();
 
-        // Deal that much damage to each of those creatures.
-        // This is triggered ability damage, NOT combat damage.
+        let source_name = state.get_object(self_id)
+            .map_or_else(|| "Balefire Dragon".into(), |o| o.name.clone());
         for creature_id in creatures {
-            if let Some(obj) = state.get_object_mut(creature_id) {
-                obj.damage_marked += amount;
-                obj.damaged_by.push(self_id);
-            }
-            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                source: self_id,
-                target: crate::events::DamageTarget::Object(creature_id),
+            let effect = crate::state::PendingEffect::DealDamage {
                 amount,
-            });
+                source_id: self_id,
+                source_name: source_name.clone(),
+            };
+            crate::engine::apply_pending_effect(
+                state,
+                &crate::actions::Target::Object(creature_id),
+                &effect,
+                registry,
+            );
         }
     }
 }

@@ -88,43 +88,35 @@ impl CardBehavior for OliviaVoldaren {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         match ability_index {
             0 => {
-                // {1}{R}: Deal 1 damage to ANOTHER target creature. Make it a Vampire. +1/+1 counter on Olivia.
                 if let Some(Target::Object(target_id)) = targets.first() {
-                    if *target_id == object_id { return; } // "another" — can't target self
-                    if let Some(target_obj) = state.get_object(*target_id) {
-                        if target_obj.zone == Zone::Battlefield {
-                            // Deal 1 damage.
-                            let is_planeswalker = state.get_object(*target_id)
-                                .is_some_and(|o| o.card_types.contains(&CardType::Planeswalker));
-                            if let Some(obj) = state.get_object_mut(*target_id) {
-                                if is_planeswalker {
-                                    let loyalty = obj.counters.entry(CounterType::Loyalty).or_insert(0);
-                                    *loyalty = loyalty.saturating_sub(1);
-                                } else {
-                                    obj.damage_marked += 1;
-                                }
-                                obj.damaged_by.push(object_id);
-                                // Add Vampire subtype if not already present.
-                                if !obj.subtypes.contains(&"Vampire".to_string()) {
-                                    obj.subtypes.push("Vampire".to_string());
-                                }
-                            }
-                            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                                source: object_id,
-                                target: crate::events::DamageTarget::Object(*target_id),
-                                amount: 1,
-                            });
-                            // +1/+1 counter on Olivia.
-                            state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
-                            state.log(crate::state::LogLevel::Event,
-                                format!("Olivia Voldaren deals 1 damage to {}, makes it a Vampire, and gets a +1/+1 counter", state.obj_name(*target_id)));
+                    if *target_id == object_id { return; }
+                    let on_battlefield = state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield);
+                    if !on_battlefield { return; }
+                    if state.has_protection_from(*target_id, object_id, registry) { return; }
+                    let effect = crate::state::PendingEffect::DealDamage {
+                        amount: 1,
+                        source_id: object_id,
+                        source_name: "Olivia Voldaren".into(),
+                    };
+                    crate::engine::apply_pending_effect(
+                        state,
+                        &Target::Object(*target_id),
+                        &effect,
+                        registry,
+                    );
+                    if let Some(obj) = state.get_object_mut(*target_id) {
+                        if !obj.subtypes.contains(&"Vampire".to_string()) {
+                            obj.subtypes.push("Vampire".to_string());
                         }
                     }
+                    state.add_counters(object_id, CounterType::PlusOnePlusOne, 1);
+                    state.log(crate::state::LogLevel::Event,
+                        format!("Olivia Voldaren deals 1 damage to {}, makes it a Vampire, and gets a +1/+1 counter", state.obj_name(*target_id)));
                 }
             }
             1 => {
