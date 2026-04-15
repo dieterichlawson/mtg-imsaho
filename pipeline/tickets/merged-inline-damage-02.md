@@ -1,6 +1,6 @@
 ---
 id: merged-inline-damage-02
-status: fixed
+status: merged
 card: multiple
 created: 2026-04-15T04:40:54Z
 kind: consolidated
@@ -19,6 +19,7 @@ fix_run_id: 2026-04-14-merged-inline-damage-02-fix
 fix_model: opus
 fix_tokens: 24850
 fix_duration: 505
+merged_at: 2026-04-15T05:51:14Z
 ---
 
 # Inline damage writes bypass the central damage handler (CR 702.16e, 614.1a)
