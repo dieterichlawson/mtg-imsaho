@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-tree_of_redemption-audit
 audit_model: opus
 audit_tokens: 9193
 audit_duration: 1139
-duplicate_of: merged-activated-no-stack-01
+duplicate_of: merged-activated-no-stack-02
 ---
 
 ## Audit Finding

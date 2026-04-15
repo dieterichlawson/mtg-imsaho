@@ -1,6 +1,6 @@
 ---
 id: skirsdag_high_priest-01
-status: new
+status: closed-duplicate
 card: Skirsdag High Priest
 card_file: mtg-engine/src/cards/isd/skirsdag_high_priest.rs
 created: 2026-04-15T03:30:28Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-skirsdag_high_priest-audit
 audit_model: opus
 audit_tokens: 12265
 audit_duration: 287
+duplicate_of: merged-activated-no-stack-02
 ---
 
 ## Audit Finding
@@ -50,4 +51,3 @@ Scenario: Place Skirsdag High Priest and two other creatures on the battlefield 
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Place Skirsdag High Priest (not summoning sick) on the battlefield with two other creatures, one of which IS summoning sick. Set morbid active. Verify the summoning-sick creature appears as a valid tap candidate in the ability's enumerated pairs — the {T} tap symbol restriction applies only to the High Priest itself (CR 302.6), not to the other creatures being tapped as an additional cost.
-

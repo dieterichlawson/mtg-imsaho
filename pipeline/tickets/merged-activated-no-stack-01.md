@@ -1,10 +1,11 @@
 ---
 id: merged-activated-no-stack-01
-status: new
+status: closed-duplicate
 card: multiple
 created: 2026-04-15T02:45:29Z
 kind: consolidated
 source_tickets: back_from_the_brink-02, kessig_wolf_run-03, nephalia_drownyard-01, tree_of_redemption-03
+duplicate_of: merged-activated-no-stack-02
 ---
 
 # Activated abilities resolve immediately with no stack entry (CR 602.2a)
@@ -39,4 +40,3 @@ Scenario: Activate Nephalia Drownyard's mill ability. Verify the ability goes on
 Source ticket: tree_of_redemption-03
 Implementation: (not yet written)
 Scenario: Activate Tree of Redemption's exchange ability. Verify the ability is on the stack; opponents can destroy Tree in response, causing the exchange to fail (per Scryfall ruling).
-

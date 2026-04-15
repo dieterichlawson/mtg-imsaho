@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-balefire_dragon-audit
 audit_model: opus
 audit_tokens: 6049
 audit_duration: 124
-duplicate_of: merged-inline-damage-01
+duplicate_of: merged-inline-damage-02
 ---
 
 ## Audit Finding

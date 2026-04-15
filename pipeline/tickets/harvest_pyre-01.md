@@ -1,6 +1,6 @@
 ---
 id: harvest_pyre-01
-status: new
+status: closed-duplicate
 card: Harvest Pyre
 card_file: mtg-engine/src/cards/isd/harvest_pyre.rs
 created: 2026-04-15T03:41:13Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-harvest_pyre-audit
 audit_model: opus
 audit_tokens: 5832
 audit_duration: 127
+duplicate_of: merged-inline-damage-02
 ---
 
 ## Audit Finding
@@ -42,4 +43,3 @@ Scenario: Set up a battlefield with a creature that has protection from red (e.g
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Set up a battlefield with Unbreathing Horde (which has PreventDamageRemoveCounter — damage is prevented and a +1/+1 counter is removed instead). Cast Harvest Pyre targeting Unbreathing Horde. Assert that damage is prevented and a +1/+1 counter is removed. Currently fails because inline damage skips the replacement effect check.
-

@@ -1,6 +1,6 @@
 ---
 id: full_moons_rise-01
-status: new
+status: closed-duplicate
 card: Full Moon's Rise
 card_file: mtg-engine/src/cards/isd/full_moons_rise.rs
 created: 2026-04-15T03:51:13Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-full_moons_rise-audit
 audit_model: opus
 audit_tokens: 21104
 audit_duration: 485
+duplicate_of: merged-activated-no-stack-02
 ---
 
 ## Audit Finding
@@ -36,4 +37,3 @@ Per CR 602.2, activated abilities are placed on the stack and players receive pr
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Player A controls Full Moon's Rise and a Werewolf creature. Player B has priority. Player A activates "Sacrifice this enchantment: Regenerate all Werewolf creatures you control." Verify the ability goes on the stack, Player B receives priority to respond (e.g., by casting an exile spell on the Werewolf), and the regeneration shields are not applied until the ability resolves.
-

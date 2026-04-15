@@ -1,6 +1,6 @@
 ---
 id: blasphemous_act-01
-status: new
+status: closed-duplicate
 card: Blasphemous Act
 card_file: mtg-engine/src/cards/isd/blasphemous_act.rs
 created: 2026-04-15T03:42:48Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-blasphemous_act-audit
 audit_model: opus
 audit_tokens: 8997
 audit_duration: 222
+duplicate_of: merged-inline-damage-02
 ---
 
 ## Audit Finding
@@ -42,4 +43,3 @@ Scenario: Place a creature with protection from red (e.g., via a continuous effe
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Place an Unbreathing Horde (which has PreventDamageRemoveCounter) with +1/+1 counters on the battlefield alongside a vanilla creature. Cast and resolve Blasphemous Act. Assert that Unbreathing Horde lost a +1/+1 counter instead of taking damage (damage_marked remains 0), and the vanilla creature has 13 damage marked.
-

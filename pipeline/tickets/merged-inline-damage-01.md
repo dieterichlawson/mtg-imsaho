@@ -1,10 +1,11 @@
 ---
 id: merged-inline-damage-01
-status: new
+status: closed-duplicate
 card: multiple
 created: 2026-04-15T02:45:28Z
 kind: consolidated
 source_tickets: balefire_dragon-01, olivia_voldaren-01, daybreak_ranger-01, devils_play-01, into_the_maw_of_hell-01
+duplicate_of: merged-inline-damage-02
 ---
 
 # Inline damage writes bypass the central damage handler (CR 702.16e, 614.1a)
@@ -45,4 +46,3 @@ Scenario: Cast Devil's Play for X=3 targeting an opponent's planeswalker with 4 
 Source ticket: into_the_maw_of_hell-01
 Implementation: (not yet written)
 Scenario: Cast Into the Maw of Hell targeting a land and a creature with protection from red. Verify the creature takes 0 damage.
-

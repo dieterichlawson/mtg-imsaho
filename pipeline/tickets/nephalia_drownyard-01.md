@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-nephalia_drownyard-audit
 audit_model: opus
 audit_tokens: 5372
 audit_duration: 126
-duplicate_of: merged-activated-no-stack-01
+duplicate_of: merged-activated-no-stack-02
 ---
 
 ## Audit Finding

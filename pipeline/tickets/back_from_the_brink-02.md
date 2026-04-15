@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-back_from_the_brink-audit
 audit_model: opus
 audit_tokens: 20377
 audit_duration: 499
-duplicate_of: merged-activated-no-stack-01
+duplicate_of: merged-activated-no-stack-02
 ---
 
 ## Audit Finding

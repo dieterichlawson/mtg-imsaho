@@ -12,6 +12,18 @@ the seeds — read `pipeline/tickets/` directly (via Grep, Glob, Read, or
 whatever tools you have) to find other open tickets that share a root
 cause with the seeds.
 
+"Other open tickets" means BOTH:
+- **Card tickets** (files like `olivia_voldaren-02.md`) that are still
+  `status: new` and have never been deduped. These may belong in your
+  cluster alongside seed tickets; pull them in as source tickets.
+- **Existing `merged-*` tickets** that are still `status: new`. These
+  can be nested under a deeper parent via `## Also closes` (see below).
+
+Treat both ticket types as equally valid cluster members. A new merged
+ticket's children commonly include a mix: some seed card tickets, some
+non-seed card tickets you discovered by exploration, and possibly one
+or more existing merged-* tickets whose root cause is subsumed.
+
 For each cluster you identify, write one consolidation input file
 (format below). You may produce zero, one, or several such files in a
 single invocation. Python will then ingest each file, creating a new
@@ -42,31 +54,38 @@ change fixes both.
 
 ## Test inheritance (IMPORTANT)
 
-**Invariant (enforced by Python):** the new parent's `## Tests` section
-must contain every test (identified by `### {slug}`) that exists in the
-`## Tests` section of any ticket being closed. No test may be silently
-dropped during consolidation. Python will refuse to ingest your output
-if any closed ticket has a test slug that doesn't appear in the parent.
+**Invariant (enforced by Python):** for every ticket being closed, the
+parent must contain at least as many tests attributable to each of its
+Source tickets as the closed ticket did. "Attributable to X" means the
+test has `Source ticket: X` in the parent. Python will refuse to ingest
+if any closed ticket loses test coverage.
 
-Practically this means:
+This is a COUNT-based check (not slug-based) — slugs may be specialized
+when copying up. What matters is the per-Source-ticket total.
 
-- When a card ticket has 1+ tests, copy EVERY one into the new parent.
-  Preserve the slug verbatim; set `Source ticket:` to the card ticket's
-  id (even if the original read `Source ticket: (new)`). A card ticket
-  with three tests contributes three entries to the parent, all with
-  the same card-ticket id as `Source ticket:`.
-- When a merged-* ticket is being closed (via `## Also closes`), copy
-  EVERY test from its `## Tests` section into the new parent verbatim,
-  preserving both the slug and the original `Source ticket:` field
-  (which already points at a card ticket).
-- You may add new tests that weren't in any closed ticket — for card
-  tickets in the seed set that haven't been merged before, write a
-  fresh entry.
+Rules for composing the Tests section:
 
-A single consolidation's Tests section can therefore contain BOTH
-freshly-written entries AND copied entries. Every entry must have a
-`Source ticket:` field pointing at a card ticket. The set of slugs must
-cover the union of all descendant tests.
+- **Card ticket sources:** when a card ticket is a source (the agent's
+  reference to it appears in a `Source ticket:` field), the parent
+  must have at least as many tests carrying that card's id as the
+  card had tests. Audit-generated card tickets typically have their
+  own tests with `Source ticket: (new)`; those count against you once
+  you adopt them — you must pull across ALL of them, re-pointing the
+  `Source ticket:` to the card's id.
+- **Merged-* sources (via `## Also closes`):** a merged-* ticket's
+  tests already carry `Source ticket:` pointing at its descendant
+  card tickets. Copy each test verbatim (preserving its `Source
+  ticket:` field) into the parent — so the parent's counts include
+  every per-Source total the merged-* had.
+- **Fresh additions:** you may add new tests for seed card tickets
+  that weren't previously merged. These count toward that seed's
+  required total.
+
+A single consolidation can therefore contain copied entries AND freshly-
+written entries. Slugs may differ from the originals if you prefer
+(e.g., specializing `activated_ability_goes_on_stack` to
+`full_moons_rise_activated_ability_on_stack`), but the Source-ticket
+counts must meet every closed ticket's requirement.
 
 ## Closing merged-* tickets whose tests you absorbed (IMPORTANT)
 

@@ -1,6 +1,6 @@
 ---
 id: stensia_bloodhall-01
-status: new
+status: closed-duplicate
 card: Stensia Bloodhall
 card_file: mtg-engine/src/cards/isd/stensia_bloodhall.rs
 created: 2026-04-15T03:48:41Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-stensia_bloodhall-audit
 audit_model: opus
 audit_tokens: 8416
 audit_duration: 225
+duplicate_of: merged-inline-damage-02
 ---
 
 ## Audit Finding
@@ -42,4 +43,3 @@ Scenario: Place Stensia Bloodhall on the battlefield controlled by P0. Place a p
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Place Stensia Bloodhall on the battlefield controlled by P0. Place a creature with `PreventDamageRemoveCounter` (e.g., Unbreathing Horde with +1/+1 counters) controlled by P1. Since Bloodhall targets "player or planeswalker" and not creatures, instead set up a player-targeted damage prevention effect if one exists, or verify via the planeswalker path: place a planeswalker controlled by P1 with a damage prevention shield. Activate Bloodhall targeting the planeswalker. Assert that damage is prevented and the prevention effect is consumed, not that loyalty is directly reduced.
-

@@ -1416,25 +1416,47 @@ def cmd_consolidate(args):
         print(f"ERROR: referenced ticket(s) not found: {missing}")
         sys.exit(1)
 
-    # Test-coverage invariant: the new parent's ## Tests section must
-    # contain every test (by slug) present in any closed ticket's own
-    # Tests section. This guarantees no test is silently dropped when
-    # an intermediate merged-* is collapsed into a deeper parent.
-    new_parent_slugs = {t["slug"] for t in parsed["tests"]}
-    coverage_gaps: list[tuple[str, list[str]]] = []
+    # Test-coverage invariant: for every ticket being closed, the new
+    # parent's `## Tests` section must contain at least as many tests
+    # attributable to each of its Source tickets as the closed ticket
+    # did. Slugs may be renamed by the dedup agent (generic audit
+    # slugs are commonly specialized for clarity), so we validate by
+    # Source-ticket *counts* rather than slug set.
+    from collections import Counter
+    parent_source_counts: Counter = Counter()
+    for t in parsed["tests"]:
+        sid = t.get("source_ticket")
+        if sid:
+            parent_source_counts[sid] += 1
+
+    def _required_counts(child_body: str, child_tid: str) -> Counter:
+        """Per-Source-ticket counts the parent must match, for a closed
+        child ticket. Tests without an explicit Source ticket (`(new)`)
+        are treated as needing a parent test with Source ticket=child_tid."""
+        counts: Counter = Counter()
+        for ct in _parse_tests_section(child_body):
+            sid = (ct.get("source_ticket") or "").strip()
+            if not sid or sid.lower() in ("(new)", "none", "null"):
+                sid = child_tid
+            counts[sid] += 1
+        return counts
+
+    coverage_gaps: list[str] = []
     for tid in all_closed_ids:
         child_body = parse_ticket(TICKETS_DIR / f"{tid}.md")["body"]
-        child_tests = _parse_tests_section(child_body)
-        missing_slugs = [ct["slug"] for ct in child_tests
-                         if ct["slug"] not in new_parent_slugs]
-        if missing_slugs:
-            coverage_gaps.append((tid, missing_slugs))
+        required = _required_counts(child_body, tid)
+        for source, need in required.items():
+            have = parent_source_counts.get(source, 0)
+            if have < need:
+                coverage_gaps.append(
+                    f"  {tid}: needs ≥ {need} test(s) with Source ticket "
+                    f"'{source}' in parent, found {have}")
     if coverage_gaps:
         print("ERROR: new parent is missing tests that exist on closed tickets.")
-        print("Every test in a closed ticket's `## Tests` section must appear")
-        print("(same `### slug`) in the new parent's `## Tests` section.")
-        for tid, slugs in coverage_gaps:
-            print(f"  {tid} — missing in parent: {', '.join(slugs)}")
+        print("For each closed ticket, the parent must have at least as many")
+        print("tests attributable to each Source ticket as the closed ticket did.")
+        for gap in coverage_gaps:
+            print(gap)
         sys.exit(1)
 
     # Mint new id: merged-<slug>-NN
@@ -1479,7 +1501,7 @@ def cmd_consolidate(args):
 
     print(f"Created {new_id} with {len(parsed['tests'])} test(s)")
     print(f"Marked {len(all_closed_ids)} ticket(s) as status=closed-duplicate "
-          f"({len(test_source_ids)} per-test, {len(also_closes)} via Also closes)")
+          f"({len(test_source_ids_unique)} per-test, {len(also_closes)} via Also closes)")
 
     # Staging files are ephemeral transport; remove once consumed successfully.
     if not args.keep_input:

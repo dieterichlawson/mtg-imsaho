@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-into_the_maw_of_hell-audit
 audit_model: opus
 audit_tokens: 12222
 audit_duration: 253
-duplicate_of: merged-inline-damage-01
+duplicate_of: merged-inline-damage-02
 ---
 
 ## Audit Finding

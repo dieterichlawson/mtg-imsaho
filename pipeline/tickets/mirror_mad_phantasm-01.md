@@ -1,6 +1,6 @@
 ---
 id: mirror_mad_phantasm-01
-status: new
+status: closed-duplicate
 card: Mirror-Mad Phantasm
 card_file: mtg-engine/src/cards/isd/mirror_mad_phantasm.rs
 created: 2026-04-15T03:36:03Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-mirror_mad_phantasm-audit
 audit_model: opus
 audit_tokens: 26524
 audit_duration: 621
+duplicate_of: merged-activated-no-stack-02
 ---
 
 ## Audit Finding
@@ -43,4 +44,3 @@ Scenario: Player A controls Mirror-Mad Phantasm on the battlefield. Player B has
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Player A controls Mirror-Mad Phantasm. Player A activates the ability (pays {1}{U}). Before the ability resolves, Player B casts an instant that exiles Mirror-Mad Phantasm. When the ability resolves, "This creature's owner shuffles it into their library" fails because the creature is in exile (not on the battlefield). The "If that player does" conditional is false, so no reveal/mill occurs. Verify the library is unchanged and no cards are milled.
-
