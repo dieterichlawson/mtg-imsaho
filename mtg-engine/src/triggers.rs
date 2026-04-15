@@ -320,6 +320,20 @@ impl PendingTrigger {
         }
     }
 
+    #[must_use]
+    pub fn chosen_targets(&self) -> &[Target] {
+        match self {
+            PendingTrigger::SelfDies { chosen_targets, .. }
+            | PendingTrigger::DeathWatch { chosen_targets, .. }
+            | PendingTrigger::EnteredBattlefield { chosen_targets, .. }
+            | PendingTrigger::SpellCastWatch { chosen_targets, .. }
+            | PendingTrigger::UpkeepTrigger { chosen_targets, .. }
+            | PendingTrigger::EndStepTrigger { chosen_targets, .. }
+            | PendingTrigger::AttacksTrigger { chosen_targets, .. } => chosen_targets,
+            _ => &[],
+        }
+    }
+
     /// Display name for the stack view, including what the trigger does.
     /// Uses the object's current transform state to show the correct face name.
     #[must_use]
@@ -1238,6 +1252,33 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
     }
     let entry = state.stack.pop().expect("stack must have trigger entry");
     let crate::state::StackEntry::Trigger(trigger) = entry else { unreachable!() };
+
+    // CR 608.2b: re-check target legality before resolving. If the trigger
+    // has targets and ALL are now illegal, the ability is countered by game rules.
+    let targets = trigger.chosen_targets();
+    if !targets.is_empty() {
+        let card_id = trigger.behavior_card_id();
+        let controller = trigger.controller();
+        let target_req = registry.get(card_id)
+            .and_then(|behavior| {
+                let data = behavior.card_data();
+                let kind = trigger.kind();
+                kind.and_then(|k| {
+                    data.triggered_abilities.iter()
+                        .find(|ta| ta.kind == k)
+                        .and_then(|ta| ta.target_requirement.clone())
+                })
+            })
+            .unwrap_or(crate::cards::TargetRequirement::None);
+        let any_legal = targets.iter().any(|t| {
+            crate::stack::is_target_legal(state, t, &target_req, controller, registry)
+        });
+        if !any_legal {
+            let name = trigger.display_name(registry);
+            state.log(crate::state::LogLevel::Event, format!("{name} fizzled (all targets illegal)"));
+            return true;
+        }
+    }
 
     match trigger {
         PendingTrigger::EnteredBattlefield { object_id, card_id, chosen_targets, .. } => {

@@ -1,5 +1,5 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetFilter, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
@@ -33,11 +33,9 @@ impl CardBehavior for ReaperFromTheAbyss {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EndStep,
                     description: "if morbid, destroy target non-Demon creature".into(),
-                    // CR 603.3d: target chosen as the trigger goes on the stack.
-                    // Use Creature + is_valid_target to filter to non-Demon creatures.
-                    // When morbid is not satisfied, is_valid_target returns false for
-                    // every creature and the trigger is removed per CR 603.3c.
-                    target_requirement: Some(TargetRequirement::Creature),
+                    target_requirement: Some(TargetRequirement::CreatureWithFilter(
+                        TargetFilter::NotSubtypes(vec!["Demon".into()])
+                    )),
                 },
             ],
         }
