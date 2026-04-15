@@ -228,6 +228,8 @@ fn skirsdag_tap_cost_paid_before_stack() {
 // CR 302.6: the {T} restriction (summoning sickness) applies only to the
 // High Priest's own tap symbol, not to the other creatures tapped as an
 // additional cost. A summoning-sick creature is a valid tap candidate.
+// CR 602.2a: even with a summoning-sick creature tapped as cost, the ability
+// should go on the stack — no Demon token until resolution.
 #[test]
 fn skirsdag_summoning_sick_creature_can_be_tapped() {
     let reg = registry();
@@ -244,5 +246,9 @@ fn skirsdag_summoning_sick_creature_can_be_tapped() {
     assert!(
         state.get_object(creature_sick).unwrap().tapped,
         "CR 302.6: summoning-sick creature should be valid tap candidate for additional cost"
+    );
+    assert_eq!(
+        count_tokens_named(&state, "Demon"), 0,
+        "CR 602.2a: Demon token should not exist until ability resolves from stack"
     );
 }
