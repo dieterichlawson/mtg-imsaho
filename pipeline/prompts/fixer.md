@@ -138,6 +138,12 @@ fixed | failed
 {What was wrong, what was changed, and why.}
 ```
 
+The `## Status` value MUST be EXACTLY one of two words: `fixed` or
+`failed`. No prose, no "PASS — everything works", no summaries, no
+commentary, no additional context. Any summary of what was done goes
+into `## Description` where it belongs. Python rejects anything else
+and forces a retry with this reminder.
+
 If you CANNOT fix the bug (e.g., it requires a major architectural change),
 write `## Status` as `failed` and explain in the Description:
 - What you tried (the approaches you attempted)

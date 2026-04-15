@@ -1169,8 +1169,33 @@ Use the format: ## Status, ## Files Changed, ## Description
             continue
 
         parsed = parse_fix_staging(staging_file)
-        fix_result = parsed.get("status", "failed")
+        fix_result_raw = parsed.get("status", "failed")
         staging_file.unlink()
+
+        # The staging `## Status` field MUST be exactly `fixed` or
+        # `failed` — parsing any free-form value (e.g. "PASS — all 10
+        # tests pass, zero warnings.") breaks status-based branching
+        # and leaves the ticket in an inconsistent state. If the
+        # agent writes anything else, retry with a clarification.
+        fix_result = fix_result_raw.strip().lower().split()[0] \
+            if fix_result_raw else "failed"
+        if fix_result not in ("fixed", "failed"):
+            if attempt < MAX_FIX_ATTEMPTS:
+                print(f"  Agent wrote invalid Status value "
+                      f"{fix_result_raw!r} — retrying to get a "
+                      f"well-formed status")
+                retry_note = (
+                    f"\n\n## Retry note (attempt {attempt} failed)\n"
+                    f"Your `## Status` section must contain EXACTLY one "
+                    f"word: either `fixed` or `failed`. Nothing else — "
+                    f"no prose, no summary, no commentary. Put any "
+                    f"summary into the `## Description` section where "
+                    f"it belongs. Previous attempt wrote "
+                    f"`{fix_result_raw}` which Python cannot parse.\n")
+                continue
+            print(f"  Agent wrote invalid Status value {fix_result_raw!r}; "
+                  f"out of retries — treating as failed")
+            fix_result = "failed"
 
         if fix_result != "fixed":
             # If the agent gave up, require a post-mortem. A `failed`
