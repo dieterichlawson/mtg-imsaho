@@ -1266,6 +1266,20 @@ def parse_consolidation_input(text: str) -> dict:
     if not slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
         raise ValueError(f"frontmatter 'slug' must be lowercase-kebab-case, got {slug!r}")
 
+    # `## Also closes` (optional): bullet list of ticket ids that should be
+    # closed-duplicate → new parent but do not contribute a unique test
+    # entry. Typical use: when nesting an existing merged-* ticket, its
+    # tests are copied into the new parent (each keeping its original card
+    # Source ticket); the merged-* itself is listed here so it gets closed.
+    also_closes: list[str] = []
+    also_match = re.search(
+        r"##\s+Also closes\n(.*?)(?=\n##\s|\Z)", body, re.DOTALL)
+    if also_match:
+        for line in also_match.group(1).strip().split("\n"):
+            line = line.strip().lstrip("-").strip()
+            if line:
+                also_closes.append(line)
+
     title_match = re.match(r"#\s+(.+?)\n", body + "\n")
     if not title_match:
         raise ValueError("body must start with a '# <title>' heading")
@@ -1320,7 +1334,28 @@ def parse_consolidation_input(text: str) -> dict:
     return {
         "slug": slug, "title": title, "description": description,
         "engine_path": engine_path, "tests": tests,
+        "also_closes": also_closes,
     }
+
+
+def _parse_tests_section(body: str) -> list[dict]:
+    """Extract test entries {slug, source_ticket} from a ticket body's
+    `## Tests` section. Used by consolidate to validate that a new parent
+    covers every test from every ticket it's closing."""
+    tests_match = re.search(r"##\s+Tests\n(.*?)(?=\n##\s|\Z)", body, re.DOTALL)
+    if not tests_match:
+        return []
+    results = []
+    for block in re.split(r"\n(?=###\s+)", tests_match.group(1)):
+        block = block.strip()
+        if not block.startswith("###"):
+            continue
+        head, _, rest = block.partition("\n")
+        slug = head[3:].strip()
+        source_match = re.search(r"Source ticket:\s*(.+)", rest)
+        source = source_match.group(1).strip() if source_match else None
+        results.append({"slug": slug, "source_ticket": source})
+    return results
 
 
 def render_consolidated_body(parsed: dict) -> str:
@@ -1334,6 +1369,11 @@ def render_consolidated_body(parsed: dict) -> str:
         lines.append("Implementation: (not yet written)")
         lines.append(f"Scenario: {t['scenario']}")
         lines.append("")
+    if parsed.get("also_closes"):
+        lines += ["## Also closes", ""]
+        for tid in parsed["also_closes"]:
+            lines.append(f"- {tid}")
+        lines.append("")
     return "\n".join(lines).rstrip() + "\n"
 
 
@@ -1346,18 +1386,55 @@ def cmd_consolidate(args):
     parsed = parse_consolidation_input(input_path.read_text())
     slug = parsed["slug"]
 
-    # Collect source ticket ids and verify they exist
-    source_ids = [t["source_ticket"] for t in parsed["tests"] if t["source_ticket"]]
-    missing = [sid for sid in source_ids
-               if not (TICKETS_DIR / f"{sid}.md").exists()]
-    if missing:
-        print(f"ERROR: source ticket(s) not found: {missing}")
+    # Collect source ticket ids (from per-test Source ticket:) plus
+    # ## Also closes entries. Both get closed-duplicate → new parent; the
+    # difference is cosmetic (Also closes entries don't carry a test).
+    # Tickets may legitimately contribute multiple tests, so dedupe.
+    test_source_ids_unique: list[str] = []
+    seen = set()
+    for t in parsed["tests"]:
+        sid = t.get("source_ticket")
+        if sid and sid not in seen:
+            test_source_ids_unique.append(sid)
+            seen.add(sid)
+    also_closes = parsed.get("also_closes", [])
+
+    overlap = set(test_source_ids_unique) & set(also_closes)
+    if overlap:
+        print(f"ERROR: ticket(s) listed both as Source ticket and in Also closes: {overlap}")
         sys.exit(1)
 
-    # Duplicates?
-    if len(source_ids) != len(set(source_ids)):
-        dupes = [x for x in source_ids if source_ids.count(x) > 1]
-        print(f"ERROR: source ticket appears in multiple tests: {set(dupes)}")
+    all_closed_ids = list(test_source_ids_unique) + list(also_closes)
+    if len(all_closed_ids) != len(set(all_closed_ids)):
+        dupes = [x for x in all_closed_ids if all_closed_ids.count(x) > 1]
+        print(f"ERROR: ticket appears multiple times in Also closes: {set(dupes)}")
+        sys.exit(1)
+
+    missing = [tid for tid in all_closed_ids
+               if not (TICKETS_DIR / f"{tid}.md").exists()]
+    if missing:
+        print(f"ERROR: referenced ticket(s) not found: {missing}")
+        sys.exit(1)
+
+    # Test-coverage invariant: the new parent's ## Tests section must
+    # contain every test (by slug) present in any closed ticket's own
+    # Tests section. This guarantees no test is silently dropped when
+    # an intermediate merged-* is collapsed into a deeper parent.
+    new_parent_slugs = {t["slug"] for t in parsed["tests"]}
+    coverage_gaps: list[tuple[str, list[str]]] = []
+    for tid in all_closed_ids:
+        child_body = parse_ticket(TICKETS_DIR / f"{tid}.md")["body"]
+        child_tests = _parse_tests_section(child_body)
+        missing_slugs = [ct["slug"] for ct in child_tests
+                         if ct["slug"] not in new_parent_slugs]
+        if missing_slugs:
+            coverage_gaps.append((tid, missing_slugs))
+    if coverage_gaps:
+        print("ERROR: new parent is missing tests that exist on closed tickets.")
+        print("Every test in a closed ticket's `## Tests` section must appear")
+        print("(same `### slug`) in the new parent's `## Tests` section.")
+        for tid, slugs in coverage_gaps:
+            print(f"  {tid} — missing in parent: {', '.join(slugs)}")
         sys.exit(1)
 
     # Mint new id: merged-<slug>-NN
@@ -1372,9 +1449,9 @@ def cmd_consolidate(args):
 
     if args.dry_run:
         print(f"\nWould create: {new_id}")
-        print(f"Would mark {len(source_ids)} source ticket(s) as deduped:")
-        for sid in source_ids:
-            print(f"  {sid} → {new_id}")
+        print(f"Would close {len(all_closed_ids)} ticket(s) as closed-duplicate:")
+        for tid in all_closed_ids:
+            print(f"  {tid} → {new_id}")
         return
 
     # Write new ticket
@@ -1385,23 +1462,24 @@ def cmd_consolidate(args):
         "created": now_iso(),
         "kind": "consolidated",
     }
-    if source_ids:
-        fm["source_tickets"] = ", ".join(source_ids)
+    if all_closed_ids:
+        fm["source_tickets"] = ", ".join(all_closed_ids)
     body = render_consolidated_body(parsed)
     write_ticket(new_id, fm, body)
 
-    # Mark each source ticket as closed-duplicate pointing at the new parent.
-    for sid in source_ids:
-        path = TICKETS_DIR / f"{sid}.md"
+    # Close every referenced ticket (per-test sources + also_closes items).
+    for tid in all_closed_ids:
+        path = TICKETS_DIR / f"{tid}.md"
         ticket = parse_ticket(path)
         ticket["frontmatter"]["status"] = "closed-duplicate"
         ticket["frontmatter"]["duplicate_of"] = new_id
         # Remove any legacy fields from earlier versions of this pipeline.
         ticket["frontmatter"].pop("deduped_into", None)
-        write_ticket(sid, ticket["frontmatter"], ticket["body"])
+        write_ticket(tid, ticket["frontmatter"], ticket["body"])
 
     print(f"Created {new_id} with {len(parsed['tests'])} test(s)")
-    print(f"Marked {len(source_ids)} source ticket(s) as status=closed-duplicate")
+    print(f"Marked {len(all_closed_ids)} ticket(s) as status=closed-duplicate "
+          f"({len(test_source_ids)} per-test, {len(also_closes)} via Also closes)")
 
     # Staging files are ephemeral transport; remove once consumed successfully.
     if not args.keep_input:

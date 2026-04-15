@@ -42,19 +42,60 @@ change fixes both.
 
 ## Test inheritance (IMPORTANT)
 
-When a merged-* ticket is a source, the new parent's `## Tests` section
-MUST contain every test currently in that merged-*'s own `## Tests`
-section — copy each test entry verbatim, preserving its `Source ticket:`
-field (which points at the original card ticket). This is how the "set
-of tests that must pass" flows up the chain.
+**Invariant (enforced by Python):** the new parent's `## Tests` section
+must contain every test (identified by `### {slug}`) that exists in the
+`## Tests` section of any ticket being closed. No test may be silently
+dropped during consolidation. Python will refuse to ingest your output
+if any closed ticket has a test slug that doesn't appear in the parent.
 
-When a card ticket is a source, emit one new test entry whose
-`Source ticket:` is that card ticket. Write a scenario the test-writer
-can directly implement (concrete setup + action + assertion).
+Practically this means:
+
+- When a card ticket has 1+ tests, copy EVERY one into the new parent.
+  Preserve the slug verbatim; set `Source ticket:` to the card ticket's
+  id (even if the original read `Source ticket: (new)`). A card ticket
+  with three tests contributes three entries to the parent, all with
+  the same card-ticket id as `Source ticket:`.
+- When a merged-* ticket is being closed (via `## Also closes`), copy
+  EVERY test from its `## Tests` section into the new parent verbatim,
+  preserving both the slug and the original `Source ticket:` field
+  (which already points at a card ticket).
+- You may add new tests that weren't in any closed ticket — for card
+  tickets in the seed set that haven't been merged before, write a
+  fresh entry.
 
 A single consolidation's Tests section can therefore contain BOTH
-freshly-written entries (for card ticket sources) AND copied entries
-(for merged-* sources). Every entry must have a `Source ticket:` field.
+freshly-written entries AND copied entries. Every entry must have a
+`Source ticket:` field pointing at a card ticket. The set of slugs must
+cover the union of all descendant tests.
+
+## Closing merged-* tickets whose tests you absorbed (IMPORTANT)
+
+When you copy tests out of an existing merged-* ticket into your new
+parent, that merged-* ticket itself must also be closed — otherwise
+it's left as an orphan pointing at children who now live elsewhere. The
+card-ticket `Source ticket:` entries on your copied tests do NOT close
+the intermediate merged-* ticket; they only close the card tickets.
+
+Use the `## Also closes` section for this. Every merged-* ticket whose
+tests you copied into your new parent must appear in `## Also closes`.
+Python will then mark them `status: closed-duplicate` with
+`duplicate_of:` pointing at the new parent — without requiring a
+synthetic test entry.
+
+```markdown
+## Also closes
+
+- merged-fake-widget-target-check-01
+- merged-fake-widget-cleanup-check-01
+```
+
+Rules:
+- Every merged-* ticket you treat as a source (whose tests you copied)
+  MUST appear in `## Also closes`.
+- A ticket cannot appear in both `Source ticket:` (per-test) and
+  `## Also closes`. Pick one.
+- `## Also closes` is optional — omit the section when you're not
+  nesting any merged-* tickets.
 
 ## Rules for the consolidation itself
 
