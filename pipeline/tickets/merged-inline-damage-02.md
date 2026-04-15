@@ -1,6 +1,6 @@
 ---
 id: merged-inline-damage-02
-status: confirmed
+status: fixed
 card: multiple
 created: 2026-04-15T04:40:54Z
 kind: consolidated
@@ -14,6 +14,11 @@ test_file: mtg-engine/tests/pipeline_bugs_merged_inline_damage_02.rs
 tests_confirmed: 11
 tests_total: 11
 worktree: /Users/dlaw/mtg/.worktrees/fix-merged-inline-damage-02
+fixed_at: 2026-04-15T05:48:29Z
+fix_run_id: 2026-04-14-merged-inline-damage-02-fix
+fix_model: opus
+fix_tokens: 24850
+fix_duration: 505
 ---
 
 # Inline damage writes bypass the central damage handler (CR 702.16e, 614.1a)
@@ -124,3 +129,20 @@ Scenario: Place Stensia Bloodhall on the battlefield. Place a planeswalker with 
 - **bloodhall_damage_respects_prevention** — confirmed
   - test fn: `bloodhall_damage_respects_prevention`
   - assertion: CR 614.1a: damage prevented by counter removal, loyalty should be unchanged (left: 2, right: 4)
+
+## Fix Result
+
+status: fixed
+files_changed: - mtg-engine/src/engine.rs
+- mtg-engine/src/cards/helpers.rs
+- mtg-engine/src/cards/isd/balefire_dragon.rs
+- mtg-engine/src/cards/isd/olivia_voldaren.rs
+- mtg-engine/src/cards/isd/daybreak_ranger.rs
+- mtg-engine/src/cards/isd/into_the_maw_of_hell.rs
+- mtg-engine/src/cards/isd/blasphemous_act.rs
+- mtg-engine/src/cards/isd/harvest_pyre.rs
+- mtg-engine/src/cards/isd/stensia_bloodhall.rs
+
+Multiple cards dealt damage by directly writing to `obj.damage_marked` or manipulating planeswalker loyalty counters instead of routing through `apply_pending_effect(PendingEffect::DealDamage)`. The central damage handler at engine.rs enforces protection from source (CR 702.16e), damage prevention/replacement effects like Unbreathing Horde's counter removal (CR 614.1a), and planeswalker loyalty-counter removal (CR 120.3c). Inline writes bypassed all three checks.
+
+The fix replaces every inline damage write in the affected cards and the `resolve_damage` helper with calls to `apply_pending_effect`, which routes damage through the central handler. For Olivia Voldaren, an early protection check prevents the entire ability (damage + Vampire subtype + counter) from applying when the target has protection from the source, since protection also prevents targeting. The planeswalker detection in the central handler was also fixed to check `obj.card_types` directly (not just `registry.card_data`), so that test-created planeswalkers without registry entries are handled correctly.

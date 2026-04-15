@@ -939,7 +939,6 @@ def cmd_fix(args):
         return
 
     shared_prompt = (PROMPTS_DIR / "fixer.md").read_text()
-    test_name = fm.get("test_name", "")
 
     # Reuse the ticket's worktree (created during test phase)
     wt_dir = get_worktree_dir(tid)
@@ -951,13 +950,37 @@ def cmd_fix(args):
     wt_staging.mkdir(parents=True, exist_ok=True)
     staging_file = wt_staging / f"{tid}-fix.md"
 
+    # Collect all tests (slug + implementation) from the ticket body.
+    # Both single-test and multi-test tickets are structured identically
+    # via the ## Tests section.
+    ticket_tests = _parse_tests_section(ticket["body"])
+    test_file = fm.get("test_file", "")
+    test_fns = []
+    for ct in ticket_tests:
+        # Implementation line on a confirmed ticket looks like
+        # "path/to/file.rs::fn_name". Only include fully-implemented tests.
+        body_ct = ticket["body"]
+        impl_match = re.search(
+            rf"(?ms)^###\s+{re.escape(ct['slug'])}\s*$.*?^Implementation:\s*(.+?)$",
+            body_ct)
+        if impl_match:
+            impl = impl_match.group(1).strip()
+            if "::" in impl:
+                test_fns.append(impl.split("::", 1)[1])
+
+    failing_tests_block = "\n".join(
+        f"- `{name}`" for name in test_fns) or "- (see ticket `## Tests` section)"
+
     per_agent = f"""## Ticket to fix
 
 {ticket["body"]}
 
-### Failing test
-- File: `{fm.get('test_file', '')}`
-- Test name: `{test_name}`
+### Failing tests
+This ticket has {len(test_fns)} test(s) that must ALL pass after your fix.
+They all live in a single file:
+- File: `{test_file}`
+- Test functions:
+{failing_tests_block}
 
 ### Staging output
 Write your result to: `pipeline/staging/{tid}-fix.md`
@@ -966,8 +989,9 @@ Use the format: ## Status, ## Files Changed, ## Description
 ### Rules
 - Only modify files under `mtg-engine/src/`
 - Do NOT modify test files
-- All tests must pass after your fix
+- EVERY test listed above must pass after your fix
 - Zero compiler warnings
+- The full `cargo test` suite must still pass (no regressions)
 """
     print(f"  Spawning agent in worktree {wt_dir.name}...")
     result = run_agent_in(shared_prompt + "\n\n---\n\n" + per_agent,
@@ -980,16 +1004,21 @@ Use the format: ## Status, ## Files Changed, ## Description
         parsed = parse_fix_staging(staging_file)
         fix_result = parsed.get("status", "failed")
 
-        # Validate in the worktree
-        if fix_result == "fixed" and test_name:
+        # Validate in the worktree. validate_fix.sh's single-test arg is
+        # for one-test tickets; for multi-test tickets we skip it and
+        # rely on the full-test-suite check the script already performs
+        # (every ticket test runs as part of `cargo test`).
+        if fix_result == "fixed":
             val = subprocess.run(
-                [str(SCRIPTS_DIR / "validate_fix.sh"), test_name],
+                [str(SCRIPTS_DIR / "validate_fix.sh")],
                 capture_output=True, text=True, cwd=str(wt_dir),
             )
             validated = val.returncode == 0
             if not validated:
                 fix_result = "failed"
                 print("  Validation FAILED")
+                print(val.stdout[-2000:] if val.stdout else "")
+                print(val.stderr[-500:] if val.stderr else "")
 
         staging_file.unlink()
 
