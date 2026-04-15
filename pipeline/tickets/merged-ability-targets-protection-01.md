@@ -1,10 +1,11 @@
 ---
 id: merged-ability-targets-protection-01
-status: new
+status: closed-duplicate
 card: multiple
 created: 2026-04-15T02:45:29Z
 kind: consolidated
 source_tickets: daybreak_ranger-03, kessig_wolf_run-02
+duplicate_of: merged-ability-targets-protection-02
 ---
 
 # Activated-ability target enumeration skips protection-from check
@@ -29,4 +30,3 @@ Scenario: Opponent controls a flying creature with protection from green (e.g., 
 Source ticket: kessig_wolf_run-02
 Implementation: (not yet written)
 Scenario: Opponent controls a creature with protection from green. Activate Kessig Wolf Run. Verify that creature is NOT offered as a legal target.
-

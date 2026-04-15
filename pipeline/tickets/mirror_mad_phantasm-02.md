@@ -1,6 +1,6 @@
 ---
 id: mirror_mad_phantasm-02
-status: new
+status: closed-duplicate
 card: Mirror-Mad Phantasm
 card_file: mtg-engine/src/cards/isd/mirror_mad_phantasm.rs
 created: 2026-04-15T03:36:03Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-mirror_mad_phantasm-audit
 audit_model: opus
 audit_tokens: 26524
 audit_duration: 621
+duplicate_of: merged-controller-after-move-01
 ---
 
 ## Audit Finding
@@ -38,4 +39,3 @@ When the found Mirror-Mad Phantasm is put onto the battlefield, `move_object` is
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Player B controls Mirror-Mad Phantasm (owned by Player A) via a Control Magic-like effect. Player A has a "Whenever a creature enters the battlefield under your control, gain 1 life" trigger. Player B activates Mirror-Mad Phantasm's ability. The Phantasm is shuffled into Player A's library and found during the reveal. When it enters the battlefield, verify that: (1) the Phantasm is controlled by Player A (the owner), and (2) Player A's ETB trigger fires (not Player B's). Currently, the `EnteredBattlefield` event carries Player B as the controller, causing Player A's trigger to miss.
-

@@ -1,6 +1,6 @@
 ---
 id: slayer_of_the_wicked-01
-status: new
+status: closed-duplicate
 card: Slayer of the Wicked
 card_file: mtg-engine/src/cards/isd/slayer_of_the_wicked.rs
 created: 2026-04-15T03:45:06Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-slayer_of_the_wicked-audit
 audit_model: opus
 audit_tokens: 19326
 audit_duration: 360
+duplicate_of: merged-target-as-choose-02
 ---
 
 ## Audit Finding
@@ -45,4 +46,3 @@ Scenario: Place a Zombie token with hexproof on the opponent's battlefield (e.g.
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Enter Slayer of the Wicked onto the battlefield when no Vampire, Werewolf, or Zombie exists on the battlefield. Verify that no ETB trigger is placed on the stack (currently the trigger goes on the stack because `target_requirement: None` bypasses the CR 603.3c check in `process_pending_trigger_pushes`). After processing triggers, the stack should remain empty.
-

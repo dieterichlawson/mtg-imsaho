@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-bloodgift_demon-audit
 audit_model: opus
 audit_tokens: 12882
 audit_duration: 241
-duplicate_of: merged-target-as-choose-01
+duplicate_of: merged-target-as-choose-02
 ---
 
 ## Audit Finding

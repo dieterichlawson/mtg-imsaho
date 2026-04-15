@@ -1,10 +1,11 @@
 ---
 id: merged-zone-cleanup-characteristics-01
-status: new
+status: closed-duplicate
 card: multiple
 created: 2026-04-15T02:45:29Z
 kind: consolidated
 source_tickets: olivia_voldaren-02, grimoire_of_the_dead-02, creeping_renaissance-01, bitterheart_witch-02
+duplicate_of: merged-zone-cleanup-characteristics-02
 ---
 
 # Zone-change cleanup misses runtime-added characteristics (CR 400.7)
@@ -40,4 +41,3 @@ Scenario: A creature enters as a copy of an enchantment (gaining Enchantment in 
 Source ticket: bitterheart_witch-02
 Implementation: (not yet written)
 Scenario: Bitterheart Witch places a Curse on a player. Bounce the Curse and replay it attached to a different player. Verify attached_to_player reflects the new target and not the stale previous one.
-

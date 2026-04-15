@@ -1,6 +1,6 @@
 ---
 id: sever_the_bloodline-02
-status: new
+status: closed-duplicate
 card: Sever the Bloodline
 card_file: mtg-engine/src/cards/isd/sever_the_bloodline.rs
 created: 2026-04-15T03:47:14Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-sever_the_bloodline-audit
 audit_model: opus
 audit_tokens: 20080
 audit_duration: 488
+duplicate_of: merged-flashback-cost-reduction-02
 ---
 
 ## Audit Finding
@@ -53,4 +54,3 @@ The flashback cast path (engine.rs:2219-2227) takes the raw `data.flashback_cost
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Place a permanent on the battlefield that grants `ContinuousEffect::ReduceCost` for the caster (e.g., a familiar reducing spell costs by {1}). Put Sever the Bloodline in the graveyard. Verify that casting it via flashback costs {4}{B}{B} (reduced from {5}{B}{B}), not the unreduced {5}{B}{B}.
-

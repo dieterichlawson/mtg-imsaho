@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-army_of_the_damned-audit
 audit_model: opus
 audit_tokens: 21975
 audit_duration: 465
-duplicate_of: merged-flashback-cost-reduction-01
+duplicate_of: merged-flashback-cost-reduction-02
 ---
 
 ## Audit Finding

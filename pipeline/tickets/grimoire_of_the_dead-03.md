@@ -1,6 +1,6 @@
 ---
 id: grimoire_of_the_dead-03
-status: new
+status: closed-duplicate
 card: Grimoire of the Dead
 card_file: mtg-engine/src/cards/isd/grimoire_of_the_dead.rs
 created: 2026-04-14T20:57:12Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-grimoire_of_the_dead-audit
 audit_model: opus
 audit_tokens: 16027
 audit_duration: 412
+duplicate_of: merged-controller-after-move-01
 ---
 
 ## Audit Finding
@@ -44,4 +45,3 @@ The code calls `move_object(cid, Zone::Battlefield, registry)` first, then sets 
 **Affected cards:**
 - Grimoire of the Dead
 - Any card that moves objects to the battlefield "under your control" then sets controller after move_object
-

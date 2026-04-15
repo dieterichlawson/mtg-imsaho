@@ -1,25 +1,23 @@
 ---
-id: merged-temp-effect-zone-persist-01
-status: closed-duplicate
+id: merged-temp-effect-zone-persist-02
+status: new
 card: multiple
-created: 2026-04-15T02:45:28Z
+created: 2026-04-15T04:57:48Z
 kind: consolidated
-source_tickets: charmbreaker_devils-02, kessig_wolf_run-01, manor_gargoyle-01, morkrut_banshee-02, past_in_flames-02, liliana_of_the_veil-02
-duplicate_of: merged-temp-effect-zone-persist-02
+source_tickets: charmbreaker_devils-02, kessig_wolf_run-01, manor_gargoyle-01, morkrut_banshee-02, past_in_flames-02, liliana_of_the_veil-02, trepanation_blade-03, merged-temp-effect-zone-persist-01
 ---
 
 # TemporaryEffect and until-end-of-turn state persist across zone changes (CR 400.7)
 
 ## Description
-Per CR 400.7, an object that changes zones becomes a new object with no memory of its previous existence. The engine reuses `ObjectId` across zone changes (incrementing `zone_change_count` in state.rs:567 instead of minting a new ID). Runtime effects keyed by `ObjectId` alone — `TemporaryEffect::ModifyPT`, `TemporaryEffect::GrantKeyword`/`RemoveKeyword`, `GrantFlashback`, and the planeswalker `abilities_activated_this_turn` sentinel — all survive zone changes, so a permanent that leaves and re-enters carries stale effects. `move_object` (state.rs:572-583) does not prune `until_end_of_turn` entries; `effective_power`/`effective_toughness`/`has_keyword` match by ObjectId without consulting `zone_change_count`.
+Per CR 400.7, an object that changes zones becomes a new object with no memory of its previous existence. The engine reuses `ObjectId` across zone changes (incrementing `zone_change_count` in state.rs:567 instead of minting a new ID). Runtime effects keyed by `ObjectId` alone — `TemporaryEffect::ModifyPT`, `GrantKeyword`/`RemoveKeyword`, `GrantFlashback`, and the planeswalker `abilities_activated_this_turn` sentinel — all survive zone changes. `move_object` (state.rs:572-583) does not prune `until_end_of_turn` entries, and `effective_power`/`effective_toughness`/`has_keyword` match by ObjectId without consulting `zone_change_count`.
 
 ## Engine path
 - state.rs:567 (zone_change_count increment — exists but unused at lookup)
-- state.rs:572-583 (move_object cleanup — does not prune until_end_of_turn or abilities_activated_this_turn)
+- state.rs:572-583 (move_object cleanup — does not prune until_end_of_turn)
 - state.rs:1072-1076 (effective_power — no zone_change_count check)
 - state.rs:1253-1256 (has_keyword — no zone_change_count check)
 - state.rs:209 (GrantFlashback stores ObjectId, no zone_change_count)
-- engine.rs:871 (planeswalker loyalty-used sentinel check)
 
 ## Tests
 
@@ -52,3 +50,13 @@ Scenario: Resolve Past in Flames granting flashback to all instants/sorceries in
 Source ticket: liliana_of_the_veil-02
 Implementation: (not yet written)
 Scenario: Activate Liliana's +1 (marks her abilities_activated_this_turn sentinel). Bounce Liliana to hand and recast her. Verify the new Liliana can activate a loyalty ability.
+
+### test_trepanation_blade_buff_does_not_persist_through_blink
+Source ticket: trepanation_blade-03
+Implementation: (not yet written)
+Scenario: Equip Trepanation Blade to a 2/2 creature. Set up defender's library so 3 cards are milled. Trigger the blade's ability so the creature gets +3/+0 (effective power 5). Blink the creature (exile then return). Assert effective power is 2 (base), not 5 — the buff should not survive the zone change.
+
+## Also closes
+
+- merged-temp-effect-zone-persist-01
+

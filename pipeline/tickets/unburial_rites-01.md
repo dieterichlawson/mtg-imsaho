@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-unburial_rites-audit
 audit_model: opus
 audit_tokens: 10537
 audit_duration: 4811
-duplicate_of: merged-flashback-cost-reduction-01
+duplicate_of: merged-flashback-cost-reduction-02
 ---
 
 ## Audit Finding

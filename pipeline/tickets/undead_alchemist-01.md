@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-undead_alchemist-audit
 audit_model: opus
 audit_tokens: 16895
 audit_duration: 397
-duplicate_of: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding

@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-splinterfright-audit
 audit_model: opus
 audit_tokens: 15601
 audit_duration: 5057
-duplicate_of: merged-your-upkeep-scope-01
+duplicate_of: merged-your-upkeep-scope-02
 ---
 
 ## Audit Finding

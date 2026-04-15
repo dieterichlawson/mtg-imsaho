@@ -1,6 +1,6 @@
 ---
 id: trepanation_blade-03
-status: new
+status: closed-duplicate
 card: Trepanation Blade
 card_file: mtg-engine/src/cards/isd/trepanation_blade.rs
 created: 2026-04-15T03:52:30Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-trepanation_blade-audit
 audit_model: opus
 audit_tokens: 28121
 audit_duration: 580
+duplicate_of: merged-temp-effect-zone-persist-02
 ---
 
 ## Audit Finding
@@ -52,4 +53,3 @@ The `TemporaryEffect::ModifyPT` entry targets the creature by `ObjectId`. If the
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Equip Trepanation Blade to a 2/2 creature. Set up defender's library so 3 cards are milled (2 nonlands + 1 land). Trigger the blade's ability so the creature gets +3/+0 (effective power 5). Then blink the creature (move to exile, then back to battlefield). Assert that the creature's effective power is 2 (base), not 5 — the buff should not survive the zone change.
-

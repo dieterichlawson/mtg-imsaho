@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-manor_gargoyle-audit
 audit_model: opus
 audit_tokens: 17084
 audit_duration: 338
-duplicate_of: merged-temp-effect-zone-persist-01
+duplicate_of: merged-temp-effect-zone-persist-02
 ---
 
 ## Audit Finding

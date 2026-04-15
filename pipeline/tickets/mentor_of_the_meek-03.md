@@ -1,6 +1,6 @@
 ---
 id: mentor_of_the_meek-03
-status: new
+status: closed-duplicate
 card: Mentor of the Meek
 card_file: mtg-engine/src/cards/isd/mentor_of_the_meek.rs
 created: 2026-04-15T03:46:51Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-mentor_of_the_meek-audit
 audit_model: opus
 audit_tokens: 19660
 audit_duration: 465
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding
@@ -49,4 +50,3 @@ Per CR 113.7a, once a triggered ability is on the stack, it exists independently
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Place Mentor of the Meek on the battlefield. Give the controller {1} floating mana and a library card. Enter a 1/1 creature (creates EnterWatch trigger). Before resolving the trigger, destroy Mentor (move to graveyard). Resolve the trigger. Assert that the YesNo pay choice IS presented — per CR 113.7a, the trigger exists independently on the stack and should resolve even though Mentor is gone.
-

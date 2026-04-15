@@ -45,6 +45,11 @@ ORACLE_SCRIPT = PROJECT_ROOT / "scripts" / "oracle_lookup.py"
 
 DEFAULT_MODEL = "opus"
 
+# Max wall-clock an agent subprocess may run before SIGKILL. Large dedup
+# passes with many tickets to cross-reference exceed the old 15-minute
+# limit; bumped to 1 hour.
+AGENT_TIMEOUT_SECS = 3600
+
 # Env vars that force API-key billing when set. Scrubbed from agent
 # subprocesses so the `claude` CLI falls back to Claude Code subscription auth.
 API_KEY_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
@@ -149,7 +154,7 @@ def run_agent_in(prompt: str, cwd: Path, model: str = DEFAULT_MODEL,
     start = time.time()
     result = subprocess.run(
         cmd, capture_output=True, text=True,
-        cwd=str(cwd), timeout=900,
+        cwd=str(cwd), timeout=AGENT_TIMEOUT_SECS,
         env=subscription_env(),
     )
     elapsed = int(time.time() - start)
@@ -272,7 +277,7 @@ def run_agent(prompt: str, model: str = DEFAULT_MODEL,
     result = subprocess.run(
         cmd, capture_output=True, text=True,
         cwd=str(PROJECT_ROOT),
-        timeout=900,
+        timeout=AGENT_TIMEOUT_SECS,
         env=subscription_env(),
     )
     elapsed = int(time.time() - start)

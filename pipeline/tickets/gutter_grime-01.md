@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-gutter_grime-audit
 audit_model: opus
 audit_tokens: 18563
 audit_duration: 350
-duplicate_of: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding

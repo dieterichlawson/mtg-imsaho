@@ -1,23 +1,21 @@
 ---
-id: merged-flashback-cost-reduction-01
-status: closed-duplicate
+id: merged-flashback-cost-reduction-02
+status: new
 card: multiple
-created: 2026-04-15T02:45:28Z
+created: 2026-04-15T04:57:48Z
 kind: consolidated
-source_tickets: army_of_the_damned-02, creeping_renaissance-02, devils_play-02, heartless_summoning-01, heartless_summoning-02, snapcaster_mage-03, unburial_rites-01
-duplicate_of: merged-flashback-cost-reduction-02
+source_tickets: army_of_the_damned-02, creeping_renaissance-02, devils_play-02, heartless_summoning-01, heartless_summoning-02, snapcaster_mage-03, unburial_rites-01, sever_the_bloodline-02, travel_preparations-01, merged-flashback-cost-reduction-01
 ---
 
 # Alternative-cost paths bypass effective_spell_cost (CR 601.2f)
 
 ## Description
-Per CR 601.2f, the total cost of a spell is the mana cost or alternative cost plus cost increases minus cost reductions. The engine's `effective_spell_cost` function (engine.rs:261-305) gathers `ReduceCost` continuous effects and applies them to a spell's cost. It is only called on the normal-cast branch. Alternative-cost paths — flashback (engine.rs:2219-2227 in `submit_action`, engine.rs:1263-1291 in `legal_actions`) and cast-from-graveyard (legal_actions graveyard branch for Skaab Ruinator et al.) — use the raw cost, so any active cost reducer silently fails to apply. Same bug in two functions (`legal_actions` for affordability and `submit_action` for payment), producing both wrong `can-cast` UX and wrong payment semantics.
+Per CR 601.2f, the total cost of a spell starts with the mana cost or alternative cost (such as flashback), then adds cost increases and subtracts cost reductions. The engine's `effective_spell_cost` function (engine.rs:261-305) applies `ReduceCost` continuous effects but is only called on the normal-cast branch. The flashback cast path (engine.rs:2219-2227) and the `legal_actions` flashback affordability check (engine.rs:1263-1291) both use the raw flashback cost, bypassing active cost reducers. This produces both incorrect affordability checks and incorrect payment amounts for all flashback spells when cost reduction is active.
 
 ## Engine path
 - engine.rs:2219-2227 (submit_action flashback branch — raw cost)
 - engine.rs:2229-2230 (submit_action normal branch — correctly reduced)
 - engine.rs:1263-1291 (legal_actions flashback affordability — raw cost)
-- engine.rs:1231-1245 (legal_actions graveyard-cast affordability — raw cost)
 - engine.rs:261-305 (effective_spell_cost — the function that should be called)
 
 ## Tests
@@ -56,3 +54,18 @@ Scenario: Control Heartless Summoning. ETB Snapcaster targeting a creature spell
 Source ticket: unburial_rites-01
 Implementation: (not yet written)
 Scenario: Control a permanent with `ReduceCost { reduction: 1, filter: SpellFilter::All }`. Cast Unburial Rites via flashback. Verify the reduction applies.
+
+### test_sever_the_bloodline_flashback_cost_reduced
+Source ticket: sever_the_bloodline-02
+Implementation: (not yet written)
+Scenario: Control a permanent with `ReduceCost { reduction: 1, filter: SpellFilter::All }`. Cast Sever the Bloodline from graveyard via flashback. Verify the paid cost is {4}{B}{B} (reduced from {5}{B}{B}).
+
+### test_travel_preparations_flashback_cost_reduced
+Source ticket: travel_preparations-01
+Implementation: (not yet written)
+Scenario: Control a permanent reducing sorcery costs by {1}. Cast Travel Preparations via flashback. Verify the flashback cost is reduced from {1}{W} to {W}.
+
+## Also closes
+
+- merged-flashback-cost-reduction-01
+

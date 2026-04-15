@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-geist_of_saint_traft-audit
 audit_model: opus
 audit_tokens: 20037
 audit_duration: 493
-duplicate_of: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding

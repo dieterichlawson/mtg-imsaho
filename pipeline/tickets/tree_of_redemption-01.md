@@ -1,6 +1,6 @@
 ---
 id: tree_of_redemption-01
-status: new
+status: closed-duplicate
 card: Tree of Redemption
 card_file: mtg-engine/src/cards/isd/tree_of_redemption.rs
 created: 2026-04-14T21:48:34Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-tree_of_redemption-audit
 audit_model: opus
 audit_tokens: 9193
 audit_duration: 1139
+duplicate_of: merged-stale-pt-zone-cleanup-01
 ---
 
 ## Audit Finding
@@ -32,4 +33,3 @@ When Tree of Redemption exchanges its toughness with the player's life total, th
 **Affected cards:**
 - Tree of Redemption
 - Any card that modifies `obj.toughness` or `obj.power` at runtime (engine-wide)
-

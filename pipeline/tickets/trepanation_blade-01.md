@@ -1,6 +1,6 @@
 ---
 id: trepanation_blade-01
-status: new
+status: closed-duplicate
 card: Trepanation Blade
 card_file: mtg-engine/src/cards/isd/trepanation_blade.rs
 created: 2026-04-15T03:52:30Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-trepanation_blade-audit
 audit_model: opus
 audit_tokens: 28121
 audit_duration: 580
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding
@@ -44,4 +45,3 @@ The `AttacksTrigger` resolution path gates execution on the source object (`obje
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Equip Trepanation Blade to a creature. Set up defender's library with [nonland, land]. Declare the creature as an attacker, which puts the Blade's attack trigger on the stack. Before the trigger resolves, destroy the Blade (move it to graveyard). Resolve the trigger. Assert that the defender's library was milled (both cards in graveyard) and the creature received +2/+0 until end of turn, despite the equipment no longer being on the battlefield.
-

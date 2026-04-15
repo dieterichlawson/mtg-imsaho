@@ -1,6 +1,6 @@
 ---
 id: stensia_bloodhall-02
-status: new
+status: closed-duplicate
 card: Stensia Bloodhall
 card_file: mtg-engine/src/cards/isd/stensia_bloodhall.rs
 created: 2026-04-15T03:48:41Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-stensia_bloodhall-audit
 audit_model: opus
 audit_tokens: 8416
 audit_duration: 225
+duplicate_of: merged-ability-targets-protection-02
 ---
 
 ## Audit Finding
@@ -38,4 +39,3 @@ When enumerating valid targets for activated abilities, the engine calls `can_be
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Place Stensia Bloodhall on the battlefield controlled by P0. Place a planeswalker controlled by P1 that has protection from colorless. Give P0 sufficient mana ({3}{B}{R}). Call `legal_actions` and assert that no `ActivateAbility` action for Bloodhall targets the protected planeswalker. The planeswalker should not appear in the target list.
-

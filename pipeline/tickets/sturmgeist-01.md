@@ -1,6 +1,6 @@
 ---
 id: sturmgeist-01
-status: new
+status: closed-duplicate
 card: Sturmgeist
 card_file: mtg-engine/src/cards/isd/sturmgeist.rs
 created: 2026-04-15T03:46:37Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-sturmgeist-audit
 audit_model: opus
 audit_tokens: 22153
 audit_duration: 451
+duplicate_of: merged-zone-cleanup-characteristics-02
 ---
 
 ## Audit Finding
@@ -40,4 +41,3 @@ Per CR 112.8, a card not on the stack or battlefield is controlled by its owner.
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Player A (P0) owns Sturmgeist. Set Sturmgeist's controller to P1 (simulating a steal effect). Give P0 3 cards in hand, P1 5 cards in hand. Move Sturmgeist to graveyard. Assert `effective_power(sturmgeist, &registry) == 3` (owner P0's hand size), not 5 (thief P1's hand size).
-

@@ -1,6 +1,6 @@
 ---
 id: moldgraf_monstrosity-02
-status: new
+status: closed-duplicate
 card: Moldgraf Monstrosity
 card_file: mtg-engine/src/cards/isd/moldgraf_monstrosity.rs
 created: 2026-04-15T03:44:23Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-moldgraf_monstrosity-audit
 audit_model: opus
 audit_tokens: 15825
 audit_duration: 317
+duplicate_of: merged-controller-after-move-01
 ---
 
 ## Audit Finding
@@ -43,4 +44,3 @@ The code sets `obj.controller` AFTER calling `state.move_object()`. The `move_ob
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Create a creature owned by P0 but last controlled by P1 (simulating a stolen-then-sacrificed creature) in P0's graveyard. Create Moldgraf Monstrosity controlled by P0. Kill Moldgraf and trigger `on_dies`. Assert the returned creature is on the battlefield controlled by P0. Capture the `EnteredBattlefield` event and assert its `controller` field is P0 (not the stale P1).
-

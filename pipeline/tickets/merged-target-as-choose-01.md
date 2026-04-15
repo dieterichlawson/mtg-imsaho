@@ -1,10 +1,11 @@
 ---
 id: merged-target-as-choose-01
-status: new
+status: closed-duplicate
 card: multiple
 created: 2026-04-15T02:45:29Z
 kind: consolidated
 source_tickets: bitterheart_witch-01, bloodgift_demon-01
+duplicate_of: merged-target-as-choose-02
 ---
 
 # "Target player" triggers implemented as `target_requirement: None` (CR 603.3c/d)
@@ -27,4 +28,3 @@ Scenario: Bitterheart Witch dies with two opponents in the game. Verify the targ
 Source ticket: bloodgift_demon-01
 Implementation: (not yet written)
 Scenario: Bloodgift Demon's upkeep triggers with multiple opponents. Verify the target player is chosen when the trigger is put on the stack and fizzles if that player gains hexproof before resolution.
-

@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-grimoire_of_the_dead-audit
 audit_model: opus
 audit_tokens: 16027
 audit_duration: 412
-duplicate_of: merged-zone-cleanup-characteristics-01
+duplicate_of: merged-zone-cleanup-characteristics-02
 ---
 
 ## Audit Finding

@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-kessig_cagebreakers-audit
 audit_model: opus
 audit_tokens: 17473
 audit_duration: 419
-duplicate_of: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding

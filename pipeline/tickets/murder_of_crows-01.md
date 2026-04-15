@@ -1,6 +1,6 @@
 ---
 id: murder_of_crows-01
-status: new
+status: closed-duplicate
 card: Murder of Crows
 card_file: mtg-engine/src/cards/isd/murder_of_crows.rs
 created: 2026-04-15T03:45:47Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-murder_of_crows-audit
 audit_model: opus
 audit_tokens: 17841
 audit_duration: 401
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding
@@ -44,4 +45,3 @@ The `on_any_creature_dies` handler gates on `self_id` being on the battlefield (
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Place Murder of Crows on the battlefield controlled by P0 with cards in library. Move Murder of Crows to the graveyard (simulating simultaneous death). Call `on_any_creature_dies` with a dummy dead creature. Assert that `state.awaiting_action` is `Some(YesNo { .. })` — the draw choice should be presented even though Murder of Crows is in the graveyard.
-

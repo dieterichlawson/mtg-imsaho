@@ -1,6 +1,6 @@
 ---
 id: moonmist-01
-status: new
+status: closed-duplicate
 card: Moonmist
 card_file: mtg-engine/src/cards/isd/moonmist.rs
 created: 2026-04-15T03:54:42Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-moonmist-audit
 audit_model: opus
 audit_tokens: 24806
 audit_duration: 535
+duplicate_of: merged-stale-pt-zone-cleanup-01
 ---
 
 ## Audit Finding
@@ -55,4 +56,3 @@ Moonmist manually transforms Humans by directly mutating obj.power and obj.tough
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Put Gatstaf Shepherd (2/2 front / 3/3 back) on the battlefield under P0. Cast and resolve Moonmist to transform it. Verify is_transformed=true and effective_power=3. Then move Gatstaf Shepherd to hand (simulating bounce). Verify is_transformed=false. Then move it back to the battlefield. Assert effective_power(id, registry) == 2 and effective_toughness(id, registry) == 2. Currently fails: effective_power returns 3 due to stale obj.power.
-

@@ -1,6 +1,6 @@
 ---
 id: cloistered_youth-02
-status: new
+status: closed-duplicate
 card: Cloistered Youth
 card_file: mtg-engine/src/cards/isd/cloistered_youth.rs
 created: 2026-04-15T03:43:08Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-cloistered_youth-audit
 audit_model: opus
 audit_tokens: 11289
 audit_duration: 242
+duplicate_of: merged-your-upkeep-scope-02
 ---
 
 ## Audit Finding
@@ -44,4 +45,3 @@ Scenario: Player A controls Cloistered Youth (untransformed). During Player B's 
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Player A controls Unholy Fiend (transformed Cloistered Youth). During Player B's end step, verify that NO end step trigger for Unholy Fiend is placed on the stack, and Player A does NOT lose 1 life. The trigger should only appear during Player A's end step.
-

@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-heartless_summoning-audit
 audit_model: opus
 audit_tokens: 19813
 audit_duration: 410
-duplicate_of: merged-flashback-cost-reduction-01
+duplicate_of: merged-flashback-cost-reduction-02
 ---
 
 ## Audit Finding

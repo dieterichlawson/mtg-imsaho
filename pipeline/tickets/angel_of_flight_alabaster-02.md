@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-angel_of_flight_alabaster-audit
 audit_model: opus
 audit_tokens: 20797
 audit_duration: 406
-duplicate_of: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 ## Audit Finding

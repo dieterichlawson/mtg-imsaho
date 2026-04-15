@@ -1,6 +1,6 @@
 ---
 id: cloistered_youth-01
-status: new
+status: closed-duplicate
 card: Cloistered Youth
 card_file: mtg-engine/src/cards/isd/cloistered_youth.rs
 created: 2026-04-15T03:43:08Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-cloistered_youth-audit
 audit_model: opus
 audit_tokens: 11289
 audit_duration: 242
+duplicate_of: merged-dfc-zone-cleanup-02
 ---
 
 ## Audit Finding
@@ -42,4 +43,3 @@ Scenario: Cast Cloistered Youth. Transform it into Unholy Fiend via the upkeep t
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Cast Cloistered Youth. Transform it into Unholy Fiend. Exile it. Assert the card's name in exile is "Cloistered Youth". Assert subtypes are ["Human"].
-

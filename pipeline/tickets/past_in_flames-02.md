@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-past_in_flames-audit
 audit_model: opus
 audit_tokens: 20370
 audit_duration: 422
-duplicate_of: merged-temp-effect-zone-persist-01
+duplicate_of: merged-temp-effect-zone-persist-02
 ---
 
 ## Audit Finding

@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-bitterheart_witch-audit
 audit_model: opus
 audit_tokens: 13463
 audit_duration: 293
-duplicate_of: merged-zone-cleanup-characteristics-01
+duplicate_of: merged-zone-cleanup-characteristics-02
 ---
 
 ## Audit Finding

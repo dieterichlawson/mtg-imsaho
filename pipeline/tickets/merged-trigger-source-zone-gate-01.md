@@ -1,10 +1,11 @@
 ---
 id: merged-trigger-source-zone-gate-01
-status: new
+status: closed-duplicate
 card: multiple
 created: 2026-04-15T02:45:28Z
 kind: consolidated
 source_tickets: angel_of_flight_alabaster-02, charmbreaker_devils-01, geist_of_saint_traft-02, kessig_cagebreakers-01, splinterfright-02, undead_alchemist-01, gutter_grime-01
+duplicate_of: merged-trigger-source-zone-gate-02
 ---
 
 # Trigger resolution skipped when source left battlefield (CR 113.7a, 603.10)
@@ -53,4 +54,3 @@ Scenario: Undead Alchemist triggers on a creature being milled. Destroy Undead A
 Source ticket: gutter_grime-01
 Implementation: (not yet written)
 Scenario: Gutter Grime and a nontoken creature are destroyed simultaneously (e.g., Planar Cleansing). Verify the death trigger partially resolves: a 0/0 Ooze token is created (which dies to SBA). At minimum, the token-creation instruction should not be skipped.
-

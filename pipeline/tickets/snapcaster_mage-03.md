@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-snapcaster_mage-audit
 audit_model: opus
 audit_tokens: 19116
 audit_duration: 381
-duplicate_of: merged-flashback-cost-reduction-01
+duplicate_of: merged-flashback-cost-reduction-02
 ---
 
 ## Audit Finding

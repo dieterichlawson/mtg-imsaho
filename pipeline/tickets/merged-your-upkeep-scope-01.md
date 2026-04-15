@@ -1,10 +1,11 @@
 ---
 id: merged-your-upkeep-scope-01
-status: new
+status: closed-duplicate
 card: multiple
 created: 2026-04-15T02:45:29Z
 kind: consolidated
 source_tickets: angel_of_flight_alabaster-01, bloodgift_demon-02, mayor_of_avabruck-03, splinterfright-01
+duplicate_of: merged-your-upkeep-scope-02
 ---
 
 # "At the beginning of your upkeep" fires during all players' upkeeps (CR 603.2)
@@ -38,4 +39,3 @@ Scenario: Howlpack Alpha (transformed Mayor of Avabruck) on battlefield; opponen
 Source ticket: splinterfright-01
 Implementation: (not yet written)
 Scenario: Splinterfright on battlefield; opponent's upkeep begins. Verify no mill trigger is on the stack.
-

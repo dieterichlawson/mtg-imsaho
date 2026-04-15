@@ -1,6 +1,6 @@
 ---
 id: witchbane_orb-02
-status: new
+status: closed-duplicate
 card: Witchbane Orb
 card_file: mtg-engine/src/cards/isd/witchbane_orb.rs
 created: 2026-04-15T03:51:04Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-witchbane_orb-audit
 audit_model: opus
 audit_tokens: 10258
 audit_duration: 267
+duplicate_of: merged-zone-cleanup-characteristics-02
 ---
 
 ## Audit Finding
@@ -39,4 +40,3 @@ When a curse leaves the battlefield (e.g., destroyed, bounced, exiled), `move_ob
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Put a Curse on the battlefield attached to P0 (set `attached_to_player = Some(P0)`). Move it to the graveyard via `move_object`. Assert `attached_to_player` is `None` after the zone change. Currently it will retain `Some(P0)`.
-

@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-kessig_wolf_run-audit
 audit_model: opus
 audit_tokens: 14580
 audit_duration: 309
-duplicate_of: merged-ability-targets-protection-01
+duplicate_of: merged-ability-targets-protection-02
 ---
 
 ## Audit Finding

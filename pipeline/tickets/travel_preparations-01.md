@@ -1,6 +1,6 @@
 ---
 id: travel_preparations-01
-status: new
+status: closed-duplicate
 card: Travel Preparations
 card_file: mtg-engine/src/cards/isd/travel_preparations.rs
 created: 2026-04-15T03:48:16Z
@@ -8,6 +8,7 @@ audit_run_id: 2026-04-14-travel_preparations-audit
 audit_model: opus
 audit_tokens: 13605
 audit_duration: 327
+duplicate_of: merged-flashback-cost-reduction-02
 ---
 
 ## Audit Finding
@@ -54,4 +55,3 @@ Per CR 601.2f, the total cost of a spell starts with the mana cost or alternativ
 Source ticket: (new)
 Implementation: (not yet written)
 Scenario: Set up a continuous effect that reduces sorcery spell costs by {1} (or a generic cost reducer). Place Travel Preparations in the graveyard. Verify that the flashback cost is reduced from {1}{W} to {W} — i.e., the spell can be cast with only {W} in pool, and the player is not charged {1}{W}.
-
