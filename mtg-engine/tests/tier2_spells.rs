@@ -16,17 +16,9 @@ fn registry() -> CardRegistry {
 
 // ── Simple damage spells ────────────────────────────────────────────
 
-#[test]
-fn bump_in_the_night_drains_3() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let card = castable_spell(&mut state, &reg, "Bump in the Night", P0);
-
-    state = cast_and_resolve(&state, &reg, card, vec![Target::Player(P1)]);
-
-    assert_eq!(state.get_player(P1).life, 17);
-}
+// Bump in the Night's 3-life-drain to a player is covered by the
+// parametric `direct_damage_spells_drain_player_life` in spells.rs.
+// Flashback behavior is covered in flashback.rs.
 
 #[test]
 fn geistflame_deals_1_damage() {
@@ -43,17 +35,8 @@ fn geistflame_deals_1_damage() {
         "2/2 with 1 damage should survive");
 }
 
-#[test]
-fn brimstone_volley_deals_3_to_player() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let card = castable_spell(&mut state, &reg, "Brimstone Volley", P0);
-
-    state = cast_and_resolve(&state, &reg, card, vec![Target::Player(P1)]);
-
-    assert_eq!(state.get_player(P1).life, 17);
-}
+// Brimstone Volley's 3-damage-to-player case is covered by the
+// parametric `direct_damage_spells_drain_player_life` in spells.rs.
 
 // ── Counter variants ────────────────────────────────────────────────
 

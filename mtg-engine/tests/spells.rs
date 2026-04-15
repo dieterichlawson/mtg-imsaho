@@ -43,17 +43,26 @@ fn lightning_bolt_kills_creature() {
     assert_eq!(state.get_object(creature).unwrap().zone, Zone::Graveyard);
 }
 
-/// Lightning Bolt deals 3 damage to a player.
+/// Direct-damage spells that hit a player drain that player's life by the
+/// spell's stated amount. Lightning Bolt's creature-target behavior is
+/// covered separately above; per-spell edge cases (flashback on Bump in
+/// the Night, morbid on Brimstone Volley, creature-only on Geistflame)
+/// have their own tests.
 #[test]
-fn lightning_bolt_damages_player() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let bolt = castable_spell(&mut state, &registry, "Lightning Bolt", P0);
-
-    state = cast_and_resolve(&state, &registry, bolt, vec![Target::Player(P1)]);
-
-    assert_eq!(state.get_player(P1).life, 17);
+fn direct_damage_spells_drain_player_life() {
+    let reg = CardRegistry::with_all_cards();
+    for (name, damage) in [
+        ("Lightning Bolt",    3u32),
+        ("Lava Axe",          5),
+        ("Bump in the Night", 3),
+        ("Brimstone Volley",  3),
+    ] {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let spell = castable_spell(&mut state, &reg, name, P0);
+        state = cast_and_resolve(&state, &reg, spell, vec![Target::Player(P1)]);
+        assert_eq!(state.get_player(P1).life, 20 - damage as i32,
+            "{name} should deal {damage} damage to the targeted player");
+    }
 }
 
 /// Lightning Bolt can be cast at instant speed (during opponent's turn).
@@ -198,20 +207,6 @@ fn targeted_spell_needs_valid_target() {
         _ => false,
     });
     assert!(!has_doom, "Should not be able to cast Doom Blade with no creatures on battlefield");
-}
-
-/// Lava Axe deals 5 to a player.
-#[test]
-fn lava_axe_damages_player() {
-    let registry = CardRegistry::with_all_cards();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let axe = castable_spell(&mut state, &registry, "Lava Axe", P0);
-
-    state = cast_and_resolve(&state, &registry, axe, vec![Target::Player(P1)]);
-
-    assert_eq!(state.get_player(P1).life, 15);
-    assert_eq!(state.get_object(axe).unwrap().zone, Zone::Graveyard);
 }
 
 /// Counterspell counters a spell, preventing it from resolving.
