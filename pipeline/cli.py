@@ -1416,6 +1416,81 @@ def cmd_merge(args):
 
 # ─── Abandon command ──────────────────────────────────────────────
 
+def cmd_retry(args):
+    """Retry a failed ticket's most-recent stage.
+
+    Looks at the ticket's frontmatter to decide what to re-run:
+    - If the ticket has `fix_run_id` set (a fix was attempted), reset
+      status to `confirmed` and re-run `cli.py fix`. Reuses the
+      existing worktree if present; otherwise recreates it from the
+      ticket's fix branch (assumed to contain the test commits).
+    - Otherwise (test stage failed), reset status to `new` and
+      re-run `cli.py test`. A stale worktree is removed first so the
+      test-writer starts fresh.
+
+    Only acts on tickets currently in `status: failed` or `blocked`
+    — refuses on `new`/`confirmed`/`fixed`/`merged`/`closed-duplicate`.
+    """
+    tid = args.ticket_id
+    path = TICKETS_DIR / f"{tid}.md"
+    if not path.exists():
+        print(f"Ticket not found: {tid}")
+        sys.exit(1)
+    ticket = parse_ticket(path)
+    fm = ticket["frontmatter"]
+    status = fm.get("status", "")
+    if status not in ("failed", "blocked"):
+        print(f"ERROR: {tid} is status={status}; retry only works on "
+              f"'failed' or 'blocked' tickets")
+        sys.exit(1)
+
+    had_fix = bool(fm.get("fix_run_id"))
+    wt_dir = get_worktree_dir(tid)
+    branch = get_worktree_branch(tid)
+
+    if had_fix:
+        print(f"[{tid}] Last stage was fix — resetting to confirmed and "
+              f"re-running fixer")
+        if not wt_dir.exists():
+            # Try to re-attach the fix branch to a new worktree. The
+            # branch should still exist (cmd_fix preserves it) unless
+            # cli.py abandon was run; if missing, the user needs to
+            # recover manually (cherry-pick the test commits).
+            branch_check = subprocess.run(
+                ["git", "rev-parse", "--verify", branch],
+                capture_output=True, cwd=str(PROJECT_ROOT),
+            )
+            if branch_check.returncode != 0:
+                print(f"ERROR: worktree gone and branch {branch} no "
+                      f"longer exists. Manual recovery required — "
+                      f"cherry-pick the test commits onto a new branch.")
+                sys.exit(1)
+            print(f"  Re-attaching worktree to existing branch {branch}")
+            subprocess.run(
+                ["git", "worktree", "add", str(wt_dir), branch],
+                check=True, cwd=str(PROJECT_ROOT),
+            )
+        update_ticket_status(tid, "confirmed")
+        # Delegate to cmd_fix with the same model/effort
+        fix_args = argparse.Namespace(
+            ticket=tid, model=args.model, effort=args.effort, dry_run=False,
+        )
+        cmd_fix(fix_args)
+        return
+
+    print(f"[{tid}] No fix_run_id recorded — treating as test-stage failure")
+    # Start fresh: nuke any stale worktree
+    if wt_dir.exists():
+        print(f"  Removing stale worktree before fresh test run")
+        remove_worktree(tid)
+    update_ticket_status(tid, "new")
+    test_args = argparse.Namespace(
+        tickets=tid, parallelism=1,
+        model=args.model, effort=args.effort, dry_run=False,
+    )
+    cmd_test(test_args)
+
+
 def cmd_abandon(args):
     tid = args.ticket_id
     path = TICKETS_DIR / f"{tid}.md"
@@ -2107,6 +2182,12 @@ def main():
     p = sub.add_parser("abandon", help="Remove worktree for a ticket without merging")
     p.add_argument("ticket_id", help="Ticket ID")
 
+    # retry
+    p = sub.add_parser("retry",
+                       help="Re-run the failed stage of a ticket (fix or test) — resets status and re-spawns the agent")
+    p.add_argument("ticket_id", help="Ticket ID")
+    add_common(p)
+
     # status
     sub.add_parser("status", help="Show metrics dashboard")
 
@@ -2153,6 +2234,7 @@ def main():
     commands = {
         "audit": cmd_audit, "test": cmd_test, "fix": cmd_fix,
         "merge": cmd_merge, "abandon": cmd_abandon,
+        "retry": cmd_retry,
         "tickets": cmd_tickets, "show": cmd_show,
         "status": cmd_status, "consolidate": cmd_consolidate,
         "close-duplicate": cmd_close_duplicate,
