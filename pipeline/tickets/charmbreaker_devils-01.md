@@ -1,6 +1,6 @@
 ---
 id: charmbreaker_devils-01
-status: deduped
+status: closed-duplicate
 card: Charmbreaker Devils
 card_file: mtg-engine/src/cards/isd/charmbreaker_devils.rs
 created: 2026-04-14T21:23:50Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-charmbreaker_devils-audit
 audit_model: opus
 audit_tokens: 23951
 audit_duration: 476
-deduped_into: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding

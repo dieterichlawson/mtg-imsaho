@@ -1,6 +1,6 @@
 ---
 id: devils_play-01
-status: deduped
+status: closed-duplicate
 card: Devil's Play
 card_file: mtg-engine/src/cards/isd/devils_play.rs
 created: 2026-04-14T21:24:56Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-devils_play-audit
 audit_model: opus
 audit_tokens: 12112
 audit_duration: 301
-deduped_into: merged-inline-damage-01
+duplicate_of: merged-inline-damage-01
 ---
 
 ## Audit Finding

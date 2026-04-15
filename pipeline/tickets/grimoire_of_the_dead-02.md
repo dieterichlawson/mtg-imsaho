@@ -1,6 +1,6 @@
 ---
 id: grimoire_of_the_dead-02
-status: deduped
+status: closed-duplicate
 card: Grimoire of the Dead
 card_file: mtg-engine/src/cards/isd/grimoire_of_the_dead.rs
 created: 2026-04-14T20:57:12Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-grimoire_of_the_dead-audit
 audit_model: opus
 audit_tokens: 16027
 audit_duration: 412
-deduped_into: merged-zone-cleanup-characteristics-01
+duplicate_of: merged-zone-cleanup-characteristics-01
 ---
 
 ## Audit Finding

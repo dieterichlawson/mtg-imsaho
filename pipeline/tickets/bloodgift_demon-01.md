@@ -1,6 +1,6 @@
 ---
 id: bloodgift_demon-01
-status: deduped
+status: closed-duplicate
 card: Bloodgift Demon
 card_file: mtg-engine/src/cards/isd/bloodgift_demon.rs
 created: 2026-04-14T21:19:54Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-bloodgift_demon-audit
 audit_model: opus
 audit_tokens: 12882
 audit_duration: 241
-deduped_into: merged-target-as-choose-01
+duplicate_of: merged-target-as-choose-01
 ---
 
 ## Audit Finding

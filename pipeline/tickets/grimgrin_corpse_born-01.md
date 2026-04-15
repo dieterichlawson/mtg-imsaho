@@ -1,6 +1,6 @@
 ---
 id: grimgrin_corpse_born-01
-status: deduped
+status: closed-duplicate
 card: Grimgrin, Corpse-Born
 card_file: mtg-engine/src/cards/isd/grimgrin_corpse_born.rs
 created: 2026-04-14T20:55:26Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-grimgrin_corpse_born-audit
 audit_model: opus
 audit_tokens: 15240
 audit_duration: 306
-deduped_into: merged-trigger-target-recheck-01
+duplicate_of: merged-trigger-target-recheck-01
 ---
 
 ## Audit Finding

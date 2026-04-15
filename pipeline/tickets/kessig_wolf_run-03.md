@@ -1,6 +1,6 @@
 ---
 id: kessig_wolf_run-03
-status: deduped
+status: closed-duplicate
 card: Kessig Wolf Run
 card_file: mtg-engine/src/cards/isd/kessig_wolf_run.rs
 created: 2026-04-14T21:29:34Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-kessig_wolf_run-audit
 audit_model: opus
 audit_tokens: 14580
 audit_duration: 309
-deduped_into: merged-activated-no-stack-01
+duplicate_of: merged-activated-no-stack-01
 ---
 
 ## Audit Finding

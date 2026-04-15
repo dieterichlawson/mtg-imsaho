@@ -962,10 +962,9 @@ def cmd_tickets(args):
             card = fm.get("card", "?")
             tid = fm.get("id", "?")
             extra = ""
-            if fm.get("deduped_into"):
-                extra = f" → {fm['deduped_into']}"
-            elif fm.get("duplicate_of"):
-                extra = f" → {fm['duplicate_of']}"
+            target = fm.get("duplicate_of") or fm.get("deduped_into")
+            if target:
+                extra = f" → {target}"
             print(f"  {tid:<30} {card}{extra}")
 
 
@@ -1168,32 +1167,37 @@ def cmd_report(args):
         print("PER-CARD BREAKDOWN")
         print(f"{'='*60}")
         print(f"  {'Card':<32} {'Audits':>6} {'Tickets':>7} "
-              f"{'Open':>5} {'Deduped':>7} {'Dup':>4} {'PASS':>5}")
-        print(f"  {'-'*32} {'-'*6} {'-'*7} {'-'*5} {'-'*7} {'-'*4} {'-'*5}")
+              f"{'Open':>5} {'Fixed':>5} {'Closed-Dup':>10}")
+        print(f"  {'-'*32} {'-'*6} {'-'*7} {'-'*5} {'-'*5} {'-'*10}")
 
-        # "Open" = anything not deduped/duplicate/merged.
-        terminal = {"deduped", "duplicate", "merged"}
+        # Status buckets. closed-duplicate covers the former deduped AND
+        # duplicate statuses; `deduped` and `duplicate` are kept here for
+        # backwards-compat with any tickets still on the old scheme.
+        OPEN_STATUSES = {"new", "confirmed", "blocked", "failed", "rejected"}
+        FIXED_STATUSES = {"fixed", "merged"}
+        CLOSED_DUP_STATUSES = {"closed-duplicate", "deduped", "duplicate"}
 
         rows = []
         for card in sorted(set(cards_attempted) | set(by_card_status)):
             audits = by_card_runs.get(card, 0)
             totals = by_card_status.get(card, Counter())
-            open_n = sum(v for s, v in totals.items() if s not in terminal)
-            deduped_n = totals.get("deduped", 0)
-            dup_n = totals.get("duplicate", 0)
+            open_n = sum(v for s, v in totals.items() if s in OPEN_STATUSES)
+            fixed_n = sum(v for s, v in totals.items() if s in FIXED_STATUSES)
+            closed_n = sum(v for s, v in totals.items()
+                           if s in CLOSED_DUP_STATUSES)
             total_tickets = by_card_total_tickets.get(card, 0)
-            pass_marker = "yes" if audits > 0 and total_tickets == 0 else ""
             rows.append((card, audits, total_tickets, open_n,
-                         deduped_n, dup_n, pass_marker))
+                         fixed_n, closed_n))
 
         # Sort: most tickets first, then by name
         rows.sort(key=lambda r: (-r[2], r[0]))
-        for card, audits, total, open_n, deduped_n, dup_n, pass_marker in rows:
+        for card, audits, total, open_n, fixed_n, closed_n in rows:
             print(f"  {card:<32} {audits:>6} {total:>7} "
-                  f"{open_n:>5} {deduped_n:>7} {dup_n:>4} {pass_marker:>5}")
+                  f"{open_n:>5} {fixed_n:>5} {closed_n:>10}")
 
-        clean = sum(1 for r in rows if r[6] == "yes")
-        print(f"\n  {len(rows)} cards total — {clean} PASS (no tickets)")
+        clean = sum(1 for r in rows if r[1] > 0 and r[2] == 0)
+        print(f"\n  {len(rows)} cards total — {clean} clean "
+              f"(Audits>0, Tickets=0)")
 
     # ── Ticket backlog summary ───────────────────────────────
     if not args.cards_only and not args.audits_only:
@@ -1386,16 +1390,18 @@ def cmd_consolidate(args):
     body = render_consolidated_body(parsed)
     write_ticket(new_id, fm, body)
 
-    # Mark each source ticket as deduped
+    # Mark each source ticket as closed-duplicate pointing at the new parent.
     for sid in source_ids:
         path = TICKETS_DIR / f"{sid}.md"
         ticket = parse_ticket(path)
-        ticket["frontmatter"]["status"] = "deduped"
-        ticket["frontmatter"]["deduped_into"] = new_id
+        ticket["frontmatter"]["status"] = "closed-duplicate"
+        ticket["frontmatter"]["duplicate_of"] = new_id
+        # Remove any legacy fields from earlier versions of this pipeline.
+        ticket["frontmatter"].pop("deduped_into", None)
         write_ticket(sid, ticket["frontmatter"], ticket["body"])
 
     print(f"Created {new_id} with {len(parsed['tests'])} test(s)")
-    print(f"Marked {len(source_ids)} source ticket(s) as status=deduped")
+    print(f"Marked {len(source_ids)} source ticket(s) as status=closed-duplicate")
 
     # Staging files are ephemeral transport; remove once consumed successfully.
     if not args.keep_input:
@@ -1534,12 +1540,12 @@ def cmd_close_duplicate(args):
 
     ticket = parse_ticket(path)
     fm = ticket["frontmatter"]
-    fm["status"] = "duplicate"
+    fm["status"] = "closed-duplicate"
     fm["duplicate_of"] = args.duplicate_of
     if args.reason:
         fm["duplicate_reason"] = args.reason
     write_ticket(ticket_id, fm, ticket["body"])
-    print(f"Marked {ticket_id} as status=duplicate → {args.duplicate_of}")
+    print(f"Marked {ticket_id} as status=closed-duplicate → {args.duplicate_of}")
 
 
 # ─── Main ─────────────────────────────────────────────────────────

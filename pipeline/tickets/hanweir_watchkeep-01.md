@@ -1,6 +1,6 @@
 ---
 id: hanweir_watchkeep-01
-status: deduped
+status: closed-duplicate
 card: Hanweir Watchkeep
 card_file: mtg-engine/src/cards/isd/hanweir_watchkeep.rs
 created: 2026-04-14T21:30:20Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-hanweir_watchkeep-audit
 audit_model: opus
 audit_tokens: 18615
 audit_duration: 468
-deduped_into: merged-dfc-zone-cleanup-01
+duplicate_of: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding

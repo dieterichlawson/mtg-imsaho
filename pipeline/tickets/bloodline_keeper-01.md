@@ -1,6 +1,6 @@
 ---
 id: bloodline_keeper-01
-status: deduped
+status: closed-duplicate
 card: Bloodline Keeper
 card_file: mtg-engine/src/cards/isd/bloodline_keeper.rs
 created: 2026-04-14T20:44:07Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-bloodline_keeper-audit
 audit_model: opus
 audit_tokens: 11343
 audit_duration: 299
-deduped_into: merged-dfc-zone-cleanup-01
+duplicate_of: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding

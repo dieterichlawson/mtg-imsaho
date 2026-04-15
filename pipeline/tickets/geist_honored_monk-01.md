@@ -1,6 +1,6 @@
 ---
 id: geist_honored_monk-01
-status: deduped
+status: closed-duplicate
 card: Geist-Honored Monk
 card_file: mtg-engine/src/cards/isd/geist_honored_monk.rs
 created: 2026-04-14T21:25:27Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-geist_honored_monk-audit
 audit_model: opus
 audit_tokens: 13619
 audit_duration: 281
-deduped_into: merged-creature-type-proxy-01
+duplicate_of: merged-creature-type-proxy-01
 ---
 
 ## Audit Finding

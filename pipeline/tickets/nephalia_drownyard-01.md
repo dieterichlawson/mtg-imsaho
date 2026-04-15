@@ -1,6 +1,6 @@
 ---
 id: nephalia_drownyard-01
-status: deduped
+status: closed-duplicate
 card: Nephalia Drownyard
 card_file: mtg-engine/src/cards/isd/nephalia_drownyard.rs
 created: 2026-04-14T21:30:20Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-nephalia_drownyard-audit
 audit_model: opus
 audit_tokens: 5372
 audit_duration: 126
-deduped_into: merged-activated-no-stack-01
+duplicate_of: merged-activated-no-stack-01
 ---
 
 ## Audit Finding

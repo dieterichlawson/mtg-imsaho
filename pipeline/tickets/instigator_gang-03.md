@@ -1,6 +1,6 @@
 ---
 id: instigator_gang-03
-status: deduped
+status: closed-duplicate
 card: Instigator Gang
 card_file: mtg-engine/src/cards/isd/instigator_gang.rs
 created: 2026-04-14T21:28:14Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-instigator_gang-audit
 audit_model: opus
 audit_tokens: 13518
 audit_duration: 264
-deduped_into: merged-dfc-zone-cleanup-01
+duplicate_of: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding

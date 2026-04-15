@@ -1,6 +1,6 @@
 ---
 id: spider_spawning-01
-status: deduped
+status: closed-duplicate
 card: Spider Spawning
 card_file: mtg-engine/src/cards/isd/spider_spawning.rs
 created: 2026-04-14T21:14:04Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-spider_spawning-audit
 audit_model: opus
 audit_tokens: 15129
 audit_duration: 441
-deduped_into: merged-creature-type-proxy-01
+duplicate_of: merged-creature-type-proxy-01
 ---
 
 ## Audit Finding

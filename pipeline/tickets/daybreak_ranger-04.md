@@ -1,6 +1,6 @@
 ---
 id: daybreak_ranger-04
-status: deduped
+status: closed-duplicate
 card: Daybreak Ranger
 card_file: mtg-engine/src/cards/isd/daybreak_ranger.rs
 created: 2026-04-14T21:22:02Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-daybreak_ranger-audit
 audit_model: opus
 audit_tokens: 12078
 audit_duration: 368
-deduped_into: merged-intervening-if-01
+duplicate_of: merged-intervening-if-01
 ---
 
 ## Audit Finding

@@ -1,6 +1,6 @@
 ---
 id: bitterheart_witch-01
-status: deduped
+status: closed-duplicate
 card: Bitterheart Witch
 card_file: mtg-engine/src/cards/isd/bitterheart_witch.rs
 created: 2026-04-14T21:20:46Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-bitterheart_witch-audit
 audit_model: opus
 audit_tokens: 13463
 audit_duration: 293
-deduped_into: merged-target-as-choose-01
+duplicate_of: merged-target-as-choose-01
 ---
 
 ## Audit Finding

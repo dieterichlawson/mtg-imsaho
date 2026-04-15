@@ -1,6 +1,6 @@
 ---
 id: gutter_grime-01
-status: deduped
+status: closed-duplicate
 card: Gutter Grime
 card_file: mtg-engine/src/cards/isd/gutter_grime.rs
 created: 2026-04-14T21:27:53Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-gutter_grime-audit
 audit_model: opus
 audit_tokens: 18563
 audit_duration: 350
-deduped_into: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding

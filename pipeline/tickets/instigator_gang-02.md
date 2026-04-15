@@ -1,6 +1,6 @@
 ---
 id: instigator_gang-02
-status: duplicate
+status: closed-duplicate
 card: Instigator Gang
 card_file: mtg-engine/src/cards/isd/instigator_gang.rs
 created: 2026-04-14T21:28:14Z

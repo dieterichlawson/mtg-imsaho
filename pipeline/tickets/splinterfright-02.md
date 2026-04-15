@@ -1,6 +1,6 @@
 ---
 id: splinterfright-02
-status: deduped
+status: closed-duplicate
 card: Splinterfright
 card_file: mtg-engine/src/cards/isd/splinterfright.rs
 created: 2026-04-14T22:53:48Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-splinterfright-audit
 audit_model: opus
 audit_tokens: 15601
 audit_duration: 5057
-deduped_into: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding

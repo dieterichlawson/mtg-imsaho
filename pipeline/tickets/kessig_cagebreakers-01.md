@@ -1,6 +1,6 @@
 ---
 id: kessig_cagebreakers-01
-status: deduped
+status: closed-duplicate
 card: Kessig Cagebreakers
 card_file: mtg-engine/src/cards/isd/kessig_cagebreakers.rs
 created: 2026-04-14T21:13:42Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-kessig_cagebreakers-audit
 audit_model: opus
 audit_tokens: 17473
 audit_duration: 419
-deduped_into: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding

@@ -1,6 +1,6 @@
 ---
 id: geist_of_saint_traft-02
-status: deduped
+status: closed-duplicate
 card: Geist of Saint Traft
 card_file: mtg-engine/src/cards/isd/geist_of_saint_traft.rs
 created: 2026-04-14T21:28:51Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-geist_of_saint_traft-audit
 audit_model: opus
 audit_tokens: 20037
 audit_duration: 493
-deduped_into: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding

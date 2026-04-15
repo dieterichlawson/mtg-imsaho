@@ -1,6 +1,6 @@
 ---
 id: heartless_summoning-02
-status: deduped
+status: closed-duplicate
 card: Heartless Summoning
 card_file: mtg-engine/src/cards/isd/heartless_summoning.rs
 created: 2026-04-14T21:29:30Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-heartless_summoning-audit
 audit_model: opus
 audit_tokens: 19813
 audit_duration: 410
-deduped_into: merged-flashback-cost-reduction-01
+duplicate_of: merged-flashback-cost-reduction-01
 ---
 
 ## Audit Finding

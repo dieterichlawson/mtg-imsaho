@@ -1,6 +1,6 @@
 ---
 id: morkrut_banshee-02
-status: deduped
+status: closed-duplicate
 card: Morkrut Banshee
 card_file: mtg-engine/src/cards/isd/morkrut_banshee.rs
 created: 2026-04-14T21:54:58Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-morkrut_banshee-audit
 audit_model: opus
 audit_tokens: 16831
 audit_duration: 1625
-deduped_into: merged-temp-effect-zone-persist-01
+duplicate_of: merged-temp-effect-zone-persist-01
 ---
 
 ## Audit Finding

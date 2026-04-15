@@ -1,6 +1,6 @@
 ---
 id: undead_alchemist-01
-status: deduped
+status: closed-duplicate
 card: Undead Alchemist
 card_file: mtg-engine/src/cards/isd/undead_alchemist.rs
 created: 2026-04-14T21:13:20Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-undead_alchemist-audit
 audit_model: opus
 audit_tokens: 16895
 audit_duration: 397
-deduped_into: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding

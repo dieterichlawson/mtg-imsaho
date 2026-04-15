@@ -1,6 +1,6 @@
 ---
 id: liliana_of_the_veil-01
-status: duplicate
+status: closed-duplicate
 card: Liliana of the Veil
 card_file: mtg-engine/src/cards/isd/liliana_of_the_veil.rs
 created: 2026-04-14T20:55:10Z

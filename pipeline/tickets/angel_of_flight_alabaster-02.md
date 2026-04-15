@@ -1,6 +1,6 @@
 ---
 id: angel_of_flight_alabaster-02
-status: deduped
+status: closed-duplicate
 card: Angel of Flight Alabaster
 card_file: mtg-engine/src/cards/isd/angel_of_flight_alabaster.rs
 created: 2026-04-14T21:22:40Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-angel_of_flight_alabaster-audit
 audit_model: opus
 audit_tokens: 20797
 audit_duration: 406
-deduped_into: merged-trigger-source-zone-gate-01
+duplicate_of: merged-trigger-source-zone-gate-01
 ---
 
 ## Audit Finding

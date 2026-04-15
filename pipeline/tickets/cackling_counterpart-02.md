@@ -1,6 +1,6 @@
 ---
 id: cackling_counterpart-02
-status: deduped
+status: closed-duplicate
 card: Cackling Counterpart
 card_file: mtg-engine/src/cards/isd/cackling_counterpart.rs
 created: 2026-04-14T21:25:14Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-cackling_counterpart-audit
 audit_model: opus
 audit_tokens: 27785
 audit_duration: 560
-deduped_into: merged-token-copy-inconsistent-01
+duplicate_of: merged-token-copy-inconsistent-01
 ---
 
 ## Audit Finding

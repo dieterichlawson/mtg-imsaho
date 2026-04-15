@@ -1,6 +1,6 @@
 ---
 id: past_in_flames-01
-status: deduped
+status: closed-duplicate
 card: Past in Flames
 card_file: mtg-engine/src/cards/isd/past_in_flames.rs
 created: 2026-04-14T20:57:22Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-past_in_flames-audit
 audit_model: opus
 audit_tokens: 20370
 audit_duration: 422
-deduped_into: merged-cost-none-free-01
+duplicate_of: merged-cost-none-free-01
 ---
 
 ## Audit Finding

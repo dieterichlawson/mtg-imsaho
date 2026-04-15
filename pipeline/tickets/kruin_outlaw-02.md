@@ -1,6 +1,6 @@
 ---
 id: kruin_outlaw-02
-status: deduped
+status: closed-duplicate
 card: Kruin Outlaw
 card_file: mtg-engine/src/cards/isd/kruin_outlaw.rs
 created: 2026-04-14T20:54:55Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-kruin_outlaw-audit
 audit_model: opus
 audit_tokens: 13110
 audit_duration: 275
-deduped_into: merged-dfc-zone-cleanup-01
+duplicate_of: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding

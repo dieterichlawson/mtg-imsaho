@@ -1,6 +1,6 @@
 ---
 id: creeping_renaissance-02
-status: deduped
+status: closed-duplicate
 card: Creeping Renaissance
 card_file: mtg-engine/src/cards/isd/creeping_renaissance.rs
 created: 2026-04-14T21:24:25Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-creeping_renaissance-audit
 audit_model: opus
 audit_tokens: 25009
 audit_duration: 511
-deduped_into: merged-flashback-cost-reduction-01
+duplicate_of: merged-flashback-cost-reduction-01
 ---
 
 ## Audit Finding

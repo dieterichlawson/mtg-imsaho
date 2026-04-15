@@ -1,6 +1,6 @@
 ---
 id: army_of_the_damned-02
-status: deduped
+status: closed-duplicate
 card: Army of the Damned
 card_file: mtg-engine/src/cards/isd/army_of_the_damned.rs
 created: 2026-04-14T20:46:53Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-army_of_the_damned-audit
 audit_model: opus
 audit_tokens: 21975
 audit_duration: 465
-deduped_into: merged-flashback-cost-reduction-01
+duplicate_of: merged-flashback-cost-reduction-01
 ---
 
 ## Audit Finding

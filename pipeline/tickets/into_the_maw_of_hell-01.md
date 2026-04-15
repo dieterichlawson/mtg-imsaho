@@ -1,6 +1,6 @@
 ---
 id: into_the_maw_of_hell-01
-status: deduped
+status: closed-duplicate
 card: Into the Maw of Hell
 card_file: mtg-engine/src/cards/isd/into_the_maw_of_hell.rs
 created: 2026-04-14T21:28:27Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-into_the_maw_of_hell-audit
 audit_model: opus
 audit_tokens: 12222
 audit_duration: 253
-deduped_into: merged-inline-damage-01
+duplicate_of: merged-inline-damage-01
 ---
 
 ## Audit Finding

@@ -1,6 +1,6 @@
 ---
 id: olivia_voldaren-02
-status: deduped
+status: closed-duplicate
 card: Olivia Voldaren
 card_file: mtg-engine/src/cards/isd/olivia_voldaren.rs
 created: 2026-04-14T20:44:31Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-olivia_voldaren-audit
 audit_model: opus
 audit_tokens: 17927
 audit_duration: 323
-deduped_into: merged-zone-cleanup-characteristics-01
+duplicate_of: merged-zone-cleanup-characteristics-01
 ---
 
 ## Audit Finding

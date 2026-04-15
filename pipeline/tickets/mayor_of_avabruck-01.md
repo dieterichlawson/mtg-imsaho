@@ -1,6 +1,6 @@
 ---
 id: mayor_of_avabruck-01
-status: deduped
+status: closed-duplicate
 card: Mayor of Avabruck
 card_file: mtg-engine/src/cards/isd/mayor_of_avabruck.rs
 created: 2026-04-14T20:57:26Z
@@ -8,7 +8,7 @@ audit_run_id: 2026-04-14-mayor_of_avabruck-audit
 audit_model: opus
 audit_tokens: 15497
 audit_duration: 426
-deduped_into: merged-dfc-zone-cleanup-01
+duplicate_of: merged-dfc-zone-cleanup-01
 ---
 
 ## Audit Finding
