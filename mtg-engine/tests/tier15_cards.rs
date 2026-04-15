@@ -26,10 +26,7 @@ fn curse_of_stalked_prey_gives_counter_on_combat_damage() {
     let mut state = game_at_step(Step::CombatDamage, P0);
 
     // Place the curse on the battlefield attached to P1.
-    let curse = named_creature(&mut state, &reg, "Curse of Stalked Prey", P0);
-    if let Some(obj) = state.get_object_mut(curse) {
-        obj.attached_to_player = Some(P1);
-    }
+    let curse = attach_curse_to_player(&mut state, &reg, "Curse of Stalked Prey", P0, P1);
 
     // Place an attacking creature.
     let attacker = ready_creature(&mut state, P0, 2, 2);

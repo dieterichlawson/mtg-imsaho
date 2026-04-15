@@ -179,10 +179,7 @@ fn curse_of_pierced_heart_deals_damage_on_upkeep() {
     let mut state = game_at_step(Step::Upkeep, P1); // P1's upkeep
 
     // P0 controls the curse attached to P1.
-    let curse_card_id = reg.get_id_by_name("Curse of the Pierced Heart").unwrap();
-    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(curse).unwrap().name = "Curse of the Pierced Heart".into();
-    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of the Pierced Heart", P0, P1);
 
     state.events.push(mtg_engine::events::GameEvent::StepStarted { step: Step::Upkeep });
     triggers::process_triggers(&mut state, &reg);
@@ -200,10 +197,7 @@ fn curse_of_deaths_hold_debuffs_opponent_creatures() {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
     // P0 controls curse targeting P1.
-    let curse_card_id = reg.get_id_by_name("Curse of Death's Hold").unwrap();
-    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(curse).unwrap().name = "Curse of Death's Hold".into();
-    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of Death's Hold", P0, P1);
 
     // P1's creature.
     let opp_creature = ready_creature(&mut state, P1, 3, 3);
@@ -273,10 +267,7 @@ fn curse_of_bloody_tome_mills_on_upkeep() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P1);
 
-    let curse_card_id = reg.get_id_by_name("Curse of the Bloody Tome").unwrap();
-    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(curse).unwrap().name = "Curse of the Bloody Tome".into();
-    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of the Bloody Tome", P0, P1);
 
     // Put cards in P1's library.
     for _ in 0..4 {
@@ -301,10 +292,7 @@ fn curse_of_oblivion_exiles_from_graveyard() {
     let reg = registry();
     let mut state = game_at_step(Step::Upkeep, P1);
 
-    let curse_card_id = reg.get_id_by_name("Curse of Oblivion").unwrap();
-    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(curse).unwrap().name = "Curse of Oblivion".into();
-    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of Oblivion", P0, P1);
 
     // Put 2 cards in P1's graveyard (auto-exiles when ≤2).
     let g1 = state.create_object(mtg_engine::ids::CardId(9999), P1, Zone::Graveyard, None, None);
@@ -326,10 +314,7 @@ fn curse_of_nightly_hunt_forces_attack() {
     let mut state = game_at_step(Step::DeclareAttackers, P1); // P1's turn
 
     // P0 controls curse attached to P1.
-    let curse_card_id = reg.get_id_by_name("Curse of the Nightly Hunt").unwrap();
-    let curse = state.create_object(curse_card_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(curse).unwrap().name = "Curse of the Nightly Hunt".into();
-    state.get_object_mut(curse).unwrap().attached_to_player = Some(P1);
+    let _curse = attach_curse_to_player(&mut state, &reg, "Curse of the Nightly Hunt", P0, P1);
 
     // P1's creature should be forced to attack.
     let creature = ready_creature(&mut state, P1, 2, 2);

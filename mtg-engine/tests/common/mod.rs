@@ -227,6 +227,25 @@ pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &C
     }
 }
 
+/// Put a curse (or any "enchant player" permanent) onto the battlefield
+/// under `controller` and attach it to `target_player`. Returns the
+/// curse's object id.
+pub fn attach_curse_to_player(
+    state: &mut GameState,
+    registry: &CardRegistry,
+    card_name: &str,
+    controller: PlayerId,
+    target_player: PlayerId,
+) -> ObjectId {
+    let card_id = registry.get_id_by_name(card_name)
+        .unwrap_or_else(|| panic!("Unknown card: {card_name}"));
+    let id = state.create_object(card_id, controller, Zone::Battlefield, None, None);
+    let obj = state.get_object_mut(id).unwrap();
+    obj.name = card_name.into();
+    obj.attached_to_player = Some(target_player);
+    id
+}
+
 /// Count counters of a given type on `obj`. Returns 0 if the object has
 /// no counters of that type (or doesn't exist). Prefer this over
 /// reaching into `state.get_object(x).unwrap().counters.get(...)` — it
