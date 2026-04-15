@@ -65,19 +65,18 @@ impl CardBehavior for IntoTheMawOfHell {
             }
         }
         if let Some(Target::Object(creature_id)) = targets.get(1) {
-            if let Some(obj) = state.get_object_mut(*creature_id) {
-                if obj.zone == Zone::Battlefield {
-                    obj.damage_marked += 13;
-                    obj.damaged_by.push(object_id);
-                    let name = obj.name.clone();
-                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: object_id,
-                        target: crate::events::DamageTarget::Object(*creature_id),
-                        amount: 13,
-                    });
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Into the Maw of Hell dealt 13 damage to {name}"));
-                }
+            if state.get_object(*creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+                let effect = crate::state::PendingEffect::DealDamage {
+                    amount: 13,
+                    source_id: object_id,
+                    source_name: "Into the Maw of Hell".into(),
+                };
+                crate::engine::apply_pending_effect(
+                    state,
+                    &Target::Object(*creature_id),
+                    &effect,
+                    registry,
+                );
             }
         }
         state.move_spell_after_resolve(object_id, registry);

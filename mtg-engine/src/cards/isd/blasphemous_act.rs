@@ -1,8 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry};
-use crate::events::{DamageTarget, GameEvent};
 use crate::ids::ObjectId;
-use crate::state::GameState;
+use crate::state::{GameState, PendingEffect};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Blasphemous Act — {8}{R} Sorcery.
@@ -50,15 +49,17 @@ impl CardBehavior for BlasphemousAct {
             .map(|o| o.id)
             .collect();
         for id in creatures {
-            if let Some(obj) = state.get_object_mut(id) {
-                obj.damage_marked += 13;
-                obj.damaged_by.push(object_id);
-            }
-            state.events.push(GameEvent::NonCombatDamageDealt {
-                source: object_id,
-                target: DamageTarget::Object(id),
+            let effect = PendingEffect::DealDamage {
                 amount: 13,
-            });
+                source_id: object_id,
+                source_name: "Blasphemous Act".into(),
+            };
+            crate::engine::apply_pending_effect(
+                state,
+                &Target::Object(id),
+                &effect,
+                registry,
+            );
         }
         state.log(crate::state::LogLevel::Event,
             "Blasphemous Act deals 13 damage to each creature".into());

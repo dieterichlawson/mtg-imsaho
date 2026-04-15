@@ -126,20 +126,17 @@ impl CardBehavior for DaybreakRanger {
                 crate::combat::fight(state, object_id, *target_id, registry);
             } else {
                 // Daybreak Ranger: deal 2 damage to creature with flying
-                let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-                if let Some(obj) = state.get_object_mut(*target_id) {
-                    if obj.zone == Zone::Battlefield {
-                        obj.damage_marked += 2;
-                        obj.damaged_by.push(object_id);
-                    }
-                }
-                state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                    source: object_id,
-                    target: crate::events::DamageTarget::Object(*target_id),
+                let effect = crate::state::PendingEffect::DealDamage {
                     amount: 2,
-                });
-                state.log(crate::state::LogLevel::Event,
-                    format!("Daybreak Ranger deals 2 damage to {target_name}"));
+                    source_id: object_id,
+                    source_name: "Daybreak Ranger".into(),
+                };
+                crate::engine::apply_pending_effect(
+                    state,
+                    &Target::Object(*target_id),
+                    &effect,
+                    registry,
+                );
             }
         }
     }

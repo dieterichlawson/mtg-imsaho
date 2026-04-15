@@ -1,8 +1,8 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement};
 use crate::ids::ObjectId;
-use crate::state::{GameState, LogLevel};
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::state::GameState;
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Harvest Pyre — {1}{R} Instant.
 /// As an additional cost to cast this spell, exile X cards from your graveyard.
@@ -43,20 +43,17 @@ impl CardBehavior for HarvestPyre {
 
         if count > 0 {
             if let Some(Target::Object(target_id)) = targets.first() {
-                if let Some(obj) = state.get_object_mut(*target_id) {
-                    if obj.zone == Zone::Battlefield {
-                        obj.damage_marked += count;
-                        obj.damaged_by.push(object_id);
-                    }
-                }
-                if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: object_id,
-                        target: crate::events::DamageTarget::Object(*target_id),
-                        amount: count,
-                    });
-                    state.log(LogLevel::Event, format!("Harvest Pyre dealt {} damage to {}", count, state.obj_name(*target_id)));
-                }
+                let effect = crate::state::PendingEffect::DealDamage {
+                    amount: count,
+                    source_id: object_id,
+                    source_name: "Harvest Pyre".into(),
+                };
+                crate::engine::apply_pending_effect(
+                    state,
+                    &Target::Object(*target_id),
+                    &effect,
+                    registry,
+                );
             }
         }
 
