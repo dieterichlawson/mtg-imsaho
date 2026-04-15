@@ -3483,6 +3483,19 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         amount: *amount,
                     });
                     state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, state.obj_name(*id)));
+                    if state.has_keyword(*source_id, Keyword::Lifelink, registry) {
+                        if let Some(src) = state.get_object(*source_id) {
+                            let src_controller = src.controller;
+                            let old_life = state.get_player(src_controller).life;
+                            let new_life = old_life + i32::try_from(*amount).unwrap_or(i32::MAX);
+                            state.get_player_mut(src_controller).life = new_life;
+                            state.events.push(GameEvent::LifeChanged {
+                                player: src_controller,
+                                old: old_life,
+                                new_life,
+                            });
+                        }
+                    }
                 }
             }
         }

@@ -164,31 +164,24 @@ impl CardBehavior for GarrukRelentless {
                 if let Some(Target::Object(target_id)) = targets.first() {
                     let target_power = state.effective_power(*target_id, registry).unwrap_or(0);
                     let target_name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
-                    // Deal 3 to the creature.
-                    if let Some(obj) = state.get_object_mut(*target_id) {
-                        obj.damage_marked += 3;
-                        obj.damaged_by.push(self_id);
-                    }
-                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: self_id,
-                        target: crate::events::DamageTarget::Object(*target_id),
+                    let self_name = state.get_object(self_id).map(|o| o.name.clone()).unwrap_or_default();
+
+                    let garruk_effect = PendingEffect::DealDamage {
                         amount: 3,
-                    });
-                    // The creature deals its power as damage to Garruk (remove loyalty counters).
+                        source_id: self_id,
+                        source_name: self_name,
+                    };
+                    crate::engine::apply_pending_effect(state, &Target::Object(*target_id), &garruk_effect, registry);
+
                     if target_power > 0 {
                         let remove = u32::try_from(target_power).unwrap_or(0);
-                        if let Some(obj) = state.get_object_mut(self_id) {
-                            let loyalty = obj.counters.entry(CounterType::Loyalty).or_insert(0);
-                            *loyalty = loyalty.saturating_sub(remove);
-                        }
-                        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                            source: *target_id,
-                            target: crate::events::DamageTarget::Object(self_id),
+                        let creature_effect = PendingEffect::DealDamage {
                             amount: remove,
-                        });
+                            source_id: *target_id,
+                            source_name: target_name.clone(),
+                        };
+                        crate::engine::apply_pending_effect(state, &Target::Object(self_id), &creature_effect, registry);
                     }
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Garruk: deals 3 to {target_name}, takes {target_power} damage back"));
                 }
             }
             1 => {
