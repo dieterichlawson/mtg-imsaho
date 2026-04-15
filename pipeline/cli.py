@@ -612,11 +612,79 @@ Write your structured audit output to `pipeline/staging/{run_id}.md`.
 Use the format specified in the prompt (Checks Performed, Finding N sections, Insights).
 """
         print(f"  [{card}] Spawning agent...")
-        log_path = LOGS_DIR / f"{run_id}.log"
-        result = run_agent(shared_prompt + "\n\n---\n\n" + per_agent,
-                          args.model, args.effort,
-                          log_path=log_path,
-                          progress_prefix=f"  [{card}] ")
+        # Audit runs with a retry loop so structural errors in the
+        # agent's staging output (missing Description / Engine path on
+        # a claimed finding) can be corrected without throwing the run
+        # away. Agent errors and empty staging also retry.
+        MAX_AUDIT_ATTEMPTS = 3
+        parsed: dict = {"findings": [], "insights": [], "is_pass": True}
+        result: dict = {"duration": 0, "tokens": 0, "tool_uses": 0,
+                        "is_error": False, "error_message": None}
+        retry_note_audit = ""
+        for attempt in range(1, MAX_AUDIT_ATTEMPTS + 1):
+            log_path = LOGS_DIR / f"{run_id}-attempt{attempt}.log"
+            result = run_agent(
+                shared_prompt + "\n\n---\n\n" + per_agent + retry_note_audit,
+                args.model, args.effort,
+                log_path=log_path,
+                progress_prefix=f"  [{card}] ")
+
+            if result.get("is_error"):
+                err = result.get("error_message") or "unknown error"
+                if attempt < MAX_AUDIT_ATTEMPTS:
+                    print(f"  [{card}] Agent error: {err} — retrying")
+                    retry_note_audit = (
+                        f"\n\n## Retry note (attempt {attempt} failed)\n"
+                        f"Previous attempt errored: {err}\n")
+                    continue
+                # Out of retries — fall through to the error-handling
+                # path below.
+                break
+
+            if not staging_file.exists():
+                if attempt < MAX_AUDIT_ATTEMPTS:
+                    print(f"  [{card}] Agent wrote no staging file — retrying")
+                    retry_note_audit = (
+                        f"\n\n## Retry note (attempt {attempt} failed)\n"
+                        f"Previous attempt did not write {staging_file}. "
+                        f"Write your audit output there.\n")
+                    continue
+                break
+
+            parsed = parse_audit_staging(staging_file)
+
+            # Every claimed finding must carry at minimum a Description
+            # and an Engine path. Oracle / Code quotes are per-prompt
+            # rules (findings without them shouldn't have been emitted
+            # in the first place); if they're missing we retry too.
+            finding_errors: list[str] = []
+            for i, finding in enumerate(parsed["findings"], 1):
+                missing = [k for k in ("description", "engine_path",
+                                       "oracle_quote", "code_quote")
+                           if not (finding.get(k) or "").strip()]
+                if missing:
+                    finding_errors.append(
+                        f"- Finding {i}: missing {', '.join(missing)}")
+
+            if finding_errors and attempt < MAX_AUDIT_ATTEMPTS:
+                print(f"  [{card}] Findings missing required fields:")
+                for e in finding_errors:
+                    print(f"    {e}")
+                detail = "\n".join(finding_errors)
+                retry_note_audit = (
+                    f"\n\n## Retry note (attempt {attempt} failed)\n"
+                    f"Your `## Finding N` blocks have structural errors. "
+                    f"Every finding MUST include `**Oracle text:**`, "
+                    f"`**Code:**`, `**Description:**`, and "
+                    f"`**Engine path:**`. If you cannot produce the "
+                    f"oracle or code quote, do not emit the finding — "
+                    f"per the prompt's Critical Rule 2, unverified "
+                    f"mismatches must be dropped.\n\n{detail}\n")
+                # Clear staging so a fresh parse happens next attempt
+                staging_file.unlink()
+                continue
+
+            break  # success or out of retries
 
         if result.get("is_error"):
             err = result.get("error_message") or "unknown error"
@@ -636,6 +704,8 @@ Use the format specified in the prompt (Checks Performed, Finding N sections, In
         # Parse staging output
         tickets_created = []
         if staging_file.exists():
+            # Already parsed inside the retry loop; re-parse as a
+            # defensive read in case the agent wrote a late version.
             parsed = parse_audit_staging(staging_file)
 
             # Find next available ticket number for this card
@@ -882,6 +952,51 @@ otherwise.
                 retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
                               f"Previous attempt produced no staging file or no "
                               f"`## Test: <slug>` blocks.\n")
+                continue
+
+            # Structural validation of each per-test block. Status
+            # must be one of {confirmed, rejected, blocked}; a confirmed
+            # test must carry a Test name. Any malformed entry forces
+            # a retry with targeted feedback so the agent can re-emit
+            # a well-formed staging output.
+            VALID_TEST_STATUSES = {"confirmed", "rejected", "blocked"}
+            protocol_errors: list[str] = []
+            for t in per_test:
+                slug = t["slug"]
+                st = (t.get("status") or "").strip().lower().split()
+                st_word = st[0] if st else ""
+                if st_word not in VALID_TEST_STATUSES:
+                    protocol_errors.append(
+                        f"- `{slug}`: Status must be EXACTLY one of "
+                        f"`confirmed`, `rejected`, `blocked` — got "
+                        f"{t.get('status')!r}")
+                    continue
+                t["status"] = st_word
+                if st_word == "confirmed" and not t.get("test_name"):
+                    protocol_errors.append(
+                        f"- `{slug}`: Status=confirmed but Test name is "
+                        f"empty — every confirmed test must name the "
+                        f"Rust fn")
+                if st_word == "blocked" and not (t.get("blocked_by") or "").strip():
+                    protocol_errors.append(
+                        f"- `{slug}`: Status=blocked but Blocked by is "
+                        f"empty — explain what needs to change")
+
+            if protocol_errors and attempt < MAX_TEST_ATTEMPTS:
+                print(f"  [{tid}] Agent output has protocol errors:")
+                for e in protocol_errors:
+                    print(f"    {e}")
+                detail = "\n".join(protocol_errors)
+                retry_note = (
+                    f"\n\n## Retry note (attempt {attempt} failed)\n"
+                    f"Your staging output has structural errors Python "
+                    f"cannot accept:\n\n{detail}\n\n"
+                    f"Fix these in your output format. Each `## Test: "
+                    f"<slug>` block must carry: `Status: <one word>` "
+                    f"from the set {{confirmed, rejected, blocked}}; "
+                    f"a confirmed test needs `Test name:`; a blocked "
+                    f"test needs `Blocked by:`. Additional prose "
+                    f"belongs in Explanation, not in Status.\n")
                 continue
 
             # Per-test validation
