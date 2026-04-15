@@ -594,6 +594,14 @@ impl GameState {
                 obj.attached_to = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;
+                if obj.is_transformed {
+                    let front = registry.get(obj.card_id).map(|b| b.card_data());
+                    if let Some(data) = front {
+                        obj.name.clone_from(&data.name);
+                        obj.keywords.clone_from(&data.keywords);
+                        obj.subtypes.clone_from(&data.subtypes);
+                    }
+                }
                 obj.is_transformed = false;
                 obj.instance_continuous_effects = None;
                 obj.instance_oracle_text = None;
