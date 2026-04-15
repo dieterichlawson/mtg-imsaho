@@ -1,6 +1,6 @@
 ---
 id: merged-trigger-source-zone-gate-02
-status: confirmed
+status: merged
 card: multiple
 created: 2026-04-15T04:57:48Z
 kind: consolidated
@@ -14,6 +14,12 @@ test_file: mtg-engine/tests/pipeline_bugs_merged_trigger_source_zone_gate_02.rs
 tests_confirmed: 10
 tests_total: 10
 worktree: /Users/dlaw/mtg/.worktrees/fix-merged-trigger-source-zone-gate-02
+fixed_at: 2026-04-15T06:29:58Z
+fix_run_id: 2026-04-14-merged-trigger-source-zone-gate-02-fix
+fix_model: opus
+fix_tokens: 24342
+fix_duration: 525
+merged_at: 2026-04-15T06:34:24Z
 ---
 
 # Trigger resolution skipped when source left battlefield (CR 113.7a, 603.10)
@@ -115,3 +121,27 @@ Scenario: Trepanation Blade is equipped to a creature. The creature attacks, put
 - **test_trepanation_blade_trigger_resolves_after_equipment_destroyed** — confirmed
   - test fn: `test_trepanation_blade_trigger_resolves_after_equipment_destroyed`
   - assertion: CR 113.7a: Trepanation Blade trigger should mill even after equipment is destroyed
+
+## Fix Result
+
+status: fixed
+files_changed: - mtg-engine/src/triggers.rs
+- mtg-engine/src/state.rs
+- mtg-engine/src/cards/isd/angel_of_flight_alabaster.rs
+- mtg-engine/src/cards/isd/charmbreaker_devils.rs
+- mtg-engine/src/cards/isd/splinterfright.rs
+- mtg-engine/src/cards/isd/geist_of_saint_traft.rs
+- mtg-engine/src/cards/isd/kessig_cagebreakers.rs
+- mtg-engine/src/cards/isd/trepanation_blade.rs
+- mtg-engine/src/cards/isd/mentor_of_the_meek.rs
+- mtg-engine/src/cards/isd/gutter_grime.rs
+- mtg-engine/src/cards/isd/murder_of_crows.rs
+- mtg-engine/src/cards/isd/undead_alchemist.rs
+
+Per CR 113.7a, a triggered ability on the stack exists independently of its source — removing the source does not counter the ability. The engine had zone gates at two layers that incorrectly fizzled triggers when the source left the battlefield:
+
+1. **Engine-level gates in triggers.rs**: UpkeepTrigger, AttacksTrigger, EnterWatch, and CreatureCardMilledWatch all checked `source.zone == Battlefield` before dispatching to card handlers. These gates were removed since the trigger was already validated when placed on the stack.
+
+2. **Card-level gates**: Nine card handlers independently matched `o.zone == Zone::Battlefield` to extract the controller, returning early if the source had moved. Changed all nine to extract the controller regardless of zone (the object still exists, just in a different zone).
+
+3. **Equipment last-known-info**: When equipment leaves the battlefield, `attached_to` is cleared. Added `last_attached_to` preservation in `card_state` (state.rs) so the Trepanation Blade handler can find the equipped creature via last known information. Also added a defender fallback using `state.opponent(controller)` when combat state is unavailable.
