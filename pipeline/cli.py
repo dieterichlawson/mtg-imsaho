@@ -1284,11 +1284,27 @@ def cmd_merge(args):
                 continue
             print(f"  [{tid}] Test passes at HEAD")
 
+        # Capture the merge commit sha before cleaning up so the ticket
+        # points at something durable instead of a worktree that's about
+        # to be deleted.
+        merge_sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=str(PROJECT_ROOT),
+        ).stdout.strip()
+
         # Clean up worktree
         remove_worktree(tid)
 
-        # Update ticket
-        update_ticket_status(tid, "merged", {"merged_at": now_iso()})
+        # Update ticket — drop the now-stale worktree field and record
+        # the merge commit in its place.
+        path = TICKETS_DIR / f"{tid}.md"
+        t = parse_ticket(path)
+        t["frontmatter"].pop("worktree", None)
+        t["frontmatter"]["status"] = "merged"
+        t["frontmatter"]["merged_at"] = now_iso()
+        if merge_sha:
+            t["frontmatter"]["merged_sha"] = merge_sha
+        write_ticket(tid, t["frontmatter"], t["body"])
         append_jsonl(METRICS_DIR / "findings.jsonl", {
             "finding_id": tid, "timestamp": now_iso(),
             "event": "merged", "card": fm.get("card", ""),

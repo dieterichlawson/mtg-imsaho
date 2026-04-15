@@ -13,13 +13,13 @@ test_duration: 1457
 test_file: mtg-engine/tests/pipeline_bugs_merged_inline_damage_02.rs
 tests_confirmed: 11
 tests_total: 11
-worktree: /Users/dlaw/mtg/.worktrees/fix-merged-inline-damage-02
 fixed_at: 2026-04-15T05:48:29Z
 fix_run_id: 2026-04-14-merged-inline-damage-02-fix
 fix_model: opus
 fix_tokens: 24850
 fix_duration: 505
 merged_at: 2026-04-15T05:51:14Z
+merged_sha: 5f203b6
 ---
 
 # Inline damage writes bypass the central damage handler (CR 702.16e, 614.1a)
