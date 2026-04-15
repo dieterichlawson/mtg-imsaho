@@ -57,12 +57,20 @@ if [[ -n "$TEST_NAME" ]]; then
     echo "Target test passes: OK"
 fi
 
-# 5. Run full test suite
+# 5. Run full test suite — any test anywhere in the workspace that
+#    fails to compile or run rejects the fix. We check cargo's exit
+#    code (catches compile errors and other non-test failures) AND
+#    grep the output for "FAILED" (belt-and-braces).
 echo "--- Running full test suite ---"
-TEST_OUTPUT=$(cargo test 2>&1)
+TEST_OUTPUT=$(cargo test 2>&1) && TEST_RC=0 || TEST_RC=$?
+if [[ $TEST_RC -ne 0 ]]; then
+    echo "REJECTED: cargo test exited with code $TEST_RC:"
+    echo "$TEST_OUTPUT" | grep -E "FAILED|failures:|error\[|error:" | head -30
+    exit 1
+fi
 if echo "$TEST_OUTPUT" | grep -q "FAILED"; then
-    echo "REJECTED: Some tests fail:"
-    echo "$TEST_OUTPUT" | grep "FAILED\|failures:" | head -20
+    echo "REJECTED: cargo test exit 0 but output contains FAILED:"
+    echo "$TEST_OUTPUT" | grep -E "FAILED|failures:" | head -20
     exit 1
 fi
 
