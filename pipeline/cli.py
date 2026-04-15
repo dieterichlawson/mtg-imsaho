@@ -1398,37 +1398,67 @@ def cmd_report(args):
 
     # ── Print per-card breakdown ──────────────────────────────
     if not args.audits_only:
-        print(f"\n{'='*60}")
-        print("PER-CARD BREAKDOWN")
-        print(f"{'='*60}")
-        print(f"  {'Card':<32} {'Audits':>6} {'Tickets':>7} "
-              f"{'Open':>5} {'Fixed':>5} {'Closed-Dup':>10}")
-        print(f"  {'-'*32} {'-'*6} {'-'*7} {'-'*5} {'-'*5} {'-'*10}")
-
-        # Status buckets. closed-duplicate covers the former deduped AND
-        # duplicate statuses; `deduped` and `duplicate` are kept here for
-        # backwards-compat with any tickets still on the old scheme.
+        # Resolve each ticket's terminal status by walking duplicate_of.
+        # A card ticket whose parent chain ends in a merged/fixed ticket
+        # is "effectively fixed" for counting purposes, even though its
+        # own status stays closed-duplicate.
         OPEN_STATUSES = {"new", "confirmed", "blocked", "failed", "rejected"}
         FIXED_STATUSES = {"fixed", "merged"}
         CLOSED_DUP_STATUSES = {"closed-duplicate", "deduped", "duplicate"}
 
+        by_id = {t["frontmatter"].get("id"): t for t in tickets}
+        def _terminal_status(tid: str, _seen=None) -> str:
+            _seen = _seen or set()
+            if tid in _seen:
+                return "(cycle)"
+            _seen.add(tid)
+            t = by_id.get(tid)
+            if not t:
+                return "(unknown)"
+            st = t["frontmatter"].get("status", "new")
+            if st not in CLOSED_DUP_STATUSES:
+                return st
+            parent = t["frontmatter"].get("duplicate_of") \
+                or t["frontmatter"].get("deduped_into")
+            if not parent:
+                return st
+            return _terminal_status(parent, _seen)
+
+        print(f"\n{'='*60}")
+        print("PER-CARD BREAKDOWN")
+        print(f"{'='*60}")
+        print(f"  {'Card':<32} {'Audits':>6} {'Tickets':>7} "
+              f"{'Open':>5} {'Fixed':>5} {'Closed':>6}")
+        print(f"  {'-'*32} {'-'*6} {'-'*7} {'-'*5} {'-'*5} {'-'*6}")
+
         rows = []
         for card in sorted(set(cards_attempted) | set(by_card_status)):
             audits = by_card_runs.get(card, 0)
-            totals = by_card_status.get(card, Counter())
-            open_n = sum(v for s, v in totals.items() if s in OPEN_STATUSES)
-            fixed_n = sum(v for s, v in totals.items() if s in FIXED_STATUSES)
-            closed_n = sum(v for s, v in totals.items()
-                           if s in CLOSED_DUP_STATUSES)
-            total_tickets = by_card_total_tickets.get(card, 0)
+            card_tickets = [t for t in tickets
+                            if t["frontmatter"].get("card") == card]
+            open_n = fixed_n = closed_open_n = 0
+            for t in card_tickets:
+                tid = t["frontmatter"].get("id")
+                st = t["frontmatter"].get("status", "new")
+                if st in OPEN_STATUSES:
+                    open_n += 1
+                elif st in FIXED_STATUSES:
+                    fixed_n += 1
+                elif st in CLOSED_DUP_STATUSES:
+                    terminal = _terminal_status(tid)
+                    if terminal in FIXED_STATUSES:
+                        fixed_n += 1
+                    else:
+                        closed_open_n += 1
+            total_tickets = len(card_tickets)
             rows.append((card, audits, total_tickets, open_n,
-                         fixed_n, closed_n))
+                         fixed_n, closed_open_n))
 
         # Sort: most tickets first, then by name
         rows.sort(key=lambda r: (-r[2], r[0]))
         for card, audits, total, open_n, fixed_n, closed_n in rows:
             print(f"  {card:<32} {audits:>6} {total:>7} "
-                  f"{open_n:>5} {fixed_n:>5} {closed_n:>10}")
+                  f"{open_n:>5} {fixed_n:>5} {closed_n:>6}")
 
         clean = sum(1 for r in rows if r[1] > 0 and r[2] == 0)
         print(f"\n  {len(rows)} cards total — {clean} clean "
