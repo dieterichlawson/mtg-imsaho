@@ -1262,12 +1262,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::EnterWatch { watcher_id, watcher_card_id, entered_id, entered_controller, .. } => {
-            // Allow watchers on battlefield or graveyard (e.g., Dearly Departed).
-            let watcher_zone = state.get_object(watcher_id).map(|o| o.zone);
-            if matches!(watcher_zone, Some(Zone::Battlefield | Zone::Graveyard)) {
-                if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_any_creature_enters(state, watcher_id, entered_id, entered_controller, registry);
-                }
+            if let Some(behavior) = registry.get(watcher_card_id) {
+                behavior.on_any_creature_enters(state, watcher_id, entered_id, entered_controller, registry);
             }
         }
         PendingTrigger::CombatDamageToPlayer { creature_id, creature_card_id, damaged_player, amount, .. } => {
@@ -1304,10 +1300,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::UpkeepTrigger { object_id, card_id, chosen_targets, .. } => {
-            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_upkeep(state, object_id, &chosen_targets, registry);
-                }
+            if let Some(behavior) = registry.get(card_id) {
+                behavior.on_upkeep(state, object_id, &chosen_targets, registry);
             }
         }
         PendingTrigger::EndStepTrigger { object_id, card_id, chosen_targets, .. } => {
@@ -1330,10 +1324,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::AttacksTrigger { object_id, card_id, chosen_targets, .. } => {
-            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_attacks(state, object_id, &chosen_targets, registry);
-                }
+            if let Some(behavior) = registry.get(card_id) {
+                behavior.on_attacks(state, object_id, &chosen_targets, registry);
             }
         }
         PendingTrigger::BlocksTrigger { object_id, card_id, blocked_attacker, .. } => {
@@ -1371,10 +1363,8 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::CreatureCardMilledWatch { watcher_id, watcher_card_id, milled_object, milled_player, .. } => {
-            if state.get_object(watcher_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(watcher_card_id) {
-                    behavior.on_creature_card_milled(state, watcher_id, milled_object, milled_player, registry);
-                }
+            if let Some(behavior) = registry.get(watcher_card_id) {
+                behavior.on_creature_card_milled(state, watcher_id, milled_object, milled_player, registry);
             }
         }
     }

@@ -57,12 +57,16 @@ impl CardBehavior for TrepanationBlade {
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         // self_id is the equipment's ID (from AttacksTrigger resolution).
         let Some(equip) = state.get_object(self_id) else { return; };
-        let Some(creature_id) = equip.attached_to else { return; };
+        let controller = equip.controller;
+        let creature_id = match equip.attached_to.or_else(|| equip.card_state.get("last_attached_to").copied()) {
+            Some(id) => id,
+            None => return,
+        };
 
         // Find the defending player from combat state.
         let defending_player = state.combat.as_ref()
-            .and_then(|c| c.attackers.get(&creature_id).copied());
-        let Some(defending_player) = defending_player else { return; };
+            .and_then(|c| c.attackers.get(&creature_id).copied())
+            .unwrap_or_else(|| state.opponent(controller));
 
         // Reveal cards from defending player's library until a land is revealed.
         let mut cards_milled = 0;

@@ -39,8 +39,8 @@ impl CardBehavior for MurderOfCrows {
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], _registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
 
         // "You may draw a card. If you do, discard a card."

@@ -54,8 +54,8 @@ impl CardBehavior for UndeadAlchemist {
         registry: &CardRegistry,
     ) {
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         // Exile the milled creature card and create a 2/2 Zombie token.
         state.move_object(milled_object, Zone::Exile, registry);

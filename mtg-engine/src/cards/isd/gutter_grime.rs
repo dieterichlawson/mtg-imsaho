@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType, CounterType};
 use crate::actions::Target;
 
 /// Gutter Grime — {4}{G} Enchantment.
@@ -44,8 +44,8 @@ impl CardBehavior for GutterGrime {
 
     fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
+            Some(o) => o.controller,
+            None => return,
         };
         // Must be our creature.
         if dead_controller != controller {
