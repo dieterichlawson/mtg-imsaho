@@ -216,3 +216,39 @@ No new generalizable insights discovered. Both findings are already documented i
 No new generalizable insights discovered. The flashback cost-reduction bypass is already noted in multiple previous audit reports and is visible from the 8i check procedure.
 
 No new generalizable insights discovered. The phantom-trigger dispatch scoping issue ("your upkeep" vs "each upkeep") and the trigger-resolution battlefield gate are both engine-wide patterns already visible from the existing 8b check procedure and previously noted in other audit reports.
+
+No new generalizable insights discovered. The inline damage pattern is already documented in auditor-insights.md.
+
+No new generalizable insights discovered. Finding 1 (zone check before conditional exile) is card-specific logic. Finding 2 (controller set after move_object) is already documented in auditor-insights.md.
+
+No new generalizable insights discovered. The "look at" vs "reveal" information leak is an engine-wide limitation (no private-look mechanism exists), but it is narrow enough that it only affects the small set of cards using "look at" with ChooseFromRevealed — it is visible from a careful reading of the oracle text rather than being a hidden code pattern.
+
+### Controller field not reset to owner on zone change affects CDAs
+`move_object` (state.rs:572-583) resets battlefield-specific state (tapped, summoning_sick, damage_marked, counters, etc.) when a permanent leaves the battlefield, but does not reset `controller` to `owner`. Per CR 112.8, a card not on the stack or battlefield is controlled by its owner. Any card that reads `obj.controller` off-battlefield — particularly CDA creatures using `dynamic_pt` — will use the last battlefield controller instead of the owner after a control-change-then-zone-change sequence. The existing "Zone-change cleanup does not reset characteristic modifications" insight covers fields like subtypes and keywords, but `controller` is a distinct field requiring a different fix (set to `owner`, not clear to default). Check any `dynamic_pt` or off-battlefield logic that reads `controller` instead of `owner`.
+Discovered auditing: Sturmgeist
+
+### Equipment/aura triggers derive equipped creature from current state, not trigger-time snapshot
+Equipment and aura cards with attack/block triggered abilities (e.g., "Whenever equipped creature attacks") typically derive the equipped creature's identity by reading `equip.attached_to` at trigger resolution time. If the equipment becomes detached between trigger creation and resolution — because the creature was destroyed (SBA detaches equipment at sba.rs:147-165), or a re-equip effect moved the equipment — the handler reads stale or wrong state. Per CR 603.3c, triggered abilities should use information from the triggering event. The root cause is that `PendingTrigger::AttacksTrigger` stores only `object_id` (the equipment) but not the attacking creature's ID or the defending player. The trigger dispatch at triggers.rs:921-944 knows both values when creating the trigger but doesn't store them. Any equipment or aura with attack/block triggers should be checked for whether the handler derives the creature from current `attached_to` rather than a trigger-time capture.
+Discovered auditing: Trepanation Blade
+
+### "If you do" draw conditionals cannot verify draw success
+`draw_cards` (engine.rs:4227) returns `void` — it tracks `drawn` count internally but does not expose it to the caller. Any card with oracle text "draw a card. If you do, [X]" needs to verify that a card was actually drawn before performing the conditional action. Without a return value, callers cannot distinguish between "drew successfully" and "library was empty, draw failed." Cards using this pattern that unconditionally proceed to the conditional action after `draw_cards` will incorrectly perform the action even when the draw failed (e.g., empty library). The fix is either to have `draw_cards` return the number of cards drawn, or to have the caller snapshot hand size before/after the call.
+Discovered auditing: Murder of Crows
+
+No new generalizable insights discovered. The resolution-time targeting pattern (using `target_requirement: None` with manual targeting in the ETB handler) and the missing `can_be_targeted_by` check are both already covered by existing required checks 8b and 8f. The engine infrastructure for subtype-based creature targeting (`CreatureWithFilter(SubtypeOrCardType)`) exists but its filter function `matches_ability_target_filter` has a `_ => true` fallback that silently passes `SubtypeOrCardType` — this is compensated by the `is_valid_target` call in `valid_targets_for_req`, so it works but is fragile. This is a known engine pattern, not a new insight.
+
+### Controller field not reset to owner on zone change affects CDAs
+`move_object` (state.rs:572-583) resets battlefield-specific state (tapped, summoning_sick, damage_marked, counters, etc.) when a permanent leaves the battlefield, but does not reset `controller` to `owner`. Per CR 112.8, a card not on the stack or battlefield is controlled by its owner. This means any card that reads `obj.controller` off-battlefield — particularly CDA creatures using `dynamic_pt` — will use the last battlefield controller instead of the owner after a control-change-then-zone-change sequence. The existing "Zone-change cleanup does not reset characteristic modifications" insight covers fields like subtypes and keywords, but `controller` is a distinct field requiring a different fix (set to `owner`, not clear to default). Check any `dynamic_pt` or off-battlefield logic that reads `controller` instead of `owner`.
+Discovered auditing: Sturmgeist
+
+No new generalizable insights discovered. Finding 1 (resolution-time characteristic check on entering creature) is specific to the EnterWatch trigger's lack of a snapshot mechanism — it would apply to any AnyCreatureEnters watcher that filters by entering creature characteristics, but this is a narrow pattern already visible from the 8b check procedure. Finding 2 (pool-only mana payment) is Bug Y, already tracked. Finding 3 (watcher zone gate) is the engine-wide trigger resolution zone-gate pattern, already noted in multiple previous audit reports.
+
+No new generalizable insights discovered. The `power.is_some()` creature proxy pattern is already documented in auditor-insights.md as partially addressed by check 8d. The `dynamic_pt` approach for self-referencing P/T modification is a well-established engine pattern.
+
+No new generalizable insights discovered. The flashback cost-reduction bypass is already well-documented in multiple previous audit reports and is visible from the 8i check procedure.
+
+No new generalizable insights discovered. The card is a straightforward ETB-watch trigger with counter placement; all patterns checked are already covered by existing required checks and insights.
+
+No new generalizable insights discovered. The DFC subtype-check divergence (Finding 2) is a specific instance of the existing 8d required check pattern — manual subtype lookups that skip `back_face_data()`. The activated-ability stack bypass (Finding 1) is already documented in auditor-insights.md as a known engine architectural limitation.
+
+No new generalizable insights discovered. The P/T mutation during transform is specific to Moonmist's manual transform implementation — all other DFC cards use `helpers::apply_transform()` which correctly avoids touching P/T. The zone-change cleanup gap (not resetting obj fields) is already documented in auditor-insights.md.
