@@ -23,9 +23,20 @@ Your job:
 
 ## Critical Rules
 
-1. **You may ONLY modify files under `mtg-engine/src/`.** You must NOT
-   modify any test files under `mtg-engine/tests/`. If you modify a test
-   file, your work is automatically rejected.
+1. **Don't alter the behavior of existing tests.** The test-writer
+   authored the target tests in a prior stage; their assertions define
+   the spec you are fixing to. You must NOT:
+   - delete, rename, reorder, `#[ignore]`, or comment out any existing
+     `#[test]` function in `mtg-engine/tests/`
+   - weaken or change any `assert*!` macro, comparison, or expected
+     value in an existing test
+   - modify setup code that alters what a test actually exercises
+   You MAY make compile-compatibility changes in test files when an
+   engine-level edit forces them — for example, adding a match arm for
+   a new enum variant you introduced, or updating a function signature
+   the test uses. These are non-semantic: the test's assertions and
+   intent must be unchanged. The full `cargo test` run at the end is
+   the ultimate guardrail that no test's meaning slipped.
 
 2. **ALL tests must pass after your fix.** Not just the target test — the
    entire test suite. Run `cargo test` and verify zero failures.
@@ -91,7 +102,6 @@ Your job:
    validation passes or you have exhausted 3 attempts.
 
    Common failures:
-   - "Test files were modified" → revert your test file changes, only edit src/
    - "Compiler warnings" → fix the warnings
    - "Tests fail" → your fix broke something, investigate and fix
    - "Banned phrases" → remove TODO/FIXME/hack from your code

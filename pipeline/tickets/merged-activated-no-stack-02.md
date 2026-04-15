@@ -14,6 +14,11 @@ test_file: mtg-engine/tests/pipeline_bugs_merged_activated_no_stack_02.rs
 tests_confirmed: 10
 tests_total: 10
 worktree: /Users/dlaw/mtg/.worktrees/fix-merged-activated-no-stack-02
+failed_at: 2026-04-15T07:45:39Z
+fix_run_id: 2026-04-15-merged-activated-no-stack-02-fix
+fix_model: opus
+fix_tokens: 167812
+fix_duration: 3303
 ---
 
 # Activated abilities resolve immediately with no stack entry (CR 602.2a)
@@ -115,3 +120,70 @@ Scenario: Place Skirsdag High Priest (not summoning sick) with two other creatur
 - **skirsdag_summoning_sick_creature_can_be_tapped** — confirmed
   - test fn: `skirsdag_summoning_sick_creature_can_be_tapped`
   - assertion: CR 602.2a: Demon token should not exist until ability resolves from stack
+
+## Fix Result
+
+status: failed
+
+### Description (post-mortem, reconstructed from streaming agent log)
+
+This Description was reconstructed by a human from the stream-json log
+of the first failed attempt; the original agent gave up without
+producing one under an older code path that didn't enforce the rule.
+It is presented in the voice of the original attempt so the next
+agent reads it as prior context.
+
+**What I tried (first attempt):**
+
+1. Added a new `StackEntry::Ability` variant alongside the existing
+   `StackEntry::Spell(id)` and `StackEntry::Trigger(t)`. This is the
+   architecturally correct model — activated abilities are first-class
+   stack objects distinct from triggers (CR 113.3).
+2. Extended `stack.rs` with a resolution handler for the new variant.
+3. Updated `engine.rs` — both the non-X `ActivateAbility` path and the
+   `ChooseXFunding` path — to push the new variant instead of calling
+   `on_activate_ability` synchronously.
+4. Started separating "cost payment at activation" from "effect at
+   resolution" across 53 ISD card files by renaming
+   `on_activate_ability` → `resolve_activated_ability` (the resolution
+   handler) and having `on_activate_ability` retain only cost-payment
+   side effects. Skirsdag High Priest was the interesting case:
+   tapping two creatures is a cost (stays in `on_activate_ability`),
+   creating the Demon token is the resolved effect (moves to
+   `resolve_activated_ability`).
+
+**Where it broke:**
+
+The exhaustive match on `StackEntry` in
+`mtg-engine/tests/death_trigger_bugs.rs` (lines 48-54) failed to
+compile once I added the new variant. Under the previous iteration of
+the fixer rules, modifying any file under `mtg-engine/tests/` was an
+automatic rejection, so I could not extend the match. I pivoted to
+modeling activated abilities as
+`StackEntry::Trigger(PendingTrigger::ActivatedAbility(...))` — reusing
+the trigger stack infrastructure — but that conflates two distinct
+ability categories and names a non-trigger ability variant
+`PendingTrigger::ActivatedAbility`, which is an oxymoron and would
+confuse future maintainers. I ran out of patience mid-pivot and
+reported `failed`.
+
+**What a clean attempt should do:**
+
+The fixer prompt has since been revised: compile-compatibility edits
+to test files (adding a match arm for a new enum variant you
+introduced, updating a function signature) are explicitly allowed, so
+long as you do not touch the `#[test]` function bodies or their
+assertions. The first architectural plan — new `StackEntry::Ability`
+variant, clean `on_activate_ability` (cost) / `resolve_activated_ability`
+(effect) split, extending the exhaustive match in
+`tests/death_trigger_bugs.rs` — is the right one. Files to touch:
+- `state.rs` — new `StackEntry::Ability` variant
+- `stack.rs` — resolution handler
+- `engine.rs` — push instead of synchronous dispatch; both non-X and
+  `ChooseXFunding` paths
+- `cards/mod.rs` — trait signature split, default impls
+- 7 card files in this ticket (the ones referenced by the tests);
+  other ISD cards only need the rename if they already override
+  `on_activate_ability` with resolution logic
+- `tests/death_trigger_bugs.rs` — add the new match arm with whatever
+  sensible default the test's `stack_names` computation wants
