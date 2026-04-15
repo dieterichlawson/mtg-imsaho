@@ -15,133 +15,114 @@ fn registry() -> CardRegistry {
 
 // ══════════════════════════════════════════════════════════════════
 // Dual Lands (checklands)
+//
+// All Innistrad checklands share one rule: "enters tapped unless you
+// control an <A> or a <B>". Before adding a new dual land, extend
+// DUAL_LANDS and the three parameterised tests below will cover it.
 // ══════════════════════════════════════════════════════════════════
 
-#[test]
-fn clifftop_retreat_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Clifftop Retreat").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.cost.is_none());
-    assert!(data.card_types.contains(&CardType::Land));
-    assert!(data.oracle_text.contains("Mountain or a Plains"));
+struct DualLand {
+    name: &'static str,
+    companion_a: &'static str,
+    companion_b: &'static str,
 }
 
-#[test]
-fn clifftop_retreat_enters_tapped_without_matching_land() {
-    let reg = registry();
+const DUAL_LANDS: &[DualLand] = &[
+    DualLand { name: "Clifftop Retreat",  companion_a: "Mountain", companion_b: "Plains" },
+    DualLand { name: "Hinterland Harbor", companion_a: "Forest",   companion_b: "Island" },
+    DualLand { name: "Isolated Chapel",   companion_a: "Plains",   companion_b: "Swamp" },
+    DualLand { name: "Sulfur Falls",      companion_a: "Island",   companion_b: "Mountain" },
+    DualLand { name: "Woodland Cemetery", companion_a: "Swamp",    companion_b: "Forest" },
+];
+
+/// Play the dual land, optionally with a companion basic already on the
+/// battlefield, and return whether the dual entered tapped.
+fn play_dual_and_check_tapped(
+    reg: &CardRegistry,
+    dual_name: &str,
+    companion_basic: Option<&str>,
+) -> bool {
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Play Clifftop Retreat with no Mountains or Plains.
-    let retreat = spell_in_hand(&mut state, &reg, "Clifftop Retreat", P0);
+    if let Some(basic_name) = companion_basic {
+        let basic_id = reg.get_id_by_name(basic_name)
+            .unwrap_or_else(|| panic!("{basic_name} must be registered"));
+        let basic_obj = state.create_object(basic_id, P0, Zone::Battlefield, None, None);
+        let obj = state.get_object_mut(basic_obj).unwrap();
+        obj.name = basic_name.into();
+        obj.subtypes = vec![basic_name.into()];
+    }
+
+    let dual = spell_in_hand(&mut state, reg, dual_name, P0);
     state.get_player_mut(P0).land_plays_remaining = 1;
 
-    let legal = engine::legal_actions(&state, &reg);
-    let play = legal.actions.iter().find(|a| matches!(a, Action::PlayLand { object_id } if *object_id == retreat)).unwrap();
-    state = engine::submit_action(&state, play, &reg);
+    let legal = engine::legal_actions(&state, reg);
+    let play = legal.actions.iter()
+        .find(|a| matches!(a, Action::PlayLand { object_id } if *object_id == dual))
+        .unwrap_or_else(|| panic!("{dual_name} should be playable"));
+    state = engine::submit_action(&state, play, reg);
 
-    // Process triggers so on_enter_battlefield fires.
-    mtg_engine::triggers::collect_triggers(&mut state, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
+    mtg_engine::triggers::collect_triggers(&mut state, reg);
+    mtg_engine::triggers::resolve_next_trigger(&mut state, reg);
 
-    assert!(state.get_object(retreat).unwrap().tapped, "Should enter tapped without matching land");
+    state.get_object(dual).unwrap().tapped
 }
 
 #[test]
-fn clifftop_retreat_enters_untapped_with_mountain() {
+fn dual_lands_are_registered_as_lands() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put a Mountain on the battlefield.
-    let mountain_id = reg.get_id_by_name("Mountain").unwrap();
-    let mtn = state.create_object(mountain_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(mtn).unwrap().name = "Mountain".into();
-    state.get_object_mut(mtn).unwrap().subtypes = vec!["Mountain".into()];
-
-    // Play Clifftop Retreat.
-    let retreat = spell_in_hand(&mut state, &reg, "Clifftop Retreat", P0);
-    state.get_player_mut(P0).land_plays_remaining = 1;
-
-    let legal = engine::legal_actions(&state, &reg);
-    let play = legal.actions.iter().find(|a| matches!(a, Action::PlayLand { object_id } if *object_id == retreat)).unwrap();
-    state = engine::submit_action(&state, play, &reg);
-
-    mtg_engine::triggers::collect_triggers(&mut state, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert!(!state.get_object(retreat).unwrap().tapped, "Should enter untapped with Mountain on battlefield");
+    for case in DUAL_LANDS {
+        let id = reg.get_id_by_name(case.name)
+            .unwrap_or_else(|| panic!("{} should be registered", case.name));
+        let data = reg.card_data(id)
+            .unwrap_or_else(|| panic!("{} should have card data", case.name));
+        assert!(data.card_types.contains(&CardType::Land),
+            "{} should have CardType::Land", case.name);
+        assert!(data.cost.is_none(),
+            "{} should have no mana cost", case.name);
+    }
 }
 
 #[test]
-fn clifftop_retreat_produces_red_or_white() {
+fn dual_lands_enter_tapped_without_matching_land() {
     let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    let retreat_card_id = reg.get_id_by_name("Clifftop Retreat").unwrap();
-    let retreat = state.create_object(retreat_card_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(retreat).unwrap().name = "Clifftop Retreat".into();
-    state.get_object_mut(retreat).unwrap().summoning_sick = false;
-
-    let legal = engine::legal_actions(&state, &reg);
-    let mana_actions: Vec<_> = legal.actions.iter().filter(|a| matches!(a, Action::ActivateManaAbility { object_id, .. } if *object_id == retreat)).collect();
-    assert_eq!(mana_actions.len(), 2, "Should have two mana abilities (R and W)");
+    for case in DUAL_LANDS {
+        let tapped = play_dual_and_check_tapped(&reg, case.name, None);
+        assert!(tapped, "{} should enter tapped with no companion basic", case.name);
+    }
 }
 
 #[test]
-fn hinterland_harbor_card_data() {
+fn dual_lands_enter_untapped_with_matching_land() {
     let reg = registry();
-    let id = reg.get_id_by_name("Hinterland Harbor").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
+    for case in DUAL_LANDS {
+        for companion in [case.companion_a, case.companion_b] {
+            let tapped = play_dual_and_check_tapped(&reg, case.name, Some(companion));
+            assert!(!tapped,
+                "{} should enter untapped with a {companion} on battlefield",
+                case.name);
+        }
+    }
 }
 
 #[test]
-fn isolated_chapel_card_data() {
+fn dual_lands_have_two_mana_abilities() {
     let reg = registry();
-    let id = reg.get_id_by_name("Isolated Chapel").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-}
+    for case in DUAL_LANDS {
+        let mut state = game_at_step(Step::PrecombatMain, P0);
+        let card_id = reg.get_id_by_name(case.name).unwrap();
+        let dual = state.create_object(card_id, P0, Zone::Battlefield, None, None);
+        let obj = state.get_object_mut(dual).unwrap();
+        obj.name = case.name.into();
+        obj.summoning_sick = false;
 
-#[test]
-fn sulfur_falls_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Sulfur Falls").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-}
-
-#[test]
-fn woodland_cemetery_card_data() {
-    let reg = registry();
-    let id = reg.get_id_by_name("Woodland Cemetery").unwrap();
-    let data = reg.card_data(id).unwrap();
-    assert!(data.card_types.contains(&CardType::Land));
-}
-
-#[test]
-fn woodland_cemetery_enters_untapped_with_swamp() {
-    let reg = registry();
-    let mut state = game_at_step(Step::PrecombatMain, P0);
-
-    // Put a Swamp on the battlefield.
-    let swamp_id = reg.get_id_by_name("Swamp").unwrap();
-    let swp = state.create_object(swamp_id, P0, Zone::Battlefield, None, None);
-    state.get_object_mut(swp).unwrap().name = "Swamp".into();
-    state.get_object_mut(swp).unwrap().subtypes = vec!["Swamp".into()];
-
-    // Play Woodland Cemetery.
-    let cem = spell_in_hand(&mut state, &reg, "Woodland Cemetery", P0);
-    state.get_player_mut(P0).land_plays_remaining = 1;
-
-    let legal = engine::legal_actions(&state, &reg);
-    let play = legal.actions.iter().find(|a| matches!(a, Action::PlayLand { object_id } if *object_id == cem)).unwrap();
-    state = engine::submit_action(&state, play, &reg);
-
-    mtg_engine::triggers::collect_triggers(&mut state, &reg);
-    mtg_engine::triggers::resolve_next_trigger(&mut state, &reg);
-
-    assert!(!state.get_object(cem).unwrap().tapped, "Should enter untapped with Swamp");
+        let legal = engine::legal_actions(&state, &reg);
+        let mana_actions: Vec<_> = legal.actions.iter()
+            .filter(|a| matches!(a, Action::ActivateManaAbility { object_id, .. } if *object_id == dual))
+            .collect();
+        assert_eq!(mana_actions.len(), 2,
+            "{} should expose two mana abilities, got {}", case.name, mana_actions.len());
+    }
 }
 
 // ══════════════════════════════════════════════════════════════════
