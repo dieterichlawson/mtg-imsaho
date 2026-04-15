@@ -406,16 +406,80 @@ def parse_audit_staging(staging_path: Path) -> dict:
 
 
 def parse_test_staging(staging_path: Path) -> dict:
-    """Parse test writer output from staging."""
-    text = staging_path.read_text()
+    """Parse test-writer output. Multi-test format produced by the
+    test-writer prompt:
 
-    result = {}
-    for field in ["Status", "Test File", "Test Name", "Assertion Message", "Explanation", "Blocked By"]:
-        match = re.search(rf"## {field}\n(.+?)(?=\n## |\Z)", text, re.DOTALL)
-        if match:
-            result[field.lower().replace(" ", "_")] = match.group(1).strip()
+        # Test Result: {ticket_id}
+
+        ## Test File
+        {shared path}
+
+        ## Test: {slug}
+        Status: confirmed | rejected | blocked
+        Test name: {fn}
+        Assertion message: {...}
+        Explanation: {...}
+        Blocked by: {only if blocked}
+
+        ## Test: {another_slug}
+        ...
+
+    Returns: {test_file, tests: [{slug, status, test_name,
+    assertion_message, explanation, blocked_by}]}
+    """
+    text = staging_path.read_text()
+    result = {"test_file": "", "tests": []}
+
+    tf = re.search(r"##\s+Test File\n(.+?)(?=\n##\s|\Z)", text, re.DOTALL)
+    if tf:
+        result["test_file"] = tf.group(1).strip()
+
+    for block in re.split(r"\n(?=##\s+Test:\s)", text):
+        block = block.strip()
+        if not block.startswith("## Test:"):
+            continue
+        head, _, body = block.partition("\n")
+        slug = head.replace("## Test:", "").strip()
+
+        def field(name: str, body=body) -> str | None:
+            m = re.search(rf"(?m)^{re.escape(name)}:\s*(.*?)(?=\n[A-Z][\w ]*:|\Z)",
+                          body, re.DOTALL)
+            return m.group(1).strip() if m else None
+
+        result["tests"].append({
+            "slug": slug,
+            "status": (field("Status") or "rejected").lower().split()[0],
+            "test_name": field("Test name") or slug,
+            "assertion_message": field("Assertion message") or "",
+            "explanation": field("Explanation") or "",
+            "blocked_by": field("Blocked by"),
+        })
 
     return result
+
+
+def update_tests_section_impls(ticket_id: str,
+                               impls_by_slug: dict[str, str]) -> None:
+    """Rewrite the `Implementation:` line for each matching `### slug` in
+    the ticket's `## Tests` section. `impls_by_slug` maps a test slug to
+    the string the Implementation field should read after update (e.g.
+    'mtg-engine/tests/pipeline_bugs_foo.rs::test_foo' or 'rejected: ...').
+    """
+    path = TICKETS_DIR / f"{ticket_id}.md"
+    t = parse_ticket(path)
+    body = t["body"]
+    new_lines: list[str] = []
+    current_slug: str | None = None
+    for line in body.split("\n"):
+        if line.startswith("### "):
+            current_slug = line[4:].strip()
+            new_lines.append(line)
+        elif (current_slug and current_slug in impls_by_slug
+              and line.startswith("Implementation:")):
+            new_lines.append(f"Implementation: {impls_by_slug[current_slug]}")
+        else:
+            new_lines.append(line)
+    write_ticket(ticket_id, t["frontmatter"], "\n".join(new_lines).rstrip() + "\n")
 
 
 def parse_fix_staging(staging_path: Path) -> dict:
@@ -685,16 +749,20 @@ def cmd_test(args):
 
 {ticket["body"]}
 
-### Oracle text (pre-fetched from Scryfall)
+### Oracle text (pre-fetched from Scryfall, if available for a single card)
 
 {oracle}
 
 ### Test file
-Write your test to: `mtg-engine/tests/pipeline_bugs_{tid_snake}.rs`
+Write every test for this ticket to a single file:
+`mtg-engine/tests/pipeline_bugs_{tid_snake}.rs`
 
 ### Staging output
 Write your result to: `pipeline/staging/{tid}-test.md`
-Use the format: ## Status, ## Test File, ## Test Name, ## Assertion Message, ## Explanation
+Use the multi-test format specified in the shared prompt:
+`## Test File`, then one `## Test: <slug>` block per entry in the
+ticket's `## Tests` section (fields: Status, Test name, Assertion
+message, Explanation, Blocked by).
 
 ### Ticket ID: {tid}
 """
@@ -702,93 +770,121 @@ Use the format: ## Status, ## Test File, ## Test Name, ## Assertion Message, ## 
         result = run_agent_in(shared_prompt + "\n\n---\n\n" + per_agent,
                              wt_dir, args.model, args.effort)
 
-        # Parse staging
-        test_result = "rejected"
-        test_name = ""
-        test_file = ""
-        validated = False
-
+        # Parse multi-test staging
+        parsed: dict = {"test_file": "", "tests": []}
         if staging_file.exists():
             parsed = parse_test_staging(staging_file)
-            test_result = parsed.get("status", "rejected")
-            test_name = parsed.get("test_name", "")
-            test_file = parsed.get("test_file", f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs")
-
-            # Validate in the worktree
-            if test_result == "confirmed" and test_name:
-                test_path = wt_dir / test_file
-                if test_path.exists():
-                    val = subprocess.run(
-                        [str(SCRIPTS_DIR / "validate_test.sh"), str(test_path), test_name],
-                        capture_output=True, text=True, cwd=str(wt_dir),
-                    )
-                    validated = val.returncode == 0
-                    if not validated:
-                        test_result = "rejected"
-                        print(f"  [{tid}] Validation FAILED")
-                else:
-                    test_result = "rejected"
-            elif test_result in ("rejected", "blocked"):
-                validated = True
-
             staging_file.unlink()
 
-        # If rejected/blocked, remove the worktree
-        if test_result in ("rejected", "blocked"):
+        test_file = parsed.get("test_file") or f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
+        per_test = parsed.get("tests", [])
+
+        if not per_test:
+            print(f"  [{tid}] agent produced no per-test entries — treating as rejected")
+            aggregate = "rejected"
+            validated = False
+            impls_by_slug: dict[str, str] = {}
+        else:
+            # Validate each test the agent claimed confirmed
+            impls_by_slug = {}
+            for t in per_test:
+                slug = t["slug"]
+                status = t["status"]
+                if status == "confirmed" and t["test_name"]:
+                    test_path = wt_dir / test_file
+                    if not test_path.exists():
+                        t["status"] = "rejected"
+                        impls_by_slug[slug] = f"rejected: test file missing"
+                        continue
+                    val = subprocess.run(
+                        [str(SCRIPTS_DIR / "validate_test.sh"),
+                         str(test_path), t["test_name"]],
+                        capture_output=True, text=True, cwd=str(wt_dir),
+                    )
+                    if val.returncode == 0:
+                        impls_by_slug[slug] = f"{test_file}::{t['test_name']}"
+                    else:
+                        t["status"] = "rejected"
+                        impls_by_slug[slug] = "rejected: validation failed"
+                elif status == "rejected":
+                    impls_by_slug[slug] = f"rejected: {t.get('explanation','')[:80]}"
+                elif status == "blocked":
+                    impls_by_slug[slug] = f"blocked: {t.get('blocked_by','')[:80]}"
+
+            # Aggregate: confirmed only if ALL tests confirmed and validated
+            statuses = {t["status"] for t in per_test}
+            if statuses == {"confirmed"}:
+                aggregate = "confirmed"
+                validated = True
+            elif "blocked" in statuses:
+                aggregate = "blocked"
+                validated = False
+            else:
+                aggregate = "rejected"
+                validated = False
+
+        # Update ticket body: fill in Implementation for each test entry
+        if impls_by_slug:
+            update_tests_section_impls(tid, impls_by_slug)
+
+        # If rejected/blocked overall, remove the worktree
+        if aggregate in ("rejected", "blocked"):
             remove_worktree(tid)
 
-        # Build test result section
-        section = f"## Test Result\n\n"
-        section += f"status: {test_result}\n"
-        if test_name:
-            section += f"test_name: {test_name}\n"
-        if 'parsed' in dir() and parsed.get("assertion_message"):
-            section += f"assertion: {parsed['assertion_message']}\n"
-        if 'parsed' in dir() and parsed.get("explanation"):
-            section += f"\n{parsed['explanation']}\n"
-        if 'parsed' in dir() and parsed.get("blocked_by"):
-            section += f"\nBlocked by: {parsed['blocked_by']}\n"
-
-        append_ticket_section(tid, section)
+        # Append a compact per-test result section to the ticket
+        section_lines = ["## Test Run Results", ""]
+        for t in per_test:
+            section_lines.append(f"- **{t['slug']}** — {t['status']}")
+            if t.get("test_name"):
+                section_lines.append(f"  - test fn: `{t['test_name']}`")
+            if t.get("assertion_message"):
+                section_lines.append(f"  - assertion: {t['assertion_message']}")
+            if t.get("blocked_by"):
+                section_lines.append(f"  - blocked by: {t['blocked_by']}")
+        append_ticket_section(tid, "\n".join(section_lines))
 
         # Update ticket status + metadata
         extra_fm = {
-            f"{test_result}_at": now_iso(),
+            f"{aggregate}_at": now_iso(),
             "test_run_id": f"{today()}-{tid}-test",
             "test_model": args.model,
             "test_tokens": str(result["tokens"]),
             "test_duration": str(result["duration"]),
+            "test_file": test_file,
+            "tests_confirmed": str(sum(1 for t in per_test if t["status"] == "confirmed")),
+            "tests_total": str(len(per_test)),
         }
-        if test_file:
-            extra_fm["test_file"] = test_file
-        if test_name:
-            extra_fm["test_name"] = test_name
-        if test_result == "confirmed":
+        if aggregate == "confirmed":
             extra_fm["worktree"] = str(get_worktree_dir(tid))
-        update_ticket_status(tid, test_result, extra_fm)
+        update_ticket_status(tid, aggregate, extra_fm)
 
         # Log
         append_jsonl(METRICS_DIR / "runs.jsonl", {
             "run_id": f"{today()}-{tid}-test", "timestamp": now_iso(),
             "role": "test-writer", "model": args.model,
             "card": card, "finding_id": tid,
-            "findings_created": 0, "test_result": test_result,
+            "findings_created": 0, "test_result": aggregate,
             "fix_result": None, "validation_passed": validated,
-            "rejection_reason": None if validated else "validation failed",
+            "rejection_reason": None if validated else "one-or-more tests failed validation",
             "total_tokens": result["tokens"], "tool_uses": result["tool_uses"],
-            "duration_seconds": result["duration"], "notes": "",
+            "duration_seconds": result["duration"],
+            "notes": f"{extra_fm['tests_confirmed']}/{extra_fm['tests_total']} tests confirmed",
         })
         append_jsonl(METRICS_DIR / "findings.jsonl", {
             "finding_id": tid, "timestamp": now_iso(),
-            "event": f"test_{test_result}",
+            "event": f"test_{aggregate}",
             "card": card, "source": "code-audit",
             "engine_file": "", "description": tid,
             "run_id": f"{today()}-{tid}-test",
-            "test_name": test_name, "test_file": test_file,
+            "test_file": test_file,
         })
 
-        print(f"  [{tid}] Done: {test_result} ({result['duration']}s, {result['tokens']} tok)")
-        return {"ticket": tid, "result": test_result}
+        n_ok = extra_fm["tests_confirmed"]
+        n_total = extra_fm["tests_total"]
+        print(f"  [{tid}] Done: {aggregate} — {n_ok}/{n_total} tests "
+              f"({result['duration']}s, {result['tokens']} tok)")
+        return {"ticket": tid, "result": aggregate,
+                "confirmed": int(n_ok), "total": int(n_total)}
 
     parallelism = args.parallelism
     if parallelism > 1:
@@ -803,7 +899,10 @@ Use the format: ## Status, ## Test File, ## Test Name, ## Assertion Message, ## 
     print("TEST SUMMARY")
     print(f"{'='*60}")
     for r in sorted(results, key=lambda x: x["ticket"]):
-        print(f"  {r['ticket']:<30} {r['result']}")
+        n_ok = r.get("confirmed", 0)
+        n_total = r.get("total", 0)
+        detail = f"{n_ok}/{n_total} tests" if n_total else ""
+        print(f"  {r['ticket']:<40} {r['result']:<10} {detail}")
     confirmed = sum(1 for r in results if r["result"] == "confirmed")
     rejected = sum(1 for r in results if r["result"] == "rejected")
     blocked = sum(1 for r in results if r["result"] == "blocked")
