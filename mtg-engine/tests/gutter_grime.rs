@@ -52,9 +52,8 @@ fn gutter_grime_creates_dynamic_pt_ooze() {
     triggers::process_triggers(&mut state, &reg);
 
     // Gutter Grime should have 1 slime counter.
-    let slime_count = *state.get_object(gutter_grime).unwrap()
-        .counters.get(&CounterType::Slime).unwrap_or(&0);
-    assert_eq!(slime_count, 1, "Gutter Grime should have 1 slime counter");
+    assert_eq!(counters_of(&state, gutter_grime, CounterType::Slime), 1,
+        "Gutter Grime should have 1 slime counter");
 
     // Find the Ooze token.
     let ooze_tokens: Vec<_> = state.objects.values()
@@ -105,9 +104,8 @@ fn gutter_grime_ooze_tokens_grow_with_more_counters() {
     triggers::process_triggers(&mut state, &reg);
 
     // Gutter Grime should have 2 slime counters now.
-    let slime_count = *state.get_object(gutter_grime).unwrap()
-        .counters.get(&CounterType::Slime).unwrap_or(&0);
-    assert_eq!(slime_count, 2, "Gutter Grime should have 2 slime counters");
+    assert_eq!(counters_of(&state, gutter_grime, CounterType::Slime), 2,
+        "Gutter Grime should have 2 slime counters");
 
     // Find all Ooze tokens.
     let ooze_tokens: Vec<_> = state.objects.values()
@@ -148,9 +146,8 @@ fn gutter_grime_ignores_token_deaths() {
     triggers::process_triggers(&mut state, &reg);
 
     // Gutter Grime should have 0 slime counters.
-    let slime_count = *state.get_object(gutter_grime).unwrap()
-        .counters.get(&CounterType::Slime).unwrap_or(&0);
-    assert_eq!(slime_count, 0, "Gutter Grime should not trigger on token deaths");
+    assert_eq!(counters_of(&state, gutter_grime, CounterType::Slime), 0,
+        "Gutter Grime should not trigger on token deaths");
 }
 
 /// Opponent's creatures dying should NOT trigger Gutter Grime.
@@ -172,9 +169,8 @@ fn gutter_grime_ignores_opponent_deaths() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let slime_count = *state.get_object(gutter_grime).unwrap()
-        .counters.get(&CounterType::Slime).unwrap_or(&0);
-    assert_eq!(slime_count, 0, "Gutter Grime should not trigger on opponent's creature deaths");
+    assert_eq!(counters_of(&state, gutter_grime, CounterType::Slime), 0,
+        "Gutter Grime should not trigger on opponent's creature deaths");
 }
 
 /// If Gutter Grime leaves the battlefield, existing Ooze tokens should become 0/0.

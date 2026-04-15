@@ -393,10 +393,9 @@ fn festerhide_boar_morbid_counters_visible_to_etb_checks() {
     behavior.on_resolve(&mut state, boar, &[], &reg);
 
     // Boar should be on battlefield with 2 +1/+1 counters.
-    let obj = state.get_object(boar).unwrap();
-    assert_eq!(obj.zone, Zone::Battlefield);
-    let counters = *obj.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 2, "Festerhide Boar should have 2 +1/+1 counters (morbid)");
+    assert_eq!(state.get_object(boar).unwrap().zone, Zone::Battlefield);
+    assert_eq!(counters_of(&state, boar, CounterType::PlusOnePlusOne), 2,
+        "Festerhide Boar should have 2 +1/+1 counters (morbid)");
 
     // The effective power should be 5 (3 base + 2 counters).
     let eff_power = state.effective_power(boar, &reg).unwrap_or(0);
@@ -439,9 +438,7 @@ fn festerhide_boar_gets_morbid_counters_when_reanimated() {
     mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     // Festerhide Boar should have 2 +1/+1 counters from morbid.
-    let counters = state.get_object(boar)
-        .map_or(0, |o| *o.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0));
-    assert_eq!(counters, 2,
+    assert_eq!(counters_of(&state, boar, CounterType::PlusOnePlusOne), 2,
         "Festerhide Boar should get morbid +1/+1 counters when reanimated, not just when cast");
 }
 

@@ -257,10 +257,10 @@ fn gavony_township_counters_all_creatures() {
     state = engine::submit_action(&state, activate.unwrap(), &reg);
 
     // Both of P0's creatures should have +1/+1 counters.
-    assert_eq!(state.get_object(c1).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0), 1);
-    assert_eq!(state.get_object(c2).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0), 1);
+    assert_eq!(counters_of(&state, c1, CounterType::PlusOnePlusOne), 1);
+    assert_eq!(counters_of(&state, c2, CounterType::PlusOnePlusOne), 1);
     // Opponent's creature should NOT have a counter.
-    assert_eq!(state.get_object(enemy).unwrap().counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0), 0);
+    assert_eq!(counters_of(&state, enemy, CounterType::PlusOnePlusOne), 0);
 }
 
 // ══════════════════════════════════════════════════════════════════

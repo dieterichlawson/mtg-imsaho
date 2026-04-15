@@ -143,9 +143,8 @@ fn dearly_departed_in_graveyard_adds_counter() {
     state.get_object_mut(human).unwrap().name = "Unruly Mob".into();
     state.move_object(human, Zone::Battlefield, &reg);
 
-    let counters = state.get_object(human).unwrap()
-        .counters.get(&mtg_engine::types::CounterType::PlusOnePlusOne).copied().unwrap_or(0);
-    assert_eq!(counters, 1, "Human entering with Dearly Departed in graveyard should get +1/+1 counter");
+    assert_eq!(counters_of(&state, human, mtg_engine::types::CounterType::PlusOnePlusOne), 1,
+        "Human entering with Dearly Departed in graveyard should get +1/+1 counter");
 }
 
 /// Dearly Departed on the battlefield should NOT trigger (it only fires from graveyard).

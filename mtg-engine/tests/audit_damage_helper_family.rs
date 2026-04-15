@@ -316,9 +316,8 @@ fn bug_br_olivia_damage_decrements_planeswalker_loyalty() {
         &registry,
     );
 
-    let garruk_obj = state.get_object(garruk).unwrap();
-    let loyalty = garruk_obj.counters.get(&CounterType::Loyalty).copied().unwrap_or(0);
-    let damage_marked = garruk_obj.damage_marked;
+    let loyalty = counters_of(&state, garruk, CounterType::Loyalty);
+    let damage_marked = state.get_object(garruk).unwrap().damage_marked;
 
     assert!(
         loyalty <= 2 && damage_marked == 0,

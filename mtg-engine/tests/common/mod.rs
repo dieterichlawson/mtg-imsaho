@@ -227,6 +227,17 @@ pub fn process_triggers_auto_target_opponent(state: &mut GameState, registry: &C
     }
 }
 
+/// Count counters of a given type on `obj`. Returns 0 if the object has
+/// no counters of that type (or doesn't exist). Prefer this over
+/// reaching into `state.get_object(x).unwrap().counters.get(...)` — it
+/// makes the intent clear and survives if the internal representation
+/// of counters changes.
+pub fn counters_of(state: &GameState, obj: ObjectId, kind: CounterType) -> u32 {
+    state.get_object(obj)
+        .and_then(|o| o.counters.get(&kind).copied())
+        .unwrap_or(0)
+}
+
 /// Drive `Action::DeclareAttackers` through `engine::submit_action` (the
 /// player-facing API). Preferred over `combat::declare_attackers` in tests
 /// that exercise end-to-end gameplay, because it sets up the

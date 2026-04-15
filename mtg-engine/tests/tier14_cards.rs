@@ -505,10 +505,7 @@ fn olivia_ping_ability() {
     assert!(new_state.get_object(target_creature).unwrap().subtypes.contains(&"Vampire".to_string()));
 
     // Olivia should have a +1/+1 counter.
-    assert_eq!(
-        *new_state.get_object(olivia).unwrap().counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0),
-        1
-    );
+    assert_eq!(counters_of(&new_state, olivia, CounterType::PlusOnePlusOne), 1);
 }
 
 /// Olivia's second ability gains control of a Vampire.

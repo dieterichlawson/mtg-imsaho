@@ -38,8 +38,7 @@ fn olivia_ability_0_deals_damage_and_makes_vampire() {
         "Target should retain Human subtype");
 
     // Olivia should have a +1/+1 counter.
-    let olivia_obj = state.get_object(olivia).unwrap();
-    assert_eq!(*olivia_obj.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0), 1,
+    assert_eq!(counters_of(&state, olivia, CounterType::PlusOnePlusOne), 1,
         "Olivia should have 1 +1/+1 counter");
 }
 
@@ -55,8 +54,7 @@ fn olivia_ability_0_cannot_target_self() {
     behavior.on_activate_ability(&mut state, olivia, 0, &[Target::Object(olivia)], &reg);
 
     // Olivia should have no +1/+1 counter (ability should be a no-op for self-target).
-    let olivia_obj = state.get_object(olivia).unwrap();
-    assert_eq!(*olivia_obj.counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0), 0,
+    assert_eq!(counters_of(&state, olivia, CounterType::PlusOnePlusOne), 0,
         "Olivia should not be able to target herself with ability 0");
 }
 

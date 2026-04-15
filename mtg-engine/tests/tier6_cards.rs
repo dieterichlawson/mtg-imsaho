@@ -98,9 +98,8 @@ fn champion_of_the_parish_counter_on_human_etb() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(champion).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 1, "Champion should get a +1/+1 counter");
+    assert_eq!(counters_of(&state, champion, CounterType::PlusOnePlusOne), 1,
+        "Champion should get a +1/+1 counter");
 }
 
 /// Champion does NOT trigger on non-Human creatures entering.
@@ -119,9 +118,8 @@ fn champion_of_the_parish_no_counter_on_non_human() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(champion).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 0, "Champion should NOT trigger on non-Human");
+    assert_eq!(counters_of(&state, champion, CounterType::PlusOnePlusOne), 0,
+        "Champion should NOT trigger on non-Human");
 }
 
 /// Champion does NOT trigger on opponent's Human.
@@ -140,9 +138,8 @@ fn champion_of_the_parish_no_counter_on_opponent_human() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(champion).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 0, "Champion should NOT trigger on opponent's Human");
+    assert_eq!(counters_of(&state, champion, CounterType::PlusOnePlusOne), 0,
+        "Champion should NOT trigger on opponent's Human");
 }
 
 // ── Stromkirk Noble ───────────────────────────────────────────────
@@ -163,9 +160,8 @@ fn stromkirk_noble_counter_on_combat_damage() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(noble).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 1, "Stromkirk Noble should get a +1/+1 counter");
+    assert_eq!(counters_of(&state, noble, CounterType::PlusOnePlusOne), 1,
+        "Stromkirk Noble should get a +1/+1 counter");
 }
 
 /// Stromkirk Noble can't be blocked by Humans.
@@ -210,9 +206,8 @@ fn rakish_heir_self_counter_on_combat_damage() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(heir).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 1, "Rakish Heir should get a +1/+1 counter on itself");
+    assert_eq!(counters_of(&state, heir, CounterType::PlusOnePlusOne), 1,
+        "Rakish Heir should get a +1/+1 counter on itself");
 }
 
 /// Rakish Heir gives +1/+1 to other Vampires you control when they deal combat damage.
@@ -231,8 +226,7 @@ fn rakish_heir_counter_on_other_vampire_combat_damage() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let vamp_counters = *state.get_object(other_vamp).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
+    let vamp_counters = counters_of(&state, other_vamp, CounterType::PlusOnePlusOne);
     // Stromkirk Noble gets +1/+1 from its own trigger AND +1/+1 from Rakish Heir.
     assert!(vamp_counters >= 2, "Other Vampire should get counters from both itself and Rakish Heir, got {vamp_counters}");
 }
@@ -254,9 +248,8 @@ fn rakish_heir_no_counter_on_non_vampire() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(non_vamp).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 0, "Non-Vampire should NOT get a counter from Rakish Heir");
+    assert_eq!(counters_of(&state, non_vamp, CounterType::PlusOnePlusOne), 0,
+        "Non-Vampire should NOT get a counter from Rakish Heir");
 }
 
 // ── Bloodcrazed Neonate ───────────────────────────────────────────
@@ -317,9 +310,8 @@ fn falkenrath_marauders_two_counters_on_combat_damage() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(marauders).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 2, "Falkenrath Marauders should get TWO +1/+1 counters");
+    assert_eq!(counters_of(&state, marauders, CounterType::PlusOnePlusOne), 2,
+        "Falkenrath Marauders should get TWO +1/+1 counters");
 }
 
 // ── Balefire Dragon ───────────────────────────────────────────────
@@ -465,7 +457,6 @@ fn stromkirk_patrol_counter_on_combat_damage() {
     });
     triggers::process_triggers(&mut state, &reg);
 
-    let counters = *state.get_object(patrol).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).unwrap_or(&0);
-    assert_eq!(counters, 1, "Stromkirk Patrol should get a +1/+1 counter");
+    assert_eq!(counters_of(&state, patrol, CounterType::PlusOnePlusOne), 1,
+        "Stromkirk Patrol should get a +1/+1 counter");
 }

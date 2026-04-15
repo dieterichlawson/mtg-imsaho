@@ -39,9 +39,8 @@ fn curse_of_stalked_prey_gives_counter_on_combat_damage() {
     behavior.on_any_combat_damage_to_player(&mut state, curse, attacker, P1, 2, &reg);
 
     // The attacker should have a +1/+1 counter.
-    let counters = state.get_object(attacker).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
-    assert_eq!(counters, 1, "Attacker should get a +1/+1 counter");
+    assert_eq!(counters_of(&state, attacker, CounterType::PlusOnePlusOne), 1,
+        "Attacker should get a +1/+1 counter");
 }
 
 // ── Dearly Departed ──────────────────────────────────────────────
@@ -62,9 +61,8 @@ fn dearly_departed_gives_counter_to_entering_humans() {
     state.get_object_mut(human).unwrap().name = "Champion of the Parish".into();
     state.move_object(human, Zone::Battlefield, &reg);
 
-    let counters = state.get_object(human).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
-    assert_eq!(counters, 1, "Human should enter with a +1/+1 counter from Dearly Departed");
+    assert_eq!(counters_of(&state, human, CounterType::PlusOnePlusOne), 1,
+        "Human should enter with a +1/+1 counter from Dearly Departed");
 }
 
 // ── Mentor of the Meek ───────────────────────────────────────────
@@ -310,9 +308,8 @@ fn gutter_grime_creates_ooze_on_creature_death() {
     behavior.on_any_creature_dies(&mut state, grime, dead, P0, &[], 2, false, &[], &reg);
 
     // Should have a slime counter on Gutter Grime.
-    let counters = state.get_object(grime).unwrap()
-        .counters.get(&CounterType::Slime).copied().unwrap_or(0);
-    assert_eq!(counters, 1, "Gutter Grime should have 1 slime counter");
+    assert_eq!(counters_of(&state, grime, CounterType::Slime), 1,
+        "Gutter Grime should have 1 slime counter");
 
     // Should have created an Ooze token.
     let oozes = state.objects.values()
@@ -820,9 +817,8 @@ fn unbreathing_horde_enters_with_counters_for_zombies() {
     let new_state = cast_and_resolve(&state, &reg, horde, vec![]);
 
     // Should have 3 counters (2 battlefield Zombies + 1 graveyard Zombie).
-    let counters = new_state.get_object(horde).unwrap()
-        .counters.get(&CounterType::PlusOnePlusOne).copied().unwrap_or(0);
-    assert_eq!(counters, 3, "Unbreathing Horde should enter with 3 +1/+1 counters");
+    assert_eq!(counters_of(&new_state, horde, CounterType::PlusOnePlusOne), 3,
+        "Unbreathing Horde should enter with 3 +1/+1 counters");
 }
 
 // ── Back from the Brink ──────────────────────────────────────────
