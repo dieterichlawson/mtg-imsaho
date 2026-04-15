@@ -40,7 +40,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
+            Some(o) => o.controller,
             _ => return,
         };
         if state.active_player != controller {
