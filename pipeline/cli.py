@@ -1,837 +1,394 @@
 #!/usr/bin/env python3
-"""Pipeline CLI — manage bug-finding and fixing agents.
-
-Tickets are the atomic unit. Each ticket tracks one bug through:
-  new → confirmed → fixed → merged
-     ↘ rejected (terminal)
-     ↘ blocked (manual intervention needed)
-                ↘ failed (can retry)
-
-Agents write to staging/. Python owns ticket state and frontmatter.
-
-Usage:
-    ./pipeline/cli.py audit --cards "Olivia Voldaren,Fiend Hunter"
-    ./pipeline/cli.py test
-    ./pipeline/cli.py fix --ticket olivia-01
-    ./pipeline/cli.py tickets --status new
-    ./pipeline/cli.py show olivia-01
-    ./pipeline/cli.py accept olivia-01
-    ./pipeline/cli.py status
-"""
+"""Pipeline CLI — find, test, fix, merge, and dedup bug tickets."""
+from __future__ import annotations
 
 import argparse
 import concurrent.futures
 import json
-import os
 import re
-import shutil
 import subprocess
 import sys
-import time
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-# ─── Paths ────────────────────────────────────────────────────────
+# Allow `./pipeline/cli.py` to run as a script (not via `python -m`).
+_THIS = Path(__file__).resolve()
+if str(_THIS.parents[1]) not in sys.path:
+    sys.path.insert(0, str(_THIS.parents[1]))
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
-PIPELINE_DIR = PROJECT_ROOT / "pipeline"
-TICKETS_DIR = PIPELINE_DIR / "tickets"
-STAGING_DIR = PIPELINE_DIR / "staging"
-PROMPTS_DIR = PIPELINE_DIR / "prompts"
-SCRIPTS_DIR = PIPELINE_DIR / "scripts"
-METRICS_DIR = PIPELINE_DIR / "metrics"
-LOGS_DIR = PIPELINE_DIR / "logs"
-CARDS_DIR = PROJECT_ROOT / "mtg-engine" / "src" / "cards" / "isd"
+from pipeline._agent import (
+    DEFAULT_MODEL, DEFAULT_EFFORT, MAX_ATTEMPTS,
+    build_prompt as _build_prompt,
+    run_agent_in as _run_agent_in, run_agent_loop)
+from pipeline._staging import (
+    StagingError, TEST_CONFIRMED, TEST_REJECTED, TEST_BLOCKED,
+    VALID_TEST_STATUSES,
+    load_audit as load_audit_staging,
+    load_test as load_test_staging,
+    load_fix as load_fix_staging,
+    load_consolidation as load_consolidation_staging)
+# ─── Paths ─────────────────────────────────────────────────────────
+PROJECT_ROOT  = Path(__file__).resolve().parent.parent
+PIPELINE_DIR  = PROJECT_ROOT / "pipeline"
+TICKETS_DIR   = PIPELINE_DIR / "tickets"
+ARCHIVE_DIR   = TICKETS_DIR / "archive"
+STAGING_DIR   = PIPELINE_DIR / "staging"
+PROMPTS_DIR   = PIPELINE_DIR / "prompts"
+SCRIPTS_DIR   = PIPELINE_DIR / "scripts"
+METRICS_DIR   = PIPELINE_DIR / "metrics"
+LOGS_DIR      = PIPELINE_DIR / "logs"
+WORKTREES_DIR = PROJECT_ROOT / ".worktrees"
 ORACLE_SCRIPT = PROJECT_ROOT / "scripts" / "oracle_lookup.py"
+# ─── Statuses ──────────────────────────────────────────────────────
+STATUS_NEW            = "new"
+STATUS_TESTED         = "tested"
+STATUS_FIXED          = "fixed"
+STATUS_SHIPPED        = "shipped"
+STATUS_FIX_FAILED     = "fix_failed"
+STATUS_FALSE_POSITIVE = "false_positive"
+STATUS_CLOSED         = "closed"
+OPEN_STATUSES     = {STATUS_NEW, STATUS_TESTED, STATUS_FIXED, STATUS_FIX_FAILED}
+TERMINAL_STATUSES = {STATUS_SHIPPED, STATUS_FALSE_POSITIVE, STATUS_CLOSED}
+CLOSED_REASON_ABSORBED  = "absorbed"
+CLOSED_REASON_ABANDONED = "abandoned"
+ABSORBABLE_STATUSES = {STATUS_NEW, STATUS_TESTED}
 
-DEFAULT_MODEL = "opus"
-
-# Max wall-clock an agent subprocess may run before SIGKILL. Large dedup
-# passes with many tickets to cross-reference exceed the old 15-minute
-# limit; bumped to 1 hour.
-AGENT_TIMEOUT_SECS = 3600
-
-# Env vars that force API-key billing when set. Scrubbed from agent
-# subprocesses so the `claude` CLI falls back to Claude Code subscription auth.
-API_KEY_ENV_VARS = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
-
-
-def subscription_env() -> dict:
-    """Inherit current env but strip API-key vars so subprocesses use
-    the Claude Code subscription rather than pay-as-you-go API billing."""
-    env = os.environ.copy()
-    for k in API_KEY_ENV_VARS:
-        env.pop(k, None)
-    return env
-DEFAULT_EFFORT = "max"
-
-
-# ─── Utilities ────────────────────────────────────────────────────
-
-def now_iso():
+# Synchronizes concurrent appends to prompts/auditor-insights.md.
+_INSIGHTS_LOCK = threading.Lock()
+# ─── Small utilities ───────────────────────────────────────────────
+def now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-def today():
+def today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
 def card_to_snake(name: str) -> str:
-    return name.lower().replace(" ", "_").replace("'", "").replace(",", "").replace("-", "_")
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
-def append_jsonl(path: Path, entry: dict):
+def append_jsonl(path: Path, entry: dict) -> None:
     with open(path, "a") as f:
         f.write(json.dumps(entry) + "\n")
-
-def _text_similarity(a: str, b: str) -> float:
-    """Simple word-overlap similarity between two strings."""
-    words_a = set(a.split())
-    words_b = set(b.split())
-    if not words_a or not words_b:
-        return 0.0
-    overlap = len(words_a & words_b)
-    return overlap / max(len(words_a), len(words_b))
-
-
-WORKTREES_DIR = PROJECT_ROOT / ".worktrees"
-
-
+# ─── Worktrees ─────────────────────────────────────────────────────
 def get_worktree_dir(ticket_id: str) -> Path:
     return WORKTREES_DIR / f"fix-{ticket_id}"
-
 
 def get_worktree_branch(ticket_id: str) -> str:
     return f"fix/{ticket_id}"
 
-
 def ensure_worktree(ticket_id: str) -> Path:
-    """Create or reuse a worktree for a ticket. Returns the worktree path."""
-    wt_dir = get_worktree_dir(ticket_id)
-    branch = get_worktree_branch(ticket_id)
+    wt = get_worktree_dir(ticket_id)
+    if wt.exists():
+        return wt
     WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["git", "worktree", "add", "-b",
+                    get_worktree_branch(ticket_id), str(wt), "HEAD"],
+                   capture_output=True, check=True, cwd=str(PROJECT_ROOT))
+    return wt
 
-    if wt_dir.exists():
-        # Worktree already exists (reuse for fix phase after test phase)
-        return wt_dir
+def remove_worktree(ticket_id: str) -> None:
+    wt = get_worktree_dir(ticket_id)
+    if wt.exists():
+        subprocess.run(["git", "worktree", "remove", "--force", str(wt)],
+                       capture_output=True, cwd=str(PROJECT_ROOT))
+    subprocess.run(["git", "branch", "-D", get_worktree_branch(ticket_id)],
+                   capture_output=True, cwd=str(PROJECT_ROOT))
 
-    # Create fresh worktree from HEAD
-    subprocess.run(
-        ["git", "worktree", "add", "-b", branch, str(wt_dir), "HEAD"],
-        capture_output=True, check=True, cwd=str(PROJECT_ROOT),
-    )
-    return wt_dir
+def _branch_head_sha(branch: str) -> str:
+    r = subprocess.run(["git", "rev-parse", branch],
+                       capture_output=True, text=True, cwd=str(PROJECT_ROOT))
+    return r.stdout.strip() if r.returncode == 0 else ""
 
-
-def remove_worktree(ticket_id: str):
-    """Remove a ticket's worktree and branch."""
-    wt_dir = get_worktree_dir(ticket_id)
-    branch = get_worktree_branch(ticket_id)
-    if wt_dir.exists():
-        subprocess.run(["git", "worktree", "remove", "--force", str(wt_dir)],
-                      capture_output=True, cwd=str(PROJECT_ROOT))
-    subprocess.run(["git", "branch", "-D", branch],
-                  capture_output=True, cwd=str(PROJECT_ROOT))
-
+def _reset_branch_to(tid: str, sha: str) -> None:
+    wt = get_worktree_dir(tid)
+    branch = get_worktree_branch(tid)
+    if not wt.exists():
+        WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
+        has = subprocess.run(["git", "rev-parse", "--verify", branch],
+                             capture_output=True, cwd=str(PROJECT_ROOT)).returncode == 0
+        cmd = (["git", "worktree", "add", str(wt), branch] if has
+               else ["git", "worktree", "add", "-b", branch, str(wt), sha])
+        subprocess.run(cmd, check=True, cwd=str(PROJECT_ROOT))
+    subprocess.run(["git", "reset", "--hard", sha], check=True, cwd=str(wt))
 
 def remove_logs_for_ticket(ticket_id: str) -> int:
-    """Delete any agent-output log files whose filename mentions
-    `ticket_id`. Run at merge/abandon time — the ticket's audit/test/
-    fix history is no longer actionable and the logs were only kept
-    for replay/post-mortem debugging.
-
-    Returns the count of files removed."""
     if not LOGS_DIR.exists():
         return 0
+    # Match `<date>-<ticket_id>-*` — substring match would clobber logs
+    # for differently-named tickets that contain our id.
+    pat = re.compile(rf"\b{re.escape(ticket_id)}(?:[-.]|$)")
     removed = 0
-    for f in LOGS_DIR.glob(f"*{ticket_id}*"):
-        try:
-            f.unlink()
-            removed += 1
-        except OSError:
-            pass
-    return removed
-
-
-def merge_worktree(ticket_id: str) -> bool:
-    """Merge a ticket's worktree branch into HEAD. Returns success."""
-    branch = get_worktree_branch(ticket_id)
-    result = subprocess.run(
-        ["git", "merge", branch, "--no-edit"],
-        capture_output=True, text=True, cwd=str(PROJECT_ROOT),
-    )
-    return result.returncode == 0
-
-
-def _summarize_stream_event(event: dict) -> str | None:
-    """Turn one stream-json event into a short human-readable line for
-    real-time progress. Returns None if the event isn't interesting.
-    Keep lines short so parallel-agent prefixes stay readable."""
-    et = event.get("type")
-    if et == "assistant":
-        msg = event.get("message", {})
-        for block in msg.get("content", []) or []:
-            btype = block.get("type")
-            if btype == "tool_use":
-                name = block.get("name", "tool")
-                inp = block.get("input", {}) or {}
-                # Pull out a short identifier depending on the tool
-                hint = ""
-                if name == "Bash":
-                    hint = (inp.get("command") or "")[:70]
-                elif name in ("Read", "Write"):
-                    hint = str(inp.get("file_path") or "")[-70:]
-                elif name == "Edit":
-                    hint = str(inp.get("file_path") or "")[-70:]
-                elif name == "Grep":
-                    hint = (inp.get("pattern") or "")[:70]
-                elif name == "Glob":
-                    hint = (inp.get("pattern") or "")[:70]
-                return f"[{name}] {hint}".rstrip()
-            if btype == "text":
-                text = (block.get("text") or "").strip()
-                if text:
-                    first = text.split("\n", 1)[0]
-                    return f"(agent) {first[:120]}"
-    elif et == "result":
-        if event.get("is_error"):
-            return f"(error) {(event.get('result') or '')[:120]}"
-        return "(done)"
-    return None
-
-
-def run_agent_in(prompt: str, cwd: Path, model: str = DEFAULT_MODEL,
-                 effort: str = DEFAULT_EFFORT,
-                 log_path: Path | None = None,
-                 progress_prefix: str = "") -> dict:
-    """Run a claude agent in a specific directory. Streams stream-json
-    events from the agent as they arrive: each event is appended to
-    `log_path` immediately and a short human-readable summary is
-    printed to stdout (prefixed with `progress_prefix` so parallel
-    runs are distinguishable). Returns usage stats accumulated from
-    the final `result` event."""
-    cmd = [
-        "claude", "-p", prompt,
-        "--model", model,
-        "--effort", effort,
-        "--output-format", "stream-json",
-        "--verbose",
-        "--permission-mode", "auto",
-        "--no-session-persistence",
-    ]
-
-    # Open log file up front so every event hits disk as it arrives.
-    log_fh = None
-    if log_path is not None:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        log_fh = log_path.open("w")
-        log_fh.write(json.dumps({"kind": "prompt", "value": prompt}) + "\n")
-        log_fh.flush()
-
-    start = time.time()
-    proc = subprocess.Popen(
-        cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        text=True, cwd=str(cwd), env=subscription_env(),
-        bufsize=1,  # line-buffered
-    )
-
-    tokens = 0
-    tool_uses = 0
-    is_error = False
-    error_message = None
-    final_event: dict | None = None
-    stdout_chunks: list[str] = []
-
-    try:
-        assert proc.stdout is not None
-        for raw_line in proc.stdout:
-            line = raw_line.rstrip("\n")
-            stdout_chunks.append(raw_line)
-            if log_fh is not None:
-                log_fh.write(raw_line)
-                log_fh.flush()
+    for f in LOGS_DIR.iterdir():
+        if pat.search(f.name):
             try:
-                event = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            summary = _summarize_stream_event(event)
-            if summary:
-                print(f"{progress_prefix}{summary}", flush=True)
-            if event.get("type") == "result":
-                final_event = event
-                tokens = event.get("usage", {}).get("input_tokens", 0) + \
-                         event.get("usage", {}).get("output_tokens", 0)
-                tool_uses = event.get("num_turns", 0)
-                if event.get("is_error"):
-                    is_error = True
-                    error_message = event.get("result") or "agent reported is_error=true"
-        # Enforce the wall-clock ceiling ourselves since we don't pass
-        # timeout= to Popen.
-        try:
-            rc = proc.wait(timeout=max(1, AGENT_TIMEOUT_SECS - int(time.time() - start)))
-        except subprocess.TimeoutExpired:
-            proc.kill()
-            proc.wait()
-            rc = -9
-            is_error = True
-            error_message = f"agent timeout after {AGENT_TIMEOUT_SECS}s"
-    finally:
-        if log_fh is not None:
-            log_fh.close()
-
-    stderr = proc.stderr.read() if proc.stderr else ""
-    elapsed = int(time.time() - start)
-
-    if rc != 0 and not is_error:
-        is_error = True
-        error_message = (stderr or "".join(stdout_chunks))[:200] or f"exit {rc}"
-
-    return {"returncode": rc, "tokens": tokens, "tool_uses": tool_uses,
-            "duration": elapsed, "is_error": is_error,
-            "error_message": error_message}
-
-
-def get_oracle_text(card_name: str) -> str | None:
-    for cmd in ["lookup", "fetch"]:
-        r = subprocess.run(
-            ["python3", str(ORACLE_SCRIPT), cmd, card_name],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT),
-        )
-        if r.returncode == 0 and r.stdout.strip():
-            return r.stdout.strip()
-    return None
-
-
-# ─── Ticket I/O ───────────────────────────────────────────────────
-
+                f.unlink(); removed += 1
+            except OSError:
+                pass
+    return removed
+# ─── Ticket I/O ────────────────────────────────────────────────────
 def parse_ticket(path: Path) -> dict:
-    """Parse a ticket file into {frontmatter: dict, body: str}."""
     text = path.read_text()
     if not text.startswith("---"):
         return {"frontmatter": {}, "body": text, "path": path}
-    try:
-        end = text.index("---", 3)
-    except ValueError:
-        return {"frontmatter": {}, "body": text, "path": path}
-    fm = {}
+    end = text.index("---", 3)
+    fm: dict[str, str] = {}
     for line in text[3:end].strip().split("\n"):
         if ":" in line:
-            key, val = line.split(":", 1)
-            fm[key.strip()] = val.strip()
-    body = text[end+3:].strip()
-    return {"frontmatter": fm, "body": body, "path": path}
+            k, v = line.split(":", 1)
+            fm[k.strip()] = v.strip()
+    return {"frontmatter": fm, "body": text[end+3:].strip(), "path": path}
 
+def ticket_path(tid: str) -> Path:
+    active = TICKETS_DIR / f"{tid}.md"
+    if active.exists():
+        return active
+    archived = ARCHIVE_DIR / f"{tid}.md"
+    return archived if archived.exists() else active
 
-def write_ticket(ticket_id: str, frontmatter: dict, body: str):
-    """Write a ticket file. Python owns this — agents never call it."""
-    path = TICKETS_DIR / f"{ticket_id}.md"
-    fm_lines = ["---"]
-    for k, v in frontmatter.items():
-        fm_lines.append(f"{k}: {v}")
-    fm_lines.append("---")
-    content = "\n".join(fm_lines) + "\n\n" + body + "\n"
-    path.write_text(content)
+def all_ticket_paths() -> list[Path]:
+    active = list(TICKETS_DIR.glob("*.md"))
+    archive = list(ARCHIVE_DIR.glob("*.md")) if ARCHIVE_DIR.exists() else []
+    return sorted(active + archive, key=lambda p: p.stem)
+
+def write_ticket(tid: str, frontmatter: dict, body: str) -> Path:
+    path = ticket_path(tid)
+    if not path.exists():
+        path = TICKETS_DIR / f"{tid}.md"
+    head = ["---"] + [f"{k}: {v}" for k, v in frontmatter.items()] + ["---"]
+    path.write_text("\n".join(head) + "\n\n" + body + "\n")
     return path
 
+def archive_ticket(tid: str) -> None:
+    src = TICKETS_DIR / f"{tid}.md"
+    if not src.exists():
+        return
+    ARCHIVE_DIR.mkdir(parents=True, exist_ok=True)
+    src.rename(ARCHIVE_DIR / f"{tid}.md")
 
-def update_ticket_status(ticket_id: str, new_status: str, extra_fm: dict = None):
-    """Update a ticket's status and optionally add frontmatter fields."""
-    path = TICKETS_DIR / f"{ticket_id}.md"
-    ticket = parse_ticket(path)
-    fm = ticket["frontmatter"]
-    fm["status"] = new_status
-    if extra_fm:
-        fm.update(extra_fm)
-    write_ticket(ticket_id, fm, ticket["body"])
+def unarchive_ticket(tid: str) -> None:
+    src = ARCHIVE_DIR / f"{tid}.md"
+    if src.exists():
+        src.rename(TICKETS_DIR / f"{tid}.md")
 
+def transition(tid: str, status: str,
+               set_: dict | None = None,
+               unset: tuple[str, ...] = ()) -> None:
+    """Canonical status change. Writes frontmatter, archives or unarchives
+    based on terminality. Every status transition should flow through this."""
+    t = parse_ticket(ticket_path(tid))
+    fm = t["frontmatter"]
+    fm["status"] = status
+    if set_:
+        fm.update(set_)
+    for k in unset:
+        fm.pop(k, None)
+    write_ticket(tid, fm, t["body"])
+    if status in TERMINAL_STATUSES:
+        archive_ticket(tid)
+    else:
+        unarchive_ticket(tid)
 
-def append_ticket_section(ticket_id: str, section: str):
-    """Append a section to a ticket's body."""
-    path = TICKETS_DIR / f"{ticket_id}.md"
-    ticket = parse_ticket(path)
-    new_body = ticket["body"] + "\n\n" + section
-    write_ticket(ticket_id, ticket["frontmatter"], new_body)
-
-
-def list_tickets(status: str = None, card: str = None) -> list[dict]:
-    """List all tickets, optionally filtered."""
-    tickets = []
-    for f in sorted(TICKETS_DIR.glob("*.md")):
+def list_tickets(status: str | None = None, card: str | None = None) -> list[dict]:
+    out = []
+    for f in all_ticket_paths():
         t = parse_ticket(f)
         fm = t["frontmatter"]
         if status and fm.get("status") != status:
             continue
         if card and card.lower() not in fm.get("card", "").lower():
             continue
-        tickets.append(t)
-    return tickets
+        out.append(t)
+    return out
 
+def append_ticket_section(tid: str, section: str) -> None:
+    t = parse_ticket(ticket_path(tid))
+    write_ticket(tid, t["frontmatter"], t["body"] + "\n\n" + section)
 
-# ─── Agent runner ─────────────────────────────────────────────────
+# ─── Tests section ─────────────────────────────────────────────────
+def _parse_tests_section(body: str) -> list[dict]:
+    m = re.search(r"##\s+Tests\n(.*?)(?=\n##\s|\Z)", body, re.DOTALL)
+    if not m:
+        return []
+    entries = []
+    for block in re.split(r"\n(?=###\s+)", m.group(1)):
+        block = block.strip()
+        if not block.startswith("###"):
+            continue
+        head, _, rest = block.partition("\n")
+        src = re.search(r"Source ticket:\s*(.+)", rest)
+        impl = re.search(r"Implementation:\s*(.+)", rest)
+        entries.append({
+            "slug": head[3:].strip(),
+            "source_ticket": src.group(1).strip() if src else None,
+            "implementation": impl.group(1).strip() if impl else ""})
+    return entries
+
+def update_tests_section_impls(tid: str, impls: dict[str, str]) -> None:
+    t = parse_ticket(ticket_path(tid))
+    current: str | None = None
+    out: list[str] = []
+    for line in t["body"].split("\n"):
+        if line.startswith("### "):
+            current = line[4:].strip()
+            out.append(line)
+        elif current and current in impls and line.startswith("Implementation:"):
+            out.append(f"Implementation: {impls[current]}")
+        else:
+            out.append(line)
+    write_ticket(tid, t["frontmatter"], "\n".join(out).rstrip() + "\n")
+# ─── Agent runner (shim to _agent module) ─────────────────────────
+_AGENT_SETTINGS = PIPELINE_DIR / "agent-settings.json"
+
+def run_agent_in(prompt: str, cwd: Path,
+                 model: str = DEFAULT_MODEL, effort: str = DEFAULT_EFFORT,
+                 log_path: Path | None = None,
+                 progress_prefix: str = "") -> dict:
+    return _run_agent_in(prompt, cwd, model, effort,
+                         log_path=log_path, progress_prefix=progress_prefix,
+                         settings_path=_AGENT_SETTINGS)
 
 def run_agent(prompt: str, model: str = DEFAULT_MODEL,
-              effort: str = DEFAULT_EFFORT,
-              log_path: Path | None = None,
+              effort: str = DEFAULT_EFFORT, log_path: Path | None = None,
               progress_prefix: str = "") -> dict:
-    """Run a claude agent at PROJECT_ROOT. Thin wrapper around
-    run_agent_in for callers that don't need a worktree."""
     return run_agent_in(prompt, PROJECT_ROOT, model, effort,
                         log_path=log_path, progress_prefix=progress_prefix)
 
+def build_prompt(role: str, **ctx):
+    return _build_prompt(role, PROMPTS_DIR, **ctx)
 
-# ─── Audit staging parser ────────────────────────────────────────
+def get_oracle_text(card_name: str) -> str | None:
+    for verb in ("lookup", "fetch"):
+        r = subprocess.run(["python3", str(ORACLE_SCRIPT), verb, card_name],
+                           capture_output=True, text=True, cwd=str(PROJECT_ROOT))
+        if r.returncode == 0 and r.stdout.strip():
+            return r.stdout.strip()
+    return None
+# ─── Metrics helpers ───────────────────────────────────────────────
+def log_run(role: str, *, run_id: str, model: str, card: str,
+            result: dict, validation_passed: bool = True,
+            finding_id: str | None = None, findings_created: int = 0,
+            test_result: str | None = None, fix_result: str | None = None,
+            rejection_reason: str | None = None, notes: str = "") -> None:
+    append_jsonl(METRICS_DIR / "runs.jsonl", {
+        "run_id": run_id, "timestamp": now_iso(), "role": role,
+        "model": model, "card": card, "finding_id": finding_id,
+        "findings_created": findings_created,
+        "test_result": test_result, "fix_result": fix_result,
+        "validation_passed": validation_passed,
+        "rejection_reason": rejection_reason,
+        "total_tokens": result.get("tokens", 0),
+        "tool_uses": result.get("tool_uses", 0),
+        "duration_seconds": result.get("duration", 0), "notes": notes})
 
-def parse_audit_staging(staging_path: Path) -> dict:
-    """Parse structured audit output from staging into findings + metadata."""
-    text = staging_path.read_text()
+def log_finding(finding_id: str, event: str, *,
+                card: str = "", run_id: str = "", **extra) -> None:
+    append_jsonl(METRICS_DIR / "findings.jsonl", {
+        "finding_id": finding_id, "timestamp": now_iso(), "event": event,
+        "card": card, "source": "code-audit", "engine_file": "",
+        "description": finding_id, "run_id": run_id, **extra})
 
-    # Extract checks performed
-    checks = {}
-    checks_match = re.search(r"## Checks Performed\n(.*?)(?=\n## )", text, re.DOTALL)
-    if checks_match:
-        for line in checks_match.group(1).strip().split("\n"):
-            line = line.strip()
-            if line and ":" in line:
-                check_id, rest = line.split(":", 1)
-                checks[check_id.strip()] = rest.strip()
-
-    # Extract findings
-    findings = []
-    finding_blocks = re.split(r"\n## Finding \d+", text)
-    for block in finding_blocks[1:]:  # skip everything before first finding
-        finding = {}
-
-        oracle_match = re.search(r"\*\*Oracle text:\*\*\n>(.+?)(?=\n\*\*)", block, re.DOTALL)
-        if oracle_match:
-            finding["oracle_quote"] = oracle_match.group(1).strip()
-
-        code_match = re.search(r"\*\*Code:\*\*\n>(.+?)(?=\n\*\*|\n##)", block, re.DOTALL)
-        if code_match:
-            finding["code_quote"] = code_match.group(1).strip()
-
-        desc_match = re.search(r"\*\*Description:\*\*\n(.+?)(?=\n\*\*|\n##)", block, re.DOTALL)
-        if desc_match:
-            finding["description"] = desc_match.group(1).strip()
-
-        path_match = re.search(r"\*\*Engine path:\*\*\n(.+?)(?=\n\*\*|\n##)", block, re.DOTALL)
-        if path_match:
-            finding["engine_path"] = path_match.group(1).strip()
-
-        check_match = re.search(r"\*\*Check:\*\*\s*(.+)", block)
-        if check_match:
-            finding["check"] = check_match.group(1).strip()
-
-        affected_match = re.search(r"\*\*Affected cards:\*\*\n(.+?)(?=\n\*\*|\n##|$)", block, re.DOTALL)
-        if affected_match:
-            finding["affected_cards"] = affected_match.group(1).strip()
-
-        # Parse **Tests:** block — zero or more ### {slug} / Scenario: entries
-        tests = []
-        tests_match = re.search(r"\*\*Tests:\*\*\n(.+?)(?=\n##\s|\Z)", block, re.DOTALL)
-        if tests_match:
-            tests_body = tests_match.group(1).strip()
-            for entry in re.split(r"\n(?=###\s+)", tests_body):
-                entry = entry.strip()
-                if not entry.startswith("###"):
-                    continue
-                head, _, rest = entry.partition("\n")
-                slug = head[3:].strip()
-                scenario_match = re.search(r"Scenario:\s*(.+)", rest, re.DOTALL)
-                if slug and scenario_match:
-                    tests.append({
-                        "slug": slug,
-                        "scenario": scenario_match.group(1).strip(),
-                    })
-        finding["tests"] = tests
-
-        if finding.get("description"):
-            findings.append(finding)
-
-    # Extract insights
-    insights = []
-    insights_match = re.search(r"## Insights\n(.*?)$", text, re.DOTALL)
-    if insights_match:
-        insights_text = insights_match.group(1).strip()
-        if insights_text:
-            insights.append(insights_text)
-
-    # Extract untested rulings
-    rulings = []
-    rulings_match = re.search(r"## Untested Rulings\n(.*?)(?=\n## |\Z)", text, re.DOTALL)
-    if rulings_match:
-        rulings = [l.strip() for l in rulings_match.group(1).strip().split("\n") if l.strip()]
-
-    # Check for pass
-    is_pass = len(findings) == 0
-
-    return {
-        "checks": checks,
-        "findings": findings,
-        "insights": insights,
-        "untested_rulings": rulings,
-        "is_pass": is_pass,
-    }
-
-
-def parse_test_staging(staging_path: Path) -> dict:
-    """Parse test-writer output. Multi-test format produced by the
-    test-writer prompt:
-
-        # Test Result: {ticket_id}
-
-        ## Test File
-        {shared path}
-
-        ## Test: {slug}
-        Status: confirmed | rejected | blocked
-        Test name: {fn}
-        Assertion message: {...}
-        Explanation: {...}
-        Blocked by: {only if blocked}
-
-        ## Test: {another_slug}
-        ...
-
-    Returns: {test_file, tests: [{slug, status, test_name,
-    assertion_message, explanation, blocked_by}]}
-    """
-    text = staging_path.read_text()
-    result = {"test_file": "", "tests": []}
-
-    tf = re.search(r"##\s+Test File\n(.+?)(?=\n##\s|\Z)", text, re.DOTALL)
-    if tf:
-        result["test_file"] = tf.group(1).strip()
-
-    for block in re.split(r"\n(?=##\s+Test:\s)", text):
-        block = block.strip()
-        if not block.startswith("## Test:"):
-            continue
-        head, _, body = block.partition("\n")
-        slug = head.replace("## Test:", "").strip()
-
-        def field(name: str, body=body) -> str | None:
-            m = re.search(rf"(?m)^{re.escape(name)}:\s*(.*?)(?=\n[A-Z][\w ]*:|\Z)",
-                          body, re.DOTALL)
-            return m.group(1).strip() if m else None
-
-        result["tests"].append({
-            "slug": slug,
-            "status": (field("Status") or "rejected").lower().split()[0],
-            "test_name": field("Test name") or slug,
-            "assertion_message": field("Assertion message") or "",
-            "explanation": field("Explanation") or "",
-            "blocked_by": field("Blocked by"),
-        })
-
-    return result
-
-
-def update_tests_section_impls(ticket_id: str,
-                               impls_by_slug: dict[str, str]) -> None:
-    """Rewrite the `Implementation:` line for each matching `### slug` in
-    the ticket's `## Tests` section. `impls_by_slug` maps a test slug to
-    the string the Implementation field should read after update (e.g.
-    'mtg-engine/tests/pipeline_bugs_foo.rs::test_foo' or 'rejected: ...').
-    """
-    path = TICKETS_DIR / f"{ticket_id}.md"
-    t = parse_ticket(path)
-    body = t["body"]
-    new_lines: list[str] = []
-    current_slug: str | None = None
-    for line in body.split("\n"):
-        if line.startswith("### "):
-            current_slug = line[4:].strip()
-            new_lines.append(line)
-        elif (current_slug and current_slug in impls_by_slug
-              and line.startswith("Implementation:")):
-            new_lines.append(f"Implementation: {impls_by_slug[current_slug]}")
-        else:
-            new_lines.append(line)
-    write_ticket(ticket_id, t["frontmatter"], "\n".join(new_lines).rstrip() + "\n")
-
-
-def parse_fix_staging(staging_path: Path) -> dict:
-    """Parse fixer output from staging."""
-    text = staging_path.read_text()
-
-    result = {}
-    for field in ["Status", "Files Changed", "Description"]:
-        match = re.search(rf"## {field}\n(.+?)(?=\n## |\Z)", text, re.DOTALL)
-        if match:
-            result[field.lower().replace(" ", "_")] = match.group(1).strip()
-
-    return result
-
-
-# ─── Audit command ────────────────────────────────────────────────
-
+def _loop_kwargs(log_prefix: str, progress_prefix: str, args) -> dict:
+    # Pass `spawn=run_agent_in` so tests that patch `cli.run_agent_in` are
+    # exercised even though `run_agent_loop` lives in `_agent`.
+    return {"logs_dir": LOGS_DIR, "log_prefix": log_prefix,
+            "progress_prefix": progress_prefix,
+            "model": args.model, "effort": args.effort,
+            "settings_path": _AGENT_SETTINGS,
+            "spawn": run_agent_in}
+# ─── Audit ─────────────────────────────────────────────────────────
 def cmd_audit(args):
     sep = ";" if ";" in args.cards else ","
     cards = [c.strip() for c in args.cards.split(sep) if c.strip()]
-
-    print(f"\n{'='*60}")
-    print(f"AUDIT — {len(cards)} card(s)")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}\nAUDIT — {len(cards)} card(s)\n{'='*60}")
     for c in cards:
         print(f"  {c}")
-
     if args.dry_run:
-        print("\n(dry run)")
-        return
+        print("\n(dry run)"); return
 
-    # Pre-fetch oracle texts
     print("\nFetching oracle texts...")
-    card_oracles = {}
-    for card in cards:
-        oracle = get_oracle_text(card)
-        if oracle:
-            card_oracles[card] = oracle
+    oracles: dict[str, str] = {}
+    for c in cards:
+        o = get_oracle_text(c)
+        if o:
+            oracles[c] = o
         else:
-            print(f"  SKIP: no oracle text for {card}")
-
-    if not card_oracles:
-        print("No cards to audit.")
-        return
-
-    shared_prompt = (PROMPTS_DIR / "auditor.md").read_text()
+            print(f"  SKIP: no oracle text for {c}")
+    if not oracles:
+        print("No cards to audit."); return
 
     def audit_one(card: str) -> dict:
-        card_snake = card_to_snake(card)
-        oracle = card_oracles[card]
-        run_id = f"{today()}-{card_snake}-audit"
-        staging_file = STAGING_DIR / f"{run_id}.md"
-
-        per_agent = f"""## Card to audit: {card}
-
-### Implementation file
-`mtg-engine/src/cards/isd/{card_snake}.rs`
-
-### Oracle text (pre-fetched from Scryfall)
-
-{oracle}
-
-### Output
-Write your structured audit output to `pipeline/staging/{run_id}.md`.
-Use the format specified in the prompt (Checks Performed, Finding N sections, Insights).
-"""
+        snake = card_to_snake(card)
+        run_id = f"{today()}-{snake}-audit"
+        staging_file = STAGING_DIR / f"{run_id}.json"
         print(f"  [{card}] Spawning agent...")
-        # Audit runs with a retry loop so structural errors in the
-        # agent's staging output (missing Description / Engine path on
-        # a claimed finding) can be corrected without throwing the run
-        # away. Agent errors and empty staging also retry.
-        MAX_AUDIT_ATTEMPTS = 3
-        parsed: dict = {"findings": [], "insights": [], "is_pass": True}
-        result: dict = {"duration": 0, "tokens": 0, "tool_uses": 0,
-                        "is_error": False, "error_message": None}
-        retry_note_audit = ""
-        for attempt in range(1, MAX_AUDIT_ATTEMPTS + 1):
-            log_path = LOGS_DIR / f"{run_id}-attempt{attempt}.log"
-            result = run_agent(
-                shared_prompt + "\n\n---\n\n" + per_agent + retry_note_audit,
-                args.model, args.effort,
-                log_path=log_path,
-                progress_prefix=f"  [{card}] ")
+        builder = build_prompt("auditor", card=card, card_snake=snake,
+                               oracle=oracles[card], run_id=run_id)
+        parsed, result = run_agent_loop(
+            build_prompt=builder, cwd=PROJECT_ROOT,
+            staging_file=staging_file, loader=load_audit_staging,
+            **_loop_kwargs(run_id, f"  [{card}] ", args))
 
-            if result.get("is_error"):
-                err = result.get("error_message") or "unknown error"
-                if attempt < MAX_AUDIT_ATTEMPTS:
-                    print(f"  [{card}] Agent error: {err} — retrying")
-                    retry_note_audit = (
-                        f"\n\n## Retry note (attempt {attempt} failed)\n"
-                        f"Previous attempt errored: {err}\n")
-                    continue
-                # Out of retries — fall through to the error-handling
-                # path below.
-                break
-
-            if not staging_file.exists():
-                if attempt < MAX_AUDIT_ATTEMPTS:
-                    print(f"  [{card}] Agent wrote no staging file — retrying")
-                    retry_note_audit = (
-                        f"\n\n## Retry note (attempt {attempt} failed)\n"
-                        f"Previous attempt did not write {staging_file}. "
-                        f"Write your audit output there.\n")
-                    continue
-                break
-
-            parsed = parse_audit_staging(staging_file)
-
-            # Every claimed finding must carry at minimum a Description
-            # and an Engine path. Oracle / Code quotes are per-prompt
-            # rules (findings without them shouldn't have been emitted
-            # in the first place); if they're missing we retry too.
-            finding_errors: list[str] = []
-            for i, finding in enumerate(parsed["findings"], 1):
-                missing = [k for k in ("description", "engine_path",
-                                       "oracle_quote", "code_quote")
-                           if not (finding.get(k) or "").strip()]
-                if missing:
-                    finding_errors.append(
-                        f"- Finding {i}: missing {', '.join(missing)}")
-
-            if finding_errors and attempt < MAX_AUDIT_ATTEMPTS:
-                print(f"  [{card}] Findings missing required fields:")
-                for e in finding_errors:
-                    print(f"    {e}")
-                detail = "\n".join(finding_errors)
-                retry_note_audit = (
-                    f"\n\n## Retry note (attempt {attempt} failed)\n"
-                    f"Your `## Finding N` blocks have structural errors. "
-                    f"Every finding MUST include `**Oracle text:**`, "
-                    f"`**Code:**`, `**Description:**`, and "
-                    f"`**Engine path:**`. If you cannot produce the "
-                    f"oracle or code quote, do not emit the finding — "
-                    f"per the prompt's Critical Rule 2, unverified "
-                    f"mismatches must be dropped.\n\n{detail}\n")
-                # Clear staging so a fresh parse happens next attempt
-                staging_file.unlink()
-                continue
-
-            break  # success or out of retries
-
-        if result.get("is_error"):
-            err = result.get("error_message") or "unknown error"
-            print(f"  [{card}] AGENT ERROR: {err} ({result['duration']}s, {result['tokens']} tok)")
-            append_jsonl(METRICS_DIR / "runs.jsonl", {
-                "run_id": run_id, "timestamp": now_iso(), "role": "auditor",
-                "model": args.model, "card": card, "finding_id": None,
-                "findings_created": 0,
-                "test_result": None, "fix_result": None,
-                "validation_passed": False, "rejection_reason": f"agent error: {err}",
-                "total_tokens": result["tokens"], "tool_uses": result["tool_uses"],
-                "duration_seconds": result["duration"], "notes": "agent_error",
-            })
-            return {"card": card, "tickets": 0, "duration": result["duration"],
+        if result.get("is_error") or parsed is None:
+            err = result.get("error_message") or "no valid staging"
+            print(f"  [{card}] AGENT ERROR: {err} "
+                  f"({result['duration']}s, {result['tokens']} tok)")
+            log_run("auditor", run_id=run_id, model=args.model, card=card,
+                    result=result, validation_passed=False,
+                    rejection_reason=f"agent error: {err}", notes="agent_error")
+            return {"card": card, "tickets": 0,
+                    "duration": result["duration"],
                     "tokens": result["tokens"], "error": err}
 
-        # Parse staging output
-        tickets_created = []
+        nums = [int(m.group(1)) for p in all_ticket_paths()
+                if (m := re.match(rf"{snake}-(\d+)$", p.stem))]
+        next_num = max(nums, default=0) + 1
+        created: list[str] = []
+        for finding in parsed["findings"]:
+            tid = f"{snake}-{next_num:02d}"
+            next_num += 1
+            body = _render_audit_body(finding, snake, next_num - 1)
+            fm = {"id": tid, "status": STATUS_NEW, "card": card,
+                  "card_file": f"mtg-engine/src/cards/isd/{snake}.rs",
+                  "created": now_iso(), "audit_run_id": run_id,
+                  "audit_model": args.model,
+                  "audit_tokens": result["tokens"],
+                  "audit_duration": result["duration"]}
+            write_ticket(tid, fm, body)
+            created.append(tid)
+            log_finding(tid, "created", card=card, run_id=run_id,
+                        engine_file=finding.get("engine_path", ""),
+                        description=finding.get("description", "")[:80])
+
+        if parsed["insights"]:
+            with _INSIGHTS_LOCK, open(PROMPTS_DIR / "auditor-insights.md", "a") as f:
+                for ins in parsed["insights"]:
+                    f.write(f"\n### {ins['title']}\n{ins['description']}\n")
         if staging_file.exists():
-            # Already parsed inside the retry loop; re-parse as a
-            # defensive read in case the agent wrote a late version.
-            parsed = parse_audit_staging(staging_file)
-
-            # Find next available ticket number for this card
-            existing = sorted(TICKETS_DIR.glob(f"{card_snake}-*.md"))
-            existing_nums = []
-            for ef in existing:
-                m = re.search(rf"{card_snake}-(\d+)", ef.stem)
-                if m:
-                    existing_nums.append(int(m.group(1)))
-            next_num = max(existing_nums, default=0) + 1
-
-            # Create tickets from findings
-            for finding in parsed["findings"]:
-                ticket_id = f"{card_snake}-{next_num:02d}"
-                next_num += 1
-                desc_short = finding.get("description", "")[:80]
-
-                body = "## Audit Finding\n\n"
-                if finding.get("oracle_quote"):
-                    body += f"**Oracle text:**\n> {finding['oracle_quote']}\n\n"
-                if finding.get("code_quote"):
-                    body += f"**Code:**\n> {finding['code_quote']}\n\n"
-                if finding.get("description"):
-                    body += f"**Description:**\n{finding['description']}\n\n"
-                if finding.get("engine_path"):
-                    body += f"**Engine path:**\n{finding['engine_path']}\n\n"
-                if finding.get("check"):
-                    body += f"**Required check:** {finding['check']}\n\n"
-                if finding.get("affected_cards"):
-                    body += f"**Affected cards:**\n{finding['affected_cards']}\n\n"
-
-                # Render ## Tests section. If the auditor supplied tests,
-                # emit them verbatim; otherwise scaffold a single default
-                # entry so every ticket has a consistent tests section.
-                body += "## Tests\n\n"
-                tests = finding.get("tests") or []
-                if not tests:
-                    default_slug = f"test_{card_snake}_{next_num - 1:02d}"
-                    default_scenario = (
-                        finding.get("description", "").split(".")[0][:240]
-                        or "See description above."
-                    )
-                    tests = [{"slug": default_slug, "scenario": default_scenario}]
-                for t in tests:
-                    body += f"### {t['slug']}\n"
-                    body += "Source ticket: (new)\n"
-                    body += "Implementation: (not yet written)\n"
-                    body += f"Scenario: {t['scenario']}\n\n"
-                body = body.rstrip() + "\n"
-
-                fm = {
-                    "id": ticket_id,
-                    "status": "new",
-                    "card": card,
-                    "card_file": f"mtg-engine/src/cards/isd/{card_snake}.rs",
-                    "created": now_iso(),
-                    "audit_run_id": run_id,
-                    "audit_model": args.model,
-                    "audit_tokens": result["tokens"],
-                    "audit_duration": result["duration"],
-                }
-                write_ticket(ticket_id, fm, body)
-                tickets_created.append(ticket_id)
-
-                # Log finding
-                append_jsonl(METRICS_DIR / "findings.jsonl", {
-                    "finding_id": ticket_id, "timestamp": now_iso(),
-                    "event": "created", "card": card,
-                    "source": "code-audit",
-                    "engine_file": finding.get("engine_path", ""),
-                    "description": desc_short,
-                    "run_id": run_id,
-                })
-
-            # Append insights
-            if parsed["insights"]:
-                insights_file = PROMPTS_DIR / "auditor-insights.md"
-                with open(insights_file, "a") as f:
-                    for insight in parsed["insights"]:
-                        f.write(f"\n{insight}\n")
-
-            # Clean up staging
             staging_file.unlink()
-        else:
-            parsed = {"findings": [], "checks": {}, "is_pass": True}
+        log_run("auditor", run_id=run_id, model=args.model, card=card,
+                result=result, findings_created=len(created))
+        st = "PASS" if parsed["is_pass"] else f"{len(created)} ticket(s)"
+        print(f"  [{card}] Done: {st} "
+              f"({result['duration']}s, {result['tokens']} tok)")
+        return {"card": card, "tickets": len(created),
+                "duration": result["duration"], "tokens": result["tokens"]}
 
-        # Log run
-        append_jsonl(METRICS_DIR / "runs.jsonl", {
-            "run_id": run_id, "timestamp": now_iso(), "role": "auditor",
-            "model": args.model, "card": card, "finding_id": None,
-            "findings_created": len(tickets_created),
-            "test_result": None, "fix_result": None,
-            "validation_passed": True, "rejection_reason": None,
-            "total_tokens": result["tokens"], "tool_uses": result["tool_uses"],
-            "duration_seconds": result["duration"], "notes": "",
-        })
-
-        n = len(tickets_created)
-        status = "PASS" if parsed["is_pass"] else f"{n} ticket(s)"
-        print(f"  [{card}] Done: {status} ({result['duration']}s, {result['tokens']} tok)")
-        return {"card": card, "tickets": n, "duration": result["duration"],
-                "tokens": result["tokens"]}
-
-    parallelism = args.parallelism
-    cards_to_audit = [c for c in cards if c in card_oracles]
-
-    if parallelism > 1:
-        print(f"\nRunning {len(cards_to_audit)} audits (parallelism={parallelism})...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=parallelism) as pool:
-            futures = {pool.submit(audit_one, c): c for c in cards_to_audit}
-            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+    to_run = list(oracles)
+    if args.parallelism > 1:
+        print(f"\nRunning {len(to_run)} audits (parallelism={args.parallelism})...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as pool:
+            fs = {pool.submit(audit_one, c): c for c in to_run}
+            results = [f.result() for f in concurrent.futures.as_completed(fs)]
     else:
-        results = [audit_one(c) for c in cards_to_audit]
+        results = [audit_one(c) for c in to_run]
 
-    # Summary
-    print(f"\n{'='*60}")
-    print("AUDIT SUMMARY")
-    print(f"{'='*60}")
-    total = 0
-    errors = []
+    print(f"\n{'='*60}\nAUDIT SUMMARY\n{'='*60}")
+    total = 0; errors = []
     for r in sorted(results, key=lambda x: x["card"]):
-        t = r["tickets"]
-        total += t
+        t = r["tickets"]; total += t
         if r.get("error"):
-            status = "ERROR"
-            errors.append(r)
+            status = "ERROR"; errors.append(r)
         else:
             status = "PASS" if t == 0 else f"{t} ticket(s)"
         print(f"  {r['card']:<30} {status:<15} {r['duration']}s  {r['tokens']} tok")
@@ -841,1652 +398,592 @@ Use the format specified in the prompt (Checks Performed, Finding N sections, In
         for r in errors:
             print(f"    {r['card']}: {r['error']}")
 
-
-# ─── Test command ─────────────────────────────────────────────────
-
+def _render_audit_body(finding: dict, snake: str, ticket_num: int) -> str:
+    parts = ["## Audit Finding", "",
+             f"**Oracle text:**\n> {finding['oracle_quote']}", "",
+             f"**Code:**\n> {finding['code_quote']}", "",
+             f"**Description:**\n{finding['description']}", ""]
+    if finding["engine_path"]:
+        parts += ["**Engine path:**"] + [f"- {p}" for p in finding["engine_path"]] + [""]
+    if finding["check"]:
+        parts += [f"**Required check:** {finding['check']}", ""]
+    if finding["affected_cards"]:
+        parts += ["**Affected cards:**"] + [f"- {c}" for c in finding["affected_cards"]] + [""]
+    parts += ["## Tests", ""]
+    tests = finding["tests"] or [{
+        "slug": f"test_{snake}_{ticket_num:02d}",
+        "scenario": (finding.get("description", "").split(".")[0][:240]
+                     or "See description above.")}]
+    for t in tests:
+        parts += [f"### {t['slug']}", "Source ticket: (new)",
+                  "Implementation: (not yet written)",
+                  f"Scenario: {t['scenario']}", ""]
+    return "\n".join(parts).rstrip() + "\n"
+# ─── Test ──────────────────────────────────────────────────────────
 def cmd_test(args):
     if args.tickets:
-        ids = [t.strip() for t in args.tickets.split(",")]
-        tickets = [parse_ticket(TICKETS_DIR / f"{tid}.md")
-                   for tid in ids if (TICKETS_DIR / f"{tid}.md").exists()]
+        tickets = [parse_ticket(ticket_path(t.strip()))
+                   for t in args.tickets.split(",")]
     else:
-        tickets = list_tickets(status="new")
-
+        tickets = list_tickets(status=STATUS_NEW)
+    tickets = [t for t in tickets if t["frontmatter"].get("status") == STATUS_NEW]
     if not tickets:
-        print("No tickets to test.")
-        return
+        print("No tickets to test."); return
 
-    print(f"\n{'='*60}")
-    print(f"TEST WRITER — {len(tickets)} ticket(s)")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}\nTEST WRITER — {len(tickets)} ticket(s)\n{'='*60}")
     for t in tickets:
         fm = t["frontmatter"]
         print(f"  {fm.get('id', '?')}: {fm.get('card', '?')}")
-
     if args.dry_run:
-        print("\n(dry run)")
-        return
+        print("\n(dry run)"); return
 
-    shared_prompt = (PROMPTS_DIR / "test-writer.md").read_text()
-
-    def test_one(ticket: dict) -> dict:
-        fm = ticket["frontmatter"]
-        tid = fm["id"]
-        card = fm.get("card", "unknown")
-        tid_snake = tid.replace("-", "_")
-
-        oracle = get_oracle_text(card) or "Oracle text not available"
-
-        # Create worktree for this ticket
-        wt_dir = ensure_worktree(tid)
-        wt_staging = wt_dir / "pipeline" / "staging"
-        wt_staging.mkdir(parents=True, exist_ok=True)
-        staging_file = wt_staging / f"{tid}-test.md"
-
-        per_agent_base = f"""## Ticket to test
-
-{ticket["body"]}
-
-### Oracle text (pre-fetched from Scryfall, if available for a single card)
-
-{oracle}
-
-### Test file
-Write every test for this ticket to a single file:
-`mtg-engine/tests/pipeline_bugs_{tid_snake}.rs`
-
-### Staging output
-Write your result to: `pipeline/staging/{tid}-test.md`
-Use the multi-test format specified in the shared prompt:
-`## Test File`, then one `## Test: <slug>` block per entry in the
-ticket's `## Tests` section (fields: Status, Test name, Assertion
-message, Explanation, Blocked by).
-
-### Commit your work
-After all tests validate, commit the test file with a descriptive
-message BEFORE writing the staging output. The worktree must be
-clean (`git status --porcelain` empty). Python will reject the run
-otherwise.
-
-### Ticket ID: {tid}
-"""
-
-        # Retry loop: re-spawn the agent if validation fails. Typical
-        # reason: agent forgot to commit its work, leaving the test
-        # file untracked in the worktree.
-        MAX_TEST_ATTEMPTS = 3
-        parsed: dict = {"test_file": "", "tests": []}
-        aggregate = "rejected"
-        validated = False
-        impls_by_slug: dict[str, str] = {}
-        per_test: list = []
-        test_file = f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
-        retry_note = ""
-
-        for attempt in range(1, MAX_TEST_ATTEMPTS + 1):
-            print(f"  [{tid}] Spawning agent in worktree "
-                  f"(attempt {attempt}/{MAX_TEST_ATTEMPTS})...")
-            prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
-            log_path = LOGS_DIR / f"{today()}-{tid}-test-attempt{attempt}.log"
-            result = run_agent_in(prompt, wt_dir, args.model, args.effort,
-                                  log_path=log_path,
-                                  progress_prefix=f"  [{tid}] ")
-
-            if result.get("is_error"):
-                err = result.get("error_message") or "unknown agent error"
-                print(f"  [{tid}] Agent error: {err}")
-                retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
-                              f"Previous attempt errored: {err}\n")
-                continue
-
-            # Parse multi-test staging
-            parsed = {"test_file": "", "tests": []}
-            if staging_file.exists():
-                parsed = parse_test_staging(staging_file)
-                staging_file.unlink()
-
-            test_file = parsed.get("test_file") or f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
-            per_test = parsed.get("tests", [])
-
-            if not per_test:
-                retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
-                              f"Previous attempt produced no staging file or no "
-                              f"`## Test: <slug>` blocks.\n")
-                continue
-
-            # Structural validation of each per-test block. Status
-            # must be one of {confirmed, rejected, blocked}; a confirmed
-            # test must carry a Test name. Any malformed entry forces
-            # a retry with targeted feedback so the agent can re-emit
-            # a well-formed staging output.
-            VALID_TEST_STATUSES = {"confirmed", "rejected", "blocked"}
-            protocol_errors: list[str] = []
-            for t in per_test:
-                slug = t["slug"]
-                st = (t.get("status") or "").strip().lower().split()
-                st_word = st[0] if st else ""
-                if st_word not in VALID_TEST_STATUSES:
-                    protocol_errors.append(
-                        f"- `{slug}`: Status must be EXACTLY one of "
-                        f"`confirmed`, `rejected`, `blocked` — got "
-                        f"{t.get('status')!r}")
-                    continue
-                t["status"] = st_word
-                if st_word == "confirmed" and not t.get("test_name"):
-                    protocol_errors.append(
-                        f"- `{slug}`: Status=confirmed but Test name is "
-                        f"empty — every confirmed test must name the "
-                        f"Rust fn")
-                if st_word == "blocked" and not (t.get("blocked_by") or "").strip():
-                    protocol_errors.append(
-                        f"- `{slug}`: Status=blocked but Blocked by is "
-                        f"empty — explain what needs to change")
-
-            if protocol_errors and attempt < MAX_TEST_ATTEMPTS:
-                print(f"  [{tid}] Agent output has protocol errors:")
-                for e in protocol_errors:
-                    print(f"    {e}")
-                detail = "\n".join(protocol_errors)
-                retry_note = (
-                    f"\n\n## Retry note (attempt {attempt} failed)\n"
-                    f"Your staging output has structural errors Python "
-                    f"cannot accept:\n\n{detail}\n\n"
-                    f"Fix these in your output format. Each `## Test: "
-                    f"<slug>` block must carry: `Status: <one word>` "
-                    f"from the set {{confirmed, rejected, blocked}}; "
-                    f"a confirmed test needs `Test name:`; a blocked "
-                    f"test needs `Blocked by:`. Additional prose "
-                    f"belongs in Explanation, not in Status.\n")
-                continue
-
-            # Per-test validation
-            impls_by_slug = {}
-            for t in per_test:
-                slug = t["slug"]
-                status = t["status"]
-                if status == "confirmed" and t["test_name"]:
-                    test_path = wt_dir / test_file
-                    if not test_path.exists():
-                        t["status"] = "rejected"
-                        impls_by_slug[slug] = "rejected: test file missing"
-                        continue
-                    val = subprocess.run(
-                        [str(SCRIPTS_DIR / "validate_test.sh"),
-                         str(test_path), t["test_name"]],
-                        capture_output=True, text=True, cwd=str(wt_dir),
-                    )
-                    if val.returncode == 0:
-                        impls_by_slug[slug] = f"{test_file}::{t['test_name']}"
-                    else:
-                        t["status"] = "rejected"
-                        impls_by_slug[slug] = "rejected: validation failed"
-                elif status == "rejected":
-                    impls_by_slug[slug] = f"rejected: {t.get('explanation','')[:80]}"
-                elif status == "blocked":
-                    impls_by_slug[slug] = f"blocked: {t.get('blocked_by','')[:80]}"
-
-            statuses = {t["status"] for t in per_test}
-            if statuses == {"confirmed"}:
-                aggregate = "confirmed"
-            elif "blocked" in statuses:
-                aggregate = "blocked"
-            else:
-                aggregate = "rejected"
-
-            # Coverage check: every slug in the ticket's ## Tests section
-            # must have a `confirmed` entry in the agent's output. Catches
-            # the case where the agent silently omits a test.
-            expected_slugs = {ct["slug"] for ct in _parse_tests_section(ticket["body"])}
-            confirmed_slugs = {t["slug"] for t in per_test if t["status"] == "confirmed"}
-            missing_slugs = expected_slugs - confirmed_slugs
-            if missing_slugs:
-                print(f"  [{tid}] Missing confirmed tests for slugs: "
-                      f"{sorted(missing_slugs)}")
-                aggregate = "rejected"
-                if attempt < MAX_TEST_ATTEMPTS:
-                    retry_note = (
-                        f"\n\n## Retry note (attempt {attempt} failed)\n"
-                        f"The ticket's `## Tests` section lists "
-                        f"{len(expected_slugs)} test slug(s), but your "
-                        f"staging output does not have a confirmed entry "
-                        f"for every one. Missing: "
-                        f"{sorted(missing_slugs)}. Every slug must have a "
-                        f"corresponding failing Rust test.\n")
-                    continue
-
-            # Worktree-clean check: the agent must commit its work before
-            # writing the staging output.
-            if aggregate == "confirmed":
-                git_status = subprocess.run(
-                    ["git", "status", "--porcelain"],
-                    capture_output=True, text=True, cwd=str(wt_dir),
-                )
-                dirty = git_status.stdout.strip()
-                if dirty:
-                    print(f"  [{tid}] Worktree dirty — agent forgot to commit:")
-                    print(dirty)
-                    aggregate = "rejected"
-                    if attempt < MAX_TEST_ATTEMPTS:
-                        retry_note = (
-                            f"\n\n## Retry note (attempt {attempt} failed)\n"
-                            f"Every per-test validation succeeded, but the "
-                            f"worktree is not clean. `git status --porcelain` "
-                            f"reported:\n\n{dirty}\n\n"
-                            f"You must `git add -A && git commit` your test "
-                            f"file before writing the staging output. Do this "
-                            f"and try again.\n")
-                        continue
-            validated = (aggregate == "confirmed")
-            break
-
-        # Update ticket body: fill in Implementation for each test entry
-        if impls_by_slug:
-            update_tests_section_impls(tid, impls_by_slug)
-
-        # If rejected/blocked overall, remove the worktree
-        if aggregate in ("rejected", "blocked"):
-            remove_worktree(tid)
-
-        # Append a compact per-test result section to the ticket
-        section_lines = ["## Test Run Results", ""]
-        for t in per_test:
-            section_lines.append(f"- **{t['slug']}** — {t['status']}")
-            if t.get("test_name"):
-                section_lines.append(f"  - test fn: `{t['test_name']}`")
-            if t.get("assertion_message"):
-                section_lines.append(f"  - assertion: {t['assertion_message']}")
-            if t.get("blocked_by"):
-                section_lines.append(f"  - blocked by: {t['blocked_by']}")
-        append_ticket_section(tid, "\n".join(section_lines))
-
-        # Update ticket status + metadata
-        extra_fm = {
-            f"{aggregate}_at": now_iso(),
-            "test_run_id": f"{today()}-{tid}-test",
-            "test_model": args.model,
-            "test_tokens": str(result["tokens"]),
-            "test_duration": str(result["duration"]),
-            "test_file": test_file,
-            "tests_confirmed": str(sum(1 for t in per_test if t["status"] == "confirmed")),
-            "tests_total": str(len(per_test)),
-        }
-        if aggregate == "confirmed":
-            extra_fm["worktree"] = str(get_worktree_dir(tid))
-        update_ticket_status(tid, aggregate, extra_fm)
-
-        # Log
-        append_jsonl(METRICS_DIR / "runs.jsonl", {
-            "run_id": f"{today()}-{tid}-test", "timestamp": now_iso(),
-            "role": "test-writer", "model": args.model,
-            "card": card, "finding_id": tid,
-            "findings_created": 0, "test_result": aggregate,
-            "fix_result": None, "validation_passed": validated,
-            "rejection_reason": None if validated else "one-or-more tests failed validation",
-            "total_tokens": result["tokens"], "tool_uses": result["tool_uses"],
-            "duration_seconds": result["duration"],
-            "notes": f"{extra_fm['tests_confirmed']}/{extra_fm['tests_total']} tests confirmed",
-        })
-        append_jsonl(METRICS_DIR / "findings.jsonl", {
-            "finding_id": tid, "timestamp": now_iso(),
-            "event": f"test_{aggregate}",
-            "card": card, "source": "code-audit",
-            "engine_file": "", "description": tid,
-            "run_id": f"{today()}-{tid}-test",
-            "test_file": test_file,
-        })
-
-        n_ok = extra_fm["tests_confirmed"]
-        n_total = extra_fm["tests_total"]
-        print(f"  [{tid}] Done: {aggregate} — {n_ok}/{n_total} tests "
-              f"({result['duration']}s, {result['tokens']} tok)")
-        return {"ticket": tid, "result": aggregate,
-                "confirmed": int(n_ok), "total": int(n_total)}
-
-    parallelism = args.parallelism
-    if parallelism > 1:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=parallelism) as pool:
-            futures = {pool.submit(test_one, t): t for t in tickets}
-            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+    if args.parallelism > 1:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.parallelism) as pool:
+            fs = {pool.submit(_test_one, t, args): t for t in tickets}
+            results = [f.result() for f in concurrent.futures.as_completed(fs)]
     else:
-        results = [test_one(t) for t in tickets]
+        results = [_test_one(t, args) for t in tickets]
 
-    # Summary
-    print(f"\n{'='*60}")
-    print("TEST SUMMARY")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}\nTEST SUMMARY\n{'='*60}")
     for r in sorted(results, key=lambda x: x["ticket"]):
-        n_ok = r.get("confirmed", 0)
-        n_total = r.get("total", 0)
-        detail = f"{n_ok}/{n_total} tests" if n_total else ""
+        detail = f"{r['confirmed']}/{r['total']} tests" if r['total'] else ""
         print(f"  {r['ticket']:<40} {r['result']:<10} {detail}")
-    confirmed = sum(1 for r in results if r["result"] == "confirmed")
-    rejected = sum(1 for r in results if r["result"] == "rejected")
-    blocked = sum(1 for r in results if r["result"] == "blocked")
-    print(f"\n  Confirmed: {confirmed}  Rejected: {rejected}  Blocked: {blocked}")
+    c  = sum(1 for r in results if r["result"] == "confirmed")
+    rj = sum(1 for r in results if r["result"] == "rejected")
+    bl = sum(1 for r in results if r["result"] == "blocked")
+    print(f"\n  Confirmed: {c}  Rejected: {rj}  Blocked: {bl}")
 
+def _test_one(ticket: dict, args) -> dict:
+    fm = ticket["frontmatter"]
+    tid = fm["id"]
+    card = fm.get("card", "unknown")
+    tid_snake = tid.replace("-", "_")
+    oracle = get_oracle_text(card) or "Oracle text not available"
+    wt = ensure_worktree(tid)
+    (wt / "pipeline" / "staging").mkdir(parents=True, exist_ok=True)
+    staging_file = wt / "pipeline" / "staging" / f"{tid}-test.json"
+    default_file = f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
 
-# ─── Fix command ──────────────────────────────────────────────────
+    engine_note = ""
+    if fm.get("allow_engine_edits") == "true":
+        engine_note = (
+            "\n### Engine edits allowed this run\n"
+            "A prior attempt reported the test cannot be expressed without "
+            "an engine change. For this run only, you may modify "
+            "`mtg-engine/src/**` to add the minimal surface area needed. "
+            "See `## Engine Change Needed` in the ticket body.\n")
 
+    builder = build_prompt("test-writer",
+        ticket_body=ticket["body"], oracle=oracle, engine_note=engine_note,
+        tid_snake=tid_snake, tid=tid)
+
+    st: dict[str, Any] = {"aggregate": "false_positive", "per_test": [],
+                          "impls": {}, "test_file": default_file}
+    expected = {e["slug"] for e in _parse_tests_section(ticket["body"])}
+
+    def validate(parsed, _result, attempt):
+        if not parsed["tests"]:
+            return ("Your staging JSON had no entries under `tests`. "
+                    "Emit one per slug in the ticket's `## Tests` section.")
+        st["test_file"] = parsed["test_file"] or default_file
+        per_test = list(parsed["tests"])
+        st["per_test"] = per_test
+
+        errs = []
+        for t in per_test:
+            if t["status"] == TEST_CONFIRMED and not t["test_name"]:
+                errs.append(f"- `{t['slug']}`: confirmed but test_name empty")
+            if t["status"] == TEST_BLOCKED and not (t["blocked_by"] or "").strip():
+                errs.append(f"- `{t['slug']}`: blocked but blocked_by empty")
+        if errs:
+            return ("Your staging JSON is missing required fields:\n"
+                    + "\n".join(errs)
+                    + "\nConfirmed MUST have `test_name`. "
+                      "Blocked MUST have `blocked_by`.")
+
+        impls: dict[str, str] = {}
+        for t in per_test:
+            slug = t["slug"]
+            if t["status"] == TEST_CONFIRMED:
+                p = wt / st["test_file"]
+                if not p.exists():
+                    t["status"] = TEST_REJECTED
+                    impls[slug] = "rejected: test file missing"
+                    continue
+                val = subprocess.run(
+                    [str(SCRIPTS_DIR / "validate_test.sh"), str(p), t["test_name"]],
+                    capture_output=True, text=True, cwd=str(wt))
+                if val.returncode == 0:
+                    impls[slug] = f"{st['test_file']}::{t['test_name']}"
+                else:
+                    t["status"] = TEST_REJECTED
+                    impls[slug] = "rejected: validation failed"
+            elif t["status"] == TEST_REJECTED:
+                impls[slug] = f"rejected: {t.get('explanation','')[:80]}"
+            elif t["status"] == TEST_BLOCKED:
+                impls[slug] = "(not yet written)"
+        st["impls"] = impls
+
+        statuses = {t["status"] for t in per_test}
+        if TEST_BLOCKED in statuses:
+            st["aggregate"] = "needs_engine"; return None
+        if TEST_CONFIRMED not in statuses:
+            st["aggregate"] = "false_positive"; return None
+
+        missing = expected - {t["slug"] for t in per_test}
+        if missing:
+            st["aggregate"] = "false_positive"
+            if attempt < MAX_ATTEMPTS:
+                return (f"Ticket's `## Tests` section lists {len(expected)} "
+                        f"slug(s) but staging has no confirmed entry for every "
+                        f"one. Missing: {sorted(missing)}.")
+            return None
+        dirty = subprocess.run(["git", "status", "--porcelain"],
+                               capture_output=True, text=True,
+                               cwd=str(wt)).stdout.strip()
+        if dirty:
+            st["aggregate"] = "false_positive"
+            if attempt < MAX_ATTEMPTS:
+                return (f"Every per-test validation succeeded but worktree "
+                        f"is not clean:\n\n{dirty}\n\nRun `git add -A && "
+                        f"git commit` before writing staging output.")
+            return None
+        st["aggregate"] = "tested"
+        return None
+
+    print(f"  [{tid}] Spawning agent in worktree...")
+    _, result = run_agent_loop(
+        build_prompt=builder, cwd=wt, staging_file=staging_file,
+        loader=load_test_staging, validator=validate,
+        **_loop_kwargs(f"{today()}-{tid}-test", f"  [{tid}] ", args))
+
+    aggregate = st["aggregate"]
+    per_test = st["per_test"]
+    validated = (aggregate == "tested")
+    if st["impls"]:
+        update_tests_section_impls(tid, st["impls"])
+    if aggregate == "false_positive":
+        remove_worktree(tid)
+
+    lines = ["## Test Run Results", ""]
+    for t in per_test:
+        lines.append(f"- **{t['slug']}** — {t['status']}")
+        if t.get("test_name"):
+            lines.append(f"  - test fn: `{t['test_name']}`")
+        if t.get("assertion_message"):
+            lines.append(f"  - assertion: {t['assertion_message']}")
+        if t.get("blocked_by"):
+            lines.append(f"  - blocked by: {t['blocked_by']}")
+    append_ticket_section(tid, "\n".join(lines))
+
+    n_conf = sum(1 for t in per_test if t["status"] == TEST_CONFIRMED)
+    extra = {"test_run_id": f"{today()}-{tid}-test",
+             "test_model": args.model,
+             "test_tokens": str(result["tokens"]),
+             "test_duration": str(result["duration"]),
+             "test_file": st["test_file"],
+             "tests_confirmed": str(n_conf),
+             "tests_total": str(len(per_test))}
+    if aggregate == "tested":
+        extra["tested_at"] = now_iso()
+        extra["worktree"] = str(get_worktree_dir(tid))
+        extra["tested_sha"] = _branch_head_sha(get_worktree_branch(tid))
+        transition(tid, STATUS_TESTED, set_=extra)
+    elif aggregate == "needs_engine":
+        extra["allow_engine_edits"] = "true"
+        extra["engine_block_at"] = now_iso()
+        transition(tid, STATUS_NEW, set_=extra)
+        blocked = [f"- **{t['slug']}**: {t['blocked_by']}" for t in per_test
+                   if t["status"] == TEST_BLOCKED and t.get("blocked_by")]
+        if blocked:
+            append_ticket_section(tid,
+                "## Engine Change Needed\n\n"
+                "The test-writer could not express the following test(s) "
+                "without engine changes. Retry will allow "
+                "`mtg-engine/src/**` edits.\n\n" + "\n".join(blocked))
+    else:
+        extra["false_positive_at"] = now_iso()
+        transition(tid, STATUS_FALSE_POSITIVE, set_=extra)
+
+    log_run("test-writer", run_id=f"{today()}-{tid}-test",
+            model=args.model, card=card, result=result,
+            finding_id=tid, test_result=aggregate,
+            validation_passed=validated,
+            rejection_reason=None if validated else "one-or-more tests failed validation",
+            notes=f"{n_conf}/{len(per_test)} tests confirmed")
+    log_finding(tid, f"test_{aggregate}", card=card,
+                run_id=f"{today()}-{tid}-test", test_file=st["test_file"])
+    print(f"  [{tid}] Done: {aggregate} — {n_conf}/{len(per_test)} tests "
+          f"({result['duration']}s, {result['tokens']} tok)")
+    return {"ticket": tid, "result": aggregate,
+            "confirmed": n_conf, "total": len(per_test)}
+# ─── Fix ───────────────────────────────────────────────────────────
 def cmd_fix(args):
     if args.ticket:
-        path = TICKETS_DIR / f"{args.ticket}.md"
-        if not path.exists():
-            print(f"Ticket not found: {args.ticket}")
-            sys.exit(1)
-        tickets = [parse_ticket(path)]
+        tickets = [parse_ticket(ticket_path(args.ticket))]
     else:
-        tickets = list_tickets(status="confirmed")[:1]
-
+        tickets = list_tickets(status=STATUS_TESTED)[:1]
     if not tickets:
-        print("No confirmed tickets to fix.")
-        return
+        print(f"No {STATUS_TESTED} tickets to fix."); return
 
     ticket = tickets[0]
     fm = ticket["frontmatter"]
     tid = fm["id"]
+    if fm.get("status") != STATUS_TESTED:
+        print(f"Ticket {tid}: status={fm.get('status')}, not {STATUS_TESTED}. "
+              f"Use `retry --to tested` to rewind.")
+        sys.exit(1)
     card = fm.get("card", "unknown")
-
-    print(f"\n{'='*60}")
-    print(f"FIXER — {tid} ({card})")
-    print(f"{'='*60}")
-
+    print(f"\n{'='*60}\nFIXER — {tid} ({card})\n{'='*60}")
     if args.dry_run:
-        print("\n(dry run)")
-        return
+        print("\n(dry run)"); return
 
-    shared_prompt = (PROMPTS_DIR / "fixer.md").read_text()
-
-    # Reuse the ticket's worktree (created during test phase)
-    wt_dir = get_worktree_dir(tid)
-    if not wt_dir.exists():
+    wt = get_worktree_dir(tid)
+    if not wt.exists():
         print(f"  No worktree found for {tid}. Run `test` first.")
         sys.exit(1)
+    (wt / "pipeline" / "staging").mkdir(parents=True, exist_ok=True)
+    staging_file = wt / "pipeline" / "staging" / f"{tid}-fix.json"
 
-    wt_staging = wt_dir / "pipeline" / "staging"
-    wt_staging.mkdir(parents=True, exist_ok=True)
-    staging_file = wt_staging / f"{tid}-fix.md"
+    test_fns = [impl.split("::", 1)[1]
+                for ct in _parse_tests_section(ticket["body"])
+                if "::" in (impl := ct.get("implementation", "").strip())]
+    failing = "\n".join(f"- `{n}`" for n in test_fns) \
+              or "- (see ticket `## Tests` section)"
+    builder = build_prompt("fixer",
+        ticket_body=ticket["body"], num_tests=len(test_fns),
+        test_file=fm.get("test_file", ""),
+        failing_tests_block=failing, tid=tid)
 
-    # Collect all tests (slug + implementation) from the ticket body.
-    # Both single-test and multi-test tickets are structured identically
-    # via the ## Tests section.
-    ticket_tests = _parse_tests_section(ticket["body"])
-    test_file = fm.get("test_file", "")
-    test_fns = []
-    for ct in ticket_tests:
-        # Implementation line on a confirmed ticket looks like
-        # "path/to/file.rs::fn_name". Only include fully-implemented tests.
-        body_ct = ticket["body"]
-        impl_match = re.search(
-            rf"(?ms)^###\s+{re.escape(ct['slug'])}\s*$.*?^Implementation:\s*(.+?)$",
-            body_ct)
-        if impl_match:
-            impl = impl_match.group(1).strip()
-            if "::" in impl:
-                test_fns.append(impl.split("::", 1)[1])
-
-    failing_tests_block = "\n".join(
-        f"- `{name}`" for name in test_fns) or "- (see ticket `## Tests` section)"
-
-    per_agent_base = f"""## Ticket to fix
-
-{ticket["body"]}
-
-### Failing tests
-This ticket has {len(test_fns)} test(s) that must ALL pass after your fix.
-They all live in a single file:
-- File: `{test_file}`
-- Test functions:
-{failing_tests_block}
-
-### Staging output
-Write your result to: `pipeline/staging/{tid}-fix.md`
-Use the format: ## Status, ## Files Changed, ## Description
-
-### Rules
-- Only modify files under `mtg-engine/src/`
-- Do NOT modify test files
-- EVERY test listed above must pass after your fix
-- Zero compiler warnings
-- The full `cargo test` suite must still pass (no regressions)
-- Commit your work (including the test file if untracked) before
-  writing the staging output. The worktree must be clean when
-  validate_fix.sh runs.
-"""
-
-    # Agent runs with a retry loop when validation fails (typically
-    # because the agent forgot to commit its changes). On each retry
-    # we append the validator's output so the agent knows what to fix.
-    fix_result = "failed"
-    validated = False
-    parsed: dict = {}
-    retry_note = ""
-    MAX_FIX_ATTEMPTS = 3
-    for attempt in range(1, MAX_FIX_ATTEMPTS + 1):
-        print(f"  Spawning agent in worktree {wt_dir.name} "
-              f"(attempt {attempt}/{MAX_FIX_ATTEMPTS})...")
-        prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
-        log_path = LOGS_DIR / f"{today()}-{tid}-fix-attempt{attempt}.log"
-        result = run_agent_in(prompt, wt_dir, args.model, args.effort,
-                              log_path=log_path,
-                              progress_prefix=f"  [{tid}] ")
-
-        if result.get("is_error"):
-            err = result.get("error_message") or "unknown agent error"
-            print(f"  Agent error: {err}")
-            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
-                          f"Previous attempt errored: {err}\n")
-            continue
-
-        if not staging_file.exists():
-            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
-                          f"Previous attempt did not write {staging_file}. "
-                          f"Write the staging output there.\n")
-            continue
-
-        parsed = parse_fix_staging(staging_file)
-        fix_result_raw = parsed.get("status", "failed")
-        staging_file.unlink()
-
-        # The staging `## Status` field MUST be exactly `fixed` or
-        # `failed` — parsing any free-form value (e.g. "PASS — all 10
-        # tests pass, zero warnings.") breaks status-based branching
-        # and leaves the ticket in an inconsistent state. If the
-        # agent writes anything else, retry with a clarification.
-        fix_result = fix_result_raw.strip().lower().split()[0] \
-            if fix_result_raw else "failed"
-        if fix_result not in ("fixed", "failed"):
-            if attempt < MAX_FIX_ATTEMPTS:
-                print(f"  Agent wrote invalid Status value "
-                      f"{fix_result_raw!r} — retrying to get a "
-                      f"well-formed status")
-                retry_note = (
-                    f"\n\n## Retry note (attempt {attempt} failed)\n"
-                    f"Your `## Status` section must contain EXACTLY one "
-                    f"word: either `fixed` or `failed`. Nothing else — "
-                    f"no prose, no summary, no commentary. Put any "
-                    f"summary into the `## Description` section where "
-                    f"it belongs. Previous attempt wrote "
-                    f"`{fix_result_raw}` which Python cannot parse.\n")
-                continue
-            print(f"  Agent wrote invalid Status value {fix_result_raw!r}; "
-                  f"out of retries — treating as failed")
-            fix_result = "failed"
-
-        if fix_result != "fixed":
-            # If the agent gave up, require a post-mortem. A `failed`
-            # status with no description is useless — we lose the only
-            # record of what went wrong. Retry with feedback demanding
-            # a description.
-            description = (parsed.get("description") or "").strip()
-            if not description and attempt < MAX_FIX_ATTEMPTS:
-                print(f"  Agent reported status={fix_result} with no "
-                      f"Description — retrying to get a post-mortem")
-                retry_note = (
-                    f"\n\n## Retry note (attempt {attempt} failed)\n"
-                    f"Previous attempt reported `status: failed` but "
-                    f"omitted `## Description`. If you genuinely cannot "
-                    f"fix this bug, the Description MUST explain what "
-                    f"you tried, what failed, and what engine-level "
-                    f"change would be required. That post-mortem is the "
-                    f"single most useful artifact of a failed run — "
-                    f"don't skip it.\n")
-                continue
-            print(f"  Agent reported status={fix_result}; not retrying")
-            break
-
-        # Validate — worktree must be clean + tests pass + no warnings.
-        val = subprocess.run(
-            [str(SCRIPTS_DIR / "validate_fix.sh")],
-            capture_output=True, text=True, cwd=str(wt_dir),
-        )
-        validated = val.returncode == 0
-        if validated:
-            break
-
-        # Validation failed — surface reason and retry
+    def validate(parsed, _result, attempt):
+        if parsed["status"] != "fixed":
+            if not parsed["description"] and attempt < MAX_ATTEMPTS:
+                return ("Previous attempt reported status=failed but omitted "
+                        "`description`. A post-mortem is the only artifact "
+                        "of a failed run — explain what you tried and what "
+                        "engine-level change would be required.")
+            return None
+        val = subprocess.run([str(SCRIPTS_DIR / "validate_fix.sh")],
+                             capture_output=True, text=True, cwd=str(wt))
+        if val.returncode == 0:
+            return None
         tail = (val.stdout[-1500:] if val.stdout else "") + \
                (val.stderr[-500:] if val.stderr else "")
-        print(f"  Validation FAILED (attempt {attempt}):")
-        print(tail)
-        fix_result = "failed"
-        if attempt < MAX_FIX_ATTEMPTS:
-            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
-                          f"validate_fix.sh rejected your previous attempt. "
-                          f"Output (last 1500 chars):\n\n{tail}\n\n"
-                          f"Fix the issue and try again. Remember to commit "
-                          f"your changes before running validate_fix.sh.\n")
+        print(f"  Validation FAILED (attempt {attempt}):\n{tail}")
+        return (f"validate_fix.sh rejected your previous attempt. Output "
+                f"(last 1500 chars):\n\n{tail}\n\nFix and retry. Remember "
+                f"to commit changes before running validate_fix.sh.")
 
-    # Keep the worktree around on failure so humans can inspect the
-    # agent's partial progress (uncommitted or on the fix branch) and
-    # optionally resume work manually. `cli.py abandon` removes it
-    # explicitly when we give up on the ticket.
-    if fix_result == "failed":
-        print(f"  Worktree preserved for inspection: {wt_dir}")
-        print(f"  Run `./pipeline/cli.py abandon {tid}` to remove it.")
+    print(f"  Spawning agent in worktree {wt.name}...")
+    parsed, result = run_agent_loop(
+        build_prompt=builder, cwd=wt, staging_file=staging_file,
+        loader=load_fix_staging, validator=validate,
+        **_loop_kwargs(f"{today()}-{tid}-fix", f"  [{tid}] ", args))
 
-    # Build ticket section
-    section = f"## Fix Result\n\n"
-    section += f"status: {fix_result}\n"
+    parsed = parsed or {"status": "failed", "files_changed": [], "description": ""}
+    fix_result = parsed["status"]
+    validated = False
+    if fix_result == "fixed":
+        val = subprocess.run([str(SCRIPTS_DIR / "validate_fix.sh")],
+                             capture_output=True, cwd=str(wt))
+        validated = val.returncode == 0
+        if not validated:
+            fix_result = "failed"
+
+    status = STATUS_FIXED if fix_result == "fixed" else STATUS_FIX_FAILED
+    if status == STATUS_FIX_FAILED:
+        print(f"  Worktree preserved for inspection: {wt}")
+        print(f"  Run `./pipeline/cli.py retry {tid}` to rewind, or "
+              f"`close {tid}` to give up.")
+
+    sec = [f"## Fix Result\n\nstatus: {status}"]
     if parsed.get("files_changed"):
-        section += f"files_changed: {parsed['files_changed']}\n"
+        sec.append("files_changed:")
+        sec += [f"- {p}" for p in parsed["files_changed"]]
     if parsed.get("description"):
-        section += f"\n{parsed['description']}\n"
+        sec += ["", parsed["description"]]
+    append_ticket_section(tid, "\n".join(sec))
 
-    append_ticket_section(tid, section)
-    update_ticket_status(tid, fix_result, {
-        f"{fix_result}_at": now_iso(),
-        "fix_run_id": f"{today()}-{tid}-fix",
-        "fix_model": args.model,
-        "fix_tokens": str(result["tokens"]),
-        "fix_duration": str(result["duration"]),
-    })
+    extra = {f"{status}_at": now_iso(),
+             "fix_run_id": f"{today()}-{tid}-fix",
+             "fix_model": args.model,
+             "fix_tokens": str(result["tokens"]),
+             "fix_duration": str(result["duration"])}
+    if status == STATUS_FIXED:
+        extra["fixed_sha"] = _branch_head_sha(get_worktree_branch(tid))
+    transition(tid, status, set_=extra)
 
-    # Log
-    append_jsonl(METRICS_DIR / "runs.jsonl", {
-        "run_id": f"{today()}-{tid}-fix", "timestamp": now_iso(),
-        "role": "fixer", "model": args.model,
-        "card": card, "finding_id": tid,
-        "findings_created": 0, "test_result": None,
-        "fix_result": fix_result, "validation_passed": validated,
-        "rejection_reason": None if validated else "validation failed",
-        "total_tokens": result["tokens"], "tool_uses": result["tool_uses"],
-        "duration_seconds": result["duration"], "notes": "",
-    })
-    append_jsonl(METRICS_DIR / "findings.jsonl", {
-        "finding_id": tid, "timestamp": now_iso(),
-        "event": "fix_succeeded" if fix_result == "fixed" else "fix_failed",
-        "card": card, "source": "code-audit",
-        "engine_file": "", "description": tid,
-        "run_id": f"{today()}-{tid}-fix",
-    })
-
-    print(f"\n  Result: {fix_result} ({result['duration']}s, {result['tokens']} tok)")
-
-
-# ─── Tickets command ──────────────────────────────────────────────
-
-def cmd_tickets(args):
-    tickets = list_tickets(status=args.status, card=args.card)
-
-    if not tickets:
-        print("No tickets found.")
-        return
-
-    # Group by status
-    by_status = {}
-    for t in tickets:
-        s = t["frontmatter"].get("status", "unknown")
-        by_status.setdefault(s, []).append(t)
-
-    # Primary statuses display in a fixed order; any remaining statuses
-    # (e.g. "deduped", or newly-introduced states) display afterwards.
-    primary = ["new", "confirmed", "blocked", "fixed", "failed", "rejected", "merged"]
-    remainder = [s for s in by_status if s not in primary]
-    for status in primary + sorted(remainder):
-        group = by_status.get(status, [])
-        if not group:
-            continue
-        print(f"\n{status.upper()} ({len(group)})")
-        for t in group:
-            fm = t["frontmatter"]
-            card = fm.get("card", "?")
-            tid = fm.get("id", "?")
-            extra = ""
-            target = fm.get("duplicate_of") or fm.get("deduped_into")
-            if target:
-                extra = f" → {target}"
-            print(f"  {tid:<30} {card}{extra}")
-
-
-# ─── Show command ─────────────────────────────────────────────────
-
-def cmd_show(args):
-    path = TICKETS_DIR / f"{args.ticket_id}.md"
-    if not path.exists():
-        print(f"Ticket not found: {args.ticket_id}")
-        sys.exit(1)
-    print(path.read_text())
-
-
-# ─── Accept command ───────────────────────────────────────────────
-
+    log_run("fixer", run_id=f"{today()}-{tid}-fix", model=args.model,
+            card=card, result=result, finding_id=tid, fix_result=fix_result,
+            validation_passed=validated,
+            rejection_reason=None if validated else "validation failed")
+    log_finding(tid, "fix_succeeded" if fix_result == "fixed" else "fix_failed",
+                card=card, run_id=f"{today()}-{tid}-fix")
+    print(f"\n  Result: {fix_result} "
+          f"({result['duration']}s, {result['tokens']} tok)")
+# ─── Merge ─────────────────────────────────────────────────────────
 def cmd_merge(args):
-    # Collect tickets to merge
     if args.ticket_id == "all":
-        tickets = list_tickets(status="fixed")
+        tickets = list_tickets(status=STATUS_FIXED)
     else:
-        ids = [t.strip() for t in args.ticket_id.split(",")]
         tickets = []
-        for tid in ids:
-            path = TICKETS_DIR / f"{tid}.md"
-            if path.exists():
-                t = parse_ticket(path)
-                if t["frontmatter"].get("status") == "fixed":
-                    tickets.append(t)
-                else:
-                    print(f"  Skipping {tid}: status is {t['frontmatter'].get('status')}, not fixed")
-            else:
-                print(f"  Skipping {tid}: not found")
-
+        for tid in [t.strip() for t in args.ticket_id.split(",")]:
+            path = ticket_path(tid)
+            if not path.exists():
+                print(f"  Skipping {tid}: not found"); continue
+            t = parse_ticket(path)
+            if t["frontmatter"].get("status") != STATUS_FIXED:
+                print(f"  Skipping {tid}: status is "
+                      f"{t['frontmatter'].get('status')}, not {STATUS_FIXED}")
+                continue
+            tickets.append(t)
     if not tickets:
-        print("No fixed tickets to merge.")
-        return
+        print(f"No {STATUS_FIXED} tickets to merge."); return
 
-    print(f"\n{'='*60}")
-    print(f"MERGE — {len(tickets)} ticket(s)")
-    print(f"{'='*60}")
+    print(f"\n{'='*60}\nMERGE — {len(tickets)} ticket(s)\n{'='*60}")
     for t in tickets:
-        fm = t["frontmatter"]
-        print(f"  {fm['id']:<30} {fm.get('card', '?')}")
-
+        print(f"  {t['frontmatter']['id']:<30} "
+              f"{t['frontmatter'].get('card', '?')}")
     if args.dry_run:
-        print("\n(dry run)")
-        return
+        print("\n(dry run)"); return
 
     for ticket in tickets:
         fm = ticket["frontmatter"]
         tid = fm["id"]
-        test_name = fm.get("test_name", "")
-        wt_dir = get_worktree_dir(tid)
-        branch = get_worktree_branch(tid)
-
+        wt = get_worktree_dir(tid)
         print(f"\n  [{tid}] Merging...")
-
-        if not wt_dir.exists():
-            print(f"  [{tid}] No worktree found — skipping")
-            continue
-
-        # Merge the branch
-        merge_result = subprocess.run(
-            ["git", "merge", branch, "--no-edit"],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT),
-        )
-        if merge_result.returncode != 0:
-            print(f"  [{tid}] Merge FAILED: {merge_result.stderr[:200]}")
-            continue
-
-        # Verify the test exists at HEAD and passes
-        if test_name:
-            test_check = subprocess.run(
-                ["cargo", "test", "--", test_name],
-                capture_output=True, text=True, cwd=str(PROJECT_ROOT),
-                timeout=300,
-            )
-            if "FAILED" in test_check.stdout or test_check.returncode != 0:
-                print(f"  [{tid}] Test fails at HEAD after merge — reverting")
-                subprocess.run(["git", "reset", "--hard", "HEAD~1"],
-                             capture_output=True, cwd=str(PROJECT_ROOT))
-                continue
-            print(f"  [{tid}] Test passes at HEAD")
-
-        # Capture the merge commit sha before cleaning up so the ticket
-        # points at something durable instead of a worktree that's about
-        # to be deleted.
-        merge_sha = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT),
-        ).stdout.strip()
-
-        # Clean up worktree + any agent output logs associated with
-        # this ticket (they were only useful mid-flight / for
-        # post-mortem; a shipped fix means we won't replay them).
+        if not wt.exists():
+            print(f"  [{tid}] No worktree found — skipping"); continue
+        r = subprocess.run(["git", "merge", get_worktree_branch(tid), "--no-edit"],
+                           capture_output=True, text=True, cwd=str(PROJECT_ROOT))
+        if r.returncode != 0:
+            print(f"  [{tid}] Merge FAILED: {r.stderr[:200]}"); continue
+        merge_sha = subprocess.run(["git", "rev-parse", "HEAD"],
+            capture_output=True, text=True, cwd=str(PROJECT_ROOT)).stdout.strip()
         remove_worktree(tid)
-        n_logs = remove_logs_for_ticket(tid)
-        if n_logs:
-            print(f"  [{tid}] Removed {n_logs} agent log file(s)")
-
-        # Update ticket — drop the now-stale worktree field and record
-        # the merge commit in its place.
-        path = TICKETS_DIR / f"{tid}.md"
-        t = parse_ticket(path)
-        t["frontmatter"].pop("worktree", None)
-        t["frontmatter"]["status"] = "merged"
-        t["frontmatter"]["merged_at"] = now_iso()
+        n = remove_logs_for_ticket(tid)
+        if n:
+            print(f"  [{tid}] Removed {n} agent log file(s)")
+        extra = {"shipped_at": now_iso()}
         if merge_sha:
-            t["frontmatter"]["merged_sha"] = merge_sha
-        write_ticket(tid, t["frontmatter"], t["body"])
-        append_jsonl(METRICS_DIR / "findings.jsonl", {
-            "finding_id": tid, "timestamp": now_iso(),
-            "event": "merged", "card": fm.get("card", ""),
-            "source": "code-audit", "engine_file": "",
-            "description": tid, "run_id": "merge",
-        })
-        print(f"  [{tid}] Merged and cleaned up")
+            extra["shipped_sha"] = merge_sha
+        transition(tid, STATUS_SHIPPED, set_=extra, unset=("worktree",))
+        log_finding(tid, "shipped", card=fm.get("card", ""), run_id="merge")
+        print(f"  [{tid}] Shipped and cleaned up")
+# ─── Retry ─────────────────────────────────────────────────────────
+_FIX_KEYS = ("fix_run_id", "fix_model", "fix_tokens", "fix_duration",
+             "fixed_at", "fixed_sha", "fix_failed_at")
+_TEST_KEYS = ("test_run_id", "test_model", "test_tokens", "test_duration",
+              "test_file", "tests_confirmed", "tests_total",
+              "tested_at", "tested_sha", "worktree", "engine_block_at",
+              "false_positive_at", "allow_engine_edits")
 
+def _archive_attempt(tid: str) -> None:
+    """Fold ## Fix Result / ## Test Run Results / ## Engine Change Needed
+    into a numbered `## Attempt N` archive, preserving history."""
+    t = parse_ticket(ticket_path(tid))
+    body = t["body"]
+    archivable = ("## Fix Result", "## Test Run Results", "## Engine Change Needed")
+    nums = [int(m.group(1)) for m in re.finditer(
+        r"^##\s+Attempt\s+(\d+)\b", body, re.MULTILINE)]
+    next_n = (max(nums) + 1) if nums else 1
 
-# ─── Abandon command ──────────────────────────────────────────────
+    sections: list[str] = []
+    keep: list[str] = []
+    current: list[str] | None = None
+    for line in body.split("\n"):
+        if line.startswith("## ") and any(line.startswith(h) for h in archivable):
+            if current is not None:
+                sections.append("\n".join(current).rstrip())
+            current = [line]
+        elif line.startswith("## ") and current is not None:
+            sections.append("\n".join(current).rstrip())
+            current = None
+            keep.append(line)
+        elif current is not None:
+            current.append(line)
+        else:
+            keep.append(line)
+    if current is not None:
+        sections.append("\n".join(current).rstrip())
+    if not sections:
+        return
+    new = "\n".join(keep).rstrip() + "\n\n"
+    new += f"## Attempt {next_n}\n\n" + "\n\n".join(sections).rstrip() + "\n"
+    write_ticket(tid, t["frontmatter"], new)
 
-def _next_retry_id(old_id: str) -> str:
-    """Choose an id for the retry ticket that replaces `old_id`.
-
-    For ids matching `<slug>-NN`, increment the trailing number (e.g.
-    `merged-foo-02` → `merged-foo-03`) until a free id is found. For
-    other shapes, append `-retry-NN`.
-    """
-    m = re.match(r"^(.*)-(\d+)$", old_id)
-    if m:
-        base, num = m.group(1), int(m.group(2))
-        n = num + 1
-        while (TICKETS_DIR / f"{base}-{n:02d}.md").exists():
-            n += 1
-        return f"{base}-{n:02d}"
-    n = 1
-    while (TICKETS_DIR / f"{old_id}-retry-{n:02d}.md").exists():
-        n += 1
-    return f"{old_id}-retry-{n:02d}"
-
-
-def _extract_retry_body(old_body: str) -> str:
-    """Carry only the essentials into the retry ticket body: Title,
-    Description, Engine path, and a Tests section with Implementation
-    fields cleared. Accumulated Fix/Test Result sections are dropped —
-    the old ticket retains them as the terminal record."""
-    # Title (first `# ...` heading)
-    title_m = re.search(r"^#\s+.+$", old_body, re.MULTILINE)
-    title = title_m.group(0) if title_m else "# (untitled)"
-
-    def section(name: str) -> str | None:
-        m = re.search(
-            rf"^##\s+{re.escape(name)}\n(.*?)(?=\n##\s|\Z)",
-            old_body, re.DOTALL | re.MULTILINE)
-        return m.group(1).strip() if m else None
-
-    description = section("Description") or "(no description)"
-    engine_path = section("Engine path")
-    tests_section = section("Tests") or ""
-
-    # Reset `Implementation:` lines — the retry must re-populate them.
-    tests_section = re.sub(
-        r"(?m)^Implementation:.*$",
-        "Implementation: (not yet written)",
-        tests_section)
-
-    out = [title, "", "## Description", description]
-    if engine_path:
-        out += ["", "## Engine path", engine_path]
-    out += ["", "## Tests", "", tests_section]
-    return "\n".join(out).rstrip() + "\n"
-
+def _clear_impls(tid: str) -> None:
+    t = parse_ticket(ticket_path(tid))
+    body = re.sub(r"(?m)^Implementation:.*$",
+                  "Implementation: (not yet written)", t["body"])
+    write_ticket(tid, t["frontmatter"], body)
 
 def cmd_retry(args):
-    """Retry a failed ticket by creating a NEW ticket for the retry
-    attempt. The old ticket is closed (closed-duplicate → new) so the
-    history of each attempt is preserved as its own ticket.
-
-    - New ticket inherits frontmatter (`source_tickets`, test metadata),
-      body essentials (Title + Description + Engine path + Tests), and
-      a `previous_attempt` pointer. `Implementation:` lines in Tests
-      are cleared — the new agent re-populates them.
-    - New ticket's phase is set so the appropriate stage runs: `new`
-      if the previous failure was test-stage, `confirmed` if fix-stage.
-    - The old worktree is preserved for inspection by the new agent.
-      A fresh worktree is created for the new ticket, with the old
-      branch's test commits cherry-picked so the new agent has the
-      Rust test file present.
-    - Old ticket transitions to `status: closed-duplicate`, with
-      `duplicate_of: <new-id>`.
-
-    Only runs on tickets currently `failed` or `blocked`.
-    """
     tid = args.ticket_id
-    old_path = TICKETS_DIR / f"{tid}.md"
-    if not old_path.exists():
-        print(f"Ticket not found: {tid}")
+    fm = parse_ticket(ticket_path(tid))["frontmatter"]
+    status = fm.get("status", "")
+    if status == STATUS_FALSE_POSITIVE and not args.force:
+        print(f"ERROR: {tid} is {STATUS_FALSE_POSITIVE}; use --force to override")
         sys.exit(1)
-    old = parse_ticket(old_path)
-    old_fm = old["frontmatter"]
-    status = old_fm.get("status", "")
-    if status not in ("failed", "blocked"):
-        print(f"ERROR: {tid} is status={status}; retry only works on "
-              f"'failed' or 'blocked' tickets")
+    if status in (STATUS_SHIPPED, STATUS_CLOSED):
+        print(f"ERROR: {tid} is terminal ({status}); cannot retry")
         sys.exit(1)
 
-    had_fix = bool(old_fm.get("fix_run_id"))
-    new_id = _next_retry_id(tid)
-    new_phase = "confirmed" if had_fix else "new"
+    target = args.to or (STATUS_TESTED if status == STATUS_FIX_FAILED else STATUS_NEW)
+    if target not in (STATUS_NEW, STATUS_TESTED):
+        print(f"ERROR: --to must be {STATUS_NEW} or {STATUS_TESTED}, got {target!r}")
+        sys.exit(1)
 
-    print(f"[{tid}] Retrying — creating {new_id} in status={new_phase}")
-
-    # Build the new body — essentials only, with a pointer back.
-    body = _extract_retry_body(old["body"])
-    body += (
-        f"\n## Previous attempt\n\n"
-        f"This ticket is a retry of `{tid}`.\n\n"
-        f"- Read that ticket's `## Fix Result` section for the post-mortem "
-        f"of what the previous attempt tried and where it broke.\n"
-        f"- The previous attempt's worktree is preserved at "
-        f"`.worktrees/fix-{tid}/` — inspect it for partial code you may "
-        f"want to read, cherry-pick, or explicitly discard.\n"
-        f"- The test file is already committed on this ticket's branch "
-        f"(`fix/{new_id}`); you do not need to re-author the tests.\n"
-    )
-
-    # New frontmatter — inherit what's still relevant.
-    new_fm: dict = {
-        "id": new_id,
-        "status": new_phase,
-        "card": old_fm.get("card", "multiple"),
-        "created": now_iso(),
-        "kind": old_fm.get("kind", "consolidated"),
-        "previous_attempt": tid,
-    }
-    if old_fm.get("source_tickets"):
-        new_fm["source_tickets"] = old_fm["source_tickets"]
-    # Carry over test metadata so the fixer knows tests already exist
-    # and Implementation can be repopulated against the same file.
-    for k in ("test_run_id", "test_model", "test_tokens", "test_duration",
-              "test_file", "tests_confirmed", "tests_total", "confirmed_at"):
-        if k in old_fm:
-            new_fm[k] = old_fm[k]
-
-    write_ticket(new_id, new_fm, body)
-    print(f"[{new_id}] Created retry ticket")
-
-    # Close the old ticket as closed-duplicate → new. Keep all other
-    # frontmatter (status timestamps, fix_run_id) intact as the
-    # historical record.
-    old["frontmatter"]["status"] = "closed-duplicate"
-    old["frontmatter"]["duplicate_of"] = new_id
-    write_ticket(tid, old["frontmatter"], old["body"])
-    print(f"[{tid}] Closed as closed-duplicate → {new_id}")
-
-    # Prepare a fresh worktree for the new ticket. Preserve the old
-    # worktree in place for inspection. Cherry-pick the old fix branch's
-    # test commits into the new branch so the test file is present.
-    if had_fix:
-        old_branch = get_worktree_branch(tid)
-        new_branch = get_worktree_branch(new_id)
-        new_wt = get_worktree_dir(new_id)
-
-        # Determine which commits on the old branch are not on master —
-        # those are the test-writer commits (and possibly committed but
-        # abandoned fix work). Cherry-pick them into the new branch.
-        old_commits_rev = subprocess.run(
-            ["git", "log", "--reverse", "--format=%H", f"master..{old_branch}"],
-            capture_output=True, text=True, cwd=str(PROJECT_ROOT),
-        )
-        commits = old_commits_rev.stdout.strip().split("\n") if old_commits_rev.stdout.strip() else []
-
-        subprocess.run(
-            ["git", "worktree", "add", "-b", new_branch, str(new_wt), "HEAD"],
-            check=True, cwd=str(PROJECT_ROOT),
-        )
-        if commits:
-            print(f"  Cherry-picking {len(commits)} commit(s) from {old_branch} into {new_branch}")
-            cp_rc = subprocess.run(
-                ["git", "cherry-pick"] + commits,
-                cwd=str(new_wt),
-            ).returncode
-            if cp_rc != 0:
-                print(f"  WARNING: cherry-pick exited {cp_rc}. Resolve manually "
-                      f"in {new_wt} and then `./pipeline/cli.py fix --ticket {new_id}`.")
-                return
-
-    # Kick off the appropriate stage on the new ticket.
-    if had_fix:
-        fix_args = argparse.Namespace(
-            ticket=new_id, model=args.model, effort=args.effort, dry_run=False,
-        )
-        cmd_fix(fix_args)
+    if target == STATUS_TESTED:
+        sha = fm.get("tested_sha", "")
+        if not sha:
+            print(f"ERROR: {tid} has no tested_sha; cannot rewind to "
+                  f"{STATUS_TESTED}. Use --to {STATUS_NEW} instead.")
+            sys.exit(1)
     else:
-        test_args = argparse.Namespace(
-            tickets=new_id, parallelism=1,
-            model=args.model, effort=args.effort, dry_run=False,
-        )
-        cmd_test(test_args)
+        sha = "master"
 
+    print(f"[{tid}] Retry: {status} → {target}  (reset to {sha})")
+    _archive_attempt(tid)
+    if target == STATUS_NEW:
+        if get_worktree_dir(tid).exists():
+            remove_worktree(tid)
+        _clear_impls(tid)
+        transition(tid, STATUS_NEW, unset=_FIX_KEYS + _TEST_KEYS)
+    else:
+        _reset_branch_to(tid, sha)
+        transition(tid, STATUS_TESTED, unset=_FIX_KEYS)
 
-def cmd_abandon(args):
+    nxt = "test" if target == STATUS_NEW else "fix"
+    flag = "--tickets" if target == STATUS_NEW else "--ticket"
+    print(f"[{tid}] Ready. Run `./pipeline/cli.py {nxt} {flag} {tid}` to continue.")
+# ─── Close / tickets / show / status / report ─────────────────────
+def cmd_close(args):
     tid = args.ticket_id
-    path = TICKETS_DIR / f"{tid}.md"
-    if not path.exists():
-        print(f"Ticket not found: {tid}")
-        sys.exit(1)
-    wt_dir = get_worktree_dir(tid)
-    if wt_dir.exists():
+    extra = {"closed_reason": CLOSED_REASON_ABANDONED, "closed_at": now_iso()}
+    if args.note:
+        extra["closed_note"] = args.note
+    transition(tid, STATUS_CLOSED, set_=extra)
+    if get_worktree_dir(tid).exists():
         remove_worktree(tid)
         print(f"Removed worktree for {tid}")
-    else:
-        print(f"No worktree for {tid}")
-    n_logs = remove_logs_for_ticket(tid)
-    if n_logs:
-        print(f"Removed {n_logs} agent log file(s) for {tid}")
-    # Reset status back to new so it can be re-tested
-    ticket = parse_ticket(path)
-    status = ticket["frontmatter"].get("status", "")
-    if status in ("confirmed", "fixed", "failed"):
-        update_ticket_status(tid, "new")
-        print(f"Reset {tid} status to new")
+    n = remove_logs_for_ticket(tid)
+    if n:
+        print(f"Removed {n} agent log file(s) for {tid}")
+    print(f"Closed {tid} (reason={CLOSED_REASON_ABANDONED})")
 
+def cmd_tickets(args):
+    tickets = list_tickets(status=args.status, card=args.card)
+    if not tickets:
+        print("No tickets found."); return
+    by_status: dict[str, list] = {}
+    for t in tickets:
+        by_status.setdefault(t["frontmatter"].get("status", "unknown"), []).append(t)
+    primary = [STATUS_NEW, STATUS_TESTED, STATUS_FIXED, STATUS_FIX_FAILED,
+               STATUS_FALSE_POSITIVE, STATUS_SHIPPED, STATUS_CLOSED]
+    for s in primary + sorted(s for s in by_status if s not in primary):
+        group = by_status.get(s, [])
+        if not group:
+            continue
+        print(f"\n{s.upper()} ({len(group)})")
+        for t in group:
+            fm = t["frontmatter"]
+            target = fm.get("duplicate_of") or fm.get("deduped_into") \
+                     or fm.get("absorbed_into")
+            extra = f" → {target}" if target else ""
+            print(f"  {fm.get('id', '?'):<30} {fm.get('card', '?')}{extra}")
 
-# ─── Status command ───────────────────────────────────────────────
+def cmd_show(args):
+    path = ticket_path(args.ticket_id)
+    if not path.exists():
+        print(f"Ticket not found: {args.ticket_id}"); sys.exit(1)
+    print(path.read_text())
 
 def cmd_status(args):
     subprocess.run(["python3", str(SCRIPTS_DIR / "metrics.py")],
                    cwd=str(PROJECT_ROOT))
 
-
-# ─── Report command ───────────────────────────────────────────────
-
-def _load_audit_runs() -> list[dict]:
-    path = METRICS_DIR / "runs.jsonl"
-    if not path.exists():
-        return []
-    runs = []
-    for line in path.read_text().strip().split("\n"):
-        if not line:
-            continue
-        try:
-            d = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if d.get("role") == "auditor":
-            runs.append(d)
-    return runs
-
-
 def cmd_report(args):
-    """Coverage + per-card breakdown crossing audit runs against ticket state."""
-    from collections import Counter, defaultdict
-
-    runs = _load_audit_runs()
-    tickets = list_tickets()
-
-    # ── Audit coverage section ──────────────────────────────────
-    successful_runs = [r for r in runs if r.get("validation_passed")]
-    errored_runs = [r for r in runs if not r.get("validation_passed")]
-    cards_attempted = sorted({r["card"] for r in runs})
-    cards_successful = sorted({r["card"] for r in successful_runs})
-    cards_errored_only = sorted(set(cards_attempted) - set(cards_successful))
-
-    # ── Per-card ticket state ──────────────────────────────────
-    by_card_runs = Counter(r["card"] for r in successful_runs)
-    by_card_status: dict[str, Counter] = defaultdict(Counter)
-    by_card_total_tickets: Counter = Counter()
-    for t in tickets:
-        fm = t["frontmatter"]
-        card = fm.get("card", "(unknown)")
-        status = fm.get("status", "new")
-        # Skip merged-* tickets when attributing to a card — they cover
-        # multiple cards and their `card:` frontmatter is "multiple".
-        if card == "multiple":
-            continue
-        by_card_status[card][status] += 1
-        by_card_total_tickets[card] += 1
-
-    # Count merged-* parent tickets separately
-    merged_parents = [t for t in tickets
-                      if t["frontmatter"].get("card") == "multiple"]
-
-    # ── Print audit coverage ──────────────────────────────────
-    if not args.cards_only:
-        print(f"\n{'='*60}")
-        print("AUDIT COVERAGE")
-        print(f"{'='*60}")
-        print(f"  Total audit runs:                  {len(runs)}")
-        print(f"  Successful runs:                   {len(successful_runs)}")
-        print(f"  Errored runs:                      {len(errored_runs)}")
-        print(f"  Unique cards attempted:            {len(cards_attempted)}")
-        print(f"  Unique cards successfully audited: {len(cards_successful)}")
-        if cards_errored_only:
-            print(f"\n  Cards with only errored runs ({len(cards_errored_only)}):")
-            for c in cards_errored_only:
-                errs = [r for r in errored_runs if r["card"] == c]
-                reason = errs[-1].get("rejection_reason", "") or "unknown"
-                print(f"    {c} — {reason}")
-
-    # ── Print per-card breakdown ──────────────────────────────
-    if not args.audits_only:
-        # Resolve each ticket's terminal status by walking duplicate_of.
-        # A card ticket whose parent chain ends in a merged/fixed ticket
-        # is "effectively fixed" for counting purposes, even though its
-        # own status stays closed-duplicate.
-        OPEN_STATUSES = {"new", "confirmed", "blocked", "failed", "rejected"}
-        FIXED_STATUSES = {"fixed", "merged"}
-        CLOSED_DUP_STATUSES = {"closed-duplicate", "deduped", "duplicate"}
-
-        by_id = {t["frontmatter"].get("id"): t for t in tickets}
-        def _terminal_status(tid: str, _seen=None) -> str:
-            _seen = _seen or set()
-            if tid in _seen:
-                return "(cycle)"
-            _seen.add(tid)
-            t = by_id.get(tid)
-            if not t:
-                return "(unknown)"
-            st = t["frontmatter"].get("status", "new")
-            if st not in CLOSED_DUP_STATUSES:
-                return st
-            parent = t["frontmatter"].get("duplicate_of") \
-                or t["frontmatter"].get("deduped_into")
-            if not parent:
-                return st
-            return _terminal_status(parent, _seen)
-
-        print(f"\n{'='*60}")
-        print("PER-CARD BREAKDOWN")
-        print(f"{'='*60}")
-        print(f"  {'Card':<32} {'Audits':>6} {'Tickets':>7} "
-              f"{'Open':>5} {'Fixed':>5} {'Closed':>6}")
-        print(f"  {'-'*32} {'-'*6} {'-'*7} {'-'*5} {'-'*5} {'-'*6}")
-
-        rows = []
-        for card in sorted(set(cards_attempted) | set(by_card_status)):
-            audits = by_card_runs.get(card, 0)
-            card_tickets = [t for t in tickets
-                            if t["frontmatter"].get("card") == card]
-            open_n = fixed_n = closed_open_n = 0
-            for t in card_tickets:
-                tid = t["frontmatter"].get("id")
-                st = t["frontmatter"].get("status", "new")
-                if st in OPEN_STATUSES:
-                    open_n += 1
-                elif st in FIXED_STATUSES:
-                    fixed_n += 1
-                elif st in CLOSED_DUP_STATUSES:
-                    terminal = _terminal_status(tid)
-                    if terminal in FIXED_STATUSES:
-                        fixed_n += 1
-                    else:
-                        closed_open_n += 1
-            total_tickets = len(card_tickets)
-            rows.append((card, audits, total_tickets, open_n,
-                         fixed_n, closed_open_n))
-
-        # Sort: most tickets first, then by name
-        rows.sort(key=lambda r: (-r[2], r[0]))
-        for card, audits, total, open_n, fixed_n, closed_n in rows:
-            print(f"  {card:<32} {audits:>6} {total:>7} "
-                  f"{open_n:>5} {fixed_n:>5} {closed_n:>6}")
-
-        clean = sum(1 for r in rows if r[1] > 0 and r[2] == 0)
-        print(f"\n  {len(rows)} cards total — {clean} clean "
-              f"(Audits>0, Tickets=0)")
-
-    # ── Ticket backlog summary ───────────────────────────────
-    if not args.cards_only and not args.audits_only:
-        print(f"\n{'='*60}")
-        print("TICKET BACKLOG")
-        print(f"{'='*60}")
-        status_counts = Counter(t["frontmatter"].get("status", "new")
-                                for t in tickets)
-        primary = ["new", "confirmed", "blocked", "fixed",
-                   "failed", "rejected", "merged"]
-        other = sorted(s for s in status_counts if s not in primary)
-        for s in primary + other:
-            n = status_counts.get(s, 0)
-            if n:
-                print(f"  {s:<12} {n:>4}")
-        print(f"\n  Merged (parent) tickets: {len(merged_parents)}")
-    print()
-
-
-# ─── Consolidate command ─────────────────────────────────────────
-
-def parse_consolidation_input(text: str) -> dict:
-    """Parse a consolidation input file.
-
-    Expected format:
-
-        ---
-        slug: <short-slug>
-        ---
-
-        # <Title>
-
-        ## Description
-        <multi-line>
-
-        ## Engine path
-        <multi-line, optional>
-
-        ## Tests
-
-        ### <test_slug_1>
-        Source ticket: <ticket-id-or-omitted>
-        Scenario: <multi-line>
-
-        ### <test_slug_2>
-        Source ticket: <ticket-id>
-        Scenario: <multi-line>
-
-    Returns dict with: slug, title, description, engine_path (optional),
-    tests (list of {slug, source_ticket, scenario}).
-    """
-    if not text.startswith("---"):
-        raise ValueError("consolidation file must start with --- frontmatter")
-    try:
-        end = text.index("---", 3)
-    except ValueError:
-        raise ValueError("missing closing --- of frontmatter")
-    fm = {}
-    for line in text[3:end].strip().split("\n"):
-        if ":" in line:
-            k, v = line.split(":", 1)
-            fm[k.strip()] = v.strip()
-    body = text[end + 3:].strip()
-
-    slug = fm.get("slug")
-    if not slug or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
-        raise ValueError(f"frontmatter 'slug' must be lowercase-kebab-case, got {slug!r}")
-
-    # `## Also closes` (optional): bullet list of ticket ids that should be
-    # closed-duplicate → new parent but do not contribute a unique test
-    # entry. Typical use: when nesting an existing merged-* ticket, its
-    # tests are copied into the new parent (each keeping its original card
-    # Source ticket); the merged-* itself is listed here so it gets closed.
-    also_closes: list[str] = []
-    also_match = re.search(
-        r"##\s+Also closes\n(.*?)(?=\n##\s|\Z)", body, re.DOTALL)
-    if also_match:
-        for line in also_match.group(1).strip().split("\n"):
-            line = line.strip().lstrip("-").strip()
-            if line:
-                also_closes.append(line)
-
-    title_match = re.match(r"#\s+(.+?)\n", body + "\n")
-    if not title_match:
-        raise ValueError("body must start with a '# <title>' heading")
-    title = title_match.group(1).strip()
-
-    def section(name: str, required: bool = False) -> str | None:
-        m = re.search(
-            rf"##\s+{re.escape(name)}\n(.*?)(?=\n##\s|\Z)",
-            body, re.DOTALL)
-        if not m:
-            if required:
-                raise ValueError(f"missing required '## {name}' section")
-            return None
-        return m.group(1).strip()
-
-    description = section("Description", required=True)
-    engine_path = section("Engine path")
-
-    tests_section = section("Tests", required=True)
-    tests = []
-    # Each test starts with '### slug'
-    for block in re.split(r"\n(?=###\s+)", tests_section):
-        block = block.strip()
-        if not block.startswith("###"):
-            continue
-        head, _, rest = block.partition("\n")
-        test_slug = head[3:].strip()
-        if not re.fullmatch(r"[a-z0-9_][a-z0-9_]*", test_slug):
-            raise ValueError(f"test slug must be snake_case, got {test_slug!r}")
-        source = None
-        scenario_lines = []
-        in_scenario = False
-        for line in rest.split("\n"):
-            if in_scenario:
-                scenario_lines.append(line)
-                continue
-            if line.startswith("Source ticket:"):
-                val = line.split(":", 1)[1].strip()
-                source = val if val and val.lower() not in ("none", "null", "(new)", "") else None
-            elif line.startswith("Scenario:"):
-                in_scenario = True
-                rest_of_line = line.split(":", 1)[1].strip()
-                if rest_of_line:
-                    scenario_lines.append(rest_of_line)
-        scenario = "\n".join(scenario_lines).strip()
-        if not scenario:
-            raise ValueError(f"test {test_slug!r} missing Scenario")
-        tests.append({"slug": test_slug, "source_ticket": source, "scenario": scenario})
-    if not tests:
-        raise ValueError("## Tests section must contain at least one ### entry")
-
-    return {
-        "slug": slug, "title": title, "description": description,
-        "engine_path": engine_path, "tests": tests,
-        "also_closes": also_closes,
-    }
-
-
-def _parse_tests_section(body: str) -> list[dict]:
-    """Extract test entries {slug, source_ticket} from a ticket body's
-    `## Tests` section. Used by consolidate to validate that a new parent
-    covers every test from every ticket it's closing."""
-    tests_match = re.search(r"##\s+Tests\n(.*?)(?=\n##\s|\Z)", body, re.DOTALL)
-    if not tests_match:
-        return []
-    results = []
-    for block in re.split(r"\n(?=###\s+)", tests_match.group(1)):
-        block = block.strip()
-        if not block.startswith("###"):
-            continue
-        head, _, rest = block.partition("\n")
-        slug = head[3:].strip()
-        source_match = re.search(r"Source ticket:\s*(.+)", rest)
-        source = source_match.group(1).strip() if source_match else None
-        results.append({"slug": slug, "source_ticket": source})
-    return results
-
-
-def render_consolidated_body(parsed: dict) -> str:
-    lines = [f"# {parsed['title']}", "", "## Description", parsed["description"]]
-    if parsed.get("engine_path"):
-        lines += ["", "## Engine path", parsed["engine_path"]]
-    lines += ["", "## Tests", ""]
-    for t in parsed["tests"]:
-        lines.append(f"### {t['slug']}")
-        lines.append(f"Source ticket: {t['source_ticket'] or '(new)'}")
-        lines.append("Implementation: (not yet written)")
-        lines.append(f"Scenario: {t['scenario']}")
-        lines.append("")
-    if parsed.get("also_closes"):
-        lines += ["## Also closes", ""]
-        for tid in parsed["also_closes"]:
-            lines.append(f"- {tid}")
-        lines.append("")
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def cmd_consolidate(args):
-    input_path = Path(args.input)
-    if not input_path.exists():
-        print(f"ERROR: input file not found: {input_path}")
-        sys.exit(1)
-
-    parsed = parse_consolidation_input(input_path.read_text())
-    slug = parsed["slug"]
-
-    # Collect source ticket ids (from per-test Source ticket:) plus
-    # ## Also closes entries. Both get closed-duplicate → new parent; the
-    # difference is cosmetic (Also closes entries don't carry a test).
-    # Tickets may legitimately contribute multiple tests, so dedupe.
-    test_source_ids_unique: list[str] = []
-    seen = set()
-    for t in parsed["tests"]:
-        sid = t.get("source_ticket")
-        if sid and sid not in seen:
-            test_source_ids_unique.append(sid)
-            seen.add(sid)
-    also_closes = parsed.get("also_closes", [])
-
-    overlap = set(test_source_ids_unique) & set(also_closes)
-    if overlap:
-        print(f"ERROR: ticket(s) listed both as Source ticket and in Also closes: {overlap}")
-        sys.exit(1)
-
-    all_closed_ids = list(test_source_ids_unique) + list(also_closes)
-    if len(all_closed_ids) != len(set(all_closed_ids)):
-        dupes = [x for x in all_closed_ids if all_closed_ids.count(x) > 1]
-        print(f"ERROR: ticket appears multiple times in Also closes: {set(dupes)}")
-        sys.exit(1)
-
-    missing = [tid for tid in all_closed_ids
-               if not (TICKETS_DIR / f"{tid}.md").exists()]
-    if missing:
-        print(f"ERROR: referenced ticket(s) not found: {missing}")
-        sys.exit(1)
-
-    # Test-coverage invariant: for every ticket being closed, the new
-    # parent's `## Tests` section must contain at least as many tests
-    # attributable to each of its Source tickets as the closed ticket
-    # did. Slugs may be renamed by the dedup agent (generic audit
-    # slugs are commonly specialized for clarity), so we validate by
-    # Source-ticket *counts* rather than slug set.
-    from collections import Counter
-    parent_source_counts: Counter = Counter()
-    for t in parsed["tests"]:
-        sid = t.get("source_ticket")
-        if sid:
-            parent_source_counts[sid] += 1
-
-    def _required_counts(child_body: str, child_tid: str) -> Counter:
-        """Per-Source-ticket counts the parent must match, for a closed
-        child ticket. Tests without an explicit Source ticket (`(new)`)
-        are treated as needing a parent test with Source ticket=child_tid."""
-        counts: Counter = Counter()
-        for ct in _parse_tests_section(child_body):
-            sid = (ct.get("source_ticket") or "").strip()
-            if not sid or sid.lower() in ("(new)", "none", "null"):
-                sid = child_tid
-            counts[sid] += 1
-        return counts
-
-    coverage_gaps: list[str] = []
-    for tid in all_closed_ids:
-        child_body = parse_ticket(TICKETS_DIR / f"{tid}.md")["body"]
-        required = _required_counts(child_body, tid)
-        for source, need in required.items():
-            have = parent_source_counts.get(source, 0)
-            if have < need:
-                coverage_gaps.append(
-                    f"  {tid}: needs ≥ {need} test(s) with Source ticket "
-                    f"'{source}' in parent, found {have}")
-    if coverage_gaps:
-        print("ERROR: new parent is missing tests that exist on closed tickets.")
-        print("For each closed ticket, the parent must have at least as many")
-        print("tests attributable to each Source ticket as the closed ticket did.")
-        for gap in coverage_gaps:
-            print(gap)
-        sys.exit(1)
-
-    # Mint new id: merged-<slug>-NN
-    existing = sorted(TICKETS_DIR.glob(f"merged-{slug}-*.md"))
-    nums = []
-    for f in existing:
-        m = re.search(rf"merged-{re.escape(slug)}-(\d+)", f.stem)
-        if m:
-            nums.append(int(m.group(1)))
-    next_num = max(nums, default=0) + 1
-    new_id = f"merged-{slug}-{next_num:02d}"
-
-    if args.dry_run:
-        print(f"\nWould create: {new_id}")
-        print(f"Would close {len(all_closed_ids)} ticket(s) as closed-duplicate:")
-        for tid in all_closed_ids:
-            print(f"  {tid} → {new_id}")
-        return
-
-    # Write new ticket
-    fm = {
-        "id": new_id,
-        "status": "new",
-        "card": "multiple",
-        "created": now_iso(),
-        "kind": "consolidated",
-    }
-    if all_closed_ids:
-        fm["source_tickets"] = ", ".join(all_closed_ids)
-    body = render_consolidated_body(parsed)
-    write_ticket(new_id, fm, body)
-
-    # Close every referenced ticket (per-test sources + also_closes items).
-    for tid in all_closed_ids:
-        path = TICKETS_DIR / f"{tid}.md"
-        ticket = parse_ticket(path)
-        ticket["frontmatter"]["status"] = "closed-duplicate"
-        ticket["frontmatter"]["duplicate_of"] = new_id
-        # Remove any legacy fields from earlier versions of this pipeline.
-        ticket["frontmatter"].pop("deduped_into", None)
-        write_ticket(tid, ticket["frontmatter"], ticket["body"])
-
-    print(f"Created {new_id} with {len(parsed['tests'])} test(s)")
-    print(f"Marked {len(all_closed_ids)} ticket(s) as status=closed-duplicate "
-          f"({len(test_source_ids_unique)} per-test, {len(also_closes)} via Also closes)")
-
-    # Staging files are ephemeral transport; remove once consumed successfully.
-    if not args.keep_input:
-        try:
-            input_path.unlink()
-            print(f"Removed staging file: {input_path}")
-        except OSError as e:
-            print(f"WARNING: could not remove staging file {input_path}: {e}")
-
-
-# ─── Dedup command ──────────────────────────────────────────────
-
-DEDUP_MAX_ATTEMPTS = 3
-
-
-_CLOSED_STATUSES = {"closed-duplicate", "fixed", "merged",
-                    "deduped", "duplicate"}  # last two for legacy tickets
-
-
-def cmd_dedup(args):
-    """Spawn a dedup agent to consider a set of candidate tickets for dedup.
-
-    The passed tickets are a *seed* — the agent may include, exclude, or
-    extend beyond them by searching `pipeline/tickets/` directly. The
-    agent may produce zero or more consolidation staging files (one per
-    proposed cluster). Python then runs `consolidate` on each.
-
-    merged-* tickets are valid sources; the resulting parent nests them
-    and must inherit every test from each child's `## Tests` section.
-
-    If the agent's output fails to parse, the agent is re-spawned with
-    the parser error appended, up to DEDUP_MAX_ATTEMPTS times.
-    """
-    ticket_ids = [t.strip() for t in args.tickets.split(",") if t.strip()]
-    if not ticket_ids:
-        print("ERROR: dedup requires at least one candidate ticket id")
-        sys.exit(1)
-
-    ticket_bodies = []
-    for tid in ticket_ids:
-        path = TICKETS_DIR / f"{tid}.md"
-        if not path.exists():
-            print(f"ERROR: ticket not found: {tid}")
-            sys.exit(1)
-        t = parse_ticket(path)
-        status = t["frontmatter"].get("status", "new")
-        if status in _CLOSED_STATUSES:
-            print(f"ERROR: {tid} already closed (status={status})")
-            sys.exit(1)
-        ticket_bodies.append((tid, path.read_text()))
-
-    shared_prompt = (PROMPTS_DIR / "dedup.md").read_text()
-    tickets_section = "\n\n---\n\n".join(
-        f"## Candidate ticket: {tid}\n\n{body}" for tid, body in ticket_bodies
-    )
-
-    per_agent_base = f"""## Candidate tickets (seed set)
-
-The following {len(ticket_ids)} ticket(s) are proposed as the starting
-point for your dedup analysis. You are NOT required to merge every one
-of them, and you SHOULD search the full `pipeline/tickets/` directory
-for other open tickets (card tickets or existing `merged-*` tickets)
-that belong in the same clusters.
-
-{tickets_section}
-
-### Output
-Write one consolidation file per proposed merged ticket to
-`pipeline/staging/consolidation-<slug>.md` using the format in the
-shared prompt. If no tickets should be merged, produce zero files.
-Each file's frontmatter `slug:` must be distinct.
-"""
-
-    if args.dry_run:
-        print(f"[dry-run] Would spawn dedup agent for {len(ticket_ids)} candidate ticket(s) "
-              f"(model={args.model})")
-        return
-
-    def _staging_files() -> list[Path]:
-        return sorted(STAGING_DIR.glob("consolidation-*.md"))
-
-    # Snapshot pre-existing staging files so we only process what the
-    # agent produces this run.
-    preexisting = {f.name for f in _staging_files()}
-
-    retry_note = ""
-    last_error = None
-    for attempt in range(1, DEDUP_MAX_ATTEMPTS + 1):
-        print(f"\nSpawning dedup agent (attempt {attempt}/{DEDUP_MAX_ATTEMPTS})...")
-        prompt = shared_prompt + "\n\n---\n\n" + per_agent_base + retry_note
-        log_path = LOGS_DIR / f"{today()}-dedup-attempt{attempt}.log"
-        result = run_agent(prompt, args.model, args.effort,
-                           log_path=log_path,
-                           progress_prefix="  [dedup] ")
-
-        if result.get("is_error"):
-            last_error = result.get("error_message") or "unknown agent error"
-            print(f"  Agent error: {last_error} ({result['duration']}s)")
-            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
-                          f"Previous attempt errored: {last_error}\n")
-            continue
-
-        new_files = [f for f in _staging_files() if f.name not in preexisting]
-        if not new_files:
-            print(f"  Agent produced no consolidation files — nothing to merge "
-                  f"({result['duration']}s, {result['tokens']} tok)")
-            return
-
-        # Validate every new staging file before ingesting any of them.
-        parse_errors: list[tuple[Path, str]] = []
-        for f in new_files:
-            try:
-                parse_consolidation_input(f.read_text())
-            except ValueError as e:
-                parse_errors.append((f, str(e)))
-
-        if parse_errors:
-            last_error = "; ".join(f"{f.name}: {msg}" for f, msg in parse_errors)
-            print(f"  Parse errors in {len(parse_errors)} file(s) "
-                  f"({result['duration']}s, {result['tokens']} tok)")
-            for f, msg in parse_errors:
-                print(f"    {f.name}: {msg}")
-            errdetail = "\n".join(f"- {f.name}: {msg}" for f, msg in parse_errors)
-            retry_note = (f"\n\n## Retry note (attempt {attempt} failed)\n"
-                          f"Previous attempt produced {len(parse_errors)} "
-                          f"unparseable staging file(s):\n{errdetail}\n"
-                          f"Edit the files in place to fix.\n")
-            continue
-
-        # All parsed — consolidate each
-        print(f"  Agent produced {len(new_files)} valid staging file(s) "
-              f"({result['duration']}s, {result['tokens']} tok)")
-        for f in new_files:
-            print(f"\n── consolidating {f.name} ──")
-            consolidate_args = argparse.Namespace(
-                input=str(f),
-                keep_input=args.keep_input,
-                dry_run=False,
-            )
-            cmd_consolidate(consolidate_args)
-        return
-
-    print(f"\nERROR: dedup failed after {DEDUP_MAX_ATTEMPTS} attempt(s). "
-          f"Last error: {last_error}")
-    sys.exit(1)
-
-
-# ─── Close-duplicate command ────────────────────────────────────
-
-def cmd_close_duplicate(args):
-    """Mark a ticket as closed because it duplicates a bug tracked elsewhere.
-
-    Unlike `consolidate`, this closes a single ticket without creating a new
-    merged-* ticket. Use it when the bug is already tracked (existing test,
-    bug ID in another system, etc.).
-    """
-    ticket_id = args.ticket
-    path = TICKETS_DIR / f"{ticket_id}.md"
-    if not path.exists():
-        print(f"ERROR: ticket not found: {ticket_id}")
-        sys.exit(1)
-
-    ticket = parse_ticket(path)
-    fm = ticket["frontmatter"]
-    fm["status"] = "closed-duplicate"
-    fm["duplicate_of"] = args.duplicate_of
-    if args.reason:
-        fm["duplicate_reason"] = args.reason
-    write_ticket(ticket_id, fm, ticket["body"])
-    print(f"Marked {ticket_id} as status=closed-duplicate → {args.duplicate_of}")
-
-
-# ─── Main ─────────────────────────────────────────────────────────
-
-def main():
-    parser = argparse.ArgumentParser(
-        description="Pipeline CLI — manage bug-finding and fixing agents",
-        formatter_class=argparse.RawDescriptionHelpFormatter)
-
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    def add_common(p):
-        p.add_argument("--model", default=DEFAULT_MODEL)
-        p.add_argument("--effort", default=DEFAULT_EFFORT)
-        p.add_argument("--dry-run", action="store_true")
-
-    # audit
-    p = sub.add_parser("audit", help="Audit cards for bugs")
-    p.add_argument("--cards", required=True, help="Card names separated by ',' (or ';' if any name contains a comma, e.g. 'Mikaeus, the Lunarch')")
-    p.add_argument("--parallelism", type=int, default=1)
-    add_common(p)
-
-    # test
-    p = sub.add_parser("test", help="Write tests for new tickets")
-    p.add_argument("--tickets", help="Comma-separated ticket IDs")
-    p.add_argument("--parallelism", type=int, default=1)
-    add_common(p)
-
-    # fix
-    p = sub.add_parser("fix", help="Fix a confirmed ticket")
-    p.add_argument("--ticket", help="Specific ticket ID")
-    add_common(p)
-
-    # tickets
-    p = sub.add_parser("tickets", help="List tickets")
-    p.add_argument("--status", help="Filter by status")
-    p.add_argument("--card", help="Filter by card name")
-
-    # show
-    p = sub.add_parser("show", help="Display a ticket")
-    p.add_argument("ticket_id", help="Ticket ID")
-
-    # merge
-    p = sub.add_parser("merge", help="Merge fixed ticket(s) to HEAD")
-    p.add_argument("ticket_id", help="Ticket ID, comma-separated IDs, or 'all'")
-    add_common(p)
-
-    # abandon
-    p = sub.add_parser("abandon", help="Remove worktree for a ticket without merging")
-    p.add_argument("ticket_id", help="Ticket ID")
-
-    # retry
-    p = sub.add_parser("retry",
-                       help="Re-run the failed stage of a ticket (fix or test) — resets status and re-spawns the agent")
-    p.add_argument("ticket_id", help="Ticket ID")
-    add_common(p)
-
-    # status
-    sub.add_parser("status", help="Show metrics dashboard")
-
-    # report
-    p = sub.add_parser("report",
-                       help="Audit coverage, per-card breakdown, and ticket backlog")
-    p.add_argument("--audits-only", action="store_true",
-                   help="Show only the audit coverage section")
-    p.add_argument("--cards-only", action="store_true",
-                   help="Show only the per-card breakdown")
-
-    # consolidate
-    p = sub.add_parser("consolidate",
-                       help="Create a merged-* ticket from a consolidation input file and mark source tickets as deduped")
-    p.add_argument("--input", required=True,
-                   help="Path to consolidation markdown input file")
-    p.add_argument("--keep-input", action="store_true",
-                   help="Do not delete the input file after successful consolidation")
+    extra = []
+    if args.audits_only:
+        extra.append("--audits-only")
+    if args.cards_only:
+        extra.append("--cards-only")
+    subprocess.run(["python3", str(SCRIPTS_DIR / "report.py"), *extra],
+                   cwd=str(PROJECT_ROOT))
+# ─── Consolidate + dedup ───────────────────────────────────────────
+# Factory-built so they can access the patchable cli.run_agent,
+# cli.parse_ticket, etc. at call time (needed by the journey tests).
+from pipeline._dedup import make_commands as _make_dedup_commands
+cmd_consolidate, cmd_dedup = _make_dedup_commands(
+    cli_module=sys.modules[__name__])
+# ─── Main / argparse ───────────────────────────────────────────────
+def _add_common(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--model", default=DEFAULT_MODEL)
+    p.add_argument("--effort", default=DEFAULT_EFFORT)
     p.add_argument("--dry-run", action="store_true")
 
-    # close-duplicate
-    p = sub.add_parser("close-duplicate",
-                       help="Close a single ticket as a duplicate of a bug tracked elsewhere")
-    p.add_argument("--ticket", required=True, help="Ticket ID to close")
-    p.add_argument("--duplicate-of", required=True,
-                   help="Reference to the tracked bug (e.g. 'Bug BK' or 'tests/audit_bugs2.rs:528')")
-    p.add_argument("--reason", help="Optional one-line reason")
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Pipeline CLI — manage bug-finding and fixing agents")
+    sub = parser.add_subparsers(dest="command", required=True)
 
-    # dedup
-    p = sub.add_parser("dedup",
-                       help="Spawn a dedup agent on a seed set of tickets; the agent searches pipeline/tickets/ and may emit zero or more merged-* tickets")
-    p.add_argument("--tickets", required=True,
-                   help="Comma-separated seed ticket IDs (starting point; agent may include others or exclude these)")
-    p.add_argument("--keep-input", action="store_true",
-                   help="Do not delete the staging files after successful consolidation")
-    add_common(p)
+    def P(name, **kw): return sub.add_parser(name, **kw)
+
+    p = P("audit", help="Audit cards for bugs"); _add_common(p)
+    p.add_argument("--cards", required=True,
+                   help="Names separated by ',' (or ';' if any name has a comma)")
+    p.add_argument("--parallelism", type=int, default=1)
+
+    p = P("test", help="Write tests for new tickets"); _add_common(p)
+    p.add_argument("--tickets", help="Comma-separated ticket IDs")
+    p.add_argument("--parallelism", type=int, default=1)
+
+    p = P("fix", help="Fix a tested ticket"); _add_common(p)
+    p.add_argument("--ticket")
+
+    p = P("tickets", help="List tickets")
+    p.add_argument("--status"); p.add_argument("--card")
+
+    p = P("show", help="Display a ticket"); p.add_argument("ticket_id")
+
+    p = P("merge", help="Merge fixed ticket(s) to HEAD"); _add_common(p)
+    p.add_argument("ticket_id", help="Ticket ID, comma-separated IDs, or 'all'")
+
+    p = P("retry", help="Rewind a ticket to an earlier phase")
+    p.add_argument("ticket_id")
+    p.add_argument("--to", choices=[STATUS_NEW, STATUS_TESTED], default=None)
+    p.add_argument("--force", action="store_true",
+                   help=f"Allow retry on {STATUS_FALSE_POSITIVE}")
+
+    p = P("close", help=f"Close as {CLOSED_REASON_ABANDONED}")
+    p.add_argument("ticket_id"); p.add_argument("--note")
+
+    P("status", help="Show metrics dashboard")
+
+    p = P("report", help="Coverage + backlog report")
+    p.add_argument("--audits-only", action="store_true")
+    p.add_argument("--cards-only", action="store_true")
+
+    p = P("consolidate", help="Ingest a consolidation staging file → merged-*")
+    p.add_argument("--input", required=True)
+    p.add_argument("--keep-input", action="store_true")
+    p.add_argument("--dry-run", action="store_true")
+
+    p = P("dedup", help="Spawn a dedup agent on a seed set of tickets")
+    p.add_argument("--tickets", required=True, help="Comma-separated seed ticket IDs")
+    p.add_argument("--keep-input", action="store_true"); _add_common(p)
 
     args = parser.parse_args()
-
     TICKETS_DIR.mkdir(exist_ok=True)
     STAGING_DIR.mkdir(exist_ok=True)
     LOGS_DIR.mkdir(exist_ok=True)
 
-    commands = {
-        "audit": cmd_audit, "test": cmd_test, "fix": cmd_fix,
-        "merge": cmd_merge, "abandon": cmd_abandon,
-        "retry": cmd_retry,
-        "tickets": cmd_tickets, "show": cmd_show,
-        "status": cmd_status, "consolidate": cmd_consolidate,
-        "close-duplicate": cmd_close_duplicate,
-        "dedup": cmd_dedup, "report": cmd_report,
-    }
-    commands[args.command](args)
-
+    {"audit": cmd_audit, "test": cmd_test, "fix": cmd_fix,
+     "merge": cmd_merge, "retry": cmd_retry, "close": cmd_close,
+     "tickets": cmd_tickets, "show": cmd_show, "status": cmd_status,
+     "consolidate": cmd_consolidate, "dedup": cmd_dedup, "report": cmd_report,
+     }[args.command](args)
 
 if __name__ == "__main__":
     main()
