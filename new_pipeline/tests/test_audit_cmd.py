@@ -116,7 +116,7 @@ class AuditCommandTest(unittest.TestCase):
             patch.object(utils, "ARCHIVE_DIR", tickets / "archive"),
             patch.object(utils, "STAGING_DIR", staging),
             patch.object(
-                utils,
+                audit_mod,
                 "get_oracle_text",
                 lambda card: f"[oracle for {card}]",
             ),
