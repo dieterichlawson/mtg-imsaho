@@ -18,12 +18,10 @@ _THIS = Path(__file__).resolve()
 sys.path.insert(0, str(_THIS.parents[2]))
 
 from new_pipeline.types import (  # noqa: E402
-    TEST_BLOCKED,
-    TEST_CONFIRMED,
-    TEST_REJECTED,
     StagingError,
     TestReport,
     TestResult,
+    TestStatus,
 )
 
 
@@ -48,11 +46,6 @@ def _good_report() -> dict:
                 "status": "rejected",
                 "explanation": "passes against current code",
             },
-            {
-                "slug": "test_blocked_by_engine",
-                "status": "blocked",
-                "blocked_by": "need pub fn on combat::",
-            },
         ],
     }
 
@@ -69,7 +62,7 @@ class TestReportTest(unittest.TestCase):
     # ── happy path ─────────────────────────────────────────────────
 
     def test_load_parses_every_status_flavor(self) -> None:
-        """Confirmed / rejected / blocked all survive the round-trip."""
+        """Confirmed and rejected both survive the round-trip."""
         _write_json(self.staging, _good_report())
         report = TestReport.load(self.staging)
 
@@ -77,10 +70,10 @@ class TestReportTest(unittest.TestCase):
             report.test_file,
             "mtg-engine/tests/pipeline_bugs_olivia_voldaren_01.rs",
         )
-        self.assertEqual(len(report.tests), 3)
+        self.assertEqual(len(report.tests), 2)
         statuses = [t.status for t in report.tests]
         self.assertEqual(
-            statuses, [TEST_CONFIRMED, TEST_REJECTED, TEST_BLOCKED],
+            statuses, [TestStatus.CONFIRMED, TestStatus.REJECTED],
         )
 
     def test_test_name_defaults_to_slug_when_absent(self) -> None:
@@ -94,19 +87,6 @@ class TestReportTest(unittest.TestCase):
         report = TestReport.load(self.staging)
         self.assertEqual(report.tests[0].test_name, "scenario_foo")
 
-    def test_blocked_by_roundtrips(self) -> None:
-        """`blocked_by: null` parses to None, a string parses verbatim."""
-        _write_json(self.staging, {
-            "test_file": "a/b.rs",
-            "tests": [
-                {"slug": "x", "status": "blocked", "blocked_by": "need X"},
-                {"slug": "y", "status": "blocked", "blocked_by": None},
-            ],
-        })
-        report = TestReport.load(self.staging)
-        self.assertEqual(report.tests[0].blocked_by, "need X")
-        self.assertIsNone(report.tests[1].blocked_by)
-
     def test_status_is_case_insensitive(self) -> None:
         """`"Confirmed"` or `"CONFIRMED"` both lower-case to `confirmed`."""
         _write_json(self.staging, {
@@ -114,7 +94,7 @@ class TestReportTest(unittest.TestCase):
             "tests": [{"slug": "x", "status": "CONFIRMED"}],
         })
         report = TestReport.load(self.staging)
-        self.assertEqual(report.tests[0].status, TEST_CONFIRMED)
+        self.assertEqual(report.tests[0].status, TestStatus.CONFIRMED)
 
     # ── malformed input → StagingError ────────────────────────────
 
@@ -135,25 +115,14 @@ class TestReportTest(unittest.TestCase):
             TestReport.load(self.staging)
 
     def test_invalid_status_raises(self) -> None:
-        """A status outside the `confirmed/rejected/blocked` set is rejected."""
+        """A status outside the `confirmed/rejected` set is rejected."""
         _write_json(self.staging, {
             "test_file": "a/b.rs",
-            "tests": [{"slug": "x", "status": "maybe"}],
+            "tests": [{"slug": "x", "status": "blocked"}],
         })
         with self.assertRaises(StagingError) as ctx:
             TestReport.load(self.staging)
         self.assertIn("must be one of", str(ctx.exception))
-
-    def test_blocked_by_wrong_type_raises(self) -> None:
-        """`blocked_by` that's neither null nor a string is rejected."""
-        _write_json(self.staging, {
-            "test_file": "a/b.rs",
-            "tests": [
-                {"slug": "x", "status": "blocked", "blocked_by": [42]},
-            ],
-        })
-        with self.assertRaises(StagingError):
-            TestReport.load(self.staging)
 
     def test_missing_slug_raises(self) -> None:
         """Every test must have a slug."""

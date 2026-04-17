@@ -532,56 +532,54 @@ class AuditReport:
 
 # ─── Test-writer staging ───────────────────────────────────────────
 
-TEST_CONFIRMED = "confirmed"
-TEST_REJECTED = "rejected"
-TEST_BLOCKED = "blocked"
-VALID_TEST_STATUSES = frozenset(
-    {TEST_CONFIRMED, TEST_REJECTED, TEST_BLOCKED},
-)
+class TestStatus(str, Enum):
+    """Per-test verdict the test-writer reports for one scenario slug.
+
+    - `CONFIRMED`: the agent wrote a test that compiles and fails,
+      proving the bug is real.
+    - `REJECTED`: the scenario passes against current code (not a bug).
+    """
+
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
 
 
 @dataclass
 class TestResult:
-    """Per-test outcome the test-writer agent reports for one slug.
+    """The agent's verdict on one test scenario from a ticket.
 
-    `status` is one of:
-    - `confirmed`: the agent wrote a test that compiles and fails,
-      proving the bug exists.
-    - `rejected`: the agent concluded this slug is a false positive
-      (no real bug to test).
-    - `blocked`: the test can't be expressed without an engine change
-      first; `blocked_by` describes what's missing.
+    The `slug` here is the per-scenario slug that appears inside a
+    ticket's `## Tests` section — e.g. `test_lifelink_first_strike` —
+    not the ticket id. A single ticket can have multiple tests, and
+    the agent returns one `TestResult` per slug so the pipeline can
+    match each verdict back to its originating entry.
     """
 
     slug: str
-    status: str  # one of VALID_TEST_STATUSES
+    status: TestStatus
     test_name: str = ""
     assertion_message: str = ""
     explanation: str = ""
-    blocked_by: str | None = None
 
     @classmethod
     def from_dict(cls, i: int, d: dict) -> TestResult:
         """Parse one `tests[i]` entry. `i` is used for error messages."""
         slug = _require(d, "slug", str)
-        status = _require(d, "status", str).lower()
-        if status not in VALID_TEST_STATUSES:
+        raw_status = _require(d, "status", str).lower()
+        try:
+            status = TestStatus(raw_status)
+        except ValueError:
+            valid = [s.value for s in TestStatus]
             raise StagingError(
                 f"tests[{i}] {slug!r}: status must be one of "
-                f"{sorted(VALID_TEST_STATUSES)}, got {status!r}"
-            )
-        blocked_by = d.get("blocked_by") or None
-        if blocked_by is not None and not isinstance(blocked_by, str):
-            raise StagingError(
-                f"tests[{i}] {slug!r}: blocked_by must be a string or null"
-            )
+                f"{valid}, got {raw_status!r}"
+            ) from None
         return cls(
             slug=slug,
             status=status,
             test_name=_optional_str(d, "test_name") or slug,
             assertion_message=_optional_str(d, "assertion_message"),
             explanation=_optional_str(d, "explanation"),
-            blocked_by=blocked_by,
         )
 
 
