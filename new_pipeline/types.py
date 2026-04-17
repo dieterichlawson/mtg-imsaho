@@ -30,6 +30,7 @@ class Status(str, Enum):
     """
 
     NEW = "new"
+    TESTED = "tested"
     CLOSED = "closed"
 
     @property
@@ -93,7 +94,10 @@ def _format_datetime(dt: datetime) -> str:
 # ─── Frontmatter ───────────────────────────────────────────────────
 
 # Numeric frontmatter fields — parsed str → int on load, str on dump.
-_INT_FIELDS = frozenset({"audit_tokens", "audit_duration"})
+_INT_FIELDS = frozenset({
+    "audit_tokens", "audit_duration",
+    "test_tokens", "test_duration",
+})
 
 
 @dataclass
@@ -113,6 +117,15 @@ class Frontmatter:
     audit_model: str = ""
     audit_tokens: int = 0
     audit_duration: int = 0
+
+    # Test phase
+    test_run_id: str = ""
+    test_model: str = ""
+    test_tokens: int = 0
+    test_duration: int = 0
+    test_file: str = ""
+    tested_sha: str = ""
+    tested_at: datetime | None = None
 
     # Terminal: closed / abandoned
     closed_reason: str = ""
@@ -143,7 +156,7 @@ class Frontmatter:
                 f"{source}: unknown status {raw['status']!r}"
             ) from None
 
-        datetime_fields = {"created", "closed_at"}
+        datetime_fields = {"created", "closed_at", "tested_at"}
         known = {f.name for f in fields(cls)} - {"extras"}
         init_kwargs: dict[str, Any] = {}
         extras: dict[str, str] = {}
