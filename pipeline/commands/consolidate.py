@@ -37,10 +37,13 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from pipeline import ticket, worktree
-from pipeline.staging import ConsolidationProposal
+from pipeline import worktree
+from pipeline.models import (
+    ConsolidationProposal,
+    Ticket,
+    parse_tests_section,
+)
 from pipeline.state import CloseReason, LifecycleEvent, Status, next_status
-from pipeline.ticket import Ticket, parse_tests_section
 from pipeline.utils import now_iso
 
 
@@ -87,7 +90,7 @@ def cmd_consolidate(args):
     tested, fixed = _classify_sources(all_closed)
     _require_at_most_one_fixed(fixed)
 
-    new_id = ticket.allocate_id(f"merged-{proposal.slug}")
+    new_id = Ticket.allocate_id(f"merged-{proposal.slug}")
     if args.dry_run:
         _print_dry_run_plan(new_id, all_closed, tested, fixed)
         return
@@ -148,7 +151,7 @@ def _require_no_overlap(sources: list[str], also_closes: list[str]) -> None:
 
 def _require_no_missing(sources: list[str], also_closes: list[str]) -> None:
     missing = [
-        tid for tid in sources + also_closes if not ticket.exists_on_disk(tid)
+        tid for tid in sources + also_closes if not Ticket.exists(tid)
     ]
     if missing:
         raise ConsolidateError(f"referenced ticket(s) not found: {missing}")
@@ -159,7 +162,7 @@ def _bucket_sources(sources: list[str]) -> ReferenceBuckets:
     closed_metadata: list[str] = []
     non_absorbable: list[str] = []
     for tid in sources:
-        t = ticket.load(tid)
+        t = Ticket.load(tid)
         if t.status.is_absorbable:
             open_sources.append(tid)
         elif t.status.is_open:
@@ -173,7 +176,7 @@ def _bad_also_closes(also_closes: list[str]) -> list[str]:
     """`also_closes` entries MUST be absorbable — they're explicit requests."""
     out = []
     for tid in also_closes:
-        t = ticket.load(tid)
+        t = Ticket.load(tid)
         if not t.status.is_absorbable:
             out.append(f"  {tid}: status={t.status.value}")
     return out
@@ -210,7 +213,7 @@ def _require_coverage(
 
     gaps: list[str] = []
     for tid in all_closed:
-        child = ticket.load(tid)
+        child = Ticket.load(tid)
         needs = _required_source_counts(child)
         for source, n in needs.items():
             if parent_counts.get(source, 0) < n:
@@ -252,7 +255,7 @@ def _classify_sources(all_closed: list[str]) -> tuple[list[str], list[str]]:
     tested: list[str] = []
     fixed: list[str] = []
     for tid in all_closed:
-        st = ticket.load(tid).status
+        st = Ticket.load(tid).status
         if st is Status.TESTED:
             tested.append(tid)
         elif st is Status.FIXED:
@@ -302,16 +305,11 @@ def _inherit_by_rename(
 ) -> tuple[str, str, dict[str, str]]:
     """Rename a single source worktree into the new parent's id + branch.
 
-    If the source is `fixed`, its branch is first reset to `tested_sha`
-    so fix commits are dropped.
+    For a `fixed` source the branch is first reset to `tested_sha` so
+    the fix commits are dropped before the rename.
     """
-    src = ticket.load(src_id)
+    src = Ticket.load(src_id)
     if src.status is Status.FIXED:
-        if not src.tested_sha:
-            raise ConsolidateError(
-                f"{src_id}: fixed source has no tested_sha — cannot drop "
-                f"fix commits"
-            )
         worktree.reset_to(src_id, src.tested_sha)
     new_test_file = _rename_test_file_on_disk(src_id, new_id, src.test_file)
     sha = worktree.rename(src_id, new_id)
@@ -328,18 +326,12 @@ def _inherit_by_merge(
 ) -> tuple[str, str, dict[str, str]]:
     """Concatenate every source's test file into a fresh parent worktree.
 
-    Fixed sources are reset to `tested_sha` so fix-era edits to the test
-    file aren't read. Source worktrees are removed once C's branch
+    Fixed sources are reset to `tested_sha` so fix-era edits to the
+    test file aren't read. Source worktrees are removed once C's branch
     carries the merged content.
     """
     for tid in fixed:
-        src = ticket.load(tid)
-        if not src.tested_sha:
-            raise ConsolidateError(
-                f"{tid}: fixed source has no tested_sha — cannot drop "
-                f"fix commits"
-            )
-        worktree.reset_to(tid, src.tested_sha)
+        worktree.reset_to(tid, Ticket.load(tid).tested_sha)
 
     wt = worktree.ensure(new_id)
     new_test_file = (
@@ -370,13 +362,9 @@ def _concat_test_files(src_ids: list[str]) -> str:
     seen: set[str] = set()
     bodies: list[str] = []
     for tid in src_ids:
-        src = ticket.load(tid)
-        if not src.test_file:
-            continue
-        path = worktree.dir_for(tid) / src.test_file
-        if not path.exists():
-            continue
-        pre_lines, body = _split_rust_preamble(path.read_text())
+        src = Ticket.load(tid)
+        content = (worktree.dir_for(tid) / src.test_file).read_text()
+        pre_lines, body = _split_rust_preamble(content)
         for line in pre_lines:
             if line not in seen:
                 preamble.append(line)
@@ -412,7 +400,7 @@ def _collect_inherited_impls(
     """Map proposal slugs → "<new_test_file>::<test_name>" from every source."""
     impls: dict[str, str] = {}
     for tid in src_ids:
-        src = ticket.load(tid)
+        src = Ticket.load(tid)
         for e in parse_tests_section(src.body):
             if "::" in e.implementation:
                 test_name = e.implementation.split("::", 1)[1]
@@ -443,36 +431,23 @@ def _rename_test_file_on_disk(
     """Rename the source's test file inside its worktree + commit.
 
     Called *before* `worktree.rename()` so we can still reach the file
-    via the old worktree path. Returns the new relative path regardless
-    of whether a rename was actually necessary.
+    via the old worktree path.
     """
     old_wt = worktree.dir_for(old_id)
     new_rel = old_test_file.replace(
         f"pipeline_bugs_{old_id.replace('-', '_')}",
         f"pipeline_bugs_{new_id.replace('-', '_')}",
     )
-    if new_rel == old_test_file:
-        return new_rel
-    if not (old_wt / old_test_file).exists():
-        return new_rel
     subprocess.run(
         ["git", "mv", old_test_file, new_rel],
-        check=True,
-        cwd=str(old_wt),
-        capture_output=True,
-        text=True,
+        check=True, cwd=str(old_wt), capture_output=True, text=True,
     )
     subprocess.run(
         [
-            "git",
-            "commit",
-            "-m",
+            "git", "commit", "-m",
             f"Rename test file for consolidation into {new_id}",
         ],
-        check=True,
-        cwd=str(old_wt),
-        capture_output=True,
-        text=True,
+        check=True, cwd=str(old_wt), capture_output=True, text=True,
     )
     return new_rel
 
@@ -520,12 +495,12 @@ def _create_parent(
             )
 
     body = _render_body(proposal, inherited)
-    ticket.new(new_id, status=status, card="multiple", body=body, extra=extra)
+    Ticket.create(new_id, status=status, card="multiple", body=body, extra=extra)
 
 
 def _absorb_all(all_closed: list[str], parent_id: str) -> None:
     for tid in all_closed:
-        t = ticket.load(tid)
+        t = Ticket.load(tid)
         t.status = next_status(t.status, LifecycleEvent.ABSORBED)
         t.frontmatter.closed_reason = CloseReason.ABSORBED.value
         t.frontmatter.absorbed_into = parent_id

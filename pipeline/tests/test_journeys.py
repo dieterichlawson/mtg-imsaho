@@ -33,13 +33,13 @@ _REPO_ROOT = _THIS.parents[2]
 sys.path.insert(0, str(_REPO_ROOT))
 
 from pipeline import agent, utils, validate, worktree  # noqa: E402
-from pipeline import ticket as ticket_mod  # noqa: E402
 from pipeline.commands import close as close_mod  # noqa: E402
 from pipeline.commands import consolidate as consolidate_mod  # noqa: E402
 from pipeline.commands import fix as fix_mod  # noqa: E402
 from pipeline.commands import merge as merge_mod  # noqa: E402
 from pipeline.commands import retry as retry_mod  # noqa: E402
 from pipeline.commands import test as test_mod  # noqa: E402
+from pipeline.models import Ticket, parse_tests_section  # noqa: E402
 from pipeline.state import CloseReason, Status  # noqa: E402
 from pipeline.validate import FixValidation, TestValidation  # noqa: E402
 
@@ -188,7 +188,7 @@ class PipelineEnv:
     # Convenience accessors ─────────────────────────────────────────
     def read_ticket(self, ticket_id: str):
         """Load and return the Ticket for `ticket_id` from this env."""
-        return ticket_mod.load(ticket_id)
+        return Ticket.load(ticket_id)
 
     def status(self, ticket_id: str):
         """Return the on-disk status of `ticket_id` as a Status enum."""
@@ -414,8 +414,8 @@ def fixer_fails(reason: str = "could not satisfy all tests"):
 
 
 def _slugs_from_ticket(tid: str) -> list[str]:
-    t = ticket_mod.load(tid)
-    return [entry.slug for entry in ticket_mod.parse_tests_section(t.body)]
+    t = Ticket.load(tid)
+    return [entry.slug for entry in parse_tests_section(t.body)]
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -450,7 +450,7 @@ def _make_ticket(
         body_lines.append("Implementation: (not yet written)")
         body_lines.append(f"Scenario: exercise {s}.")
         body_lines.append("")
-    ticket_mod.new(
+    Ticket.create(
         tid, status=Status.NEW, card=card, body="\n".join(body_lines)
     )
 
@@ -1137,15 +1137,15 @@ class JourneyTest(unittest.TestCase):
         _make_ticket(self.env, "dead-01")
         _run_close(self.env, "dead-01")
 
-        all_tickets = ticket_mod.list_all()
+        all_tickets = Ticket.list_all()
         ids = {t.id for t in all_tickets}
         self.assertIn("live-01", ids)
         self.assertIn("dead-01", ids)
 
         # Filtering by status also sees the archived ones
-        closed = ticket_mod.list_all(status=Status.CLOSED)
+        closed = Ticket.list_all(status=Status.CLOSED)
         self.assertEqual({t.id for t in closed}, {"dead-01"})
-        new = ticket_mod.list_all(status=Status.NEW)
+        new = Ticket.list_all(status=Status.NEW)
         self.assertEqual({t.id for t in new}, {"live-01"})
 
     def test_absorb_tested_source_inherits_worktree(self) -> None:
@@ -1421,6 +1421,67 @@ class JourneyTest(unittest.TestCase):
             check=True,
         ).stdout.split()
         self.assertIn(tested_sha, log)
+
+    def test_absorb_fixed_plus_new_source(self) -> None:
+        """One fixed + one new source → parent lands at new (single-source rename).
+
+        The new-status ticket contributes no worktree, so this still
+        goes through the single-source rename fast path. The fixed
+        source's fix commits are dropped (branch reset to tested_sha).
+        """
+        _make_ticket(self.env, "fx-01", slugs=["fx_slug"])
+        self.env.install_agent([tester_confirms(), fixer_succeeds()])
+        _run_test(self.env, "fx-01")
+        _run_fix(self.env, "fx-01")
+        self.assertEqual(self.env.status("fx-01"), Status.FIXED)
+
+        _make_ticket(self.env, "new-01", slugs=["new_slug"])
+        self.assertEqual(self.env.status("new-01"), Status.NEW)
+
+        stg = self.env.pipeline / "staging" / "cons-fn.json"
+        stg.write_text(
+            json.dumps(
+                {
+                    "slug": "fn",
+                    "title": "Fixed + new",
+                    "description": "d",
+                    "engine_path": ["e.rs:1"],
+                    "tests": [
+                        {
+                            "slug": "fx_slug",
+                            "source_ticket": "fx-01",
+                            "scenario": "s",
+                        },
+                        {
+                            "slug": "new_slug",
+                            "source_ticket": "new-01",
+                            "scenario": "s",
+                        },
+                    ],
+                },
+                indent=2,
+            )
+        )
+        consolidate_mod.cmd_consolidate(
+            argparse.Namespace(
+                input=str(stg), keep_input=False, dry_run=False
+            )
+        )
+
+        parent = "merged-fn-01"
+        self.assertEqual(self.env.status("fx-01"), Status.CLOSED)
+        self.assertEqual(self.env.status("new-01"), Status.CLOSED)
+        # Parent lands at `new` because new-01 contributes an unimplemented
+        # test. The fx_slug impl is inherited; new_slug is "(not yet written)".
+        self.assertEqual(self.env.status(parent), Status.NEW)
+        fm = self.env.read_ticket(parent).frontmatter
+        self.assertEqual(fm.inherited_from, "fx-01")
+        body = self.env.read_ticket(parent).body
+        self.assertIn(f"Implementation: {fm.test_file}::test_fx_slug", body)
+        self.assertIn("Implementation: (not yet written)", body)
+        # Fix artifact dropped.
+        wt = worktree.dir_for(parent)
+        self.assertFalse((wt / "mtg-engine" / "src" / "engine.rs").exists())
 
     def test_absorb_fixed_plus_tested_merges(self) -> None:
         """One fixed + one tested source → parent lands at tested, fix dropped."""

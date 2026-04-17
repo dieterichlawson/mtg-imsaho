@@ -9,10 +9,10 @@ from __future__ import annotations
 import re
 import subprocess
 
-from pipeline import ticket, utils, worktree
+from pipeline import utils, worktree
 from pipeline.metrics import log_finding
+from pipeline.models import Ticket, parse_tests_section
 from pipeline.state import LifecycleEvent, Status, next_status
-from pipeline.ticket import Ticket, parse_tests_section
 from pipeline.utils import now_iso
 
 
@@ -34,10 +34,10 @@ def cmd_merge(args):
 
 def _collect(ids: list[str]) -> list[Ticket]:
     if ids == ["all"]:
-        return ticket.list_all(status=Status.FIXED)
+        return Ticket.list_all(status=Status.FIXED)
     out = []
     for tid in ids:
-        t = ticket.get_ticket_if_exists(tid)
+        t = Ticket.try_load(tid)
         if t is None:
             print(f"  Skipping {tid}: not found")
             continue

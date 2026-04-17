@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from pipeline import utils
-from pipeline.staging import StagingError
+from pipeline.models import StagingError
 
 DEFAULT_MODEL = "opus"
 DEFAULT_EFFORT = "max"
@@ -207,87 +207,98 @@ def _stream_summary(event: dict) -> str | None:
 # ─── Retry loop ─────────────────────────────────────────────────────
 
 
+LoadResult = Callable[[dict, int], tuple[Any, str | None]]
+
+
 def run_agent_loop(
     *,
     build_prompt: Callable[[str, int], str],
     cwd: Path,
-    staging_file: Path,
-    loader: Callable[[Path], Any],
-    validator: Callable[[Any, dict, int], str | None] | None = None,
+    load_result: LoadResult,
     max_attempts: int = MAX_ATTEMPTS,
     model: str = DEFAULT_MODEL,
     effort: str = DEFAULT_EFFORT,
     log_prefix: str = "",
     progress_prefix: str = "",
 ) -> tuple[Any, dict]:
-    """Spawn the agent until it produces valid staging + passes `validator`,.
+    """Spawn the agent until `load_result` accepts its output, up to.
 
-    up to max_attempts. Every failure's reason becomes a `## Retry note`
-    appended to the next prompt. Returns (parsed, last_result); parsed is
-    None iff every attempt failed before a valid load.
+    max_attempts. Every failure's reason becomes a `## Retry note`
+    appended to the next prompt.
+
+    `load_result(result, attempt)` is the caller's hook: it inspects
+    the raw agent result (+ any worktree/staging side effects) and
+    returns `(parsed, None)` on success or `(None, reason)` on failure.
+
+    Post-condition: `parsed is None` iff `result["is_error"]` is True —
+    callers can rely on a non-None `parsed` whenever `is_error` is False.
     """
     retry_note = ""
     parsed: Any = None
-    result: dict = {
-        "duration": 0,
-        "tokens": 0,
-        "tool_uses": 0,
-        "is_error": False,
-        "error_message": None,
-    }
+    error: str | None = "no attempts ran"
+    result: dict = {}
     for attempt in range(1, max_attempts + 1):
         prompt = build_prompt(retry_note, attempt)
         log_path = utils.LOGS_DIR / f"{log_prefix}-attempt{attempt}.log"
         result = run_agent_in(
-            prompt,
-            cwd,
-            model,
-            effort,
-            log_path=log_path,
-            progress_prefix=progress_prefix,
+            prompt, cwd, model, effort,
+            log_path=log_path, progress_prefix=progress_prefix,
         )
-        parsed, error = _load_or_describe(result, staging_file, loader)
-        if error is None and validator is not None:
-            error = validator(parsed, result, attempt)
+        parsed, error = load_result(result, attempt)
         if error is None:
             return parsed, result
         print(
             f"{progress_prefix}attempt {attempt} rejected: "
             f"{error.splitlines()[0]}"
         )
-        if attempt == max_attempts:
-            return parsed, result
-        retry_note = f"\n\n## Retry note (attempt {attempt} failed)\n{error}\n"
+        if attempt < max_attempts:
+            retry_note = (
+                f"\n\n## Retry note (attempt {attempt} failed)\n{error}\n"
+            )
+
+    # Exhausted attempts. Stamp is_error so callers can rely on the invariant.
+    if parsed is None:
+        result["is_error"] = True
+        if not result.get("error_message"):
+            result["error_message"] = error
     return parsed, result
 
 
-def _load_or_describe(
-    result: dict, staging_file: Path, loader: Callable[[Path], Any]
-) -> tuple[Any, str | None]:
-    """Return (parsed, None) on success or (None, error_msg) on failure.
+def single_file_loader(
+    staging_file: Path,
+    loader: Callable[[Path], Any],
+    validator: Callable[[Any, dict, int], str | None] | None = None,
+) -> LoadResult:
+    """Load a single staging file and optionally run a follow-up validator.
 
-    Always removes the staging file afterwards (ephemeral transport; later
-    worktree-clean checks assume it's gone).
+    The staging file is always deleted after loading (ephemeral transport;
+    worktree-clean checks assume it's gone). On StagingError the file is
+    still deleted before returning the retry note.
     """
-    if result.get("is_error"):
-        return None, f"Previous attempt errored: {result.get('error_message')}"
-    if not staging_file.exists():
-        return None, (
-            f"Previous attempt did not write {staging_file.name}. "
-            f"Write your staging output there."
-        )
-    try:
-        parsed = loader(staging_file)
-        error = None
-    except StagingError as e:
-        parsed = None
-        error = (
-            f"Your staging JSON failed validation: {e}\n"
-            f"Re-emit matching the shared prompt's schema."
-        )
-    if staging_file.exists():
+    def _load(result: dict, attempt: int) -> tuple[Any, str | None]:
+        if result.get("is_error"):
+            err_msg = result.get("error_message") or "unknown"
+            return None, f"Previous attempt errored: {err_msg}"
+        if not staging_file.exists():
+            return None, (
+                f"Previous attempt did not write {staging_file.name}. "
+                f"Write your staging output there."
+            )
+        try:
+            parsed = loader(staging_file)
+        except StagingError as e:
+            staging_file.unlink()
+            return None, (
+                f"Your staging JSON failed validation: {e}\n"
+                f"Re-emit matching the shared prompt's schema."
+            )
         staging_file.unlink()
-    return parsed, error
+        if validator is not None:
+            err = validator(parsed, result, attempt)
+            if err is not None:
+                return parsed, err
+        return parsed, None
+    return _load
 
 
 # ─── Prompt assembly ────────────────────────────────────────────────

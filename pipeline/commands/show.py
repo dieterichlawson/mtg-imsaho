@@ -5,7 +5,8 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from pipeline import ticket, utils
+from pipeline import utils
+from pipeline.models import Ticket
 from pipeline.state import Status
 
 # Status order used for grouped display.
@@ -23,7 +24,7 @@ _DISPLAY_ORDER = [
 def cmd_tickets(args):
     """Entry point for `./pipeline/cli.py tickets`."""
     status = Status(args.status) if args.status else None
-    tickets = ticket.list_all(status=status, card=args.card)
+    tickets = Ticket.list_all(status=status, card=args.card)
     if not tickets:
         print("No tickets found.")
         return
@@ -48,7 +49,7 @@ def cmd_tickets(args):
 
 def cmd_show(args):
     """Entry point for `./pipeline/cli.py show`."""
-    t = ticket.get_ticket_if_exists(args.ticket_id)
+    t = Ticket.try_load(args.ticket_id)
     if t is None:
         print(f"Ticket not found: {args.ticket_id}")
         sys.exit(1)

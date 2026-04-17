@@ -96,34 +96,30 @@ _TRANSITIONS: dict[tuple[Status, Outcome], Status] = {
 }
 
 
-class IllegalTransitionError(ValueError):
-    """Raised when no valid transition exists for (current, outcome)."""
-
-
 def next_status(current: Status, outcome: Outcome) -> Status:
     """Return the status a ticket should land in after `outcome`.
 
-    Raises IllegalTransitionError if the pair isn't in the state machine.
-    Absorbed/abandoned apply from any open/absorbable state and are
-    handled explicitly — the rest are a pure table lookup.
+    Raises ValueError if the pair isn't in the state machine. Absorbed
+    and abandoned apply from any open/absorbable state and are handled
+    explicitly — the rest are a pure table lookup.
     """
     if outcome is LifecycleEvent.ABSORBED:
         if not current.is_absorbable:
-            raise IllegalTransitionError(
+            raise ValueError(
                 f"cannot absorb a ticket in status {current.value!r}; "
-                f"only 'new' and 'tested' are absorbable"
+                f"only 'new', 'tested', and 'fixed' are absorbable"
             )
         return Status.CLOSED
     if outcome is LifecycleEvent.ABANDONED:
         if current.is_terminal:
-            raise IllegalTransitionError(
+            raise ValueError(
                 f"cannot abandon a ticket already terminal ({current.value!r})"
             )
         return Status.CLOSED
     try:
         return _TRANSITIONS[(current, outcome)]
     except KeyError:
-        raise IllegalTransitionError(
+        raise ValueError(
             f"no transition: status={current.value!r}, "
             f"outcome={outcome.value!r}"
         ) from None
@@ -138,15 +134,11 @@ def retry_target(
     `--to`). We just enforce the rules around terminality and force.
     """
     if current is Status.FALSE_POSITIVE and not force:
-        raise IllegalTransitionError(
-            f"{current.value!r} requires --force to retry"
-        )
+        raise ValueError(f"{current.value!r} requires --force to retry")
     if current in {Status.SHIPPED, Status.CLOSED}:
-        raise IllegalTransitionError(
-            f"{current.value!r} is terminal; cannot retry"
-        )
+        raise ValueError(f"{current.value!r} is terminal; cannot retry")
     if target not in {Status.NEW, Status.TESTED}:
-        raise IllegalTransitionError(
+        raise ValueError(
             f"retry target must be 'new' or 'tested', got {target.value!r}"
         )
     return target

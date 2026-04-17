@@ -5,17 +5,17 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-from pipeline import ticket, validate, worktree
+from pipeline import validate, worktree
 from pipeline.agent import (
     MAX_ATTEMPTS,
     build_prompt,
     run_agent_loop,
+    single_file_loader,
     worktree_staging_file,
 )
 from pipeline.metrics import log_finding, log_run
-from pipeline.staging import FixReport
+from pipeline.models import FixReport, Ticket, parse_tests_section
 from pipeline.state import FixOutcome, Status, next_status
-from pipeline.ticket import Ticket
 from pipeline.utils import now_iso, today
 
 # Retry-feedback fragment surfaced to the agent.
@@ -39,7 +39,7 @@ def cmd_fix(args):
 
 def _pick_ticket(args) -> Ticket | None:
     if args.ticket:
-        t = ticket.load(args.ticket)
+        t = Ticket.load(args.ticket)
         if t.status is not Status.TESTED:
             print(
                 f"Ticket {t.id}: status={t.status.value}, not "
@@ -47,7 +47,7 @@ def _pick_ticket(args) -> Ticket | None:
             )
             sys.exit(1)
         return t
-    candidates = ticket.list_all(status=Status.TESTED)
+    candidates = Ticket.list_all(status=Status.TESTED)
     return candidates[0] if candidates else None
 
 
@@ -92,9 +92,9 @@ def _run_fixer(t: Ticket, wt: Path, args) -> tuple[FixOutcome, dict, dict]:
     parsed, result = run_agent_loop(
         build_prompt=builder,
         cwd=wt,
-        staging_file=staging_file,
-        loader=FixReport.load,
-        validator=validator,
+        load_result=single_file_loader(
+            staging_file, FixReport.load, validator
+        ),
         model=args.model,
         effort=args.effort,
         log_prefix=f"{today()}-{t.id}-fix",
@@ -110,7 +110,7 @@ def _run_fixer(t: Ticket, wt: Path, args) -> tuple[FixOutcome, dict, dict]:
 def _failing_tests_block(t: Ticket) -> str:
     fns = [
         impl.split("::", 1)[1]
-        for entry in ticket.parse_tests_section(t.body)
+        for entry in parse_tests_section(t.body)
         if "::" in (impl := entry.implementation.strip())
     ]
     if not fns:

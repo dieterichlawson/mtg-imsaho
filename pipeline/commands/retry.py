@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 import sys
 
-from pipeline import ticket, worktree
+from pipeline import worktree
+from pipeline.models import Ticket
 from pipeline.state import Status, retry_target
 
 # Frontmatter fields that belong to each phase. Cleared when a retry
@@ -38,7 +39,7 @@ _TEST_KEYS = (
 
 def cmd_retry(args):
     """Entry point for `./pipeline/cli.py retry`."""
-    t = ticket.load(args.ticket_id)
+    t = Ticket.load(args.ticket_id)
     previous = t.status
     target = Status(args.to) if args.to else _default_target(previous)
 
@@ -62,9 +63,8 @@ def cmd_retry(args):
     _archive_prior_attempt(t)
 
     if target is Status.NEW:
-        if worktree.dir_for(t.id).exists():
-            worktree.remove(t.id)
-        ticket.reset_test_implementations(t)
+        worktree.remove(t.id)
+        t.reset_test_implementations()
         _clear(t, _FIX_KEYS + _TEST_KEYS)
     else:
         worktree.reset_to(t.id, sha)

@@ -10,16 +10,12 @@ import re
 import threading
 from dataclasses import dataclass
 
-from pipeline import ticket, utils
-from pipeline.agent import build_prompt, run_agent_loop
+from pipeline import utils
+from pipeline.agent import build_prompt, run_agent_loop, single_file_loader
 from pipeline.metrics import log_finding, log_run
-from pipeline.staging import AuditReport, Finding
+from pipeline.models import AuditReport, Finding, Ticket
 from pipeline.state import Status
 from pipeline.utils import now_iso, run_in_parallel, today
-
-
-class AuditError(RuntimeError):
-    """Raised when cmd_audit cannot proceed (e.g. no cards have oracle text)."""
 
 
 @dataclass
@@ -45,14 +41,8 @@ def cmd_audit(args):
         print(f"  {c}")
 
     oracles = _fetch_oracles(cards)
-    if not oracles:
-        raise AuditError(
-            f"none of the {len(cards)} card(s) have oracle text available "
-            f"— run `scripts/oracle_lookup.py add-card NAME` first"
-        )
 
     def run_one(card):
-
         return audit_one(card, oracles[card], args)
 
     results = run_in_parallel(run_one, list(oracles), args.parallelism)
@@ -76,15 +66,14 @@ def audit_one(card: str, oracle_text: str, args) -> AuditOneResult:
     parsed, result = run_agent_loop(
         build_prompt=builder,
         cwd=utils.PROJECT_ROOT,
-        staging_file=staging_file,
-        loader=AuditReport.load,
+        load_result=single_file_loader(staging_file, AuditReport.load),
         model=args.model,
         effort=args.effort,
         log_prefix=run_id,
         progress_prefix=f"  [{card}] ",
     )
 
-    if result.get("is_error") or parsed is None:
+    if result.get("is_error"):
         return _record_error(card, run_id, result, args.model)
 
     created = [
@@ -119,7 +108,7 @@ def audit_one(card: str, oracle_text: str, args) -> AuditOneResult:
 def _record_error(
     card: str, run_id: str, result: dict, model: str
 ) -> AuditOneResult:
-    err = result.get("error_message") or "no valid staging"
+    err = result["error_message"]
     print(
         f"  [{card}] AGENT ERROR: {err} "
         f"({result['duration']}s, {result['tokens']} tok)"
@@ -151,7 +140,7 @@ def _create_ticket(
     model: str,
     result: dict,
 ) -> str:
-    new_id = ticket.allocate_id(snake)
+    new_id = Ticket.allocate_id(snake)
     num = int(new_id.rsplit("-", 1)[1])
     body = _render_audit_body(finding, snake, num)
     extra = {
@@ -162,7 +151,7 @@ def _create_ticket(
         "audit_tokens": str(result["tokens"]),
         "audit_duration": str(result["duration"]),
     }
-    ticket.new(new_id, status=Status.NEW, card=card, body=body, extra=extra)
+    Ticket.create(new_id, status=Status.NEW, card=card, body=body, extra=extra)
     log_finding(
         new_id,
         "created",
@@ -175,7 +164,6 @@ def _create_ticket(
 
 
 def _append_insights(insights) -> None:
-
     if not insights:
         return
     with (
@@ -192,14 +180,15 @@ def _parse_cards(raw: str) -> list[str]:
 
 
 def _fetch_oracles(cards: list[str]) -> dict[str, str]:
+    """Fetch oracle text for every card, raising if any are missing."""
     print("\nFetching oracle texts...")
-    out: dict[str, str] = {}
-    for c in cards:
-        text = utils.get_oracle_text(c)
-        if text:
-            out[c] = text
-        else:
-            print(f"  SKIP: no oracle text for {c}")
+    out = {c: utils.get_oracle_text(c) for c in cards}
+    missing = [c for c, text in out.items() if not text]
+    if missing:
+        raise RuntimeError(
+            f"no oracle text for {len(missing)} card(s): {missing}. "
+            f"Run `scripts/oracle_lookup.py add-card NAME` first."
+        )
     return out
 
 

@@ -8,23 +8,25 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from pipeline import ticket, utils, validate, worktree
+from pipeline import utils, validate, worktree
 from pipeline.agent import (
     MAX_ATTEMPTS,
     build_prompt,
     run_agent_loop,
+    single_file_loader,
     worktree_staging_file,
 )
 from pipeline.metrics import log_finding, log_run
-from pipeline.staging import (
+from pipeline.models import (
     TEST_BLOCKED,
     TEST_CONFIRMED,
     TEST_REJECTED,
     TestReport,
     TestResult,
+    Ticket,
+    parse_tests_section,
 )
 from pipeline.state import Status, TestOutcome, next_status
-from pipeline.ticket import Ticket
 from pipeline.utils import now_iso, run_in_parallel, today
 
 # Retry-feedback fragments. Surfaced to the agent as `## Retry note`.
@@ -77,11 +79,11 @@ def _select(args) -> list[Ticket]:
     if args.tickets:
         tickets = []
         for tid in [t.strip() for t in args.tickets.split(",")]:
-            t = ticket.get_ticket_if_exists(tid)
+            t = Ticket.try_load(tid)
             if t is not None:
                 tickets.append(t)
     else:
-        tickets = ticket.list_all(status=Status.NEW)
+        tickets = Ticket.list_all(status=Status.NEW)
     return [t for t in tickets if t.status is Status.NEW]
 
 
@@ -104,7 +106,7 @@ def _run_test_writer(
     engine_note = _ENGINE_NOTE if t.allow_engine_edits else ""
     tid_snake = t.id.replace("-", "_")
     default_file = f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
-    expected_slugs = {e.slug for e in ticket.parse_tests_section(t.body)}
+    expected_slugs = {e.slug for e in parse_tests_section(t.body)}
     outcome = TestPhaseResult(test_file=default_file)
 
     builder = build_prompt(
@@ -125,9 +127,9 @@ def _run_test_writer(
     _, result = run_agent_loop(
         build_prompt=builder,
         cwd=wt,
-        staging_file=staging_file,
-        loader=TestReport.load,
-        validator=validator,
+        load_result=single_file_loader(
+            staging_file, TestReport.load, validator
+        ),
         model=args.model,
         effort=args.effort,
         log_prefix=f"{today()}-{t.id}-test",
@@ -245,7 +247,7 @@ def _apply_test_outcome(
 ) -> None:
     run_id = f"{today()}-{t.id}-test"
     if out.implementations:
-        ticket.set_test_implementations(t, out.implementations)
+        t.set_test_implementations(out.implementations)
     if out.aggregate is TestOutcome.NO_REAL_BUG:
         worktree.remove(t.id)
 
