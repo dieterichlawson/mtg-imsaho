@@ -16,7 +16,7 @@ from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args, get_type_hints
 
 from new_pipeline import utils
 
@@ -30,12 +30,14 @@ class Status(str, Enum):
     """
 
     NEW = "new"
+    TESTED = "tested"
+    COULD_NOT_CONFIRM = "could_not_confirm"
     CLOSED = "closed"
 
     @property
     def is_terminal(self) -> bool:
         """True if no further transitions are allowed."""
-        return self is Status.CLOSED
+        return self in {Status.CLOSED, Status.COULD_NOT_CONFIRM}
 
 
 class CloseReason(str, Enum):
@@ -92,8 +94,13 @@ def _format_datetime(dt: datetime) -> str:
 
 # ─── Frontmatter ───────────────────────────────────────────────────
 
-# Numeric frontmatter fields — parsed str → int on load, str on dump.
-_INT_FIELDS = frozenset({"audit_tokens", "audit_duration"})
+
+def _unwrap_optional(hint: Any) -> Any:
+    """Strip `Optional[T]` / `T | None` down to `T`, else return `hint`."""
+    args = get_args(hint)
+    if args:
+        return next((a for a in args if a is not type(None)), hint)
+    return hint
 
 
 @dataclass
@@ -113,6 +120,15 @@ class Frontmatter:
     audit_model: str = ""
     audit_tokens: int = 0
     audit_duration: int = 0
+
+    # Test phase
+    test_run_id: str = ""
+    test_model: str = ""
+    test_tokens: int = 0
+    test_duration: int = 0
+    test_file: str = ""
+    tested_sha: str = ""
+    tested_at: datetime | None = None
 
     # Terminal: closed / abandoned
     closed_reason: str = ""
@@ -143,21 +159,24 @@ class Frontmatter:
                 f"{source}: unknown status {raw['status']!r}"
             ) from None
 
-        datetime_fields = {"created", "closed_at"}
+        hints = get_type_hints(cls)
         known = {f.name for f in fields(cls)} - {"extras"}
         init_kwargs: dict[str, Any] = {}
         extras: dict[str, str] = {}
         for k, v in raw.items():
             if k == "status":
                 init_kwargs["status"] = status
-            elif k in datetime_fields:
-                init_kwargs[k] = _parse_datetime(v) if v else None
-            elif k in _INT_FIELDS:
-                init_kwargs[k] = int(v) if v else 0
-            elif k in known:
-                init_kwargs[k] = v
-            else:
+                continue
+            if k not in known:
                 extras[k] = v
+                continue
+            core = _unwrap_optional(hints[k])
+            if core is int:
+                init_kwargs[k] = int(v) if v else 0
+            elif core is datetime:
+                init_kwargs[k] = _parse_datetime(v) if v else None
+            else:
+                init_kwargs[k] = v
         init_kwargs["extras"] = extras
         return cls(**init_kwargs)
 
@@ -287,13 +306,50 @@ class Ticket:
             self._move_to(utils.TICKETS_DIR)
 
     def close(self, *, note: str | None = None) -> None:
-        """Close the ticket as abandoned and save to disk."""
+        """Mutate to closed/abandoned. Caller is responsible for `.save()`."""
         self.status = next_status(self.status, LifecycleEvent.ABANDONED)
         self.frontmatter.closed_reason = CloseReason.ABANDONED.value
         self.frontmatter.closed_at = datetime.now(timezone.utc)
         if note:
             self.frontmatter.closed_note = note
-        self.save()
+
+    def mark_tested(
+        self,
+        report: TestReport,
+        *,
+        run_id: str,
+        model: str,
+        tokens: int,
+        duration: int,
+        tested_sha: str,
+    ) -> None:
+        """Mutate to `tested` with test-phase metadata, append results.
+
+        Caller is responsible for `.save()`.
+        """
+        self.status = Status.TESTED
+        fm = self.frontmatter
+        fm.test_run_id = run_id
+        fm.test_model = model
+        fm.test_tokens = tokens
+        fm.test_duration = duration
+        fm.test_file = report.test_file
+        fm.tested_sha = tested_sha
+        fm.tested_at = datetime.now(timezone.utc)
+        self.body = (
+            self.body.rstrip() + "\n\n" + report.to_results_section() + "\n"
+        )
+
+    def mark_could_not_confirm(self, report: TestReport) -> None:
+        """Terminal: test-writer couldn't confirm any scenario as a bug.
+
+        Appends the results section for context. Caller is responsible
+        for `.save()` (which will auto-archive since the status is terminal).
+        """
+        self.status = Status.COULD_NOT_CONFIRM
+        self.body = (
+            self.body.rstrip() + "\n\n" + report.to_results_section() + "\n"
+        )
 
     # ── Internals ────────────────────────────────────────────────
 
@@ -612,3 +668,16 @@ class TestReport:
                 for i, t in enumerate(_require_objects(d, "tests"))
             ],
         )
+
+    def to_results_section(self) -> str:
+        """Render per-test verdicts as a `## Test Run Results` section."""
+        lines = ["## Test Run Results", ""]
+        for r in self.tests:
+            lines.append(f"- **{r.slug}** — {r.status.value}")
+            if r.test_name and r.test_name != r.slug:
+                lines.append(f"  - test fn: `{r.test_name}`")
+            if r.assertion_message:
+                lines.append(f"  - assertion: {r.assertion_message}")
+            if r.explanation:
+                lines.append(f"  - explanation: {r.explanation}")
+        return "\n".join(lines)

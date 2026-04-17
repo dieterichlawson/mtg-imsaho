@@ -26,7 +26,7 @@ from unittest.mock import patch
 _THIS = Path(__file__).resolve()
 sys.path.insert(0, str(_THIS.parents[2]))
 
-from new_pipeline import utils  # noqa: E402
+from new_pipeline import oracle, utils  # noqa: E402
 from new_pipeline.commands import audit as audit_mod  # noqa: E402
 from new_pipeline.types import Status, Ticket  # noqa: E402
 
@@ -116,7 +116,7 @@ class AuditCommandTest(unittest.TestCase):
             patch.object(utils, "ARCHIVE_DIR", tickets / "archive"),
             patch.object(utils, "STAGING_DIR", staging),
             patch.object(
-                audit_mod,
+                oracle,
                 "get_oracle_text",
                 lambda card: f"[oracle for {card}]",
             ),
