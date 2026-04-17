@@ -1,0 +1,49 @@
+# Google-style-ish Python linting for the pipeline package.
+#
+# Uses ruff's built-in pydocstyle Google convention plus pycodestyle,
+# pyflakes, isort, pep8-naming, pyupgrade, and bugbear. This subset
+# covers most of the things Google's style guide calls out
+# (https://google.github.io/styleguide/pyguide.html) that a linter can
+# mechanically check. The remainder (naming conventions for dataclasses,
+# comment style, docstring structure) is enforced by `D*` rules below.
+
+line-length = 90
+target-version = "py310"
+
+[lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (import ordering)
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "D",     # pydocstyle (Google convention)
+    "SIM",   # flake8-simplify
+]
+ignore = [
+    "D100",  # Missing docstring in public module (module docstrings optional)
+    "D104",  # Missing docstring in public package
+    "D105",  # Missing docstring in magic method
+    "D107",  # Missing docstring in __init__
+    "D203",  # 1 blank line before class (conflicts with D211)
+    "D205",  # Blank line after summary — we allow short wrap-around docstrings
+    "D213",  # Multi-line summary should start on the second line (conflicts with D212)
+    "E501",  # line too long — Python's fmt handles this, and 90 is a soft target
+    "SIM105",# try/except/pass vs contextlib.suppress (stylistic)
+    "B008",  # default arg call (argparse patterns use this)
+    "UP006", # PEP 604 vs typing.Dict — we already use builtins, this flags imports
+    "UP007", # Optional[X] → X | None (our code already uses | None)
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+"tests/*.py"                = ["D101", "D102", "D103"]   # tests don't need docstrings
+"pipeline/tests/*.py"       = ["D101", "D102", "D103", "E402"]
+"pipeline/cli.py"           = ["E402", "N802"]           # argparse bootstrap + helper `P`
+"pipeline/commands/*.py"    = ["D103"]                   # cmd_* / *_one self-documenting
+"pipeline/scripts/*.py"     = ["D"]                      # ad-hoc scripts
