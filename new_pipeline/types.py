@@ -1,13 +1,16 @@
-"""The ticket on disk — its lifecycle, its frontmatter, and the markdown body.
+"""The ticket on disk and the audit-report JSON it's minted from.
 
-One file so the ticket's shape (`Ticket`, `Frontmatter`) and its state
-machine (`Status`, `LifecycleEvent`, `next_status`) stay next to each
-other. Callers never construct a ticket file by hand — they go through
-`Ticket.load` to read and `Ticket.save` / `Ticket.close` to write.
+One file so the ticket's shape (`Ticket`, `Frontmatter`), its state
+machine (`Status`, `LifecycleEvent`, `next_status`), and the staging
+data types that feed it (`AuditReport`, `Finding`) stay next to each
+other. Callers never build a ticket file or parse JSON by hand — they
+go through the methods on these classes.
 """
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field, fields
 from datetime import datetime, timezone
@@ -69,6 +72,10 @@ class TicketError(ValueError):
     """Raised when a ticket file is missing, malformed, or misused."""
 
 
+class StagingError(ValueError):
+    """Raised when an agent-produced JSON staging file fails validation."""
+
+
 # ISO-8601 with trailing `Z`, e.g. `2026-04-17T12:34:56Z`.
 _ISO_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
@@ -81,6 +88,11 @@ def _parse_datetime(raw: str) -> datetime:
 def _format_datetime(dt: datetime) -> str:
     """Render a datetime as our canonical ISO-8601 `...Z` string."""
     return dt.astimezone(timezone.utc).strftime(_ISO_FMT)
+
+
+def _card_to_snake(name: str) -> str:
+    """Normalize a card name to a snake_case slug for ticket ids."""
+    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
 # ─── Frontmatter ───────────────────────────────────────────────────
@@ -206,7 +218,50 @@ class Ticket:
             out.append(t)
         return out
 
+    @classmethod
+    def allocate_id(cls, stem: str) -> str:
+        """Return the next unused `{stem}-NN` ticket id.
+
+        Scans active + archive so a previously-shipped id isn't reused.
+        """
+        nums: list[int] = []
+        for p in _all_ticket_paths():
+            m = re.match(rf"{re.escape(stem)}-(\d+)$", p.stem)
+            if m:
+                nums.append(int(m.group(1)))
+        return f"{stem}-{max(nums, default=0) + 1:02d}"
+
     # ── Writes ───────────────────────────────────────────────────
+
+    @classmethod
+    def create(
+        cls,
+        ticket_id: str,
+        *,
+        status: Status,
+        card: str,
+        body: str,
+        extra: dict[str, str] | None = None,
+    ) -> Ticket:
+        """Mint + persist a new ticket. Raises TicketError if id collides."""
+        if cls._path_for(ticket_id) is not None:
+            raise TicketError(f"ticket already exists: {ticket_id}")
+        raw = {
+            "id": ticket_id,
+            "status": status.value,
+            "card": card,
+            **(extra or {}),
+        }
+        fm = Frontmatter.parse(raw, source=ticket_id)
+        t = cls(
+            id=ticket_id,
+            status=status,
+            body=body.rstrip() + "\n",
+            frontmatter=fm,
+            path=utils.TICKETS_DIR / f"{ticket_id}.md",
+        )
+        t.save()
+        return t
 
     def save(self) -> None:
         """Write back to disk at the current path.
@@ -290,3 +345,170 @@ def _all_ticket_paths() -> Iterator[Path]:
         if utils.ARCHIVE_DIR.exists() else []
     )
     return iter(sorted(active + archive, key=lambda p: p.stem))
+
+
+# ─── Audit staging ─────────────────────────────────────────────────
+
+
+def _load_json(path: Path) -> dict:
+    try:
+        return json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise StagingError(f"{path.name}: invalid JSON — {e}") from None
+
+
+def _require(d: dict, key: str, kind: type) -> Any:
+    if key not in d:
+        raise StagingError(f"missing required field: {key!r}")
+    v = d[key]
+    if not isinstance(v, kind):
+        raise StagingError(
+            f"field {key!r}: expected {kind.__name__}, got {type(v).__name__}"
+        )
+    return v
+
+
+def _require_objects(d: dict, key: str) -> list[dict]:
+    arr = _require(d, key, list)
+    for i, x in enumerate(arr):
+        if not isinstance(x, dict):
+            raise StagingError(
+                f"{key}[{i}]: expected object, got {type(x).__name__}"
+            )
+    return arr
+
+
+def _optional_str(d: dict, key: str) -> str:
+    """`d[key]` as a string; empty-string if absent; raise if wrong type."""
+    v = d.get(key)
+    if v is None:
+        return ""
+    if not isinstance(v, str):
+        raise StagingError(
+            f"field {key!r}: expected str, got {type(v).__name__}"
+        )
+    return v
+
+
+@dataclass
+class FindingTest:
+    """A single test slug + scenario the auditor wants written."""
+
+    slug: str
+    scenario: str
+
+    @classmethod
+    def from_dict(cls, d: dict) -> FindingTest:
+        """Parse one `tests[*]` entry from a finding's JSON."""
+        return cls(
+            slug=_require(d, "slug", str),
+            scenario=_require(d, "scenario", str),
+        )
+
+
+@dataclass
+class Finding:
+    """One bug identified by the auditor."""
+
+    oracle_quote: str
+    code_quote: str
+    description: str
+    engine_path: str = ""
+    check: str = ""
+    affected_cards: list[str] = field(default_factory=list)
+    tests: list[FindingTest] = field(default_factory=list)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> Finding:
+        """Parse one `findings[*]` entry from an audit-report JSON."""
+        return cls(
+            oracle_quote=_require(d, "oracle_quote", str),
+            code_quote=_require(d, "code_quote", str),
+            description=_require(d, "description", str),
+            engine_path=_optional_str(d, "engine_path"),
+            check=_optional_str(d, "check"),
+            affected_cards=list(d.get("affected_cards") or []),
+            tests=[
+                FindingTest.from_dict(t) for t in (d.get("tests") or [])
+            ],
+        )
+
+    def to_ticket_body(self, card_snake: str, ticket_num: int) -> str:
+        """Render this finding as the body of the ticket that tracks it.
+
+        `card_snake` + `ticket_num` name the fallback test slug used when
+        the auditor didn't propose any test names of its own.
+        """
+        parts = [
+            "## Audit Finding",
+            "",
+            f"**Oracle text:**\n> {self.oracle_quote}",
+            "",
+            f"**Code:**\n> {self.code_quote}",
+            "",
+            f"**Description:**\n{self.description}",
+            "",
+        ]
+        if self.engine_path:
+            parts += [f"**Engine path:** {self.engine_path}", ""]
+        if self.check:
+            parts += [f"**Required check:** {self.check}", ""]
+        if self.affected_cards:
+            parts += (
+                ["**Affected cards:**"]
+                + [f"- {c}" for c in self.affected_cards]
+                + [""]
+            )
+        parts += ["## Tests", ""]
+        if self.tests:
+            tests = [(t.slug, t.scenario) for t in self.tests]
+        else:
+            default_scenario = (
+                self.description.split(".")[0][:240] or "See description above."
+            )
+            tests = [
+                (f"test_{card_snake}_{ticket_num:02d}", default_scenario),
+            ]
+        for slug, scenario in tests:
+            parts += [
+                f"### {slug}",
+                f"Scenario: {scenario}",
+                "",
+            ]
+        return "\n".join(parts).rstrip() + "\n"
+
+
+@dataclass
+class AuditReport:
+    """One auditor run's findings for a single card."""
+
+    card: str
+    findings: list[Finding]
+
+    @classmethod
+    def load(cls, path: Path) -> AuditReport:
+        """Parse and validate an auditor staging file."""
+        d = _load_json(path)
+        return cls(
+            card=_require(d, "card", str),
+            findings=[
+                Finding.from_dict(f)
+                for f in _require_objects(d, "findings")
+            ],
+        )
+
+    def mint_tickets(self) -> list[Ticket]:
+        """Mint one ticket per finding. Returns the newly-created tickets."""
+        snake = _card_to_snake(self.card)
+        out: list[Ticket] = []
+        for finding in self.findings:
+            new_id = Ticket.allocate_id(snake)
+            num = int(new_id.rsplit("-", 1)[1])
+            t = Ticket.create(
+                new_id,
+                status=Status.NEW,
+                card=self.card,
+                body=finding.to_ticket_body(snake, num),
+            )
+            out.append(t)
+        return out
