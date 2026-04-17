@@ -38,8 +38,14 @@ class Status(str, Enum):
 
     @property
     def is_absorbable(self) -> bool:
-        """Eligible to be folded into a merged-* parent via consolidate."""
-        return self in {Status.NEW, Status.TESTED}
+        """Eligible to be folded into a merged-* parent via consolidate.
+
+        `fixed` is included: consolidate drops the fix commits and the
+        parent re-enters the fix phase. `fix_failed` is not — its
+        post-mortem commits are the only artifact of a failed run and
+        silently losing them on absorption would hide real information.
+        """
+        return self in {Status.NEW, Status.TESTED, Status.FIXED}
 
 
 class CloseReason(str, Enum):

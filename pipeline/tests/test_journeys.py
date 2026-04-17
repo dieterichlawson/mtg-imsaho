@@ -1270,10 +1270,15 @@ class JourneyTest(unittest.TestCase):
         self.assertTrue((wt / new_test_file).exists())
         self.assertFalse((wt / parent1_test_file).exists())
 
-    def test_absorb_rejects_multiple_tested(self) -> None:
-        """Consolidation rejects proposals with more than one tested source."""
-        """Consolidation may inherit from at most one tested source."""
-        # Build two separately-tested merged parents.
+    def test_absorb_multiple_tested_merges(self) -> None:
+        """Multiple tested sources merge into a single tested parent.
+
+        Each source's test file is concatenated into the new parent's
+        test file, every tested source's worktree is torn down, and the
+        parent lands at `tested` with inherited implementations for all
+        proposed slugs.
+        """
+        # Two separately-tested merged parents.
         for slug in ("x", "y"):
             _make_ticket(self.env, f"{slug}-01", slugs=[f"{slug}_slug"])
         for slug in ("x", "y"):
@@ -1307,7 +1312,7 @@ class JourneyTest(unittest.TestCase):
         self.assertEqual(self.env.status("merged-x-01"), Status.TESTED)
         self.assertEqual(self.env.status("merged-y-01"), Status.TESTED)
 
-        # Now attempt to absorb both tested parents into one deeper parent.
+        # Absorb both tested parents into one deeper parent.
         stg3 = self.env.pipeline / "staging" / "cons-both.json"
         stg3.write_text(
             json.dumps(
@@ -1333,68 +1338,232 @@ class JourneyTest(unittest.TestCase):
                 indent=2,
             )
         )
-        with self.assertRaises(consolidate_mod.ConsolidateError):
-            consolidate_mod.cmd_consolidate(
-                argparse.Namespace(
-                    input=str(stg3), keep_input=False, dry_run=False
-                )
+        consolidate_mod.cmd_consolidate(
+            argparse.Namespace(
+                input=str(stg3), keep_input=False, dry_run=False
             )
-        # Neither parent is re-absorbed; both still tested.
-        self.assertEqual(self.env.status("merged-x-01"), Status.TESTED)
-        self.assertEqual(self.env.status("merged-y-01"), Status.TESTED)
-        self.assertFalse(
-            (self.env.pipeline / "tickets" / "merged-both-01.md").exists()
         )
 
-    def test_absorb_rejects_fixed_or_fix_failed(self) -> None:
-        """Only new and tested sources may be absorbed — fixed/fix_failed are off-limits."""
-        """Only `new` and `tested` sources may be absorbed. `fixed` and
+        parent = "merged-both-01"
+        # Both sources absorbed.
+        self.assertEqual(self.env.status("merged-x-01"), Status.CLOSED)
+        self.assertEqual(self.env.status("merged-y-01"), Status.CLOSED)
+        # Parent minted at tested with inherited impls.
+        self.assertEqual(self.env.status(parent), Status.TESTED)
+        fm = self.env.read_ticket(parent).frontmatter
+        self.assertIn("merged-x-01", fm.inherited_from)
+        self.assertIn("merged-y-01", fm.inherited_from)
+        new_test_file = fm.test_file
+        self.assertTrue(
+            new_test_file.endswith("pipeline_bugs_merged_both_01.rs")
+        )
+        body = self.env.read_ticket(parent).body
+        self.assertIn(f"Implementation: {new_test_file}::test_x_slug", body)
+        self.assertIn(f"Implementation: {new_test_file}::test_y_slug", body)
+        # Source worktrees torn down; parent has its own.
+        self.assertFalse(worktree.dir_for("merged-x-01").exists())
+        self.assertFalse(worktree.dir_for("merged-y-01").exists())
+        self.assertTrue(worktree.dir_for(parent).exists())
 
-        `fix_failed` carry real work (commits, post-mortem) and are
-        off-limits — the user must retry --to new first.
+    def test_absorb_single_fixed_drops_fix_commits(self) -> None:
+        """A single fixed source is absorbed; fix commits are dropped.
+
+        The parent inherits the source's worktree + test file but rewinds
+        the branch to `tested_sha`, so the fix commit never travels
+        forward. The parent lands at `tested`, not `fixed`.
         """
-        # Set up: a fixed ticket and a fix_failed ticket.
         _make_ticket(self.env, "fx-01", slugs=["fx_slug"])
         self.env.install_agent([tester_confirms(), fixer_succeeds()])
         _run_test(self.env, "fx-01")
+        tested_sha = self.env.read_ticket("fx-01").frontmatter.tested_sha
         _run_fix(self.env, "fx-01")
         self.assertEqual(self.env.status("fx-01"), Status.FIXED)
 
+        stg = self.env.pipeline / "staging" / "cons-fx.json"
+        stg.write_text(
+            json.dumps(
+                {
+                    "slug": "fx",
+                    "title": "Absorb fixed",
+                    "description": "d",
+                    "engine_path": ["e.rs:1"],
+                    "tests": [
+                        {
+                            "slug": "fx_slug",
+                            "source_ticket": "fx-01",
+                            "scenario": "s",
+                        }
+                    ],
+                },
+                indent=2,
+            )
+        )
+        consolidate_mod.cmd_consolidate(
+            argparse.Namespace(
+                input=str(stg), keep_input=False, dry_run=False
+            )
+        )
+
+        parent = "merged-fx-01"
+        self.assertEqual(self.env.status("fx-01"), Status.CLOSED)
+        self.assertEqual(self.env.status(parent), Status.TESTED)
+        # Parent's branch HEAD was rewound past the fix commit before
+        # the rename-commit landed, so the fix diff is gone.
+        wt = worktree.dir_for(parent)
+        self.assertTrue(wt.exists())
+        self.assertFalse((wt / "mtg-engine" / "src" / "engine.rs").exists())
+        # Branch parent commit chain passes through tested_sha.
+        log = subprocess.run(
+            ["git", "log", "--format=%H"],
+            cwd=str(wt),
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.split()
+        self.assertIn(tested_sha, log)
+
+    def test_absorb_fixed_plus_tested_merges(self) -> None:
+        """One fixed + one tested source → parent lands at tested, fix dropped."""
+        _make_ticket(self.env, "f-01", slugs=["f_slug"])
+        self.env.install_agent([tester_confirms(), fixer_succeeds()])
+        _run_test(self.env, "f-01")
+        _run_fix(self.env, "f-01")
+        self.assertEqual(self.env.status("f-01"), Status.FIXED)
+
+        _make_ticket(self.env, "t-01", slugs=["t_slug"])
+        self.env.install_agent([tester_confirms()])
+        _run_test(self.env, "t-01")
+        self.assertEqual(self.env.status("t-01"), Status.TESTED)
+
+        stg = self.env.pipeline / "staging" / "cons-ft.json"
+        stg.write_text(
+            json.dumps(
+                {
+                    "slug": "ft",
+                    "title": "Fixed + tested",
+                    "description": "d",
+                    "engine_path": ["e.rs:1"],
+                    "tests": [
+                        {
+                            "slug": "f_slug",
+                            "source_ticket": "f-01",
+                            "scenario": "s",
+                        },
+                        {
+                            "slug": "t_slug",
+                            "source_ticket": "t-01",
+                            "scenario": "s",
+                        },
+                    ],
+                },
+                indent=2,
+            )
+        )
+        consolidate_mod.cmd_consolidate(
+            argparse.Namespace(
+                input=str(stg), keep_input=False, dry_run=False
+            )
+        )
+
+        parent = "merged-ft-01"
+        self.assertEqual(self.env.status("f-01"), Status.CLOSED)
+        self.assertEqual(self.env.status("t-01"), Status.CLOSED)
+        self.assertEqual(self.env.status(parent), Status.TESTED)
+        # The merged test file exists and references both impls.
+        fm = self.env.read_ticket(parent).frontmatter
+        new_test_file = fm.test_file
+        body = self.env.read_ticket(parent).body
+        self.assertIn(f"Implementation: {new_test_file}::test_f_slug", body)
+        self.assertIn(f"Implementation: {new_test_file}::test_t_slug", body)
+        # Fix artifact from f-01 was dropped during merge (engine.rs never
+        # entered the parent's branch).
+        wt = worktree.dir_for(parent)
+        self.assertFalse((wt / "mtg-engine" / "src" / "engine.rs").exists())
+
+    def test_absorb_rejects_two_fixed(self) -> None:
+        """Two fixed sources → rejected (combining fix commit-sets is OOS)."""
+        for slug in ("p", "q"):
+            _make_ticket(self.env, f"{slug}-01", slugs=[f"{slug}_slug"])
+            self.env.install_agent([tester_confirms(), fixer_succeeds()])
+            _run_test(self.env, f"{slug}-01")
+            _run_fix(self.env, f"{slug}-01")
+            self.assertEqual(self.env.status(f"{slug}-01"), Status.FIXED)
+
+        stg = self.env.pipeline / "staging" / "cons-pq.json"
+        stg.write_text(
+            json.dumps(
+                {
+                    "slug": "pq",
+                    "title": "Two fixed",
+                    "description": "d",
+                    "engine_path": ["e.rs:1"],
+                    "tests": [
+                        {
+                            "slug": "p_slug",
+                            "source_ticket": "p-01",
+                            "scenario": "s",
+                        },
+                        {
+                            "slug": "q_slug",
+                            "source_ticket": "q-01",
+                            "scenario": "s",
+                        },
+                    ],
+                },
+                indent=2,
+            )
+        )
+        with self.assertRaises(consolidate_mod.ConsolidateError):
+            consolidate_mod.cmd_consolidate(
+                argparse.Namespace(
+                    input=str(stg), keep_input=False, dry_run=False
+                )
+            )
+        self.assertEqual(self.env.status("p-01"), Status.FIXED)
+        self.assertEqual(self.env.status("q-01"), Status.FIXED)
+        self.assertFalse(
+            (self.env.pipeline / "tickets" / "merged-pq-01.md").exists()
+        )
+
+    def test_absorb_rejects_fix_failed(self) -> None:
+        """`fix_failed` sources are off-limits — post-mortem must survive.
+
+        `new`/`tested`/`fixed` absorb cleanly; `fix_failed` carries the
+        post-mortem commits that are the only artifact of a failed run,
+        so silently losing them on absorption would hide real info.
+        The user must `retry --to tested` first.
+        """
         _make_ticket(self.env, "ff-01", slugs=["ff_slug"])
         self.env.install_agent([tester_confirms(), fixer_fails()])
         _run_test(self.env, "ff-01")
         _run_fix(self.env, "ff-01")
         self.assertEqual(self.env.status("ff-01"), Status.FIX_FAILED)
 
-        # Try to absorb each into a new parent — each should be rejected.
-        for source in ("fx-01", "ff-01"):
-            stg = self.env.pipeline / "staging" / f"cons-{source}.json"
-            stg.write_text(
-                json.dumps(
-                    {
-                        "slug": source.replace("-", ""),
-                        "title": "T",
-                        "description": "d",
-                        "engine_path": ["e.rs:1"],
-                        "tests": [
-                            {
-                                "slug": f"{source.replace('-', '_')}_slug",
-                                "source_ticket": source,
-                                "scenario": "s",
-                            }
-                        ],
-                    },
-                    indent=2,
+        stg = self.env.pipeline / "staging" / "cons-ff.json"
+        stg.write_text(
+            json.dumps(
+                {
+                    "slug": "ff",
+                    "title": "Reject",
+                    "description": "d",
+                    "engine_path": ["e.rs:1"],
+                    "tests": [
+                        {
+                            "slug": "ff_slug",
+                            "source_ticket": "ff-01",
+                            "scenario": "s",
+                        }
+                    ],
+                },
+                indent=2,
+            )
+        )
+        with self.assertRaises(consolidate_mod.ConsolidateError):
+            consolidate_mod.cmd_consolidate(
+                argparse.Namespace(
+                    input=str(stg), keep_input=False, dry_run=False
                 )
             )
-            with self.assertRaises(consolidate_mod.ConsolidateError):
-                consolidate_mod.cmd_consolidate(
-                    argparse.Namespace(
-                        input=str(stg), keep_input=False, dry_run=False
-                    )
-                )
-        # Both sources unchanged.
-        self.assertEqual(self.env.status("fx-01"), Status.FIXED)
         self.assertEqual(self.env.status("ff-01"), Status.FIX_FAILED)
 
     # J10: Status guards — test refuses non-new, fix refuses non-tested.

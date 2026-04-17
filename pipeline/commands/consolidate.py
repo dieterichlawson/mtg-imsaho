@@ -6,31 +6,28 @@ source as closed/absorbed.
 
 ## Merge semantics
 
-Given a proposal to absorb source tickets A, B, … into a new parent C:
+Given a proposal to absorb source tickets A, B, … into a new parent C,
+C takes the *minimum* of its sources' statuses (bounded at `tested` —
+fix work is never carried forward, only test coverage):
 
-    A status          B status          ⇒  C status
-    ──────────────────────────────────────────────
-    new               new               ⇒  new
-    new               tested            ⇒  new  (test file inheritance
-                                                  only supported from a
-                                                  single tested source;
-                                                  see note below)
-    tested            tested            ⇒  rejected (ambiguous — which
-                                                      tested source's
-                                                      worktree wins?)
-    new / tested      fixed / fix_failed ⇒ rejected (downstream state
-                                                      would be dropped)
+    all sources new                    ⇒  new
+    ≥ 1 tested, rest new               ⇒  tested (if every proposed
+                                                   test inherited an
+                                                   implementation;
+                                                   else new)
+    exactly 1 fixed + any tested/new   ⇒  tested (fix commits dropped)
+    ≥ 2 fixed                          ⇒  rejected (combining multiple
+                                                     fix commit-sets
+                                                     is out of scope)
+    any fix_failed                     ⇒  rejected (post-mortem commits
+                                                     are the only artifact
+                                                     of a failed run)
 
-The ASPIRATIONAL rule is simpler: C takes the *minimum* of its
-sources' statuses. Today we implement the `new`/`tested` cases and
-reject the rest. Extending to `fixed` sources is deliberately out of
-scope for this pass — combining multiple fix commits is a separate
-engineering problem.
-
-When exactly one source is `tested`, C inherits that worktree + test
-file and starts life in whichever status matches its test coverage
-(`tested` if every proposed test inherited an implementation, `new`
-otherwise).
+When C inherits from exactly one source, the source's worktree is
+renamed into C's. For ≥ 2 sources carrying a worktree, C gets a fresh
+worktree off master and each source's test file is concatenated into
+C's single test file in one commit. Fixed sources are first reset to
+their `tested_sha` so fix commits never enter C's history.
 """
 
 from __future__ import annotations
@@ -87,19 +84,20 @@ def cmd_consolidate(args):
         )
 
     _require_coverage(proposal, all_closed)
-    tested_src = _pick_single_tested(all_closed)
+    tested, fixed = _classify_sources(all_closed)
+    _require_at_most_one_fixed(fixed)
 
     new_id = ticket.allocate_id(f"merged-{proposal.slug}")
     if args.dry_run:
-        _print_dry_run_plan(new_id, all_closed, tested_src)
+        _print_dry_run_plan(new_id, all_closed, tested, fixed)
         return
 
-    new_test_file, tested_sha, inherited = _inherit_from(tested_src, new_id)
+    new_test_file, tested_sha, inherited = _inherit_from(tested, fixed, new_id)
     _create_parent(
         new_id,
         proposal,
-        all_closed,
-        tested_src,
+        tested,
+        fixed,
         tested_sha,
         new_test_file,
         inherited,
@@ -111,7 +109,7 @@ def cmd_consolidate(args):
         all_closed,
         buckets.open_sources,
         also_closes,
-        tested_src,
+        tested + fixed,
         inherited,
     )
 
@@ -184,10 +182,11 @@ def _bad_also_closes(also_closes: list[str]) -> list[str]:
 def _not_absorbable_message(bad_src: list[str], bad_also: list[str]) -> str:
     lines = [
         "consolidation names ticket(s) whose status isn't absorbable.",
-        "Only `new` and `tested` tickets may be absorbed; `fixed` and",
-        "`fix_failed` carry downstream state that would be silently dropped.",
-        "Use `retry --to new` (or --to tested) on those tickets first if",
-        "you really want to cluster them.",
+        "`new`, `tested`, and `fixed` tickets may be absorbed; `fix_failed`",
+        "tickets may not — their post-mortem commits are the only artifact",
+        "of a failed run and silently losing them on absorption would hide",
+        "real information. `retry --to tested` first if you really want to",
+        "cluster one.",
     ]
     return "\n".join(lines + bad_src + bad_also)
 
@@ -241,36 +240,81 @@ def _required_source_counts(child: Ticket) -> Counter:
     return counts
 
 
-# ── Tested source inheritance ───────────────────────────────────────
+# ── Source classification + merge semantics ─────────────────────────
 
 
-def _pick_single_tested(all_closed: list[str]) -> str | None:
-    tested = [
-        tid for tid in all_closed if ticket.load(tid).status is Status.TESTED
-    ]
-    if len(tested) > 1:
+def _classify_sources(all_closed: list[str]) -> tuple[list[str], list[str]]:
+    """Partition absorbable sources into (tested, fixed) lists by status.
+
+    `new`-status sources carry no worktree so they contribute nothing
+    to build; they're absorbed for bookkeeping only and omitted here.
+    """
+    tested: list[str] = []
+    fixed: list[str] = []
+    for tid in all_closed:
+        st = ticket.load(tid).status
+        if st is Status.TESTED:
+            tested.append(tid)
+        elif st is Status.FIXED:
+            fixed.append(tid)
+    return tested, fixed
+
+
+def _require_at_most_one_fixed(fixed: list[str]) -> None:
+    if len(fixed) >= 2:
         raise ConsolidateError(
-            "more than one absorbed source is `tested`:\n"
-            + "\n".join(f"  {tid}" for tid in tested)
-            + "\nConsolidation can inherit from at most one tested source. "
-            "Use `retry --to new` on all but one first."
+            "more than one absorbed source is `fixed`:\n"
+            + "\n".join(f"  {tid}" for tid in fixed)
+            + "\nCombining multiple fix commit-sets is out of scope. "
+            "`retry --to tested` on all but one first (drops its fix)."
         )
-    return tested[0] if tested else None
+
+
+# ── Inheritance ─────────────────────────────────────────────────────
 
 
 def _inherit_from(
-    tested_src: str | None, new_id: str
+    tested: list[str], fixed: list[str], new_id: str
 ) -> tuple[str | None, str | None, dict[str, str]]:
-    """If we're inheriting a tested source's worktree, rename it into the.
+    """Build the new parent's worktree + test file from the sources.
 
-    new parent's branch + test file. Returns (new_test_file_rel, sha, impls).
+    Returns (new_test_file, sha, {slug: "test_file::test_name"}). Three
+    dispatch cases:
+
+    - no tested/fixed sources → no worktree (parent starts `new`).
+    - one source (tested or fixed) → rename its worktree into the parent.
+      Fixed sources are first reset to `tested_sha` so fix commits don't
+      travel forward.
+    - multiple sources → build a fresh parent worktree, concatenate each
+      source's test file into one, and tear down the source worktrees.
     """
-    if tested_src is None:
+    all_srcs = tested + fixed
+    if not all_srcs:
         return None, None, {}
-    src = ticket.load(tested_src)
-    old_test_file = src.test_file
-    new_test_file = _rename_test_file_on_disk(tested_src, new_id, old_test_file)
-    sha = worktree.rename(tested_src, new_id)
+
+    if len(all_srcs) == 1:
+        return _inherit_by_rename(all_srcs[0], new_id)
+    return _inherit_by_merge(tested, fixed, new_id)
+
+
+def _inherit_by_rename(
+    src_id: str, new_id: str
+) -> tuple[str, str, dict[str, str]]:
+    """Rename a single source worktree into the new parent's id + branch.
+
+    If the source is `fixed`, its branch is first reset to `tested_sha`
+    so fix commits are dropped.
+    """
+    src = ticket.load(src_id)
+    if src.status is Status.FIXED:
+        if not src.tested_sha:
+            raise ConsolidateError(
+                f"{src_id}: fixed source has no tested_sha — cannot drop "
+                f"fix commits"
+            )
+        worktree.reset_to(src_id, src.tested_sha)
+    new_test_file = _rename_test_file_on_disk(src_id, new_id, src.test_file)
+    sha = worktree.rename(src_id, new_id)
     inherited = {
         e.slug: f"{new_test_file}::{e.implementation.split('::', 1)[1]}"
         for e in parse_tests_section(src.body)
@@ -279,19 +323,129 @@ def _inherit_from(
     return new_test_file, sha, inherited
 
 
+def _inherit_by_merge(
+    tested: list[str], fixed: list[str], new_id: str
+) -> tuple[str, str, dict[str, str]]:
+    """Concatenate every source's test file into a fresh parent worktree.
+
+    Fixed sources are reset to `tested_sha` so fix-era edits to the test
+    file aren't read. Source worktrees are removed once C's branch
+    carries the merged content.
+    """
+    for tid in fixed:
+        src = ticket.load(tid)
+        if not src.tested_sha:
+            raise ConsolidateError(
+                f"{tid}: fixed source has no tested_sha — cannot drop "
+                f"fix commits"
+            )
+        worktree.reset_to(tid, src.tested_sha)
+
+    wt = worktree.ensure(new_id)
+    new_test_file = (
+        f"mtg-engine/tests/pipeline_bugs_{new_id.replace('-', '_')}.rs"
+    )
+    merged = _concat_test_files(tested + fixed)
+    target = wt / new_test_file
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(merged)
+    _git_commit(wt, f"Inherit tests from: {', '.join(tested + fixed)}")
+    sha = worktree.branch_head(worktree.branch_for(new_id))
+
+    for tid in tested + fixed:
+        worktree.remove(tid)
+
+    inherited = _collect_inherited_impls(tested + fixed, new_test_file)
+    return new_test_file, sha, inherited
+
+
+def _concat_test_files(src_ids: list[str]) -> str:
+    """Merge per-source test files: union of preamble lines + all bodies.
+
+    Preamble = leading block of `use` / `mod` / `extern crate` / `#![...]`
+    / comment / blank lines. Lines after the first non-preamble line are
+    the body. Each body is emitted under a divider comment for traceability.
+    """
+    preamble: list[str] = []
+    seen: set[str] = set()
+    bodies: list[str] = []
+    for tid in src_ids:
+        src = ticket.load(tid)
+        if not src.test_file:
+            continue
+        path = worktree.dir_for(tid) / src.test_file
+        if not path.exists():
+            continue
+        pre_lines, body = _split_rust_preamble(path.read_text())
+        for line in pre_lines:
+            if line not in seen:
+                preamble.append(line)
+                seen.add(line)
+        bodies.append(f"// ─── inherited from {tid} ───\n{body}".rstrip())
+
+    parts = ["\n".join(preamble).rstrip()] if preamble else []
+    parts.extend(bodies)
+    return "\n\n".join(p for p in parts if p).rstrip() + "\n"
+
+
+_PREAMBLE_PREFIXES = (
+    "use ", "mod ", "pub use ", "pub mod ", "extern ", "#![",
+)
+
+
+def _split_rust_preamble(content: str) -> tuple[list[str], str]:
+    """Split (preamble_lines, rest) on the first non-preamble line."""
+    lines = content.splitlines()
+    i = 0
+    while i < len(lines):
+        s = lines[i].strip()
+        if not s or s.startswith("//") or s.startswith(_PREAMBLE_PREFIXES):
+            i += 1
+            continue
+        break
+    return lines[:i], "\n".join(lines[i:])
+
+
+def _collect_inherited_impls(
+    src_ids: list[str], new_test_file: str
+) -> dict[str, str]:
+    """Map proposal slugs → "<new_test_file>::<test_name>" from every source."""
+    impls: dict[str, str] = {}
+    for tid in src_ids:
+        src = ticket.load(tid)
+        for e in parse_tests_section(src.body):
+            if "::" in e.implementation:
+                test_name = e.implementation.split("::", 1)[1]
+                impls[e.slug] = f"{new_test_file}::{test_name}"
+    return impls
+
+
+def _git_commit(wt: Path, msg: str) -> None:
+    subprocess.run(
+        ["git", "add", "-A"],
+        check=True,
+        cwd=str(wt),
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", msg],
+        check=True,
+        cwd=str(wt),
+        capture_output=True,
+        text=True,
+    )
+
+
 def _rename_test_file_on_disk(
     old_id: str, new_id: str, old_test_file: str
 ) -> str:
-    """Move the tested source's worktree + rename its test file so the new.
+    """Rename the source's test file inside its worktree + commit.
 
-    parent's branch contains `pipeline_bugs_<new_id>.rs`. Called BEFORE
-    the worktree move-rename so we can inspect the file on its old path.
+    Called *before* `worktree.rename()` so we can still reach the file
+    via the old worktree path. Returns the new relative path regardless
+    of whether a rename was actually necessary.
     """
-    # The actual worktree move happens in worktree.rename(); before that,
-    # the old path is still at the tested source's worktree dir. We rename
-    # in _two phases_ to keep operations atomic per directory:
-    #   1. Here: rename the file in the OLD worktree and commit.
-    #   2. Caller: worktree.rename() moves the whole directory + branch.
     old_wt = worktree.dir_for(old_id)
     new_rel = old_test_file.replace(
         f"pipeline_bugs_{old_id.replace('-', '_')}",
@@ -329,17 +483,16 @@ def _rename_test_file_on_disk(
 def _create_parent(
     new_id: str,
     proposal: ConsolidationProposal,
-    all_closed: list[str],
-    tested_src: str | None,
+    tested: list[str],
+    fixed: list[str],
     tested_sha: str | None,
     new_test_file: str | None,
     inherited: dict[str, str],
 ) -> None:
     extra = {"created": now_iso(), "kind": "consolidated"}
-    if all_closed:
-        extra["source_tickets"] = ", ".join(all_closed)
-
-    all_tests_have_impls = tested_src is not None and all(
+    inherits = tested + fixed
+    has_worktree = bool(inherits)
+    all_tests_have_impls = has_worktree and all(
         t.slug in inherited for t in proposal.tests
     )
 
@@ -350,17 +503,17 @@ def _create_parent(
                 "tested_at": now_iso(),
                 "test_file": new_test_file or "",
                 "worktree": str(worktree.dir_for(new_id)),
-                "inherited_from": tested_src or "",
+                "inherited_from": ", ".join(inherits),
             }
         )
         if tested_sha:
             extra["tested_sha"] = tested_sha
     else:
         status = Status.NEW
-        if tested_src:
+        if has_worktree:
             extra.update(
                 {
-                    "inherited_from": tested_src,
+                    "inherited_from": ", ".join(inherits),
                     "test_file": new_test_file or "",
                     "worktree": str(worktree.dir_for(new_id)),
                 }
@@ -410,14 +563,20 @@ def _render_body(proposal: ConsolidationProposal, impls: dict[str, str]) -> str:
 
 
 def _print_dry_run_plan(
-    new_id: str, all_closed: list[str], tested_src: str | None
+    new_id: str,
+    all_closed: list[str],
+    tested: list[str],
+    fixed: list[str],
 ) -> None:
     print(f"\nWould create: {new_id}")
     print(f"Would close {len(all_closed)} ticket(s) as closed-duplicate:")
     for tid in all_closed:
         print(f"  {tid} → {new_id}")
-    if tested_src:
-        print(f"Would inherit worktree + test file from {tested_src}")
+    inherits = tested + fixed
+    if inherits:
+        suffix = " (fix commits dropped)" if fixed else ""
+        print(f"Would inherit worktree + test file from: "
+              f"{', '.join(inherits)}{suffix}")
 
 
 def _print_summary(
@@ -426,7 +585,7 @@ def _print_summary(
     all_closed: list[str],
     open_sources: list[str],
     also_closes: list[str],
-    tested_src: str | None,
+    inherits: list[str],
     inherited: dict[str, str],
 ) -> None:
     print(f"Created {new_id} with {len(proposal.tests)} test(s)")
@@ -435,7 +594,7 @@ def _print_summary(
         f"(reason={CloseReason.ABSORBED.value}; "
         f"{len(open_sources)} per-test, {len(also_closes)} via Also closes)"
     )
-    if tested_src:
+    if inherits:
         all_inherited = len(inherited) == len(proposal.tests)
         note = (
             "ready for fix (fully inherited)"
@@ -444,7 +603,8 @@ def _print_summary(
             f"{len(proposal.tests) - len(inherited)} still need "
             f"implementation"
         )
-        print(f"Inherited worktree + test file from {tested_src}: {note}")
+        print(f"Inherited worktree + test file from "
+              f"{', '.join(inherits)}: {note}")
 
 
 def _remove_proposal(path: Path) -> None:
