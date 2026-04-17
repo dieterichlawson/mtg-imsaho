@@ -528,3 +528,78 @@ class AuditReport:
             )
             out.append(t)
         return out
+
+
+# ─── Test-writer staging ───────────────────────────────────────────
+
+TEST_CONFIRMED = "confirmed"
+TEST_REJECTED = "rejected"
+TEST_BLOCKED = "blocked"
+VALID_TEST_STATUSES = frozenset(
+    {TEST_CONFIRMED, TEST_REJECTED, TEST_BLOCKED},
+)
+
+
+@dataclass
+class TestResult:
+    """Per-test outcome the test-writer agent reports for one slug.
+
+    `status` is one of:
+    - `confirmed`: the agent wrote a test that compiles and fails,
+      proving the bug exists.
+    - `rejected`: the agent concluded this slug is a false positive
+      (no real bug to test).
+    - `blocked`: the test can't be expressed without an engine change
+      first; `blocked_by` describes what's missing.
+    """
+
+    slug: str
+    status: str  # one of VALID_TEST_STATUSES
+    test_name: str = ""
+    assertion_message: str = ""
+    explanation: str = ""
+    blocked_by: str | None = None
+
+    @classmethod
+    def from_dict(cls, i: int, d: dict) -> TestResult:
+        """Parse one `tests[i]` entry. `i` is used for error messages."""
+        slug = _require(d, "slug", str)
+        status = _require(d, "status", str).lower()
+        if status not in VALID_TEST_STATUSES:
+            raise StagingError(
+                f"tests[{i}] {slug!r}: status must be one of "
+                f"{sorted(VALID_TEST_STATUSES)}, got {status!r}"
+            )
+        blocked_by = d.get("blocked_by") or None
+        if blocked_by is not None and not isinstance(blocked_by, str):
+            raise StagingError(
+                f"tests[{i}] {slug!r}: blocked_by must be a string or null"
+            )
+        return cls(
+            slug=slug,
+            status=status,
+            test_name=_optional_str(d, "test_name") or slug,
+            assertion_message=_optional_str(d, "assertion_message"),
+            explanation=_optional_str(d, "explanation"),
+            blocked_by=blocked_by,
+        )
+
+
+@dataclass
+class TestReport:
+    """The test-writer agent's JSON staging file."""
+
+    test_file: str
+    tests: list[TestResult]
+
+    @classmethod
+    def load(cls, path: Path) -> TestReport:
+        """Parse and validate a test-writer staging file."""
+        d = _load_json(path)
+        return cls(
+            test_file=_require(d, "test_file", str),
+            tests=[
+                TestResult.from_dict(i, t)
+                for i, t in enumerate(_require_objects(d, "tests"))
+            ],
+        )
