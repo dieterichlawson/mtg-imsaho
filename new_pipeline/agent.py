@@ -1,22 +1,30 @@
 """Spawn the `claude` CLI in a subprocess and collect a typed result.
 
-One function — `run_agent(prompt, cwd, ...)` — wraps a single invocation
-of the `claude` binary, streams its stream-json events, and returns an
-`AgentResult` carrying tokens, duration, and any error. No retry logic;
-no log-file writing; no progress printing. Callers layer those on later.
+Two entry points:
 
-The child process is run with `ANTHROPIC_API_KEY` / `ANTHROPIC_AUTH_TOKEN`
-scrubbed from its environment so it falls back to subscription auth.
+- `run_agent(prompt, cwd, ...)` — one invocation of the `claude` binary.
+  Streams stream-json events, returns an `AgentResult` carrying tokens,
+  duration, and any error. The child runs with `ANTHROPIC_API_KEY` /
+  `ANTHROPIC_AUTH_TOKEN` scrubbed from its environment so it falls back
+  to subscription auth.
+- `run_agent_loop(build_prompt, load_result, ...)` — retry wrapper.
+  Calls `run_agent` up to `max_attempts` times; each failing attempt's
+  reason is prepended as a `## Retry note` to the next prompt via
+  `build_prompt(retry_note, attempt)`. Post-condition: the returned
+  `parsed` is None iff `AgentResult.is_error` is True.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import os
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 # Env vars that force API-key billing when set. Scrubbed from agent
 # subprocesses so `claude` picks subscription auth.
@@ -129,3 +137,65 @@ def _subscription_env() -> dict[str, str]:
     for k in _API_KEY_ENV_VARS:
         env.pop(k, None)
     return env
+
+
+# ─── Retry loop ────────────────────────────────────────────────────
+
+
+BuildPrompt = Callable[[str, int], str]
+LoadResult = Callable[["AgentResult", int], tuple[Any, str | None]]
+
+
+def run_agent_loop(
+    *,
+    build_prompt: BuildPrompt,
+    cwd: Path,
+    load_result: LoadResult,
+    model: str,
+    effort: str,
+    max_attempts: int = 3,
+) -> tuple[Any, AgentResult]:
+    """Spawn the agent up to `max_attempts` until `load_result` accepts.
+
+    Each attempt:
+        1. Build the prompt via `build_prompt(retry_note, attempt)`.
+           On attempt 1 the retry_note is empty; on later attempts it
+           carries the previous attempt's failure reason.
+        2. Spawn the agent via `run_agent`.
+        3. Hand the `AgentResult` to `load_result(result, attempt)`. It
+           returns `(parsed, None)` on success or `(parsed_or_none,
+           reason)` to ask for a retry.
+
+    Returns `(parsed, result)` for the last attempt. Post-condition:
+    `parsed is None` iff `result.is_error` is True — after a fully-
+    failed run, the returned result is stamped `is_error=True` with
+    the last retry reason as `error_message`, even if the agent itself
+    technically succeeded but produced unusable output.
+    """
+    assert max_attempts >= 1, "max_attempts must be at least 1"
+    retry_note = ""
+    parsed: Any = None
+    error: str | None = None
+    result: AgentResult | None = None
+    for attempt in range(1, max_attempts + 1):
+        prompt = build_prompt(retry_note, attempt)
+        result = run_agent(prompt, cwd=cwd, model=model, effort=effort)
+        parsed, error = load_result(result, attempt)
+        if error is None:
+            return parsed, result
+        if attempt < max_attempts:
+            retry_note = (
+                f"\n\n## Retry note (attempt {attempt} failed)\n{error}\n"
+            )
+
+    # Exhausted attempts with a non-None error. Enforce the invariant
+    # that parsed is None iff result.is_error — so callers can branch
+    # on result.is_error alone.
+    assert result is not None  # loop ran at least once
+    if parsed is None and not result.is_error:
+        result = dataclasses.replace(
+            result,
+            is_error=True,
+            error_message=result.error_message or error,
+        )
+    return parsed, result
