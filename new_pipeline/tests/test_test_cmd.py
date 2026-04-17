@@ -287,8 +287,8 @@ class TestCommandTest(unittest.TestCase):
         self.assertIs(t.status, Status.CLOSED)
         self.assertEqual(t.frontmatter.test_run_id, "")
 
-    def test_all_rejected_keeps_ticket_new(self) -> None:
-        """Agent rejects every scenario → ticket stays `new`, notes appended."""
+    def test_all_rejected_marks_could_not_confirm(self) -> None:
+        """Agent rejects every scenario → terminal `could_not_confirm`."""
         _write_ticket_file(self.tickets, "fp-01")
         self._script_agent({
             "test_file": "mtg-engine/tests/pipeline_bugs_fp_01.rs",
@@ -305,8 +305,14 @@ class TestCommandTest(unittest.TestCase):
         test_mod.cmd_test(_args("fp-01"))
 
         t = Ticket.load("fp-01")
-        self.assertIs(t.status, Status.NEW)  # unchanged
-        self.assertEqual(t.frontmatter.test_run_id, "")  # no metadata
+        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
+        self.assertTrue(t.status.is_terminal)
+        # Terminal tickets auto-archive on save.
+        self.assertTrue((self.tickets / "archive" / "fp-01.md").exists())
+        self.assertFalse((self.tickets / "fp-01.md").exists())
+        # No test-phase metadata stamped (there's nothing to record).
+        self.assertEqual(t.frontmatter.test_run_id, "")
+        # But the results section is appended for context.
         self.assertIn("## Test Run Results", t.body)
         self.assertIn("passes against current code", t.body)
 

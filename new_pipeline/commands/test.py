@@ -3,17 +3,16 @@
 For each ticket:
     load → guard status == NEW → ensure worktree → build prompt from
     `prompts/test-writer.md` → run_agent_loop (loader parses TestReport
-    + validates each confirmed test via cargo) → write results section
-    + test-phase frontmatter → save.
+    + validates each confirmed test via cargo) → `t.mark_tested` or
+    `t.mark_could_not_confirm` depending on the outcome.
 
 On success the ticket moves to `tested`. If the agent rejects every
-scenario (no real bug), the ticket keeps its `new` status — the user
-decides whether to close it as false-positive in a later PR.
+scenario, the ticket moves to the terminal `could_not_confirm` status
+(archived). Agent infrastructure errors leave the ticket `new` so a
+rerun can pick up where it left off.
 """
 
 from __future__ import annotations
-
-from datetime import datetime, timezone
 
 from new_pipeline import oracle, utils, validate, worktree
 from new_pipeline.agent import AgentResult, run_agent_loop
@@ -84,10 +83,9 @@ def _test_one(tid: str, args) -> None:
                 continue
             v = validate.validate_test(wt, report.test_file, r.test_name)
             if not v.ok:
-                tail = v.output[-800:] if v.output else ""
                 return None, (
                     f"test {r.slug!r} ({r.test_name}) failed validation: "
-                    f"{v.reason}\n{tail}"
+                    f"{v.reason}\n{v.output}"
                 )
         return report, None
 
@@ -109,56 +107,24 @@ def _test_one(tid: str, args) -> None:
 
     confirmed = [r for r in report.tests if r.status is TestStatus.CONFIRMED]
     if not confirmed:
-        # Agent rejected every scenario — no bug was found. Leave the
-        # ticket in `new` for the human to triage.
-        t.body = (
-            t.body.rstrip() + "\n\n" + _render_results_section(report) + "\n"
-        )
+        t.mark_could_not_confirm(report)
         t.save()
         print(
-            f"[{tid}] No bugs confirmed ({len(report.tests)} rejected). "
-            f"Ticket stays {Status.NEW.value}."
+            f"[{tid}] {Status.COULD_NOT_CONFIRM.value}: "
+            f"{len(report.tests)} scenario(s) rejected by agent."
         )
         return
 
-    _mark_tested(t, report, result, run_id, args, wt)
+    t.mark_tested(
+        report,
+        run_id=run_id,
+        model=args.model,
+        tokens=result.tokens,
+        duration=result.duration,
+        tested_sha=worktree.branch_head(worktree.branch_for(t.id)),
+    )
+    t.save()
     print(
         f"[{tid}] Done: {len(confirmed)}/{len(report.tests)} tests "
         f"confirmed ({result.duration}s, {result.tokens} tok)"
     )
-
-
-def _mark_tested(
-    t: Ticket,
-    report: TestReport,
-    result: AgentResult,
-    run_id: str,
-    args,
-    wt,
-) -> None:
-    """Transition the ticket to `tested` with full test-phase metadata."""
-    t.status = Status.TESTED
-    fm = t.frontmatter
-    fm.test_run_id = run_id
-    fm.test_model = args.model
-    fm.test_tokens = result.tokens
-    fm.test_duration = result.duration
-    fm.test_file = report.test_file
-    fm.tested_sha = worktree.branch_head(worktree.branch_for(t.id))
-    fm.tested_at = datetime.now(timezone.utc)
-    t.body = t.body.rstrip() + "\n\n" + _render_results_section(report) + "\n"
-    t.save()
-
-
-def _render_results_section(report: TestReport) -> str:
-    """Append a `## Test Run Results` block summarizing each scenario."""
-    lines = ["## Test Run Results", ""]
-    for r in report.tests:
-        lines.append(f"- **{r.slug}** — {r.status.value}")
-        if r.test_name and r.test_name != r.slug:
-            lines.append(f"  - test fn: `{r.test_name}`")
-        if r.assertion_message:
-            lines.append(f"  - assertion: {r.assertion_message}")
-        if r.explanation:
-            lines.append(f"  - explanation: {r.explanation}")
-    return "\n".join(lines)
