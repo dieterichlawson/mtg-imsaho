@@ -1,0 +1,37 @@
+# Google-style-ish Python linting for the new_pipeline package.
+#
+# Uses ruff's built-in pydocstyle Google convention plus pycodestyle,
+# pyflakes, isort, pep8-naming, pyupgrade, bugbear, comprehensions, and
+# simplify. This subset covers most of what the Google style guide
+# (https://google.github.io/styleguide/pyguide.html) calls out that a
+# linter can mechanically check.
+
+line-length = 80
+target-version = "py310"
+
+[lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort (import ordering)
+    "N",     # pep8-naming
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "D",     # pydocstyle (Google convention)
+    "SIM",   # flake8-simplify
+]
+ignore = [
+    "D105",  # Missing docstring in magic method (__getitem__ etc.)
+    "D107",  # Missing docstring in __init__ (class docstring covers it)
+    "D213",  # Multi-line summary on second line (conflicts with D212)
+    "B008",  # default arg call — argparse patterns use this legitimately
+]
+
+[lint.pydocstyle]
+convention = "google"
+
+[lint.per-file-ignores]
+# cli.py does a sys.path tweak before importing from the package.
+"cli.py" = ["E402"]
