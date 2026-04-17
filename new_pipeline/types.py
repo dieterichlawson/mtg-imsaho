@@ -543,6 +543,22 @@ class TestStatus(str, Enum):
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
 
+    @classmethod
+    def parse(cls, raw: str, *, context: str = "") -> TestStatus:
+        """Parse a case-insensitive string into a TestStatus.
+
+        Raises StagingError (prefixed with `context`) if the value isn't
+        one of the enum members.
+        """
+        try:
+            return cls(raw.lower())
+        except ValueError:
+            valid = [s.value for s in cls]
+            prefix = f"{context}: " if context else ""
+            raise StagingError(
+                f"{prefix}status must be one of {valid}, got {raw!r}"
+            ) from None
+
 
 @dataclass
 class TestResult:
@@ -565,15 +581,10 @@ class TestResult:
     def from_dict(cls, i: int, d: dict) -> TestResult:
         """Parse one `tests[i]` entry. `i` is used for error messages."""
         slug = _require(d, "slug", str)
-        raw_status = _require(d, "status", str).lower()
-        try:
-            status = TestStatus(raw_status)
-        except ValueError:
-            valid = [s.value for s in TestStatus]
-            raise StagingError(
-                f"tests[{i}] {slug!r}: status must be one of "
-                f"{valid}, got {raw_status!r}"
-            ) from None
+        status = TestStatus.parse(
+            _require(d, "status", str),
+            context=f"tests[{i}] {slug!r}",
+        )
         return cls(
             slug=slug,
             status=status,
