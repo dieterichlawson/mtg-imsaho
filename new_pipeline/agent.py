@@ -199,3 +199,48 @@ def run_agent_loop(
             error_message=result.error_message or error,
         )
     return parsed, result
+
+
+def single_file_loader(
+    staging_path: Path,
+    parser: Callable[[Path], Any],
+    *,
+    validator: Callable[[Any], str | None] | None = None,
+    missing_hint: str = "",
+) -> LoadResult:
+    """Build a `load_result` for the common "one file, one parser" case.
+
+    The returned closure, per attempt:
+      - surfaces agent errors verbatim,
+      - requires `staging_path` to exist on disk (the agent wrote it),
+      - parses it with `parser`, raising StagingError → retry note,
+      - optionally runs `validator(parsed)`; a non-None return is the
+        retry reason (and `parsed` still comes back so callers that
+        want the partial can inspect it).
+
+    `missing_hint` gets appended to the "agent did not write <file>"
+    message so the retry prompt tells the agent what to do.
+    """
+    # Deferred import so StagingError isn't required by callers that
+    # never trigger the parse-error branch — and to avoid a hard
+    # dependency from agent.py on types.py.
+    from new_pipeline.types import StagingError
+
+    def _load(result: AgentResult, _attempt: int):
+        if result.is_error:
+            return None, f"agent error: {result.error_message}"
+        if not staging_path.exists():
+            suffix = f" {missing_hint}" if missing_hint else ""
+            return None, (
+                f"agent did not write {staging_path.name}.{suffix}"
+            )
+        try:
+            parsed = parser(staging_path)
+        except StagingError as e:
+            return None, f"staging JSON failed validation: {e}"
+        if validator is not None:
+            err = validator(parsed)
+            if err is not None:
+                return parsed, err
+        return parsed, None
+    return _load

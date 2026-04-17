@@ -9,8 +9,8 @@ run metadata stamped onto every new ticket.
 from __future__ import annotations
 
 from new_pipeline import oracle, utils
-from new_pipeline.agent import AgentResult, run_agent_loop
-from new_pipeline.types import AuditReport, StagingError, Ticket
+from new_pipeline.agent import run_agent_loop, single_file_loader
+from new_pipeline.types import AuditReport, Ticket
 
 
 def cmd_audit(args) -> None:
@@ -52,24 +52,14 @@ def _audit_one(card: str, args) -> list[Ticket] | None:
             card=card, oracle=oracle_text, staging_path=str(staging_path),
         ) + retry_note
 
-    def load_result(result: AgentResult, _attempt):
-        if result.is_error:
-            return None, f"agent error: {result.error_message}"
-        if not staging_path.exists():
-            return None, (
-                f"agent did not write {staging_path.name}. "
-                f"Write the findings JSON to the staging path above."
-            )
-        try:
-            return AuditReport.load(staging_path), None
-        except StagingError as e:
-            return None, f"staging JSON failed validation: {e}"
-
     print(f"\n[{card}] Running audit agent...")
     report, result = run_agent_loop(
         build_prompt=build_prompt,
         cwd=utils.PROJECT_ROOT,
-        load_result=load_result,
+        load_result=single_file_loader(
+            staging_path, AuditReport.load,
+            missing_hint="Write the findings JSON to the staging path above.",
+        ),
         model=args.model,
         effort=args.effort,
     )
@@ -81,13 +71,12 @@ def _audit_one(card: str, args) -> list[Ticket] | None:
         )
         return None
 
-    extras = {
-        "audit_run_id": run_id,
-        "audit_model": args.model,
-        "audit_tokens": str(result.tokens),
-        "audit_duration": str(result.duration),
-    }
-    minted = report.mint_tickets(extra=extras)
+    minted = report.mint_tickets(
+        run_id=run_id,
+        model=args.model,
+        tokens=result.tokens,
+        duration=result.duration,
+    )
     print(
         f"[{card}] Done: {len(minted)} ticket(s) "
         f"({result.duration}s, {result.tokens} tok)"

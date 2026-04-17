@@ -562,14 +562,29 @@ class AuditReport:
         )
 
     def mint_tickets(
-        self, *, extra: dict[str, str] | None = None,
+        self,
+        *,
+        run_id: str = "",
+        model: str = "",
+        tokens: int = 0,
+        duration: int = 0,
     ) -> list[Ticket]:
-        """Mint one ticket per finding. Returns the newly-created tickets.
+        """Mint one ticket per finding, stamping audit-run metadata.
 
-        `extra` is applied to every minted ticket's frontmatter — useful
-        for stamping audit-run metadata (run id, model, tokens, duration)
-        onto every ticket produced by the same run.
+        `run_id` / `model` / `tokens` / `duration` land on every minted
+        ticket's `audit_*` frontmatter slots. Defaults stand in for
+        hand-ingested reports that don't have agent metadata.
         """
+        extra: dict[str, str] = {}
+        if run_id:
+            extra["audit_run_id"] = run_id
+        if model:
+            extra["audit_model"] = model
+        if tokens:
+            extra["audit_tokens"] = str(tokens)
+        if duration:
+            extra["audit_duration"] = str(duration)
+
         snake = utils.card_to_snake(self.card)
         out: list[Ticket] = []
         for finding in self.findings:
@@ -580,7 +595,7 @@ class AuditReport:
                 status=Status.NEW,
                 card=self.card,
                 body=finding.to_ticket_body(snake, num),
-                extra=extra,
+                extra=extra or None,
             )
             out.append(t)
         return out

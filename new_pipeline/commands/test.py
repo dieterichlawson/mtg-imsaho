@@ -15,9 +15,8 @@ rerun can pick up where it left off.
 from __future__ import annotations
 
 from new_pipeline import oracle, utils, validate, worktree
-from new_pipeline.agent import AgentResult, run_agent_loop
+from new_pipeline.agent import run_agent_loop, single_file_loader
 from new_pipeline.types import (
-    StagingError,
     Status,
     TestReport,
     TestStatus,
@@ -64,18 +63,7 @@ def _test_one(tid: str, args) -> None:
             staging_path=str(staging_path),
         ) + retry_note
 
-    def load_result(result: AgentResult, _attempt):
-        if result.is_error:
-            return None, f"agent error: {result.error_message}"
-        if not staging_path.exists():
-            return None, (
-                f"agent did not write {staging_path.name}. "
-                f"Write the report JSON to the staging path above."
-            )
-        try:
-            report = TestReport.load(staging_path)
-        except StagingError as e:
-            return None, f"staging JSON failed validation: {e}"
+    def _validate_tests(report: TestReport) -> str | None:
         # Every confirmed test must actually compile + fail with an
         # assertion. One bad confirmed → retry the whole run.
         for r in report.tests:
@@ -83,17 +71,21 @@ def _test_one(tid: str, args) -> None:
                 continue
             v = validate.validate_test(wt, report.test_file, r.test_name)
             if not v.ok:
-                return None, (
+                return (
                     f"test {r.slug!r} ({r.test_name}) failed validation: "
                     f"{v.reason}\n{v.output}"
                 )
-        return report, None
+        return None
 
     print(f"\n[{tid}] Running test-writer agent...")
     report, result = run_agent_loop(
         build_prompt=build_prompt,
         cwd=wt,
-        load_result=load_result,
+        load_result=single_file_loader(
+            staging_path, TestReport.load,
+            validator=_validate_tests,
+            missing_hint="Write the report JSON to the staging path above.",
+        ),
         model=args.model,
         effort=args.effort,
     )
