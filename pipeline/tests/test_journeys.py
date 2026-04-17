@@ -14,24 +14,34 @@ Run with:
 from __future__ import annotations
 
 import argparse
-import os
+import json
+import re
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable
 from unittest.mock import patch
 
-# Make `import pipeline.cli` work regardless of the cwd the tests run in.
+# Make `import pipeline.X` work regardless of the cwd the tests run in.
 _THIS = Path(__file__).resolve()
 _REPO_ROOT = _THIS.parents[2]
 sys.path.insert(0, str(_REPO_ROOT))
 
-from pipeline import cli  # noqa: E402
-
+from pipeline import (
+    agent,  # noqa: E402
+    cli,  # noqa: E402
+    validate,  # noqa: E402
+)
+from pipeline import oracle as oracle_mod  # noqa: E402
+from pipeline import paths as pipe_paths  # noqa: E402
+from pipeline import ticket as ticket_mod  # noqa: E402
+from pipeline.commands import merge as merge_mod  # noqa: E402
+from pipeline.state import Status  # noqa: E402
+from pipeline.validate import FixValidation, TestValidation  # noqa: E402
 
 # ──────────────────────────────────────────────────────────────────
 # Fixture: a disposable pipeline project rooted in a temp directory.
@@ -72,7 +82,10 @@ class PipelineEnv:
         (peragent_dir / "dedup.peragent.md").write_text(
             "{tickets_section}\n")
 
-        # Stub validation scripts — always succeed.
+        # Stub validate.validate_test / validate_fix so we don't invoke cargo.
+        # The journey tests exercise state-machine wiring, not Rust builds.
+        # Also stub the legacy shell scripts (still referenced by one
+        # validator path if Python code decides to shell out).
         for name in ("validate_test.sh", "validate_fix.sh"):
             p = self.pipeline / "scripts" / name
             p.write_text("#!/bin/bash\nexit 0\n")
@@ -86,9 +99,11 @@ class PipelineEnv:
         self._git("add", "-A")
         self._git("commit", "-q", "-m", "init")
 
-        # Patch the cli module's path-dependent globals to this env.
+        # Patch pipeline.paths to this env. Every other module reads
+        # paths via `from pipeline import paths; paths.X`, so patching
+        # the module attributes here is enough.
         self._patchers = []
-        paths = {
+        new_paths = {
             "PROJECT_ROOT": self.tmp,
             "PIPELINE_DIR": self.pipeline,
             "TICKETS_DIR":  self.pipeline / "tickets",
@@ -99,27 +114,42 @@ class PipelineEnv:
             "METRICS_DIR":  self.pipeline / "metrics",
             "LOGS_DIR":     self.pipeline / "logs",
             "WORKTREES_DIR": self.tmp / ".worktrees",
+            "AGENT_SETTINGS": self.pipeline / "agent-settings.json",
         }
-        for name, val in paths.items():
-            p = patch.object(cli, name, val)
+        for name, val in new_paths.items():
+            p = patch.object(pipe_paths, name, val)
             p.start()
             self._patchers.append(p)
 
-        # Oracle text is looked up by `get_oracle_text` which shells out
-        # to scripts/oracle_lookup.py. Stub it out.
-        p = patch.object(cli, "get_oracle_text",
+        # Oracle lookup shells out to scripts/oracle_lookup.py. Stub.
+        p = patch.object(oracle_mod, "get_oracle_text",
                          lambda name: f"[fake oracle for {name}]")
         p.start()
         self._patchers.append(p)
 
         # Scripted agent responses — set per-journey via install_agent().
         self._agent_script: list[Callable[[Path, str], None]] = []
-        p = patch.object(cli, "run_agent_in", self._fake_run_agent_in)
+        p = patch.object(agent, "run_agent_in", self._fake_run_agent_in)
         p.start()
         self._patchers.append(p)
-        # cmd_audit uses run_agent (no cwd); the default fake would also
-        # serve. We don't exercise cmd_audit in these journeys.
-        p = patch.object(cli, "run_agent", self._fake_run_agent)
+        p = patch.object(agent, "run_agent", self._fake_run_agent)
+        p.start()
+        self._patchers.append(p)
+
+        # Short-circuit validate.* so we don't depend on cargo being on PATH.
+        # Tests that want a rejection-at-validation path can re-patch.
+        p = patch.object(validate, "validate_test",
+                         lambda *a, **k: TestValidation(True, "stubbed"))
+        p.start()
+        self._patchers.append(p)
+        p = patch.object(validate, "validate_fix",
+                         lambda *a, **k: FixValidation(True, "stubbed"))
+        p.start()
+        self._patchers.append(p)
+
+        # Merge's post-merge cargo test is also subprocess-based; stub it
+        # so the journey tests don't invoke cargo.
+        p = patch.object(merge_mod, "_tests_pass_at_head", lambda _t: True)
         p.start()
         self._patchers.append(p)
 
@@ -130,7 +160,8 @@ class PipelineEnv:
         Each callable runs for one agent invocation in order. It receives
         the worktree path and the ticket id (best-effort, parsed from
         the prompt) and is responsible for writing the staging file and
-        committing any code changes."""
+        committing any code changes.
+        """
         self._agent_script = list(script)
 
     def cleanup(self) -> None:
@@ -140,18 +171,11 @@ class PipelineEnv:
         shutil.rmtree(self.tmp, ignore_errors=True)
 
     # Convenience accessors ─────────────────────────────────────────
-    def ticket_path(self, ticket_id: str) -> Path:
-        # Mirror cli.ticket_path: look active first, then archive.
-        return cli.ticket_path(ticket_id)
+    def read_ticket(self, ticket_id: str):
+        return ticket_mod.load(ticket_id)
 
-    def read_ticket(self, ticket_id: str) -> dict:
-        return cli.parse_ticket(self.ticket_path(ticket_id))
-
-    def status(self, ticket_id: str) -> str:
-        return self.read_ticket(ticket_id)["frontmatter"].get("status", "")
-
-    def write_ticket(self, ticket_id: str, fm: dict, body: str) -> None:
-        cli.write_ticket(ticket_id, fm, body)
+    def status(self, ticket_id: str):
+        return self.read_ticket(ticket_id).status
 
     # Internals ─────────────────────────────────────────────────────
     def _git(self, *args: str, cwd: Path | None = None) -> subprocess.CompletedProcess:
@@ -179,8 +203,8 @@ def _extract_ticket_id(prompt: str) -> str:
     """Pull the ticket id out of a per-agent prompt. Tolerant of the two
     shapes actually used: `### Ticket ID: X` (test-writer) and the
     per-agent-prompt header the audit command uses. Returns '' if
-    absent."""
-    import re
+    absent.
+    """
     m = re.search(r"Ticket ID:\s*(\S+)", prompt)
     if m:
         return m.group(1).strip()
@@ -208,16 +232,16 @@ def _commit_all(wt: Path, msg: str) -> None:
 
 def _write_test_staging(wt: Path, tid: str, test_file_rel: str,
                         per_test: list[dict]) -> None:
-    import json as _json
     staging = wt / "pipeline" / "staging" / f"{tid}-test.json"
     staging.parent.mkdir(parents=True, exist_ok=True)
-    staging.write_text(_json.dumps(
+    staging.write_text(json.dumps(
         {"test_file": test_file_rel, "tests": per_test}, indent=2))
 
 
 def tester_confirms(test_slugs: list[str] | None = None):
     """Agent script: write a Rust test file, commit it, emit a staging
-    file that confirms every slug in the ticket's ## Tests section."""
+    file that confirms every slug in the ticket's ## Tests section.
+    """
     def _fn(wt: Path, tid: str) -> None:
         tid_snake = tid.replace("-", "_")
         test_file_rel = f"mtg-engine/tests/pipeline_bugs_{tid_snake}.rs"
@@ -236,7 +260,9 @@ def tester_confirms(test_slugs: list[str] | None = None):
 
 def tester_blocks_on_engine(reason: str = "needs new API in foo.rs:123"):
     """Agent script: report the test can't be written without an engine
-    change. Commits nothing; writes staging with per-test blocked."""
+    change. Commits nothing
+    writes staging with per-test blocked.
+    """
     def _fn(wt: Path, tid: str) -> None:
         slugs = _slugs_from_ticket(tid)
         test_file_rel = f"mtg-engine/tests/pipeline_bugs_{tid.replace('-','_')}.rs"
@@ -249,7 +275,8 @@ def tester_blocks_on_engine(reason: str = "needs new API in foo.rs:123"):
 
 def tester_all_false_positive():
     """Agent script: every test entry comes back Status=rejected.
-    Aggregates to false_positive."""
+    Aggregates to false_positive.
+    """
     def _fn(wt: Path, tid: str) -> None:
         slugs = _slugs_from_ticket(tid)
         test_file_rel = f"mtg-engine/tests/pipeline_bugs_{tid.replace('-','_')}.rs"
@@ -263,14 +290,13 @@ def tester_all_false_positive():
 def fixer_succeeds():
     """Agent script: write a source change, commit, emit fixed staging."""
     def _fn(wt: Path, tid: str) -> None:
-        import json as _json
         f = wt / "mtg-engine" / "src" / "engine.rs"
         f.parent.mkdir(parents=True, exist_ok=True)
         f.write_text(f"// fix for {tid}\n")
         _commit_all(wt, f"Fix {tid}")
         staging = wt / "pipeline" / "staging" / f"{tid}-fix.json"
         staging.parent.mkdir(parents=True, exist_ok=True)
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "status": "fixed",
             "files_changed": ["mtg-engine/src/engine.rs"],
             "description": "Fixed the dispatcher filter.",
@@ -281,10 +307,9 @@ def fixer_succeeds():
 def fixer_fails(reason: str = "could not satisfy all tests"):
     """Agent script: commit nothing new, emit failed staging."""
     def _fn(wt: Path, tid: str) -> None:
-        import json as _json
         staging = wt / "pipeline" / "staging" / f"{tid}-fix.json"
         staging.parent.mkdir(parents=True, exist_ok=True)
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "status": "failed",
             "files_changed": [],
             "description": reason,
@@ -293,8 +318,8 @@ def fixer_fails(reason: str = "could not satisfy all tests"):
 
 
 def _slugs_from_ticket(tid: str) -> list[str]:
-    body = cli.parse_ticket(cli.ticket_path(tid))["body"]
-    return [t["slug"] for t in cli._parse_tests_section(body)]
+    t = ticket_mod.load(tid)
+    return [entry["slug"] for entry in ticket_mod.parse_tests_section(t.body)]
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -324,11 +349,8 @@ def make_ticket(env: PipelineEnv, tid: str, *,
         body_lines.append("Implementation: (not yet written)")
         body_lines.append(f"Scenario: exercise {s}.")
         body_lines.append("")
-    fm = {
-        "id": tid, "status": cli.STATUS_NEW, "card": card,
-        "created": cli.now_iso(),
-    }
-    env.write_ticket(tid, fm, "\n".join(body_lines))
+    ticket_mod.new(tid, status=Status.NEW, card=card,
+                   body="\n".join(body_lines))
 
 
 # ──────────────────────────────────────────────────────────────────
@@ -513,9 +535,8 @@ class JourneyTest(unittest.TestCase):
 
         # Hand-craft a consolidation staging file (what the dedup agent
         # would produce) and run cmd_consolidate directly.
-        import json as _json
         staging = self.env.pipeline / "staging" / "consolidation-w-target.json"
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "slug": "w-target",
             "title": "Merged target check",
             "description": "One engine cause.",
@@ -546,9 +567,8 @@ class JourneyTest(unittest.TestCase):
         # Build: two children → consolidate → parent → test/fix flow.
         for child in ("c1-01", "c2-01"):
             make_ticket(self.env, child, card=child, slugs=[f"{child}_slug"])
-        import json as _json
         staging = self.env.pipeline / "staging" / "consolidation-p.json"
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "slug": "p",
             "title": "Parent",
             "description": "d",
@@ -647,7 +667,8 @@ class JourneyTest(unittest.TestCase):
 
     def test_terminal_transitions_archive(self) -> None:
         """Close, merge-to-shipped, and consolidate-absorb should each
-        physically move the ticket file into pipeline/tickets/archive/."""
+        physically move the ticket file into pipeline/tickets/archive/.
+        """
         active = self.env.pipeline / "tickets"
         archive = active / "archive"
 
@@ -670,9 +691,8 @@ class JourneyTest(unittest.TestCase):
 
         # consolidate → absorbed sources archived, parent stays active
         make_ticket(self.env, "abs-01", slugs=["abs_slug"])
-        import json as _json
         staging = self.env.pipeline / "staging" / "consolidation-abs.json"
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "slug": "abs",
             "title": "Absorb",
             "description": "root cause",
@@ -691,16 +711,16 @@ class JourneyTest(unittest.TestCase):
         ticket, Python treats it as coverage metadata (not an absorption
         target). The closed ticket's status is unchanged. This supports
         the common case of copying tests verbatim from a merged-* parent
-        that carries closed-card-ticket source_ticket pointers."""
+        that carries closed-card-ticket source_ticket pointers.
+        """
         # Two cards: one already closed (the metadata case), one open
         # (the legitimate absorption target).
         make_ticket(self.env, "closed-01", slugs=["closed_slug"])
         run_close(self.env, "closed-01")
         make_ticket(self.env, "open-01", slugs=["open_slug"])
 
-        import json as _json
         staging = self.env.pipeline / "staging" / "consolidation-meta.json"
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "slug": "meta",
             "title": "Metadata kept",
             "description": "d",
@@ -729,14 +749,14 @@ class JourneyTest(unittest.TestCase):
     def test_consolidate_rejects_closed_also_closes(self) -> None:
         """`also_closes` entries are EXPLICIT absorption requests —
         they must be currently-open tickets. Listing an already-closed
-        id there is a protocol violation that gets rejected hard."""
+        id there is a protocol violation that gets rejected hard.
+        """
         make_ticket(self.env, "live-01", slugs=["live_slug"])
         make_ticket(self.env, "dead-01", slugs=["dead_slug"])
         run_close(self.env, "dead-01")
 
-        import json as _json
         staging = self.env.pipeline / "staging" / "consolidation-bad.json"
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "slug": "bad",
             "title": "Bad",
             "description": "d",
@@ -761,7 +781,8 @@ class JourneyTest(unittest.TestCase):
     def test_auto_numbering_sees_archive(self) -> None:
         """Auto-numbering of new ticket ids must skip ids that live in
         archive, so a re-audit of an already-audited card doesn't stomp
-        on an archived ticket's id."""
+        on an archived ticket's id.
+        """
         # Seed: create -01 and archive it.
         make_ticket(self.env, "numbering-01")
         run_close(self.env, "numbering-01")
@@ -771,10 +792,9 @@ class JourneyTest(unittest.TestCase):
         # Next merged consolidation using the same stem base should take
         # -02, not reuse -01. Exercise via consolidate (easier than a
         # full cmd_audit) — the same all_ticket_paths helper drives both.
-        import json as _json
         make_ticket(self.env, "src-01", slugs=["s"])
         staging = self.env.pipeline / "staging" / "consolidation-numbering.json"
-        staging.write_text(_json.dumps({
+        staging.write_text(json.dumps({
             "slug": "numbering",
             "title": "Numbering",
             "description": "d",
@@ -790,7 +810,7 @@ class JourneyTest(unittest.TestCase):
         # Now create a second consolidation using the same slug: must get -02
         make_ticket(self.env, "src-02", slugs=["s2"])
         staging2 = self.env.pipeline / "staging" / "consolidation-numbering2.json"
-        staging2.write_text(_json.dumps({
+        staging2.write_text(json.dumps({
             "slug": "numbering",
             "title": "Numbering 2",
             "description": "d",
@@ -812,7 +832,7 @@ class JourneyTest(unittest.TestCase):
 
         make_ticket(self.env, "src-03", slugs=["s3"])
         staging3 = self.env.pipeline / "staging" / "consolidation-numbering3.json"
-        staging3.write_text(_json.dumps({
+        staging3.write_text(json.dumps({
             "slug": "numbering",
             "title": "Numbering 3",
             "description": "d",
@@ -826,21 +846,22 @@ class JourneyTest(unittest.TestCase):
 
     def test_list_tickets_spans_active_and_archive(self) -> None:
         """list_tickets reads both directories so reports/backlog
-        queries see the full history."""
+        queries see the full history.
+        """
         make_ticket(self.env, "live-01")
         make_ticket(self.env, "dead-01")
         run_close(self.env, "dead-01")
 
-        all_tickets = cli.list_tickets()
-        ids = {t["frontmatter"].get("id") for t in all_tickets}
+        all_tickets = ticket_mod.list_all()
+        ids = {t.id for t in all_tickets}
         self.assertIn("live-01", ids)
         self.assertIn("dead-01", ids)
 
         # Filtering by status also sees the archived ones
-        closed = cli.list_tickets(status=cli.STATUS_CLOSED)
-        self.assertEqual({t["frontmatter"]["id"] for t in closed}, {"dead-01"})
-        new = cli.list_tickets(status=cli.STATUS_NEW)
-        self.assertEqual({t["frontmatter"]["id"] for t in new}, {"live-01"})
+        closed = ticket_mod.list_all(status=Status.CLOSED)
+        self.assertEqual({t.id for t in closed}, {"dead-01"})
+        new = ticket_mod.list_all(status=Status.NEW)
+        self.assertEqual({t.id for t in new}, {"live-01"})
 
     def test_absorb_tested_source_inherits_worktree(self) -> None:
         """Absorbing a single `tested` merged-* source into a deeper new
@@ -848,14 +869,14 @@ class JourneyTest(unittest.TestCase):
         renamed on disk and committed, and inherited Implementation
         pointers appear in the new parent's body (pointing at the new
         test-file name). If all tests inherit, the new parent goes
-        straight to status=tested."""
+        straight to status=tested.
+        """
         # Set up: create a merged parent via consolidate, then run test
         # on it so its status becomes `tested`.
         for tid, slug in (("a-01", "a_slug"), ("b-01", "b_slug")):
             make_ticket(self.env, tid, slugs=[slug])
-        import json as _json
         stg = self.env.pipeline / "staging" / "consolidation-first.json"
-        stg.write_text(_json.dumps({
+        stg.write_text(json.dumps({
             "slug": "first", "title": "First", "description": "d",
             "engine_path": ["e.rs:1"],
             "tests": [
@@ -883,7 +904,7 @@ class JourneyTest(unittest.TestCase):
         # for the card ticket.
         make_ticket(self.env, "c-01", slugs=["c_slug"])
         stg2 = self.env.pipeline / "staging" / "consolidation-deep.json"
-        stg2.write_text(_json.dumps({
+        stg2.write_text(json.dumps({
             "slug": "deep", "title": "Deep", "description": "d",
             "engine_path": ["e.rs:1"],
             "tests": [
@@ -930,10 +951,9 @@ class JourneyTest(unittest.TestCase):
         # Build two separately-tested merged parents.
         for slug in ("x", "y"):
             make_ticket(self.env, f"{slug}-01", slugs=[f"{slug}_slug"])
-        import json as _json
         for slug in ("x", "y"):
             stg = self.env.pipeline / "staging" / f"cons-{slug}.json"
-            stg.write_text(_json.dumps({
+            stg.write_text(json.dumps({
                 "slug": slug, "title": slug, "description": "d",
                 "engine_path": ["e.rs:1"],
                 "tests": [{"slug": f"{slug}_slug",
@@ -949,7 +969,7 @@ class JourneyTest(unittest.TestCase):
 
         # Now attempt to absorb both tested parents into one deeper parent.
         stg3 = self.env.pipeline / "staging" / "cons-both.json"
-        stg3.write_text(_json.dumps({
+        stg3.write_text(json.dumps({
             "slug": "both", "title": "Both", "description": "d",
             "engine_path": ["e.rs:1"],
             "tests": [
@@ -970,7 +990,8 @@ class JourneyTest(unittest.TestCase):
     def test_absorb_rejects_fixed_or_fix_failed(self) -> None:
         """Only `new` and `tested` sources may be absorbed. `fixed` and
         `fix_failed` carry real work (commits, post-mortem) and are
-        off-limits — the user must retry --to new first."""
+        off-limits — the user must retry --to new first.
+        """
         # Set up: a fixed ticket and a fix_failed ticket.
         make_ticket(self.env, "fx-01", slugs=["fx_slug"])
         self.env.install_agent([tester_confirms(), fixer_succeeds()])
@@ -985,10 +1006,9 @@ class JourneyTest(unittest.TestCase):
         self.assertEqual(self.env.status("ff-01"), cli.STATUS_FIX_FAILED)
 
         # Try to absorb each into a new parent — each should be rejected.
-        import json as _json
         for source in ("fx-01", "ff-01"):
             stg = self.env.pipeline / "staging" / f"cons-{source}.json"
-            stg.write_text(_json.dumps({
+            stg.write_text(json.dumps({
                 "slug": source.replace("-", ""),
                 "title": "T", "description": "d",
                 "engine_path": ["e.rs:1"],

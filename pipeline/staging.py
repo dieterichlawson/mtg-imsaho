@@ -45,6 +45,7 @@ VALID_TEST_STATUSES = {TEST_CONFIRMED, TEST_REJECTED, TEST_BLOCKED}
 
 
 def load_audit(path: Path) -> dict:
+    """Parse an auditor staging file into a normalized findings+insights dict."""
     d = _load_json(path)
     findings = []
     for f in _require_objects(d, "findings"):
@@ -71,6 +72,7 @@ def load_audit(path: Path) -> dict:
 
 
 def load_test(path: Path) -> dict:
+    """Parse a test-writer staging file into {test_file, tests:[...]}."""
     d = _load_json(path)
     tests = []
     for i, t in enumerate(_require_objects(d, "tests")):
@@ -88,6 +90,7 @@ def load_test(path: Path) -> dict:
 
 
 def load_fix(path: Path) -> dict:
+    """Parse a fixer staging file into {status, files_changed, description}."""
     d = _load_json(path)
     status = _require(d, "status", str).lower()
     if status not in ("fixed", "failed"):
@@ -98,6 +101,7 @@ def load_fix(path: Path) -> dict:
 
 
 def load_consolidation(path: Path) -> dict:
+    """Parse a dedup consolidation proposal into a normalized dict."""
     d = _load_json(path)
     slug = _require(d, "slug", str)
     if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", slug):
