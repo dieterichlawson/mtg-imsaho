@@ -1,32 +1,35 @@
-"""The ticket state machine — statuses and the transitions between them.
+"""The ticket state machine — statuses, outcomes, and one transition function.
 
-Every status change in the pipeline goes through one of the `after_*`
-functions below. They are pure: status in, status out. Side effects
-(writing the ticket file, archiving, logging) live in ticket.py and
-the command modules.
+Every status change in the pipeline goes through `next_status`. It is
+pure: current status + outcome → new status. Side effects (writing the
+ticket file, archiving, metrics) live in ticket.py and the command
+modules.
 """
+
 from __future__ import annotations
 
 from enum import Enum
 
 
 class Status(str, Enum):
-    """A ticket's lifecycle state. Mixes with `str` so comparisons with
-    raw frontmatter strings still work transparently.
+    """A ticket's lifecycle state.
+
+    Mixes with `str` so comparisons against raw frontmatter strings
+    still work transparently.
     """
 
-    NEW            = "new"
-    TESTED         = "tested"
-    FIXED          = "fixed"
-    SHIPPED        = "shipped"
-    FIX_FAILED     = "fix_failed"
+    NEW = "new"
+    TESTED = "tested"
+    FIXED = "fixed"
+    SHIPPED = "shipped"
+    FIX_FAILED = "fix_failed"
     FALSE_POSITIVE = "false_positive"
-    CLOSED         = "closed"
+    CLOSED = "closed"
 
     @property
     def is_terminal(self) -> bool:
         """True if no further transitions are allowed (shipped/closed/FP)."""
-        return self in _TERMINAL
+        return self in {Status.SHIPPED, Status.FALSE_POSITIVE, Status.CLOSED}
 
     @property
     def is_open(self) -> bool:
@@ -35,103 +38,109 @@ class Status(str, Enum):
 
     @property
     def is_absorbable(self) -> bool:
-        """Eligible to be folded into a merged-* parent via consolidate/dedup."""
-        return self in _ABSORBABLE
-
-
-_TERMINAL   = frozenset({Status.SHIPPED, Status.FALSE_POSITIVE, Status.CLOSED})
-_ABSORBABLE = frozenset({Status.NEW, Status.TESTED})
+        """Eligible to be folded into a merged-* parent via consolidate."""
+        return self in {Status.NEW, Status.TESTED}
 
 
 class CloseReason(str, Enum):
     """Why a ticket ended up in `closed`."""
 
-    ABSORBED  = "absorbed"   # folded into a merged-* parent
+    ABSORBED = "absorbed"  # folded into a merged-* parent
     ABANDONED = "abandoned"  # human gave up
 
 
 class TestOutcome(str, Enum):
     """Aggregated verdict of the test-writer on a ticket."""
 
-    CONFIRMED    = "confirmed"      # at least one test compiles + fails
-    NEEDS_ENGINE = "needs_engine"   # one or more blocked on engine surface
-    NO_REAL_BUG  = "no_real_bug"    # nothing confirmed, no blockers
+    CONFIRMED = "confirmed"  # at least one test compiles + fails
+    NEEDS_ENGINE = "needs_engine"  # one or more blocked on engine surface
+    NO_REAL_BUG = "no_real_bug"  # nothing confirmed, no blockers
 
 
 class FixOutcome(str, Enum):
     """Aggregated verdict of the fixer on a ticket."""
 
-    SUCCEEDED = "succeeded"   # validate_fix passed
-    FAILED    = "failed"      # fixer gave up or validation rejected
+    SUCCEEDED = "succeeded"  # validate_fix passed
+    FAILED = "failed"  # fixer gave up or validation rejected
 
 
-# ─── Transitions ─────────────────────────────────────────────────────
+class LifecycleEvent(str, Enum):
+    """Non-stage events that still change a ticket's status."""
 
-def after_audit() -> Status:
-    """A freshly-created audit ticket starts here."""
-    return Status.NEW
-
-
-def after_test(current: Status, outcome: TestOutcome) -> Status:
-    """Route a ticket after the test-writer runs."""
-    _require(current, {Status.NEW}, f"test phase on {current}")
-    if outcome is TestOutcome.CONFIRMED:
-        return Status.TESTED
-    if outcome is TestOutcome.NEEDS_ENGINE:
-        # Re-enter `new` so test-writer runs again with allow_engine_edits set.
-        return Status.NEW
-    return Status.FALSE_POSITIVE
+    MERGED = "merged"  # branch merged into master
+    ABSORBED = "absorbed"  # folded into a merged-* parent
+    ABANDONED = "abandoned"  # human gave up
 
 
-def after_fix(current: Status, outcome: FixOutcome) -> Status:
-    """Route a ticket after the fixer runs."""
-    _require(current, {Status.TESTED}, f"fix phase on {current}")
-    return Status.FIXED if outcome is FixOutcome.SUCCEEDED else Status.FIX_FAILED
+# Every outcome the state machine knows how to route. Callers pass one
+# of these to `next_status` alongside the current status.
+Outcome = TestOutcome | FixOutcome | LifecycleEvent
 
 
-def after_merge(current: Status) -> Status:
-    """Route a ticket after its branch is merged into master."""
-    _require(current, {Status.FIXED}, f"merge on {current}")
-    return Status.SHIPPED
+# (from_status, outcome) → to_status. Missing pairs are illegal.
+_TRANSITIONS: dict[tuple[Status, Outcome], Status] = {
+    (Status.NEW, TestOutcome.CONFIRMED): Status.TESTED,
+    # NEEDS_ENGINE re-enters `new` so the next test run sees
+    # allow_engine_edits=true and may modify engine source.
+    (Status.NEW, TestOutcome.NEEDS_ENGINE): Status.NEW,
+    (Status.NEW, TestOutcome.NO_REAL_BUG): Status.FALSE_POSITIVE,
+    (Status.TESTED, FixOutcome.SUCCEEDED): Status.FIXED,
+    (Status.TESTED, FixOutcome.FAILED): Status.FIX_FAILED,
+    (Status.FIXED, LifecycleEvent.MERGED): Status.SHIPPED,
+}
 
 
-def after_absorb(current: Status) -> Status:
-    """Consolidate/dedup absorbs a ticket into a merged-* parent."""
-    if not current.is_absorbable:
-        raise ValueError(
-            f"cannot absorb a ticket in status {current!r}; "
-            f"only {sorted(s.value for s in _ABSORBABLE)} are absorbable")
-    return Status.CLOSED
+class IllegalTransitionError(ValueError):
+    """Raised when no valid transition exists for (current, outcome)."""
 
 
-def after_abandon(current: Status) -> Status:
-    """Human gives up and closes the ticket manually."""
-    if current.is_terminal:
-        raise ValueError(
-            f"cannot abandon a ticket already in terminal status {current!r}")
-    return Status.CLOSED
+def next_status(current: Status, outcome: Outcome) -> Status:
+    """Return the status a ticket should land in after `outcome`.
+
+    Raises IllegalTransitionError if the pair isn't in the state machine.
+    Absorbed/abandoned apply from any open/absorbable state and are
+    handled explicitly — the rest are a pure table lookup.
+    """
+    if outcome is LifecycleEvent.ABSORBED:
+        if not current.is_absorbable:
+            raise IllegalTransitionError(
+                f"cannot absorb a ticket in status {current.value!r}; "
+                f"only 'new' and 'tested' are absorbable"
+            )
+        return Status.CLOSED
+    if outcome is LifecycleEvent.ABANDONED:
+        if current.is_terminal:
+            raise IllegalTransitionError(
+                f"cannot abandon a ticket already terminal ({current.value!r})"
+            )
+        return Status.CLOSED
+    try:
+        return _TRANSITIONS[(current, outcome)]
+    except KeyError:
+        raise IllegalTransitionError(
+            f"no transition: status={current.value!r}, "
+            f"outcome={outcome.value!r}"
+        ) from None
 
 
-def after_retry(current: Status, target: Status, force: bool = False) -> Status:
-    """Rewind a ticket to an earlier phase.
+def retry_target(
+    current: Status, target: Status, *, force: bool = False
+) -> Status:
+    """Validate a retry rewind request.
 
-    `target` is chosen by the caller (user can pass --to). Defaults live
-    in the retry command, not here; this function validates legality.
+    Unlike `next_status`, the caller picks the target explicitly (via
+    `--to`). We just enforce the rules around terminality and force.
     """
     if current is Status.FALSE_POSITIVE and not force:
-        raise ValueError(f"{current} requires --force to retry")
+        raise IllegalTransitionError(
+            f"{current.value!r} requires --force to retry"
+        )
     if current in {Status.SHIPPED, Status.CLOSED}:
-        raise ValueError(f"{current} is terminal; cannot retry")
+        raise IllegalTransitionError(
+            f"{current.value!r} is terminal; cannot retry"
+        )
     if target not in {Status.NEW, Status.TESTED}:
-        raise ValueError(
-            f"retry target must be {Status.NEW} or {Status.TESTED}, got {target}")
+        raise IllegalTransitionError(
+            f"retry target must be 'new' or 'tested', got {target.value!r}"
+        )
     return target
-
-
-# ─── Internals ───────────────────────────────────────────────────────
-
-def _require(current: Status, allowed: set, what: str) -> None:
-    if current not in allowed:
-        raise ValueError(
-            f"{what}: expected one of {sorted(s.value for s in allowed)}, "
-            f"got {current!r}")

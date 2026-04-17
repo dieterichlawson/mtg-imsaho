@@ -14,6 +14,7 @@ from pipeline import cli  # noqa: E402
 
 
 def _load_audit_runs() -> list[dict]:
+
     path = cli.METRICS_DIR / "runs.jsonl"
     if not path.exists():
         return []
@@ -31,6 +32,7 @@ def _load_audit_runs() -> list[dict]:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Print audit coverage, per-card breakdown, and ticket backlog."""
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("--audits-only", action="store_true")
     p.add_argument("--cards-only", action="store_true")
@@ -47,22 +49,33 @@ def main(argv: list[str] | None = None) -> None:
     cards_errored_only = sorted(set(cards_attempted) - set(cards_ok))
 
     if not args.cards_only:
-        print(f"\n{'='*60}\nAUDIT COVERAGE\n{'='*60}")
+        print(f"\n{'=' * 60}\nAUDIT COVERAGE\n{'=' * 60}")
         print(f"  Total audit runs:                  {len(runs)}")
         print(f"  Successful runs:                   {len(successful)}")
         print(f"  Errored runs:                      {len(errored)}")
         print(f"  Unique cards attempted:            {len(cards_attempted)}")
         print(f"  Unique cards successfully audited: {len(cards_ok)}")
         if cards_errored_only:
-            print(f"\n  Cards with only errored runs ({len(cards_errored_only)}):")
+            print(
+                f"\n  Cards with only errored runs ({len(cards_errored_only)}):"
+            )
             for c in cards_errored_only:
-                reason = next((r.get("rejection_reason") for r in reversed(errored)
-                               if r["card"] == c), None) or "unknown"
+                reason = (
+                    next(
+                        (
+                            r.get("rejection_reason")
+                            for r in reversed(errored)
+                            if r["card"] == c
+                        ),
+                        None,
+                    )
+                    or "unknown"
+                )
                 print(f"    {c} — {reason}")
 
     # ── Per-card breakdown ──────────────────────────────────────
     if not args.audits_only:
-        FIXED_LIKE = {cli.STATUS_FIXED, cli.STATUS_SHIPPED}
+        fixed_like = {cli.STATUS_FIXED, cli.STATUS_SHIPPED}
         by_id = {t["frontmatter"].get("id"): t for t in tickets}
 
         def terminal_status(tid: str, seen=None) -> str:
@@ -88,50 +101,67 @@ def main(argv: list[str] | None = None) -> None:
                 continue
             by_card_status[card][fm.get("status", cli.STATUS_NEW)] += 1
 
-        print(f"\n{'='*60}\nPER-CARD BREAKDOWN\n{'='*60}")
-        print(f"  {'Card':<32} {'Audits':>6} {'Tickets':>7} "
-              f"{'Open':>5} {'Fixed':>5} {'Closed':>6}")
-        print(f"  {'-'*32} {'-'*6} {'-'*7} {'-'*5} {'-'*5} {'-'*6}")
+        print(f"\n{'=' * 60}\nPER-CARD BREAKDOWN\n{'=' * 60}")
+        print(
+            f"  {'Card':<32} {'Audits':>6} {'Tickets':>7} "
+            f"{'Open':>5} {'Fixed':>5} {'Closed':>6}"
+        )
+        print(f"  {'-' * 32} {'-' * 6} {'-' * 7} {'-' * 5} {'-' * 5} {'-' * 6}")
 
         rows = []
         for card in sorted(set(cards_attempted) | set(by_card_status)):
             audits = by_card_runs.get(card, 0)
-            card_tickets = [t for t in tickets if t["frontmatter"].get("card") == card]
+            card_tickets = [
+                t for t in tickets if t["frontmatter"].get("card") == card
+            ]
             open_n = fixed_n = closed_n = 0
             for t in card_tickets:
                 tid = t["frontmatter"].get("id")
                 st = t["frontmatter"].get("status", "new")
                 if st in cli.OPEN_STATUSES:
                     open_n += 1
-                elif st in FIXED_LIKE:
+                elif st in fixed_like:
                     fixed_n += 1
                 elif st == cli.STATUS_CLOSED:
-                    if terminal_status(tid) in FIXED_LIKE:
+                    if terminal_status(tid) in fixed_like:
                         fixed_n += 1
                     else:
                         closed_n += 1
-            rows.append((card, audits, len(card_tickets), open_n, fixed_n, closed_n))
+            rows.append(
+                (card, audits, len(card_tickets), open_n, fixed_n, closed_n)
+            )
 
         rows.sort(key=lambda r: (-r[2], r[0]))
         for card, a, tot, op, fx, cl in rows:
             print(f"  {card:<32} {a:>6} {tot:>7} {op:>5} {fx:>5} {cl:>6}")
 
         clean = sum(1 for r in rows if r[1] > 0 and r[2] == 0)
-        print(f"\n  {len(rows)} cards total — {clean} clean (Audits>0, Tickets=0)")
+        print(
+            f"\n  {len(rows)} cards total — {clean} clean (Audits>0, Tickets=0)"
+        )
 
     # ── Ticket backlog ──────────────────────────────────────────
     if not args.cards_only and not args.audits_only:
-        print(f"\n{'='*60}\nTICKET BACKLOG\n{'='*60}")
-        status_counts = Counter(t["frontmatter"].get("status", cli.STATUS_NEW) for t in tickets)
-        primary = [cli.STATUS_NEW, cli.STATUS_TESTED, cli.STATUS_FIXED,
-                   cli.STATUS_FIX_FAILED, cli.STATUS_FALSE_POSITIVE,
-                   cli.STATUS_SHIPPED, cli.STATUS_CLOSED]
+        print(f"\n{'=' * 60}\nTICKET BACKLOG\n{'=' * 60}")
+        status_counts = Counter(
+            t["frontmatter"].get("status", cli.STATUS_NEW) for t in tickets
+        )
+        primary = [
+            cli.STATUS_NEW,
+            cli.STATUS_TESTED,
+            cli.STATUS_FIXED,
+            cli.STATUS_FIX_FAILED,
+            cli.STATUS_FALSE_POSITIVE,
+            cli.STATUS_SHIPPED,
+            cli.STATUS_CLOSED,
+        ]
         other = sorted(s for s in status_counts if s not in primary)
         for s in primary + other:
             if status_counts.get(s):
                 print(f"  {s:<14} {status_counts[s]:>4}")
-        merged_parents = [t for t in tickets
-                          if t["frontmatter"].get("card") == "multiple"]
+        merged_parents = [
+            t for t in tickets if t["frontmatter"].get("card") == "multiple"
+        ]
         print(f"\n  Merged (parent) tickets: {len(merged_parents)}")
     print()
 
