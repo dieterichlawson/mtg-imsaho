@@ -5,6 +5,7 @@ Usage:
     ./new_pipeline/cli.py tickets [--status X] [--card Y]
     ./new_pipeline/cli.py show <ticket-id>
     ./new_pipeline/cli.py close <ticket-id> [--note "..."]
+    ./new_pipeline/cli.py audit --cards "X, Y" [--model M] [--effort E]
 """
 
 from __future__ import annotations
@@ -17,7 +18,7 @@ from pathlib import Path
 if __name__ == "__main__" and __package__ is None:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from new_pipeline.commands import close, show  # noqa: E402
+from new_pipeline.commands import audit, close, show  # noqa: E402
 
 
 def main() -> None:
@@ -36,11 +37,22 @@ def main() -> None:
     p_close.add_argument("ticket_id")
     p_close.add_argument("--note", help="Optional note recorded in frontmatter")
 
+    p_audit = sub.add_parser(
+        "audit",
+        help="Spawn the auditor agent on one or more cards, mint tickets",
+    )
+    p_audit.add_argument(
+        "--cards", required=True, help="Comma-separated card names",
+    )
+    p_audit.add_argument("--model", default="opus")
+    p_audit.add_argument("--effort", default="max")
+
     args = parser.parse_args()
     dispatch = {
         "tickets": show.cmd_tickets,
         "show": show.cmd_show,
         "close": close.cmd_close,
+        "audit": audit.cmd_audit,
     }
     dispatch[args.command](args)
 

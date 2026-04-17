@@ -90,12 +90,10 @@ def _format_datetime(dt: datetime) -> str:
     return dt.astimezone(timezone.utc).strftime(_ISO_FMT)
 
 
-def _card_to_snake(name: str) -> str:
-    """Normalize a card name to a snake_case slug for ticket ids."""
-    return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
-
-
 # ─── Frontmatter ───────────────────────────────────────────────────
+
+# Numeric frontmatter fields — parsed str → int on load, str on dump.
+_INT_FIELDS = frozenset({"audit_tokens", "audit_duration"})
 
 
 @dataclass
@@ -109,6 +107,12 @@ class Frontmatter:
     # Identification
     card: str = ""
     created: datetime | None = None
+
+    # Audit phase
+    audit_run_id: str = ""
+    audit_model: str = ""
+    audit_tokens: int = 0
+    audit_duration: int = 0
 
     # Terminal: closed / abandoned
     closed_reason: str = ""
@@ -148,6 +152,8 @@ class Frontmatter:
                 init_kwargs["status"] = status
             elif k in datetime_fields:
                 init_kwargs[k] = _parse_datetime(v) if v else None
+            elif k in _INT_FIELDS:
+                init_kwargs[k] = int(v) if v else 0
             elif k in known:
                 init_kwargs[k] = v
             else:
@@ -162,12 +168,14 @@ class Frontmatter:
             if f.name == "extras":
                 continue
             value = getattr(self, f.name)
-            if value is None or value == "":
+            if value is None or value == "" or value == 0:
                 continue
             if isinstance(value, Status):
                 out[f.name] = value.value
             elif isinstance(value, datetime):
                 out[f.name] = _format_datetime(value)
+            elif isinstance(value, int):
+                out[f.name] = str(value)
             else:
                 out[f.name] = value
         out.update(self.extras)
@@ -497,9 +505,16 @@ class AuditReport:
             ],
         )
 
-    def mint_tickets(self) -> list[Ticket]:
-        """Mint one ticket per finding. Returns the newly-created tickets."""
-        snake = _card_to_snake(self.card)
+    def mint_tickets(
+        self, *, extra: dict[str, str] | None = None,
+    ) -> list[Ticket]:
+        """Mint one ticket per finding. Returns the newly-created tickets.
+
+        `extra` is applied to every minted ticket's frontmatter — useful
+        for stamping audit-run metadata (run id, model, tokens, duration)
+        onto every ticket produced by the same run.
+        """
+        snake = utils.card_to_snake(self.card)
         out: list[Ticket] = []
         for finding in self.findings:
             new_id = Ticket.allocate_id(snake)
@@ -509,6 +524,7 @@ class AuditReport:
                 status=Status.NEW,
                 card=self.card,
                 body=finding.to_ticket_body(snake, num),
+                extra=extra,
             )
             out.append(t)
         return out
