@@ -528,3 +528,87 @@ class AuditReport:
             )
             out.append(t)
         return out
+
+
+# ─── Test-writer staging ───────────────────────────────────────────
+
+class TestStatus(str, Enum):
+    """Per-test verdict the test-writer reports for one scenario slug.
+
+    - `CONFIRMED`: the agent wrote a test that compiles and fails,
+      proving the bug is real.
+    - `REJECTED`: the scenario passes against current code (not a bug).
+    """
+
+    CONFIRMED = "confirmed"
+    REJECTED = "rejected"
+
+    @classmethod
+    def parse(cls, raw: str, *, context: str = "") -> TestStatus:
+        """Parse a case-insensitive string into a TestStatus.
+
+        Raises StagingError (prefixed with `context`) if the value isn't
+        one of the enum members.
+        """
+        try:
+            return cls(raw.lower())
+        except ValueError:
+            valid = [s.value for s in cls]
+            prefix = f"{context}: " if context else ""
+            raise StagingError(
+                f"{prefix}status must be one of {valid}, got {raw!r}"
+            ) from None
+
+
+@dataclass
+class TestResult:
+    """The agent's verdict on one test scenario from a ticket.
+
+    The `slug` here is the per-scenario slug that appears inside a
+    ticket's `## Tests` section — e.g. `test_lifelink_first_strike` —
+    not the ticket id. A single ticket can have multiple tests, and
+    the agent returns one `TestResult` per slug so the pipeline can
+    match each verdict back to its originating entry.
+    """
+
+    slug: str
+    status: TestStatus
+    test_name: str = ""
+    assertion_message: str = ""
+    explanation: str = ""
+
+    @classmethod
+    def from_dict(cls, i: int, d: dict) -> TestResult:
+        """Parse one `tests[i]` entry. `i` is used for error messages."""
+        slug = _require(d, "slug", str)
+        status = TestStatus.parse(
+            _require(d, "status", str),
+            context=f"tests[{i}] {slug!r}",
+        )
+        return cls(
+            slug=slug,
+            status=status,
+            test_name=_optional_str(d, "test_name") or slug,
+            assertion_message=_optional_str(d, "assertion_message"),
+            explanation=_optional_str(d, "explanation"),
+        )
+
+
+@dataclass
+class TestReport:
+    """The test-writer agent's JSON staging file."""
+
+    test_file: str
+    tests: list[TestResult]
+
+    @classmethod
+    def load(cls, path: Path) -> TestReport:
+        """Parse and validate a test-writer staging file."""
+        d = _load_json(path)
+        return cls(
+            test_file=_require(d, "test_file", str),
+            tests=[
+                TestResult.from_dict(i, t)
+                for i, t in enumerate(_require_objects(d, "tests"))
+            ],
+        )
