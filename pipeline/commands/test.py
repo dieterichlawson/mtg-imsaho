@@ -251,7 +251,10 @@ def _apply_test_outcome(
     if out.aggregate is TestOutcome.NO_REAL_BUG:
         worktree.remove(t.id)
 
-    t.append_section(_render_results_section(out.per_test))
+    t.append_section(
+        TestReport(test_file=out.test_file, tests=out.per_test)
+        .to_results_section()
+    )
     _apply_status(t, out, result, args.model, run_id)
     _log(t, out, result, args.model, run_id)
 
@@ -303,19 +306,6 @@ def _apply_status(
                 "without engine changes. Retry will allow "
                 "`mtg-engine/src/**` edits.\n\n" + "\n".join(blockers)
             )
-
-
-def _render_results_section(per_test: list[TestResult]) -> str:
-    lines = ["## Test Run Results", ""]
-    for t in per_test:
-        lines.append(f"- **{t.slug}** — {t.status}")
-        if t.test_name:
-            lines.append(f"  - test fn: `{t.test_name}`")
-        if t.assertion_message:
-            lines.append(f"  - assertion: {t.assertion_message}")
-        if t.blocked_by:
-            lines.append(f"  - blocked by: {t.blocked_by}")
-    return "\n".join(lines)
 
 
 def _log(

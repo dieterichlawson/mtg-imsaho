@@ -142,7 +142,7 @@ def _create_ticket(
 ) -> str:
     new_id = Ticket.allocate_id(snake)
     num = int(new_id.rsplit("-", 1)[1])
-    body = _render_audit_body(finding, snake, num)
+    body = finding.to_ticket_body(snake, num)
     extra = {
         "card_file": f"mtg-engine/src/cards/isd/{snake}.rs",
         "created": now_iso(),
@@ -211,50 +211,6 @@ def _print_summary(results: list[AuditOneResult]) -> None:
         print(f"\n  {len(errors)} agent error(s):")
         for r in errors:
             print(f"    {r.card}: {r.error}")
-
-
-def _render_audit_body(finding: Finding, snake: str, ticket_num: int) -> str:
-    parts = [
-        "## Audit Finding",
-        "",
-        f"**Oracle text:**\n> {finding.oracle_quote}",
-        "",
-        f"**Code:**\n> {finding.code_quote}",
-        "",
-        f"**Description:**\n{finding.description}",
-        "",
-    ]
-    if finding.engine_path:
-        parts += (
-            ["**Engine path:**"]
-            + [f"- {p}" for p in finding.engine_path]
-            + [""]
-        )
-    if finding.check:
-        parts += [f"**Required check:** {finding.check}", ""]
-    if finding.affected_cards:
-        parts += (
-            ["**Affected cards:**"]
-            + [f"- {c}" for c in finding.affected_cards]
-            + [""]
-        )
-    parts += ["## Tests", ""]
-    if finding.tests:
-        tests = [(t.slug, t.scenario) for t in finding.tests]
-    else:
-        default_scenario = (
-            finding.description.split(".")[0][:240] or "See description above."
-        )
-        tests = [(f"test_{snake}_{ticket_num:02d}", default_scenario)]
-    for slug, scenario in tests:
-        parts += [
-            f"### {slug}",
-            "Source ticket: (new)",
-            "Implementation: (not yet written)",
-            f"Scenario: {scenario}",
-            "",
-        ]
-    return "\n".join(parts).rstrip() + "\n"
 
 
 def _card_to_snake(name: str) -> str:

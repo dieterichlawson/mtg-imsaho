@@ -546,6 +546,56 @@ class Finding:
     affected_cards: list[str] = field(default_factory=list)
     tests: list[FindingTest] = field(default_factory=list)
 
+    def to_ticket_body(self, card_snake: str, ticket_num: int) -> str:
+        """Render this finding as the body of the ticket that tracks it.
+
+        `card_snake` + `ticket_num` name the fallback test slug used when
+        the auditor didn't propose any test names of its own.
+        """
+        parts = [
+            "## Audit Finding",
+            "",
+            f"**Oracle text:**\n> {self.oracle_quote}",
+            "",
+            f"**Code:**\n> {self.code_quote}",
+            "",
+            f"**Description:**\n{self.description}",
+            "",
+        ]
+        if self.engine_path:
+            parts += (
+                ["**Engine path:**"]
+                + [f"- {p}" for p in self.engine_path]
+                + [""]
+            )
+        if self.check:
+            parts += [f"**Required check:** {self.check}", ""]
+        if self.affected_cards:
+            parts += (
+                ["**Affected cards:**"]
+                + [f"- {c}" for c in self.affected_cards]
+                + [""]
+            )
+        parts += ["## Tests", ""]
+        if self.tests:
+            tests = [(t.slug, t.scenario) for t in self.tests]
+        else:
+            default_scenario = (
+                self.description.split(".")[0][:240] or "See description above."
+            )
+            tests = [
+                (f"test_{card_snake}_{ticket_num:02d}", default_scenario),
+            ]
+        for slug, scenario in tests:
+            parts += [
+                f"### {slug}",
+                "Source ticket: (new)",
+                "Implementation: (not yet written)",
+                f"Scenario: {scenario}",
+                "",
+            ]
+        return "\n".join(parts).rstrip() + "\n"
+
 
 @dataclass
 class Insight:
@@ -659,6 +709,19 @@ class TestReport:
             )
         return cls(test_file=str(d.get("test_file") or ""), tests=tests)
 
+    def to_results_section(self) -> str:
+        """Render the per-test outcomes as a `## Test Run Results` section."""
+        lines = ["## Test Run Results", ""]
+        for t in self.tests:
+            lines.append(f"- **{t.slug}** — {t.status}")
+            if t.test_name:
+                lines.append(f"  - test fn: `{t.test_name}`")
+            if t.assertion_message:
+                lines.append(f"  - assertion: {t.assertion_message}")
+            if t.blocked_by:
+                lines.append(f"  - blocked by: {t.blocked_by}")
+        return "\n".join(lines)
+
 
 # ─── Fixer staging ─────────────────────────────────────────────────
 
@@ -685,6 +748,21 @@ class FixReport:
             files_changed=list(d.get("files_changed") or []),
             description=str(d.get("description") or ""),
         )
+
+    def to_section(self, status_key: str) -> str:
+        """Render as a `## Fix Result` section for the ticket body.
+
+        `status_key` is whichever terminal status the ticket is moving
+        into (`fixed` / `fix_failed`) — included so the body states it
+        explicitly alongside the agent's own description.
+        """
+        lines = [f"## Fix Result\n\nstatus: {status_key}"]
+        if self.files_changed:
+            lines.append("files_changed:")
+            lines += [f"- {p}" for p in self.files_changed]
+        if self.description:
+            lines += ["", self.description]
+        return "\n".join(lines)
 
 
 # ─── Dedup consolidation proposal ─────────────────────────────────
@@ -733,6 +811,38 @@ class ConsolidationProposal:
             tests=tests,
             also_closes=list(d.get("also_closes") or []),
         )
+
+    def to_ticket_body(self, inherited_impls: dict[str, str]) -> str:
+        """Render as the body of the merged-* parent ticket.
+
+        `inherited_impls` maps slug → `<test_file>::<test_name>` for
+        slugs whose implementation has already been written elsewhere
+        (by a tested source that's being absorbed).
+        """
+        lines = [
+            f"# {self.title}", "", "## Description", self.description,
+        ]
+        if self.engine_path:
+            lines += ["", "## Engine path"] + [
+                f"- {p}" for p in self.engine_path
+            ]
+        lines += ["", "## Tests", ""]
+        for t in self.tests:
+            lines += [
+                f"### {t.slug}",
+                f"Source ticket: {t.source_ticket}",
+                f"Implementation: "
+                f"{inherited_impls.get(t.slug) or '(not yet written)'}",
+                f"Scenario: {t.scenario}",
+                "",
+            ]
+        if self.also_closes:
+            lines += (
+                ["## Also closes", ""]
+                + [f"- {tid}" for tid in self.also_closes]
+                + [""]
+            )
+        return "\n".join(lines).rstrip() + "\n"
 
 
 def _parse_proposed_test(i: int, t: dict) -> ProposedTest:

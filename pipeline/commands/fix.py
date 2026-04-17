@@ -157,7 +157,7 @@ def _apply_fix_outcome(
     run_id = f"{today()}-{t.id}-fix"
     t.status = next_status(Status.TESTED, outcome)
     status_key = t.status.value
-    t.append_section(_render_fix_section(status_key, parsed))
+    t.append_section(parsed.to_section(status_key))
     t.frontmatter.set(
         **{
             f"{status_key}_at": now_iso(),
@@ -193,11 +193,3 @@ def _apply_fix_outcome(
     )
 
 
-def _render_fix_section(status_key: str, parsed: FixReport) -> str:
-    lines = [f"## Fix Result\n\nstatus: {status_key}"]
-    if parsed.files_changed:
-        lines.append("files_changed:")
-        lines += [f"- {p}" for p in parsed.files_changed]
-    if parsed.description:
-        lines += ["", parsed.description]
-    return "\n".join(lines)

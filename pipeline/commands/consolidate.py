@@ -494,8 +494,10 @@ def _create_parent(
                 }
             )
 
-    body = _render_body(proposal, inherited)
-    Ticket.create(new_id, status=status, card="multiple", body=body, extra=extra)
+    body = proposal.to_ticket_body(inherited)
+    Ticket.create(
+        new_id, status=status, card="multiple", body=body, extra=extra,
+    )
 
 
 def _absorb_all(all_closed: list[str], parent_id: str) -> None:
@@ -508,30 +510,6 @@ def _absorb_all(all_closed: list[str], parent_id: str) -> None:
         # The tested source's worktree was renamed; drop its stale pointer.
         t.frontmatter.worktree = ""
         t.save()
-
-
-def _render_body(proposal: ConsolidationProposal, impls: dict[str, str]) -> str:
-    lines = [f"# {proposal.title}", "", "## Description", proposal.description]
-    if proposal.engine_path:
-        lines += ["", "## Engine path"] + [
-            f"- {p}" for p in proposal.engine_path
-        ]
-    lines += ["", "## Tests", ""]
-    for t in proposal.tests:
-        lines += [
-            f"### {t.slug}",
-            f"Source ticket: {t.source_ticket}",
-            f"Implementation: {impls.get(t.slug) or '(not yet written)'}",
-            f"Scenario: {t.scenario}",
-            "",
-        ]
-    if proposal.also_closes:
-        lines += (
-            ["## Also closes", ""]
-            + [f"- {tid}" for tid in proposal.also_closes]
-            + [""]
-        )
-    return "\n".join(lines).rstrip() + "\n"
 
 
 # ── Reporting ───────────────────────────────────────────────────────
