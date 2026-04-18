@@ -668,10 +668,16 @@ class TestStatus(str, Enum):
     - `CONFIRMED`: the agent wrote a test that compiles and fails,
       proving the bug is real.
     - `REJECTED`: the scenario passes against current code (not a bug).
+    - `NEEDS_ENGINE_WORK`: the scenario can't be tested without adding
+      surface area to `mtg-engine/src/` (a method, trait, type, etc.).
+      The agent is not permitted to modify engine files in this run;
+      a later retry will re-invoke the test-writer with the required
+      engine surface in place. `explanation` describes what's missing.
     """
 
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
+    NEEDS_ENGINE_WORK = "needs_engine_work"
 
     @classmethod
     def parse(cls, raw: str, *, context: str = "") -> TestStatus:
