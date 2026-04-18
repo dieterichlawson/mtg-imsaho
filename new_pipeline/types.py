@@ -696,3 +696,72 @@ class TestReport:
             if r.explanation:
                 lines.append(f"  - explanation: {r.explanation}")
         return "\n".join(lines)
+
+
+# ─── Fixer staging ────────────────────────────────────────────────
+
+
+class FixStatus(str, Enum):
+    """The fixer agent's verdict on a ticket.
+
+    - `FIXED`: the agent committed a fix and believes it works.
+    - `FAILED`: the agent tried and couldn't. `description` carries
+      the post-mortem explaining what was attempted and why it didn't
+      work — the only artifact of a failed run.
+    """
+
+    FIXED = "fixed"
+    FAILED = "failed"
+
+    @classmethod
+    def parse(cls, raw: str, *, context: str = "") -> FixStatus:
+        """Parse a case-insensitive string into a FixStatus.
+
+        Raises StagingError (prefixed with `context`) if the value isn't
+        one of the enum members.
+        """
+        try:
+            return cls(raw.lower())
+        except ValueError:
+            valid = [s.value for s in cls]
+            prefix = f"{context}: " if context else ""
+            raise StagingError(
+                f"{prefix}status must be one of {valid}, got {raw!r}"
+            ) from None
+
+
+@dataclass
+class FixReport:
+    """The fixer agent's JSON staging file.
+
+    `description` is required on both outcomes: on success it's the
+    fix narrative; on failure it's the post-mortem. A failed-fix
+    ticket with no post-mortem has no value, so we reject the JSON
+    at the parser boundary.
+    """
+
+    status: FixStatus
+    description: str
+
+    @classmethod
+    def load(cls, path: Path) -> FixReport:
+        """Parse and validate a fixer staging file."""
+        d = _load_json(path)
+        status = FixStatus.parse(_require(d, "status", str))
+        description = _require(d, "description", str)
+        if not description.strip():
+            raise StagingError(
+                "description is required — on fixed it explains the fix; "
+                "on failed it's the post-mortem"
+            )
+        return cls(status=status, description=description)
+
+    def to_result_section(self) -> str:
+        """Render as a `## Fix Result` block for the ticket body."""
+        return (
+            "## Fix Result\n"
+            "\n"
+            f"**Status:** {self.status.value}\n"
+            "\n"
+            f"{self.description}"
+        )

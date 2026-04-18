@@ -69,11 +69,11 @@ def _test_one(tid: str, args) -> None:
         for r in report.tests:
             if r.status is not TestStatus.CONFIRMED:
                 continue
-            v = validate.validate_test(wt, report.test_file, r.test_name)
-            if not v.ok:
+            why = validate.validate_test(wt, report.test_file, r.test_name)
+            if why is not None:
                 return (
                     f"test {r.slug!r} ({r.test_name}) failed validation: "
-                    f"{v.reason}\n{v.output}"
+                    f"{why}"
                 )
         return None
 

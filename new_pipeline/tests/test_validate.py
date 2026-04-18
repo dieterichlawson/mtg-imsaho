@@ -4,6 +4,9 @@ A fake `cargo` executable is dropped into a temp bin dir and prepended
 to `PATH`, so `validate_test` spawns a real subprocess. The fake's
 behavior (exit code, stdout, stderr) is driven by env vars so each
 test can script the outcome it wants to exercise.
+
+`validate_test` returns `str | None` — None on validated, otherwise a
+retry-note string combining the reason and the cargo output tail.
 """
 
 from __future__ import annotations
@@ -20,7 +23,7 @@ from unittest.mock import patch
 _THIS = Path(__file__).resolve()
 sys.path.insert(0, str(_THIS.parents[2]))
 
-from new_pipeline.validate import TestValidation, validate_test  # noqa: E402
+from new_pipeline.validate import validate_test  # noqa: E402
 
 _FAKE_CARGO = textwrap.dedent(
     """\
@@ -46,7 +49,7 @@ _GOOD_TEST_SRC = textwrap.dedent(
 
 
 class ValidateTestTest(unittest.TestCase):
-    """Pre-cargo checks + every cargo outcome `validate_test` distinguishes."""
+    """Pre-cargo checks + every cargo outcome validate_test distinguishes."""
 
     def setUp(self) -> None:
         """Temp worktree + fake cargo on PATH + env vars cleared."""
@@ -82,7 +85,7 @@ class ValidateTestTest(unittest.TestCase):
     def _write_test(self, contents: str) -> None:
         (self.worktree / self.test_file_rel).write_text(contents)
 
-    def _run(self) -> TestValidation:
+    def _run(self) -> str | None:
         return validate_test(
             self.worktree, self.test_file_rel, "test_thing",
         )
@@ -92,8 +95,8 @@ class ValidateTestTest(unittest.TestCase):
     def test_missing_test_file_rejects(self) -> None:
         """Test file not on disk → fail without running cargo."""
         result = self._run()
-        self.assertFalse(result.ok)
-        self.assertIn("does not exist", result.reason)
+        self.assertIsNotNone(result)
+        self.assertIn("does not exist", result)
 
     def test_banned_phrase_rejects(self) -> None:
         """Placeholder text like TODO / 'would need to' blocks validation."""
@@ -103,15 +106,15 @@ class ValidateTestTest(unittest.TestCase):
             "fn test_thing() { assert!(false); }\n"
         )
         result = self._run()
-        self.assertFalse(result.ok)
-        self.assertIn("banned placeholder", result.reason)
+        self.assertIsNotNone(result)
+        self.assertIn("banned placeholder", result)
 
     def test_no_assertions_rejects(self) -> None:
         """A test file with zero assertions is rejected."""
         self._write_test("#[test]\nfn test_thing() { let _ = 42; }\n")
         result = self._run()
-        self.assertFalse(result.ok)
-        self.assertIn("no assertions", result.reason)
+        self.assertIsNotNone(result)
+        self.assertIn("no assertions", result)
 
     # ── cargo outcomes ────────────────────────────────────────────
 
@@ -121,11 +124,11 @@ class ValidateTestTest(unittest.TestCase):
         os.environ["FAKE_CARGO_EXIT"] = "0"
         os.environ["FAKE_CARGO_STDOUT"] = "test result: ok. 1 passed\n"
         result = self._run()
-        self.assertFalse(result.ok)
-        self.assertIn("false positive", result.reason)
+        self.assertIsNotNone(result)
+        self.assertIn("false positive", result)
 
     def test_cargo_fails_with_assertion_is_confirmed_bug(self) -> None:
-        """Cargo nonzero + 'assertion failed' in output → real bug."""
+        """Cargo nonzero + 'assertion failed' in output → real bug → None."""
         self._write_test(_GOOD_TEST_SRC)
         os.environ["FAKE_CARGO_EXIT"] = "101"
         os.environ["FAKE_CARGO_STDOUT"] = (
@@ -133,9 +136,7 @@ class ValidateTestTest(unittest.TestCase):
             "assertion `left == right` failed\n"
             "  left: 20\n right: 21\n"
         )
-        result = self._run()
-        self.assertTrue(result.ok)
-        self.assertIn("assertion", result.reason)
+        self.assertIsNone(self._run())
 
     def test_cargo_panics_without_assertion_is_rejected(self) -> None:
         """Cargo fails but the output is a panic, not an assertion."""
@@ -146,8 +147,8 @@ class ValidateTestTest(unittest.TestCase):
             "thread 'main' panicked at 'index out of bounds'\n"
         )
         result = self._run()
-        self.assertFalse(result.ok)
-        self.assertIn("panic", result.reason)
+        self.assertIsNotNone(result)
+        self.assertIn("panic", result)
 
     def test_cargo_unclear_failure_is_rejected(self) -> None:
         """Nonzero exit without any recognizable failure marker."""
@@ -155,18 +156,19 @@ class ValidateTestTest(unittest.TestCase):
         os.environ["FAKE_CARGO_EXIT"] = "2"
         os.environ["FAKE_CARGO_STDOUT"] = "linker error\n"
         result = self._run()
-        self.assertFalse(result.ok)
-        self.assertIn("unclear", result.reason)
+        self.assertIsNotNone(result)
+        self.assertIn("unclear", result)
 
-    def test_output_tail_is_captured_on_failure(self) -> None:
-        """On cargo failure, `output` carries the stdout/stderr tail."""
+    def test_retry_note_carries_cargo_output(self) -> None:
+        """On failure, the returned string includes the cargo output tail."""
         self._write_test(_GOOD_TEST_SRC)
-        os.environ["FAKE_CARGO_EXIT"] = "101"
+        os.environ["FAKE_CARGO_EXIT"] = "0"
         os.environ["FAKE_CARGO_STDOUT"] = (
-            "some prelude\nassertion failed: left == right\n"
+            "some prelude\ntest result: ok. 1 passed\n"
         )
         result = self._run()
-        self.assertIn("assertion failed", result.output)
+        self.assertIsNotNone(result)
+        self.assertIn("test result: ok", result)
 
 
 if __name__ == "__main__":
