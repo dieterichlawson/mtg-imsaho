@@ -80,6 +80,64 @@ def branch_head(branch: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
+def current_branch() -> str:
+    """Name of the branch currently checked out at the project root."""
+    r = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        capture_output=True,
+        text=True,
+        cwd=str(utils.PROJECT_ROOT),
+    )
+    return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def is_clean() -> bool:
+    """True if the project root has no uncommitted or untracked changes."""
+    r = subprocess.run(
+        ["git", "status", "--porcelain"],
+        capture_output=True,
+        text=True,
+        cwd=str(utils.PROJECT_ROOT),
+    )
+    return r.returncode == 0 and not r.stdout.strip()
+
+
+class MergeConflictError(RuntimeError):
+    """`git merge` left the repo in a conflict state — caller must intervene."""
+
+
+def merge_to_master(ticket_id: str) -> str:
+    """Merge `fix/<ticket_id>` into the current branch with `--no-ff`.
+
+    Returns the new merge-commit sha on success. Raises
+    `MergeConflictError` if the merge produced conflicts; the merge
+    is aborted before raising so the working tree is restored to its
+    pre-merge state. Any other git failure raises
+    `subprocess.CalledProcessError`.
+    """
+    branch = branch_for(ticket_id)
+    r = subprocess.run(
+        [
+            "git", "merge", "--no-ff", branch,
+            "-m", f"Merge {branch}",
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(utils.PROJECT_ROOT),
+    )
+    if r.returncode != 0:
+        # Conflict or other merge failure — abort to restore the tree.
+        subprocess.run(
+            ["git", "merge", "--abort"],
+            capture_output=True,
+            cwd=str(utils.PROJECT_ROOT),
+        )
+        raise MergeConflictError(
+            f"merging {branch}: {r.stdout.strip() or r.stderr.strip()}"
+        )
+    return branch_head("HEAD")
+
+
 def create_from_sha(ticket_id: str, sha: str) -> Path:
     """Create a fresh worktree for `ticket_id` checked out at `sha`.
 

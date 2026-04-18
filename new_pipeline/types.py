@@ -32,6 +32,7 @@ class Status(str, Enum):
     NEW = "new"
     TESTED = "tested"
     FIXED = "fixed"
+    MERGED = "merged"
     FIX_FAILED = "fix_failed"
     COULD_NOT_CONFIRM = "could_not_confirm"
     CLOSED = "closed"
@@ -44,12 +45,14 @@ class Status(str, Enum):
         doesn't mutate them — it mints a fresh ticket with a
         `retry_of` pointer and carries forward the old's post-mortem
         as context. The old ticket stays archived as an immutable
-        record of the failed attempt.
+        record of the failed attempt. MERGED is terminal because the
+        fix has landed on master — there's nothing left to do.
         """
         return self in {
             Status.CLOSED,
             Status.COULD_NOT_CONFIRM,
             Status.FIX_FAILED,
+            Status.MERGED,
         }
 
 
@@ -151,6 +154,10 @@ class Frontmatter:
     fixed_sha: str = ""
     fixed_at: datetime | None = None
     fix_failed_at: datetime | None = None
+
+    # Merge phase
+    merged_sha: str = ""
+    merged_at: datetime | None = None
 
     # Retry — id of the terminal ticket this one succeeds.
     retry_of: str = ""
@@ -442,6 +449,18 @@ class Ticket:
         fm.fix_tokens = tokens
         fm.fix_duration = duration
         fm.fix_failed_at = datetime.now(timezone.utc)
+
+    def mark_merged(self, *, merged_sha: str) -> None:
+        """Mutate to `merged` (terminal) with the merge-commit sha stamped.
+
+        `merged_sha` is the sha of the merge commit on master created by
+        `git merge --no-ff fix/<id>`. Caller is responsible for `.save()`
+        (which auto-archives because MERGED is terminal).
+        """
+        self.status = Status.MERGED
+        fm = self.frontmatter
+        fm.merged_sha = merged_sha
+        fm.merged_at = datetime.now(timezone.utc)
 
     # ── Internals ────────────────────────────────────────────────
 
