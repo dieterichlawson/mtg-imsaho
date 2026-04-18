@@ -78,3 +78,29 @@ def branch_head(branch: str) -> str:
         cwd=str(utils.PROJECT_ROOT),
     )
     return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def rename(old_id: str, new_id: str) -> None:
+    """Rename the worktree directory + branch from `old_id` to `new_id`.
+
+    Moves `.worktrees/fix-<old_id>/` → `.worktrees/fix-<new_id>/` via
+    `git worktree move`, then renames the branch `fix/<old_id>` →
+    `fix/<new_id>` via `git branch -m`. The commits on the branch
+    (test commits, etc.) come along unchanged — their SHAs are
+    preserved, so any frontmatter referencing a specific sha (e.g.
+    `tested_sha`) is still valid after the rename.
+    """
+    old_dir = dir_for(old_id)
+    new_dir = dir_for(new_id)
+    subprocess.run(
+        ["git", "worktree", "move", str(old_dir), str(new_dir)],
+        check=True,
+        capture_output=True,
+        cwd=str(utils.PROJECT_ROOT),
+    )
+    subprocess.run(
+        ["git", "branch", "-m", branch_for(old_id), branch_for(new_id)],
+        check=True,
+        capture_output=True,
+        cwd=str(new_dir),
+    )

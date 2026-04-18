@@ -38,8 +38,19 @@ class Status(str, Enum):
 
     @property
     def is_terminal(self) -> bool:
-        """True if no further transitions are allowed."""
-        return self in {Status.CLOSED, Status.COULD_NOT_CONFIRM}
+        """True if no further transitions are allowed.
+
+        FIX_FAILED and COULD_NOT_CONFIRM are terminal because retry
+        doesn't mutate them — it mints a fresh ticket with a
+        `retry_of` pointer and carries forward the old's post-mortem
+        as context. The old ticket stays archived as an immutable
+        record of the failed attempt.
+        """
+        return self in {
+            Status.CLOSED,
+            Status.COULD_NOT_CONFIRM,
+            Status.FIX_FAILED,
+        }
 
 
 class CloseReason(str, Enum):
@@ -84,12 +95,12 @@ class StagingError(ValueError):
 _ISO_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 
-def _parse_datetime(raw: str) -> datetime:
+def parse_datetime(raw: str) -> datetime:
     """Parse an ISO-8601 `...Z` timestamp into a timezone-aware datetime."""
     return datetime.strptime(raw, _ISO_FMT).replace(tzinfo=timezone.utc)
 
 
-def _format_datetime(dt: datetime) -> str:
+def format_datetime(dt: datetime) -> str:
     """Render a datetime as our canonical ISO-8601 `...Z` string."""
     return dt.astimezone(timezone.utc).strftime(_ISO_FMT)
 
@@ -141,6 +152,9 @@ class Frontmatter:
     fixed_at: datetime | None = None
     fix_failed_at: datetime | None = None
 
+    # Retry — id of the terminal ticket this one succeeds.
+    retry_of: str = ""
+
     # Terminal: closed / abandoned
     closed_reason: str = ""
     closed_at: datetime | None = None
@@ -185,7 +199,7 @@ class Frontmatter:
             if core is int:
                 init_kwargs[k] = int(v) if v else 0
             elif core is datetime:
-                init_kwargs[k] = _parse_datetime(v) if v else None
+                init_kwargs[k] = parse_datetime(v) if v else None
             else:
                 init_kwargs[k] = v
         init_kwargs["extras"] = extras
@@ -203,7 +217,7 @@ class Frontmatter:
             if isinstance(value, Status):
                 out[f.name] = value.value
             elif isinstance(value, datetime):
-                out[f.name] = _format_datetime(value)
+                out[f.name] = format_datetime(value)
             elif isinstance(value, int):
                 out[f.name] = str(value)
             else:
