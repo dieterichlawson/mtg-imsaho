@@ -316,7 +316,7 @@ class Ticket:
         elif not self.status.is_terminal and in_archive:
             self._move_to(utils.TICKETS_DIR)
 
-    def append_section(self, section: str) -> None:
+    def append_body_section(self, section: str) -> None:
         """Append a markdown section to the body.
 
         The body is a write-only log of what happened to the ticket;
@@ -347,7 +347,7 @@ class Ticket:
     ) -> None:
         """Mutate to `tested` with test-phase metadata. Does not touch body.
 
-        Caller is responsible for `.append_section(...)` and `.save()`.
+        Caller is responsible for `.append_body_section(...)` and `.save()`.
         """
         self.status = Status.TESTED
         fm = self.frontmatter
@@ -362,7 +362,7 @@ class Ticket:
     def mark_could_not_confirm(self) -> None:
         """Terminal: test-writer couldn't confirm any scenario as a bug.
 
-        Caller is responsible for `.append_section(...)` and `.save()`
+        Caller is responsible for `.append_body_section(...)` and `.save()`
         (which will auto-archive since the status is terminal).
         """
         self.status = Status.COULD_NOT_CONFIRM
@@ -378,7 +378,7 @@ class Ticket:
     ) -> None:
         """Mutate to `fixed` with fix-phase metadata. Does not touch body.
 
-        Caller is responsible for `.append_section(...)` and `.save()`.
+        Caller is responsible for `.append_body_section(...)` and `.save()`.
         """
         self.status = Status.FIXED
         fm = self.frontmatter
@@ -400,7 +400,7 @@ class Ticket:
         """Mutate to `fix_failed` with run metadata. Does not touch body.
 
         No `fixed_sha` (no successful fix). Caller is responsible for
-        `.append_section(...)` and `.save()`.
+        `.append_body_section(...)` and `.save()`.
         """
         self.status = Status.FIX_FAILED
         fm = self.frontmatter

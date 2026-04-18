@@ -84,7 +84,7 @@ class TicketFixPhaseTest(unittest.TestCase):
         """mark_fixed transitions status + stamps every fix_* frontmatter.
 
         The mutator doesn't touch the body; the caller pairs it with
-        `append_section(report.to_result_section())` when it wants the
+        `append_body_section(report.to_result_section())` when it wants the
         outcome recorded in the body too.
         """
         _write_tested_ticket(self.tickets)
@@ -101,7 +101,7 @@ class TicketFixPhaseTest(unittest.TestCase):
             duration=42,
             fixed_sha="def456789012345678901234567890abcdef0123",
         )
-        t.append_section(report.to_result_section())
+        t.append_body_section(report.to_result_section())
         t.save()
 
         reloaded = Ticket.load("foo-01")
@@ -175,7 +175,7 @@ class TicketFixPhaseTest(unittest.TestCase):
             tokens=567,
             duration=12,
         )
-        t.append_section(report.to_result_section())
+        t.append_body_section(report.to_result_section())
         t.save()
 
         reloaded = Ticket.load("giveup-01")

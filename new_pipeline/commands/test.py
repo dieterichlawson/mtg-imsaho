@@ -100,7 +100,7 @@ def _test_one(tid: str, args) -> None:
     confirmed = [r for r in report.tests if r.status is TestStatus.CONFIRMED]
     if not confirmed:
         t.mark_could_not_confirm()
-        t.append_section(report.to_results_section())
+        t.append_body_section(report.to_results_section())
         t.save()
         print(
             f"[{tid}] {Status.COULD_NOT_CONFIRM.value}: "
@@ -116,7 +116,7 @@ def _test_one(tid: str, args) -> None:
         test_file=report.test_file,
         tested_sha=worktree.branch_head(worktree.branch_for(t.id)),
     )
-    t.append_section(report.to_results_section())
+    t.append_body_section(report.to_results_section())
     t.save()
     print(
         f"[{tid}] Done: {len(confirmed)}/{len(report.tests)} tests "
