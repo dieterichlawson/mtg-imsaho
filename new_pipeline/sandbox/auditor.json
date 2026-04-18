@@ -1,0 +1,79 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "denyWrite": [
+        "./mtg-engine/**",
+        "./cards/**",
+        "./pipeline/**",
+        "./decks/**",
+        "./data/**",
+        "./audits/**",
+        "./reports/**",
+        "./logs/**",
+        "./scripts/**",
+        "./prompts/**",
+        "./.git/**",
+        "./.claude/**",
+        "./.worktrees/**",
+        "./Cargo.toml",
+        "./Cargo.lock",
+        "./CLAUDE.md",
+        "./TODO.md",
+        "./AGENT_COORD.md",
+        "./README.md",
+        "./.gitignore",
+        "./new_pipeline/agent.py",
+        "./new_pipeline/cli.py",
+        "./new_pipeline/types.py",
+        "./new_pipeline/utils.py",
+        "./new_pipeline/validate.py",
+        "./new_pipeline/worktree.py",
+        "./new_pipeline/oracle.py",
+        "./new_pipeline/__init__.py",
+        "./new_pipeline/prompts/**",
+        "./new_pipeline/commands/**",
+        "./new_pipeline/tests/**",
+        "./new_pipeline/sandbox/**",
+        "./new_pipeline/tickets/archive/**"
+      ],
+      "denyRead": [
+        "./new_pipeline/tickets/archive/**",
+        "./.claude/**"
+      ]
+    }
+  },
+  "permissions": {
+    "deny": [
+      "Edit(mtg-engine/**)",
+      "Write(mtg-engine/**)",
+      "Edit(cards/**)",
+      "Write(cards/**)",
+      "Edit(pipeline/**)",
+      "Write(pipeline/**)",
+      "Edit(.claude/**)",
+      "Write(.claude/**)",
+      "Edit(.git/**)",
+      "Write(.git/**)",
+      "Edit(new_pipeline/agent.py)",
+      "Edit(new_pipeline/cli.py)",
+      "Edit(new_pipeline/types.py)",
+      "Edit(new_pipeline/utils.py)",
+      "Edit(new_pipeline/validate.py)",
+      "Edit(new_pipeline/worktree.py)",
+      "Edit(new_pipeline/oracle.py)",
+      "Edit(new_pipeline/prompts/**)",
+      "Write(new_pipeline/prompts/**)",
+      "Edit(new_pipeline/commands/**)",
+      "Write(new_pipeline/commands/**)",
+      "Edit(new_pipeline/tests/**)",
+      "Write(new_pipeline/tests/**)",
+      "Edit(new_pipeline/sandbox/**)",
+      "Write(new_pipeline/sandbox/**)",
+      "Edit(new_pipeline/tickets/archive/**)",
+      "Write(new_pipeline/tickets/archive/**)",
+      "Read(new_pipeline/tickets/archive/**)"
+    ]
+  }
+}

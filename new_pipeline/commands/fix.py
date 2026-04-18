@@ -15,7 +15,7 @@ the ticket `tested` so a rerun picks up where it left off.
 
 from __future__ import annotations
 
-from new_pipeline import utils, validate, worktree
+from new_pipeline import sandbox, utils, validate, worktree
 from new_pipeline.agent import run_agent_loop, single_file_loader
 from new_pipeline.types import (
     FixReport,
@@ -84,6 +84,9 @@ def _fix_one(tid: str, args) -> None:
         ),
         model=args.model,
         effort=args.effort,
+        settings=sandbox.render(
+            "fixer", project_root=str(utils.PROJECT_ROOT),
+        ),
     )
 
     if result.is_error:

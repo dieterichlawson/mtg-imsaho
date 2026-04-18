@@ -27,6 +27,7 @@ class _FakePopen:
     """
 
     last_env: dict[str, str] | None = None  # most-recent constructor env
+    last_cmd: list[str] | None = None  # most-recent constructor cmd
 
     def __init__(
         self,
@@ -50,6 +51,7 @@ class _FakePopen:
         self._timeout_on_wait = timeout_on_wait
         self.killed = False
         _FakePopen.last_env = env
+        _FakePopen.last_cmd = list(cmd)
 
     def wait(self, timeout=None):
         if self._timeout_on_wait and not self.killed:
@@ -187,6 +189,37 @@ class RunAgentTest(unittest.TestCase):
         self.assertNotIn("ANTHROPIC_API_KEY", env)
         self.assertNotIn("ANTHROPIC_AUTH_TOKEN", env)
         self.assertEqual(env.get("PATH"), "/usr/bin")
+
+
+    def test_settings_arg_omitted_by_default(self) -> None:
+        """No settings kwarg → `--settings` is absent from the cmd line."""
+        with patch.object(
+            agent.subprocess, "Popen",
+            _popen_factory(stdout_lines=[], returncode=0),
+        ):
+            run_agent("hi", cwd=Path("."), model="opus", effort="max")
+        cmd = _FakePopen.last_cmd
+        assert cmd is not None
+        self.assertNotIn("--settings", cmd)
+
+    def test_settings_arg_passes_through_verbatim(self) -> None:
+        """`settings=<json>` → cmd has `--settings <json>` verbatim."""
+        payload = '{"sandbox": {"enabled": true}}'
+        with patch.object(
+            agent.subprocess, "Popen",
+            _popen_factory(stdout_lines=[], returncode=0),
+        ):
+            run_agent(
+                "hi",
+                cwd=Path("."),
+                model="opus",
+                effort="max",
+                settings=payload,
+            )
+        cmd = _FakePopen.last_cmd
+        assert cmd is not None
+        self.assertIn("--settings", cmd)
+        self.assertEqual(cmd[cmd.index("--settings") + 1], payload)
 
 
 if __name__ == "__main__":

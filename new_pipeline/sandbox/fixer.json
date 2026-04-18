@@ -1,0 +1,53 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "allowUnsandboxedCommands": false,
+    "filesystem": {
+      "allowWrite": [
+        "${project_root}/new_pipeline/staging/"
+      ],
+      "denyWrite": [
+        "./mtg-engine/tests/**",
+        "./pipeline/**",
+        "./new_pipeline/**",
+        "./.git/**",
+        "./.claude/**",
+        "./.worktrees/**",
+        "./Cargo.toml",
+        "./Cargo.lock",
+        "./CLAUDE.md",
+        "./TODO.md",
+        "./AGENT_COORD.md",
+        "./README.md",
+        "./.gitignore",
+        "./decks/**",
+        "./data/**",
+        "./audits/**",
+        "./reports/**",
+        "./logs/**",
+        "./scripts/**",
+        "./prompts/**"
+      ],
+      "denyRead": [
+        "./new_pipeline/tickets/archive/**",
+        "./new_pipeline/tickets/**",
+        "./.claude/**"
+      ]
+    }
+  },
+  "permissions": {
+    "deny": [
+      "Edit(mtg-engine/tests/**)",
+      "Write(mtg-engine/tests/**)",
+      "Edit(pipeline/**)",
+      "Write(pipeline/**)",
+      "Edit(new_pipeline/**)",
+      "Write(new_pipeline/**)",
+      "Edit(.claude/**)",
+      "Write(.claude/**)",
+      "Edit(.git/**)",
+      "Write(.git/**)",
+      "Read(new_pipeline/tickets/**)"
+    ]
+  }
+}

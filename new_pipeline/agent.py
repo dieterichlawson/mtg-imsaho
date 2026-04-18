@@ -48,6 +48,7 @@ def run_agent(
     cwd: Path,
     model: str,
     effort: str,
+    settings: str | None = None,
     timeout_secs: int = 3600,
 ) -> AgentResult:
     """Run `claude -p <prompt>` in `cwd`, collect usage + errors, return them.
@@ -56,6 +57,10 @@ def run_agent(
     `AgentResult` has `is_error=True` with a timeout message in that case.
     Agent-reported errors (the `result` stream event with `is_error: true`)
     pass through as `AgentResult.is_error`.
+
+    `settings`, if given, is a JSON string passed verbatim via
+    `claude --settings <json>` to layer per-call sandbox + permission
+    rules on top of the standard settings hierarchy.
     """
     cmd = [
         "claude",
@@ -72,6 +77,8 @@ def run_agent(
         "auto",
         "--no-session-persistence",
     ]
+    if settings is not None:
+        cmd.extend(["--settings", settings])
     start = time.time()
     proc = subprocess.Popen(
         cmd,
@@ -153,6 +160,7 @@ def run_agent_loop(
     load_result: LoadResult,
     model: str,
     effort: str,
+    settings: str | None = None,
     max_attempts: int = 3,
 ) -> tuple[Any, AgentResult]:
     """Spawn the agent up to `max_attempts` until `load_result` accepts.
@@ -179,7 +187,9 @@ def run_agent_loop(
     result: AgentResult | None = None
     for attempt in range(1, max_attempts + 1):
         prompt = build_prompt(retry_note, attempt)
-        result = run_agent(prompt, cwd=cwd, model=model, effort=effort)
+        result = run_agent(
+            prompt, cwd=cwd, model=model, effort=effort, settings=settings,
+        )
         parsed, error = load_result(result, attempt)
         if error is None:
             return parsed, result

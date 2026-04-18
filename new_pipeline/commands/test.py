@@ -14,7 +14,7 @@ rerun can pick up where it left off.
 
 from __future__ import annotations
 
-from new_pipeline import oracle, utils, validate, worktree
+from new_pipeline import oracle, sandbox, utils, validate, worktree
 from new_pipeline.agent import run_agent_loop, single_file_loader
 from new_pipeline.types import (
     Status,
@@ -77,6 +77,14 @@ def _test_one(tid: str, args) -> None:
                 )
         return None
 
+    # Retrying a `could_not_confirm` predecessor implies the previous
+    # test-writer ran out of options without engine surface — grant the
+    # successor write access to `mtg-engine/src/`. Fresh tickets stay
+    # locked out.
+    profile = (
+        "test_writer_engine" if t.frontmatter.retry_of else "test_writer"
+    )
+
     print(f"\n[{tid}] Running test-writer agent...")
     report, result = run_agent_loop(
         build_prompt=build_prompt,
@@ -88,6 +96,9 @@ def _test_one(tid: str, args) -> None:
         ),
         model=args.model,
         effort=args.effort,
+        settings=sandbox.render(
+            profile, project_root=str(utils.PROJECT_ROOT),
+        ),
     )
 
     if result.is_error:
