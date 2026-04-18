@@ -95,6 +95,9 @@ def _fix_one(tid: str, args) -> None:
         model=args.model,
         effort=args.effort,
         sandbox_settings_path=sandbox_path,
+        log_dir=utils.LOGS_DIR,
+        log_stem=run_id,
+        progress_prefix=f"[{tid}] ",
     )
 
     if result.is_error:

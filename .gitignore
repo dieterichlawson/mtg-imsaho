@@ -9,6 +9,8 @@
 # Raw agent event logs (written by run_agent_in); cleaned up on
 # merge/abandon. Kept on disk for post-mortem during a run.
 /pipeline/logs/
+/new_pipeline/staging/
+/new_pipeline/logs/
 # Claude Code: commit commands/skills and project settings, ignore local/personal files
 .claude/settings.local.json
 .claude/worktrees/
