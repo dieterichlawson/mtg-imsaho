@@ -9,6 +9,7 @@ Usage:
     ./new_pipeline/cli.py test --tickets "<id>, ..." [--model M] [--effort E]
     ./new_pipeline/cli.py fix --tickets "<id>, ..." [--model M] [--effort E]
     ./new_pipeline/cli.py retry --tickets "<id>, ..."
+    ./new_pipeline/cli.py merge --tickets "<id>, ..."
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ from new_pipeline.commands import (  # noqa: E402
     audit,
     close,
     fix,
+    merge,
     retry,
     show,
     test,
@@ -85,6 +87,14 @@ def main() -> None:
         "--tickets", required=True, help="Comma-separated ticket ids",
     )
 
+    p_merge = sub.add_parser(
+        "merge",
+        help="Merge `fixed` ticket commits into master and archive them",
+    )
+    p_merge.add_argument(
+        "--tickets", required=True, help="Comma-separated ticket ids",
+    )
+
     args = parser.parse_args()
     dispatch = {
         "tickets": show.cmd_tickets,
@@ -94,6 +104,7 @@ def main() -> None:
         "test": test.cmd_test,
         "fix": fix.cmd_fix,
         "retry": retry.cmd_retry,
+        "merge": merge.cmd_merge,
     }
     dispatch[args.command](args)
 
