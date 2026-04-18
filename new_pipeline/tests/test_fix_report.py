@@ -80,6 +80,32 @@ class FixReportTest(unittest.TestCase):
         self.assertIn("**Status:** fixed", section)
         self.assertIn("Added the missing lifelink trigger.", section)
 
+    def test_files_changed_parses_and_renders(self) -> None:
+        """files_changed list parses, then renders as a bullet list."""
+        _write_json(self.staging, {
+            "status": "fixed",
+            "description": "Threaded source_id through the targeting check.",
+            "files_changed": [
+                "mtg-engine/src/engine.rs",
+                "mtg-engine/src/cards/foo.rs",
+            ],
+        })
+        report = FixReport.load(self.staging)
+        self.assertEqual(len(report.files_changed), 2)
+        section = report.to_result_section()
+        self.assertIn("**Files changed:**", section)
+        self.assertIn("- mtg-engine/src/engine.rs", section)
+
+    def test_files_changed_defaults_to_empty(self) -> None:
+        """No files_changed key → empty list, no Files-changed block."""
+        _write_json(self.staging, {
+            "status": "fixed",
+            "description": "Whatever.",
+        })
+        report = FixReport.load(self.staging)
+        self.assertEqual(report.files_changed, [])
+        self.assertNotIn("Files changed", report.to_result_section())
+
     # ── malformed input → StagingError ────────────────────────────
 
     def test_missing_status_raises(self) -> None:

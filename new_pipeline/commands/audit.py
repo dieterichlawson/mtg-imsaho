@@ -88,8 +88,30 @@ def _audit_one(card: str, args) -> list[Ticket] | None:
         tokens=result.tokens,
         duration=result.duration,
     )
+    if report.insights:
+        _append_insights(report.insights, card=card)
     print(
         f"[{card}] Done: {len(minted)} ticket(s) "
         f"({result.duration}s, {result.tokens} tok)"
     )
     return minted
+
+
+def _append_insights(insights: list[str], *, card: str) -> None:
+    """Append agent-discovered insights to `prompts/auditor-insights.md`.
+
+    Each insight is the markdown block the auditor produced (typically
+    a `## Title` heading + paragraph). We append them verbatim so the
+    next auditor reads them as part of its pre-reading.
+    """
+    path = utils.PROMPTS_DIR / "auditor-insights.md"
+    blocks = [
+        f"\n{ins.rstrip()}\n\n_Discovered auditing: {card}_\n"
+        for ins in insights
+    ]
+    with path.open("a") as f:
+        f.write("".join(blocks))
+    print(
+        f"[{card}] Appended {len(insights)} insight(s) to "
+        f"prompts/auditor-insights.md"
+    )

@@ -580,6 +580,36 @@ def _optional_str(d: dict, key: str) -> str:
     return v
 
 
+def _optional_str_list(d: dict, key: str) -> list[str]:
+    """`d[key]` as a list of strings; [] if absent; raise on wrong type."""
+    v = d.get(key) or []
+    if not isinstance(v, list):
+        raise StagingError(
+            f"field {key!r}: expected list, got {type(v).__name__}"
+        )
+    for i, x in enumerate(v):
+        if not isinstance(x, str):
+            raise StagingError(
+                f"{key}[{i}]: expected str, got {type(x).__name__}"
+            )
+    return list(v)
+
+
+def _optional_str_dict(d: dict, key: str) -> dict[str, str]:
+    """`d[key]` as a {str: str} map; {} if absent; raise on wrong shape."""
+    v = d.get(key) or {}
+    if not isinstance(v, dict):
+        raise StagingError(
+            f"field {key!r}: expected object, got {type(v).__name__}"
+        )
+    for k, val in v.items():
+        if not isinstance(k, str) or not isinstance(val, str):
+            raise StagingError(
+                f"{key}: every key and value must be a string"
+            )
+    return dict(v)
+
+
 @dataclass
 class FindingTest:
     """A single test slug + scenario the auditor wants written."""
@@ -674,6 +704,9 @@ class AuditReport:
 
     card: str
     findings: list[Finding]
+    checks_performed: dict[str, str] = field(default_factory=dict)
+    untested_rulings: list[str] = field(default_factory=list)
+    insights: list[str] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path) -> AuditReport:
@@ -685,6 +718,9 @@ class AuditReport:
                 Finding.from_dict(f)
                 for f in _require_objects(d, "findings")
             ],
+            checks_performed=_optional_str_dict(d, "checks_performed"),
+            untested_rulings=_optional_str_list(d, "untested_rulings"),
+            insights=_optional_str_list(d, "insights"),
         )
 
     def mint_tickets(
@@ -874,6 +910,7 @@ class FixReport:
 
     status: FixStatus
     description: str
+    files_changed: list[str] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path) -> FixReport:
@@ -886,14 +923,35 @@ class FixReport:
                 "description is required — on fixed it explains the fix; "
                 "on failed it's the post-mortem"
             )
-        return cls(status=status, description=description)
+        raw_files = d.get("files_changed") or []
+        if not isinstance(raw_files, list):
+            raise StagingError(
+                "field 'files_changed': expected list, "
+                f"got {type(raw_files).__name__}"
+            )
+        for i, p in enumerate(raw_files):
+            if not isinstance(p, str):
+                raise StagingError(
+                    f"files_changed[{i}]: expected str, "
+                    f"got {type(p).__name__}"
+                )
+        return cls(
+            status=status,
+            description=description,
+            files_changed=list(raw_files),
+        )
 
     def to_result_section(self) -> str:
         """Render as a `## Fix Result` block for the ticket body."""
-        return (
-            "## Fix Result\n"
-            "\n"
-            f"**Status:** {self.status.value}\n"
-            "\n"
-            f"{self.description}"
-        )
+        lines = [
+            "## Fix Result",
+            "",
+            f"**Status:** {self.status.value}",
+            "",
+        ]
+        if self.files_changed:
+            lines += ["**Files changed:**"]
+            lines += [f"- {p}" for p in self.files_changed]
+            lines += [""]
+        lines += [self.description]
+        return "\n".join(lines)
