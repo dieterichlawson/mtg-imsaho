@@ -343,18 +343,6 @@ Write a single JSON file to `{staging_path}` matching this shape:
 ```json
 {{
   "card": "{card}",
-  "checks_performed": {{
-    "8a": "done — no runtime field modifications",
-    "8b": "done — single death trigger, dispatch filter ok",
-    "8c": "n/a — no activated abilities",
-    "8d": "done — uses both registry and obj subtypes",
-    "8e": "done — uses central damage helper",
-    "8f": "n/a — no targeting",
-    "8g": "n/a — no token creation",
-    "8h": "done — until-end-of-turn cleanup correct",
-    "8i": "n/a — vanilla creature",
-    "8j": "done — 2 rulings filed as findings for coverage"
-  }},
   "findings": [
     {{
       "oracle_quote": "exact text from the oracle",
@@ -374,11 +362,6 @@ Write a single JSON file to `{staging_path}` matching this shape:
 }}
 ```
 
-- `checks_performed` is **required**. Map each applicable
-  required-check id (8a–8j) to a one-line note: `"done — <brief
-  result>"` if you ran it, `"n/a — <reason>"` if it doesn't apply to
-  this card. Every applicable check must appear; this is the audit
-  trail proving you actually ran the procedure.
 - `oracle_quote`, `code_quote`, `description` are required on every
   finding. The rest are optional.
 - `check` should be the required-check id (8a–8j) that surfaced the

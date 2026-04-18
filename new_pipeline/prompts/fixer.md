@@ -61,7 +61,6 @@ Write your report to `{staging_path}` matching this shape:
 ```json
 {{
   "status": "fixed",
-  "files_changed": ["mtg-engine/src/foo.rs", "mtg-engine/src/bar.rs"],
   "description": "one paragraph explaining what changed and why."
 }}
 ```
@@ -71,16 +70,12 @@ or
 ```json
 {{
   "status": "failed",
-  "files_changed": [],
   "description": "detailed post-mortem: what you tried, why it didn't work, and what engine-level change (if any) would be required."
 }}
 ```
 
 - `status` is either `fixed` (cargo is green, commits are on the
   branch) or `failed` (you gave up).
-- `files_changed` is the list of files in your final diff (excluding
-  the staging report). On `failed`, it's `[]` if you reverted, or the
-  list of files you committed before giving up.
 - `description` is **required on both outcomes**. On `failed`, it's
   the post-mortem — the only artifact of a failed run, so be thorough.
 
