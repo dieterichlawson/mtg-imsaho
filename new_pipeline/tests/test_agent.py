@@ -191,8 +191,8 @@ class RunAgentTest(unittest.TestCase):
         self.assertEqual(env.get("PATH"), "/usr/bin")
 
 
-    def test_settings_arg_omitted_by_default(self) -> None:
-        """No settings kwarg → `--settings` is absent from the cmd line."""
+    def test_no_sandbox_runs_claude_directly(self) -> None:
+        """No sandbox kwarg → cmd starts with `claude`, not `srt`."""
         with patch.object(
             agent.subprocess, "Popen",
             _popen_factory(stdout_lines=[], returncode=0),
@@ -200,11 +200,18 @@ class RunAgentTest(unittest.TestCase):
             run_agent("hi", cwd=Path("."), model="opus", effort="max")
         cmd = _FakePopen.last_cmd
         assert cmd is not None
-        self.assertNotIn("--settings", cmd)
+        self.assertEqual(cmd[0], "claude")
+        self.assertNotIn("srt", cmd)
 
-    def test_settings_arg_passes_through_verbatim(self) -> None:
-        """`settings=<json>` → cmd has `--settings <json>` verbatim."""
-        payload = '{"sandbox": {"enabled": true}}'
+    def test_sandbox_wraps_in_srt(self) -> None:
+        """sandbox_settings_path → cmd is `srt --settings <path> -c <claude>`.
+
+        srt is invoked via the `-c '<shell-string>'` form because its
+        positional-argv form mangles multi-word arguments (the prompt
+        comes back to claude truncated). The full claude invocation is
+        shell-quoted and passed as one arg.
+        """
+        settings_path = Path("/tmp/test-sandbox.json")
         with patch.object(
             agent.subprocess, "Popen",
             _popen_factory(stdout_lines=[], returncode=0),
@@ -214,12 +221,21 @@ class RunAgentTest(unittest.TestCase):
                 cwd=Path("."),
                 model="opus",
                 effort="max",
-                settings=payload,
+                sandbox_settings_path=settings_path,
             )
         cmd = _FakePopen.last_cmd
         assert cmd is not None
-        self.assertIn("--settings", cmd)
-        self.assertEqual(cmd[cmd.index("--settings") + 1], payload)
+        # First three args: srt --settings <path>
+        self.assertEqual(cmd[0], "srt")
+        self.assertEqual(cmd[1], "--settings")
+        self.assertEqual(cmd[2], str(settings_path))
+        # Fourth: -c, fifth: a single shell string starting with `claude `
+        self.assertEqual(cmd[3], "-c")
+        self.assertTrue(cmd[4].startswith("claude "))
+        # The prompt and other args are inside the shell string, quoted.
+        self.assertIn("hi", cmd[4])
+        self.assertIn("--model", cmd[4])
+        self.assertIn("opus", cmd[4])
 
 
 if __name__ == "__main__":

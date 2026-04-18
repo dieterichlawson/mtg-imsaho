@@ -8,6 +8,8 @@ run metadata stamped onto every new ticket.
 
 from __future__ import annotations
 
+import os
+
 from new_pipeline import oracle, sandbox, utils
 from new_pipeline.agent import run_agent_loop, single_file_loader
 from new_pipeline.types import AuditReport, Ticket
@@ -44,6 +46,14 @@ def _audit_one(card: str, args) -> list[Ticket] | None:
 
     utils.STAGING_DIR.mkdir(parents=True, exist_ok=True)
     staging_path = utils.STAGING_DIR / f"{run_id}.json"
+    sandbox_path = utils.STAGING_DIR / f"{run_id}.srt.json"
+    sandbox_path.write_text(
+        sandbox.render(
+            "auditor",
+            project_root=str(utils.PROJECT_ROOT),
+            home=os.path.expanduser("~"),
+        )
+    )
 
     template = (utils.PROMPTS_DIR / "auditor.md").read_text()
 
@@ -62,9 +72,7 @@ def _audit_one(card: str, args) -> list[Ticket] | None:
         ),
         model=args.model,
         effort=args.effort,
-        settings=sandbox.render(
-            "auditor", project_root=str(utils.PROJECT_ROOT),
-        ),
+        sandbox_settings_path=sandbox_path,
     )
 
     if result.is_error:

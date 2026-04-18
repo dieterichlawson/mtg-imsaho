@@ -15,6 +15,8 @@ the ticket `tested` so a rerun picks up where it left off.
 
 from __future__ import annotations
 
+import os
+
 from new_pipeline import sandbox, utils, validate, worktree
 from new_pipeline.agent import run_agent_loop, single_file_loader
 from new_pipeline.types import (
@@ -55,6 +57,14 @@ def _fix_one(tid: str, args) -> None:
 
     utils.STAGING_DIR.mkdir(parents=True, exist_ok=True)
     staging_path = utils.STAGING_DIR / f"{run_id}.json"
+    sandbox_path = utils.STAGING_DIR / f"{run_id}.srt.json"
+    sandbox_path.write_text(
+        sandbox.render(
+            "fixer",
+            project_root=str(utils.PROJECT_ROOT),
+            home=os.path.expanduser("~"),
+        )
+    )
 
     template = (utils.PROMPTS_DIR / "fixer.md").read_text()
 
@@ -84,9 +94,7 @@ def _fix_one(tid: str, args) -> None:
         ),
         model=args.model,
         effort=args.effort,
-        settings=sandbox.render(
-            "fixer", project_root=str(utils.PROJECT_ROOT),
-        ),
+        sandbox_settings_path=sandbox_path,
     )
 
     if result.is_error:

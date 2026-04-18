@@ -1,14 +1,20 @@
-"""Per-agent sandbox profiles passed to `claude --settings <json>`.
+"""Per-agent sandbox profiles for `@anthropic-ai/sandbox-runtime` (`srt`).
 
 Each agent role has a JSON template in this directory describing its
-filesystem and permission rules. `render(profile, **vars)` loads the
-named template, substitutes `${var}` placeholders, and returns the
-result as a JSON string ready to feed to `claude --settings`.
+filesystem and network rules in srt's native schema. `render(profile,
+**vars)` loads the named template, substitutes `${project_root}` and
+`${home}` placeholders, and returns the rendered JSON string. The
+caller writes it to a file and passes it as `srt --settings <path>`.
 
-The sandbox config is enforced at the OS level (Seatbelt on macOS,
-bubblewrap on Linux) for any Bash subprocess the agent spawns; the
-permissions block covers Claude Code's built-in Edit/Write/Read tools.
-Both layers are needed because they cover different escape vectors.
+The sandbox is enforced at the OS level (Seatbelt on macOS, bubblewrap
+on Linux) and applies to every syscall the wrapped process and its
+children make — including Claude Code's own Edit/Write tools, which
+ultimately become open()/write() syscalls the kernel sees and rejects.
+
+The profiles use srt's allow-only model: `allowWrite` lists every
+path the agent legitimately needs to touch. Anything not in that list
+is denied. Some paths (engine src for the locked test-writer; the test
+file for the fixer) are deliberately absent.
 
 Profiles:
     auditor               — auditor agent (cwd = project root)

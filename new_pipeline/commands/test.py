@@ -14,6 +14,8 @@ rerun can pick up where it left off.
 
 from __future__ import annotations
 
+import os
+
 from new_pipeline import oracle, sandbox, utils, validate, worktree
 from new_pipeline.agent import run_agent_loop, single_file_loader
 from new_pipeline.types import (
@@ -52,6 +54,22 @@ def _test_one(tid: str, args) -> None:
     utils.STAGING_DIR.mkdir(parents=True, exist_ok=True)
     staging_path = utils.STAGING_DIR / f"{run_id}.json"
 
+    # Retrying a `could_not_confirm` predecessor implies the previous
+    # test-writer ran out of options without engine surface — grant the
+    # successor write access to `mtg-engine/src/`. Fresh tickets stay
+    # locked out.
+    profile = (
+        "test_writer_engine" if t.frontmatter.retry_of else "test_writer"
+    )
+    sandbox_path = utils.STAGING_DIR / f"{run_id}.srt.json"
+    sandbox_path.write_text(
+        sandbox.render(
+            profile,
+            project_root=str(utils.PROJECT_ROOT),
+            home=os.path.expanduser("~"),
+        )
+    )
+
     template = (utils.PROMPTS_DIR / "test-writer.md").read_text()
 
     def build_prompt(retry_note: str, _attempt: int) -> str:
@@ -77,14 +95,6 @@ def _test_one(tid: str, args) -> None:
                 )
         return None
 
-    # Retrying a `could_not_confirm` predecessor implies the previous
-    # test-writer ran out of options without engine surface — grant the
-    # successor write access to `mtg-engine/src/`. Fresh tickets stay
-    # locked out.
-    profile = (
-        "test_writer_engine" if t.frontmatter.retry_of else "test_writer"
-    )
-
     print(f"\n[{tid}] Running test-writer agent...")
     report, result = run_agent_loop(
         build_prompt=build_prompt,
@@ -96,9 +106,7 @@ def _test_one(tid: str, args) -> None:
         ),
         model=args.model,
         effort=args.effort,
-        settings=sandbox.render(
-            profile, project_root=str(utils.PROJECT_ROOT),
-        ),
+        sandbox_settings_path=sandbox_path,
     )
 
     if result.is_error:
