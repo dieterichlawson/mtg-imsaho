@@ -20,6 +20,16 @@ Run `git log {tested_sha}..HEAD` to see what's already been committed
 on this branch (typically just the test file). Your fix adds one
 more commit on top.
 
+## If this is a retry
+
+If the ticket body has a `## Previous attempt (<old_id>)` section,
+this is a retry of an earlier fix attempt that failed. The old
+worktree — with whatever that attempt committed — is preserved at
+`../fix-<old_id>/` (sibling of your current worktree). You can `cd`
+there and run `git log {tested_sha}..HEAD` to see the failed fix at
+code level. The post-mortem in the ticket body is the narrative; the
+old worktree is the source. Use it to avoid repeating dead ends.
+
 ## Task
 
 1. Read the ticket, the failing tests, and the relevant engine source

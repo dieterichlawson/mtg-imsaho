@@ -38,8 +38,19 @@ class Status(str, Enum):
 
     @property
     def is_terminal(self) -> bool:
-        """True if no further transitions are allowed."""
-        return self in {Status.CLOSED, Status.COULD_NOT_CONFIRM}
+        """True if no further transitions are allowed.
+
+        FIX_FAILED and COULD_NOT_CONFIRM are terminal because retry
+        doesn't mutate them — it mints a fresh ticket with a
+        `retry_of` pointer and carries forward the old's post-mortem
+        as context. The old ticket stays archived as an immutable
+        record of the failed attempt.
+        """
+        return self in {
+            Status.CLOSED,
+            Status.COULD_NOT_CONFIRM,
+            Status.FIX_FAILED,
+        }
 
 
 class CloseReason(str, Enum):
@@ -84,12 +95,12 @@ class StagingError(ValueError):
 _ISO_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
 
-def _parse_datetime(raw: str) -> datetime:
+def parse_datetime(raw: str) -> datetime:
     """Parse an ISO-8601 `...Z` timestamp into a timezone-aware datetime."""
     return datetime.strptime(raw, _ISO_FMT).replace(tzinfo=timezone.utc)
 
 
-def _format_datetime(dt: datetime) -> str:
+def format_datetime(dt: datetime) -> str:
     """Render a datetime as our canonical ISO-8601 `...Z` string."""
     return dt.astimezone(timezone.utc).strftime(_ISO_FMT)
 
@@ -141,6 +152,9 @@ class Frontmatter:
     fixed_at: datetime | None = None
     fix_failed_at: datetime | None = None
 
+    # Retry — id of the terminal ticket this one succeeds.
+    retry_of: str = ""
+
     # Terminal: closed / abandoned
     closed_reason: str = ""
     closed_at: datetime | None = None
@@ -185,7 +199,7 @@ class Frontmatter:
             if core is int:
                 init_kwargs[k] = int(v) if v else 0
             elif core is datetime:
-                init_kwargs[k] = _parse_datetime(v) if v else None
+                init_kwargs[k] = parse_datetime(v) if v else None
             else:
                 init_kwargs[k] = v
         init_kwargs["extras"] = extras
@@ -203,7 +217,7 @@ class Frontmatter:
             if isinstance(value, Status):
                 out[f.name] = value.value
             elif isinstance(value, datetime):
-                out[f.name] = _format_datetime(value)
+                out[f.name] = format_datetime(value)
             elif isinstance(value, int):
                 out[f.name] = str(value)
             else:
@@ -326,6 +340,25 @@ class Ticket:
         "state change" and "body entry" is explicit at the call site.
         """
         self.body = self.body.rstrip() + "\n\n" + section.rstrip() + "\n"
+
+    def body_with_previous_attempt(self, *, section_heading: str) -> str:
+        """Rewrap the named section as `## Previous attempt ({self.id})`.
+
+        Used by retry to mint a successor ticket whose body inherits
+        this ticket's content up through the named section, with that
+        section repointed at this ticket as the predecessor. If the
+        named section isn't present, returns self.body with a bare
+        `## Previous attempt ({self.id})` placeholder.
+        """
+        before, section, after = _split_off_section(self.body, section_heading)
+        inner = _strip_leading_heading(section) if section else (
+            f"See archived ticket `{self.id}` for details."
+        )
+        remainder = before.rstrip() + (
+            "\n\n" + after.lstrip() if after else ""
+        )
+        prev = f"## Previous attempt ({self.id})\n\n{inner.rstrip()}"
+        return remainder.rstrip() + "\n\n" + prev + "\n"
 
     def close(self, *, note: str | None = None) -> None:
         """Mutate to closed/abandoned. Caller is responsible for `.save()`."""
@@ -459,6 +492,40 @@ class Ticket:
         new_path = new_dir / f"{self.id}.md"
         self.path.rename(new_path)
         self.path = new_path
+
+
+def _split_off_section(
+    body: str, heading: str,
+) -> tuple[str, str, str]:
+    """Split `body` around a `## {heading}` section.
+
+    Returns (before, section, after). `section` includes its own
+    heading line and runs until the next `## ` heading or end of
+    body. If the heading isn't found, returns `(body, "", "")`.
+    """
+    lines = body.split("\n")
+    start: int | None = None
+    for i, line in enumerate(lines):
+        if line.strip() == f"## {heading}":
+            start = i
+            break
+    if start is None:
+        return body, "", ""
+    end = len(lines)
+    for j in range(start + 1, len(lines)):
+        if lines[j].startswith("## "):
+            end = j
+            break
+    before = "\n".join(lines[:start]).rstrip()
+    section = "\n".join(lines[start:end]).rstrip()
+    after = "\n".join(lines[end:]).strip()
+    return before, section, after
+
+
+def _strip_leading_heading(section: str) -> str:
+    """Drop the `## ...` line at the top of `section`, return the rest."""
+    _, _, rest = section.partition("\n")
+    return rest.lstrip()
 
 
 def _all_ticket_paths() -> Iterator[Path]:

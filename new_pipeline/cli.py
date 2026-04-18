@@ -8,6 +8,7 @@ Usage:
     ./new_pipeline/cli.py audit --cards "X, Y" [--model M] [--effort E]
     ./new_pipeline/cli.py test --tickets "<id>, ..." [--model M] [--effort E]
     ./new_pipeline/cli.py fix --tickets "<id>, ..." [--model M] [--effort E]
+    ./new_pipeline/cli.py retry --tickets "<id>, ..."
 """
 
 from __future__ import annotations
@@ -24,6 +25,7 @@ from new_pipeline.commands import (  # noqa: E402
     audit,
     close,
     fix,
+    retry,
     show,
     test,
 )
@@ -75,6 +77,14 @@ def main() -> None:
     p_fix.add_argument("--model", default="opus")
     p_fix.add_argument("--effort", default="max")
 
+    p_retry = sub.add_parser(
+        "retry",
+        help="Mint a successor ticket for a `fix_failed`/`could_not_confirm`",
+    )
+    p_retry.add_argument(
+        "--tickets", required=True, help="Comma-separated ticket ids",
+    )
+
     args = parser.parse_args()
     dispatch = {
         "tickets": show.cmd_tickets,
@@ -83,6 +93,7 @@ def main() -> None:
         "audit": audit.cmd_audit,
         "test": test.cmd_test,
         "fix": fix.cmd_fix,
+        "retry": retry.cmd_retry,
     }
     dispatch[args.command](args)
 
