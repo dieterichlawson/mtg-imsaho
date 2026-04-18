@@ -78,3 +78,27 @@ def branch_head(branch: str) -> str:
         cwd=str(utils.PROJECT_ROOT),
     )
     return r.stdout.strip() if r.returncode == 0 else ""
+
+
+def create_from_sha(ticket_id: str, sha: str) -> Path:
+    """Create a fresh worktree for `ticket_id` checked out at `sha`.
+
+    Used by retry to mint a new worktree at the parent ticket's
+    `tested_sha` — the new branch starts from the post-test state,
+    leaving any failed-fix commits behind. The old worktree is left
+    untouched so an operator can still inspect what the previous
+    attempt tried.
+    """
+    wt = dir_for(ticket_id)
+    utils.WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "git", "worktree", "add",
+            "-b", branch_for(ticket_id),
+            str(wt), sha,
+        ],
+        check=True,
+        capture_output=True,
+        cwd=str(utils.PROJECT_ROOT),
+    )
+    return wt

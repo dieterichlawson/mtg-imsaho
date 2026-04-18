@@ -192,17 +192,17 @@ class TicketFixPhaseTest(unittest.TestCase):
         self.assertIn("## Fix Result", reloaded.body)
         self.assertIn("Got stuck on Y", reloaded.body)
 
-    def test_fix_failed_is_not_terminal_stays_in_active(self) -> None:
-        """FIX_FAILED is non-terminal (retryable); stays in active/."""
+    def test_fix_failed_is_terminal_auto_archives(self) -> None:
+        """FIX_FAILED is terminal; retry mints a new ticket instead."""
         _write_tested_ticket(self.tickets, ticket_id="retryable-01")
         t = Ticket.load("retryable-01")
         t.mark_fix_failed(
             run_id="r", model="m", tokens=1, duration=1,
         )
         t.save()
-        self.assertFalse(Status.FIX_FAILED.is_terminal)
-        self.assertTrue((self.tickets / "retryable-01.md").exists())
-        self.assertFalse(
+        self.assertTrue(Status.FIX_FAILED.is_terminal)
+        self.assertFalse((self.tickets / "retryable-01.md").exists())
+        self.assertTrue(
             (self.tickets / "archive" / "retryable-01.md").exists()
         )
 
