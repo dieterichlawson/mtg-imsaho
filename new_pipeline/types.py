@@ -705,7 +705,6 @@ class AuditReport:
     card: str
     findings: list[Finding]
     checks_performed: dict[str, str] = field(default_factory=dict)
-    untested_rulings: list[str] = field(default_factory=list)
     insights: list[str] = field(default_factory=list)
 
     @classmethod
@@ -719,7 +718,6 @@ class AuditReport:
                 for f in _require_objects(d, "findings")
             ],
             checks_performed=_optional_str_dict(d, "checks_performed"),
-            untested_rulings=_optional_str_list(d, "untested_rulings"),
             insights=_optional_str_list(d, "insights"),
         )
 

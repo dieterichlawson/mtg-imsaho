@@ -83,13 +83,12 @@ class AuditIngestTest(unittest.TestCase):
     # ── happy path ─────────────────────────────────────────────────
 
     def test_load_parses_optional_audit_metadata(self) -> None:
-        """checks_performed, untested_rulings, insights all parse cleanly."""
+        """checks_performed and insights both parse cleanly."""
         payload = _good_report(
             checks_performed={
                 "8a": "done — no runtime fields touched",
                 "8b": "n/a — no triggered abilities",
             },
-            untested_rulings=["Lifelink applies once per damage event."],
             insights=[
                 "## A new pattern\n\nEngine omits X check.",
             ],
@@ -98,8 +97,6 @@ class AuditIngestTest(unittest.TestCase):
         report = AuditReport.load(self.staging)
         self.assertEqual(report.checks_performed["8a"],
                          "done — no runtime fields touched")
-        self.assertEqual(len(report.untested_rulings), 1)
-        self.assertIn("Lifelink", report.untested_rulings[0])
         self.assertEqual(len(report.insights), 1)
         self.assertIn("A new pattern", report.insights[0])
 
@@ -108,7 +105,6 @@ class AuditIngestTest(unittest.TestCase):
         _write_json(self.staging, _good_report())
         report = AuditReport.load(self.staging)
         self.assertEqual(report.checks_performed, {})
-        self.assertEqual(report.untested_rulings, [])
         self.assertEqual(report.insights, [])
 
     def test_insights_must_be_strings(self) -> None:

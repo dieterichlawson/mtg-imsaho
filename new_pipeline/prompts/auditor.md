@@ -283,8 +283,15 @@ Check for:
 **8j. Rulings coverage** (if rulings are provided in the oracle
 block):
 For each ruling, verify the ruling's behavior is correctly
-implemented. If the implementation matches but no test exists, note
-it as untested rather than a code bug.
+implemented. If the implementation matches but no test in
+`mtg-engine/tests/` exercises that scenario, **emit it as a finding**
+— rulings are exactly the edge cases the card's designers cared
+about, and "code looks right but no test proves it" is a real gap.
+Use the ruling text as `oracle_quote`, the matching code as
+`code_quote`, and a description that says the behavior appears
+correct but lacks coverage. The test-writer will then write the
+test: if it passes, we gained coverage; if it fails, we found a
+latent bug we'd otherwise have missed.
 
 ### Step 9. Reconcile
 
@@ -345,11 +352,9 @@ Write a single JSON file to `{staging_path}` matching this shape:
     "8f": "n/a — no targeting",
     "8g": "n/a — no token creation",
     "8h": "done — until-end-of-turn cleanup correct",
-    "8i": "n/a — vanilla creature"
+    "8i": "n/a — vanilla creature",
+    "8j": "done — 2 rulings filed as findings for coverage"
   }},
-  "untested_rulings": [
-    "Ruling text or summary that the code handles correctly but isn't covered by a test."
-  ],
   "findings": [
     {{
       "oracle_quote": "exact text from the oracle",
@@ -374,14 +379,11 @@ Write a single JSON file to `{staging_path}` matching this shape:
   result>"` if you ran it, `"n/a — <reason>"` if it doesn't apply to
   this card. Every applicable check must appear; this is the audit
   trail proving you actually ran the procedure.
-- `untested_rulings` is for rulings present in the oracle block whose
-  behavior the code implements correctly but no test covers. Empty
-  list or omit if all rulings are tested or no rulings were
-  provided.
 - `oracle_quote`, `code_quote`, `description` are required on every
   finding. The rest are optional.
 - `check` should be the required-check id (8a–8j) that surfaced the
-  bug, when applicable.
+  bug, when applicable. Findings emitted by 8j (untested-ruling
+  coverage) should set `check: "8j"`.
 - `tests` is one entry per scenario (see "When to bundle tests").
 - `insights` is a list of new generalizable patterns, formatted as
   markdown blocks (each starting with a `##` heading). Empty array
