@@ -31,6 +31,8 @@ class Status(str, Enum):
 
     NEW = "new"
     TESTED = "tested"
+    FIXED = "fixed"
+    FIX_FAILED = "fix_failed"
     COULD_NOT_CONFIRM = "could_not_confirm"
     CLOSED = "closed"
 
@@ -129,6 +131,15 @@ class Frontmatter:
     test_file: str = ""
     tested_sha: str = ""
     tested_at: datetime | None = None
+
+    # Fix phase
+    fix_run_id: str = ""
+    fix_model: str = ""
+    fix_tokens: int = 0
+    fix_duration: int = 0
+    fixed_sha: str = ""
+    fixed_at: datetime | None = None
+    fix_failed_at: datetime | None = None
 
     # Terminal: closed / abandoned
     closed_reason: str = ""
@@ -305,6 +316,17 @@ class Ticket:
         elif not self.status.is_terminal and in_archive:
             self._move_to(utils.TICKETS_DIR)
 
+    def append_body_section(self, section: str) -> None:
+        """Append a markdown section to the body.
+
+        The body is a write-only log of what happened to the ticket;
+        each phase transition records its outcome here. Callers pair
+        this with a `mark_*` mutator when they want both in one step.
+        Not called inside the mutators so that the split between
+        "state change" and "body entry" is explicit at the call site.
+        """
+        self.body = self.body.rstrip() + "\n\n" + section.rstrip() + "\n"
+
     def close(self, *, note: str | None = None) -> None:
         """Mutate to closed/abandoned. Caller is responsible for `.save()`."""
         self.status = next_status(self.status, LifecycleEvent.ABANDONED)
@@ -315,17 +337,17 @@ class Ticket:
 
     def mark_tested(
         self,
-        report: TestReport,
         *,
         run_id: str,
         model: str,
         tokens: int,
         duration: int,
+        test_file: str,
         tested_sha: str,
     ) -> None:
-        """Mutate to `tested` with test-phase metadata, append results.
+        """Mutate to `tested` with test-phase metadata. Does not touch body.
 
-        Caller is responsible for `.save()`.
+        Caller is responsible for `.append_body_section(...)` and `.save()`.
         """
         self.status = Status.TESTED
         fm = self.frontmatter
@@ -333,23 +355,60 @@ class Ticket:
         fm.test_model = model
         fm.test_tokens = tokens
         fm.test_duration = duration
-        fm.test_file = report.test_file
+        fm.test_file = test_file
         fm.tested_sha = tested_sha
         fm.tested_at = datetime.now(timezone.utc)
-        self.body = (
-            self.body.rstrip() + "\n\n" + report.to_results_section() + "\n"
-        )
 
-    def mark_could_not_confirm(self, report: TestReport) -> None:
+    def mark_could_not_confirm(self) -> None:
         """Terminal: test-writer couldn't confirm any scenario as a bug.
 
-        Appends the results section for context. Caller is responsible
-        for `.save()` (which will auto-archive since the status is terminal).
+        Caller is responsible for `.append_body_section(...)` and `.save()`
+        (which will auto-archive since the status is terminal).
         """
         self.status = Status.COULD_NOT_CONFIRM
-        self.body = (
-            self.body.rstrip() + "\n\n" + report.to_results_section() + "\n"
-        )
+
+    def mark_fixed(
+        self,
+        *,
+        run_id: str,
+        model: str,
+        tokens: int,
+        duration: int,
+        fixed_sha: str,
+    ) -> None:
+        """Mutate to `fixed` with fix-phase metadata. Does not touch body.
+
+        Caller is responsible for `.append_body_section(...)` and `.save()`.
+        """
+        self.status = Status.FIXED
+        fm = self.frontmatter
+        fm.fix_run_id = run_id
+        fm.fix_model = model
+        fm.fix_tokens = tokens
+        fm.fix_duration = duration
+        fm.fixed_sha = fixed_sha
+        fm.fixed_at = datetime.now(timezone.utc)
+
+    def mark_fix_failed(
+        self,
+        *,
+        run_id: str,
+        model: str,
+        tokens: int,
+        duration: int,
+    ) -> None:
+        """Mutate to `fix_failed` with run metadata. Does not touch body.
+
+        No `fixed_sha` (no successful fix). Caller is responsible for
+        `.append_body_section(...)` and `.save()`.
+        """
+        self.status = Status.FIX_FAILED
+        fm = self.frontmatter
+        fm.fix_run_id = run_id
+        fm.fix_model = model
+        fm.fix_tokens = tokens
+        fm.fix_duration = duration
+        fm.fix_failed_at = datetime.now(timezone.utc)
 
     # ── Internals ────────────────────────────────────────────────
 
