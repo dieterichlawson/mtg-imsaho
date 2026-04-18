@@ -3,18 +3,20 @@
 Two cases handled, both following the same pattern:
 
 - `FIX_FAILED` → mint a new ticket in `TESTED`. The test file is
-  still valid; the worktree is renamed over to the new ticket so
-  the fix phase can run directly. The new ticket's body inherits
-  everything up through `## Test Run Results`, plus the failed
-  ticket's `## Fix Result` wrapped as a `## Previous attempt`.
+  still valid; a fresh worktree is created at the old ticket's
+  `tested_sha` so the fix phase starts from the post-test state
+  (failed-fix commits are left behind). The new ticket's body
+  inherits everything up through `## Test Run Results`, plus the
+  failed ticket's `## Fix Result` wrapped as a `## Previous attempt`.
 - `COULD_NOT_CONFIRM` → mint a new ticket in `NEW`. Previous tests
-  were rejected (or needed engine work), so the worktree is
-  discarded. The new ticket's body inherits the audit finding +
-  `## Tests` scenarios, plus the failed ticket's
-  `## Test Run Results` wrapped as a `## Previous attempt`.
+  were rejected (or needed engine work), so the new ticket gets no
+  worktree (the test phase will create one). The new ticket's body
+  inherits the audit finding + `## Tests` scenarios, plus the failed
+  ticket's `## Test Run Results` wrapped as a `## Previous attempt`.
 
-In both cases the old ticket stays archived as an immutable record;
-the new ticket carries a `retry_of` frontmatter pointer to it.
+The old ticket's worktree is left in place in both cases — operators
+can still inspect what the previous attempt tried. Cleanup happens
+later via `close`.
 """
 
 from __future__ import annotations
@@ -57,8 +59,10 @@ def _retry_one(tid: str) -> None:
 def _retry_from_fix_failed(old: Ticket) -> str:
     """Mint the successor for a FIX_FAILED ticket.
 
-    Tests are still good, so the worktree is renamed to the new
-    ticket. Carries all test-phase metadata over.
+    Tests are still good, so a fresh worktree is created at the old
+    ticket's `tested_sha` — the new branch starts from the post-test
+    state, leaving failed-fix commits behind in the old worktree.
+    Carries all test-phase metadata over.
     """
     stem = _stem_of(old.id)
     new_id = Ticket.allocate_id(stem)
@@ -67,8 +71,6 @@ def _retry_from_fix_failed(old: Ticket) -> str:
         old.body, section_heading="Fix Result", old_id=old.id,
     )
 
-    # Mint the new ticket first — takes the worktree-less slot in
-    # the active tickets dir. The worktree rename lands after.
     fm = old.frontmatter
     extra = {
         "retry_of": old.id,
@@ -91,9 +93,8 @@ def _retry_from_fix_failed(old: Ticket) -> str:
         extra=extra,
     )
 
-    # Rename the worktree/branch to the new id. Commits preserved,
-    # tested_sha still points at the same commit.
-    worktree.rename(old.id, new_id)
+    # Fresh worktree at the post-test sha; old worktree stays put.
+    worktree.create_from_sha(new_id, fm.tested_sha)
     return new_id
 
 
@@ -101,8 +102,8 @@ def _retry_from_could_not_confirm(old: Ticket) -> str:
     """Mint the successor for a COULD_NOT_CONFIRM ticket.
 
     Previous tests were rejected (or needed engine work), so the
-    worktree is torn down and the new ticket starts in NEW — the
-    test phase will run fresh.
+    new ticket starts in NEW with no worktree — the test phase will
+    create one. The old worktree stays put for inspection.
     """
     stem = _stem_of(old.id)
     new_id = Ticket.allocate_id(stem)
@@ -118,9 +119,6 @@ def _retry_from_could_not_confirm(old: Ticket) -> str:
         body=new_body,
         extra={"retry_of": old.id},
     )
-    # The old worktree holds partial/rejected test work — drop it so
-    # the next test run starts from scratch.
-    worktree.remove(old.id)
     return new_id
 
 

@@ -1,14 +1,15 @@
 """End-to-end tests for `cmd_retry`.
 
-Uses real git (for the worktree rename) but no agent/cargo — retry
-is a ticket-file-and-git-operation only, no subprocesses beyond
-what worktree.rename calls.
+Uses real git (for worktree creation) but no agent/cargo — retry
+is a ticket-file-and-git-operation only.
 
 Covers both retry paths:
-  - FIX_FAILED → new TESTED ticket, worktree renamed, body inherits
-    up through `## Test Run Results` plus `## Previous attempt`.
-  - COULD_NOT_CONFIRM → new NEW ticket, worktree removed, body
-    inherits up through `## Tests` plus `## Previous attempt`.
+  - FIX_FAILED → new TESTED ticket, fresh worktree at `tested_sha`,
+    old worktree left in place. Body inherits up through
+    `## Test Run Results` plus `## Previous attempt`.
+  - COULD_NOT_CONFIRM → new NEW ticket with no worktree (test phase
+    will create one). Old worktree left in place. Body inherits up
+    through `## Tests` plus `## Previous attempt`.
 """
 
 from __future__ import annotations
@@ -146,8 +147,13 @@ class RetryCommandTest(unittest.TestCase):
 
     # ── FIX_FAILED → TESTED ──────────────────────────────────────
 
-    def test_fix_failed_retry_mints_tested_with_worktree(self) -> None:
-        """FIX_FAILED retry mints TESTED successor + renames worktree."""
+    def test_fix_failed_retry_mints_tested_with_fresh_worktree(self) -> None:
+        """FIX_FAILED retry mints TESTED successor on a fresh worktree.
+
+        The successor's worktree is created at `tested_sha` so any
+        failed-fix commits stay behind in the old worktree (which is
+        kept for forensics).
+        """
         # Set up a worktree on fix/foo-01 with a committed test file.
         wt_old = worktree.ensure("foo-01")
         test_rel = "mtg-engine/tests/pipeline_bugs_foo_01.rs"
@@ -158,6 +164,15 @@ class RetryCommandTest(unittest.TestCase):
         _git("add", "-A", cwd=wt_old)
         _git("commit", "-q", "-m", "tests", cwd=wt_old)
         tested_sha = _git(
+            "rev-parse", "HEAD", cwd=wt_old,
+        ).stdout.strip()
+
+        # Layer a (failed) fix commit on top — it should NOT carry over
+        # to the new worktree.
+        (wt_old / "broken_fix.rs").write_text("// did not work\n")
+        _git("add", "-A", cwd=wt_old)
+        _git("commit", "-q", "-m", "failed fix attempt", cwd=wt_old)
+        failed_sha = _git(
             "rev-parse", "HEAD", cwd=wt_old,
         ).stdout.strip()
 
@@ -201,12 +216,18 @@ class RetryCommandTest(unittest.TestCase):
         # The original `## Fix Result` heading should NOT appear.
         self.assertNotIn("## Fix Result", new.body)
 
-        # Worktree renamed.
-        self.assertFalse(worktree.dir_for("foo-01").exists())
+        # Both worktrees exist: old (with failed-fix commit) and new
+        # (fresh, branched at tested_sha).
+        self.assertTrue(worktree.dir_for("foo-01").exists())
         self.assertTrue(worktree.dir_for("foo-02").exists())
-        # Branch renamed.
-        self.assertEqual(worktree.branch_head("fix/foo-01"), "")
+        # Branches: old still tipped at the failed-fix sha, new tipped
+        # at the tested sha (failed commits left behind).
+        self.assertEqual(worktree.branch_head("fix/foo-01"), failed_sha)
         self.assertEqual(worktree.branch_head("fix/foo-02"), tested_sha)
+        # The leaked-fix file must NOT be present in the new worktree.
+        self.assertFalse(
+            (worktree.dir_for("foo-02") / "broken_fix.rs").exists()
+        )
 
         # Old ticket untouched in archive.
         old = Ticket.load("foo-01")
@@ -215,10 +236,12 @@ class RetryCommandTest(unittest.TestCase):
 
     # ── COULD_NOT_CONFIRM → NEW ──────────────────────────────────
 
-    def test_could_not_confirm_retry_mints_new_and_tears_worktree(
-        self,
-    ) -> None:
-        """COULD_NOT_CONFIRM retry mints NEW successor; worktree removed."""
+    def test_could_not_confirm_retry_keeps_old_worktree(self) -> None:
+        """COULD_NOT_CONFIRM retry mints NEW successor; old worktree kept.
+
+        The successor has no worktree of its own — the test phase will
+        create one. The old worktree is left in place for inspection.
+        """
         wt_old = worktree.ensure("bar-01")
         # Drop a placeholder file so the worktree isn't empty.
         (wt_old / "scratch.rs").write_text("// partial work\n")
@@ -242,9 +265,9 @@ class RetryCommandTest(unittest.TestCase):
         # Old `## Test Run Results` heading is gone.
         self.assertNotIn("## Test Run Results", new.body)
 
-        # Worktree for old ticket torn down; no new worktree yet
-        # (test phase will create one).
-        self.assertFalse(worktree.dir_for("bar-01").exists())
+        # Old worktree kept for forensics; no new worktree yet
+        # (the test phase will create one).
+        self.assertTrue(worktree.dir_for("bar-01").exists())
         self.assertFalse(worktree.dir_for("bar-02").exists())
 
     # ── invalid source status ────────────────────────────────────

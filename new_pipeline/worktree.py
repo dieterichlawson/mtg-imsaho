@@ -80,27 +80,25 @@ def branch_head(branch: str) -> str:
     return r.stdout.strip() if r.returncode == 0 else ""
 
 
-def rename(old_id: str, new_id: str) -> None:
-    """Rename the worktree directory + branch from `old_id` to `new_id`.
+def create_from_sha(ticket_id: str, sha: str) -> Path:
+    """Create a fresh worktree for `ticket_id` checked out at `sha`.
 
-    Moves `.worktrees/fix-<old_id>/` → `.worktrees/fix-<new_id>/` via
-    `git worktree move`, then renames the branch `fix/<old_id>` →
-    `fix/<new_id>` via `git branch -m`. The commits on the branch
-    (test commits, etc.) come along unchanged — their SHAs are
-    preserved, so any frontmatter referencing a specific sha (e.g.
-    `tested_sha`) is still valid after the rename.
+    Used by retry to mint a new worktree at the parent ticket's
+    `tested_sha` — the new branch starts from the post-test state,
+    leaving any failed-fix commits behind. The old worktree is left
+    untouched so an operator can still inspect what the previous
+    attempt tried.
     """
-    old_dir = dir_for(old_id)
-    new_dir = dir_for(new_id)
+    wt = dir_for(ticket_id)
+    utils.WORKTREES_DIR.mkdir(parents=True, exist_ok=True)
     subprocess.run(
-        ["git", "worktree", "move", str(old_dir), str(new_dir)],
+        [
+            "git", "worktree", "add",
+            "-b", branch_for(ticket_id),
+            str(wt), sha,
+        ],
         check=True,
         capture_output=True,
         cwd=str(utils.PROJECT_ROOT),
     )
-    subprocess.run(
-        ["git", "branch", "-m", branch_for(old_id), branch_for(new_id)],
-        check=True,
-        capture_output=True,
-        cwd=str(new_dir),
-    )
+    return wt
