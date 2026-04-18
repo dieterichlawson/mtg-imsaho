@@ -98,6 +98,7 @@ class SandboxIntegrationTest(unittest.TestCase):
             profile,
             project_root=str(repo),
             home=str(repo / "fake-home"),
+            test_file="mtg-engine/tests/pipeline_bugs_foo_01.rs",
         ))
         cfg["filesystem"]["allowWrite"] = [
             p for p in cfg["filesystem"]["allowWrite"]
@@ -159,6 +160,34 @@ class SandboxIntegrationTest(unittest.TestCase):
                     settings, repo, "mtg-engine/src/leaked.rs",
                 ),
                 "default test_writer must not write engine src",
+            )
+
+    def test_test_writer_locks_to_single_test_file(self) -> None:
+        """test_writer can write its specific test file but NOT a sibling.
+
+        The sandbox is locked to `./<test_file>` (the exact path passed
+        in via the template var), not the whole `mtg-engine/tests/` dir,
+        so the agent can't drop a stray test file or overwrite an
+        unrelated existing test.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            settings = self._write_settings(repo, "test_writer")
+            # The configured file is allowed.
+            self.assertTrue(
+                self._try_write(
+                    settings, repo,
+                    "mtg-engine/tests/pipeline_bugs_foo_01.rs",
+                ),
+                "test_writer must be able to write its configured test file",
+            )
+            # A sibling test file is blocked.
+            self.assertFalse(
+                self._try_write(
+                    settings, repo,
+                    "mtg-engine/tests/some_other_test.rs",
+                ),
+                "test_writer must NOT be able to write a sibling test file",
             )
 
     def test_test_writer_engine_permits_engine_src_write(self) -> None:

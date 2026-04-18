@@ -16,14 +16,12 @@
   },
   "filesystem": {
     "allowWrite": [
-      "./mtg-engine/tests",
+      "./${test_file}",
       "./mtg-engine/src",
       "./cards",
       "./target",
       "./.git",
       "${project_root}/new_pipeline/staging",
-      "${home}/.claude",
-      "${home}/.cargo",
       "/tmp",
       "/var/folders"
     ],
@@ -33,7 +31,8 @@
       "./new_pipeline/tickets",
       "${home}/.aws",
       "${home}/.ssh",
-      "${home}/.gnupg"
+      "${home}/.gnupg",
+      "${home}/.cargo/credentials.toml"
     ]
   }
 }

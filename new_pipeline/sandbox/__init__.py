@@ -2,9 +2,10 @@
 
 Each agent role has a JSON template in this directory describing its
 filesystem and network rules in srt's native schema. `render(profile,
-**vars)` loads the named template, substitutes `${project_root}` and
-`${home}` placeholders, and returns the rendered JSON string. The
-caller writes it to a file and passes it as `srt --settings <path>`.
+**vars)` loads the named template, substitutes `${project_root}`,
+`${home}`, and (test_writer profiles only) `${test_file}` placeholders,
+and returns the rendered JSON string. The caller writes it to a file
+and passes it as `srt --settings <path>`.
 
 The sandbox is enforced at the OS level (Seatbelt on macOS, bubblewrap
 on Linux) and applies to every syscall the wrapped process and its

@@ -18,7 +18,11 @@ sys.path.insert(0, str(_THIS.parents[2]))
 
 from new_pipeline import sandbox  # noqa: E402
 
-_VARS = {"project_root": "/tmp/repo", "home": "/Users/test"}
+_VARS = {
+    "project_root": "/tmp/repo",
+    "home": "/Users/test",
+    "test_file": "mtg-engine/tests/pipeline_bugs_foo_01.rs",
+}
 
 
 class SandboxRenderTest(unittest.TestCase):
@@ -54,18 +58,28 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertNotIn(".", allows)
         self.assertNotIn("./", allows)
 
-    def test_test_writer_default_omits_engine_src(self) -> None:
-        """test_writer profile: `mtg-engine/src` not in the allow list."""
+    def test_test_writer_locks_to_single_test_file(self) -> None:
+        """test_writer profile: only the specific test file is writable.
+
+        Locked to `./<test_file>` rather than the whole tests dir, so
+        the agent can't write a stray test file or overwrite an
+        unrelated existing test.
+        """
         cfg = json.loads(sandbox.render("test_writer", **_VARS))
         allows = cfg["filesystem"]["allowWrite"]
-        self.assertIn("./mtg-engine/tests", allows)
-        # The whole point of the locked profile.
+        self.assertIn("./mtg-engine/tests/pipeline_bugs_foo_01.rs", allows)
+        # NOT the whole tests dir — single file only.
+        self.assertNotIn("./mtg-engine/tests", allows)
+        # Engine src locked.
         self.assertNotIn("./mtg-engine/src", allows)
-        # Cargo + git need broad worktree access.
+        # Cargo writes target/, git commits to .git/.
         self.assertIn("./target", allows)
         self.assertIn("./.git", allows)
         # Staging on the main repo is allow-listed (outside cwd).
         self.assertIn("/tmp/repo/new_pipeline/staging", allows)
+        # Tightened: ~/.claude and ~/.cargo should NOT be in allowWrite.
+        self.assertNotIn("/Users/test/.claude", allows)
+        self.assertNotIn("/Users/test/.cargo", allows)
 
     def test_test_writer_engine_adds_engine_src_and_cards(self) -> None:
         """needs_engine_work retry profile: engine src + cards added."""
@@ -74,8 +88,9 @@ class SandboxRenderTest(unittest.TestCase):
         # The whole point of the engine variant.
         self.assertIn("./mtg-engine/src", allows)
         self.assertIn("./cards", allows)
-        # Test writer's own writes still allowed.
-        self.assertIn("./mtg-engine/tests", allows)
+        # Test writer's own single-file write still allowed.
+        self.assertIn("./mtg-engine/tests/pipeline_bugs_foo_01.rs", allows)
+        self.assertNotIn("./mtg-engine/tests", allows)
 
     def test_fixer_omits_test_dir(self) -> None:
         """Fixer can write engine src + cards, NOT the test file."""
@@ -94,7 +109,9 @@ class SandboxRenderTest(unittest.TestCase):
         cfg = json.loads(rendered)
         allows = cfg["filesystem"]["allowWrite"]
         self.assertIn("/Users/foo/repo/new_pipeline/staging", allows)
-        self.assertIn("/Users/foo/.claude", allows)
+        # ${home} is substituted in denyRead (sensitive home dirs).
+        deny_reads = cfg["filesystem"]["denyRead"]
+        self.assertIn("/Users/foo/.ssh", deny_reads)
         self.assertNotIn("${", rendered)
 
     def test_missing_var_raises(self) -> None:

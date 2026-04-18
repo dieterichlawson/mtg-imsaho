@@ -26,7 +26,8 @@
       "./new_pipeline/tickets/archive",
       "${home}/.aws",
       "${home}/.ssh",
-      "${home}/.gnupg"
+      "${home}/.gnupg",
+      "${home}/.cargo/credentials.toml"
     ]
   }
 }

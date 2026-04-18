@@ -67,6 +67,7 @@ def _test_one(tid: str, args) -> None:
             profile,
             project_root=str(utils.PROJECT_ROOT),
             home=os.path.expanduser("~"),
+            test_file=test_file_rel,
         )
     )
 
