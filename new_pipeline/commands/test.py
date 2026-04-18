@@ -97,14 +97,21 @@ def _test_one(tid: str, args) -> None:
         )
         return
 
-    confirmed = [r for r in report.tests if r.status is TestStatus.CONFIRMED]
-    if not confirmed:
+    # Strict aggregation: every scenario in the ticket must be confirmed
+    # for the ticket to move to `tested`. Any rejected or
+    # needs_engine_work entry blocks the whole ticket — the human must
+    # retry (after adjusting the scenario set, adding engine surface,
+    # etc.) rather than move forward with partial coverage.
+    confirmed = sum(1 for r in report.tests if r.status is TestStatus.CONFIRMED)
+    all_confirmed = bool(report.tests) and confirmed == len(report.tests)
+
+    if not all_confirmed:
         t.mark_could_not_confirm()
         t.append_body_section(report.to_results_section())
         t.save()
         print(
             f"[{tid}] {Status.COULD_NOT_CONFIRM.value}: "
-            f"{len(report.tests)} scenario(s) rejected by agent."
+            f"{confirmed}/{len(report.tests)} scenario(s) confirmed."
         )
         return
 
@@ -119,6 +126,6 @@ def _test_one(tid: str, args) -> None:
     t.append_body_section(report.to_results_section())
     t.save()
     print(
-        f"[{tid}] Done: {len(confirmed)}/{len(report.tests)} tests "
+        f"[{tid}] Done: {confirmed}/{len(report.tests)} tests "
         f"confirmed ({result.duration}s, {result.tokens} tok)"
     )

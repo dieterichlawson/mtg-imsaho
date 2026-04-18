@@ -327,6 +327,78 @@ class TestCommandTest(unittest.TestCase):
         self.assertIs(t.status, Status.NEW)
         self.assertEqual(t.frontmatter.test_run_id, "")
 
+    # ── strict aggregation ────────────────────────────────────────
+
+    def test_mixed_confirmed_and_rejected_marks_could_not_confirm(
+        self,
+    ) -> None:
+        """Any non-confirmed scenario blocks the whole ticket."""
+        (self.tickets / "mixed-01.md").write_text(textwrap.dedent(
+            """\
+            ---
+            id: mixed-01
+            status: new
+            card: Fake Card
+            ---
+
+            ## Tests
+
+            ### scenario_a
+            Scenario: one.
+
+            ### scenario_b
+            Scenario: two.
+            """
+        ))
+        self._script_agent({
+            "test_file": "mtg-engine/tests/pipeline_bugs_mixed_01.rs",
+            "tests": [
+                {
+                    "slug": "scenario_a", "status": "confirmed",
+                    "test_name": "test_scenario_a",
+                    "assertion_message": "x",
+                },
+                {
+                    "slug": "scenario_b", "status": "rejected",
+                    "explanation": "not actually a bug",
+                },
+            ],
+        })
+        # Make cargo validate scenario_a (the confirmed one) as a real bug.
+        os.environ["FAKE_CARGO_EXIT"] = "101"
+        os.environ["FAKE_CARGO_STDOUT"] = (
+            "assertion `left == right` failed\n  left: 20\n right: 21\n"
+        )
+
+        test_mod.cmd_test(_args("mixed-01"))
+
+        t = Ticket.load("mixed-01")
+        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
+        self.assertTrue(t.status.is_terminal)
+
+    def test_needs_engine_work_entry_marks_could_not_confirm(self) -> None:
+        """`needs_engine_work` blocks the ticket → could_not_confirm."""
+        _write_ticket_file(self.tickets, "blocked-01")
+        self._script_agent({
+            "test_file": "mtg-engine/tests/pipeline_bugs_blocked_01.rs",
+            "tests": [
+                {
+                    "slug": "test_my_scenario",
+                    "status": "needs_engine_work",
+                    "explanation": (
+                        "would need combat::apply_damage_with_source()"
+                    ),
+                },
+            ],
+        })
+
+        test_mod.cmd_test(_args("blocked-01"))
+
+        t = Ticket.load("blocked-01")
+        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
+        self.assertIn("needs_engine_work", t.body)
+        self.assertIn("combat::apply_damage_with_source", t.body)
+
     # ── arg validation ────────────────────────────────────────────
 
     def test_empty_tickets_raises(self) -> None:

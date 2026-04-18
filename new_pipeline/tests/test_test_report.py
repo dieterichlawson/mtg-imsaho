@@ -96,6 +96,24 @@ class TestReportTest(unittest.TestCase):
         report = TestReport.load(self.staging)
         self.assertEqual(report.tests[0].status, TestStatus.CONFIRMED)
 
+    def test_needs_engine_work_status_parses(self) -> None:
+        """The third per-scenario verdict round-trips through parsing."""
+        _write_json(self.staging, {
+            "test_file": "a/b.rs",
+            "tests": [
+                {
+                    "slug": "x",
+                    "status": "needs_engine_work",
+                    "explanation": "would need combat::apply_with_source()",
+                },
+            ],
+        })
+        report = TestReport.load(self.staging)
+        self.assertEqual(
+            report.tests[0].status, TestStatus.NEEDS_ENGINE_WORK,
+        )
+        self.assertIn("combat::", report.tests[0].explanation)
+
     # ── malformed input → StagingError ────────────────────────────
 
     def test_missing_test_file_raises(self) -> None:
