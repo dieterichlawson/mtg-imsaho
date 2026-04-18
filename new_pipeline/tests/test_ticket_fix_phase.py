@@ -81,7 +81,12 @@ class TicketFixPhaseTest(unittest.TestCase):
     # ── mark_fixed ────────────────────────────────────────────────
 
     def test_mark_fixed_sets_status_and_all_metadata(self) -> None:
-        """mark_fixed transitions status + stamps every fix_* frontmatter."""
+        """mark_fixed transitions status + stamps every fix_* frontmatter.
+
+        The mutator doesn't touch the body; the caller pairs it with
+        `append_section(report.to_result_section())` when it wants the
+        outcome recorded in the body too.
+        """
         _write_tested_ticket(self.tickets)
         t = Ticket.load("foo-01")
 
@@ -90,13 +95,13 @@ class TicketFixPhaseTest(unittest.TestCase):
             description="Added missing lifelink trigger on first-strike.",
         )
         t.mark_fixed(
-            report,
             run_id="2026-04-17-foo-01-fix",
             model="opus",
             tokens=1234,
             duration=42,
             fixed_sha="def456789012345678901234567890abcdef0123",
         )
+        t.append_section(report.to_result_section())
         t.save()
 
         reloaded = Ticket.load("foo-01")
@@ -114,23 +119,31 @@ class TicketFixPhaseTest(unittest.TestCase):
         self.assertIn("## Fix Result", reloaded.body)
         self.assertIn("Added missing lifelink trigger", reloaded.body)
 
-    def test_mark_fixed_does_not_save(self) -> None:
-        """The mutator is pure — caller must call .save() to persist."""
+    def test_mark_fixed_does_not_touch_body(self) -> None:
+        """Mutator updates state only; body stays untouched until append."""
         _write_tested_ticket(self.tickets, ticket_id="foo-02")
         t = Ticket.load("foo-02")
+        body_before = t.body
         t.mark_fixed(
-            FixReport(status=FixStatus.FIXED, description="d"),
+            run_id="r", model="m", tokens=1, duration=1, fixed_sha="s",
+        )
+        self.assertEqual(t.body, body_before)
+
+    def test_mark_fixed_does_not_save(self) -> None:
+        """The mutator is pure — caller must call .save() to persist."""
+        _write_tested_ticket(self.tickets, ticket_id="foo-03")
+        t = Ticket.load("foo-03")
+        t.mark_fixed(
             run_id="r", model="m", tokens=1, duration=1, fixed_sha="s",
         )
         # No .save() yet → disk still says `tested`.
-        self.assertIs(Ticket.load("foo-02").status, Status.TESTED)
+        self.assertIs(Ticket.load("foo-03").status, Status.TESTED)
 
     def test_fixed_is_not_terminal_stays_in_active(self) -> None:
         """FIXED is not terminal — the file stays in the active dir."""
         _write_tested_ticket(self.tickets, ticket_id="stay-01")
         t = Ticket.load("stay-01")
         t.mark_fixed(
-            FixReport(status=FixStatus.FIXED, description="d"),
             run_id="r", model="m", tokens=1, duration=1, fixed_sha="s",
         )
         t.save()
@@ -157,12 +170,12 @@ class TicketFixPhaseTest(unittest.TestCase):
             ),
         )
         t.mark_fix_failed(
-            report,
             run_id="2026-04-17-giveup-01-fix",
             model="opus",
             tokens=567,
             duration=12,
         )
+        t.append_section(report.to_result_section())
         t.save()
 
         reloaded = Ticket.load("giveup-01")
@@ -184,7 +197,6 @@ class TicketFixPhaseTest(unittest.TestCase):
         _write_tested_ticket(self.tickets, ticket_id="retryable-01")
         t = Ticket.load("retryable-01")
         t.mark_fix_failed(
-            FixReport(status=FixStatus.FAILED, description="d"),
             run_id="r", model="m", tokens=1, duration=1,
         )
         t.save()

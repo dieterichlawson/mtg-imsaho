@@ -316,6 +316,17 @@ class Ticket:
         elif not self.status.is_terminal and in_archive:
             self._move_to(utils.TICKETS_DIR)
 
+    def append_section(self, section: str) -> None:
+        """Append a markdown section to the body.
+
+        The body is a write-only log of what happened to the ticket;
+        each phase transition records its outcome here. Callers pair
+        this with a `mark_*` mutator when they want both in one step.
+        Not called inside the mutators so that the split between
+        "state change" and "body entry" is explicit at the call site.
+        """
+        self.body = self.body.rstrip() + "\n\n" + section.rstrip() + "\n"
+
     def close(self, *, note: str | None = None) -> None:
         """Mutate to closed/abandoned. Caller is responsible for `.save()`."""
         self.status = next_status(self.status, LifecycleEvent.ABANDONED)
@@ -326,17 +337,17 @@ class Ticket:
 
     def mark_tested(
         self,
-        report: TestReport,
         *,
         run_id: str,
         model: str,
         tokens: int,
         duration: int,
+        test_file: str,
         tested_sha: str,
     ) -> None:
-        """Mutate to `tested` with test-phase metadata, append results.
+        """Mutate to `tested` with test-phase metadata. Does not touch body.
 
-        Caller is responsible for `.save()`.
+        Caller is responsible for `.append_section(...)` and `.save()`.
         """
         self.status = Status.TESTED
         fm = self.frontmatter
@@ -344,27 +355,20 @@ class Ticket:
         fm.test_model = model
         fm.test_tokens = tokens
         fm.test_duration = duration
-        fm.test_file = report.test_file
+        fm.test_file = test_file
         fm.tested_sha = tested_sha
         fm.tested_at = datetime.now(timezone.utc)
-        self.body = (
-            self.body.rstrip() + "\n\n" + report.to_results_section() + "\n"
-        )
 
-    def mark_could_not_confirm(self, report: TestReport) -> None:
+    def mark_could_not_confirm(self) -> None:
         """Terminal: test-writer couldn't confirm any scenario as a bug.
 
-        Appends the results section for context. Caller is responsible
-        for `.save()` (which will auto-archive since the status is terminal).
+        Caller is responsible for `.append_section(...)` and `.save()`
+        (which will auto-archive since the status is terminal).
         """
         self.status = Status.COULD_NOT_CONFIRM
-        self.body = (
-            self.body.rstrip() + "\n\n" + report.to_results_section() + "\n"
-        )
 
     def mark_fixed(
         self,
-        report: FixReport,
         *,
         run_id: str,
         model: str,
@@ -372,9 +376,9 @@ class Ticket:
         duration: int,
         fixed_sha: str,
     ) -> None:
-        """Mutate to `fixed` with fix-phase metadata, append fix result.
+        """Mutate to `fixed` with fix-phase metadata. Does not touch body.
 
-        Caller is responsible for `.save()`.
+        Caller is responsible for `.append_section(...)` and `.save()`.
         """
         self.status = Status.FIXED
         fm = self.frontmatter
@@ -384,23 +388,19 @@ class Ticket:
         fm.fix_duration = duration
         fm.fixed_sha = fixed_sha
         fm.fixed_at = datetime.now(timezone.utc)
-        self.body = (
-            self.body.rstrip() + "\n\n" + report.to_result_section() + "\n"
-        )
 
     def mark_fix_failed(
         self,
-        report: FixReport,
         *,
         run_id: str,
         model: str,
         tokens: int,
         duration: int,
     ) -> None:
-        """Mutate to `fix_failed` with run metadata, append the post-mortem.
+        """Mutate to `fix_failed` with run metadata. Does not touch body.
 
-        No `fixed_sha` (no successful fix exists). Caller is
-        responsible for `.save()`.
+        No `fixed_sha` (no successful fix). Caller is responsible for
+        `.append_section(...)` and `.save()`.
         """
         self.status = Status.FIX_FAILED
         fm = self.frontmatter
@@ -409,9 +409,6 @@ class Ticket:
         fm.fix_tokens = tokens
         fm.fix_duration = duration
         fm.fix_failed_at = datetime.now(timezone.utc)
-        self.body = (
-            self.body.rstrip() + "\n\n" + report.to_result_section() + "\n"
-        )
 
     # ── Internals ────────────────────────────────────────────────
 
