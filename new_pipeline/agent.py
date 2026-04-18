@@ -190,15 +190,17 @@ def run_agent_loop(
 
     # Exhausted attempts with a non-None error. Enforce the invariant
     # that parsed is None iff result.is_error — so callers can branch
-    # on result.is_error alone.
+    # on result.is_error alone. `parsed` may have come back non-None
+    # if the validator rejected an otherwise-valid parse; null it out
+    # and stamp the error on the result.
     assert result is not None  # loop ran at least once
-    if parsed is None and not result.is_error:
+    if not result.is_error:
         result = dataclasses.replace(
             result,
             is_error=True,
             error_message=result.error_message or error,
         )
-    return parsed, result
+    return None, result
 
 
 def single_file_loader(
