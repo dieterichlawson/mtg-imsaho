@@ -6,7 +6,9 @@ Two entry points:
   Streams stream-json events, returns an `AgentResult` carrying tokens,
   duration, and any error. The child runs with `ANTHROPIC_API_KEY` /
   `ANTHROPIC_AUTH_TOKEN` scrubbed from its environment so it falls back
-  to subscription auth.
+  to subscription auth. When `sandbox_settings_path` is given, the
+  invocation is wrapped in `srt --settings <path> -c '<claude cmd>'`
+  for OS-level filesystem and network restrictions.
 - `run_agent_loop(build_prompt, load_result, ...)` — retry wrapper.
   Calls `run_agent` up to `max_attempts` times; each failing attempt's
   reason is prepended as a `## Retry note` to the next prompt via
@@ -19,6 +21,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import shlex
 import subprocess
 import time
 from collections.abc import Callable
@@ -48,6 +51,7 @@ def run_agent(
     cwd: Path,
     model: str,
     effort: str,
+    sandbox_settings_path: Path | None = None,
     timeout_secs: int = 3600,
 ) -> AgentResult:
     """Run `claude -p <prompt>` in `cwd`, collect usage + errors, return them.
@@ -56,8 +60,14 @@ def run_agent(
     `AgentResult` has `is_error=True` with a timeout message in that case.
     Agent-reported errors (the `result` stream event with `is_error: true`)
     pass through as `AgentResult.is_error`.
+
+    When `sandbox_settings_path` is given, the claude invocation is
+    wrapped in `srt --settings <path> -c '<claude cmd>'` so it runs
+    under an OS-level filesystem + network sandbox. Without it, claude
+    runs directly with no extra restrictions beyond the user's
+    standard settings hierarchy.
     """
-    cmd = [
+    claude_argv = [
         "claude",
         "-p",
         prompt,
@@ -72,6 +82,19 @@ def run_agent(
         "auto",
         "--no-session-persistence",
     ]
+    if sandbox_settings_path is not None:
+        # `srt cmd args...` mangles multi-word args (the prompt comes
+        # back to claude as just "Use"). The `-c '<shell-string>'` form
+        # works correctly. shlex.join handles the quoting for us.
+        cmd = [
+            "srt",
+            "--settings",
+            str(sandbox_settings_path),
+            "-c",
+            shlex.join(claude_argv),
+        ]
+    else:
+        cmd = claude_argv
     start = time.time()
     proc = subprocess.Popen(
         cmd,
@@ -153,6 +176,7 @@ def run_agent_loop(
     load_result: LoadResult,
     model: str,
     effort: str,
+    sandbox_settings_path: Path | None = None,
     max_attempts: int = 3,
 ) -> tuple[Any, AgentResult]:
     """Spawn the agent up to `max_attempts` until `load_result` accepts.
@@ -179,7 +203,13 @@ def run_agent_loop(
     result: AgentResult | None = None
     for attempt in range(1, max_attempts + 1):
         prompt = build_prompt(retry_note, attempt)
-        result = run_agent(prompt, cwd=cwd, model=model, effort=effort)
+        result = run_agent(
+            prompt,
+            cwd=cwd,
+            model=model,
+            effort=effort,
+            sandbox_settings_path=sandbox_settings_path,
+        )
         parsed, error = load_result(result, attempt)
         if error is None:
             return parsed, result

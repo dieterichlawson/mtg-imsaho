@@ -27,6 +27,7 @@ class _FakePopen:
     """
 
     last_env: dict[str, str] | None = None  # most-recent constructor env
+    last_cmd: list[str] | None = None  # most-recent constructor cmd
 
     def __init__(
         self,
@@ -50,6 +51,7 @@ class _FakePopen:
         self._timeout_on_wait = timeout_on_wait
         self.killed = False
         _FakePopen.last_env = env
+        _FakePopen.last_cmd = list(cmd)
 
     def wait(self, timeout=None):
         if self._timeout_on_wait and not self.killed:
@@ -187,6 +189,53 @@ class RunAgentTest(unittest.TestCase):
         self.assertNotIn("ANTHROPIC_API_KEY", env)
         self.assertNotIn("ANTHROPIC_AUTH_TOKEN", env)
         self.assertEqual(env.get("PATH"), "/usr/bin")
+
+
+    def test_no_sandbox_runs_claude_directly(self) -> None:
+        """No sandbox kwarg → cmd starts with `claude`, not `srt`."""
+        with patch.object(
+            agent.subprocess, "Popen",
+            _popen_factory(stdout_lines=[], returncode=0),
+        ):
+            run_agent("hi", cwd=Path("."), model="opus", effort="max")
+        cmd = _FakePopen.last_cmd
+        assert cmd is not None
+        self.assertEqual(cmd[0], "claude")
+        self.assertNotIn("srt", cmd)
+
+    def test_sandbox_wraps_in_srt(self) -> None:
+        """sandbox_settings_path → cmd is `srt --settings <path> -c <claude>`.
+
+        srt is invoked via the `-c '<shell-string>'` form because its
+        positional-argv form mangles multi-word arguments (the prompt
+        comes back to claude truncated). The full claude invocation is
+        shell-quoted and passed as one arg.
+        """
+        settings_path = Path("/tmp/test-sandbox.json")
+        with patch.object(
+            agent.subprocess, "Popen",
+            _popen_factory(stdout_lines=[], returncode=0),
+        ):
+            run_agent(
+                "hi",
+                cwd=Path("."),
+                model="opus",
+                effort="max",
+                sandbox_settings_path=settings_path,
+            )
+        cmd = _FakePopen.last_cmd
+        assert cmd is not None
+        # First three args: srt --settings <path>
+        self.assertEqual(cmd[0], "srt")
+        self.assertEqual(cmd[1], "--settings")
+        self.assertEqual(cmd[2], str(settings_path))
+        # Fourth: -c, fifth: a single shell string starting with `claude `
+        self.assertEqual(cmd[3], "-c")
+        self.assertTrue(cmd[4].startswith("claude "))
+        # The prompt and other args are inside the shell string, quoted.
+        self.assertIn("hi", cmd[4])
+        self.assertIn("--model", cmd[4])
+        self.assertIn("opus", cmd[4])
 
 
 if __name__ == "__main__":

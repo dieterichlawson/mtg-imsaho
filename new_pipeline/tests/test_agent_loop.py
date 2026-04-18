@@ -57,7 +57,10 @@ def _scripted_run_agent(results: list[AgentResult]):
     """Return a drop-in for run_agent that pops from `results` per call."""
     it = iter(results)
 
-    def _fn(prompt, *, cwd, model, effort, timeout_secs=3600):
+    def _fn(
+        prompt, *, cwd, model, effort,
+        sandbox_settings_path=None, timeout_secs=3600,
+    ):
         return next(it)
 
     return _fn

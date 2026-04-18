@@ -1,0 +1,38 @@
+{
+  "network": {
+    "allowedDomains": [
+      "*.anthropic.com",
+      "anthropic.com",
+      "*.claude.ai",
+      "claude.ai",
+      "*.statsig.com",
+      "statsig.com",
+      "*.sentry.io",
+      "sentry.io",
+      "*.scryfall.com",
+      "scryfall.com"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "allowWrite": [
+      "./${test_file}",
+      "./mtg-engine/src",
+      "./cards",
+      "./target",
+      "./.git",
+      "${project_root}/new_pipeline/staging",
+      "/tmp",
+      "/var/folders"
+    ],
+    "denyWrite": [],
+    "allowRead": [],
+    "denyRead": [
+      "./new_pipeline/tickets",
+      "${home}/.aws",
+      "${home}/.ssh",
+      "${home}/.gnupg",
+      "${home}/.cargo/credentials.toml"
+    ]
+  }
+}

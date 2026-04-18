@@ -1,0 +1,33 @@
+{
+  "network": {
+    "allowedDomains": [
+      "*.anthropic.com",
+      "anthropic.com",
+      "*.claude.ai",
+      "claude.ai",
+      "*.statsig.com",
+      "statsig.com",
+      "*.sentry.io",
+      "sentry.io",
+      "*.scryfall.com",
+      "scryfall.com"
+    ],
+    "deniedDomains": []
+  },
+  "filesystem": {
+    "allowWrite": [
+      "./new_pipeline/staging",
+      "/tmp",
+      "/var/folders"
+    ],
+    "denyWrite": [],
+    "allowRead": [],
+    "denyRead": [
+      "./new_pipeline/tickets/archive",
+      "${home}/.aws",
+      "${home}/.ssh",
+      "${home}/.gnupg",
+      "${home}/.cargo/credentials.toml"
+    ]
+  }
+}
