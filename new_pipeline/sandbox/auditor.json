@@ -16,9 +16,7 @@
   },
   "filesystem": {
     "allowWrite": [
-      "./new_pipeline/tickets",
       "./new_pipeline/staging",
-      "${home}/.claude",
       "/tmp",
       "/var/folders"
     ],

@@ -185,16 +185,35 @@ class SandboxIntegrationTest(unittest.TestCase):
                 "auditor must not write to engine",
             )
 
-    def test_auditor_permits_ticket_write(self) -> None:
-        """Auditor profile: ticket writes succeed."""
+    def test_auditor_blocks_ticket_write(self) -> None:
+        """Auditor profile: ticket writes denied (Python mints tickets).
+
+        The auditor agent only emits its report to staging. The actual
+        ticket files are written by `AuditReport.mint_tickets()` in
+        the main Python process after the agent finishes, outside the
+        sandbox. So if the AGENT itself tries to write a ticket file,
+        that's unexpected behavior and should be denied.
+        """
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            settings = self._write_settings(repo, "auditor")
+            self.assertFalse(
+                self._try_write(
+                    settings, repo, "new_pipeline/tickets/foo-01.md",
+                ),
+                "auditor agent should not write tickets directly",
+            )
+
+    def test_auditor_permits_staging_write(self) -> None:
+        """Auditor profile: staging report write succeeds."""
         with tempfile.TemporaryDirectory() as tmp:
             repo = Path(tmp)
             settings = self._write_settings(repo, "auditor")
             self.assertTrue(
                 self._try_write(
-                    settings, repo, "new_pipeline/tickets/foo-01.md",
+                    settings, repo, "new_pipeline/staging/run-id.json",
                 ),
-                "auditor must be able to write tickets",
+                "auditor must be able to write its report to staging",
             )
 
 

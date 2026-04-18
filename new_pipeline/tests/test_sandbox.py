@@ -29,17 +29,28 @@ class SandboxRenderTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             sandbox.render("nonexistent", **_VARS)
 
-    def test_auditor_writes_only_tickets_and_staging(self) -> None:
-        """Auditor allowWrite is the minimal set: tickets + staging + tmp."""
+    def test_auditor_writes_only_staging(self) -> None:
+        """Auditor allowWrite is the minimal set: staging + system tmp.
+
+        The agent only emits a report JSON to staging. Ticket files
+        are created by Python (`AuditReport.mint_tickets()`) AFTER
+        the agent run finishes — that runs in the main process,
+        outside srt's sandbox. So the agent itself never needs
+        ticket-dir write access.
+
+        ~/.claude is also absent: claude is invoked with
+        `--no-session-persistence` and shouldn't need to write its
+        own metadata dir during a one-shot `-p` run.
+        """
         cfg = json.loads(sandbox.render("auditor", **_VARS))
         allows = cfg["filesystem"]["allowWrite"]
-        self.assertIn("./new_pipeline/tickets", allows)
         self.assertIn("./new_pipeline/staging", allows)
-        # Critically: engine, cards, pipeline source are NOT in allowWrite
-        # → kernel rejects writes there.
+        self.assertIn("/tmp", allows)
+        # Things that should NOT be writable (kernel rejects).
+        self.assertNotIn("./new_pipeline/tickets", allows)
+        self.assertNotIn("/Users/test/.claude", allows)
         self.assertNotIn("./mtg-engine", allows)
         self.assertNotIn("./cards", allows)
-        # The whole repo is not blanket-writable.
         self.assertNotIn(".", allows)
         self.assertNotIn("./", allows)
 
