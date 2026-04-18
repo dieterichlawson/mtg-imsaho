@@ -103,9 +103,21 @@ class AuditCommandTest(unittest.TestCase):
         self.tmp = Path(tempfile.mkdtemp(prefix="new-pipeline-audit-"))
         tickets = self.tmp / "tickets"
         staging = self.tmp / "staging"
+        prompts = self.tmp / "prompts"
         bindir = self.tmp / "bin"
         tickets.mkdir()
+        prompts.mkdir()
         bindir.mkdir()
+        # Stub auditor.md + auditor-insights.md so the append target exists
+        # and the prompt template renders. The fake `claude` ignores prompt
+        # content; only the staging path it extracts matters.
+        (prompts / "auditor.md").write_text(
+            "{card}\n{oracle}\n{staging_path}\n"
+        )
+        (prompts / "auditor-insights.md").write_text(
+            "# Auditor insights\n\n<!-- insights below -->\n"
+        )
+        self.prompts = prompts
         fake_claude = bindir / "claude"
         fake_claude.write_text(_FAKE_CLAUDE)
         fake_claude.chmod(0o755)
@@ -115,6 +127,7 @@ class AuditCommandTest(unittest.TestCase):
             patch.object(utils, "TICKETS_DIR", tickets),
             patch.object(utils, "ARCHIVE_DIR", tickets / "archive"),
             patch.object(utils, "STAGING_DIR", staging),
+            patch.object(utils, "PROMPTS_DIR", prompts),
             patch.object(
                 oracle,
                 "get_oracle_text",
@@ -175,6 +188,35 @@ class AuditCommandTest(unittest.TestCase):
         self._set_payload({"card": "Clean Card", "findings": []})
         audit_mod.cmd_audit(_args("Clean Card"))
         self.assertEqual(list(utils.TICKETS_DIR.glob("*.md")), [])
+
+    def test_insights_appended_to_insights_file(self) -> None:
+        """Agent-discovered insights get appended to auditor-insights.md."""
+        self._set_payload({
+            "card": "Olivia Voldaren",
+            "findings": [],
+            "insights": [
+                "## A new pattern\nEngine omits X check.",
+                "## Another pattern\nY is similarly broken.",
+            ],
+        })
+        audit_mod.cmd_audit(_args("Olivia Voldaren"))
+
+        text = (self.prompts / "auditor-insights.md").read_text()
+        self.assertIn("A new pattern", text)
+        self.assertIn("Another pattern", text)
+        # Each block carries an attribution line back to the source card.
+        self.assertIn("Discovered auditing: Olivia Voldaren", text)
+
+    def test_no_insights_leaves_file_untouched(self) -> None:
+        """No insights in report → insights file unchanged."""
+        before = (self.prompts / "auditor-insights.md").read_text()
+        self._set_payload({
+            "card": "Clean Card",
+            "findings": [],
+        })
+        audit_mod.cmd_audit(_args("Clean Card"))
+        after = (self.prompts / "auditor-insights.md").read_text()
+        self.assertEqual(before, after)
 
     def test_multiple_cards_mint_independently(self) -> None:
         """Two cards, two audits, two tickets — one per card."""

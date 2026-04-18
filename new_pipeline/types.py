@@ -580,6 +580,21 @@ def _optional_str(d: dict, key: str) -> str:
     return v
 
 
+def _optional_str_list(d: dict, key: str) -> list[str]:
+    """`d[key]` as a list of strings; [] if absent; raise on wrong type."""
+    v = d.get(key) or []
+    if not isinstance(v, list):
+        raise StagingError(
+            f"field {key!r}: expected list, got {type(v).__name__}"
+        )
+    for i, x in enumerate(v):
+        if not isinstance(x, str):
+            raise StagingError(
+                f"{key}[{i}]: expected str, got {type(x).__name__}"
+            )
+    return list(v)
+
+
 @dataclass
 class FindingTest:
     """A single test slug + scenario the auditor wants written."""
@@ -674,6 +689,7 @@ class AuditReport:
 
     card: str
     findings: list[Finding]
+    insights: list[str] = field(default_factory=list)
 
     @classmethod
     def load(cls, path: Path) -> AuditReport:
@@ -685,6 +701,7 @@ class AuditReport:
                 Finding.from_dict(f)
                 for f in _require_objects(d, "findings")
             ],
+            insights=_optional_str_list(d, "insights"),
         )
 
     def mint_tickets(

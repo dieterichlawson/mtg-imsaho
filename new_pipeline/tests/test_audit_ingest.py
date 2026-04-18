@@ -82,6 +82,29 @@ class AuditIngestTest(unittest.TestCase):
 
     # ── happy path ─────────────────────────────────────────────────
 
+    def test_load_parses_insights(self) -> None:
+        """`insights` field parses into the dataclass."""
+        payload = _good_report(insights=[
+            "## A new pattern\n\nEngine omits X check.",
+        ])
+        _write_json(self.staging, payload)
+        report = AuditReport.load(self.staging)
+        self.assertEqual(len(report.insights), 1)
+        self.assertIn("A new pattern", report.insights[0])
+
+    def test_insights_defaults_to_empty(self) -> None:
+        """Reports without `insights` parse with an empty list default."""
+        _write_json(self.staging, _good_report())
+        report = AuditReport.load(self.staging)
+        self.assertEqual(report.insights, [])
+
+    def test_insights_must_be_strings(self) -> None:
+        """Non-string entry in insights → StagingError."""
+        payload = _good_report(insights=["valid", 42, "also valid"])
+        _write_json(self.staging, payload)
+        with self.assertRaises(StagingError):
+            AuditReport.load(self.staging)
+
     def test_load_parses_report(self) -> None:
         """`AuditReport.load` returns a typed dataclass tree."""
         _write_json(self.staging, _good_report())

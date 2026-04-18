@@ -43,6 +43,17 @@ old worktree is the source. Use it to avoid repeating dead ends.
 Iterate until cargo is clean. Don't emit `status: "fixed"` with a
 broken cargo run.
 
+## Banned phrases
+
+These markers will cause the validator to reject your fix even if
+all tests pass. Don't include them in code or commit messages:
+
+- `TODO`
+- `FIXME`
+- "hack"
+- "workaround"
+- "temporary"
+
 ## Output
 
 Write your report to `{staging_path}` matching this shape:
@@ -63,7 +74,9 @@ or
 }}
 ```
 
-- `status` is either `fixed` (cargo is green, commits are on the branch) or `failed` (you gave up).
-- `description` is **required on both outcomes**. On `failed`, it's the post-mortem — the only artifact of a failed run, so be thorough.
+- `status` is either `fixed` (cargo is green, commits are on the
+  branch) or `failed` (you gave up).
+- `description` is **required on both outcomes**. On `failed`, it's
+  the post-mortem — the only artifact of a failed run, so be thorough.
 
 Do not print the JSON to stdout; write it to the staging path above.
