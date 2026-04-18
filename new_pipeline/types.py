@@ -31,6 +31,8 @@ class Status(str, Enum):
 
     NEW = "new"
     TESTED = "tested"
+    FIXED = "fixed"
+    FIX_FAILED = "fix_failed"
     COULD_NOT_CONFIRM = "could_not_confirm"
     CLOSED = "closed"
 
@@ -129,6 +131,15 @@ class Frontmatter:
     test_file: str = ""
     tested_sha: str = ""
     tested_at: datetime | None = None
+
+    # Fix phase
+    fix_run_id: str = ""
+    fix_model: str = ""
+    fix_tokens: int = 0
+    fix_duration: int = 0
+    fixed_sha: str = ""
+    fixed_at: datetime | None = None
+    fix_failed_at: datetime | None = None
 
     # Terminal: closed / abandoned
     closed_reason: str = ""
@@ -349,6 +360,57 @@ class Ticket:
         self.status = Status.COULD_NOT_CONFIRM
         self.body = (
             self.body.rstrip() + "\n\n" + report.to_results_section() + "\n"
+        )
+
+    def mark_fixed(
+        self,
+        report: FixReport,
+        *,
+        run_id: str,
+        model: str,
+        tokens: int,
+        duration: int,
+        fixed_sha: str,
+    ) -> None:
+        """Mutate to `fixed` with fix-phase metadata, append fix result.
+
+        Caller is responsible for `.save()`.
+        """
+        self.status = Status.FIXED
+        fm = self.frontmatter
+        fm.fix_run_id = run_id
+        fm.fix_model = model
+        fm.fix_tokens = tokens
+        fm.fix_duration = duration
+        fm.fixed_sha = fixed_sha
+        fm.fixed_at = datetime.now(timezone.utc)
+        self.body = (
+            self.body.rstrip() + "\n\n" + report.to_result_section() + "\n"
+        )
+
+    def mark_fix_failed(
+        self,
+        report: FixReport,
+        *,
+        run_id: str,
+        model: str,
+        tokens: int,
+        duration: int,
+    ) -> None:
+        """Mutate to `fix_failed` with run metadata, append the post-mortem.
+
+        No `fixed_sha` (no successful fix exists). Caller is
+        responsible for `.save()`.
+        """
+        self.status = Status.FIX_FAILED
+        fm = self.frontmatter
+        fm.fix_run_id = run_id
+        fm.fix_model = model
+        fm.fix_tokens = tokens
+        fm.fix_duration = duration
+        fm.fix_failed_at = datetime.now(timezone.utc)
+        self.body = (
+            self.body.rstrip() + "\n\n" + report.to_result_section() + "\n"
         )
 
     # ── Internals ────────────────────────────────────────────────
