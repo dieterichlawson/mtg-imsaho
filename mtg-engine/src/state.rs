@@ -554,8 +554,8 @@ impl GameState {
         registry: &crate::cards::CardRegistry,
     ) -> ObjectId {
         let source = self.get_object(source_id);
-        let (name, power, toughness, card_id, is_legendary) = match source {
-            Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.is_legendary),
+        let (name, power, toughness, card_id, is_legendary, obj_colors, obj_keywords, obj_card_types, obj_subtypes) = match source {
+            Some(o) => (o.name.clone(), o.power, o.toughness, o.card_id, o.is_legendary, o.colors.clone(), o.keywords.clone(), o.card_types.clone(), o.subtypes.clone()),
             None => return ObjectId(0),
         };
         let (colors, keywords, card_types, subtypes) = registry.card_data(card_id)
@@ -573,7 +573,7 @@ impl GameState {
                 }
                 (cols, d.keywords.clone(), d.card_types.clone(), d.subtypes.clone())
             })
-            .unwrap_or_default();
+            .unwrap_or_else(|| (obj_colors, obj_keywords, obj_card_types, obj_subtypes));
 
         let all_ids = self.create_token_with_subtypes(
             &name,
