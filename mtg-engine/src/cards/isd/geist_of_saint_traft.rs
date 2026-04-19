@@ -32,12 +32,7 @@ impl CardBehavior for GeistOfSaintTraft {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Attacks,
                     description: "create a 4/4 Angel token tapped and attacking".into(),
-                target_requirement: None,
-                },
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EndCombat,
-                    description: "exile the Angel token".into(),
-                target_requirement: None,
+                    target_requirement: None,
                 },
             ],
         }
@@ -51,8 +46,8 @@ impl CardBehavior for GeistOfSaintTraft {
     }
 
     fn on_attacks(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) => o.controller,
+        let (controller, source_card_id) = match state.get_object(self_id) {
+            Some(o) => (o.controller, o.card_id),
             None => return,
         };
 
@@ -81,15 +76,19 @@ impl CardBehavior for GeistOfSaintTraft {
                 combat.attackers.insert(token_id, defender);
             }
 
-            // Store the token ID for exile at end of combat.
-            // Uses game-level storage so the exile fires even if Geist leaves the battlefield.
-            state.end_of_combat_exiles.push(token_id);
+            // Register a delayed triggered ability (CR 603.7) to exile the
+            // Angel at end of combat. It will be drained onto the stack by
+            // triggers::collect_triggers on StepStarted { EndCombat }, giving
+            // players priority to respond before it resolves.
+            state.end_of_combat_exiles.push(crate::state::EndOfCombatExileEntry {
+                target_id: token_id,
+                source_card_id,
+                controller,
+                description: "exile the Angel token".into(),
+            });
         }
 
         state.log(crate::state::LogLevel::Event,
             "Geist of Saint Traft: created a 4/4 Angel token tapped and attacking".into());
     }
-
-    // on_end_combat is not needed — the Angel exile is handled as a delayed trigger
-    // via state.end_of_combat_exiles, which fires even if Geist has left the battlefield.
 }

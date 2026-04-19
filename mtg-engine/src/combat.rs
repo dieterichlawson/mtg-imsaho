@@ -631,18 +631,12 @@ fn deal_damage_to_player(
     }
 }
 
-/// Clean up combat state at end of combat.
-pub fn end_combat(state: &mut GameState, registry: &crate::cards::CardRegistry) {
-    // Process delayed exile triggers (e.g., Geist of Saint Traft's Angel token).
-    // These fire independently of the source permanent's presence on the battlefield.
-    let exiles: Vec<_> = state.end_of_combat_exiles.drain(..).collect();
-    for exile_id in exiles {
-        if state.get_object(exile_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            state.move_object(exile_id, Zone::Exile, registry);
-            state.log(crate::state::LogLevel::Event,
-                "Token exiled at end of combat (delayed trigger)".into());
-        }
-    }
+/// Clean up combat state at end of combat. Any delayed triggered abilities
+/// scheduled for end of combat (e.g. Geist of Saint Traft's Angel token exile)
+/// are drained onto the stack separately by `triggers::collect_triggers` when
+/// it processes the `StepStarted { EndCombat }` event — they must go through
+/// the stack with priority windows, not be applied as turn-based actions.
+pub fn end_combat(state: &mut GameState, _registry: &crate::cards::CardRegistry) {
     state.combat = None;
 }
 
