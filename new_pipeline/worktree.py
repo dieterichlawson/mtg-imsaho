@@ -45,7 +45,33 @@ def ensure(ticket_id: str) -> Path:
         capture_output=True,
         cwd=str(utils.PROJECT_ROOT),
     )
+    _write_cargo_env_override(wt)
     return wt
+
+
+def _write_cargo_env_override(wt: Path) -> None:
+    """Write `<wt>/.cargo/config.toml` with a dummy ANTHROPIC_API_KEY.
+
+    mtg-player tests (e.g. `llm_conversation`) `.expect()` the var
+    just to construct an `AnthropicBackend` for prompt-formatting
+    tests — they never hit the API. Our pipeline strips the real
+    key from every subprocess (so claude uses subscription auth), so
+    cargo runs inherit an unset var and those tests panic.
+
+    cargo walks up from cwd looking for `.cargo/config.toml` and
+    applies the `[env]` table to every cargo subprocess (test
+    binaries, build scripts). `force = false` means a real operator
+    key still wins when running cargo outside the pipeline.
+
+    The file is per-worktree and never committed — touching it only
+    affects pipeline runs in that worktree.
+    """
+    cfg_dir = wt / ".cargo"
+    cfg_dir.mkdir(exist_ok=True)
+    (cfg_dir / "config.toml").write_text(
+        "[env]\n"
+        'ANTHROPIC_API_KEY = { value = "pipeline-dummy", force = false }\n'
+    )
 
 
 def remove(ticket_id: str) -> None:
@@ -159,4 +185,5 @@ def create_from_sha(ticket_id: str, sha: str) -> Path:
         capture_output=True,
         cwd=str(utils.PROJECT_ROOT),
     )
+    _write_cargo_env_override(wt)
     return wt
