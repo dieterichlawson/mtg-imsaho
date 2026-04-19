@@ -225,6 +225,16 @@ def _subscription_env() -> dict[str, str]:
     env = os.environ.copy()
     for k in _API_KEY_ENV_VARS:
         env.pop(k, None)
+    # Claude Code reads these to raise the Bash tool's default + max
+    # per-call timeout from the built-in 2 minutes to the documented
+    # 10-minute ceiling. cargo cold builds easily exceed 2 min, and
+    # the agent doesn't reliably remember to pass `timeout: 600000`
+    # on every invocation. Note: some versions of claude report
+    # these env vars as ignored — the prompts also instruct the
+    # agent explicitly, so this is defense-in-depth rather than the
+    # sole mechanism.
+    env.setdefault("BASH_DEFAULT_TIMEOUT_MS", "600000")
+    env.setdefault("BASH_MAX_TIMEOUT_MS", "600000")
     return env
 
 
