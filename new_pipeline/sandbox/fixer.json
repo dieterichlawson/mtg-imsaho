@@ -21,6 +21,7 @@
       "./.git",
       "${project_root}/target",
       "${project_root}/new_pipeline/staging",
+      "${home}/.claude/session-env",
       "/tmp",
       "/var/folders"
     ],
