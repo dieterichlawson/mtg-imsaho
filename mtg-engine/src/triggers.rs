@@ -189,6 +189,16 @@ pub enum PendingTrigger {
         milled_player: PlayerId,
         description: String,
     },
+    /// A delayed triggered ability that exiles a specific token at end of combat
+    /// (CR 603.7). Created by an earlier effect (e.g. Geist of Saint Traft's
+    /// "exile that token at end of combat"). Fires even if the source permanent
+    /// has since left the battlefield (CR 603.7d).
+    DelayedTokenExile {
+        target_id: ObjectId,
+        source_card_id: CardId,
+        controller: PlayerId,
+        description: String,
+    },
 }
 
 impl PendingTrigger {
@@ -214,7 +224,8 @@ impl PendingTrigger {
             | PendingTrigger::CombatDamageToCreature { controller, .. }
             | PendingTrigger::BecomesBlockedTrigger { controller, .. }
             | PendingTrigger::StateTriggered { controller, .. }
-            | PendingTrigger::CreatureCardMilledWatch { controller, .. } => *controller,
+            | PendingTrigger::CreatureCardMilledWatch { controller, .. }
+            | PendingTrigger::DelayedTokenExile { controller, .. } => *controller,
         }
     }
 
@@ -243,6 +254,7 @@ impl PendingTrigger {
             | PendingTrigger::StateTriggered { object_id, .. } => Some(*object_id),
             PendingTrigger::CombatDamageToPlayer { creature_id, .. }
             | PendingTrigger::CombatDamageToCreature { creature_id, .. } => Some(*creature_id),
+            PendingTrigger::DelayedTokenExile { .. } => None,
         }
     }
 
@@ -270,6 +282,7 @@ impl PendingTrigger {
             | PendingTrigger::StateTriggered { card_id, .. } => *card_id,
             PendingTrigger::CombatDamageToPlayer { creature_card_id, .. }
             | PendingTrigger::CombatDamageToCreature { creature_card_id, .. } => *creature_card_id,
+            PendingTrigger::DelayedTokenExile { source_card_id, .. } => *source_card_id,
         }
     }
 
@@ -298,7 +311,7 @@ impl PendingTrigger {
             PendingTrigger::CombatDamageToCreature { .. } => TriggerKind::DealsCombatDamageToCreature,
             PendingTrigger::BecomesBlockedTrigger { .. } => TriggerKind::BecomesBlocked,
             PendingTrigger::CreatureCardMilledWatch { .. } => TriggerKind::CreatureCardMilled,
-            PendingTrigger::StateTriggered { .. } => return None,
+            PendingTrigger::StateTriggered { .. } | PendingTrigger::DelayedTokenExile { .. } => return None,
         })
     }
 
@@ -452,6 +465,13 @@ impl PendingTrigger {
                     format!("{}'s mill-watcher trigger", card_name(*watcher_card_id))
                 } else {
                     format!("{}'s mill-watcher trigger ({})", card_name(*watcher_card_id), description)
+                }
+            }
+            PendingTrigger::DelayedTokenExile { source_card_id, description, .. } => {
+                if description.is_empty() {
+                    format!("{}'s delayed exile trigger", card_name(*source_card_id))
+                } else {
+                    format!("{}'s delayed exile trigger ({})", card_name(*source_card_id), description)
                 }
             }
         }
@@ -827,6 +847,26 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 }
             }
             GameEvent::StepStarted { step } => {
+                // Drain delayed end-of-combat exile triggers (CR 603.7) into the
+                // pending queue. These fire regardless of whether the source
+                // permanent is still on the battlefield.
+                if *step == crate::types::Step::EndCombat {
+                    let pending = std::mem::take(&mut state.end_of_combat_exiles);
+                    for entry in pending {
+                        let trigger = PendingTrigger::DelayedTokenExile {
+                            target_id: entry.target_id,
+                            source_card_id: entry.source_card_id,
+                            controller: entry.controller,
+                            description: entry.description,
+                        };
+                        if entry.controller == active_player {
+                            ap_triggers.push(trigger);
+                        } else {
+                            nap_triggers.push(trigger);
+                        }
+                    }
+                }
+
                 let trigger_kind = match step {
                     crate::types::Step::Upkeep => Some(crate::cards::TriggerKind::Upkeep),
                     crate::types::Step::EndCombat => Some(crate::cards::TriggerKind::EndCombat),
@@ -1408,6 +1448,13 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
         PendingTrigger::CreatureCardMilledWatch { watcher_id, watcher_card_id, milled_object, milled_player, .. } => {
             if let Some(behavior) = registry.get(watcher_card_id) {
                 behavior.on_creature_card_milled(state, watcher_id, milled_object, milled_player, registry);
+            }
+        }
+        PendingTrigger::DelayedTokenExile { target_id, .. } => {
+            if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
+                state.move_object(target_id, Zone::Exile, registry);
+                state.log(crate::state::LogLevel::Event,
+                    "Token exiled by delayed end-of-combat trigger".into());
             }
         }
     }

@@ -9,7 +9,6 @@ mod common;
 
 use common::*;
 use mtg_engine::cards::CardRegistry;
-use mtg_engine::combat;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
@@ -59,8 +58,9 @@ fn angel_exiled_at_end_of_combat() {
         .map(|o| o.id)
         .expect("Angel should exist");
 
-    // End combat — Angel should be exiled.
-    combat::end_combat(&mut state, &reg);
+    // End combat fires the delayed trigger; auto-resolve exiles the Angel.
+    state.step = Step::EndCombat;
+    fire_step_trigger(&mut state, Step::EndCombat, &reg);
 
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile,
         "Angel token should be exiled at end of combat");
@@ -92,8 +92,10 @@ fn angel_exiled_even_if_geist_dies() {
     assert_eq!(state.get_object(geist).unwrap().zone, Zone::Graveyard,
         "Geist should be dead");
 
-    // End combat — Angel should STILL be exiled even though Geist is gone.
-    combat::end_combat(&mut state, &reg);
+    // End combat fires the delayed trigger; the exile entry was recorded
+    // at attack time, so the Angel is still exiled even after Geist dies.
+    state.step = Step::EndCombat;
+    fire_step_trigger(&mut state, Step::EndCombat, &reg);
 
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile,
         "Angel should be exiled even when Geist has left the battlefield");

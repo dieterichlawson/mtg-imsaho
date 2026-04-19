@@ -57,6 +57,17 @@ impl StackEntry {
     }
 }
 
+/// A pending delayed end-of-combat exile trigger. Stored on `GameState` until
+/// the end of combat step begins, at which point it is converted into a
+/// `PendingTrigger::DelayedTokenExile` and placed on the stack.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EndOfCombatExileEntry {
+    pub target_id: ObjectId,
+    pub source_card_id: CardId,
+    pub controller: PlayerId,
+    pub description: String,
+}
+
 /// The complete, immutable game state. Clone to produce new states.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GameState {
@@ -80,9 +91,11 @@ pub struct GameState {
     /// Combat state, present only during combat phase.
     pub combat: Option<CombatState>,
 
-    /// Objects to exile at end of combat (delayed triggers like Geist of Saint Traft's Angel).
-    /// These fire independently of the source permanent's presence on the battlefield.
-    pub end_of_combat_exiles: Vec<ObjectId>,
+    /// Delayed end-of-combat exile triggers (CR 603.7) created by earlier effects,
+    /// e.g. Geist of Saint Traft's "exile that token at end of combat". Drained
+    /// into the stack when the end of combat step begins; fires independently of
+    /// the source permanent's presence on the battlefield (CR 603.7d).
+    pub end_of_combat_exiles: Vec<EndOfCombatExileEntry>,
 
     /// Whether the game is waiting for attackers/blockers declaration.
     pub awaiting_action: Option<AwaitingAction>,

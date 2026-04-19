@@ -1771,8 +1771,8 @@ fn geist_angel_exiled_at_end_of_combat() {
 
     let angel_id = find_token_named(&state, "Angel").unwrap();
 
-    // End of combat — angel should be exiled via delayed trigger in end_combat.
-    mtg_engine::combat::end_combat(&mut state, &reg);
+    // End of combat fires the delayed trigger; auto-resolve exiles the Angel.
+    fire_step_trigger(&mut state, Step::EndCombat, &reg);
     assert_eq!(state.get_object(angel_id).unwrap().zone, Zone::Exile);
 }
 
