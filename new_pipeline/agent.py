@@ -57,6 +57,7 @@ def run_agent(
     sandbox_settings_path: Path | None = None,
     log_path: Path | None = None,
     progress_prefix: str = "",
+    extra_env: dict[str, str] | None = None,
     timeout_secs: int = 3600,
 ) -> AgentResult:
     """Run `claude -p <prompt>` in `cwd`, collect usage + errors, return them.
@@ -112,6 +113,10 @@ def run_agent(
         log_fh.write(json.dumps({"kind": "prompt", "value": prompt}) + "\n")
         log_fh.flush()
 
+    env = _subscription_env()
+    if extra_env:
+        env.update(extra_env)
+
     start = time.time()
     proc = subprocess.Popen(
         cmd,
@@ -119,7 +124,7 @@ def run_agent(
         stderr=subprocess.PIPE,
         text=True,
         cwd=str(cwd),
-        env=_subscription_env(),
+        env=env,
         bufsize=1,
     )
 
@@ -241,6 +246,7 @@ def run_agent_loop(
     log_dir: Path | None = None,
     log_stem: str = "",
     progress_prefix: str = "",
+    extra_env: dict[str, str] | None = None,
     max_attempts: int = 3,
 ) -> tuple[Any, AgentResult]:
     """Spawn the agent up to `max_attempts` until `load_result` accepts.
@@ -279,6 +285,7 @@ def run_agent_loop(
             sandbox_settings_path=sandbox_settings_path,
             log_path=log_path,
             progress_prefix=progress_prefix,
+            extra_env=extra_env,
         )
         parsed, error = load_result(result, attempt)
         if error is None:

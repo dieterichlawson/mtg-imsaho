@@ -17,8 +17,8 @@
   "filesystem": {
     "allowWrite": [
       "./${test_file}",
-      "./target",
       "./.git",
+      "${project_root}/target",
       "${project_root}/new_pipeline/staging",
       "/tmp",
       "/var/folders"

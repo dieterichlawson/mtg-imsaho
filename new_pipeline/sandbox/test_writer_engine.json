@@ -19,8 +19,8 @@
       "./${test_file}",
       "./mtg-engine/src",
       "./cards",
-      "./target",
       "./.git",
+      "${project_root}/target",
       "${project_root}/new_pipeline/staging",
       "/tmp",
       "/var/folders"

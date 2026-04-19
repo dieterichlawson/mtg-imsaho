@@ -98,6 +98,10 @@ def _fix_one(tid: str, args) -> None:
         log_dir=utils.LOGS_DIR,
         log_stem=run_id,
         progress_prefix=f"[{tid}] ",
+        # Share the cargo target dir with the main repo so the agent's
+        # first cargo invocation finds a populated cache instead of
+        # cold-building all 250 cards.
+        extra_env={"CARGO_TARGET_DIR": str(utils.PROJECT_ROOT / "target")},
     )
 
     if result.is_error:

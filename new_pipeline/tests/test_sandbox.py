@@ -72,8 +72,12 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertNotIn("./mtg-engine/tests", allows)
         # Engine src locked.
         self.assertNotIn("./mtg-engine/src", allows)
-        # Cargo writes target/, git commits to .git/.
-        self.assertIn("./target", allows)
+        # Cargo writes target/ on the main repo (shared via
+        # CARGO_TARGET_DIR). The worktree's local ./target is NOT in
+        # the allow list — cargo never writes there.
+        self.assertIn("/tmp/repo/target", allows)
+        self.assertNotIn("./target", allows)
+        # Git commits to worktree's .git/.
         self.assertIn("./.git", allows)
         # Staging on the main repo is allow-listed (outside cwd).
         self.assertIn("/tmp/repo/new_pipeline/staging", allows)

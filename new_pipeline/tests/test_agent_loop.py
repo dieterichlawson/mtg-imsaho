@@ -61,6 +61,7 @@ def _scripted_run_agent(results: list[AgentResult]):
         prompt, *, cwd, model, effort,
         sandbox_settings_path=None,
         log_path=None, progress_prefix="",
+        extra_env=None,
         timeout_secs=3600,
     ):
         return next(it)
