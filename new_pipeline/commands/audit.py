@@ -17,7 +17,7 @@ from new_pipeline.types import AuditReport, Ticket
 
 def cmd_audit(args) -> None:
     """Entry point for `./new_pipeline/cli.py audit`."""
-    cards = [c.strip() for c in args.cards.split(",") if c.strip()]
+    cards = utils.split_csv(args.cards)
     if not cards:
         raise ValueError("--cards needs at least one non-empty name")
 

@@ -25,3 +25,12 @@ def today() -> str:
 def card_to_snake(name: str) -> str:
     """Normalize a card name to a snake_case slug for ticket ids."""
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
+
+
+def split_csv(raw: str) -> list[str]:
+    """Split a CLI list argument. Uses `;` if present (lets card names
+    with commas like `Mikaeus, the Lunarch` pass through), otherwise
+    falls back to `,`. Empty entries are dropped and whitespace stripped.
+    """
+    sep = ";" if ";" in raw else ","
+    return [x.strip() for x in raw.split(sep) if x.strip()]
