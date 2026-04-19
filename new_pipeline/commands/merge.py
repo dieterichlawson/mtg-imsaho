@@ -38,7 +38,7 @@ _MASTER_BRANCH = "master"
 
 def cmd_merge(args) -> None:
     """Entry point for `./new_pipeline/cli.py merge`."""
-    ids = [i.strip() for i in args.tickets.split(",") if i.strip()]
+    ids = utils.split_csv(args.tickets)
     if not ids:
         raise ValueError("--tickets needs at least one non-empty id")
 

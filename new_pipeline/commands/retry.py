@@ -21,7 +21,7 @@ later via `close`.
 
 from __future__ import annotations
 
-from new_pipeline import worktree
+from new_pipeline import utils, worktree
 from new_pipeline.types import (
     Status,
     Ticket,
@@ -32,7 +32,7 @@ from new_pipeline.types import (
 
 def cmd_retry(args) -> None:
     """Entry point for `./new_pipeline/cli.py retry`."""
-    ids = [i.strip() for i in args.tickets.split(",") if i.strip()]
+    ids = utils.split_csv(args.tickets)
     if not ids:
         raise ValueError("--tickets needs at least one non-empty id")
     for tid in ids:

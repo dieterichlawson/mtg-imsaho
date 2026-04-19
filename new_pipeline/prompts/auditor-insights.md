@@ -218,3 +218,51 @@ successfully" and "library was empty, draw failed." Cards using
 this pattern that unconditionally proceed to the conditional
 action after `draw_cards` will incorrectly perform the action
 even when the draw failed (e.g., empty library).
+
+## Non-token permanents have empty `card_types` on the object; use `o.power.is_some()` for creature detection
+
+The `create_object` function initialises `card_types: Vec::new()`. The default `on_resolve` for permanents does not populate `card_types` on the object — it only calls `state.move_object`. Tokens are the exception: `create_token_with_subtypes` explicitly sets the `card_types` argument. As a result, `o.card_types.contains(&CardType::Creature)` silently returns `false` for most non-token creatures on the battlefield. The canonical engine pattern for 'is this a creature on the battlefield?' is `o.power.is_some()` (e.g., `sba.rs:54`). Card code that builds a list of battlefield creatures for buffing, sacrificing, or similar effects must use `o.power.is_some()` (or the two-branch registry fallback `if o.card_types.is_empty() { registry.card_data(...).is_some_and(...) } else { o.card_types.contains(...) }`) rather than relying on the object's `card_types` field alone.
+
+_Discovered auditing: Garruk Relentless_
+
+## Per-turn state flags in card_state are not cleared at end of turn unless the clearing code runs unconditionally
+
+Cards that store "happened this turn" boolean flags in obj.card_state (e.g., `card_state.insert("attacked_this_turn", ...)`) must ensure those flags are cleared at the end of every turn, regardless of game state. The Cleanup step handler in engine.rs does NOT clear card_state; it only resets damage_marked, until_end_of_turn effects, and regeneration shields. If the flag-clearing logic lives inside a triggered ability handler that only fires under specific conditions (such as "only when the creature is on the back face at end step"), the flag can persist across turns when those conditions are not met. Any card that writes a per-turn tracking flag to card_state should clear that flag in a step/phase that is guaranteed to run every turn — for example, during the Cleanup step or the Untap step — or should use a global event hook rather than a conditional trigger handler.
+
+_Discovered auditing: Civilized Scholar_
+
+## Step-trigger dispatch never checks intervening-if conditions at trigger-creation time
+
+The `GameEvent::StepStarted` handler in `triggers.rs` (around line 844) creates a `PendingTrigger` for every battlefield permanent whose current face has a non-empty description for the relevant `TriggerKind`. The only guard is the `step_trigger_scope` check (Your vs Each). Per CR 603.4, a triggered ability phrased as 'At/When/Whenever [event], if [condition], [effect]' must evaluate the condition *when the trigger event occurs* — the trigger only goes on the stack if the condition is true at that moment. The engine skips this check at creation and only evaluates the condition at resolution (inside `on_upkeep`, `on_end_step`, etc.). This causes triggers to appear on the stack when they shouldn't, incorrectly granting priority and exposing observable game state. All cards with conditional step triggers are affected: werewolves ('if no spells were cast last turn', 'if a player cast 2+ spells'), Screeching Bat ('if you have no cards in hand'), and any future card with an 'At the beginning of [your/each] upkeep, if [condition]' pattern. The fix requires a new `CardBehavior` trait method — e.g. `should_step_trigger(state, id, kind, registry) -> bool` defaulting to `true` — that the dispatch loop calls before creating the trigger.
+
+_Discovered auditing: Village Ironsmith_
+
+## Intervening-if upkeep triggers queued unconditionally
+
+The `collect_triggers` handler for `GameEvent::StepStarted { step: Upkeep }` (triggers.rs) calls `face_trigger_description` to decide whether a card has an upkeep trigger, then unconditionally queues the trigger if the description is non-empty. `face_trigger_description` only checks whether the card declares an upkeep trigger — it does not evaluate the trigger's intervening-if condition. Per CR 603.4, a triggered ability reading 'At [event], if [condition], [effect]' may only be placed on the stack if the condition is true at the time the event occurs. Cards whose upkeep trigger description is a static string (e.g. werewolf transform triggers) will therefore appear on the stack on every upkeep, even when the condition is false, giving players a spurious opportunity to respond. The fix requires a new `CardBehavior` hook (e.g. `should_queue_upkeep_trigger(state, is_transformed) -> bool`) that the dispatch calls before queuing, so cards with intervening-if conditions can pre-filter. Any card whose upkeep trigger has an 'if [dynamic condition]' clause should be checked for this pattern.
+
+_Discovered auditing: Kruin Outlaw_
+
+## In-card subtype-counting loops may not handle DFC transformation
+
+Some cards implement local helper functions that count permanents of a given type (e.g., `count_vampires`) rather than routing through the engine's canonical `matches_filter` / `HasSubtype` path. These local loops commonly check `registry.card_data(o.card_id).subtypes` to identify non-token card types, but `registry.card_data()` always returns the **front-face** data regardless of `o.is_transformed`. The engine's canonical `matches_filter` (state.rs) correctly handles this by branching on `creature.is_transformed` and consulting `back_face_data().subtypes` when true. Any card with a custom type-counting activation condition should be checked to see whether its loop mirrors that branch. If a DFC exists whose front face has the relevant subtype but back face does not (or vice versa), the in-card loop will produce wrong counts, incorrectly enabling or suppressing the activation restriction.
+
+_Discovered auditing: Bloodline Keeper_
+
+## `ChooseFromLibrary` omits `move_spell_after_resolve` and cannot support post-search card logic
+
+`ResolutionChoiceKind::ChooseFromLibrary` was designed for *activated abilities* (Garruk, Traveler's Amulet) where there is no spell on the stack to clean up after the search. Its handler in engine.rs always moves the chosen card to `Zone::Hand` and shuffles, but never calls `move_spell_after_resolve`. When a *resolving sorcery* uses this mechanism for the multi-match case, the spell remains in `Zone::Stack` after the choice resolves and will be re-entered on the next priority pass. Additionally, the handler offers no hook for card-specific post-search logic (e.g., a conditional destination choice like Caravan Vigil's morbid option). Any sorcery or instant that needs to (a) let the player choose among multiple library matches and (b) do anything beyond moving the chosen card to hand must NOT use `ChooseFromLibrary`; it needs a dedicated card-specific selection path that routes through the card's own resolution logic after the player picks.
+
+_Discovered auditing: Caravan Vigil_
+
+## Counters placed on non-battlefield objects persist through reanimation
+
+When a triggered ability places a counter on its source (e.g., 'put a +1/+1 counter on [card name]') and the source has left the battlefield before the trigger resolves, `add_counters` in state.rs adds the counter to the graveyard (or exile) object without checking zone. `move_object` clears counters only when an object *leaves* the battlefield (`from == Zone::Battlefield && to != Zone::Battlefield`), not when it *enters* the battlefield from a non-battlefield zone. Therefore a counter added to a graveyard object by a stale trigger survives the graveyard → battlefield transition and incorrectly appears on the reanimated permanent, violating CR 400.7. Any effect helper or triggered-ability handler that calls `add_counters(source_id, ...)` should first verify that `source_id` refers to an object whose `zone == Zone::Battlefield`.
+
+_Discovered auditing: Grimgrin, Corpse-Born_
+
+## Player-choice mana abilities implemented as `ActivatedAbilityDef` are excluded from auto-tap plans
+
+`ManaAbilityDef` has a static `produced: Vec<(ManaType, u32)>` field, which cannot express "add one mana of any color" without enumerating one entry per color. When a card has a mana ability requiring a player choice ("add one mana of any color," "add one mana of a color a land you control could produce," etc.), developers may implement it as multiple `ActivatedAbilityDef` entries instead of `ManaAbilityDef` entries. This workaround silently excludes the ability from `gather_mana_sources` (engine.rs, line 76), which only calls `behavior.mana_abilities()`. The ability therefore never appears in any `CastSpell` or `ActivateAbility` tap plan. AI players lose all awareness of the color-fixing the land provides, and the tap-plan optimizer cannot fund colored spells through it. The fix is to add one `ManaAbilityDef` per color choice so the optimizer can select the correct color during planning. Any land or artifact with text like "Add one mana of any color" or "Add one mana of any type that a land you control could produce" should be checked for this pattern.
+
+_Discovered auditing: Shimmering Grotto_

@@ -65,6 +65,21 @@ long timeout is still mandatory to cover the cold-cache case.
 Iterate until cargo is clean. Don't emit `status: "fixed"` with a
 broken cargo run.
 
+## When existing tests fail
+
+Your fix may cause pre-existing tests outside `{test_file}` to fail —
+typically because those tests encoded the buggy behavior as an
+assertion. **Do not work around this.** Do not edit other test files,
+do not add compatibility shims in engine code to keep the old tests
+passing, do not `git reset` or stash your way around the sandbox.
+
+If a pre-existing test's assertion is wrong under the correct
+behavior, emit `status: "failed"` with a post-mortem that (a) names
+the test, (b) quotes the offending assertion, and (c) explains what
+the assertion should become. A human will update the test and retry.
+Surfacing this is more valuable than a fix that keeps the bug alive
+to avoid touching the old test.
+
 ## Banned phrases
 
 These markers will cause the validator to reject your fix even if
