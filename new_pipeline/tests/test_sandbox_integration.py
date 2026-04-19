@@ -102,7 +102,10 @@ class SandboxIntegrationTest(unittest.TestCase):
         ))
         cfg["filesystem"]["allowWrite"] = [
             p for p in cfg["filesystem"]["allowWrite"]
-            if p not in ("/tmp", "/var/folders")
+            if p not in (
+                "/tmp", "/var/folders",
+                "/private/tmp", "/private/var/folders",
+            )
         ]
         path = repo / f"{profile}.srt.json"
         path.write_text(json.dumps(cfg))

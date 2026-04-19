@@ -23,7 +23,9 @@
       "${project_root}/new_pipeline/staging",
       "${home}/.claude",
       "/tmp",
-      "/var/folders"
+      "/private/tmp",
+      "/var/folders",
+      "/private/var/folders"
     ],
     "denyWrite": [],
     "allowRead": [],
