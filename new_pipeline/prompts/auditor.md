@@ -280,18 +280,24 @@ Check for:
 - **Total cost locked in at 601.2f.** After 601.2f, effects that would
   change the cost have no effect.
 
-**8j. Rulings coverage** (if rulings are provided in the oracle
-block):
-For each ruling, verify the ruling's behavior is correctly
-implemented. If the implementation matches but no test in
-`mtg-engine/tests/` exercises that scenario, **emit it as a finding**
-— rulings are exactly the edge cases the card's designers cared
-about, and "code looks right but no test proves it" is a real gap.
-Use the ruling text as `oracle_quote`, the matching code as
-`code_quote`, and a description that says the behavior appears
-correct but lacks coverage. The test-writer will then write the
-test: if it passes, we gained coverage; if it fails, we found a
-latent bug we'd otherwise have missed.
+**8j. Rulings as investigation prompts** (if rulings are provided
+in the oracle block):
+Rulings exist because the designers thought the behavior was
+non-obvious — they are exactly the edge cases worth investigating.
+For each ruling, walk through it with the same rigor as Steps 3–7:
+trace what the code does in that scenario, identify the specific
+engine functions involved, and check whether the ruling's behavior
+actually holds.
+
+If you find a concrete divergence between the ruling and the code,
+emit it as a finding with `check: "8j"`, the ruling as
+`oracle_quote`, and the diverging code span as `code_quote`.
+
+If the code handles the ruling correctly, do NOT file a finding —
+even if no test covers it. A missing test isn't a bug, and
+speculative "might have a coverage gap here" tickets burn the
+test-writer's time rejecting false positives. Use rulings as a
+*direction of investigation*, not an automatic finding source.
 
 ### Step 9. Reconcile
 

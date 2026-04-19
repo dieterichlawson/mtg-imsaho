@@ -108,6 +108,14 @@ def _test_one(tid: str, args) -> None:
         model=args.model,
         effort=args.effort,
         sandbox_settings_path=sandbox_path,
+        log_dir=utils.LOGS_DIR,
+        log_stem=run_id,
+        progress_prefix=f"[{tid}] ",
+        # Share the cargo target dir with the main repo so the agent's
+        # first cargo invocation finds a populated cache instead of
+        # cold-building all 250 cards (which would blow past the 10-min
+        # Bash-tool ceiling and leave the agent spinning).
+        extra_env={"CARGO_TARGET_DIR": str(utils.PROJECT_ROOT / "target")},
     )
 
     if result.is_error:

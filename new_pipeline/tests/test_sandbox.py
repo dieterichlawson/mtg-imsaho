@@ -72,13 +72,20 @@ class SandboxRenderTest(unittest.TestCase):
         self.assertNotIn("./mtg-engine/tests", allows)
         # Engine src locked.
         self.assertNotIn("./mtg-engine/src", allows)
-        # Cargo writes target/, git commits to .git/.
-        self.assertIn("./target", allows)
+        # Cargo writes target/ on the main repo (shared via
+        # CARGO_TARGET_DIR). The worktree's local ./target is NOT in
+        # the allow list — cargo never writes there.
+        self.assertIn("/tmp/repo/target", allows)
+        self.assertNotIn("./target", allows)
+        # Git commits to worktree's .git/.
         self.assertIn("./.git", allows)
         # Staging on the main repo is allow-listed (outside cwd).
         self.assertIn("/tmp/repo/new_pipeline/staging", allows)
-        # Tightened: ~/.claude and ~/.cargo should NOT be in allowWrite.
-        self.assertNotIn("/Users/test/.claude", allows)
+        # ~/.claude IS allowed — claude's Bash tool writes per-session
+        # state (shell-snapshots, session-env, etc.) there, and blocking
+        # it breaks every Bash call. ~/.cargo stays denied (the cache
+        # is shared via CARGO_TARGET_DIR on the project's own target/).
+        self.assertIn("/Users/test/.claude", allows)
         self.assertNotIn("/Users/test/.cargo", allows)
 
     def test_test_writer_engine_adds_engine_src_and_cards(self) -> None:

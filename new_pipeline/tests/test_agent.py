@@ -6,8 +6,10 @@ stream-json lines, so these tests never invoke the real `claude` CLI.
 
 from __future__ import annotations
 
+import io
 import json
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -236,6 +238,77 @@ class RunAgentTest(unittest.TestCase):
         self.assertIn("hi", cmd[4])
         self.assertIn("--model", cmd[4])
         self.assertIn("opus", cmd[4])
+
+    # ── streaming logs + progress ──────────────────────────────────
+
+    def test_log_path_writes_prompt_then_each_event(self) -> None:
+        """Each raw stream-json line is appended; prompt prepended first."""
+        events = [
+            _event("assistant", message={
+                "content": [
+                    {"type": "tool_use", "name": "Read",
+                     "input": {"file_path": "src/foo.rs"}},
+                ],
+            }),
+            _event("result", usage={"input_tokens": 1, "output_tokens": 1},
+                   num_turns=1),
+        ]
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            agent.subprocess, "Popen",
+            _popen_factory(stdout_lines=events, returncode=0),
+        ):
+            log_path = Path(tmp) / "run.jsonl"
+            run_agent(
+                "the prompt", cwd=Path("."), model="opus", effort="max",
+                log_path=log_path,
+            )
+            lines = log_path.read_text().splitlines()
+        # First line: prompt record. Then one line per stream-json event.
+        self.assertEqual(json.loads(lines[0]),
+                         {"kind": "prompt", "value": "the prompt"})
+        self.assertEqual(json.loads(lines[1])["type"], "assistant")
+        self.assertEqual(json.loads(lines[2])["type"], "result")
+
+    def test_progress_summaries_print_to_stdout(self) -> None:
+        """Tool-use + result events emit one prefixed line each on stdout."""
+        events = [
+            _event("assistant", message={
+                "content": [
+                    {"type": "tool_use", "name": "Bash",
+                     "input": {"command": "ls -la"}},
+                ],
+            }),
+            _event("assistant", message={
+                "content": [{"type": "text", "text": "Found something."}],
+            }),
+            _event("result", usage={"input_tokens": 1, "output_tokens": 1},
+                   num_turns=1),
+        ]
+        captured = io.StringIO()
+        with patch("sys.stdout", captured), patch.object(
+            agent.subprocess, "Popen",
+            _popen_factory(stdout_lines=events, returncode=0),
+        ):
+            run_agent(
+                "p", cwd=Path("."), model="opus", effort="max",
+                progress_prefix="[card] ",
+            )
+        out = captured.getvalue()
+        self.assertIn("[card] [Bash] ls -la", out)
+        self.assertIn("[card] (agent) Found something.", out)
+        self.assertIn("[card] (done)", out)
+
+    def test_log_path_omitted_writes_nothing(self) -> None:
+        """No log_path → no file is created."""
+        with tempfile.TemporaryDirectory() as tmp, patch.object(
+            agent.subprocess, "Popen",
+            _popen_factory(stdout_lines=[], returncode=0),
+        ):
+            tmp_path = Path(tmp)
+            run_agent(
+                "p", cwd=Path("."), model="opus", effort="max",
+            )
+            self.assertEqual(list(tmp_path.iterdir()), [])
 
 
 if __name__ == "__main__":

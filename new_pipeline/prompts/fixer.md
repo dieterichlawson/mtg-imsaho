@@ -30,13 +30,35 @@ there and run `git log {tested_sha}..HEAD` to see the failed fix at
 code level. The post-mortem in the ticket body is the narrative; the
 old worktree is the source. Use it to avoid repeating dead ends.
 
+## Cargo commands: use a long timeout
+
+**Every `cargo` Bash call MUST pass `timeout: 600000` as a Bash tool
+parameter.** The Bash tool's default is 2 minutes and cargo will
+often exceed that on the first invocation in a session. If you use
+the default and cargo doesn't return, the Bash tool kills it
+silently and you see nothing — don't try to diagnose by retrying;
+set the timeout and re-run.
+
+The tool call should look like:
+
+```
+Bash(command="cargo check 2>&1 | tail -30", timeout=600000)
+Bash(command="cargo test 2>&1", timeout=600000)
+```
+
+The pipeline sets `CARGO_TARGET_DIR` to share the cache with the main
+repo, so builds are incremental — seconds, not minutes — but the
+long timeout is still mandatory to cover the cold-cache case.
+
 ## Task
 
 1. Read the ticket, the failing tests, and the relevant engine source
    in `mtg-engine/src/`.
 2. Implement the minimum fix.
-3. Run `cargo check` — it must produce zero warnings.
-4. Run `cargo test` — it must exit 0 with no `FAILED` lines.
+3. Run `cargo check` (with `timeout: 600000`) — it must produce zero
+   warnings.
+4. Run `cargo test` (with `timeout: 600000`) — it must exit 0 with no
+   `FAILED` lines.
 5. Commit all changes with `git add -A && git commit -m "..."`.
 6. Emit your report as JSON to `{staging_path}`.
 

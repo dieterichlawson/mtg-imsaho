@@ -128,6 +128,7 @@ class AuditCommandTest(unittest.TestCase):
             patch.object(utils, "ARCHIVE_DIR", tickets / "archive"),
             patch.object(utils, "STAGING_DIR", staging),
             patch.object(utils, "PROMPTS_DIR", prompts),
+            patch.object(utils, "LOGS_DIR", self.tmp / "logs"),
             patch.object(
                 oracle,
                 "get_oracle_text",

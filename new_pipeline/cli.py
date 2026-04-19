@@ -15,8 +15,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+
+# Strip API-key env vars from the running Python process *before* importing
+# any module that might spawn subprocesses. This ensures that grandchildren
+# (claude under srt under bash) cannot accidentally inherit them via any
+# path that bypasses our Popen `env=` kwarg.
+for _k in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"):
+    os.environ.pop(_k, None)
 
 # Make `new_pipeline.*` importable when this script is invoked directly.
 if __name__ == "__main__" and __package__ is None:

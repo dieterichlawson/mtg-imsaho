@@ -18,11 +18,15 @@
     "allowWrite": [
       "./mtg-engine/src",
       "./cards",
-      "./target",
       "./.git",
+      "${project_root}/.git",
+      "${project_root}/target",
       "${project_root}/new_pipeline/staging",
+      "${home}/.claude",
       "/tmp",
-      "/var/folders"
+      "/private/tmp",
+      "/var/folders",
+      "/private/var/folders"
     ],
     "denyWrite": [],
     "allowRead": [],

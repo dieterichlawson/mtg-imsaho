@@ -13,6 +13,7 @@ TICKETS_DIR = _HERE / "tickets"
 ARCHIVE_DIR = TICKETS_DIR / "archive"
 STAGING_DIR = _HERE / "staging"
 PROMPTS_DIR = _HERE / "prompts"
+LOGS_DIR = _HERE / "logs"
 WORKTREES_DIR = PROJECT_ROOT / ".worktrees"
 
 

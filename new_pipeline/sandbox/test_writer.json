@@ -17,11 +17,15 @@
   "filesystem": {
     "allowWrite": [
       "./${test_file}",
-      "./target",
       "./.git",
+      "${project_root}/.git",
+      "${project_root}/target",
       "${project_root}/new_pipeline/staging",
+      "${home}/.claude",
       "/tmp",
-      "/var/folders"
+      "/private/tmp",
+      "/var/folders",
+      "/private/var/folders"
     ],
     "denyWrite": [],
     "allowRead": [],
