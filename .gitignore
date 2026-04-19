@@ -11,6 +11,10 @@
 /pipeline/logs/
 /new_pipeline/staging/
 /new_pipeline/logs/
+# Per-worktree cargo config written by `worktree.ensure` (holds a
+# dummy ANTHROPIC_API_KEY so tests that .expect() it don't panic
+# when running under the pipeline's scrubbed env).
+.cargo/
 # Claude Code: commit commands/skills and project settings, ignore local/personal files
 .claude/settings.local.json
 .claude/worktrees/
