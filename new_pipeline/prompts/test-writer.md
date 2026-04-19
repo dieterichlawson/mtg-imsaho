@@ -57,6 +57,33 @@ pipeline will re-invoke you on a retry with permission to edit the
 engine, the explanation in context, and the expectation that you
 add the minimal surface area needed before writing the test.
 
+## Cargo commands: use a long timeout
+
+**Every `cargo` Bash call MUST pass `timeout: 600000` as a Bash tool
+parameter.** The Bash tool's default is 2 minutes and cargo will
+often exceed that on the first invocation in a session (even with a
+warm shared cache, linking a new test binary can take longer). If
+you use the default and cargo doesn't return, the Bash tool kills it
+silently and you see nothing — don't try to diagnose by retrying; set
+the timeout and re-run.
+
+The tool call should look like:
+
+```
+Bash(
+  command="cargo check --tests 2>&1 | tail -30",
+  timeout=600000
+)
+Bash(
+  command="cargo test --test pipeline_bugs_<id> 2>&1",
+  timeout=600000
+)
+```
+
+The pipeline sets `CARGO_TARGET_DIR` to share the cache with the main
+repo, so builds are incremental — seconds, not minutes — but the
+long timeout is still mandatory to cover the cold-cache case.
+
 ## Test structure
 
 Each scenario becomes one top-level `#[test] fn <slug>` in
