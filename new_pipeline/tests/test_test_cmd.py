@@ -288,8 +288,8 @@ class TestCommandTest(unittest.TestCase):
         self.assertIs(t.status, Status.CLOSED)
         self.assertEqual(t.frontmatter.test_run_id, "")
 
-    def test_all_rejected_marks_could_not_confirm(self) -> None:
-        """Agent rejects every scenario → terminal `could_not_confirm`."""
+    def test_all_rejected_closes_not_a_bug(self) -> None:
+        """Agent rejects every scenario → closed with reason not_a_bug."""
         _write_ticket_file(self.tickets, "fp-01")
         self._script_agent({
             "test_file": "mtg-engine/tests/pipeline_bugs_fp_01.rs",
@@ -306,14 +306,11 @@ class TestCommandTest(unittest.TestCase):
         test_mod.cmd_test(_args("fp-01"))
 
         t = Ticket.load("fp-01")
-        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
+        self.assertIs(t.status, Status.CLOSED)
+        self.assertEqual(t.frontmatter.closed_reason, "not_a_bug")
         self.assertTrue(t.status.is_terminal)
-        # Terminal tickets auto-archive on save.
         self.assertTrue((self.tickets / "archive" / "fp-01.md").exists())
         self.assertFalse((self.tickets / "fp-01.md").exists())
-        # No test-phase metadata stamped (there's nothing to record).
-        self.assertEqual(t.frontmatter.test_run_id, "")
-        # But the results section is appended for context.
         self.assertIn("## Test Run Results", t.body)
         self.assertIn("passes against current code", t.body)
 
@@ -330,10 +327,10 @@ class TestCommandTest(unittest.TestCase):
 
     # ── strict aggregation ────────────────────────────────────────
 
-    def test_mixed_confirmed_and_rejected_marks_could_not_confirm(
+    def test_mixed_confirmed_and_rejected_marks_mixed(
         self,
     ) -> None:
-        """Any non-confirmed scenario blocks the whole ticket."""
+        """Any non-confirmed scenario blocks the whole ticket → mixed."""
         (self.tickets / "mixed-01.md").write_text(textwrap.dedent(
             """\
             ---
@@ -374,78 +371,11 @@ class TestCommandTest(unittest.TestCase):
         test_mod.cmd_test(_args("mixed-01"))
 
         t = Ticket.load("mixed-01")
-        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
+        self.assertIs(t.status, Status.MIXED)
         self.assertTrue(t.status.is_terminal)
 
-    def test_all_already_fixed_closes_ticket(self) -> None:
-        """Every scenario `already_fixed` → close with CloseReason.ALREADY_FIXED."""
-        _write_ticket_file(self.tickets, "af-01")
-        self._script_agent({
-            "test_file": "mtg-engine/tests/pipeline_bugs_af_01.rs",
-            "tests": [
-                {
-                    "slug": "test_my_scenario",
-                    "status": "already_fixed",
-                    "explanation": "triggers.rs:881 now evaluates intervening-if",
-                },
-            ],
-        })
-
-        test_mod.cmd_test(_args("af-01"))
-
-        t = Ticket.load("af-01")
-        self.assertIs(t.status, Status.CLOSED)
-        self.assertEqual(t.frontmatter.closed_reason, "already_fixed")
-        self.assertTrue((self.tickets / "archive" / "af-01.md").exists())
-        self.assertIn("already_fixed", t.body)
-
-    def test_mixed_confirmed_and_already_fixed_marks_could_not_confirm(
-        self,
-    ) -> None:
-        """Partial already_fixed still blocks — only all-already_fixed closes."""
-        (self.tickets / "mix-af-01.md").write_text(textwrap.dedent(
-            """\
-            ---
-            id: mix-af-01
-            status: new
-            card: Foo
-            ---
-
-            ## Tests
-
-            ### scenario_a
-
-            ### scenario_b
-            """
-        ))
-        self._script_agent({
-            "test_file": "mtg-engine/tests/pipeline_bugs_mix_af_01.rs",
-            "tests": [
-                {
-                    "slug": "scenario_a",
-                    "status": "confirmed",
-                    "test_name": "scenario_a",
-                    "assertion_message": "expected 5, got 3",
-                },
-                {
-                    "slug": "scenario_b",
-                    "status": "already_fixed",
-                    "explanation": "handled by merged-foo-01",
-                },
-            ],
-        })
-        os.environ["FAKE_CARGO_EXIT"] = "101"
-        os.environ["FAKE_CARGO_STDOUT"] = (
-            "assertion `left == right` failed\n"
-        )
-
-        test_mod.cmd_test(_args("mix-af-01"))
-
-        t = Ticket.load("mix-af-01")
-        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
-
-    def test_needs_engine_work_entry_marks_could_not_confirm(self) -> None:
-        """`needs_engine_work` blocks the ticket → could_not_confirm."""
+    def test_all_needs_engine_work_marks_engine_blocked(self) -> None:
+        """Every scenario needs engine surface → terminal `engine_blocked`."""
         _write_ticket_file(self.tickets, "blocked-01")
         self._script_agent({
             "test_file": "mtg-engine/tests/pipeline_bugs_blocked_01.rs",
@@ -463,9 +393,46 @@ class TestCommandTest(unittest.TestCase):
         test_mod.cmd_test(_args("blocked-01"))
 
         t = Ticket.load("blocked-01")
-        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
+        self.assertIs(t.status, Status.ENGINE_BLOCKED)
+        self.assertTrue(t.status.is_terminal)
         self.assertIn("needs_engine_work", t.body)
         self.assertIn("combat::apply_damage_with_source", t.body)
+
+    def test_mixed_needs_engine_and_rejected_marks_mixed(self) -> None:
+        """Mix of needs_engine_work and rejected (no confirmed) → mixed, not engine_blocked."""
+        (self.tickets / "mix-nr-01.md").write_text(textwrap.dedent(
+            """\
+            ---
+            id: mix-nr-01
+            status: new
+            card: Foo
+            ---
+
+            ## Tests
+
+            ### scenario_a
+
+            ### scenario_b
+            """
+        ))
+        self._script_agent({
+            "test_file": "mtg-engine/tests/pipeline_bugs_mix_nr_01.rs",
+            "tests": [
+                {
+                    "slug": "scenario_a", "status": "needs_engine_work",
+                    "explanation": "need foo::bar()",
+                },
+                {
+                    "slug": "scenario_b", "status": "rejected",
+                    "explanation": "auditor misread the code",
+                },
+            ],
+        })
+
+        test_mod.cmd_test(_args("mix-nr-01"))
+
+        t = Ticket.load("mix-nr-01")
+        self.assertIs(t.status, Status.MIXED)
 
     # ── arg validation ────────────────────────────────────────────
 

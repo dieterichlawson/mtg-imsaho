@@ -1,6 +1,6 @@
-"""Retry command — recover from a terminal failure state.
+"""Retry command — recover from a terminal-but-retryable state.
 
-Two cases handled, both following the same pattern:
+Three retryable statuses, all following the same pattern:
 
 - `FIX_FAILED` → mint a new ticket in `TESTED`. The test file is
   still valid; a fresh worktree is created at the old ticket's
@@ -8,15 +8,16 @@ Two cases handled, both following the same pattern:
   (failed-fix commits are left behind). The new ticket's body
   inherits everything up through `## Test Run Results`, plus the
   failed ticket's `## Fix Result` wrapped as a `## Previous attempt`.
-- `COULD_NOT_CONFIRM` → mint a new ticket in `NEW`. Previous tests
-  were rejected (or needed engine work), so the new ticket gets no
-  worktree (the test phase will create one). The new ticket's body
-  inherits the audit finding + `## Tests` scenarios, plus the failed
-  ticket's `## Test Run Results` wrapped as a `## Previous attempt`.
+- `ENGINE_BLOCKED` → mint a new ticket in `NEW`. The previous tests
+  all needed engine surface; the fresh ticket gets no worktree (the
+  test phase will create one) and the test-writer will run with the
+  `test_writer_engine` sandbox so it can add the missing surface.
+- `MIXED` → mint a new ticket in `NEW`. Same mechanics as
+  ENGINE_BLOCKED — operator is expected to trim or edit the
+  scenarios in the new ticket before re-running `test`.
 
-The old ticket's worktree is left in place in both cases — operators
-can still inspect what the previous attempt tried. Cleanup happens
-later via `close`.
+The old ticket's worktree is left in place for inspection. Cleanup
+happens later via `close`.
 """
 
 from __future__ import annotations
@@ -39,16 +40,19 @@ def cmd_retry(args) -> None:
         _retry_one(tid)
 
 
+_RETRY_FROM_TEST_PHASE = {Status.ENGINE_BLOCKED, Status.MIXED}
+
+
 def _retry_one(tid: str) -> None:
     old = Ticket.load(tid)
     if old.status is Status.FIX_FAILED:
         new_id = _retry_from_fix_failed(old)
-    elif old.status is Status.COULD_NOT_CONFIRM:
-        new_id = _retry_from_could_not_confirm(old)
+    elif old.status in _RETRY_FROM_TEST_PHASE:
+        new_id = _retry_from_test_phase(old)
     else:
         raise TicketError(
             f"cannot retry a ticket in status {old.status.value!r} — "
-            f"retry works on `fix_failed` and `could_not_confirm` only"
+            f"retry works on `fix_failed`, `engine_blocked`, and `mixed` only"
         )
     print(f"[{tid}] retried into {new_id}")
 
@@ -98,12 +102,14 @@ def _retry_from_fix_failed(old: Ticket) -> str:
     return new_id
 
 
-def _retry_from_could_not_confirm(old: Ticket) -> str:
-    """Mint the successor for a COULD_NOT_CONFIRM ticket.
+def _retry_from_test_phase(old: Ticket) -> str:
+    """Mint the successor for a test-phase failure (ENGINE_BLOCKED or MIXED).
 
-    Previous tests were rejected (or needed engine work), so the
+    Previous tests couldn't confirm the full scenario set, so the
     new ticket starts in NEW with no worktree — the test phase will
-    create one. The old worktree stays put for inspection.
+    create one. The `retry_of` pointer tells the test command to use
+    the `test_writer_engine` sandbox (engine-edit access), useful for
+    ENGINE_BLOCKED and harmless for MIXED.
     """
     stem = _stem_of(old.id)
     new_id = Ticket.allocate_id(stem)

@@ -7,9 +7,9 @@ Covers both retry paths:
   - FIX_FAILED → new TESTED ticket, fresh worktree at `tested_sha`,
     old worktree left in place. Body inherits up through
     `## Test Run Results` plus `## Previous attempt`.
-  - COULD_NOT_CONFIRM → new NEW ticket with no worktree (test phase
-    will create one). Old worktree left in place. Body inherits up
-    through `## Tests` plus `## Previous attempt`.
+  - ENGINE_BLOCKED / MIXED → new NEW ticket with no worktree (test
+    phase will create one). Old worktree left in place. Body
+    inherits up through `## Tests` plus `## Previous attempt`.
 """
 
 from __future__ import annotations
@@ -69,7 +69,7 @@ _FIX_FAILED_BODY = textwrap.dedent(
     """
 )
 
-_COULD_NOT_CONFIRM_BODY = textwrap.dedent(
+_ENGINE_BLOCKED_BODY = textwrap.dedent(
     """\
     ## Audit Finding
     A fake finding.
@@ -234,10 +234,10 @@ class RetryCommandTest(unittest.TestCase):
         self.assertIs(old.status, Status.FIX_FAILED)
         self.assertIn("## Fix Result", old.body)
 
-    # ── COULD_NOT_CONFIRM → NEW ──────────────────────────────────
+    # ── ENGINE_BLOCKED → NEW ─────────────────────────────────────
 
-    def test_could_not_confirm_retry_keeps_old_worktree(self) -> None:
-        """COULD_NOT_CONFIRM retry mints NEW successor; old worktree kept.
+    def test_engine_blocked_retry_keeps_old_worktree(self) -> None:
+        """ENGINE_BLOCKED retry mints NEW successor; old worktree kept.
 
         The successor has no worktree of its own — the test phase will
         create one. The old worktree is left in place for inspection.
@@ -249,7 +249,7 @@ class RetryCommandTest(unittest.TestCase):
         _git("commit", "-q", "-m", "partial", cwd=wt_old)
 
         self._write_archived_ticket(
-            "bar-01", "could_not_confirm", _COULD_NOT_CONFIRM_BODY,
+            "bar-01", "engine_blocked", _ENGINE_BLOCKED_BODY,
         )
 
         retry_mod.cmd_retry(_args("bar-01"))
@@ -293,8 +293,8 @@ class RetryCommandTest(unittest.TestCase):
     def test_retry_of_retry_accumulates_previous_attempts(self) -> None:
         """A-01 → A-02 → A-03 each layer a `## Previous attempt`."""
         # Simulate A-02 already being a retry of A-01 that itself later
-        # landed in COULD_NOT_CONFIRM. Body has the A-01 previous-attempt
-        # section from the first retry, plus A-02's own test results.
+        # landed in MIXED. Body has the A-01 previous-attempt section
+        # from the first retry, plus A-02's own test results.
         body_a02 = textwrap.dedent(
             """\
             ## Audit Finding
@@ -315,7 +315,7 @@ class RetryCommandTest(unittest.TestCase):
             Tried earlier; rejected back then.
             """
         )
-        self._write_archived_ticket("a-02", "could_not_confirm", body_a02)
+        self._write_archived_ticket("a-02", "mixed", body_a02)
 
         retry_mod.cmd_retry(_args("a-02"))
 

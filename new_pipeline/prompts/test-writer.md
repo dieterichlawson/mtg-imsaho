@@ -21,10 +21,10 @@ an assertion error against the current code.
    one scenario you must produce a verdict for. The slug is the key
    you'll echo back in your output JSON.
 
-2. For each scenario, decide which of the verdicts below fits and
-   act accordingly.
+2. For each scenario, decide which of the three verdicts below fits
+   and act accordingly.
 
-## Per-scenario verdicts
+## Three per-scenario verdicts
 
 ### `confirmed` — the common case
 
@@ -34,27 +34,26 @@ proof the bug is real.
 
 - Each confirmed test must include at least one `assert!` /
   `assert_eq!` / `assert_ne!`.
-- If your test passes, the bug isn't reproducible against current
-  code. That's either `rejected` (the auditor misread the code) or
-  `already_fixed` (the bug was real but has since been fixed) —
-  pick the one that matches what you actually found.
+- Passing tests mean the bug doesn't reproduce — return `rejected`
+  instead of `confirmed`.
 
-### `rejected` — the scenario isn't a bug
+### `rejected` — the scenario doesn't reproduce
 
-After investigating, you believe the auditor was wrong: the code
-has always handled this scenario correctly and no fix ever landed
-for it. Return `rejected` with an `explanation` pointing at the
-specific misreading. Don't write a passing test; reject explicitly.
+After investigating, you believe the bug doesn't show up against
+current code. Any of these fit under `rejected`; use the
+`explanation` to say which:
 
-### `already_fixed` — the bug was real but is resolved
+- The auditor misread the code (guard is present, path doesn't exist, …).
+- The auditor misinterpreted the oracle or rules.
+- The scenario is unreachable in normal play.
+- The bug was real but another fix (likely a merged ticket) has
+  since resolved it.
+- The finding is a coverage gap dressed as a bug — the code already
+  handles the ruling correctly.
 
-The scenario describes a real bug, but the current code already
-handles it correctly — typically because another merged ticket's
-fix subsumed this one after the audit was written. Return
-`already_fixed` with an `explanation` identifying what changed
-(e.g. "triggers.rs:881 now evaluates intervening-if at creation;
-fixed in merged-intervening-if-01"). Don't write a passing test;
-close it out in prose.
+Don't write a passing test; reject explicitly with an
+`explanation` concrete enough that the next reader knows which of
+the above applies.
 
 ### `needs_engine_work` — the engine doesn't support this test yet
 
@@ -68,15 +67,6 @@ a scenario needs engine changes, use `needs_engine_work` — the
 pipeline will re-invoke you on a retry with permission to edit the
 engine, the explanation in context, and the expectation that you
 add the minimal surface area needed before writing the test.
-
-### `needs_other_cards` — the scenario needs an unimplemented card
-
-The scenario relies on a card that isn't in the registry (e.g. the
-bug only shows up when an opponent steals the creature via Act of
-Treason, and Act of Treason isn't implemented). The engine surface
-is fine; the card catalog is short. Return `needs_other_cards` with
-an `explanation` naming the missing card(s). Adding cards is out of
-scope for this run.
 
 ## Cargo commands: use a long timeout
 
@@ -175,7 +165,7 @@ Typical failures:
 | `Banned phrases found`         | Remove the phrase from the code or comment.     |
 | `No assertions found`          | Add an `assert!` / `assert_eq!` / `assert_ne!`. |
 | `Test does not compile`        | Fix the compile error in `{test_file}`.         |
-| `Test passed (expected fail)`  | Return `rejected` (never a bug) or `already_fixed` (bug existed, now fixed). |
+| `Test passed (expected fail)`  | Bug doesn't reproduce — return `rejected`.      |
 
 ## Output
 
@@ -194,22 +184,12 @@ When you're done, write a single JSON file to `{staging_path}`:
     {{
       "slug": "<slug from the ticket>",
       "status": "rejected",
-      "explanation": "<why this scenario isn't a real bug>"
-    }},
-    {{
-      "slug": "<slug from the ticket>",
-      "status": "already_fixed",
-      "explanation": "<what changed since the audit; point at the fix if you can>"
+      "explanation": "<which of the rejection reasons applies and why>"
     }},
     {{
       "slug": "<slug from the ticket>",
       "status": "needs_engine_work",
       "explanation": "<what engine surface is missing and what you'd add>"
-    }},
-    {{
-      "slug": "<slug from the ticket>",
-      "status": "needs_other_cards",
-      "explanation": "<which unimplemented card(s) the scenario requires>"
     }}
   ]
 }}
@@ -220,7 +200,6 @@ When you're done, write a single JSON file to `{staging_path}`:
 - `test_name` is required on `confirmed` (Rust function name).
 - `assertion_message` is required on `confirmed` (what the assertion
   printed when it failed — pull it from cargo's output).
-- `explanation` is required on `rejected`, `already_fixed`,
-  `needs_engine_work`, and `needs_other_cards`.
+- `explanation` is required on `rejected` and `needs_engine_work`.
 
 Do not print the JSON to stdout; write it to the staging path above.

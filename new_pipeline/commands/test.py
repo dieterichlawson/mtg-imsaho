@@ -1,15 +1,17 @@
 """Test-writer command — run the test agent on one or more `new` tickets.
 
-For each ticket:
-    load → guard status == NEW → ensure worktree → build prompt from
-    `prompts/test-writer.md` → run_agent_loop (loader parses TestReport
-    + validates each confirmed test via cargo) → `t.mark_tested` or
-    `t.mark_could_not_confirm` depending on the outcome.
+For each ticket: load → guard status == NEW → ensure worktree → build
+prompt from `prompts/test-writer.md` → run_agent_loop (loader parses
+TestReport + validates each confirmed test via cargo). Aggregation of
+per-scenario verdicts routes the ticket to one of four destinations:
 
-On success the ticket moves to `tested`. If the agent rejects every
-scenario, the ticket moves to the terminal `could_not_confirm` status
-(archived). Agent infrastructure errors leave the ticket `new` so a
-rerun can pick up where it left off.
+- All `confirmed` → `tested` (proceeds to fix phase).
+- All `rejected` → `closed` (reason `not_a_bug`; no retry helps).
+- All `needs_engine_work` → `engine_blocked` (retry grants engine sandbox).
+- Any mix → `mixed` (operator reviews explanations, edits scenarios).
+
+Agent infrastructure errors leave the ticket `new` so a rerun can
+pick up where it left off.
 """
 
 from __future__ import annotations
@@ -125,35 +127,50 @@ def _test_one(tid: str, args) -> None:
         )
         return
 
-    # Strict aggregation: every scenario in the ticket must be confirmed
-    # for the ticket to move to `tested`. Any non-confirmed entry blocks
-    # the whole ticket. Special case: if every scenario is
-    # `already_fixed`, close the ticket instead of leaving it stuck in
-    # could_not_confirm — there's nothing to fix.
-    confirmed = sum(1 for r in report.tests if r.status is TestStatus.CONFIRMED)
-    already_fixed = sum(1 for r in report.tests if r.status is TestStatus.ALREADY_FIXED)
-    all_confirmed = bool(report.tests) and confirmed == len(report.tests)
-    all_already_fixed = (
-        bool(report.tests) and already_fixed == len(report.tests)
-    )
-
-    if all_already_fixed:
-        t.mark_already_fixed()
+    # Aggregate per-scenario verdicts into the ticket's next status.
+    # Status encodes what operator action is needed: mixed → review;
+    # engine_blocked → retry with engine sandbox; closed → nothing.
+    if not report.tests:
+        # Empty report — treat as mixed so the operator looks closer.
+        t.mark_mixed()
         t.append_body_section(report.to_results_section())
         t.save()
-        print(
-            f"[{tid}] {Status.CLOSED.value} (already_fixed): "
-            f"{len(report.tests)} scenario(s) no longer reproduce."
-        )
+        print(f"[{tid}] {Status.MIXED.value}: report had no scenarios.")
         return
 
-    if not all_confirmed:
-        t.mark_could_not_confirm()
+    statuses = {r.status for r in report.tests}
+    total = len(report.tests)
+
+    if statuses == {TestStatus.CONFIRMED}:
+        # fall through to the mark_tested path below
+        pass
+    elif statuses == {TestStatus.REJECTED}:
+        t.mark_not_a_bug()
         t.append_body_section(report.to_results_section())
         t.save()
         print(
-            f"[{tid}] {Status.COULD_NOT_CONFIRM.value}: "
-            f"{confirmed}/{len(report.tests)} scenario(s) confirmed."
+            f"[{tid}] {Status.CLOSED.value} (not_a_bug): "
+            f"{total} scenario(s) rejected."
+        )
+        return
+    elif statuses == {TestStatus.NEEDS_ENGINE_WORK}:
+        t.mark_engine_blocked()
+        t.append_body_section(report.to_results_section())
+        t.save()
+        print(
+            f"[{tid}] {Status.ENGINE_BLOCKED.value}: "
+            f"{total} scenario(s) need engine surface. "
+            f"Run `retry` to re-invoke with engine-edit access."
+        )
+        return
+    else:
+        confirmed = sum(1 for r in report.tests if r.status is TestStatus.CONFIRMED)
+        t.mark_mixed()
+        t.append_body_section(report.to_results_section())
+        t.save()
+        print(
+            f"[{tid}] {Status.MIXED.value}: "
+            f"{confirmed}/{total} scenario(s) confirmed; review the others."
         )
         return
 
@@ -168,6 +185,6 @@ def _test_one(tid: str, args) -> None:
     t.append_body_section(report.to_results_section())
     t.save()
     print(
-        f"[{tid}] Done: {confirmed}/{len(report.tests)} tests "
+        f"[{tid}] Done: {total}/{total} tests "
         f"confirmed ({result.duration}s, {result.tokens} tok)"
     )
