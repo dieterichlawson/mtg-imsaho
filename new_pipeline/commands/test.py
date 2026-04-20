@@ -8,7 +8,8 @@ per-scenario verdicts routes the ticket to one of four destinations:
 - All `confirmed` → `tested` (proceeds to fix phase).
 - All `rejected` → `closed` (reason `not_a_bug`; no retry helps).
 - All `needs_engine_work` → `engine_blocked` (retry grants engine sandbox).
-- Any mix → `mixed` (operator reviews explanations, edits scenarios).
+- Any mix → `mixed` (terminal; operator hand-authors fresh tickets for
+  whichever subset is worth pursuing — `retry` will not auto-mint).
 
 Agent infrastructure errors leave the ticket `new` so a rerun can
 pick up where it left off.
@@ -170,7 +171,9 @@ def _test_one(tid: str, args) -> None:
         t.save()
         print(
             f"[{tid}] {Status.MIXED.value}: "
-            f"{confirmed}/{total} scenario(s) confirmed; review the others."
+            f"{confirmed}/{total} scenario(s) confirmed. "
+            f"Read the per-scenario explanations and file fresh tickets "
+            f"for whichever subset is worth pursuing — retry won't auto-mint."
         )
         return
 

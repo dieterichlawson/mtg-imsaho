@@ -272,6 +272,15 @@ class RetryCommandTest(unittest.TestCase):
 
     # ── invalid source status ────────────────────────────────────
 
+    def test_retry_on_mixed_raises(self) -> None:
+        """MIXED is terminal but not auto-retryable — operator must split."""
+        self._write_archived_ticket(
+            "mix-01", "mixed", "body\n",
+        )
+        with self.assertRaises(TicketError) as cm:
+            retry_mod.cmd_retry(_args("mix-01"))
+        self.assertIn("mixed", str(cm.exception).lower())
+
     def test_retry_on_tested_raises(self) -> None:
         """Retrying a non-terminal ticket (e.g. tested) is an error."""
         (self.tickets / "active-01.md").write_text(textwrap.dedent(
@@ -293,8 +302,8 @@ class RetryCommandTest(unittest.TestCase):
     def test_retry_of_retry_accumulates_previous_attempts(self) -> None:
         """A-01 → A-02 → A-03 each layer a `## Previous attempt`."""
         # Simulate A-02 already being a retry of A-01 that itself later
-        # landed in MIXED. Body has the A-01 previous-attempt section
-        # from the first retry, plus A-02's own test results.
+        # landed in ENGINE_BLOCKED. Body has the A-01 previous-attempt
+        # section from the first retry, plus A-02's own test results.
         body_a02 = textwrap.dedent(
             """\
             ## Audit Finding
@@ -315,7 +324,7 @@ class RetryCommandTest(unittest.TestCase):
             Tried earlier; rejected back then.
             """
         )
-        self._write_archived_ticket("a-02", "mixed", body_a02)
+        self._write_archived_ticket("a-02", "engine_blocked", body_a02)
 
         retry_mod.cmd_retry(_args("a-02"))
 

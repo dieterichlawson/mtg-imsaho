@@ -1,6 +1,6 @@
 """Retry command — recover from a terminal-but-retryable state.
 
-Three retryable statuses, all following the same pattern:
+Two retryable statuses:
 
 - `FIX_FAILED` → mint a new ticket in `TESTED`. The test file is
   still valid; a fresh worktree is created at the old ticket's
@@ -12,9 +12,12 @@ Three retryable statuses, all following the same pattern:
   all needed engine surface; the fresh ticket gets no worktree (the
   test phase will create one) and the test-writer will run with the
   `test_writer_engine` sandbox so it can add the missing surface.
-- `MIXED` → mint a new ticket in `NEW`. Same mechanics as
-  ENGINE_BLOCKED — operator is expected to trim or edit the
-  scenarios in the new ticket before re-running `test`.
+
+`MIXED` is intentionally NOT retryable — a mixed outcome means the
+operator needs to read the per-scenario explanations and hand-author
+fresh tickets for whichever subset is worth pursuing. Auto-minting a
+successor would just re-run the same agent on the same ambiguous
+scenarios.
 
 The old ticket's worktree is left in place for inspection. Cleanup
 happens later via `close`.
@@ -40,19 +43,22 @@ def cmd_retry(args) -> None:
         _retry_one(tid)
 
 
-_RETRY_FROM_TEST_PHASE = {Status.ENGINE_BLOCKED, Status.MIXED}
-
-
 def _retry_one(tid: str) -> None:
     old = Ticket.load(tid)
     if old.status is Status.FIX_FAILED:
         new_id = _retry_from_fix_failed(old)
-    elif old.status in _RETRY_FROM_TEST_PHASE:
-        new_id = _retry_from_test_phase(old)
+    elif old.status is Status.ENGINE_BLOCKED:
+        new_id = _retry_from_engine_blocked(old)
+    elif old.status is Status.MIXED:
+        raise TicketError(
+            f"cannot retry {tid!r} — mixed outcomes need manual review; "
+            f"read the per-scenario explanations and hand-author fresh "
+            f"tickets for the subset(s) worth pursuing"
+        )
     else:
         raise TicketError(
             f"cannot retry a ticket in status {old.status.value!r} — "
-            f"retry works on `fix_failed`, `engine_blocked`, and `mixed` only"
+            f"retry works on `fix_failed` and `engine_blocked` only"
         )
     print(f"[{tid}] retried into {new_id}")
 
@@ -102,14 +108,14 @@ def _retry_from_fix_failed(old: Ticket) -> str:
     return new_id
 
 
-def _retry_from_test_phase(old: Ticket) -> str:
-    """Mint the successor for a test-phase failure (ENGINE_BLOCKED or MIXED).
+def _retry_from_engine_blocked(old: Ticket) -> str:
+    """Mint the successor for an ENGINE_BLOCKED ticket.
 
-    Previous tests couldn't confirm the full scenario set, so the
-    new ticket starts in NEW with no worktree — the test phase will
-    create one. The `retry_of` pointer tells the test command to use
-    the `test_writer_engine` sandbox (engine-edit access), useful for
-    ENGINE_BLOCKED and harmless for MIXED.
+    Every previous scenario needed engine surface. The new ticket
+    starts in NEW with no worktree — the test phase will create one.
+    The `retry_of` pointer tells the test command to use the
+    `test_writer_engine` sandbox, granting the test-writer permission
+    to add the missing surface before writing the test.
     """
     stem = _stem_of(old.id)
     new_id = Ticket.allocate_id(stem)

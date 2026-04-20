@@ -89,7 +89,7 @@ def main() -> None:
 
     p_retry = sub.add_parser(
         "retry",
-        help="Mint a successor ticket for `fix_failed`/`engine_blocked`/`mixed`",
+        help="Mint a successor ticket for `fix_failed`/`engine_blocked`",
     )
     p_retry.add_argument(
         "--tickets", required=True, help="Comma-separated ticket ids",
