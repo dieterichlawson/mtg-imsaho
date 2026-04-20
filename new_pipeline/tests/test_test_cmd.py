@@ -377,6 +377,73 @@ class TestCommandTest(unittest.TestCase):
         self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
         self.assertTrue(t.status.is_terminal)
 
+    def test_all_already_fixed_closes_ticket(self) -> None:
+        """Every scenario `already_fixed` → close with CloseReason.ALREADY_FIXED."""
+        _write_ticket_file(self.tickets, "af-01")
+        self._script_agent({
+            "test_file": "mtg-engine/tests/pipeline_bugs_af_01.rs",
+            "tests": [
+                {
+                    "slug": "test_my_scenario",
+                    "status": "already_fixed",
+                    "explanation": "triggers.rs:881 now evaluates intervening-if",
+                },
+            ],
+        })
+
+        test_mod.cmd_test(_args("af-01"))
+
+        t = Ticket.load("af-01")
+        self.assertIs(t.status, Status.CLOSED)
+        self.assertEqual(t.frontmatter.closed_reason, "already_fixed")
+        self.assertTrue((self.tickets / "archive" / "af-01.md").exists())
+        self.assertIn("already_fixed", t.body)
+
+    def test_mixed_confirmed_and_already_fixed_marks_could_not_confirm(
+        self,
+    ) -> None:
+        """Partial already_fixed still blocks — only all-already_fixed closes."""
+        (self.tickets / "mix-af-01.md").write_text(textwrap.dedent(
+            """\
+            ---
+            id: mix-af-01
+            status: new
+            card: Foo
+            ---
+
+            ## Tests
+
+            ### scenario_a
+
+            ### scenario_b
+            """
+        ))
+        self._script_agent({
+            "test_file": "mtg-engine/tests/pipeline_bugs_mix_af_01.rs",
+            "tests": [
+                {
+                    "slug": "scenario_a",
+                    "status": "confirmed",
+                    "test_name": "scenario_a",
+                    "assertion_message": "expected 5, got 3",
+                },
+                {
+                    "slug": "scenario_b",
+                    "status": "already_fixed",
+                    "explanation": "handled by merged-foo-01",
+                },
+            ],
+        })
+        os.environ["FAKE_CARGO_EXIT"] = "101"
+        os.environ["FAKE_CARGO_STDOUT"] = (
+            "assertion `left == right` failed\n"
+        )
+
+        test_mod.cmd_test(_args("mix-af-01"))
+
+        t = Ticket.load("mix-af-01")
+        self.assertIs(t.status, Status.COULD_NOT_CONFIRM)
+
     def test_needs_engine_work_entry_marks_could_not_confirm(self) -> None:
         """`needs_engine_work` blocks the ticket → could_not_confirm."""
         _write_ticket_file(self.tickets, "blocked-01")

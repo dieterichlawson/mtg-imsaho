@@ -126,12 +126,26 @@ def _test_one(tid: str, args) -> None:
         return
 
     # Strict aggregation: every scenario in the ticket must be confirmed
-    # for the ticket to move to `tested`. Any rejected or
-    # needs_engine_work entry blocks the whole ticket — the human must
-    # retry (after adjusting the scenario set, adding engine surface,
-    # etc.) rather than move forward with partial coverage.
+    # for the ticket to move to `tested`. Any non-confirmed entry blocks
+    # the whole ticket. Special case: if every scenario is
+    # `already_fixed`, close the ticket instead of leaving it stuck in
+    # could_not_confirm — there's nothing to fix.
     confirmed = sum(1 for r in report.tests if r.status is TestStatus.CONFIRMED)
+    already_fixed = sum(1 for r in report.tests if r.status is TestStatus.ALREADY_FIXED)
     all_confirmed = bool(report.tests) and confirmed == len(report.tests)
+    all_already_fixed = (
+        bool(report.tests) and already_fixed == len(report.tests)
+    )
+
+    if all_already_fixed:
+        t.mark_already_fixed()
+        t.append_body_section(report.to_results_section())
+        t.save()
+        print(
+            f"[{tid}] {Status.CLOSED.value} (already_fixed): "
+            f"{len(report.tests)} scenario(s) no longer reproduce."
+        )
+        return
 
     if not all_confirmed:
         t.mark_could_not_confirm()

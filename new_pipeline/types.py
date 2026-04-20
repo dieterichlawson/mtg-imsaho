@@ -60,6 +60,7 @@ class CloseReason(str, Enum):
     """Why a ticket ended up in `closed`."""
 
     ABANDONED = "abandoned"  # human gave up
+    ALREADY_FIXED = "already_fixed"  # test-writer found the bug no longer reproduces
 
 
 class LifecycleEvent(str, Enum):
@@ -406,6 +407,16 @@ class Ticket:
         (which will auto-archive since the status is terminal).
         """
         self.status = Status.COULD_NOT_CONFIRM
+
+    def mark_already_fixed(self) -> None:
+        """Terminal: every scenario's bug is already handled by current code.
+
+        Closes the ticket with `CloseReason.ALREADY_FIXED`. Caller is
+        responsible for `.append_body_section(...)` and `.save()`.
+        """
+        self.status = next_status(self.status, LifecycleEvent.ABANDONED)
+        self.frontmatter.closed_reason = CloseReason.ALREADY_FIXED.value
+        self.frontmatter.closed_at = datetime.now(timezone.utc)
 
     def mark_fixed(
         self,
@@ -771,16 +782,25 @@ class TestStatus(str, Enum):
     - `CONFIRMED`: the agent wrote a test that compiles and fails,
       proving the bug is real.
     - `REJECTED`: the scenario passes against current code (not a bug).
+    - `ALREADY_FIXED`: the scenario describes a real bug, but the
+      current code already handles it correctly — typically because
+      another merged ticket's fix subsumed it after the audit.
     - `NEEDS_ENGINE_WORK`: the scenario can't be tested without adding
       surface area to `mtg-engine/src/` (a method, trait, type, etc.).
       The agent is not permitted to modify engine files in this run;
       a later retry will re-invoke the test-writer with the required
       engine surface in place. `explanation` describes what's missing.
+    - `NEEDS_OTHER_CARDS`: the scenario requires a card that isn't
+      implemented yet (e.g. "stolen via Act of Treason" needs Act of
+      Treason in the registry). Distinct from `NEEDS_ENGINE_WORK` —
+      the engine has the surface; the card catalog is short.
     """
 
     CONFIRMED = "confirmed"
     REJECTED = "rejected"
+    ALREADY_FIXED = "already_fixed"
     NEEDS_ENGINE_WORK = "needs_engine_work"
+    NEEDS_OTHER_CARDS = "needs_other_cards"
 
     @classmethod
     def parse(cls, raw: str, *, context: str = "") -> TestStatus:
