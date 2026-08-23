@@ -85,7 +85,8 @@ fn regenerate(state: &mut GameState, id: ObjectId) {
 
 /// Actually destroy a permanent: emit events, move to graveyard, set morbid flag.
 fn destroy(state: &mut GameState, id: ObjectId, registry: Option<&CardRegistry>) {
-    let is_creature = state.get_object(id).is_some_and(|o| o.power.is_some());
+    let is_creature = registry.is_some_and(|r| state.is_creature(id, r))
+        || state.get_object(id).is_some_and(|o| o.power.is_some());
     if is_creature {
         // Capture last-known information before the zone change clears it.
         let (cid, ctrl, damaged_by, is_token) = state.get_object(id)

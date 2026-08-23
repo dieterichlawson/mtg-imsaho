@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Serialize, Deserialize};
 
@@ -99,6 +99,22 @@ pub struct GameState {
 
     /// Whether the game is waiting for attackers/blockers declaration.
     pub awaiting_action: Option<AwaitingAction>,
+
+    /// CR 510.5: when first/double strikers are in combat, the combat damage
+    /// step happens twice. Set after the first-strike damage instance; tells
+    /// `advance_step` to repeat `Step::CombatDamage` (with a full SBA /
+    /// trigger / priority round in between) instead of moving to EndCombat.
+    #[serde(default)]
+    pub combat_damage_step_pending: bool,
+
+    /// The spell currently mid-resolution because it presented a player
+    /// choice (`awaiting_action`). The ENGINE owns moving a resolved spell
+    /// off the stack: `stack::resolve_spell` for spells that finish in one
+    /// step, and `engine::finish_spell_resolution_if_idle` once the choice
+    /// chain completes. Card code must never call `move_spell_after_resolve`
+    /// from a pending-effect handler.
+    #[serde(default)]
+    pub resolving_spell: Option<ObjectId>,
 
     /// Game result, if the game is over.
     pub result: Option<GameResult>,
@@ -267,6 +283,32 @@ pub enum TemporaryEffect {
     },
 }
 
+/// The single battlefield permanent an until-end-of-turn effect is attached
+/// to, if any. Such effects end when that permanent leaves the battlefield
+/// (CR 400.7 — the returning object is new and must not inherit them).
+/// Controller-scoped, global, and graveyard-targeted effects return `None`.
+///
+/// Exhaustive by design: a new `TemporaryEffect` variant must be classified
+/// here rather than silently defaulting.
+fn until_eot_object_target(effect: &TemporaryEffect) -> Option<ObjectId> {
+    match effect {
+        TemporaryEffect::ModifyPT { target, .. }
+        | TemporaryEffect::GrantKeyword { target, .. }
+        | TemporaryEffect::RemoveKeyword { target, .. }
+        | TemporaryEffect::CantBlock { target }
+        | TemporaryEffect::GrantProtection { target, .. }
+        | TemporaryEffect::ChangeControl { target, .. }
+        | TemporaryEffect::ModifyPTWhileSourceInPlay { target, .. } => Some(*target),
+        // Targets a card in the graveyard, not a battlefield permanent.
+        TemporaryEffect::GrantFlashback { .. } => None,
+        // Controller-scoped or global — not tied to one permanent.
+        TemporaryEffect::PreventNonWolfWerewolfCombatDamage
+        | TemporaryEffect::ModifyPTAll { .. }
+        | TemporaryEffect::GrantKeywordAll { .. }
+        | TemporaryEffect::GrantProtectionAll { .. } => None,
+    }
+}
+
 impl GameState {
     /// Create a new game state for a given number of players.
     #[must_use]
@@ -287,6 +329,8 @@ impl GameState {
             combat: None,
             end_of_combat_exiles: Vec::new(),
             awaiting_action: None,
+            combat_damage_step_pending: false,
+            resolving_spell: None,
             result: None,
             consecutive_passes: 0,
             is_first_turn: true,
@@ -580,6 +624,13 @@ impl GameState {
         // immediately before it left the battlefield.
         let pre_move_controller = self.objects.get(&id).map(|o| o.controller);
 
+        // A tracked mid-resolution spell that leaves the stack (moved by a
+        // pending-effect handler, or entering the battlefield as a
+        // permanent) no longer needs engine cleanup.
+        if self.resolving_spell == Some(id) && to != Zone::Stack {
+            self.resolving_spell = None;
+        }
+
         // CR 614.1c: Compute "enters with" counters BEFORE the zone change,
         // so graveyard counts still include this creature if entering from GY.
         let entering_counters = if to == Zone::Battlefield && from.is_some_and(|z| z != Zone::Battlefield) {
@@ -632,6 +683,32 @@ impl GameState {
                 obj.card_state.clear();
                 obj.summoning_sick = true;
             }
+        }
+
+        // CR 614.1d: a permanent that "enters as a copy" via a player choice
+        // (Evil Twin) resolves that choice through an ETB trigger, so it
+        // briefly exists as its printed 0/0 before the copy applies. Arm the
+        // SBA copy-guard AT ENTRY — the single moment before any SBA runs —
+        // so the 0/0 isn't destroyed in the window before the trigger
+        // resolves. The guard is a transient flag cleared when the copy
+        // decision concludes (see the CopyCreature handler and the copy-choice
+        // resolution path); SBA consults only that flag, never a static
+        // card property.
+        if to == Zone::Battlefield && from != Some(Zone::Battlefield)
+            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
+                .is_some_and(super::cards::CardBehavior::enters_as_copy)
+        {
+            if let Some(obj) = self.objects.get_mut(&id) {
+                obj.entering_copy_source = true;
+            }
+        }
+
+        // CR 400.7: when a permanent leaves the battlefield it becomes a new
+        // object. End any until-end-of-turn effect attached to it, so a
+        // same-turn return reusing this ObjectId is a clean object rather than
+        // inheriting stale buffs/grants/control changes.
+        if from == Some(Zone::Battlefield) && to != Zone::Battlefield {
+            self.until_end_of_turn.retain(|e| until_eot_object_target(e) != Some(id));
         }
 
         // Emit zone-change events outside the mutable borrow.
@@ -1003,27 +1080,10 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            // Check instance-level effects first.
-            if let Some(ref instance_effects) = source.instance_continuous_effects {
-                for effect in instance_effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            return true;
-                        }
-                    }
-                }
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                // Use back face effects when transformed.
-                let effects = if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                };
-                for effect in &effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            return true;
-                        }
+            for effect in self.continuous_effects_of(source.id, registry) {
+                if let Some(scope) = predicate(&effect) {
+                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        return true;
                     }
                 }
             }
@@ -1044,25 +1104,10 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            if let Some(ref instance_effects) = source.instance_continuous_effects {
-                for effect in instance_effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            count += 1;
-                        }
-                    }
-                }
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                let effects = if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                };
-                for effect in &effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            count += 1;
-                        }
+            for effect in self.continuous_effects_of(source.id, registry) {
+                if let Some(scope) = predicate(&effect) {
+                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        count += 1;
                     }
                 }
             }
@@ -1088,9 +1133,17 @@ impl GameState {
             self.get_object(*source_id)
                 .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
         } else if let Some(behavior) = registry.get(obj.card_id) {
-            // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
-            if let Some((p, _)) = behavior.dynamic_pt(self, id) {
-                p
+            // Check if this creature's own card has dynamic P/T (e.g.,
+            // Geist-Honored Monk). Only creatures (base P/T set — CDA
+            // creatures use the Some(0) sentinel) consult their own
+            // dynamic_pt: equipment/aura dynamic_pt contributes to the
+            // attached creature, not to the source itself.
+            if obj.power.is_some() {
+                if let Some((p, _)) = behavior.dynamic_pt(self, id) {
+                    p
+                } else {
+                    obj.power?
+                }
             } else {
                 obj.power?
             }
@@ -1149,9 +1202,14 @@ impl GameState {
             self.get_object(*source_id)
                 .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
         } else if let Some(behavior) = registry.get(obj.card_id) {
-            // Check if this creature's own card has dynamic P/T.
-            if let Some((_, t)) = behavior.dynamic_pt(self, id) {
-                t
+            // Check if this creature's own card has dynamic P/T. Same
+            // creature-only guard as effective_power — see comment there.
+            if obj.toughness.is_some() {
+                if let Some((_, t)) = behavior.dynamic_pt(self, id) {
+                    t
+                } else {
+                    obj.toughness?
+                }
             } else {
                 obj.toughness?
             }
@@ -1318,21 +1376,8 @@ impl GameState {
     pub fn has_protection_from(&self, target_id: ObjectId, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
         use crate::types::ContinuousEffect;
 
-        // Get the source's subtypes.
-        let source_subtypes: Vec<String> = self.get_object(source_id)
-            .map(|o| {
-                let mut subs = o.subtypes.clone();
-                // Also get subtypes from registry.
-                if let Some(data) = registry.card_data(o.card_id) {
-                    for s in &data.subtypes {
-                        if !subs.contains(s) {
-                            subs.push(s.clone());
-                        }
-                    }
-                }
-                subs
-            })
-            .unwrap_or_default();
+        // Get the source's subtypes (active face — transform-aware).
+        let source_subtypes: Vec<String> = self.subtypes_of(source_id, registry);
 
         // Check ProtectionFromSubtype effects on the target.
         let has_subtype_protection = self.has_continuous_effect(target_id, &|e| {
@@ -1351,11 +1396,31 @@ impl GameState {
             return true;
         }
 
+        // Check filter-based static ProtectionFrom effects (e.g., protection
+        // from a color or card type granted by a permanent).
+        for src_obj in self.objects.values() {
+            if src_obj.zone != Zone::Battlefield {
+                continue;
+            }
+            for effect in self.continuous_effects_of(src_obj.id, registry) {
+                if let ContinuousEffect::ProtectionFrom { filter, scope } = effect {
+                    if self.effect_applies_to(target_id, &scope, src_obj.id, src_obj.controller, registry)
+                        && self.matches_filter(source_id, &filter, src_obj.controller, registry)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        let target_controller = self.get_object(target_id)
+            .map_or(crate::ids::PlayerId(0), |o| o.controller);
+
         // Check until-end-of-turn protection grants (e.g., Spare from Evil).
         for effect in &self.until_end_of_turn {
             match effect {
                 TemporaryEffect::GrantProtection { target, filter } if *target == target_id => {
-                    if self.matches_filter(source_id, filter, crate::ids::PlayerId(0), registry) {
+                    if self.matches_filter(source_id, filter, target_controller, registry) {
                         return true;
                     }
                 }
@@ -1381,17 +1446,7 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
-                instance_effects.clone()
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                }
-            } else {
-                continue
-            };
+            let effects = self.continuous_effects_of(source.id, registry);
             for effect in &effects {
                 let (condition, scope) = if is_attack {
                     match effect {
@@ -1420,17 +1475,7 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
-                instance_effects.clone()
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                }
-            } else {
-                continue;
-            };
+            let effects = self.continuous_effects_of(source.id, registry);
             for effect in &effects {
                 if let ContinuousEffect::ConditionalKeyword { keyword: kw, condition, scope } = effect {
                     if *kw != keyword {
@@ -1513,6 +1558,26 @@ impl GameState {
         }
     }
 
+    /// Change control of a battlefield permanent (CR 800.4a).
+    ///
+    /// The permanent becomes summoning-sick for the new controller: it hasn't
+    /// been under their control continuously since their most recent turn began
+    /// (CR 302.6 / 508.1a), so it can't attack or use tap/untap abilities until
+    /// their next untap step — unless it has haste, which is checked at
+    /// use-time (`eligible_attackers`, tap-ability legality), not here. Effects
+    /// that grant haste alongside the steal (e.g. Act-of-Treason variants) thus
+    /// still work. This is the single correct way to reassign controller for an
+    /// in-play permanent; assigning `obj.controller` directly skips the
+    /// summoning-sickness reset and is a bug.
+    pub fn change_control(&mut self, id: ObjectId, new_controller: PlayerId) {
+        if let Some(obj) = self.get_object_mut(id) {
+            if obj.controller != new_controller {
+                obj.controller = new_controller;
+                obj.summoning_sick = true;
+            }
+        }
+    }
+
     /// Move a resolving spell to the appropriate zone.
     /// Flashback spells go to exile; others go to graveyard.
     pub fn move_spell_after_resolve(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {
@@ -1556,6 +1621,124 @@ impl GameState {
     #[must_use]
     pub fn is_game_over(&self) -> bool {
         self.result.is_some()
+    }
+
+    // ===== Characteristics layer =====
+    //
+    // Single source of truth for an object's printed characteristics.
+    // Resolution order: object-level fields (set for tokens and copies)
+    // → active face (back face when transformed) → registry front face.
+    //
+    // Engine code should use these instead of reading `obj.card_types` /
+    // `obj.subtypes` / `obj.colors` directly or calling `registry.card_data`:
+    // object fields are empty for non-token permanents, and raw registry
+    // lookups return front-face data for transformed DFCs.
+
+    /// The `CardData` of the object's active face: the back face for a
+    /// transformed DFC, the front face otherwise. `None` for objects with
+    /// no registry entry (anonymous test objects).
+    #[must_use]
+    pub fn face_data(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<crate::cards::CardData> {
+        let obj = self.get_object(id)?;
+        let behavior = registry.get(obj.card_id)?;
+        if obj.is_transformed {
+            if let Some(back) = behavior.back_face_data() {
+                return Some(back);
+            }
+        }
+        Some(behavior.card_data())
+    }
+
+    /// Card types of the object: object-level types if set (tokens, copies),
+    /// otherwise the active face's types.
+    #[must_use]
+    pub fn card_types_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::CardType> {
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        if !obj.card_types.is_empty() {
+            return obj.card_types.clone();
+        }
+        self.face_data(id, registry).map(|d| d.card_types).unwrap_or_default()
+    }
+
+    /// Whether the object has the given card type on its active face.
+    #[must_use]
+    pub fn has_card_type(&self, id: ObjectId, card_type: crate::types::CardType, registry: &crate::cards::CardRegistry) -> bool {
+        self.card_types_of(id, registry).contains(&card_type)
+    }
+
+    /// Whether the object is a creature. Checks card types first; also
+    /// accepts object-level P/T as a creature sentinel (tokens, `*/*`
+    /// creatures, and anonymous test objects all set it, while equipment,
+    /// auras, and lands never do).
+    #[must_use]
+    pub fn is_creature(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.has_card_type(id, crate::types::CardType::Creature, registry)
+            || self.get_object(id).is_some_and(|o| o.power.is_some())
+    }
+
+    /// Subtypes of the object: the union of object-level subtypes and the
+    /// active face's subtypes.
+    #[must_use]
+    pub fn subtypes_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<String> {
+        let mut subs = self.get_object(id).map(|o| o.subtypes.clone()).unwrap_or_default();
+        if let Some(data) = self.face_data(id, registry) {
+            for s in data.subtypes {
+                if !subs.contains(&s) {
+                    subs.push(s);
+                }
+            }
+        }
+        subs
+    }
+
+    /// Whether the object has the given subtype on its active face.
+    #[must_use]
+    pub fn has_subtype(&self, id: ObjectId, subtype: &str, registry: &crate::cards::CardRegistry) -> bool {
+        self.get_object(id).is_some_and(|o| o.subtypes.iter().any(|s| s == subtype))
+            || self.face_data(id, registry)
+                .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
+    }
+
+    /// Colors of the object: object-level colors if set, otherwise derived
+    /// from the active face's mana cost. (Color indicators are not modeled;
+    /// object-level colors are populated at setup for all real cards.)
+    #[must_use]
+    pub fn colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        if !obj.colors.is_empty() {
+            return obj.colors.clone();
+        }
+        self.face_data(id, registry)
+            .and_then(|d| d.cost)
+            .map(|cost| {
+                let mut cols = Vec::new();
+                for sym in &cost.symbols {
+                    if let crate::types::ManaSymbol::Colored(c) = sym {
+                        if !cols.contains(c) {
+                            cols.push(*c);
+                        }
+                    }
+                }
+                cols
+            })
+            .unwrap_or_default()
+    }
+
+    /// Continuous effects the object provides: instance-level overrides if
+    /// present (e.g. equipment granting effects), otherwise the active face's.
+    #[must_use]
+    pub fn continuous_effects_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        if let Some(ref inst) = obj.instance_continuous_effects {
+            return inst.clone();
+        }
+        self.face_data(id, registry).map(|d| d.continuous_effects).unwrap_or_default()
+    }
+
+    /// Triggered abilities of the object's active face.
+    #[must_use]
+    pub fn triggered_abilities_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::cards::TriggeredAbilityDef> {
+        self.face_data(id, registry).map(|d| d.triggered_abilities).unwrap_or_default()
     }
 }
 
@@ -1736,6 +1919,17 @@ pub struct CombatState {
     pub attackers: HashMap<ObjectId, PlayerId>,
     /// Map of attacker `ObjectId` -> list of blockers assigned to it.
     pub blocker_assignments: HashMap<ObjectId, Vec<ObjectId>>,
+    /// Attackers that became blocked when blockers were declared. Blocked-ness
+    /// is permanent for the combat (CR 509.2): an attacker whose blockers all
+    /// leave combat is still blocked (deals no combat damage without trample),
+    /// which `blocker_assignments` alone can't express once its list empties.
+    #[serde(default)]
+    pub blocked_attackers: HashSet<ObjectId>,
+    /// Creatures that had first/double strike when first-strike combat damage
+    /// was dealt (CR 510.5): they don't deal damage again in the regular
+    /// combat damage step unless they have double strike.
+    #[serde(default)]
+    pub dealt_first_strike: HashSet<ObjectId>,
 }
 
 impl CombatState {
@@ -2123,5 +2317,77 @@ mod tests {
         let player = state.get_player_mut(PlayerId(0));
         assert!(player.draw_top_card().is_none());
         assert!(player.has_drawn_from_empty);
+    }
+
+    #[test]
+    fn face_data_uses_back_face_when_transformed() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let dfc = registry.get_id_by_name("Daybreak Ranger").unwrap();
+        let id = state.create_object(dfc, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
+
+        assert_eq!(state.face_data(id, &registry).unwrap().name, "Daybreak Ranger");
+        state.get_object_mut(id).unwrap().is_transformed = true;
+        assert_eq!(state.face_data(id, &registry).unwrap().name, "Nightfall Predator");
+    }
+
+    #[test]
+    fn card_types_of_falls_back_to_registry_for_non_tokens() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let pike = registry.get_id_by_name("Runechanter's Pike").unwrap();
+        // Non-token permanents have empty object-level card_types.
+        let id = state.create_object(pike, PlayerId(0), Zone::Battlefield, None, None);
+        assert!(state.get_object(id).unwrap().card_types.is_empty());
+
+        assert!(state.has_card_type(id, crate::types::CardType::Artifact, &registry));
+        assert!(!state.is_creature(id, &registry));
+    }
+
+    #[test]
+    fn is_creature_covers_cards_tokens_and_anonymous_objects() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+
+        let bears = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let card = state.create_object(bears, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
+        assert!(state.is_creature(card, &registry));
+
+        // Anonymous object with P/T (test convention).
+        let anon = state.create_object(CardId(9999), PlayerId(0), Zone::Battlefield, Some(1), Some(1));
+        assert!(state.is_creature(anon, &registry));
+
+        // Aura: no P/T, not a creature.
+        let pacifism = registry.get_id_by_name("Pacifism").unwrap();
+        let aura = state.create_object(pacifism, PlayerId(0), Zone::Battlefield, None, None);
+        assert!(!state.is_creature(aura, &registry));
+    }
+
+    #[test]
+    fn subtypes_of_is_transform_aware() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let dfc = registry.get_id_by_name("Daybreak Ranger").unwrap();
+        let id = state.create_object(dfc, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
+
+        assert!(state.has_subtype(id, "Human", &registry));
+        state.get_object_mut(id).unwrap().is_transformed = true;
+        let subs = state.subtypes_of(id, &registry);
+        assert!(subs.iter().any(|s| s == "Werewolf"), "back face subtypes: {subs:?}");
+    }
+
+    #[test]
+    fn equipment_dynamic_pt_does_not_leak_into_own_effective_pt() {
+        // Runechanter's Pike implements dynamic_pt for the equipped creature.
+        // The equipment itself (base P/T None) must not report effective P/T.
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let pike = registry.get_id_by_name("Runechanter's Pike").unwrap();
+        let id = state.create_object(pike, PlayerId(0), Zone::Battlefield, None, None);
+
+        assert_eq!(state.effective_power(id, &registry), None,
+            "equipment must not have effective power from its own dynamic_pt");
+        assert_eq!(state.effective_toughness(id, &registry), None,
+            "equipment must not have effective toughness from its own dynamic_pt");
     }
 }

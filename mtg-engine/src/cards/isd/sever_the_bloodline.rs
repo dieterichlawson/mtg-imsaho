@@ -39,7 +39,7 @@ impl CardBehavior for SeverTheBloodline {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 // Get the name of the target creature.
@@ -59,6 +59,5 @@ impl CardBehavior for SeverTheBloodline {
                     format!("Sever the Bloodline exiles {} creature(s) named \"{}\"", to_exile.len(), name));
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

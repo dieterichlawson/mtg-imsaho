@@ -30,12 +30,11 @@ impl CardBehavior for SilentDeparture {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.move_object(*target_id, Zone::Hand, registry);
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

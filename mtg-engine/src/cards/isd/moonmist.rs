@@ -28,7 +28,7 @@ impl CardBehavior for Moonmist {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         // "Transform all Humans." — any creature currently with the Human subtype
         // should transform, regardless of which face is showing. This includes:
         // - Front-face Humans (transform to back face)
@@ -103,6 +103,5 @@ impl CardBehavior for Moonmist {
         state.log(crate::state::LogLevel::Event,
             "Moonmist: preventing combat damage from non-Wolf/non-Werewolf creatures this turn".into());
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

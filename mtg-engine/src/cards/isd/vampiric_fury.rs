@@ -26,7 +26,7 @@ impl CardBehavior for VampiricFury {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         // Find the controller of this spell.
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
@@ -49,6 +49,5 @@ impl CardBehavior for VampiricFury {
             }
         );
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

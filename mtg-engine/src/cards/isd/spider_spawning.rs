@@ -43,6 +43,5 @@ impl CardBehavior for SpiderSpawning {
         if creature_count > 0 {
             state.log(crate::state::LogLevel::Event, format!("Spider Spawning created {creature_count} Spider tokens"));
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

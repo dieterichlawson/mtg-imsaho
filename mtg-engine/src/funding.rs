@@ -307,11 +307,7 @@ pub fn build_options(
 
         // Summoning-sick creatures can't activate {T} abilities unless
         // they have haste (CR 302.6). Lands are never summoning-sick.
-        let types = registry
-            .card_data(obj.card_id)
-            .map(|d| d.card_types)
-            .unwrap_or_default();
-        let is_creature = obj.power.is_some() || types.contains(&CardType::Creature);
+        let is_creature = state.is_creature(obj.id, registry);
         let needs_tap = abilities.iter().any(|a| a.requires_tap);
         if is_creature && obj.summoning_sick && needs_tap
             && !state.has_keyword(obj.id, Keyword::Haste, registry)
@@ -319,7 +315,7 @@ pub fn build_options(
             continue;
         }
 
-        let category = if types.contains(&CardType::Land) {
+        let category = if state.has_card_type(obj.id, CardType::Land, registry) {
             FundingCategory::Lands
         } else if is_creature {
             FundingCategory::Dorks

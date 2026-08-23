@@ -116,6 +116,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(cage, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     // Put 3 creatures in graveyard.
@@ -1580,6 +1581,7 @@ fn grimgrin_attack_trigger_destroys_and_adds_counter() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     // Fire the AttackersDeclared event and run the trigger pipeline.
@@ -1611,6 +1613,7 @@ fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     // Fire the AttackersDeclared event and collect triggers (which enters
@@ -1656,6 +1659,7 @@ fn grimgrin_attack_no_targets_no_counter() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
@@ -1685,6 +1689,7 @@ fn grimgrin_attack_indestructible_target_still_gets_counter() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
@@ -1717,6 +1722,7 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
@@ -1804,6 +1810,41 @@ fn evil_twin_copies_creature_on_etb() {
     assert_eq!(state.get_object(twin).unwrap().toughness, Some(2));
     // Should still have the Evil Twin marker.
     assert!(state.get_object(twin).unwrap().card_state.contains_key("is_evil_twin"));
+}
+
+/// A copy of a legendary creature is itself legendary (CR 707.2), so an Evil
+/// Twin copying your own legend triggers the legend rule.
+#[test]
+fn evil_twin_copying_legendary_triggers_legend_rule() {
+    let reg = registry();
+    let mut state = game_at_step(Step::PrecombatMain, P0);
+
+    // P0 controls a legendary creature with fixed P/T.
+    let original = named_creature(&mut state, &reg, "Geist of Saint Traft", P0);
+    assert!(state.get_object(original).unwrap().is_legendary);
+
+    // Evil Twin (also P0) enters and copies it.
+    let twin = named_creature(&mut state, &reg, "Evil Twin", P0);
+    let behavior = reg.get(state.get_object(twin).unwrap().card_id).unwrap();
+    behavior.on_enter_battlefield(&mut state, twin, &[], &reg);
+    state.awaiting_action = None;
+    engine::apply_pending_effect(
+        &mut state,
+        &Target::Object(original),
+        &mtg_engine::state::PendingEffect::CopyCreature { source_id: twin },
+        &reg,
+    );
+
+    // The copy is legendary and shares the original's name.
+    assert!(state.get_object(twin).unwrap().is_legendary,
+        "a copy of a legendary creature is itself legendary (CR 707.2)");
+    assert_eq!(state.get_object(twin).unwrap().name, "Geist of Saint Traft");
+
+    // Legend rule: P0 now controls two same-named legendaries — SBA must
+    // require choosing which to keep.
+    check_state_based_actions(&mut state, &reg);
+    assert!(state.awaiting_action.is_some(),
+        "legend rule should force P0 to choose which legendary to keep");
 }
 
 // ── Moldgraf Monstrosity ──────────────────────────────────────────

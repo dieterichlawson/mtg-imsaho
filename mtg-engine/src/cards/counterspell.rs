@@ -40,7 +40,7 @@ impl CardBehavior for Counterspell {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if let Some(obj) = state.get_object(*target_id) {
                 if obj.zone == Zone::Stack {
@@ -51,6 +51,5 @@ impl CardBehavior for Counterspell {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

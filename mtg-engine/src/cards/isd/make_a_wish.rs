@@ -56,6 +56,5 @@ impl CardBehavior for MakeAWish {
                 "Make a Wish: no cards in graveyard to return".into());
         }
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

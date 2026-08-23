@@ -33,6 +33,7 @@ fn terror_of_kruin_pass_self_requires_two_blockers() {
     let mut combat_state = mtg_engine::state::CombatState {
         attackers: std::collections::HashMap::new(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     };
     combat_state.attackers.insert(terror, P1);
     combat_state.blocker_assignments.insert(terror, vec![]);
@@ -64,6 +65,7 @@ fn terror_of_kruin_pass_allows_two_blockers() {
     let mut combat_state = mtg_engine::state::CombatState {
         attackers: std::collections::HashMap::new(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     };
     combat_state.attackers.insert(terror, P1);
     combat_state.blocker_assignments.insert(terror, vec![]);
@@ -107,6 +109,7 @@ fn terror_of_kruin_pass_grants_restriction_to_other_werewolves() {
     let mut combat_state = mtg_engine::state::CombatState {
         attackers: std::collections::HashMap::new(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     };
     combat_state.attackers.insert(other_wolf, P1);
     combat_state.blocker_assignments.insert(other_wolf, vec![]);
@@ -143,6 +146,7 @@ fn terror_of_kruin_pass_does_not_affect_non_werewolves() {
     let mut combat_state = mtg_engine::state::CombatState {
         attackers: std::collections::HashMap::new(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     };
     combat_state.attackers.insert(human, P1);
     combat_state.blocker_assignments.insert(human, vec![]);
@@ -180,6 +184,7 @@ fn terror_of_kruin_pass_does_not_affect_opponent_werewolves() {
     let mut combat_state = mtg_engine::state::CombatState {
         attackers: std::collections::HashMap::new(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     };
     combat_state.attackers.insert(opp_wolf, P0);
     combat_state.blocker_assignments.insert(opp_wolf, vec![]);

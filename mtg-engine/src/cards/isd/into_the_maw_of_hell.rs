@@ -79,6 +79,5 @@ impl CardBehavior for IntoTheMawOfHell {
                 );
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

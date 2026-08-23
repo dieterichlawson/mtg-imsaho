@@ -30,6 +30,7 @@ fn doubles_damage_to_player() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(creature, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     let life_before = state.get_player(P1).life;
@@ -54,6 +55,7 @@ fn doubles_damage_to_creature() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(attacker, P1)].into_iter().collect(),
         blocker_assignments: [(attacker, vec![blocker])].into_iter().collect(),
+        ..Default::default()
     });
 
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
@@ -77,6 +79,7 @@ fn doubles_damage_taken_from_blocker() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(attacker, P1)].into_iter().collect(),
         blocker_assignments: [(attacker, vec![blocker])].into_iter().collect(),
+        ..Default::default()
     });
 
     mtg_engine::combat::deal_combat_damage(&mut state, &reg);
@@ -99,6 +102,7 @@ fn no_doubling_without_flail() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(creature, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     let life_before = state.get_player(P1).life;
@@ -125,6 +129,7 @@ fn two_flails_quadruple_damage() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(creature, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     let life_before = state.get_player(P1).life;

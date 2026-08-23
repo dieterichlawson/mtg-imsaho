@@ -31,7 +31,11 @@ impl CardBehavior for FiendHunter {
                 TriggeredAbilityDef {
                     kind: TriggerKind::EntersBattlefield,
                     description: "you may exile another target creature".into(),
-                target_requirement: None,
+                    // CR 603.3d: declaring the requirement makes the engine
+                    // lock the target as the trigger goes on the stack.
+                    target_requirement: Some(crate::cards::TargetRequirement::CreatureWithFilter(
+                        crate::cards::TargetFilter::Another,
+                    )),
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::LeavesBattlefield,
@@ -44,16 +48,17 @@ impl CardBehavior for FiendHunter {
 
     fn has_etb_handler(&self) -> bool { true }
 
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
+    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], _registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
-        // "Another target creature" — any creature except Fiend Hunter itself.
-        // Can target own creatures (Oracle doesn't restrict to opponents).
-        let targets = crate::cards::helpers::creature_targets_except(state, object_id, object_id, controller, registry);
-        // "You may" — always present choice, even with 1 target.
+        // CR 603.3d: the target was chosen when the trigger went on the
+        // stack; legality was re-checked before resolution. Only the "you
+        // may" decision remains — offer exactly the locked target (or
+        // decline), never a fresh pick from the current battlefield.
+        let Some(target) = chosen_targets.first().cloned() else { return };
         crate::cards::helpers::present_optional_target_choice(
-            state, object_id, controller, targets,
+            state, object_id, controller, vec![target],
             PendingEffect::ExileAndStore { source_id: object_id, source_name: "Fiend Hunter".into() },
-            "Fiend Hunter: you may exile another target creature",
+            "Fiend Hunter: you may exile the targeted creature",
         );
     }
 

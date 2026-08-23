@@ -66,9 +66,9 @@ impl CardBehavior for DivineReckoning {
             }
         }
 
-        // Clean up the spell first.
-        state.move_spell_after_resolve(object_id, registry);
-
+        // Spell cleanup is engine-owned: resolve_spell handles the immediate
+        // case, finish_spell_resolution_if_idle the suspended-choice case —
+        // AFTER the choice chain completes (CR 608.2m).
         if pending_players.is_empty() {
             // All players had 0-1 creatures; destroy everything not kept.
             let all_creatures: Vec<ObjectId> = state.objects.values()

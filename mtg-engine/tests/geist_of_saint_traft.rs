@@ -27,6 +27,7 @@ fn geist_creates_angel_on_attack() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
     behavior.on_attacks(&mut state, geist, &[], &reg);
 
@@ -48,6 +49,7 @@ fn angel_exiled_at_end_of_combat() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
@@ -77,6 +79,7 @@ fn angel_exiled_even_if_geist_dies() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();

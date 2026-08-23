@@ -583,7 +583,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 // ETB-watch: notify other permanents (and graveyard cards like Dearly Departed)
                 // that a creature entered. Only collect if the watcher's zone matches
                 // the trigger's allowed zones (via CardBehavior::trigger_zones).
-                if state.get_object(*object).is_some_and(|o| o.power.is_some()) {
+                if state.is_creature(*object, registry) {
                     let watchers: Vec<(ObjectId, CardId, PlayerId, Zone)> = state.objects.values()
                         .filter(|o| (o.zone == Zone::Battlefield || o.zone == Zone::Graveyard) && o.id != *object)
                         .map(|o| (o.id, o.card_id, o.controller, o.zone))
@@ -651,19 +651,19 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         None
                     }
                 }).collect();
-                let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
                     .filter(|o| o.id != dead_id &&
                         (o.zone == Zone::Battlefield || simultaneously_dead.contains(&o.id)))
-                    .map(|o| (o.id, o.card_id, o.controller))
+                    .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
                     .collect();
-                for (watcher_id, watcher_card_id, watcher_controller) in watchers {
-                    // Only create death-watch triggers for cards that actually have
-                    // an AnyCreatureDies triggered ability.
-                    let has_death_trigger = registry.get(watcher_card_id)
-                        .is_some_and(|b| b.card_data().triggered_abilities.iter()
-                            .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies));
+                for (watcher_id, watcher_card_id, watcher_controller, watcher_transformed) in watchers {
+                    // Only create death-watch triggers for permanents whose ACTIVE
+                    // face has an AnyCreatureDies triggered ability (CR 712.8d —
+                    // a transformed DFC only has its back face's abilities).
+                    let has_death_trigger = state.triggered_abilities_of(watcher_id, registry).iter()
+                        .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies);
                     if has_death_trigger {
-                        let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, false);
+                        let desc = face_trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, watcher_transformed);
                         let trigger = PendingTrigger::DeathWatch {
                             watcher_id,
                             watcher_card_id,
@@ -713,7 +713,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 if let crate::events::DamageTarget::Object(damaged_id) = target {
                     let source_id = *source;
                     if let Some(obj) = state.get_object(source_id) {
-                        if obj.zone == Zone::Battlefield && obj.power.is_some() {
+                        if obj.zone == Zone::Battlefield && state.is_creature(source_id, registry) {
                             let card_id = obj.card_id;
                             let controller = obj.controller;
                             if registry.get(card_id).is_some() {
@@ -741,7 +741,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 if let crate::events::DamageTarget::Player(damaged_player) = target {
                     let source_id = *source;
                     if let Some(obj) = state.get_object(source_id) {
-                        if obj.zone == Zone::Battlefield && obj.power.is_some() {
+                        if obj.zone == Zone::Battlefield && state.is_creature(source_id, registry) {
                             let card_id = obj.card_id;
                             let controller = obj.controller;
 
@@ -921,15 +921,19 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 }
             }
             GameEvent::SpellCast { player: caster, object: spell_id } => {
-                // Dispatch SpellCast triggers for ALL spell types (not just instant/sorcery).
-                // Individual card handlers can filter by spell type if needed.
                 {
                     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
                         .filter(|o| o.zone == Zone::Battlefield)
                         .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
                     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
-                        if registry.get(watcher_card_id).is_some() {
+                        if let Some(behavior) = registry.get(watcher_card_id) {
+                            // CR 603.2: only create the trigger when the
+                            // watcher's full condition holds (caster / spell
+                            // type restrictions), not for every spell cast.
+                            if !behavior.should_trigger_on_spell_cast(state, watcher_id, *caster, *spell_id, registry) {
+                                continue;
+                            }
                             let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::SpellCast, false);
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::SpellCastWatch {
@@ -1034,8 +1038,14 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
                         _ => continue,
                     };
-                    if registry.get(card_id).is_some() {
-                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Blocks, false);
+                    if let Some(b) = registry.get(card_id) {
+                        // CR 603.2: conditional Blocks triggers only fire
+                        // when the blocked creature matches.
+                        let desc = if b.should_trigger_on_blocks(state, *blocker_id, *attacker_id, registry) {
+                            trigger_description(registry, card_id, &crate::cards::TriggerKind::Blocks, false)
+                        } else {
+                            String::new()
+                        };
                         if !desc.is_empty() {
                             let trigger = PendingTrigger::BlocksTrigger {
                                 object_id: *blocker_id,
@@ -1057,8 +1067,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
                     for (eq_id, eq_card_id, eq_controller) in attached {
-                        if registry.get(eq_card_id).is_some() {
-                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks, false);
+                        if let Some(b) = registry.get(eq_card_id) {
+                            let desc = if b.should_trigger_on_blocks(state, eq_id, *attacker_id, registry) {
+                                trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks, false)
+                            } else {
+                                String::new()
+                            };
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::BlocksTrigger {
                                     object_id: eq_id,
@@ -1081,8 +1095,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
                         _ => continue,
                     };
-                    if registry.get(att_card_id).is_some() {
-                        let desc = trigger_description(registry, att_card_id, &crate::cards::TriggerKind::BecomesBlocked, false);
+                    if let Some(b) = registry.get(att_card_id) {
+                        let desc = if b.should_trigger_on_becomes_blocked(state, *attacker_id, *blocker_id, registry) {
+                            trigger_description(registry, att_card_id, &crate::cards::TriggerKind::BecomesBlocked, false)
+                        } else {
+                            String::new()
+                        };
                         if !desc.is_empty() {
                             let trigger = PendingTrigger::BecomesBlockedTrigger {
                                 object_id: *attacker_id,
@@ -1104,8 +1122,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
                     for (eq_id, eq_card_id, eq_controller) in att_attached {
-                        if registry.get(eq_card_id).is_some() {
-                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::BecomesBlocked, false);
+                        if let Some(b) = registry.get(eq_card_id) {
+                            let desc = if b.should_trigger_on_becomes_blocked(state, eq_id, *blocker_id, registry) {
+                                trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::BecomesBlocked, false)
+                            } else {
+                                String::new()
+                            };
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::BecomesBlockedTrigger {
                                     object_id: eq_id,

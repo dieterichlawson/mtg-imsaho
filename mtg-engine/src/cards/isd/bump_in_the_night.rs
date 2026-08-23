@@ -39,7 +39,7 @@ impl CardBehavior for BumpInTheNight {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Player(player_id)) = targets.first() {
             let old_life = state.get_player(*player_id).life;
             let new_life = old_life - 3;
@@ -50,6 +50,5 @@ impl CardBehavior for BumpInTheNight {
                 new_life,
             });
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

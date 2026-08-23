@@ -83,30 +83,26 @@ impl CardBehavior for WoodenStake {
         }
     }
 
+    // "Whenever equipped creature blocks or becomes blocked by a Vampire" —
+    // the Vampire condition is part of the trigger itself (CR 603.2), so it
+    // gates dispatch; the resolution handlers re-check for defense in depth.
+    fn should_trigger_on_blocks(&self, state: &GameState, _self_id: ObjectId, blocked_attacker: ObjectId, registry: &CardRegistry) -> bool {
+        state.has_subtype(blocked_attacker, "Vampire", registry)
+    }
+
+    fn should_trigger_on_becomes_blocked(&self, state: &GameState, _self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) -> bool {
+        state.has_subtype(blocker_id, "Vampire", registry)
+    }
+
     fn on_blocks(&self, state: &mut GameState, _self_id: ObjectId, other_creature: ObjectId, registry: &CardRegistry) {
-        // Check if the other creature is a Vampire.
-        let is_vampire = state.get_object(other_creature)
-            .and_then(|o| registry.card_data(o.card_id))
-            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Vampire"));
-
-        // Also check instance subtypes on the game object (for tokens, etc.).
-        let is_vampire = is_vampire || state.get_object(other_creature)
-            .is_some_and(|o| o.subtypes.iter().any(|s| s == "Vampire"));
-
-        if is_vampire {
+        if state.has_subtype(other_creature, "Vampire", registry) {
             state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", state.obj_name(other_creature)));
             crate::destruction::try_destroy_no_regen(state, other_creature, registry);
         }
     }
 
     fn on_becomes_blocked(&self, state: &mut GameState, _self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) {
-        // Same check: if the blocker is a Vampire, destroy it.
-        let is_vampire = state.get_object(blocker_id)
-            .and_then(|o| registry.card_data(o.card_id))
-            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Vampire"))
-            || state.get_object(blocker_id)
-                .is_some_and(|o| o.subtypes.iter().any(|s| s == "Vampire"));
-        if is_vampire {
+        if state.has_subtype(blocker_id, "Vampire", registry) {
             state.log(crate::state::LogLevel::Event, format!("Wooden Stake destroys {} (Vampire)", state.obj_name(blocker_id)));
             crate::destruction::try_destroy_no_regen(state, blocker_id, registry);
         }

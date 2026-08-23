@@ -51,8 +51,11 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
 
         // Identify creatures that need to leave the battlefield.
         let creature_ids: Vec<_> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+            .filter(|o| o.zone == Zone::Battlefield)
             .map(|o| o.id)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter(|&id| state.is_creature(id, registry))
             .collect();
 
         // Classify each creature: zero toughness vs lethal damage/deathtouch.
@@ -65,12 +68,14 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
             let obj = state.get_object(id);
             let damage = obj.map_or(0, |o| o.damage_marked);
             let deathtouch = obj.is_some_and(|o| o.dealt_deathtouch_damage);
-            // Skip creatures with a pending copy-replacement effect (CR 614.1d)
-            // — their 0/0 base P/T will be replaced once the copy resolves.
-            let entering_copy = state.get_object(id).is_some_and(|o| o.entering_copy_source)
-                || state.get_object(id)
-                    .and_then(|o| registry.get(o.card_id))
-                    .is_some_and(super::cards::CardBehavior::enters_as_copy);
+            // Skip creatures whose "enters as a copy" choice is still pending
+            // (CR 614.1d) — their printed 0/0 P/T is replaced once the copy
+            // resolves. The guard is the transient `entering_copy_source`
+            // flag, armed at entry and cleared when the choice concludes
+            // (success, decline, or no legal target). It is deliberately NOT
+            // the static `enters_as_copy()` card property, which would leave
+            // every such permanent permanently unkillable.
+            let entering_copy = state.get_object(id).is_some_and(|o| o.entering_copy_source);
             match effective_t {
                 Some(t) if t <= 0 && !entering_copy => {
                     // Rule 704.5f: 0 or less toughness — not destruction,
@@ -234,23 +239,14 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         let pw_zero_loyalty: Vec<_> = state.objects.values()
             .filter(|o| {
                 o.zone == Zone::Battlefield
-                    && o.card_types.contains(&crate::types::CardType::Planeswalker)
                     && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
             })
             .map(|o| o.id)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter(|&id| state.has_card_type(id, crate::types::CardType::Planeswalker, registry))
             .collect();
-        // Also check via registry for non-token planeswalkers.
-        let pw_zero_loyalty_registry: Vec<_> = state.objects.values()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && !o.card_types.contains(&crate::types::CardType::Planeswalker)
-                    && registry.card_data(o.card_id)
-                        .is_some_and(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
-                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
-            })
-            .map(|o| o.id)
-            .collect();
-        for id in pw_zero_loyalty.into_iter().chain(pw_zero_loyalty_registry) {
+        for id in pw_zero_loyalty {
             state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
                 state.obj_name(id)));
             state.move_object(id, Zone::Graveyard, registry);

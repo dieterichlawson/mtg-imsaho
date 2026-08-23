@@ -114,22 +114,16 @@ fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
     // (otherwise Evil Twin's ETB silently no-ops).
     let _bears = ready_creature(&mut state, P1, 2, 2);
 
-    // Evil Twin enters the battlefield as the printed 0/0 Shapeshifter.
+    // Evil Twin enters the battlefield as the printed 0/0 Shapeshifter
+    // through the real entry chokepoint (move_object), which arms the
+    // transient SBA copy-guard (CR 614.1d).
     let evil_twin_card_id = registry.get_id_by_name("Evil Twin").unwrap();
-    let twin = state.create_object(
-        evil_twin_card_id,
-        P0,
-        Zone::Battlefield,
-        Some(0),
-        Some(0),
-    );
+    let twin = state.create_object(evil_twin_card_id, P0, Zone::Hand, Some(0), Some(0));
     state.get_object_mut(twin).unwrap().name = "Evil Twin".into();
-    state.get_object_mut(twin).unwrap().card_types = vec![CardType::Creature];
+    state.move_object(twin, Zone::Battlefield, &registry);
 
-    // Run SBA. Today this kills Evil Twin (0 toughness → SBA 704.5f).
-    // Post-fix, Evil Twin should survive long enough for its copy
-    // mechanic to apply (whether via dynamic_pt override, replacement
-    // effect, or some other mechanism).
+    // Run SBA. The copy-guard armed at entry keeps the 0/0 alive so the
+    // copy choice (resolved via the ETB trigger) has its chance to apply.
     mtg_engine::sba::check_state_based_actions(&mut state, &registry);
 
     let still_on_battlefield = state.get_object(twin).map(|o| o.zone) == Some(Zone::Battlefield);
@@ -137,9 +131,9 @@ fn bug_bj_evil_twin_survives_sba_before_copy_effect_resolves() {
         still_on_battlefield,
         "Evil Twin should not be killed by SBA on entry — its copy \
          effect (CR 614.1d 'enter as a copy') needs the chance to apply \
-         first. Bug BJ: evil_twin.rs declares 0/0 base P/T and uses an \
-         ETB trigger for the copy, so SBA 704.5f kills it before the \
-         trigger resolves. Current zone: {:?}",
+         first. The move_object entry chokepoint arms entering_copy_source \
+         so SBA 704.5f can't kill the printed 0/0 before the ETB copy \
+         resolves. Current zone: {:?}",
         state.get_object(twin).map(|o| o.zone),
     );
 }
@@ -313,6 +307,7 @@ fn bug_by_geist_angel_token_defender_matches_geist() {
     state.combat = Some(CombatState {
         attackers,
         blocker_assignments: HashMap::new(),
+        ..Default::default()
     });
 
     let geist_card_id = state.get_object(geist).unwrap().card_id;

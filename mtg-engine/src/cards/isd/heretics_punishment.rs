@@ -102,36 +102,12 @@ impl CardBehavior for HereticsPunishment {
         // Deal damage to target equal to highest mana value.
         if max_mv > 0 {
             let target = targets.first().unwrap();
-            match target {
-                Target::Object(target_id) => {
-                    if let Some(obj) = state.get_object_mut(*target_id) {
-                        if obj.zone == Zone::Battlefield {
-                            obj.damage_marked += max_mv;
-                            obj.damaged_by.push(object_id);
-                        }
-                    }
-                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: object_id,
-                        target: crate::events::DamageTarget::Object(*target_id),
-                        amount: max_mv,
-                    });
-                }
-                Target::Player(player_id) => {
-                    let old = state.get_player(*player_id).life;
-                    let new_life = old - i32::try_from(max_mv).unwrap_or(i32::MAX);
-                    state.get_player_mut(*player_id).life = new_life;
-                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: object_id,
-                        target: crate::events::DamageTarget::Player(*player_id),
-                        amount: max_mv,
-                    });
-                    state.events.push(crate::events::GameEvent::LifeChanged {
-                        player: *player_id,
-                        old,
-                        new_life,
-                    });
-                }
-            }
+            let damage_target = match target {
+                Target::Object(target_id) => crate::events::DamageTarget::Object(*target_id),
+                Target::Player(player_id) => crate::events::DamageTarget::Player(*player_id),
+            };
+            crate::damage::deal_damage(state, object_id, damage_target, max_mv,
+                crate::damage::DamageKind::NonCombat, registry);
         }
 
         state.log(crate::state::LogLevel::Event,

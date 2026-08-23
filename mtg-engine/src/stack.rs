@@ -4,29 +4,6 @@ use crate::events::GameEvent;
 use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
-fn check_target_filter(state: &GameState, obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter, caster: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
-    use crate::cards::TargetFilter;
-    match filter {
-        TargetFilter::YouControl => obj.controller == caster,
-        TargetFilter::YouDontControl => obj.controller != caster,
-        TargetFilter::NotSubtypes(types) => {
-            !types.iter().any(|t| obj.subtypes.contains(t))
-        }
-        TargetFilter::HasSubtype(subtype) => {
-            obj.subtypes.contains(subtype)
-                || registry.card_data(obj.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
-        }
-        TargetFilter::HasKeyword(keyword) => {
-            state.has_keyword(obj.id, *keyword, registry)
-        }
-        TargetFilter::PowerAtLeast(n) => {
-            state.effective_power(obj.id, registry).unwrap_or(0) >= *n
-        }
-        _ => true,
-    }
-}
-
 /// Check if a target is still legal at resolution time.
 pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement, caster: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
     use crate::cards::TargetRequirement;
@@ -69,7 +46,11 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                         _ => None,
                     };
                     if let Some(filter) = filter {
-                        if !check_target_filter(state, obj, filter, caster, registry) {
+                        // Re-run the full canonical filter check: a target
+                        // whose characteristics changed in response (e.g. a
+                        // creature that became black vs a Nonblack filter)
+                        // is no longer legal (CR 608.2b).
+                        if !crate::engine::matches_target_filter(state, obj, filter, caster, None, registry) {
                             return false;
                         }
                     }
@@ -158,6 +139,10 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
     state.log(LogLevel::Event, format!("{} resolved", state.obj_name(object_id)));
     state.events.push(GameEvent::SpellResolved { object: object_id });
 
+    // Track the spell so the ENGINE owns its post-resolution cleanup, even
+    // when resolution is suspended on a player choice.
+    state.resolving_spell = Some(object_id);
+
     // Call the card's on_resolve behavior with targets.
     if let Some(behavior) = registry.get(card_id) {
         behavior.on_resolve(state, object_id, &targets, registry);
@@ -165,13 +150,15 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
 
     // If the card set an awaiting_action, it's mid-resolution (e.g., Unburial
     // Rites waiting for player to choose a creature). Don't clean up yet —
-    // the ResolveChoice handler in submit_action will do that.
+    // `engine::finish_spell_resolution_if_idle` moves the spell once the
+    // choice chain completes (CR 608.2m: graveyard as the final step).
     if state.awaiting_action.is_some() {
         return;
     }
 
     // If the card is still on the stack after resolution, move it to the
     // appropriate zone. Flashback spells go to exile; others to graveyard.
+    state.resolving_spell = None;
     if let Some(obj) = state.get_object(object_id) {
         if obj.zone == Zone::Stack {
             state.move_spell_after_resolve(object_id, registry);

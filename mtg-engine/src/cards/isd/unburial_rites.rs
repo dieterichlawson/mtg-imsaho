@@ -31,7 +31,7 @@ impl CardBehavior for UnburialRites {
         TargetRequirement::GraveyardCreature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // The target was chosen at cast time; use it directly.
         if let Some(Target::Object(id)) = targets.first() {
             let id = *id;
@@ -40,6 +40,5 @@ impl CardBehavior for UnburialRites {
             state.log(LogLevel::Event, format!("{returned_name} returned to the battlefield"));
         }
         // If target is missing (fizzled), do nothing — just clean up.
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

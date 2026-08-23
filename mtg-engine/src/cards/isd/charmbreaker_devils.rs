@@ -81,6 +81,18 @@ impl CardBehavior for CharmbreakerDevils {
         }
     }
 
+    // "Whenever you cast an instant or sorcery spell" — both restrictions
+    // are part of the trigger condition (CR 603.2) and gate dispatch.
+    fn should_trigger_on_spell_cast(&self, state: &GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, registry: &CardRegistry) -> bool {
+        let controller = match state.get_object(self_id) {
+            Some(o) => o.controller,
+            None => return false,
+        };
+        caster == controller
+            && (state.has_card_type(spell_id, CardType::Instant, registry)
+                || state.has_card_type(spell_id, CardType::Sorcery, registry))
+    }
+
     fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,

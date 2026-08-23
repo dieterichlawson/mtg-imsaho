@@ -63,6 +63,5 @@ impl CardBehavior for BlasphemousAct {
         }
         state.log(crate::state::LogLevel::Event,
             "Blasphemous Act deals 13 damage to each creature".into());
-        state.move_spell_after_resolve(object_id, registry);
     }
 }
