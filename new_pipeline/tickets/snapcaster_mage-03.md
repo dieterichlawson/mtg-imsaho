@@ -1,11 +1,15 @@
 ---
 id: snapcaster_mage-03
-status: new
+status: fixed
 card: Snapcaster Mage
 audit_run_id: 2026-04-19-snapcaster_mage-audit
 audit_model: sonnet
 audit_tokens: 34984
 audit_duration: 719
+fixed_sha: 8f754da4380b632f90aa42b773f2c5f872a1fa27
+fixed_at: 2026-08-23T23:10:08Z
+test_file: mtg-engine/tests/flashback_multiple_instances.rs
+fix_note: cluster fix: every available flashback cost is offered as its own castable option (CR 702.33); no-mana-cost cards no longer get a free one (702.33a)
 ---
 
 ## Audit Finding

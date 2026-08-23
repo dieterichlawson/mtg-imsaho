@@ -1,11 +1,15 @@
 ---
 id: past_in_flames-02
-status: new
+status: fixed
 card: Past in Flames
 audit_run_id: 2026-04-19-past_in_flames-audit
 audit_model: sonnet
 audit_tokens: 47972
 audit_duration: 925
+fixed_sha: 8f754da4380b632f90aa42b773f2c5f872a1fa27
+fixed_at: 2026-08-23T23:10:08Z
+test_file: mtg-engine/tests/flashback_multiple_instances.rs
+fix_note: cluster fix: every available flashback cost is offered as its own castable option (CR 702.33); no-mana-cost cards no longer get a free one (702.33a)
 ---
 
 ## Audit Finding
