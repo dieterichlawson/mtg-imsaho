@@ -2871,8 +2871,19 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         }
                     }
                     (ResolutionChoiceKind::ChooseTarget { effect, .. },
-                     ResolvedChoice::ChosenTarget(Some(t))) => {
-                        apply_pending_effect(&mut new_state, t, effect, registry);
+                     ResolvedChoice::ChosenTarget(chosen)) => {
+                        if let Some(t) = chosen {
+                            apply_pending_effect(&mut new_state, t, effect, registry);
+                        }
+                        // If this was an "enters as a copy" choice (Evil Twin)
+                        // and the player declined, the copy never resolves —
+                        // disarm the SBA guard so the printed 0/0 can die.
+                        // (On accept, the CopyCreature handler already did.)
+                        if let crate::state::PendingEffect::CopyCreature { source_id } = effect {
+                            if let Some(obj) = new_state.get_object_mut(*source_id) {
+                                obj.entering_copy_source = false;
+                            }
+                        }
                     }
                     (ResolutionChoiceKind::ChooseCardFromHand { .. },
                      ResolvedChoice::ChosenCard(discard_id)) => {
@@ -3570,6 +3581,9 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 // copies an Evil Twin (the target carries the marker).
                 let _ = is_evil_twin; // retained from target for documentation; source always gets it
                 obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
+                // The copy has resolved — disarm the SBA copy-guard so the
+                // permanent is once again subject to state-based actions.
+                obj.entering_copy_source = false;
             }
             state.log(LogLevel::Event,
                 format!("Evil Twin enters as a copy of {}", state.obj_name(*target_id)));

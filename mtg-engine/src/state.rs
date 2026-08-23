@@ -659,6 +659,24 @@ impl GameState {
             }
         }
 
+        // CR 614.1d: a permanent that "enters as a copy" via a player choice
+        // (Evil Twin) resolves that choice through an ETB trigger, so it
+        // briefly exists as its printed 0/0 before the copy applies. Arm the
+        // SBA copy-guard AT ENTRY — the single moment before any SBA runs —
+        // so the 0/0 isn't destroyed in the window before the trigger
+        // resolves. The guard is a transient flag cleared when the copy
+        // decision concludes (see the CopyCreature handler and the copy-choice
+        // resolution path); SBA consults only that flag, never a static
+        // card property.
+        if to == Zone::Battlefield && from != Some(Zone::Battlefield)
+            && registry.get(self.objects.get(&id).map_or(CardId(0), |o| o.card_id))
+                .is_some_and(super::cards::CardBehavior::enters_as_copy)
+        {
+            if let Some(obj) = self.objects.get_mut(&id) {
+                obj.entering_copy_source = true;
+            }
+        }
+
         // Emit zone-change events outside the mutable borrow.
         if let Some(from_zone) = from {
             if from_zone == Zone::Battlefield && to != Zone::Battlefield {
