@@ -2946,16 +2946,8 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         };
                         let to_return: Vec<ObjectId> = new_state.objects_in_zone(Zone::Graveyard, *controller)
                             .iter()
-                            .filter(|o| {
-                                // Check object's own card_types first, fall back to registry
-                                if o.card_types.is_empty() {
-                                    registry.card_data(o.card_id)
-                                        .is_some_and(|d| d.card_types.contains(&card_type))
-                                } else {
-                                    o.card_types.contains(&card_type)
-                                }
-                            })
                             .map(|o| o.id)
+                            .filter(|id| new_state.has_card_type(*id, card_type, registry))
                             .collect();
                         let count = to_return.len();
                         for id in to_return {
@@ -3325,20 +3317,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::AddCounters { count, human_bonus }) => {
             let mut final_count = *count;
             if *human_bonus {
-                let is_human = state.get_object(*id)
-                    .is_some_and(|o| {
-                        if o.subtypes.iter().any(|s| s == "Human") {
-                            true
-                        } else if o.is_transformed {
-                            registry.get(o.card_id)
-                                .and_then(super::cards::CardBehavior::back_face_data)
-                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        } else {
-                            registry.card_data(o.card_id)
-                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        }
-                    });
-                if is_human {
+                if state.has_subtype(*id, "Human", registry) {
                     final_count = count * 2;
                 }
             }
@@ -3494,18 +3473,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
 
             // Find all creature cards in library for the player to choose from.
             let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
-                .filter(|&&lib_id| {
-                    if let Some(obj) = state.get_object(lib_id) {
-                        if obj.card_types.is_empty() {
-                            registry.card_data(obj.card_id)
-                                .is_some_and(|d| d.card_types.contains(&CardType::Creature))
-                        } else {
-                            obj.card_types.contains(&CardType::Creature)
-                        }
-                    } else {
-                        false
-                    }
-                })
+                .filter(|&&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
                 .copied()
                 .collect();
 
@@ -3579,10 +3547,16 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 };
 
             if let Some(obj) = state.get_object_mut(*source_id) {
+                // Setting `card_id` is what makes this object a copy: every
+                // characteristics accessor now resolves through the copied
+                // card's face. The object-level vectors are only carried over
+                // when the *source* had runtime grants of its own (a token's
+                // printed types, or a subtype some effect added to it) — they
+                // are grants, not a duplicate of the copied face.
+                obj.card_id = card_id;
                 obj.name.clone_from(&name);
                 obj.power = power;
                 obj.toughness = toughness;
-                obj.card_id = card_id;
                 obj.keywords = keywords;
                 obj.card_types = card_types;
                 obj.subtypes = subtypes;
@@ -3914,21 +3888,6 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
 
             let card_data = registry.card_data(card_id).expect("card must be in registry");
 
-            // Derive colors from mana cost.
-            let colors: Vec<Color> = card_data.cost.as_ref()
-                .map(|cost| {
-                    let mut c = Vec::new();
-                    for sym in &cost.symbols {
-                        if let ManaSymbol::Colored(color) = sym {
-                            if !c.contains(color) {
-                                c.push(*color);
-                            }
-                        }
-                    }
-                    c
-                })
-                .unwrap_or_default();
-
             for _ in 0..*count {
                 let obj_id = state.create_object(
                     card_id,
@@ -3937,12 +3896,17 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
                     card_data.power,
                     card_data.toughness,
                 );
+                // Printed characteristics are NOT copied onto the object: they
+                // live on the card's active face and are read through the
+                // characteristics accessors. Copying them here was the source
+                // of a test/production split — a real game's objects had
+                // populated `card_types`/`subtypes`/`colors` while every object
+                // built by `create_object` (tests, tokens, reanimation) had them
+                // empty, so code reading the raw fields worked in play and
+                // silently did nothing under test. `name` stays as a display
+                // cache; `name_of` is the authoritative read.
                 let obj = state.get_object_mut(obj_id).expect("object must exist for library draw");
-                obj.colors.clone_from(&colors);
                 obj.name.clone_from(card_name);
-                obj.keywords.clone_from(&card_data.keywords);
-                obj.card_types.clone_from(&card_data.card_types);
-                obj.subtypes.clone_from(&card_data.subtypes);
                 library_ids.push(obj_id);
             }
         }

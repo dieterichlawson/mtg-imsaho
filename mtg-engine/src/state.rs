@@ -679,13 +679,14 @@ impl GameState {
                     obj.colors.clear();
                 }
                 // CR 712.8a: a DFC that isn't on the battlefield or the stack
-                // has only its front-face characteristics.
+                // has only its front-face characteristics. Clearing
+                // `is_transformed` is all it takes — every characteristics
+                // accessor resolves through `face_data`, which now reads the
+                // front face again. Only `name` needs writing back, because it
+                // is a display cache with no registry lookup behind it.
                 if obj.is_transformed {
-                    let front = registry.get(obj.card_id).map(|b| b.card_data());
-                    if let Some(data) = front {
-                        obj.name.clone_from(&data.name);
-                        obj.keywords.clone_from(&data.keywords);
-                        obj.subtypes.clone_from(&data.subtypes);
+                    if let Some(front) = registry.get(obj.card_id).map(|b| b.card_data()) {
+                        obj.name.clone_from(&front.name);
                     }
                 }
                 obj.is_transformed = false;
@@ -965,25 +966,7 @@ impl GameState {
             CreatureFilter::ControlledByYou => creature.controller == source_controller,
             CreatureFilter::ControlledByOpponent => creature.controller != source_controller,
             CreatureFilter::ControlledByYouToken => creature.controller == source_controller && creature.is_token,
-            CreatureFilter::HasSubtype(subtype) => {
-                // For transformed DFCs, use back face subtypes instead of front face.
-                if creature.is_transformed {
-                    if let Some(behavior) = registry.get(creature.card_id) {
-                        if let Some(back) = behavior.back_face_data() {
-                            if back.subtypes.iter().any(|s| s == subtype) {
-                                return true;
-                            }
-                        }
-                    }
-                } else {
-                    // Check card data subtypes first, then object-level subtypes (for tokens).
-                    if registry.card_data(creature.card_id)
-                        .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype)) {
-                        return true;
-                    }
-                }
-                creature.subtypes.iter().any(|s| s == subtype)
-            }
+            CreatureFilter::HasSubtype(subtype) => self.has_subtype(creature_id, subtype, registry),
             CreatureFilter::HasKeyword(kw) => self.has_keyword(creature_id, *kw, registry),
             CreatureFilter::And(filters) => filters.iter().all(|f| self.matches_filter(creature_id, f, source_controller, registry)),
             CreatureFilter::Or(filters) => filters.iter().any(|f| self.matches_filter(creature_id, f, source_controller, registry)),
@@ -1081,7 +1064,7 @@ impl GameState {
                 }
                 // Dynamic P/T from auras (e.g., Wreath of Geists: +X/+X where X = creatures in graveyard).
                 if source.attached_to == Some(creature_id) {
-                    if let Some((p, t)) = behavior.dynamic_pt(self, source.id) {
+                    if let Some((p, t)) = behavior.dynamic_pt(self, source.id, registry) {
                         power += p;
                         toughness += t;
                     }
@@ -1161,7 +1144,7 @@ impl GameState {
             // dynamic_pt: equipment/aura dynamic_pt contributes to the
             // attached creature, not to the source itself.
             if obj.power.is_some() {
-                if let Some((p, _)) = behavior.dynamic_pt(self, id) {
+                if let Some((p, _)) = behavior.dynamic_pt(self, id, registry) {
                     p
                 } else {
                     obj.power?
@@ -1227,7 +1210,7 @@ impl GameState {
             // Check if this creature's own card has dynamic P/T. Same
             // creature-only guard as effective_power — see comment there.
             if obj.toughness.is_some() {
-                if let Some((_, t)) = behavior.dynamic_pt(self, id) {
+                if let Some((_, t)) = behavior.dynamic_pt(self, id, registry) {
                     t
                 } else {
                     obj.toughness?
@@ -1342,8 +1325,17 @@ impl GameState {
                 return true;
             }
         } else {
-            // 0. No registry entry (tokens, anonymous objects): fall back to
-            //    keywords stored directly on the object.
+            // No registry entry (tokens, anonymous objects): `obj.keywords` is
+            // where their printed keywords live.
+            //
+            // Deliberately NOT unioned in for a card that HAS a face, unlike
+            // subtypes and colors. Those are granted at runtime by writing the
+            // object vector (Olivia Voldaren's "Vampire", Grimoire of the
+            // Dead's black), so they have to be unioned. Keywords have a real
+            // effects layer instead — `ContinuousEffect::GrantKeyword` and
+            // `TemporaryEffect`, handled below — and nothing grants one by
+            // writing here. Unioning would resurrect a stale front-face
+            // keyword on a transformed DFC.
             if obj.keywords.contains(&keyword) {
                 return true;
             }
@@ -1520,23 +1512,15 @@ impl GameState {
         use crate::types::EffectCondition;
         match condition {
             EffectCondition::YouControlSubtype(subtype) => {
-                self.objects.values().any(|o| {
-                    o.zone == Zone::Battlefield && o.controller == controller && (
-                        o.subtypes.iter().any(|s| s == subtype)
-                        || registry.card_data(o.card_id)
-                            .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
-                    )
-                })
+                self.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield && o.controller == controller)
+                    .any(|o| self.has_subtype(o.id, subtype, registry))
             }
             EffectCondition::OpponentControlsSubtype(subtype) => {
                 let opponent = self.opponent(controller);
-                self.objects.values().any(|o| {
-                    o.zone == Zone::Battlefield && o.controller == opponent && (
-                        o.subtypes.iter().any(|s| s == subtype)
-                        || registry.card_data(o.card_id)
-                            .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
-                    )
-                })
+                self.objects.values()
+                    .filter(|o| o.zone == Zone::Battlefield && o.controller == opponent)
+                    .any(|o| self.has_subtype(o.id, subtype, registry))
             }
             EffectCondition::SelfHasKeyword(kw) => {
                 let removed = self.until_end_of_turn.iter().any(|e| matches!(e,
@@ -1546,15 +1530,7 @@ impl GameState {
                 if removed {
                     return false;
                 }
-                self.get_object(source_id)
-                    .is_some_and(|o| {
-                        if o.keywords.contains(kw) {
-                            true
-                        } else {
-                            registry.card_data(o.card_id)
-                                .is_some_and(|d| d.keywords.contains(kw))
-                        }
-                    })
+                self.has_keyword(source_id, *kw, registry)
             }
             EffectCondition::AttachedHasSubtype(subtype) => {
                 // Subtypes are additive: `obj.subtypes` holds only what was
@@ -1641,14 +1617,32 @@ impl GameState {
 
     // ===== Characteristics layer =====
     //
-    // Single source of truth for an object's printed characteristics.
-    // Resolution order: object-level fields (set for tokens and copies)
-    // → active face (back face when transformed) → registry front face.
+    // THE RULE: an object's characteristics are
     //
-    // Engine code should use these instead of reading `obj.card_types` /
-    // `obj.subtypes` / `obj.colors` directly or calling `registry.card_data`:
-    // object fields are empty for non-token permanents, and raw registry
-    // lookups return front-face data for transformed DFCs.
+    //     printed (its active face)  UNION  granted (its object-level fields)
+    //
+    // `face_data` is the printed half: the back face when a DFC is
+    // transformed, the front face otherwise. The object-level vectors
+    // (`card_types`, `subtypes`, `colors`, `keywords`) are the granted half —
+    // what an effect added at runtime, like Olivia Voldaren's "Vampire" or
+    // Grimoire of the Dead's "Zombie". Tokens are the one exception: they have
+    // no registry face, so their object-level fields carry their printed
+    // characteristics instead.
+    //
+    // Union, never override, and never duplicate the face onto the object.
+    // Both of those went wrong here before: `card_types_of` and `colors_of`
+    // used to return the object's vector *instead of* the face's whenever it
+    // was non-empty, while `subtypes_of` unioned — so the same question got two
+    // different answers depending on which field you asked about. And
+    // `setup_game` used to copy every card's data onto its object while
+    // `create_object` left it empty, so a card's raw fields were populated in a
+    // real game and empty in a test, and code reading them directly appeared to
+    // work while silently doing nothing under test.
+    //
+    // ALWAYS go through these accessors. Reading `obj.card_types` /
+    // `obj.subtypes` / `obj.colors` / `obj.keywords` / `obj.name` directly, or
+    // calling `registry.card_data` (which is always the FRONT face), is a bug —
+    // `characteristics_invariant.rs` fails the build if card code does it.
 
     /// The `CardData` of the object's active face: the back face for a
     /// transformed DFC, the front face otherwise. `None` for objects with
@@ -1665,15 +1659,31 @@ impl GameState {
         Some(behavior.card_data())
     }
 
-    /// Card types of the object: object-level types if set (tokens, copies),
-    /// otherwise the active face's types.
+    /// The object's name, from its active face — the back face when a DFC is
+    /// transformed. `obj.name` is only authoritative for tokens, which have no
+    /// registry face; for a real card it is a display cache that goes stale
+    /// (CR 712.8a: a DFC outside the battlefield has its front face's name).
+    #[must_use]
+    pub fn name_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> String {
+        if let Some(data) = self.face_data(id, registry) {
+            return data.name;
+        }
+        self.get_object(id).map(|o| o.name.clone()).unwrap_or_default()
+    }
+
+    /// Card types of the object: the union of the active face's types and any
+    /// granted at runtime. Union, not override — see the module rule above.
     #[must_use]
     pub fn card_types_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::CardType> {
-        let Some(obj) = self.get_object(id) else { return Vec::new() };
-        if !obj.card_types.is_empty() {
-            return obj.card_types.clone();
+        let mut types = self.get_object(id).map(|o| o.card_types.clone()).unwrap_or_default();
+        if let Some(data) = self.face_data(id, registry) {
+            for t in data.card_types {
+                if !types.contains(&t) {
+                    types.push(t);
+                }
+            }
         }
-        self.face_data(id, registry).map(|d| d.card_types).unwrap_or_default()
+        types
     }
 
     /// Whether the object has the given card type on its active face.
@@ -1715,29 +1725,22 @@ impl GameState {
                 .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
     }
 
-    /// Colors of the object: object-level colors if set, otherwise derived
-    /// from the active face's mana cost. (Color indicators are not modeled;
-    /// object-level colors are populated at setup for all real cards.)
+    /// Colors of the object: the union of any granted at runtime (Grimoire of
+    /// the Dead's black) and those derived from the active face's mana cost.
+    /// (Color indicators are not modeled.)
     #[must_use]
     pub fn colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
-        let Some(obj) = self.get_object(id) else { return Vec::new() };
-        if !obj.colors.is_empty() {
-            return obj.colors.clone();
-        }
-        self.face_data(id, registry)
-            .and_then(|d| d.cost)
-            .map(|cost| {
-                let mut cols = Vec::new();
-                for sym in &cost.symbols {
-                    if let crate::types::ManaSymbol::Colored(c) = sym {
-                        if !cols.contains(c) {
-                            cols.push(*c);
-                        }
+        let mut cols = self.get_object(id).map(|o| o.colors.clone()).unwrap_or_default();
+        if let Some(cost) = self.face_data(id, registry).and_then(|d| d.cost) {
+            for sym in &cost.symbols {
+                if let crate::types::ManaSymbol::Colored(c) = sym {
+                    if !cols.contains(c) {
+                        cols.push(*c);
                     }
                 }
-                cols
-            })
-            .unwrap_or_default()
+            }
+        }
+        cols
     }
 
     /// Continuous effects the object provides: instance-level overrides if
