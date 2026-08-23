@@ -87,17 +87,7 @@ pub fn declare_blockers_with_registry(
             if source.zone != crate::types::Zone::Battlefield {
                 continue;
             }
-            let effects = if let Some(ref inst) = source.instance_continuous_effects {
-                inst.clone()
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                }
-            } else {
-                vec![]
-            };
+            let effects = state.continuous_effects_of(source.id, registry);
             for effect in &effects {
                 if let crate::types::ContinuousEffect::MinimumBlockers { count, scope } = effect {
                     if state.effect_applies_to(att_id, scope, source.id, source.controller, registry) {
@@ -386,13 +376,7 @@ fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, 
         if source.zone != crate::types::Zone::Battlefield {
             continue;
         }
-        let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
-            instance_effects.clone()
-        } else if let Some(behavior) = registry.get(source.card_id) {
-            behavior.card_data().continuous_effects
-        } else {
-            continue;
-        };
+        let effects = state.continuous_effects_of(source.id, registry);
         for effect in &effects {
             if let crate::types::ContinuousEffect::ProtectionFromSubtype { subtype: prot_sub, scope } = effect {
                 if prot_sub == subtype && state.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
@@ -408,30 +392,7 @@ fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, 
 /// Transform-aware: uses back-face data for transformed DFCs.
 #[must_use]
 pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> Vec<String> {
-    let mut subtypes = Vec::new();
-    if let Some(obj) = state.get_object(creature_id) {
-        subtypes.extend(obj.subtypes.iter().cloned());
-        if obj.is_transformed {
-            if let Some(behavior) = registry.get(obj.card_id) {
-                if let Some(back) = behavior.back_face_data() {
-                    for s in &back.subtypes {
-                        if !subtypes.contains(s) {
-                            subtypes.push(s.clone());
-                        }
-                    }
-                    return subtypes;
-                }
-            }
-        }
-        if let Some(data) = registry.card_data(obj.card_id) {
-            for s in &data.subtypes {
-                if !subtypes.contains(s) {
-                    subtypes.push(s.clone());
-                }
-            }
-        }
-    }
-    subtypes
+    state.subtypes_of(creature_id, registry)
 }
 
 /// Check if `creature_a` has protection from `creature_b`.
@@ -451,13 +412,7 @@ fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker
         if source.zone != crate::types::Zone::Battlefield {
             continue;
         }
-        let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
-            instance_effects.clone()
-        } else if let Some(behavior) = registry.get(source.card_id) {
-            behavior.card_data().continuous_effects
-        } else {
-            continue;
-        };
+        let effects = state.continuous_effects_of(source.id, registry);
         for effect in &effects {
             if let crate::types::ContinuousEffect::ProtectionFrom { filter, scope } = effect {
                 if state.effect_applies_to(protected, scope, source.id, source.controller, registry)
@@ -648,7 +603,7 @@ pub fn eligible_attackers(state: &GameState, player: PlayerId, registry: &CardRe
         .filter(|o| {
             o.zone == Zone::Battlefield
                 && o.controller == player
-                && o.power.is_some()
+                && state.is_creature(o.id, registry)
                 && !o.tapped
                 // Haste overrides summoning sickness.
                 && (!o.summoning_sick || state.has_keyword(o.id, Keyword::Haste, registry))
@@ -669,7 +624,7 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardReg
         .filter(|o| {
             o.zone == Zone::Battlefield
                 && o.controller == player
-                && o.power.is_some()
+                && state.is_creature(o.id, registry)
                 && !o.tapped
         })
         .map(|o| o.id)
@@ -706,12 +661,11 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
 
     // Intimidate: can only be blocked by artifact creatures or creatures that share a color.
     if state.has_keyword(attacker_id, Keyword::Intimidate, registry) {
-        let Some(blocker) = state.get_object(blocker_id) else { return false };
-        let is_artifact = registry.card_data(blocker.card_id)
-            .is_some_and(|d| d.card_types.contains(&crate::types::CardType::Artifact));
+        let is_artifact = state.has_card_type(blocker_id, crate::types::CardType::Artifact, registry);
         if !is_artifact {
-            let Some(attacker) = state.get_object(attacker_id) else { return false };
-            let shares_color = attacker.colors.iter().any(|c| blocker.colors.contains(c));
+            let attacker_colors = state.colors_of(attacker_id, registry);
+            let blocker_colors = state.colors_of(blocker_id, registry);
+            let shares_color = attacker_colors.iter().any(|c| blocker_colors.contains(c));
             if !shares_color {
                 return false;
             }

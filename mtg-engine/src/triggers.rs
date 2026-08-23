@@ -583,7 +583,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 // ETB-watch: notify other permanents (and graveyard cards like Dearly Departed)
                 // that a creature entered. Only collect if the watcher's zone matches
                 // the trigger's allowed zones (via CardBehavior::trigger_zones).
-                if state.get_object(*object).is_some_and(|o| o.power.is_some()) {
+                if state.is_creature(*object, registry) {
                     let watchers: Vec<(ObjectId, CardId, PlayerId, Zone)> = state.objects.values()
                         .filter(|o| (o.zone == Zone::Battlefield || o.zone == Zone::Graveyard) && o.id != *object)
                         .map(|o| (o.id, o.card_id, o.controller, o.zone))
@@ -651,19 +651,19 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         None
                     }
                 }).collect();
-                let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
+                let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
                     .filter(|o| o.id != dead_id &&
                         (o.zone == Zone::Battlefield || simultaneously_dead.contains(&o.id)))
-                    .map(|o| (o.id, o.card_id, o.controller))
+                    .map(|o| (o.id, o.card_id, o.controller, o.is_transformed))
                     .collect();
-                for (watcher_id, watcher_card_id, watcher_controller) in watchers {
-                    // Only create death-watch triggers for cards that actually have
-                    // an AnyCreatureDies triggered ability.
-                    let has_death_trigger = registry.get(watcher_card_id)
-                        .is_some_and(|b| b.card_data().triggered_abilities.iter()
-                            .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies));
+                for (watcher_id, watcher_card_id, watcher_controller, watcher_transformed) in watchers {
+                    // Only create death-watch triggers for permanents whose ACTIVE
+                    // face has an AnyCreatureDies triggered ability (CR 712.8d —
+                    // a transformed DFC only has its back face's abilities).
+                    let has_death_trigger = state.triggered_abilities_of(watcher_id, registry).iter()
+                        .any(|t| t.kind == crate::cards::TriggerKind::AnyCreatureDies);
                     if has_death_trigger {
-                        let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, false);
+                        let desc = face_trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyCreatureDies, watcher_transformed);
                         let trigger = PendingTrigger::DeathWatch {
                             watcher_id,
                             watcher_card_id,
@@ -713,7 +713,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 if let crate::events::DamageTarget::Object(damaged_id) = target {
                     let source_id = *source;
                     if let Some(obj) = state.get_object(source_id) {
-                        if obj.zone == Zone::Battlefield && obj.power.is_some() {
+                        if obj.zone == Zone::Battlefield && state.is_creature(source_id, registry) {
                             let card_id = obj.card_id;
                             let controller = obj.controller;
                             if registry.get(card_id).is_some() {
@@ -741,7 +741,7 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 if let crate::events::DamageTarget::Player(damaged_player) = target {
                     let source_id = *source;
                     if let Some(obj) = state.get_object(source_id) {
-                        if obj.zone == Zone::Battlefield && obj.power.is_some() {
+                        if obj.zone == Zone::Battlefield && state.is_creature(source_id, registry) {
                             let card_id = obj.card_id;
                             let controller = obj.controller;
 

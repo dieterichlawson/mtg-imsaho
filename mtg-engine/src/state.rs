@@ -1003,27 +1003,10 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            // Check instance-level effects first.
-            if let Some(ref instance_effects) = source.instance_continuous_effects {
-                for effect in instance_effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            return true;
-                        }
-                    }
-                }
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                // Use back face effects when transformed.
-                let effects = if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                };
-                for effect in &effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            return true;
-                        }
+            for effect in self.continuous_effects_of(source.id, registry) {
+                if let Some(scope) = predicate(&effect) {
+                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        return true;
                     }
                 }
             }
@@ -1044,25 +1027,10 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            if let Some(ref instance_effects) = source.instance_continuous_effects {
-                for effect in instance_effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            count += 1;
-                        }
-                    }
-                }
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                let effects = if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                };
-                for effect in &effects {
-                    if let Some(scope) = predicate(effect) {
-                        if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                            count += 1;
-                        }
+            for effect in self.continuous_effects_of(source.id, registry) {
+                if let Some(scope) = predicate(&effect) {
+                    if self.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
+                        count += 1;
                     }
                 }
             }
@@ -1088,9 +1056,17 @@ impl GameState {
             self.get_object(*source_id)
                 .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
         } else if let Some(behavior) = registry.get(obj.card_id) {
-            // Check if this creature's own card has dynamic P/T (e.g., Geist-Honored Monk).
-            if let Some((p, _)) = behavior.dynamic_pt(self, id) {
-                p
+            // Check if this creature's own card has dynamic P/T (e.g.,
+            // Geist-Honored Monk). Only creatures (base P/T set — CDA
+            // creatures use the Some(0) sentinel) consult their own
+            // dynamic_pt: equipment/aura dynamic_pt contributes to the
+            // attached creature, not to the source itself.
+            if obj.power.is_some() {
+                if let Some((p, _)) = behavior.dynamic_pt(self, id) {
+                    p
+                } else {
+                    obj.power?
+                }
             } else {
                 obj.power?
             }
@@ -1149,9 +1125,14 @@ impl GameState {
             self.get_object(*source_id)
                 .map_or(0, |src| i32::try_from(*src.counters.get(&counter_type).unwrap_or(&0)).unwrap_or(i32::MAX))
         } else if let Some(behavior) = registry.get(obj.card_id) {
-            // Check if this creature's own card has dynamic P/T.
-            if let Some((_, t)) = behavior.dynamic_pt(self, id) {
-                t
+            // Check if this creature's own card has dynamic P/T. Same
+            // creature-only guard as effective_power — see comment there.
+            if obj.toughness.is_some() {
+                if let Some((_, t)) = behavior.dynamic_pt(self, id) {
+                    t
+                } else {
+                    obj.toughness?
+                }
             } else {
                 obj.toughness?
             }
@@ -1318,21 +1299,8 @@ impl GameState {
     pub fn has_protection_from(&self, target_id: ObjectId, source_id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
         use crate::types::ContinuousEffect;
 
-        // Get the source's subtypes.
-        let source_subtypes: Vec<String> = self.get_object(source_id)
-            .map(|o| {
-                let mut subs = o.subtypes.clone();
-                // Also get subtypes from registry.
-                if let Some(data) = registry.card_data(o.card_id) {
-                    for s in &data.subtypes {
-                        if !subs.contains(s) {
-                            subs.push(s.clone());
-                        }
-                    }
-                }
-                subs
-            })
-            .unwrap_or_default();
+        // Get the source's subtypes (active face — transform-aware).
+        let source_subtypes: Vec<String> = self.subtypes_of(source_id, registry);
 
         // Check ProtectionFromSubtype effects on the target.
         let has_subtype_protection = self.has_continuous_effect(target_id, &|e| {
@@ -1381,17 +1349,7 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
-                instance_effects.clone()
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                }
-            } else {
-                continue
-            };
+            let effects = self.continuous_effects_of(source.id, registry);
             for effect in &effects {
                 let (condition, scope) = if is_attack {
                     match effect {
@@ -1420,17 +1378,7 @@ impl GameState {
             if source.zone != Zone::Battlefield {
                 continue;
             }
-            let effects = if let Some(ref instance_effects) = source.instance_continuous_effects {
-                instance_effects.clone()
-            } else if let Some(behavior) = registry.get(source.card_id) {
-                if source.is_transformed {
-                    behavior.back_face_data().map(|d| d.continuous_effects).unwrap_or_default()
-                } else {
-                    behavior.card_data().continuous_effects
-                }
-            } else {
-                continue;
-            };
+            let effects = self.continuous_effects_of(source.id, registry);
             for effect in &effects {
                 if let ContinuousEffect::ConditionalKeyword { keyword: kw, condition, scope } = effect {
                     if *kw != keyword {
@@ -2298,5 +2246,20 @@ mod tests {
         state.get_object_mut(id).unwrap().is_transformed = true;
         let subs = state.subtypes_of(id, &registry);
         assert!(subs.iter().any(|s| s == "Werewolf"), "back face subtypes: {subs:?}");
+    }
+
+    #[test]
+    fn equipment_dynamic_pt_does_not_leak_into_own_effective_pt() {
+        // Runechanter's Pike implements dynamic_pt for the equipped creature.
+        // The equipment itself (base P/T None) must not report effective P/T.
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let pike = registry.get_id_by_name("Runechanter's Pike").unwrap();
+        let id = state.create_object(pike, PlayerId(0), Zone::Battlefield, None, None);
+
+        assert_eq!(state.effective_power(id, &registry), None,
+            "equipment must not have effective power from its own dynamic_pt");
+        assert_eq!(state.effective_toughness(id, &registry), None,
+            "equipment must not have effective toughness from its own dynamic_pt");
     }
 }

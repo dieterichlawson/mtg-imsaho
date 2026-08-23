@@ -51,8 +51,11 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
 
         // Identify creatures that need to leave the battlefield.
         let creature_ids: Vec<_> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+            .filter(|o| o.zone == Zone::Battlefield)
             .map(|o| o.id)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter(|&id| state.is_creature(id, registry))
             .collect();
 
         // Classify each creature: zero toughness vs lethal damage/deathtouch.
@@ -234,23 +237,14 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         let pw_zero_loyalty: Vec<_> = state.objects.values()
             .filter(|o| {
                 o.zone == Zone::Battlefield
-                    && o.card_types.contains(&crate::types::CardType::Planeswalker)
                     && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
             })
             .map(|o| o.id)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .filter(|&id| state.has_card_type(id, crate::types::CardType::Planeswalker, registry))
             .collect();
-        // Also check via registry for non-token planeswalkers.
-        let pw_zero_loyalty_registry: Vec<_> = state.objects.values()
-            .filter(|o| {
-                o.zone == Zone::Battlefield
-                    && !o.card_types.contains(&crate::types::CardType::Planeswalker)
-                    && registry.card_data(o.card_id)
-                        .is_some_and(|d| d.card_types.contains(&crate::types::CardType::Planeswalker))
-                    && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) == 0
-            })
-            .map(|o| o.id)
-            .collect();
-        for id in pw_zero_loyalty.into_iter().chain(pw_zero_loyalty_registry) {
+        for id in pw_zero_loyalty {
             state.log(LogLevel::Event, format!("{} has 0 loyalty and is put into graveyard",
                 state.obj_name(id)));
             state.move_object(id, Zone::Graveyard, registry);
