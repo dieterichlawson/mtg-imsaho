@@ -449,6 +449,20 @@ pub trait CardBehavior: Send + Sync {
     /// DISPATCH time. Default: trigger for every block.
     fn should_trigger_on_becomes_blocked(&self, _state: &GameState, _self_id: ObjectId, _blocker_id: ObjectId, _registry: &CardRegistry) -> bool { true }
 
+    /// CR 603.4: the "intervening if" clause of a triggered ability is checked
+    /// when the ability would trigger, not only when it resolves. If the
+    /// condition is false at that moment the ability never goes on the stack —
+    /// so the phantom stack entry, and the priority window it opens, must not
+    /// exist. Consulted at DISPATCH time in `collect_triggers` for the step
+    /// (upkeep / end step / end of combat) and enters-the-battlefield paths.
+    ///
+    /// Cards whose trigger text reads "At the beginning of ..., **if** X" or
+    /// "When this enters, **if** X" must override this to mirror X; the
+    /// resolution handler should keep the same check for defence in depth,
+    /// since the condition is checked a second time on resolution.
+    /// Default: no intervening-if clause, so the ability always triggers.
+    fn should_trigger(&self, _state: &GameState, _self_id: ObjectId, _kind: &TriggerKind, _registry: &CardRegistry) -> bool { true }
+
     /// Loyalty abilities for planeswalkers.
     fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
 

@@ -4,9 +4,10 @@
 //! - Spell resolution helpers (`resolve_aura`, `resolve_damage`, `resolve_destroy`)
 //! - Choice presentation helpers (`present_target_choice`, `present_yes_no`, etc.)
 //! - Target collection helpers (`any_targets`, `creature_targets`, etc.)
+//! - Trigger-time condition helpers (`werewolf_should_trigger`, `morbid_should_trigger`)
 
 use crate::actions::Target;
-use crate::cards::CardRegistry;
+use crate::cards::{CardBehavior, CardRegistry, TriggerKind};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
 use crate::types::Zone;
@@ -297,4 +298,46 @@ pub fn format_tap_plan_names(state: &GameState, tap_plan: &[(ObjectId, usize)]) 
         .map(|(n, c)| if c == 1 { n } else { format!("{c}x {n}") })
         .collect();
     format!("tap {}", parts.join(", "))
+}
+
+/// CR 603.4 intervening-if gate for the werewolf day/night transform trigger.
+///
+/// Every werewolf DFC in the set reads "At the beginning of each upkeep, **if**
+/// [no spells were cast last turn | a player cast two or more spells last
+/// turn], transform this creature." That `if` is an intervening-if clause: the
+/// ability only triggers when the condition already holds at the beginning of
+/// upkeep. When it doesn't, nothing goes on the stack — and so no player gets
+/// the priority window that a stack entry would open.
+///
+/// Delegating to the card's own `should_transform` is what keeps the
+/// dispatch-time check and the resolution-time check from ever disagreeing.
+/// Werewolves pass this straight through from `CardBehavior::should_trigger`.
+///
+/// Only `Upkeep` is gated; a werewolf face with an unconditional trigger of
+/// another kind (Howlpack Alpha's end-step Wolf token) still fires normally.
+pub fn werewolf_should_trigger(
+    behavior: &dyn CardBehavior,
+    state: &GameState,
+    self_id: ObjectId,
+    kind: &TriggerKind,
+    registry: &CardRegistry,
+) -> bool {
+    if *kind == TriggerKind::Upkeep {
+        return behavior.should_transform(state, self_id, registry);
+    }
+    true
+}
+
+/// CR 603.4 intervening-if gate for the morbid enters-the-battlefield trigger.
+///
+/// "Morbid — When this creature enters, **if** a creature died this turn, ..."
+/// is an intervening-if clause, so with no creature dead this turn the ability
+/// doesn't trigger and no stack entry appears. Resolution handlers keep their
+/// own `creature_died_this_turn` guard, which is what made the *outcome*
+/// correct before this gate existed — only the phantom stack entry was wrong.
+pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
+    if *kind == TriggerKind::EntersBattlefield {
+        return state.creature_died_this_turn;
+    }
+    true
 }

@@ -563,8 +563,14 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 // trigger on the stack — per MTG rules, only declared triggered abilities
                 // create stack entries.
                 if let Some(behavior) = registry.get(card_id) {
-                    if behavior.has_etb_handler() {
-                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::EntersBattlefield, false);
+                    // CR 603.4: an intervening-if condition is checked here, when
+                    // the ability would trigger — a false condition means no stack
+                    // entry and no priority window at all.
+                    let etb_kind = crate::cards::TriggerKind::EntersBattlefield;
+                    if behavior.has_etb_handler()
+                        && behavior.should_trigger(state, *object, &etb_kind, registry)
+                    {
+                        let desc = trigger_description(registry, card_id, &etb_kind, false);
                         let trigger = PendingTrigger::EnteredBattlefield {
                             object_id: *object,
                             card_id,
@@ -885,6 +891,11 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                 if behavior.step_trigger_scope(&kind, is_transformed) == crate::cards::TriggerScope::Your
                                     && controller != active_player
                                 {
+                                    continue;
+                                }
+                                // CR 603.4: intervening-if is checked at trigger
+                                // time, so a false condition creates no stack entry.
+                                if !behavior.should_trigger(state, obj_id, &kind, registry) {
                                     continue;
                                 }
                                 let trigger = match kind {
