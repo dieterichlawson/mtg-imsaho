@@ -1,11 +1,15 @@
 ---
 id: back_from_the_brink-02
-status: new
+status: fixed
 card: Back from the Brink
 audit_run_id: 2026-04-19-back_from_the_brink-audit
 audit_model: sonnet
 audit_tokens: 35564
 audit_duration: 870
+fixed_sha: ac58079cd610fdd6b957d0dadbe3f542dfd7779c
+fixed_at: 2026-08-23T23:16:15Z
+test_file: mtg-engine/tests/zone_change_resets_object.rs
+fix_note: token copies of DFCs cannot transform (CR 111.7); guarded in apply_transform and at trigger dispatch
 ---
 
 ## Audit Finding

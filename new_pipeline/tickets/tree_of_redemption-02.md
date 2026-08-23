@@ -1,11 +1,15 @@
 ---
 id: tree_of_redemption-02
-status: new
+status: fixed
 card: Tree of Redemption
 audit_run_id: 2026-04-19-tree_of_redemption-audit
 audit_model: sonnet
 audit_tokens: 14966
 audit_duration: 349
+fixed_sha: ac58079cd610fdd6b957d0dadbe3f542dfd7779c
+fixed_at: 2026-08-23T23:16:14Z
+test_file: mtg-engine/tests/zone_change_resets_object.rs
+fix_note: cluster fix: move_object now restores printed identity (card_id/name/base P-T) and clears attached_to_player on leaving the battlefield (CR 400.7)
 ---
 
 ## Audit Finding
