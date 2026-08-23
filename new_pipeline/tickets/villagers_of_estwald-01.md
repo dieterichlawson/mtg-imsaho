@@ -1,11 +1,15 @@
 ---
 id: villagers_of_estwald-01
-status: new
+status: fixed
 card: Villagers of Estwald
 audit_run_id: 2026-04-19-villagers_of_estwald-audit
 audit_model: sonnet
 audit_tokens: 29158
 audit_duration: 548
+fixed_sha: 28755d7786c3882a8061e402a59c15fd2378da86
+fixed_at: 2026-08-23T17:03:38Z
+test_file: mtg-engine/tests/intervening_if.rs
+fix_note: cluster fix: CardBehavior::should_trigger gates dispatch on the intervening-if condition (CR 603.4)
 ---
 
 ## Audit Finding

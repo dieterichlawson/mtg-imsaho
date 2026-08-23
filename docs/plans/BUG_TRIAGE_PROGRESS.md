@@ -28,7 +28,7 @@ never filter through `grep FAILED`.
 | # | Cluster | Tickets | Status |
 |---|---------|--------:|--------|
 | 2 | Protection-from-source in ability targeting | ~10 | **done** |
-| 1 | Intervening-if triggers (CR 603.4) | ~14 | not started |
+| 1 | Intervening-if triggers (CR 603.4) | 12 | **done** |
 | — | Confirm-and-close already-fixed tickets | ~20 | not started |
 | 3 | Enters-tapped replacement effects | ~8 | not started |
 | 4 | Card code reading empty object-level fields | ~7 | not started |
@@ -71,13 +71,68 @@ against the pre-fix engine and green after.
 elder_of_laurels-01, kessig_wolf_run-01, sharpened_pitchfork-01,
 stensia_bloodhall-01, inquisitor_s_flail-01, skirsdag_cultist-03, evil_twin-06.
 
+### Cluster 1 — intervening-if trigger conditions (CR 603.4)
+
+**Root cause.** An intervening-if clause is checked when the ability *would*
+trigger, not only when it resolves; a false condition means the ability never
+goes on the stack. `collect_triggers` had no notion of this — it queued a
+trigger for every permanent whose active face declared one and left the
+condition to the resolution handler. The board ended up correct (which is why
+no existing test caught it), but a phantom stack entry appeared and opened a
+priority window the rules say shouldn't exist.
+
+**Fix.** New `CardBehavior::should_trigger`, consulted at dispatch time on both
+the step (upkeep / end step / end of combat) and ETB paths in
+`collect_triggers`. It follows the existing `should_trigger_on_spell_cast` /
+`_on_blocks` / `_on_becomes_blocked` gates, which solve the same problem for
+CR 603.2 event conditions. Defaults to `true`. It takes the `TriggerKind`, so a
+face with both a conditional and an unconditional trigger (Howlpack Alpha's
+upkeep transform vs. its end-step Wolf token) gates only the conditional one.
+
+Two `helpers` functions carry the shared conditions instead of duplicating
+them across 15 cards: `werewolf_should_trigger` delegates to the card's own
+`should_transform` — which is what stops dispatch-time and resolution-time
+checks from ever disagreeing — and `morbid_should_trigger` reads
+`creature_died_this_turn`.
+
+**Deliberately excluded** (they read as intervening-if but aren't): Cloistered
+Youth ("you may transform"), Screeching Bat ("you may pay {2}{B}{B}"), Delver
+of Secrets (looks at the top card regardless, then transforms on what it finds).
+
+**Test.** `mtg-engine/tests/intervening_if.rs`, 8 tests. They assert on the
+stack after dispatch, not the resolved board, since the board was already
+right. Every condition is covered in both directions across the whole family,
+so the gate can't pass by suppressing everything. 5 of the 8 verified red
+against the pre-fix engine.
+
+**Bug found along the way.** The family test caught `instigator_gang-01`
+independently: Wildblood Pack declared only its `AnyCreatureAttacks` ability,
+and `face_trigger_description` reads the *visible* face's list — so the back
+face had no upkeep trigger and could never turn back into a Human, no matter
+how many spells were cast. Fixed in the same pass.
+
+**Tickets closed:** daybreak_ranger-02, gatstaf_shepherd-01,
+grizzled_outcasts-01, hanweir_watchkeep-01, instigator_gang-01, kruin_outlaw-01,
+reckless_waif-01, tormented_pariah-01, ulvenwald_mystics-01,
+village_ironsmith-01, villagers_of_estwald-01, woodland_sleuth-01.
+
+**Correction to `SESSION_HANDOFF.md`'s grouping.** It listed
+`mentor_of_the_meek-01` and `wooden_stake-01` in this cluster; reading the
+tickets, neither is intervening-if. `mentor_of_the_meek-01` wants the entering
+creature's power *snapshotted* into `PendingTrigger::EnterWatch` at trigger
+time (CR 603.2 event condition). `wooden_stake-01` is a "blocks a Vampire"
+event condition, which the existing `should_trigger_on_blocks` hook already
+covers. Both are tracked as one-offs instead.
+
 ## Next up
 
-1. Cluster 1, intervening-if (CR 603.4) — biggest single win at ~14 tickets.
-   Condition must be checked when the trigger *would fire*, not at resolution;
-   dispatch site is `mtg-engine/src/triggers.rs:843`.
-2. Confirm-and-close the ~20 tickets `SESSION_HANDOFF.md` believes are already
+1. Confirm-and-close the ~20 tickets `SESSION_HANDOFF.md` believes are already
    fixed. (That doc explicitly corrects one: **unbreathing_horde-01 is still
    open** — it is about counting Zombie *cards* excluding tokens on entry, not
    the fight-damage prevention the damage pipeline fixed.)
-3. Then clusters 3 → 4 → 5 → 6, and the one-off tail last.
+2. Then clusters 3 → 4 → 5 → 6, and the one-off tail last.
+3. `should_trigger` is now the hook for any future intervening-if card — check
+   for one whenever a ticket says "the condition is only evaluated at
+   resolution".
+
+**Backlog count: 24 fixed / 92 open** (was 2 / 114 at the start of this pass).

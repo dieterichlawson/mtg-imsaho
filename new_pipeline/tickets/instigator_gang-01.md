@@ -1,11 +1,15 @@
 ---
 id: instigator_gang-01
-status: new
+status: fixed
 card: Instigator Gang
 audit_run_id: 2026-04-19-instigator_gang-audit
 audit_model: sonnet
 audit_tokens: 32082
 audit_duration: 573
+fixed_sha: 28755d7786c3882a8061e402a59c15fd2378da86
+fixed_at: 2026-08-23T17:03:38Z
+test_file: mtg-engine/tests/intervening_if.rs
+fix_note: back face was missing its TriggerKind::Upkeep entry, so Wildblood Pack could never transform back
 ---
 
 ## Audit Finding
