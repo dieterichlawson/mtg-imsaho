@@ -167,7 +167,7 @@ pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId,
     // Add planeswalkers (which have power = None, so creature_targets misses them)
     for o in state.objects.values() {
         if o.zone == Zone::Battlefield && o.power.is_none()
-            && o.card_types.contains(&crate::types::CardType::Planeswalker)
+            && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
             && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
         {
             targets.push(Target::Object(o.id));
@@ -188,7 +188,7 @@ pub fn any_targets_except(state: &GameState, exclude: ObjectId, source_id: Objec
     // Add planeswalkers (which have power = None, so creature_targets misses them)
     for o in state.objects.values() {
         if o.zone == Zone::Battlefield && o.power.is_none() && o.id != exclude
-            && o.card_types.contains(&crate::types::CardType::Planeswalker)
+            && state.has_card_type(o.id, crate::types::CardType::Planeswalker, registry)
             && crate::engine::can_be_targeted_by(state, o.id, controller, Some(source_id), registry)
         {
             targets.push(Target::Object(o.id));
@@ -226,46 +226,42 @@ pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
 // ═══════════════════════════════════════════════════════════════════
 // Transform helpers
 //
-// Generic transform logic for double-faced cards. Updates all
-// face-dependent properties (name, keywords, subtypes) so that
-// obj.keywords always reflects the active face.
+// Generic transform logic for double-faced cards.
 // ═══════════════════════════════════════════════════════════════════
 
-/// Toggle `is_transformed` on a permanent and update all face-dependent
-/// properties (name, keywords, subtypes) to match the new active face.
+/// Transform a double-faced permanent.
 ///
-/// This is the correct way to transform a DFC. Card-specific code should
-/// call this instead of manually flipping `obj.is_transformed` and `obj.name`,
-/// which leaves `obj.keywords` and `obj.subtypes` stale.
+/// This flips `is_transformed` and nothing else that matters: every
+/// characteristics accessor resolves through `GameState::face_data`, which
+/// reads that flag, so the permanent's subtypes, keywords, card types and
+/// colors all follow automatically. `name` is refreshed only because it is a
+/// display cache for logging with no registry lookup behind it — rules code
+/// reads `GameState::name_of`.
+///
+/// It used to copy the new face's name, keywords and subtypes onto the object,
+/// which made those fields a second source of truth that a card hand-rolling
+/// its own transform could leave stale. There is nothing left to leave stale.
 pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
     let (card_id, was_transformed) = match state.get_object(object_id) {
         Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.is_transformed),
         _ => return,
     };
-
     let Some(behavior) = registry.get(card_id) else { return; };
 
-    // Flip the transform flag.
+    // Refresh the display cache when the card declares a back face. Some DFCs
+    // (Garruk Relentless) model their back face by branching on
+    // `is_transformed` in `loyalty_abilities` / `dynamic_pt` instead of
+    // declaring `back_face_data`, so the flip itself must not depend on one.
+    let new_name = if was_transformed {
+        Some(behavior.card_data().name)
+    } else {
+        behavior.back_face_data().map(|back| back.name)
+    };
+
     if let Some(obj) = state.get_object_mut(object_id) {
         obj.is_transformed = !was_transformed;
-    }
-
-    if was_transformed {
-        // Was on back face -> now front face. Restore front face data.
-        let front = behavior.card_data();
-        if let Some(obj) = state.get_object_mut(object_id) {
-            obj.name.clone_from(&front.name);
-            obj.keywords.clone_from(&front.keywords);
-            obj.subtypes.clone_from(&front.subtypes);
-        }
-    } else {
-        // Was on front face -> now back face. Apply back face data.
-        if let Some(back) = behavior.back_face_data() {
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.name.clone_from(&back.name);
-                obj.keywords.clone_from(&back.keywords);
-                obj.subtypes.clone_from(&back.subtypes);
-            }
+        if let Some(name) = new_name {
+            obj.name = name;
         }
     }
 }
