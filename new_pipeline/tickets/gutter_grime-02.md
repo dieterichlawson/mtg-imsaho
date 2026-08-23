@@ -1,11 +1,15 @@
 ---
 id: gutter_grime-02
-status: new
+status: fixed
 card: Gutter Grime
 audit_run_id: 2026-04-19-gutter_grime-audit
 audit_model: sonnet
 audit_tokens: 42107
 audit_duration: 797
+fixed_sha: 5b2471bda7cbdf3ac83b8d6bf521bd75796fcdc6
+fixed_at: 2026-08-23T23:34:08Z
+test_file: mtg-engine/tests/trigger_independence.rs
+fix_note: add_counters is a no-op off the battlefield (CR 121.1)
 ---
 
 ## Audit Finding

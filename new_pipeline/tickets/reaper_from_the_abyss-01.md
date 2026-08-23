@@ -1,11 +1,15 @@
 ---
 id: reaper_from_the_abyss-01
-status: new
+status: fixed
 card: Reaper from the Abyss
 audit_run_id: 2026-04-19-reaper_from_the_abyss-audit
 audit_model: sonnet
 audit_tokens: 25098
 audit_duration: 451
+fixed_sha: 5b2471bda7cbdf3ac83b8d6bf521bd75796fcdc6
+fixed_at: 2026-08-23T23:34:08Z
+test_file: mtg-engine/tests/trigger_independence.rs
+fix_note: EndStepTrigger no longer requires the source on the battlefield (CR 112.7a)
 ---
 
 ## Audit Finding

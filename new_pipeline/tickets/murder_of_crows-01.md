@@ -1,11 +1,14 @@
 ---
 id: murder_of_crows-01
-status: new
+status: fixed
 card: Murder of Crows
 audit_run_id: 2026-04-19-murder_of_crows-audit
 audit_model: sonnet
 audit_tokens: 14529
 audit_duration: 313
+fixed_sha: 5b2471bda7cbdf3ac83b8d6bf521bd75796fcdc6
+fixed_at: 2026-08-23T23:34:08Z
+fix_note: draw_cards returns the number actually drawn, so 'if you do' is honoured with an empty library
 ---
 
 ## Audit Finding

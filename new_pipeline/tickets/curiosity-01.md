@@ -1,11 +1,15 @@
 ---
 id: curiosity-01
-status: new
+status: fixed
 card: Curiosity
 audit_run_id: 2026-04-19-curiosity-audit
 audit_model: sonnet
 audit_tokens: 23098
 audit_duration: 429
+fixed_sha: 5b2471bda7cbdf3ac83b8d6bf521bd75796fcdc6
+fixed_at: 2026-08-23T23:34:08Z
+test_file: mtg-engine/tests/trigger_independence.rs
+fix_note: should_trigger_on_damage_to_player gates dispatch on source and damaged player (CR 603.2)
 ---
 
 ## Audit Finding
