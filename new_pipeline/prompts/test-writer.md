@@ -34,15 +34,26 @@ proof the bug is real.
 
 - Each confirmed test must include at least one `assert!` /
   `assert_eq!` / `assert_ne!`.
-- Passing tests are a false positive — if your test passes, return
-  `rejected` instead of `confirmed`.
+- Passing tests mean the bug doesn't reproduce — return `rejected`
+  instead of `confirmed`.
 
-### `rejected` — the scenario isn't a bug
+### `rejected` — the scenario doesn't reproduce
 
-After investigating, you believe the code already handles this
-scenario correctly. Return `rejected` with an `explanation` telling
-the next reader why you reached that conclusion. Don't write a
-passing test; reject explicitly.
+After investigating, you believe the bug doesn't show up against
+current code. Any of these fit under `rejected`; use the
+`explanation` to say which:
+
+- The auditor misread the code (guard is present, path doesn't exist, …).
+- The auditor misinterpreted the oracle or rules.
+- The scenario is unreachable in normal play.
+- The bug was real but another fix (likely a merged ticket) has
+  since resolved it.
+- The finding is a coverage gap dressed as a bug — the code already
+  handles the ruling correctly.
+
+Don't write a passing test; reject explicitly with an
+`explanation` concrete enough that the next reader knows which of
+the above applies.
 
 ### `needs_engine_work` — the engine doesn't support this test yet
 
@@ -154,7 +165,7 @@ Typical failures:
 | `Banned phrases found`         | Remove the phrase from the code or comment.     |
 | `No assertions found`          | Add an `assert!` / `assert_eq!` / `assert_ne!`. |
 | `Test does not compile`        | Fix the compile error in `{test_file}`.         |
-| `Test passed (expected fail)`  | Bug is a false positive — return `rejected`.    |
+| `Test passed (expected fail)`  | Bug doesn't reproduce — return `rejected`.      |
 
 ## Output
 
@@ -173,7 +184,7 @@ When you're done, write a single JSON file to `{staging_path}`:
     {{
       "slug": "<slug from the ticket>",
       "status": "rejected",
-      "explanation": "<why this scenario isn't a real bug>"
+      "explanation": "<which of the rejection reasons applies and why>"
     }},
     {{
       "slug": "<slug from the ticket>",

@@ -34,25 +34,30 @@ class Status(str, Enum):
     FIXED = "fixed"
     MERGED = "merged"
     FIX_FAILED = "fix_failed"
-    COULD_NOT_CONFIRM = "could_not_confirm"
+    # Test-phase outcomes (replacing the old COULD_NOT_CONFIRM grab-bag):
+    # - ENGINE_BLOCKED: every scenario needs engine surface; retry grants
+    #   the test-writer write access to `mtg-engine/src/`.
+    # - MIXED: per-scenario verdicts disagreed (some confirmed, some not);
+    #   operator reviews explanations and edits scenarios before retry.
+    ENGINE_BLOCKED = "engine_blocked"
+    MIXED = "mixed"
     CLOSED = "closed"
 
     @property
     def is_terminal(self) -> bool:
-        """True if no further transitions are allowed.
+        """True if no further transitions are allowed on this ticket.
 
-        FIX_FAILED and COULD_NOT_CONFIRM are terminal because retry
-        doesn't mutate them — it mints a fresh ticket with a
-        `retry_of` pointer and carries forward the old's post-mortem
-        as context. The old ticket stays archived as an immutable
-        record of the failed attempt. MERGED is terminal because the
-        fix has landed on master — there's nothing left to do.
+        Terminal + retryable: FIX_FAILED, ENGINE_BLOCKED, MIXED — retry
+        mints a fresh `-NN` ticket with a `retry_of` pointer; the old
+        ticket stays archived as the immutable record of the attempt.
+        Terminal + non-retryable: MERGED, CLOSED.
         """
         return self in {
             Status.CLOSED,
-            Status.COULD_NOT_CONFIRM,
+            Status.ENGINE_BLOCKED,
             Status.FIX_FAILED,
             Status.MERGED,
+            Status.MIXED,
         }
 
 
@@ -60,6 +65,7 @@ class CloseReason(str, Enum):
     """Why a ticket ended up in `closed`."""
 
     ABANDONED = "abandoned"  # human gave up
+    NOT_A_BUG = "not_a_bug"  # test-writer rejected every scenario
 
 
 class LifecycleEvent(str, Enum):
@@ -399,13 +405,34 @@ class Ticket:
         fm.tested_sha = tested_sha
         fm.tested_at = datetime.now(timezone.utc)
 
-    def mark_could_not_confirm(self) -> None:
-        """Terminal: test-writer couldn't confirm any scenario as a bug.
+    def mark_engine_blocked(self) -> None:
+        """Terminal + retryable: every scenario needs engine surface.
 
-        Caller is responsible for `.append_body_section(...)` and `.save()`
-        (which will auto-archive since the status is terminal).
+        Retry will grant the test-writer engine-edit access via the
+        `test_writer_engine` sandbox profile. Caller is responsible
+        for `.append_body_section(...)` and `.save()`.
         """
-        self.status = Status.COULD_NOT_CONFIRM
+        self.status = Status.ENGINE_BLOCKED
+
+    def mark_mixed(self) -> None:
+        """Terminal + retryable: scenarios disagreed on whether the bug reproduces.
+
+        Operator reviews the per-scenario explanations, decides to
+        trim / split / add engine surface, and then `retry` mints a
+        fresh ticket. Caller is responsible for
+        `.append_body_section(...)` and `.save()`.
+        """
+        self.status = Status.MIXED
+
+    def mark_not_a_bug(self) -> None:
+        """Terminal: test-writer rejected every scenario.
+
+        Closes the ticket with `CloseReason.NOT_A_BUG`. No retry path
+        — rerunning hits the same code and gets the same answer.
+        """
+        self.status = next_status(self.status, LifecycleEvent.ABANDONED)
+        self.frontmatter.closed_reason = CloseReason.NOT_A_BUG.value
+        self.frontmatter.closed_at = datetime.now(timezone.utc)
 
     def mark_fixed(
         self,
