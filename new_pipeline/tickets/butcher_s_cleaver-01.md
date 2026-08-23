@@ -1,11 +1,15 @@
 ---
 id: butcher_s_cleaver-01
-status: new
+status: fixed
 card: Butcher's Cleaver
 audit_run_id: 2026-04-19-butcher_s_cleaver-audit
 audit_model: sonnet
 audit_tokens: 32807
 audit_duration: 713
+fixed_sha: eb10c286f92469fd334d00ead56072b930dce6eb
+fixed_at: 2026-08-23T23:03:53Z
+test_file: mtg-engine/tests/curse_and_equip_scope.rs
+fix_note: cluster fix: equip target generation no longer excludes the already-attached creature (CR 702.6a)
 ---
 
 ## Audit Finding

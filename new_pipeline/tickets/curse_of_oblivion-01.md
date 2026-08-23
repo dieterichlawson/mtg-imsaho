@@ -1,11 +1,15 @@
 ---
 id: curse_of_oblivion-01
-status: new
+status: fixed
 card: Curse of Oblivion
 audit_run_id: 2026-04-19-curse_of_oblivion-audit
 audit_model: sonnet
 audit_tokens: 13329
 audit_duration: 233
+fixed_sha: eb10c286f92469fd334d00ead56072b930dce6eb
+fixed_at: 2026-08-23T23:03:52Z
+test_file: mtg-engine/tests/curse_and_equip_scope.rs
+fix_note: TriggerScope::AttachedPlayer — the curse's upkeep trigger no longer reaches the stack on other players' upkeeps
 ---
 
 ## Audit Finding
