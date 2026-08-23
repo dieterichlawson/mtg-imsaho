@@ -577,14 +577,22 @@ mod tests {
         let pack = generate_pack(&sheets, &mut state, &mut rng);
 
         // The first 2-3 commons should be consecutive cards from common_a
-        // (starting from position 0)
+        // (starting from position 0). Exception: a rare/mythic foil displaces
+        // the first A-run common (remove_from_run "a"), shifting the start to
+        // sheet position 1 — this made the test flaky (~1.4% of packs) before
+        // it modeled displacement.
         let a_run = &sheets.common_a;
-        let first_common = &pack.commons[0];
+        let a_start = match &pack.foil {
+            Some(Foil::NonDfc { displaced_run, .. }) if displaced_run == "a" => 1,
+            _ => 0,
+        };
         assert_eq!(
-            first_common, &a_run[0],
-            "First A-run common should match sheet position 0"
+            &pack.commons[0], &a_run[a_start],
+            "First A-run common should match sheet position {a_start} (foil: {:?})",
+            pack.foil
         );
-        if pack.commons.len() > 1 {
+        if pack.foil.is_none() {
+            // Without foil displacement, C1 packs always draw >= 2 A commons.
             assert_eq!(
                 &pack.commons[1], &a_run[1],
                 "Second common should match sheet position 1"
