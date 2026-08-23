@@ -1439,12 +1439,6 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     LegalActions { actions, combat_prompt: None, castable_spells, activatable_abilities, context: Some(context), resolution_prompt: None }
 }
 
-/// Check if a permanent can be targeted by a spell from the given caster.
-/// Returns false if the target has hexproof and the caster is an opponent.
-fn can_be_targeted(state: &GameState, target_id: ObjectId, caster: PlayerId, registry: &CardRegistry) -> bool {
-    can_be_targeted_by(state, target_id, caster, None, registry)
-}
-
 /// Check targeting legality, including protection from the source.
 /// `source_id` is the spell or permanent whose ability is targeting.
 #[must_use]
@@ -1678,7 +1672,7 @@ pub(crate) fn valid_targets_for_req(
                 .collect();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
-                if is_pw && can_be_targeted(state, obj.id, caster, registry) {
+                if is_pw && can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) {
                     let t = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &t, registry) {
                         targets.push(t);
@@ -1860,7 +1854,7 @@ fn generate_ability_targets(
         TargetRequirement::Creature => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
@@ -1872,7 +1866,7 @@ fn generate_ability_targets(
                 .and_then(|o| o.attached_to);
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| state.is_creature(o.id, registry))
-                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
                 .filter(|o| matches_target_filter(state, o, filter, controller, Some(source_id), registry))
                 .filter(|o| already_attached != Some(o.id))
                 .map(|o| Target::Object(o.id))
@@ -1896,7 +1890,7 @@ fn generate_ability_targets(
                 .collect();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
                 let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
-                if is_pw && can_be_targeted(state, obj.id, controller, registry) {
+                if is_pw && can_be_targeted_by(state, obj.id, controller, Some(source_id), registry) {
                     let t = Target::Object(obj.id);
                     if behavior.is_valid_target(state, controller, &t, registry) {
                         targets.push(t);
@@ -1909,7 +1903,7 @@ fn generate_ability_targets(
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| state.is_creature(o.id, registry)
                     || state.has_card_type(o.id, CardType::Planeswalker, registry))
-                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
@@ -1925,7 +1919,7 @@ fn generate_ability_targets(
         }
         TargetRequirement::PermanentWithFilter(filter) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| can_be_targeted(state, o.id, controller, registry))
+                .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
                 .filter(|o| matches_target_filter(state, o, filter, controller, Some(source_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
