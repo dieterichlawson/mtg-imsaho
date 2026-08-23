@@ -154,7 +154,7 @@ function call. It now applies its own drain directly.
 | 4 | Card code reading empty object-level fields | 7 | **done** |
 | 5 | Control-on-entry ordering | 4 | **done** |
 | 6 | Targeted trigger declared untargeted | 4 | **done** |
-| 7 | Card-specific one-offs | 38 left | in progress |
+| 7 | Card-specific one-offs | 28 left | in progress |
 
 ## Done
 
@@ -406,6 +406,34 @@ nothing; and the Mask of Avacyn test asserted "no duplicate equip actions" by
 counting actions, which conflated duplicates with target count. Both now
 assert what they mean.
 
+### Cluster 7, continued — more general hooks
+
+- **Copy effects (CR 115.1 / 614.12 / 707.2)** — three rules, one card family.
+  Choosing is not targeting, so Evil Twin's copy candidates must not be
+  filtered by hexproof or protection (`creature_choices_except`). A permanent
+  entering as a copy enters bearing the copied characteristics, so the COPIED
+  creature's ETB abilities trigger — they were never raised at all. And a
+  generic token's printed keywords live on the object, so copying a flying
+  Spirit token dropped its flying (`printed_keywords_of` completes the
+  characteristics accessors). 5 tickets, two of which were "no test coverage".
+- **`should_trigger_on_damage_to_player`** — Curiosity's "enchanted creature
+  deals damage to an opponent" was checked at resolution, so the ability went
+  on the stack every time any permanent damaged any player.
+- **CR 112.7a** — the EndStepTrigger arm required its source still be on the
+  battlefield, unlike the Upkeep and ETB arms beside it, so killing Reaper from
+  the Abyss in response silently cancelled its destruction.
+- **CR 603.10a** — the simultaneous-death list was keyed on `CreatureDied`,
+  which `destroy` only emits for things with power, so a non-creature watcher
+  (Gutter Grime is an enchantment) destroyed alongside the creature it watches
+  lost its trigger entirely. Keyed on `LeftBattlefield` now.
+- **CR 121.1** — `add_counters` wrote to permanents that had left the
+  battlefield, so a Gutter Grime destroyed in response to its own trigger still
+  gained a slime counter and its Ooze came in 1/1 instead of 0/0.
+- **`draw_cards` returns a count** and is `#[must_use]`. It returned `()`, so
+  "draw a card. If you do, discard a card" checked the hand instead — a player
+  with an empty library discarded a card they never drew. The must_use flagged
+  13 other call sites; all are plain "draw N" and now say so.
+
 ## Next up
 
 1. Clusters 3 → 5 → 6, then the one-off tail.
@@ -413,5 +441,5 @@ assert what they mean.
    for one whenever a ticket says "the condition is only evaluated at
    resolution".
 
-**Backlog count: 78 fixed / 38 open**, plus the root-cause refactor above,
+**Backlog count: 88 fixed / 28 open**, plus the root-cause refactor above,
 which removes the mechanism behind the whole characteristics bug family (was 2 / 114 at the start of this pass).
