@@ -2753,7 +2753,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
             let mut rng = rand::thread_rng();
             new_state.get_player_mut(player).library_order.shuffle(&mut rng);
             // Redraw seven.
-            draw_cards(&mut new_state, player, 7, registry);
+            let _ = draw_cards(&mut new_state, player, 7, registry);
             new_state.get_player_mut(player).mulligan_count += 1;
             let mull_count = new_state.get_player(player).mulligan_count;
             new_state.log(LogLevel::Event,
@@ -3628,7 +3628,7 @@ pub fn setup_game(config: &GameConfig, registry: &CardRegistry) -> GameState {
     // Draw opening hands (7 cards each).
     for player_idx in 0..num_players {
         let player_id = PlayerId(player_idx);
-        draw_cards(&mut state, player_id, 7, registry);
+        let _ = draw_cards(&mut state, player_id, 7, registry);
     }
 
     state.events.push(GameEvent::GameStarted);
@@ -3723,8 +3723,15 @@ AwaitingAction::BottomAfterMulligan { .. }))
 }
 
 /// Draw N cards for a player. Logs a single summary entry.
-pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) {
-    let mut drawn = 0;
+/// Draw `count` cards, returning how many were ACTUALLY drawn.
+///
+/// The count matters for "draw a card. If you do, ..." — with an empty library
+/// nothing is drawn and the rest of the effect does not happen. This returned
+/// `()`, so Murder of Crows checked whether the hand was non-empty instead and
+/// made a player discard a card they had never drawn.
+#[must_use = "'if you do' effects depend on how many cards were actually drawn"]
+pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registry: &CardRegistry) -> usize {
+    let mut drawn: usize = 0;
     for _ in 0..count {
         let card_id = {
             let player_state = state.get_player_mut(player);
@@ -3774,6 +3781,7 @@ pub fn draw_cards(state: &mut GameState, player: PlayerId, count: usize, registr
             state.log(LogLevel::Info, format!("p{} drew {} cards", player.0, drawn));
         }
     }
+    drawn
 }
 
 /// Mill N cards from a player's library (move top N cards to graveyard).
@@ -4001,7 +4009,7 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
         Step::Draw => {
             // Active player draws a card (skip on the very first turn).
             if !state.is_first_turn {
-                draw_cards(state, active, 1, registry);
+                let _ = draw_cards(state, active, 1, registry);
             }
             state.priority_player = Some(active);
         }

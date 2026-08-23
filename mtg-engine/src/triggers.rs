@@ -653,15 +653,21 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     }
                 }
 
-                // 2. Death-watch: collect triggers from permanents on the battlefield,
-                // plus creatures that died in the same event batch (they were on the
-                // battlefield when the simultaneous deaths occurred).
-                let simultaneously_dead: Vec<ObjectId> = events.iter().filter_map(|e| {
-                    if let GameEvent::CreatureDied { object, .. } = e {
-                        Some(*object)
-                    } else {
-                        None
-                    }
+                // 2. Death-watch: collect triggers from permanents on the
+                // battlefield, plus permanents that left in the same event
+                // batch — they were still on the battlefield when the
+                // simultaneous deaths occurred, so their death-watch abilities
+                // trigger (CR 603.10a).
+                //
+                // Keyed on LeftBattlefield rather than CreatureDied, because
+                // `destroy` only emits CreatureDied for things with power. A
+                // NON-creature watcher destroyed alongside the creature it
+                // watches — Gutter Grime is an enchantment — was invisible to
+                // this list and lost its trigger entirely.
+                let simultaneously_dead: Vec<ObjectId> = events.iter().filter_map(|e| match e {
+                    GameEvent::LeftBattlefield { object, .. } => Some(*object),
+                    GameEvent::CreatureDied { object, .. } => Some(*object),
+                    _ => None,
                 }).collect();
                 let watchers: Vec<(ObjectId, CardId, PlayerId, bool)> = state.objects.values()
                     .filter(|o| o.id != dead_id &&
@@ -805,7 +811,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                                     }
                                     // AnyDamageToPlayer watchers (combat damage is also damage).
                                     let desc2 = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer, false);
-                                    if !desc2.is_empty() {
+                                    // CR 603.2: the watcher's own condition on
+                                    // WHO dealt the damage and to WHOM.
+                                    if !desc2.is_empty()
+                                        && registry.get(watcher_card_id).is_some_and(|b|
+                                            b.should_trigger_on_damage_to_player(state, watcher_id, source_id, *damaged_player, registry))
+                                    {
                                         let trigger = PendingTrigger::DamageToPlayerWatch {
                                             watcher_id,
                                             watcher_card_id,
@@ -838,7 +849,10 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
                         if registry.get(watcher_card_id).is_some() {
                             let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::AnyDamageToPlayer, false);
-                            if !desc.is_empty() {
+                            if !desc.is_empty()
+                                && registry.get(watcher_card_id).is_some_and(|b|
+                                    b.should_trigger_on_damage_to_player(state, watcher_id, source_id, *damaged_player, registry))
+                            {
                                 let trigger = PendingTrigger::DamageToPlayerWatch {
                                     watcher_id,
                                     watcher_card_id,
@@ -1437,10 +1451,14 @@ pub fn resolve_next_trigger(state: &mut GameState, registry: &CardRegistry) -> b
             }
         }
         PendingTrigger::EndStepTrigger { object_id, card_id, chosen_targets, .. } => {
-            if state.get_object(object_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                if let Some(behavior) = registry.get(card_id) {
-                    behavior.on_end_step(state, object_id, &chosen_targets, registry);
-                }
+            // CR 112.7a: a triggered ability on the stack exists independently
+            // of its source, so destroying the source in response does not
+            // counter it. This arm used to require the source still be on the
+            // battlefield — unlike the Upkeep and ETB arms beside it — which
+            // let an opponent silently cancel Reaper from the Abyss's end-step
+            // destruction by killing the Reaper.
+            if let Some(behavior) = registry.get(card_id) {
+                behavior.on_end_step(state, object_id, &chosen_targets, registry);
             }
         }
         PendingTrigger::SpellCastWatch { watcher_id, watcher_card_id, caster, spell_id, chosen_targets, .. } => {

@@ -30,6 +30,6 @@ impl CardBehavior for Divination {
         let controller = state.get_object(object_id)
             .map_or(crate::ids::PlayerId(0), |o| o.controller);
 
-        crate::engine::draw_cards(state, controller, 2, registry);
+        let _ = crate::engine::draw_cards(state, controller, 2, registry);
     }
 }

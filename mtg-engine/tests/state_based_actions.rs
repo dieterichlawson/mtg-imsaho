@@ -53,7 +53,7 @@ fn empty_library_loss_is_deferred_to_sba() {
     let reg = registry();
     let mut state = game_at_step(Step::Draw, P0);
 
-    engine::draw_cards(&mut state, P0, 1, &reg);
+    let _ = engine::draw_cards(&mut state, P0, 1, &reg);
 
     assert!(state.get_player(P0).has_drawn_from_empty);
     assert!(!state.get_player(P0).lost,

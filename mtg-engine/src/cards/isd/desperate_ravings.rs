@@ -31,7 +31,7 @@ impl CardBehavior for DesperateRavings {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
-        crate::engine::draw_cards(state, controller, 2, registry);
+        let _ = crate::engine::draw_cards(state, controller, 2, registry);
         // Discard a card at random.
         let hand: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Hand && o.owner == controller)

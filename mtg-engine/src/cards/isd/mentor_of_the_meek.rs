@@ -98,7 +98,7 @@ impl CardBehavior for MentorOfTheMeek {
             paid = found;
         }
         if paid {
-            crate::engine::draw_cards(state, controller, 1, registry);
+            let _ = crate::engine::draw_cards(state, controller, 1, registry);
             state.log(LogLevel::Event, "Mentor of the Meek: paid {1}, drew a card".into());
         }
     }

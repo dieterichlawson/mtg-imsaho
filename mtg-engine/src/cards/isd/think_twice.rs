@@ -29,6 +29,6 @@ impl CardBehavior for ThinkTwice {
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
-        crate::engine::draw_cards(state, controller, 1, registry);
+        let _ = crate::engine::draw_cards(state, controller, 1, registry);
     }
 }

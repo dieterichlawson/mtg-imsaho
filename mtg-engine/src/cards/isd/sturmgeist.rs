@@ -51,6 +51,6 @@ impl CardBehavior for Sturmgeist {
             Some(o) => o.controller,
             None => return,
         };
-        crate::engine::draw_cards(state, controller, 1, registry);
+        let _ = crate::engine::draw_cards(state, controller, 1, registry);
     }
 }

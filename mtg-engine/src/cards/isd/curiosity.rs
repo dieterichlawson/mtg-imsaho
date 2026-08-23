@@ -44,22 +44,24 @@ impl CardBehavior for Curiosity {
         crate::cards::helpers::resolve_aura(state, object_id, targets, registry);
     }
 
-    fn on_any_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
-        // "Whenever enchanted creature deals damage to an opponent"
-        let aura = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o,
-            _ => return,
+    /// "Whenever enchanted creature deals damage to an opponent" — CR 603.2:
+    /// both halves of that are part of the triggering event, so they are read
+    /// at dispatch. Checking them at resolution instead meant the ability went
+    /// on the stack every time ANY permanent damaged ANY player and then
+    /// quietly did nothing, handing everyone a priority window each time.
+    fn should_trigger_on_damage_to_player(&self, state: &GameState, self_id: ObjectId, source_id: ObjectId, damaged_player: PlayerId, _registry: &CardRegistry) -> bool {
+        let Some(aura) = state.get_object(self_id).filter(|o| o.zone == Zone::Battlefield) else {
+            return false;
         };
-        let Some(attached_to) = aura.attached_to else { return; };
-        // Only trigger if the source is the enchanted creature.
-        if source_id != attached_to {
-            return;
-        }
-        // Only trigger if damage was dealt to an opponent (not the controller).
-        let controller = aura.controller;
-        if damaged_player == controller {
-            return;
-        }
+        // The source must be the enchanted creature, and the damage must have
+        // gone to an opponent.
+        aura.attached_to == Some(source_id) && damaged_player != aura.controller
+    }
+
+    fn on_any_damage_to_player(&self, state: &mut GameState, self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _amount: u32, _registry: &CardRegistry) {
+        let Some(controller) = state.get_object(self_id)
+            .filter(|o| o.zone == Zone::Battlefield)
+            .map(|o| o.controller) else { return };
         // "You may draw a card" — present choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,
@@ -77,7 +79,7 @@ impl CardBehavior for Curiosity {
         }
         let controller = state.get_object(self_id)
             .map_or(PlayerId(0), |o| o.controller);
-        draw_cards(state, controller, 1, registry);
+        let _ = draw_cards(state, controller, 1, registry);
         state.log(LogLevel::Event, "Curiosity: drew a card".into());
     }
 }

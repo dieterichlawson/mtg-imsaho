@@ -61,7 +61,7 @@ impl CardBehavior for BloodgiftDemon {
     /// 1 life." The card count and the life loss are this card's numbers.
     fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
         let Target::Player(pid) = target else { return };
-        crate::engine::draw_cards(state, *pid, 1, registry);
+        let _ = crate::engine::draw_cards(state, *pid, 1, registry);
         state.lose_life(*pid, 1);
         state.log(crate::state::LogLevel::Event,
             format!("Bloodgift Demon: p{} drew a card and lost 1 life", pid.0));

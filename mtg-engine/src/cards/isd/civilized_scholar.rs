@@ -122,7 +122,7 @@ impl CardBehavior for CivilizedScholar {
         };
 
         // Draw a card.
-        crate::engine::draw_cards(state, controller, 1, registry);
+        let _ = crate::engine::draw_cards(state, controller, 1, registry);
 
         // Player must choose which card to discard.
         let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)

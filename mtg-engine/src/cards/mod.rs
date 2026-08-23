@@ -459,6 +459,12 @@ pub trait CardBehavior: Send + Sync {
     /// same check for defense in depth. Default: trigger for every spell.
     fn should_trigger_on_spell_cast(&self, _state: &GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) -> bool { true }
 
+    /// CR 603.2: "whenever ENCHANTED CREATURE deals damage to AN OPPONENT"
+    /// only triggers when both halves hold — the right source dealt it, to the
+    /// right player. Consulted at DISPATCH time. Default: trigger for any
+    /// damage dealt to any player.
+    fn should_trigger_on_damage_to_player(&self, _state: &GameState, _self_id: ObjectId, _source_id: ObjectId, _damaged_player: PlayerId, _registry: &CardRegistry) -> bool { true }
+
     /// CR 603.2: "whenever another creature WITH POWER 2 OR LESS enters"
     /// only triggers when the entering creature matches. Consulted at DISPATCH
     /// time, so the condition is read as the creature enters — a creature

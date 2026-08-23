@@ -1681,6 +1681,19 @@ impl GameState {
 
     /// Add counters to a permanent.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
+        // CR 121.1: counters go on permanents. A permanent that has left the
+        // battlefield is a different object, so a counter aimed at it lands
+        // nowhere — an ability that resolves after its source was destroyed
+        // simply fails to put the counter on.
+        //
+        // Without this, Gutter Grime destroyed in response to its own trigger
+        // still gained a slime counter in the graveyard, and since P/T reads
+        // counters regardless of zone, the Ooze it made came in 1/1 instead of
+        // the 0/0 the ruling requires. The counter then rode along if the
+        // Grime was ever reanimated.
+        if self.objects.get(&id).is_none_or(|o| o.zone != Zone::Battlefield) {
+            return;
+        }
         if let Some(obj) = self.objects.get_mut(&id) {
             *obj.counters.entry(counter_type).or_insert(0) += count;
         }

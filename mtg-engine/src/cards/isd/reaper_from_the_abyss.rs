@@ -57,10 +57,11 @@ impl CardBehavior for ReaperFromTheAbyss {
     }
 
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
-        // Must still be on the battlefield.
-        if !state.get_object(self_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-            return;
-        }
+        // CR 112.7a: the ability is on the stack independently of the Reaper,
+        // so it resolves even if the Reaper has since been destroyed — the
+        // creature being destroyed is a different permanent and the Reaper's
+        // whereabouts are irrelevant to it. This used to return early here.
+        let _ = self_id;
         // Morbid — only destroy if a creature died this turn (CR 603.4 intervening-if,
         // also enforced at stack-time via is_valid_target).
         if !state.creature_died_this_turn {
