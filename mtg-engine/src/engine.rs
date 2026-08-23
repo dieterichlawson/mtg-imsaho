@@ -670,7 +670,16 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             }
         }
         for attached in state.objects.values() {
-            if attached.zone == Zone::Battlefield && attached.attached_to == Some(obj_id) {
+            // Only offer abilities granted by attachments the acting player
+            // controls. Every granted activated ability in the set includes
+            // sacrificing the attached source as a cost (often paid manually
+            // in on_activate_ability, e.g. Blazing Torch), and a player can
+            // only sacrifice permanents they control (CR 601.2g/701.13) — so
+            // an opponent-controlled attachment's granted ability is
+            // unpayable.
+            if attached.zone == Zone::Battlefield
+                && attached.attached_to == Some(obj_id)
+                && attached.controller == player {
                 if let Some(behavior) = registry.get(attached.card_id) {
                     for ab in behavior.activated_abilities(state, obj_id, registry) {
                         abilities.push((attached.card_id, ab));
