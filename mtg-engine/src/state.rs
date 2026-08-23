@@ -1524,6 +1524,26 @@ impl GameState {
         }
     }
 
+    /// Change control of a battlefield permanent (CR 800.4a).
+    ///
+    /// The permanent becomes summoning-sick for the new controller: it hasn't
+    /// been under their control continuously since their most recent turn began
+    /// (CR 302.6 / 508.1a), so it can't attack or use tap/untap abilities until
+    /// their next untap step — unless it has haste, which is checked at
+    /// use-time (`eligible_attackers`, tap-ability legality), not here. Effects
+    /// that grant haste alongside the steal (e.g. Act-of-Treason variants) thus
+    /// still work. This is the single correct way to reassign controller for an
+    /// in-play permanent; assigning `obj.controller` directly skips the
+    /// summoning-sickness reset and is a bug.
+    pub fn change_control(&mut self, id: ObjectId, new_controller: PlayerId) {
+        if let Some(obj) = self.get_object_mut(id) {
+            if obj.controller != new_controller {
+                obj.controller = new_controller;
+                obj.summoning_sick = true;
+            }
+        }
+    }
+
     /// Move a resolving spell to the appropriate zone.
     /// Flashback spells go to exile; others go to graveyard.
     pub fn move_spell_after_resolve(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {

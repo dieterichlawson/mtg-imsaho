@@ -122,15 +122,19 @@ impl CardBehavior for OliviaVoldaren {
             1 => {
                 // {3}{B}{B}: Gain control of target Vampire for as long as you control Olivia.
                 if let Some(Target::Object(target_id)) = targets.first() {
+                    // Recognise printed Vampires (registry subtype) as well as
+                    // creatures Olivia's other ability turned into Vampires
+                    // (object-level subtype) — via the characteristics layer.
                     let is_vampire = state.get_object(*target_id)
-                        .is_some_and(|o| o.zone == Zone::Battlefield && o.subtypes.contains(&"Vampire".to_string()));
+                        .is_some_and(|o| o.zone == Zone::Battlefield)
+                        && state.has_subtype(*target_id, "Vampire", registry);
                     if is_vampire {
                         // Record the original controller so we can revert when Olivia leaves.
                         let original_controller = state.get_object(*target_id).map_or(controller, |o| o.controller);
                         let stolen_name = state.obj_name(*target_id);
-                        if let Some(obj) = state.get_object_mut(*target_id) {
-                            obj.controller = controller;
-                        }
+                        // Gaining control makes the stolen Vampire summoning-sick
+                        // for its new controller (no haste granted here).
+                        state.change_control(*target_id, controller);
                         state.log(crate::state::LogLevel::Event,
                             format!("Olivia Voldaren gains control of {stolen_name}"));
                         // Track the stolen creature in Olivia's card_state.
@@ -179,9 +183,8 @@ impl CardBehavior for OliviaVoldaren {
             let orig_controller = crate::ids::PlayerId(u8::try_from(orig_controller_id.0).unwrap_or(u8::MAX));
             if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 let returned_name = state.obj_name(target_id);
-                if let Some(obj) = state.get_object_mut(target_id) {
-                    obj.controller = orig_controller;
-                }
+                // Control changes back — summoning-sick for the returnee too.
+                state.change_control(target_id, orig_controller);
                 state.log(crate::state::LogLevel::Event,
                     format!("Olivia Voldaren left: {} returned to p{}", returned_name, orig_controller.0));
             }
