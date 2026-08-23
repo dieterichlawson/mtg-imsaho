@@ -150,10 +150,10 @@ function call. It now applies its own drain directly.
 | 2 | Protection-from-source in ability targeting | ~10 | **done** |
 | 1 | Intervening-if triggers (CR 603.4) | 12 | **done** |
 | — | Confirm-and-close already-fixed tickets | 19 | **done** |
-| 3 | Enters-tapped replacement effects | ~8 | not started |
+| 3 | Enters-tapped replacement effects | 6 | **done** |
 | 4 | Card code reading empty object-level fields | 7 | **done** |
-| 5 | Control-on-entry ordering | ~4 | not started |
-| 6 | Targeted trigger declared untargeted | ~4 | not started |
+| 5 | Control-on-entry ordering | 4 | **done** |
+| 6 | Targeted trigger declared untargeted | 4 | **done** |
 | 7 | Card-specific one-offs | ~45 | not started |
 
 ## Done
@@ -324,6 +324,56 @@ already described. Their assertions are unchanged in intent.
 hamlet_captain-01, butcher_s_cleaver-02, silver_inlaid_dagger-01,
 olivia_voldaren-01, grimoire_of_the_dead-01.
 
+### Clusters 3, 5, 6 — general hooks, not special cases
+
+Each of these was a *missing general mechanism*, and the cards were working
+around its absence. Implementing the mechanism was the fix in every case.
+
+**Cluster 3 — `CardBehavior::enters_tapped` (CR 614.1d).** The five check
+lands modelled "enters tapped unless you control a Mountain" as a triggered
+ability that tapped the land on resolution. Three observable bugs: the land
+entered UNTAPPED and could be tapped for mana in response to its own trigger
+(a free mana every time); the condition was read at resolution, so an opponent
+could bounce the qualifying land in response; and when the condition was met a
+trigger still went on the stack for nothing. The hook sits next to the
+existing `entering_with_counters` (CR 614.1c) and applies at the same point in
+`move_object` — after the permanent is placed, before `EnteredBattlefield`.
+
+**Library search — `helpers::search_library` (CR 701.19).**
+`ChooseFromLibrary` hardcoded "put it in the owner's hand", so any card
+fetching onto the battlefield hand-rolled the whole shape; five did, and
+drifted. The choice now carries `destination` and `tapped`, and one helper
+implements find-candidates / none-one-many / move / shuffle. `optional` is
+part of the mechanism: "you MAY search" is a real decision even with one
+candidate, which Ghost Quarter's tests caught when the first version
+auto-took. Also fixed a bug Caravan Vigil's own comment admitted — with 2+
+lands it fell through to the engine's finisher and never offered morbid.
+
+**Cluster 5 — `GameState::move_object_under_control` (CR 110.2).** Cards
+called `move_object` then assigned `controller` on the next line, but the
+event is emitted *during* the move, so it carried the previous controller and
+every `AnyCreatureEnters` watcher read the wrong player. Not hypothetical:
+`move_object` deliberately keeps `controller` on leaving the battlefield
+(death triggers use it as last known information), so a creature that died
+while stolen sits in its owner's graveyard marked as the thief's — which is
+exactly where these three cards reanimate from. Splinterfright was the same
+confusion inverted: it passed `controller` to `objects_in_zone`, which filters
+graveyards by OWNER, so after a steal it counted the opponent's graveyard
+(CR 112.8).
+
+**Cluster 6 — no engine change needed at all.** The mechanism already existed;
+three cards declared `target_requirement: None` and bypassed it, hand-rolling
+a prompt at resolution. That broke CR 603.3b (targets chosen as the trigger
+goes on the stack), 603.3c (no legal targets → never reaches the stack) and
+608.2b (resolution-time legality re-check, which only runs on declared
+targets) simultaneously — and Elder Cathar's hand-rolled list never called
+`can_be_targeted_by`, so shroud didn't protect. Curse of the Pierced Heart
+gates its "enchanted player's upkeep" through the `should_trigger` hook.
+
+Two tests were found to be **passing vacuously** while writing this: moving a
+creature to the graveyard is not *dying*, so the death trigger never fired and
+"no trigger on the stack" was trivially true. They now destroy the creature.
+
 ## Next up
 
 1. Clusters 3 → 5 → 6, then the one-off tail.
@@ -331,5 +381,5 @@ olivia_voldaren-01, grimoire_of_the_dead-01.
    for one whenever a ticket says "the condition is only evaluated at
    resolution".
 
-**Backlog count: 50 fixed / 66 open**, plus the root-cause refactor above,
+**Backlog count: 64 fixed / 52 open**, plus the root-cause refactor above,
 which removes the mechanism behind the whole characteristics bug family (was 2 / 114 at the start of this pass).

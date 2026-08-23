@@ -1,11 +1,15 @@
 ---
 id: elder_cathar-01
-status: new
+status: fixed
 card: Elder Cathar
 audit_run_id: 2026-04-19-elder_cathar-audit
 audit_model: sonnet
 audit_tokens: 16530
 audit_duration: 274
+fixed_sha: bfcb01c57a8d3097e9b8904ac6da8984fcc6ff81
+fixed_at: 2026-08-23T20:33:49Z
+test_file: mtg-engine/tests/trigger_targets_declared.rs
+fix_note: cluster fix: declares target_requirement so the engine chooses targets at stack-push time (CR 603.3b/c, 608.2b)
 ---
 
 ## Audit Finding

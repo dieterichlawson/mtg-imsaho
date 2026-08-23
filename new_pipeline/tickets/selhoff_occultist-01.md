@@ -1,11 +1,15 @@
 ---
 id: selhoff_occultist-01
-status: new
+status: fixed
 card: Selhoff Occultist
 audit_run_id: 2026-04-19-selhoff_occultist-audit
 audit_model: sonnet
 audit_tokens: 21123
 audit_duration: 374
+fixed_sha: bfcb01c57a8d3097e9b8904ac6da8984fcc6ff81
+fixed_at: 2026-08-23T20:33:49Z
+test_file: mtg-engine/tests/trigger_targets_declared.rs
+fix_note: cluster fix: declares target_requirement so the engine chooses targets at stack-push time (CR 603.3b/c, 608.2b)
 ---
 
 ## Audit Finding
