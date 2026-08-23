@@ -101,6 +101,10 @@ const HUMAN_CONDITIONAL: &[HumanConditional] = &[
 
 /// Avacyn's Pilgrim is a 1/1 Human.
 const PILGRIM_BASE: (i32, i32) = (1, 1);
+/// Villagers of Estwald is a 2/3 Human Werewolf; its back face,
+/// Howlpack of Estwald, is a 4/6 Werewolf — no longer a Human.
+const VILLAGER_BASE: (i32, i32) = (2, 3);
+const HOWLPACK_BASE: (i32, i32) = (4, 6);
 /// Walking Corpse is a 2/2 Zombie (not a Human).
 const ZOMBIE_BASE: (i32, i32) = (2, 2);
 
@@ -156,21 +160,24 @@ fn human_equipment_bonuses_skip_conditional_on_non_human() {
 }
 
 /// Regression: the conditional bonus must follow the creature's current
-/// subtype, not a snapshot taken at equip time. Simulate a transform by
-/// stripping the Human subtype after equipping and verify the Human-only
-/// portion disappears while the unconditional portion stays.
+/// subtype, not a snapshot taken at equip time. Uses the real lever from this
+/// file's opening note — a Human Werewolf transforming into its non-Human back
+/// face — rather than overwriting `obj.subtypes`, which models nothing the
+/// engine does: outside transform, subtypes are only ever added to.
 #[test]
-fn human_equipment_conditional_bonus_drops_when_subtype_stripped() {
+fn human_equipment_conditional_bonus_drops_when_creature_transforms() {
     let reg = registry();
     for case in HUMAN_CONDITIONAL {
         let mut state = game_at_step(Step::PrecombatMain, P0);
-        let pilgrim = named_creature(&mut state, &reg, "Avacyn's Pilgrim", P0);
+        let villager = named_creature(&mut state, &reg, "Villagers of Estwald", P0);
         let gear = equipment(&mut state, &reg, case.equipment, P0);
-        let mut state = equip(&state, &reg, gear, pilgrim, case.equip_cost);
-        assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, true);
+        let mut state = equip(&state, &reg, gear, villager, case.equip_cost);
+        assert_equipped_matches(&state, &reg, villager, VILLAGER_BASE, case, true);
 
-        state.get_object_mut(pilgrim).unwrap().subtypes = vec!["Werewolf".into()];
-        assert_equipped_matches(&state, &reg, pilgrim, PILGRIM_BASE, case, false);
+        mtg_engine::cards::helpers::apply_transform(&mut state, villager, &reg);
+        assert!(!state.has_subtype(villager, "Human", &reg),
+            "test precondition: Howlpack of Estwald is a Werewolf, not a Human");
+        assert_equipped_matches(&state, &reg, villager, HOWLPACK_BASE, case, false);
     }
 }
 

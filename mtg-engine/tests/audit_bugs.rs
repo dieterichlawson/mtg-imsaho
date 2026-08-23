@@ -474,8 +474,12 @@ fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
 
-    // Place a Human creature (Champion of the Parish — Human Soldier 1/1)
-    let human = named_creature(&mut state, &registry, "Champion of the Parish", P0);
+    // Cloistered Youth is a Human 1/1 whose back face, Unholy Fiend, is a
+    // Horror — transforming is the way a creature in this set actually stops
+    // being a Human. (Overwriting `obj.subtypes` would not model anything the
+    // engine does: outside transform, subtypes are only ever added to, so
+    // `has_subtype` unions the object's runtime grants with its active face.)
+    let human = named_creature(&mut state, &registry, "Cloistered Youth", P0);
 
     // Cast Bonds of Faith on it
     let bonds = castable_spell(&mut state, &registry, "Bonds of Faith", P0);
@@ -488,19 +492,19 @@ fn bug_bonds_of_faith_snapshot_instead_of_continuous() {
     let p = state.effective_power(human, &registry).unwrap_or(0);
     assert_eq!(p, 3, "Human with Bonds should have power 3 (1 base + 2 buff)");
 
-    // Now remove the Human subtype (simulate transform or type change)
-    if let Some(obj) = state.get_object_mut(human) {
-        obj.subtypes = vec!["Beast".into()]; // No longer Human
-    }
+    // Transform into Unholy Fiend: no longer a Human.
+    mtg_engine::cards::helpers::apply_transform(&mut state, human, &registry);
+    assert!(!state.has_subtype(human, "Human", &registry),
+        "test precondition: Unholy Fiend is a Horror, not a Human");
 
-    // The "as long as" condition is no longer true.
-    // The effect should switch from +2/+2 to can't-attack-or-block.
-    // With no +2/+2, effective power should be 1 (base).
+    // The "as long as" condition is no longer true, so the effect must switch
+    // from +2/+2 to can't-attack-or-block. Unholy Fiend's printed power is 3,
+    // so 3 means the buff is gone and 5 would mean Bonds snapshotted the Human
+    // check at ETB and never re-read it.
     let p_after = state.effective_power(human, &registry).unwrap_or(0);
-
-    // BUG: Power is still 3 because instance_continuous_effects was set once at ETB
-    assert_eq!(p_after, 1,
-        "Non-Human should lose +2/+2 from Bonds. Power: {p_after} (expected 1)");
+    assert_eq!(p_after, 3,
+        "a non-Human should lose the +2/+2 from Bonds — power {p_after} \
+         (3 = Unholy Fiend's printed power, 5 = buff wrongly still applied)");
 }
 
 // ═══════════════════════════════════════════════════════════════
