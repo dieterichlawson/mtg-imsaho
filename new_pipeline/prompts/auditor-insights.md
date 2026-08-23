@@ -27,9 +27,12 @@ handler in `resolve_single_effect()` (engine.rs).
 
 ## Zone-change cleanup does not reset characteristic modifications
 
-The cleanup block in `move_object()` (state.rs) does NOT clear
+**RESOLVED — see "The characteristics layer is the only way to read a
+permanent's types" below. Do not report findings based on this entry.**
+
+The cleanup block in `move_object()` (state.rs) did NOT clear
 `subtypes`, `keywords`, `colors`, `power`, `toughness`, `card_types`,
-or `name` when an object leaves the battlefield. Any card that
+or `name` when an object left the battlefield. Any card that
 modifies these fields at runtime (e.g., adding a subtype, granting
 a keyword) will have those modifications persist incorrectly through
 zone changes, violating CR 400.7. Check whether the card modifies
@@ -317,7 +320,7 @@ _Discovered auditing: Blazing Torch_
 
 ## `matches_target_filter` `HasCardType` branch lacks registry fallback, breaking non-creature permanent targeting
 
-`matches_target_filter` in engine.rs handles `TargetFilter::HasCardType` with a bare `obj.card_types.contains(t)` check and no registry fallback. Because `create_object` initialises `card_types: Vec::new()` for every game object, non-token permanents on the battlefield always have an empty `card_types` list, so `HasCardType([Artifact])`, `HasCardType([Enchantment])`, and `HasCardType([Land])` all silently return `false` for non-token permanents of those types. Tokens are the exception: `create_token_with_subtypes` explicitly sets `card_types`. The `HasSubtype` branch in the same function already applies the correct two-step pattern (`obj.subtypes` first, then `registry.card_data(obj.card_id)`). The fix for `HasCardType` is identical: fall back to `registry.card_data(obj.card_id).is_some_and(|d| types.iter().any(|t| d.card_types.contains(t)))` when the object-level field is empty. Any card whose targeting requirement uses `PermanentWithFilter(HasCardType([Artifact|Enchantment|Land|...]))` — whether cast as a spell or activated as an ability — is affected and will offer zero valid targets against all non-token permanents of those types.
+**RESOLVED — superseded by "The characteristics layer is the only way to read a permanent's types" below; the premise of this entry is also wrong, see there. Do not report findings based on this entry.** `matches_target_filter` in engine.rs handled `TargetFilter::HasCardType` with a bare `obj.card_types.contains(t)` check and no registry fallback. Because `create_object` initialises `card_types: Vec::new()` for every game object, non-token permanents on the battlefield always have an empty `card_types` list, so `HasCardType([Artifact])`, `HasCardType([Enchantment])`, and `HasCardType([Land])` all silently return `false` for non-token permanents of those types. Tokens are the exception: `create_token_with_subtypes` explicitly sets `card_types`. The `HasSubtype` branch in the same function already applies the correct two-step pattern (`obj.subtypes` first, then `registry.card_data(obj.card_id)`). The fix for `HasCardType` is identical: fall back to `registry.card_data(obj.card_id).is_some_and(|d| types.iter().any(|t| d.card_types.contains(t)))` when the object-level field is empty. Any card whose targeting requirement uses `PermanentWithFilter(HasCardType([Artifact|Enchantment|Land|...]))` — whether cast as a spell or activated as an ability — is affected and will offer zero valid targets against all non-token permanents of those types.
 
 _Discovered auditing: Ghost Quarter_
 
@@ -488,3 +491,57 @@ _Discovered auditing: Unbreathing Horde_
 The `legal_actions` function in `engine.rs` (lines 722–729) only excludes the source permanent from the auto-tap mana-source pool when the ability has `SacrificeCost::SacrificeThis`. For any `requires_tap: true` ability with any other sacrifice cost (including `SacrificeCost::None`), the source is included in `ability_sources` via the `else` branch at line 728 and can be selected by `compute_autotap` as a mana source for that same ability's mana cost. If the source also has a mana ability (e.g., a land with `{T}: Add {C}`), the engine generates and executes an `ActivateAbility` action where the source appears in both the mana tap plan and the activation tap target — a single tap used twice, violating CR 602.2h. The practical effect: the ability is offered as legal when the player lacks sufficient mana from other sources, and the source's own mana production is illegally credited toward its activation cost. Fix: extend the exclusion condition at `engine.rs:722` from `if ability_has_sac_this` to `if ability_has_sac_this || ab.requires_tap`. Any card with both a mana ability and a tap-cost non-sacrifice activated ability is affected.
 
 _Discovered auditing: Gavony Township_
+
+## The characteristics layer is the only way to read a permanent's types
+
+**This entry supersedes and corrects two earlier ones.** Several past audits
+reported "`obj.card_types` / `obj.subtypes` is always empty for non-token
+permanents". That was **half wrong, and the wrong half mattered.** Those
+fields were empty for objects built by `create_object` — every test helper,
+token and reanimation path — but *populated* for objects built by
+`setup_game`, which copied each card's data onto its library object. So a
+card reading the raw field worked in a real game and silently did nothing in
+its own tests. The bug was invisible to the very tests written to catch it,
+which is why this one defect was found and re-reported about fifteen times
+under fifteen different card names.
+
+A previous audit drew the opposite conclusion from the same evidence and
+prescribed "make `setup_game` populate `obj.subtypes` too" (Bug BD). That
+would have deepened the split. It was **not** implemented; the duplication was
+removed instead.
+
+**The rule now, enforced by `mtg-engine/tests/characteristics_invariant.rs`:**
+
+    an object's characteristics = its active face  UNION  its runtime grants
+
+- The **active face** is `state.face_data(id, registry)` — the back face when
+  `is_transformed`, the front face otherwise.
+- The **object-level vectors** hold only what an effect granted at runtime
+  (Olivia Voldaren's "Vampire", Grimoire of the Dead's "Zombie" and black).
+  Tokens are the one exception: having no registry face, their object fields
+  carry their printed characteristics.
+- Nothing duplicates the face onto the object. `setup_game` does not populate;
+  `apply_transform` only flips the flag; the copy path only sets `card_id`.
+
+**So when auditing, these are always bugs — the guard test will reject them:**
+
+| Instead of | Use |
+|---|---|
+| `obj.card_types.contains(&CardType::X)` | `state.has_card_type(id, CardType::X, registry)` |
+| `obj.subtypes.iter().any(\|s\| s == "X")` | `state.has_subtype(id, "X", registry)` |
+| `obj.colors.contains(&Color::X)` | `state.colors_of(id, registry)` |
+| `obj.keywords.contains(&Keyword::X)` | `state.has_keyword(id, Keyword::X, registry)` |
+| `registry.card_data(obj.card_id)` | `state.face_data(id, registry)` |
+| `obj.name` (for a rules decision) | `state.name_of(id, registry)` |
+
+`registry.card_data` deserves special attention: it returns the **front face,
+always**. Every use of it on a game object is a latent bug for transformed
+DFCs, and several shipped that way (Champion of the Parish counted a
+transformed werewolf as a Human).
+
+Writing to the object vectors is still correct — that is how a runtime grant
+is recorded. Only reads are policed. Note that keywords are the exception to
+the union: they have a real effects layer
+(`ContinuousEffect::GrantKeyword`, `TemporaryEffect`), nothing grants one by
+writing the vector, and `has_keyword` reads the object field only for objects
+with no registry face.
