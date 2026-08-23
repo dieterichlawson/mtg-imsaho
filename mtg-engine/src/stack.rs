@@ -139,6 +139,10 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
     state.log(LogLevel::Event, format!("{} resolved", state.obj_name(object_id)));
     state.events.push(GameEvent::SpellResolved { object: object_id });
 
+    // Track the spell so the ENGINE owns its post-resolution cleanup, even
+    // when resolution is suspended on a player choice.
+    state.resolving_spell = Some(object_id);
+
     // Call the card's on_resolve behavior with targets.
     if let Some(behavior) = registry.get(card_id) {
         behavior.on_resolve(state, object_id, &targets, registry);
@@ -146,13 +150,15 @@ fn resolve_spell(state: &mut GameState, registry: &CardRegistry, object_id: crat
 
     // If the card set an awaiting_action, it's mid-resolution (e.g., Unburial
     // Rites waiting for player to choose a creature). Don't clean up yet —
-    // the ResolveChoice handler in submit_action will do that.
+    // `engine::finish_spell_resolution_if_idle` moves the spell once the
+    // choice chain completes (CR 608.2m: graveyard as the final step).
     if state.awaiting_action.is_some() {
         return;
     }
 
     // If the card is still on the stack after resolution, move it to the
     // appropriate zone. Flashback spells go to exile; others to graveyard.
+    state.resolving_spell = None;
     if let Some(obj) = state.get_object(object_id) {
         if obj.zone == Zone::Stack {
             state.move_spell_after_resolve(object_id, registry);

@@ -100,6 +100,15 @@ pub struct GameState {
     /// Whether the game is waiting for attackers/blockers declaration.
     pub awaiting_action: Option<AwaitingAction>,
 
+    /// The spell currently mid-resolution because it presented a player
+    /// choice (`awaiting_action`). The ENGINE owns moving a resolved spell
+    /// off the stack: `stack::resolve_spell` for spells that finish in one
+    /// step, and `engine::finish_spell_resolution_if_idle` once the choice
+    /// chain completes. Card code must never call `move_spell_after_resolve`
+    /// from a pending-effect handler.
+    #[serde(default)]
+    pub resolving_spell: Option<ObjectId>,
+
     /// Game result, if the game is over.
     pub result: Option<GameResult>,
 
@@ -287,6 +296,7 @@ impl GameState {
             combat: None,
             end_of_combat_exiles: Vec::new(),
             awaiting_action: None,
+            resolving_spell: None,
             result: None,
             consecutive_passes: 0,
             is_first_turn: true,
@@ -579,6 +589,13 @@ impl GameState {
         // triggers to be controlled by whoever controlled the permanent
         // immediately before it left the battlefield.
         let pre_move_controller = self.objects.get(&id).map(|o| o.controller);
+
+        // A tracked mid-resolution spell that leaves the stack (moved by a
+        // pending-effect handler, or entering the battlefield as a
+        // permanent) no longer needs engine cleanup.
+        if self.resolving_spell == Some(id) && to != Zone::Stack {
+            self.resolving_spell = None;
+        }
 
         // CR 614.1c: Compute "enters with" counters BEFORE the zone change,
         // so graveyard counts still include this creature if entering from GY.

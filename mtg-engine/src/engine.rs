@@ -3242,7 +3242,29 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
     }
 
+    finish_spell_resolution_if_idle(&mut new_state, registry);
+
     new_state
+}
+
+/// Complete a suspended spell resolution once its choice chain has finished.
+///
+/// When a spell's `on_resolve` presents a player choice, resolution pauses
+/// with `awaiting_action` set and the spell tracked in
+/// `state.resolving_spell`. Once no further choice is pending, the engine —
+/// not the card — moves the spell off the stack (graveyard, or exile for
+/// flashback), per CR 608.2m. Handlers that already moved the spell (or
+/// permanents that entered the battlefield) cleared the tracker via
+/// `move_object`, making this a no-op.
+pub(crate) fn finish_spell_resolution_if_idle(state: &mut GameState, registry: &CardRegistry) {
+    if state.awaiting_action.is_some() {
+        return;
+    }
+    if let Some(spell_id) = state.resolving_spell.take() {
+        if state.get_object(spell_id).is_some_and(|o| o.zone == Zone::Stack) {
+            state.move_spell_after_resolve(spell_id, registry);
+        }
+    }
 }
 
 /// Apply a pending effect from a resolution choice to a target.
