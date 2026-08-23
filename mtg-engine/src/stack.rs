@@ -4,29 +4,6 @@ use crate::events::GameEvent;
 use crate::state::{GameState, LogLevel, StackEntry};
 use crate::types::Zone;
 
-fn check_target_filter(state: &GameState, obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter, caster: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
-    use crate::cards::TargetFilter;
-    match filter {
-        TargetFilter::YouControl => obj.controller == caster,
-        TargetFilter::YouDontControl => obj.controller != caster,
-        TargetFilter::NotSubtypes(types) => {
-            !types.iter().any(|t| obj.subtypes.contains(t))
-        }
-        TargetFilter::HasSubtype(subtype) => {
-            obj.subtypes.contains(subtype)
-                || registry.card_data(obj.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
-        }
-        TargetFilter::HasKeyword(keyword) => {
-            state.has_keyword(obj.id, *keyword, registry)
-        }
-        TargetFilter::PowerAtLeast(n) => {
-            state.effective_power(obj.id, registry).unwrap_or(0) >= *n
-        }
-        _ => true,
-    }
-}
-
 /// Check if a target is still legal at resolution time.
 pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &crate::cards::TargetRequirement, caster: crate::ids::PlayerId, registry: &crate::cards::CardRegistry) -> bool {
     use crate::cards::TargetRequirement;
@@ -69,7 +46,11 @@ pub(crate) fn is_target_legal(state: &GameState, target: &Target, target_req: &c
                         _ => None,
                     };
                     if let Some(filter) = filter {
-                        if !check_target_filter(state, obj, filter, caster, registry) {
+                        // Re-run the full canonical filter check: a target
+                        // whose characteristics changed in response (e.g. a
+                        // creature that became black vs a Nonblack filter)
+                        // is no longer legal (CR 608.2b).
+                        if !crate::engine::matches_target_filter(state, obj, filter, caster, None, registry) {
                             return false;
                         }
                     }

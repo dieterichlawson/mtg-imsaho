@@ -66,11 +66,9 @@ pub(crate) fn gather_mana_sources(
     let mut sources = Vec::new();
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         // Stony Silence: skip mana abilities from artifacts.
-        if prevent_artifact_abilities {
-            let is_artifact = registry.card_data(obj.card_id)
-                .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
-                || obj.card_types.contains(&CardType::Artifact);
-            if is_artifact { continue; }
+        if prevent_artifact_abilities
+            && state.has_card_type(obj.id, CardType::Artifact, registry) {
+            continue;
         }
         if let Some(behavior) = registry.get(obj.card_id) {
             let abilities = behavior.mana_abilities(state, obj.id);
@@ -78,11 +76,9 @@ pub(crate) fn gather_mana_sources(
 
             // Classify the source kind.
             let has_side_effects = abilities.iter().any(|a| a.has_side_effects);
-            let is_creature = obj.power.is_some()
-                || registry.card_data(obj.card_id)
-                    .is_some_and(|d| d.card_types.contains(&CardType::Creature));
+            let is_creature = state.is_creature(obj.id, registry);
             let has_utility = !behavior.activated_abilities(state, obj.id, registry).is_empty();
-            let is_basic = registry.card_data(obj.card_id)
+            let is_basic = state.face_data(obj.id, registry)
                 .is_some_and(|d| d.supertypes.contains(&Supertype::Basic));
 
             let source_kind = if has_side_effects {
@@ -610,10 +606,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     for obj in state.objects_in_zone(Zone::Battlefield, player) {
         // Stony Silence: skip mana abilities from artifacts.
         if prevent_artifact_abilities {
-            let is_artifact = registry.card_data(obj.card_id)
-                .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
-                || obj.card_types.contains(&CardType::Artifact);
-            if is_artifact { continue; }
+            if state.has_card_type(obj.id, CardType::Artifact, registry) { continue; }
         }
         if let Some(behavior) = registry.get(obj.card_id) {
             let mana_abs = behavior.mana_abilities(state, obj.id);
@@ -650,10 +643,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
         // Stony Silence: skip artifact activated abilities.
         if prevent_artifact_abilities {
-            let is_artifact = registry.card_data(obj_card_id)
-                .is_some_and(|d| d.card_types.contains(&CardType::Artifact))
-                || obj.card_types.contains(&CardType::Artifact);
-            if is_artifact { continue; }
+            if state.has_card_type(obj_id, CardType::Artifact, registry) { continue; }
         }
 
         // Collect abilities from this permanent's card and attached auras.
@@ -766,7 +756,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             // affected by summoning sickness (CR 302.6).
             if ab.requires_tap {
                 if obj_tapped { continue; }
-                let is_creature = obj.power.is_some();
+                let is_creature = state.is_creature(obj.id, registry);
                 if is_creature && obj.summoning_sick && !state.has_keyword(obj.id, Keyword::Haste, registry) {
                     continue;
                 }
@@ -788,7 +778,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 SacrificeCost::SacrificeCreature => {
                     let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
                         .iter()
-                        .filter(|o| o.power.is_some())
+                        .filter(|o| state.is_creature(o.id, registry))
                         .map(|o| o.id)
                         .collect();
                     if creatures.is_empty() { continue; }
@@ -798,7 +788,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     // "Another" excludes the source permanent (the equipment / card itself).
                     let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
                         .iter()
-                        .filter(|o| o.power.is_some() && o.id != obj_id)
+                        .filter(|o| state.is_creature(o.id, registry) && o.id != obj_id)
                         .map(|o| o.id)
                         .collect();
                     if creatures.is_empty() { continue; }
@@ -1056,7 +1046,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 Some(AdditionalCost::SacrificeCreature) => {
                     let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, player)
                         .iter()
-                        .filter(|o| o.power.is_some())
+                        .filter(|o| state.is_creature(o.id, registry))
                         .map(|o| o.id)
                         .collect();
                     if creatures.is_empty() { continue; }
@@ -1071,8 +1061,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     let creature_count = state.objects.values()
                         .filter(|o| {
                             o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
-                                && (o.power.is_some() || registry.card_data(o.card_id)
-                                    .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
+                                && state.is_creature(o.id, registry)
                         })
                         .count();
                     if creature_count < *n { continue; } // Not enough creatures to exile
@@ -1287,8 +1276,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     let creature_count = state.objects.values()
                         .filter(|o| {
                             o.zone == Zone::Graveyard && o.owner == player && o.id != obj.id
-                                && (o.power.is_some() || registry.card_data(o.card_id)
-                                    .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
+                                && state.is_creature(o.id, registry)
                         })
                         .count();
                     if creature_count < *n { continue; }
@@ -1526,156 +1514,12 @@ fn generate_cast_actions_with_targets(
     target_req: &crate::cards::TargetRequirement,
     behavior: &dyn crate::cards::CardBehavior,
 ) -> Vec<Action> {
-    use crate::actions::Target;
     use crate::cards::TargetRequirement;
     let registry = &CardRegistry::with_all_cards();
 
     match target_req {
         TargetRequirement::None => {
             vec![Action::CastSpell { object_id: spell_id, targets: vec![], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] }]
-        }
-        TargetRequirement::AnyTarget => {
-            // Can target any creature or planeswalker on the battlefield, or any player.
-            let mut actions = Vec::new();
-            for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                let is_creature = obj.power.is_some();
-                let is_planeswalker = obj.card_types.contains(&CardType::Planeswalker);
-                if is_creature || is_planeswalker {
-                    if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
-                    let target = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, caster, &target, registry) {
-                        actions.push(Action::CastSpell {
-                            object_id: spell_id,
-                            targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                        });
-                    }
-                }
-            }
-            for player in &state.players {
-                if !player.lost && can_target_player(state, player.id, caster, registry) {
-                    let target = Target::Player(player.id);
-                    if behavior.is_valid_target(state, caster, &target, registry) {
-                        actions.push(Action::CastSpell {
-                            object_id: spell_id,
-                            targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                        });
-                    }
-                }
-            }
-            actions
-        }
-        TargetRequirement::Creature | TargetRequirement::CreatureWithFilter(_) => {
-            let mut actions = Vec::new();
-            for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                if obj.power.is_some() { // is a creature
-                    if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
-                    let target = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, caster, &target, registry) {
-                        actions.push(Action::CastSpell {
-                            object_id: spell_id,
-                            targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                        });
-                    }
-                }
-            }
-            actions
-        }
-        TargetRequirement::PlayerOnly => {
-            let mut actions = Vec::new();
-            for player in &state.players {
-                if !player.lost && can_target_player(state, player.id, caster, registry) {
-                    let target = Target::Player(player.id);
-                    if behavior.is_valid_target(state, caster, &target, registry) {
-                        actions.push(Action::CastSpell {
-                            object_id: spell_id,
-                            targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                        });
-                    }
-                }
-            }
-            actions
-        }
-        TargetRequirement::PlayerOrPlaneswalker => {
-            let mut actions = Vec::new();
-            // Players
-            for player in &state.players {
-                if !player.lost && can_target_player(state, player.id, caster, registry) {
-                    let target = Target::Player(player.id);
-                    if behavior.is_valid_target(state, caster, &target, registry) {
-                        actions.push(Action::CastSpell {
-                            object_id: spell_id,
-                            targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                        });
-                    }
-                }
-            }
-            // Planeswalkers on the battlefield
-            for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
-                    || registry.card_data(obj.card_id)
-                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
-                if is_pw {
-                    if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
-                    let target = Target::Object(obj.id);
-                    if behavior.is_valid_target(state, caster, &target, registry) {
-                        actions.push(Action::CastSpell {
-                            object_id: spell_id,
-                            targets: vec![target],
-                            sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                        });
-                    }
-                }
-            }
-            actions
-        }
-        TargetRequirement::Spell => {
-            let mut actions = Vec::new();
-            for entry in &state.stack {
-                let Some(stack_obj_id) = entry.as_spell() else {
-                    continue; // Skip triggers — can't target with Counterspell
-                };
-                // Don't let a spell target itself on the stack.
-                if stack_obj_id == spell_id { continue; }
-                let target = Target::Object(stack_obj_id);
-                if behavior.is_valid_target(state, caster, &target, registry) {
-                    actions.push(Action::CastSpell {
-                        object_id: spell_id,
-                        targets: vec![target],
-                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                    });
-                }
-            }
-            actions
-        }
-        TargetRequirement::PermanentWithFilter(_) => {
-            // Target any permanent on the battlefield matching a filter.
-            // Actual filtering is done by the card's is_valid_target.
-            let mut actions = Vec::new();
-            for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                if !can_be_targeted_by(state, obj.id, caster, Some(spell_id), registry) { continue; }
-                let target = Target::Object(obj.id);
-                if behavior.is_valid_target(state, caster, &target, registry) {
-                    actions.push(Action::CastSpell {
-                        object_id: spell_id,
-                        targets: vec![target],
-                        sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![],
-                    });
-                }
-            }
-            actions
-        }
-        TargetRequirement::GraveyardCard | TargetRequirement::ExileCard
-        | TargetRequirement::GraveyardCreature | TargetRequirement::GraveyardCreatureOfSubtype(_)
-        | TargetRequirement::GraveyardCardOwnedByCaster | TargetRequirement::GraveyardCardOwnedByOpponent => {
-            let targets = valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry);
-            targets.into_iter()
-                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] })
-                .collect()
         }
         TargetRequirement::ModalChoice(ref modes) => {
             let mut actions = Vec::new();
@@ -1732,6 +1576,14 @@ fn generate_cast_actions_with_targets(
             }
             actions
         }
+        // All single-target requirement kinds share the canonical target
+        // enumeration in `valid_targets_for_req` — one target per action.
+        _ => {
+            valid_targets_for_req(state, caster, spell_id, target_req, behavior, registry)
+                .into_iter()
+                .map(|t| Action::CastSpell { object_id: spell_id, targets: vec![t], sacrifice: None, exile_count: None, exile_ids: vec![], alternative_cost: None, tap_plan: vec![] })
+                .collect()
+        }
     }
 }
 
@@ -1750,7 +1602,7 @@ pub(crate) fn valid_targets_for_req(
     match req {
         TargetRequirement::Creature => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some())
+                .filter(|o| state.is_creature(o.id, registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1758,8 +1610,8 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::CreatureWithFilter(filter) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some())
-                .filter(|o| matches_ability_target_filter(state, o, filter, caster, spell_id, registry))
+                .filter(|o| state.is_creature(o.id, registry))
+                .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1776,7 +1628,7 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::PermanentWithFilter(filter) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| matches_target_filter(o, filter, registry))
+                .filter(|o| matches_target_filter(state, o, filter, caster, Some(spell_id), registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1784,7 +1636,8 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some() || o.card_types.contains(&CardType::Planeswalker))
+                .filter(|o| state.is_creature(o.id, registry)
+                    || state.has_card_type(o.id, CardType::Planeswalker, registry))
                 .filter(|o| can_be_targeted_by(state, o.id, caster, Some(spell_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1815,9 +1668,7 @@ pub(crate) fn valid_targets_for_req(
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
                 .collect();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
-                    || registry.card_data(obj.card_id)
-                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
+                let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
                 if is_pw && can_be_targeted(state, obj.id, caster, registry) {
                     let t = Target::Object(obj.id);
                     if behavior.is_valid_target(state, caster, &t, registry) {
@@ -1836,14 +1687,12 @@ pub(crate) fn valid_targets_for_req(
                 .collect()
         }
         TargetRequirement::GraveyardCreature => {
-            // Creature cards in caster's graveyard. Check both object and registry data.
+            // Creature cards in caster's graveyard.
             state.objects.values()
                 .filter(|o| {
                     o.zone == Zone::Graveyard
                         && o.owner == caster
-                        && (o.power.is_some()
-                            || registry.card_data(o.card_id)
-                                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature))))
+                        && state.is_creature(o.id, registry)
                 })
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1851,16 +1700,11 @@ pub(crate) fn valid_targets_for_req(
         }
         TargetRequirement::GraveyardCreatureOfSubtype(ref subtype) => {
             // Creature cards with a specific subtype in all graveyards.
-            // Check subtypes on both the object and the registry card data.
             state.objects.values()
                 .filter(|o| {
                     o.zone == Zone::Graveyard
-                        && (o.power.is_some()
-                            || registry.card_data(o.card_id)
-                                .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature))))
-                        && (o.subtypes.iter().any(|s| s == subtype)
-                            || registry.card_data(o.card_id)
-                                .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype)))
+                        && state.is_creature(o.id, registry)
+                        && state.has_subtype(o.id, subtype, registry)
                 })
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, caster, t, registry))
@@ -1934,34 +1778,34 @@ fn build_cast_target_spec(
     }
 }
 
-/// Check if a creature matches a `TargetFilter` for ability targeting.
-fn matches_ability_target_filter(
+/// Check whether an object satisfies a `TargetFilter`.
+///
+/// The single canonical filter matcher — used by spell targeting, ability
+/// targeting, and resolution-time legality checks (stack.rs). All
+/// characteristic lookups go through the `GameState` characteristics layer,
+/// so non-token permanents (empty object-level fields) and transformed DFCs
+/// are handled uniformly.
+///
+/// `source_id` is the permanent or spell the targeting originates from; it
+/// only affects `Another` and `SameNameAsSource`. Pass `None` when no source
+/// is available (resolution-time recheck), which leaves `Another`
+/// unrestricted.
+pub(crate) fn matches_target_filter(
     state: &GameState,
     obj: &crate::state::GameObject,
     filter: &crate::cards::TargetFilter,
     controller: PlayerId,
-    source_id: ObjectId,
+    source_id: Option<ObjectId>,
     registry: &CardRegistry,
 ) -> bool {
     use crate::cards::TargetFilter;
     match filter {
-        TargetFilter::Another => obj.id != source_id,
+        TargetFilter::Any => true,
         TargetFilter::YouControl => obj.controller == controller,
         TargetFilter::YouDontControl => obj.controller != controller,
-        TargetFilter::Nonblack => {
-            // Check if the creature's mana cost contains black.
-            if let Some(data) = registry.card_data(obj.card_id) {
-                if let Some(ref cost) = data.cost {
-                    !cost.symbols.iter().any(|s| matches!(s, ManaSymbol::Colored(Color::Black)))
-                } else {
-                    true // No cost = not black
-                }
-            } else {
-                true
-            }
-        }
+        TargetFilter::Nonblack => !state.colors_of(obj.id, registry).contains(&Color::Black),
         TargetFilter::NotSubtypes(types) => {
-            let subtypes = &obj.subtypes;
+            let subtypes = state.subtypes_of(obj.id, registry);
             !types.iter().any(|t| subtypes.contains(t))
         }
         TargetFilter::PowerAtLeast(n) => {
@@ -1970,20 +1814,22 @@ fn matches_ability_target_filter(
         TargetFilter::Attacking => {
             state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&obj.id))
         }
-        TargetFilter::HasSubtype(subtype) => {
-            obj.subtypes.contains(subtype)
-                || registry.card_data(obj.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
+        TargetFilter::Noncreature => !state.is_creature(obj.id, registry),
+        TargetFilter::HasCardType(types) => {
+            types.iter().any(|t| state.has_card_type(obj.id, *t, registry))
         }
-        TargetFilter::HasKeyword(keyword) => {
-            state.has_keyword(obj.id, *keyword, registry)
+        TargetFilter::SubtypeOrCardType { subtypes, card_types } => {
+            subtypes.iter().any(|s| state.has_subtype(obj.id, s, registry))
+                || card_types.iter().any(|t| state.has_card_type(obj.id, *t, registry))
         }
+        TargetFilter::HasSubtype(subtype) => state.has_subtype(obj.id, subtype, registry),
+        TargetFilter::HasKeyword(keyword) => state.has_keyword(obj.id, *keyword, registry),
+        TargetFilter::Another => source_id.is_none_or(|s| obj.id != s),
         TargetFilter::SameNameAsSource => {
-            // Only target creatures with the same name as the source permanent.
-            state.get_object(source_id)
+            source_id
+                .and_then(|s| state.get_object(s))
                 .is_some_and(|source| source.name == obj.name)
         }
-        _ => true, // Other filters not commonly used for ability targeting
     }
 }
 
@@ -2004,7 +1850,7 @@ fn generate_ability_targets(
     match target_req {
         TargetRequirement::Creature => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some())
+                .filter(|o| state.is_creature(o.id, registry))
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
@@ -2016,9 +1862,9 @@ fn generate_ability_targets(
                 .filter(|o| o.is_equipment)
                 .and_then(|o| o.attached_to);
             state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some())
+                .filter(|o| state.is_creature(o.id, registry))
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
-                .filter(|o| matches_ability_target_filter(state, o, filter, controller, source_id, registry))
+                .filter(|o| matches_target_filter(state, o, filter, controller, Some(source_id), registry))
                 .filter(|o| already_attached != Some(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
@@ -2040,9 +1886,7 @@ fn generate_ability_targets(
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect();
             for obj in state.all_objects_in_zone(Zone::Battlefield) {
-                let is_pw = obj.card_types.contains(&CardType::Planeswalker)
-                    || registry.card_data(obj.card_id)
-                        .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
+                let is_pw = state.has_card_type(obj.id, CardType::Planeswalker, registry);
                 if is_pw && can_be_targeted(state, obj.id, controller, registry) {
                     let t = Target::Object(obj.id);
                     if behavior.is_valid_target(state, controller, &t, registry) {
@@ -2054,7 +1898,8 @@ fn generate_ability_targets(
         }
         TargetRequirement::AnyTarget => {
             let mut targets: Vec<Target> = state.all_objects_in_zone(Zone::Battlefield).iter()
-                .filter(|o| o.power.is_some() || o.card_types.contains(&CardType::Planeswalker))
+                .filter(|o| state.is_creature(o.id, registry)
+                    || state.has_card_type(o.id, CardType::Planeswalker, registry))
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
@@ -2072,7 +1917,7 @@ fn generate_ability_targets(
         TargetRequirement::PermanentWithFilter(filter) => {
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| can_be_targeted(state, o.id, controller, registry))
-                .filter(|o| matches_target_filter(o, filter, registry))
+                .filter(|o| matches_target_filter(state, o, filter, controller, Some(source_id), registry))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
@@ -2092,25 +1937,6 @@ fn generate_ability_targets(
                 .collect()
         }
         _ => vec![],
-    }
-}
-
-/// Check if a battlefield object matches a `TargetFilter`.
-/// Used by `generate_ability_targets` to filter targets for activated abilities.
-fn matches_target_filter(obj: &crate::state::GameObject, filter: &crate::cards::TargetFilter, registry: &CardRegistry) -> bool {
-    use crate::cards::TargetFilter;
-    match filter {
-        TargetFilter::HasCardType(types) => {
-            types.iter().any(|t| obj.card_types.contains(t))
-        }
-        TargetFilter::Noncreature => obj.power.is_none(),
-        TargetFilter::Nonblack => !obj.colors.contains(&crate::types::Color::Black),
-        TargetFilter::HasSubtype(subtype) => {
-            obj.subtypes.iter().any(|s| s == subtype)
-                || registry.card_data(obj.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
-        }
-        _ => true, // Other filters not yet needed for abilities.
     }
 }
 
@@ -2339,8 +2165,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             let opts: Vec<ObjectId> = new_state.objects.values()
                                 .filter(|o| {
                                     o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
-                                        && (o.power.is_some() || registry.card_data(o.card_id)
-                                            .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
+                                        && state.is_creature(o.id, registry)
                                 })
                                 .map(|o| o.id)
                                 .collect();
@@ -2434,7 +2259,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 if needs_sac {
                     let creature = new_state.objects_in_zone(Zone::Battlefield, player)
                         .iter()
-                        .find(|o| o.power.is_some())
+                        .find(|o| new_state.is_creature(o.id, registry))
                         .map(|o| o.id);
                     if let Some(cid) = creature {
                         let sac_name = card_name(&new_state, registry, cid);
@@ -2456,8 +2281,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let mut exile_candidates: Vec<(ObjectId, i32)> = new_state.objects.values()
                             .filter(|o| {
                                 o.zone == Zone::Graveyard && o.owner == player && o.id != *object_id
-                                    && (o.power.is_some() || registry.card_data(o.card_id)
-                                        .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
+                                    && state.is_creature(o.id, registry)
                             })
                             .map(|o| (o.id, o.power.unwrap_or(0)))
                             .collect();
@@ -2748,7 +2572,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 let mut forced = Vec::new();
                 for creature in new_state.objects.values() {
                     if creature.zone != Zone::Battlefield || creature.controller != active
-                        || creature.power.is_none() || creature.tapped || creature.summoning_sick {
+                        || !new_state.is_creature(creature.id, registry) || creature.tapped || creature.summoning_sick {
                         continue;
                     }
                     if new_state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&creature.id)) {
@@ -3268,8 +3092,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                         .filter(|o| {
                                             o.zone == Zone::Graveyard && o.owner == player
                                                 && o.id != pending.object_id
-                                                && (o.power.is_some() || registry.card_data(o.card_id)
-                                                    .is_some_and(|d| d.card_types.contains(&CardType::Creature)))
+                                                && state.is_creature(o.id, registry)
                                         })
                                         .map(|o| (o.id, new_state.effective_power(o.id, registry).unwrap_or(0)))
                                         .collect();
@@ -3664,8 +3487,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(id), PendingEffect::ExileFromGraveyardGainLife { controller }) => {
             let is_creature = state.get_object(*id)
                 .is_some_and(|o| {
-                    registry.card_data(o.card_id)
-                        .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                    state.is_creature(o.id, registry)
                 });
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Exile, registry);
@@ -3806,7 +3628,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             if remaining_players.is_empty() {
                 // All players have chosen. Destroy every creature not in the kept set.
                 let all_creatures: Vec<ObjectId> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                    .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
                     .map(|o| o.id)
                     .collect();
                 for cid in all_creatures {
@@ -3820,7 +3642,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 let rest = remaining_players[1..].to_vec();
 
                 let options: Vec<crate::actions::Target> = state.objects.values()
-                    .filter(|o| o.zone == Zone::Battlefield && o.controller == next_player && o.power.is_some())
+                    .filter(|o| o.zone == Zone::Battlefield && o.controller == next_player && state.is_creature(o.id, registry))
                     .map(|o| crate::actions::Target::Object(o.id))
                     .collect();
 
@@ -3838,7 +3660,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         if remaining.is_empty() {
                             // All done — destroy the rest.
                             let all_creatures: Vec<ObjectId> = state.objects.values()
-                                .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
+                                .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
                                 .map(|o| o.id)
                                 .collect();
                             for cid in all_creatures {
@@ -3851,7 +3673,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                         let np = remaining[0];
                         let nr = remaining[1..].to_vec();
                         let np_options: Vec<crate::actions::Target> = state.objects.values()
-                            .filter(|o| o.zone == Zone::Battlefield && o.controller == np && o.power.is_some())
+                            .filter(|o| o.zone == Zone::Battlefield && o.controller == np && state.is_creature(o.id, registry))
                             .map(|o| crate::actions::Target::Object(o.id))
                             .collect();
                         if np_options.len() <= 1 {
@@ -4313,8 +4135,7 @@ pub fn mill_cards(state: &mut GameState, player: PlayerId, count: usize, registr
         // Check if it's a creature card before moving (for mill-watcher triggers).
         let is_creature = state.get_object(obj_id)
             .is_some_and(|o| {
-                registry.card_data(o.card_id)
-                    .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
+                state.is_creature(o.id, registry)
             });
         state.move_object(obj_id, Zone::Graveyard, registry);
         if is_creature {
