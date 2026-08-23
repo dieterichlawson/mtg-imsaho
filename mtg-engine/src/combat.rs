@@ -133,7 +133,12 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
     if any_first_strike {
         // First strike damage step: only first/double strikers deal damage.
         deal_damage_step(state, &combat, registry, true);
-        // Run SBAs between first strike and normal damage.
+        // Run SBAs between first strike and normal damage. Creatures that
+        // leave combat during this pass (e.g. a blocker that regenerated —
+        // CR 701.15c) are skipped in the normal step via the liveness checks
+        // in deal_damage_step; the snapshot is still used for blocked-ness
+        // (a blocked attacker stays blocked even if its blockers leave,
+        // CR 510.1c).
         while crate::sba::check_state_based_actions(state, registry) {}
         // Normal damage step: non-first-strikers + double strikers.
         deal_damage_step(state, &combat, registry, false);
@@ -167,6 +172,12 @@ fn deal_damage_step(
 ) {
     for (&attacker_id, &defending_player) in &combat.attackers {
         if state.get_object(attacker_id).is_none_or(|o| o.zone != Zone::Battlefield) {
+            continue;
+        }
+        // An attacker removed from combat since the snapshot (e.g. it
+        // regenerated between damage steps) neither deals nor receives
+        // combat damage (CR 506.4c).
+        if state.combat.as_ref().is_some_and(|c| !c.attackers.contains_key(&attacker_id)) {
             continue;
         }
 
@@ -203,6 +214,14 @@ fn deal_damage_step(
             let blocker_count = blockers.len();
             for (idx, &blocker_id) in blockers.iter().enumerate() {
                 if state.get_object(blocker_id).is_none_or(|o| o.zone != Zone::Battlefield) {
+                    continue;
+                }
+                // A blocker removed from combat since the snapshot (e.g. it
+                // regenerated between damage steps) neither deals nor
+                // receives combat damage (CR 506.4c). The attacker remains
+                // blocked (CR 510.1c) — handled by the snapshot itself.
+                if state.combat.as_ref().is_some_and(|c|
+                    !c.blocker_assignments.get(&attacker_id).is_some_and(|v| v.contains(&blocker_id))) {
                     continue;
                 }
                 let is_last_blocker = idx == blocker_count - 1;
