@@ -1,11 +1,15 @@
 ---
 id: grimoire_of_the_dead-01
-status: new
+status: fixed
 card: Grimoire of the Dead
 audit_run_id: 2026-04-19-grimoire_of_the_dead-audit
 audit_model: sonnet
 audit_tokens: 22452
 audit_duration: 439
+fixed_sha: fc41ee775c2558a71e0743f1f9af70a119e52574
+fixed_at: 2026-08-23T17:28:19Z
+test_file: mtg-engine/tests/characteristics_card_sweep.rs
+fix_note: cluster fix: move_object clears runtime-granted subtypes and colors on leaving the battlefield (CR 400.7); tokens exempt
 ---
 
 ## Audit Finding

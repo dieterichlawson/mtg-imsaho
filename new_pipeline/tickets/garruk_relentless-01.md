@@ -1,11 +1,15 @@
 ---
 id: garruk_relentless-01
-status: new
+status: fixed
 card: Garruk Relentless
 audit_run_id: 2026-04-19-garruk_relentless-audit
 audit_model: sonnet
 audit_tokens: 43867
 audit_duration: 733
+fixed_sha: fc41ee775c2558a71e0743f1f9af70a119e52574
+fixed_at: 2026-08-23T17:28:19Z
+test_file: mtg-engine/tests/characteristics_card_sweep.rs
+fix_note: cluster fix: card code now reads characteristics through the GameState accessors (has_card_type / is_creature / has_subtype)
 ---
 
 ## Audit Finding

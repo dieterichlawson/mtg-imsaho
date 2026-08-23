@@ -1,11 +1,15 @@
 ---
 id: silver_inlaid_dagger-01
-status: new
+status: fixed
 card: Silver-Inlaid Dagger
 audit_run_id: 2026-04-19-silver_inlaid_dagger-audit
 audit_model: sonnet
 audit_tokens: 13236
 audit_duration: 278
+fixed_sha: fc41ee775c2558a71e0743f1f9af70a119e52574
+fixed_at: 2026-08-23T17:28:19Z
+test_file: mtg-engine/tests/characteristics_card_sweep.rs
+fix_note: cluster fix: EffectCondition::AttachedHasSubtype now unions runtime grants with the active face via has_subtype
 ---
 
 ## Audit Finding

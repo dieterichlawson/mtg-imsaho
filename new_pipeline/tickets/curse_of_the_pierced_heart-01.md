@@ -1,11 +1,15 @@
 ---
 id: curse_of_the_pierced_heart-01
-status: new
+status: fixed
 card: Curse of the Pierced Heart
 audit_run_id: 2026-04-19-curse_of_the_pierced_heart-audit
 audit_model: sonnet
 audit_tokens: 30078
 audit_duration: 606
+fixed_sha: fc41ee775c2558a71e0743f1f9af70a119e52574
+fixed_at: 2026-08-23T17:28:19Z
+test_file: mtg-engine/tests/characteristics_card_sweep.rs
+fix_note: cluster fix: card code now reads characteristics through the GameState accessors (has_card_type / is_creature / has_subtype)
 ---
 
 ## Audit Finding

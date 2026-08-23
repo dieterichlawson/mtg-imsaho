@@ -31,7 +31,7 @@ never filter through `grep FAILED`.
 | 1 | Intervening-if triggers (CR 603.4) | 12 | **done** |
 | — | Confirm-and-close already-fixed tickets | 19 | **done** |
 | 3 | Enters-tapped replacement effects | ~8 | not started |
-| 4 | Card code reading empty object-level fields | ~7 | not started |
+| 4 | Card code reading empty object-level fields | 7 | **done** |
 | 5 | Control-on-entry ordering | ~4 | not started |
 | 6 | Targeted trigger declared untargeted | ~4 | not started |
 | 7 | Card-specific one-offs | ~45 | not started |
@@ -155,11 +155,60 @@ are genuinely fixed, and each has regression-test coverage already in
 The one correction in the handoff held up: **unbreathing_horde-01 is still
 open** and is not covered by the damage-pipeline work.
 
+### Cluster 4 — characteristics reads in card and condition code
+
+Three distinct root causes, not one:
+
+1. **Empty vector read as "has no types".** Garruk Relentless' -3 filtered on
+   `o.card_types.contains(Creature)`, false for every non-token creature, so
+   the +X/+X and trample hit nothing. Curse of the Pierced Heart scanned the
+   same field for Planeswalker, making "or a planeswalker that player
+   controls" dead code. Both now use `state.is_creature` / `has_card_type`.
+2. **Non-empty vector read as the whole truth.**
+   `EffectCondition::AttachedHasSubtype` treated `obj.subtypes` as
+   authoritative once anything was in it, so a Human that Olivia Voldaren had
+   turned into a Vampire stopped counting as a Human — Silver-Inlaid Dagger's
+   +1/+0 and Butcher's Cleaver's lifelink both vanished, and
+   `AttachedLacksSubtype` inverted the wrong answer on top. Now goes through
+   `has_subtype`, matching what `CreatureFilter::HasSubtype` already did.
+3. **Front-face-only registry read.** `registry.card_data` always returns the
+   front face, so Hamlet Captain buffed transformed werewolves as if still
+   Human (CR 712.8d). Full Moon's Rise had the same read and was switched over
+   with it (harmless today — werewolf front faces are Werewolves too).
+
+Plus the mirror of (2) on the way out: CR 400.7 runtime grants — Olivia's
+"Vampire", Grimoire of the Dead's "Zombie" and black — were surviving a zone
+change, so a creature reanimated by Grimoire stayed a black Zombie in the
+graveyard. `move_object` now clears `subtypes` and `colors` on leaving the
+battlefield, **before** the CR 712.8a front-face revert (order matters: the
+clear would otherwise wipe what that revert writes). Tokens are exempt —
+their object-level fields *are* their printed characteristics.
+
+**Deliberately not done:** clearing `card_types` on zone change. Neither
+ticket asks for it, nothing in the set grants a card type at runtime (only the
+copy-effect and token paths write that field), and clearing it broke test
+fixtures that use `card_types` as a stand-in for a real card. That is a
+separate behavioural change with its own blast radius.
+
+**Test.** `mtg-engine/tests/characteristics_card_sweep.rs`, 6 tests; 5
+verified red pre-fix, the 6th guards the token exemption.
+
+**Two existing tests were re-based on real levers.** Both simulated "stops
+being a Human" by overwriting `obj.subtypes`, which models nothing the engine
+does — outside transform, subtypes are only ever added to. They now transform
+a real DFC (Cloistered Youth → Unholy Fiend; Villagers of Estwald → Howlpack
+of Estwald), which is the lever the equipment test file's own opening note
+already described. Their assertions are unchanged in intent.
+
+**Tickets closed:** garruk_relentless-01, curse_of_the_pierced_heart-01,
+hamlet_captain-01, butcher_s_cleaver-02, silver_inlaid_dagger-01,
+olivia_voldaren-01, grimoire_of_the_dead-01.
+
 ## Next up
 
-1. Clusters 3 → 4 → 5 → 6, then the one-off tail.
+1. Clusters 3 → 5 → 6, then the one-off tail.
 2. `should_trigger` is now the hook for any future intervening-if card — check
    for one whenever a ticket says "the condition is only evaluated at
    resolution".
 
-**Backlog count: 43 fixed / 73 open** (was 2 / 114 at the start of this pass).
+**Backlog count: 50 fixed / 66 open** (was 2 / 114 at the start of this pass).
