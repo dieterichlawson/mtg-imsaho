@@ -331,6 +331,20 @@ pub trait CardBehavior: Send + Sync {
     /// `from_zone` is the zone the creature is coming from (`None` for tokens).
     fn entering_with_counters(&self, _state: &GameState, _self_id: ObjectId, _from_zone: Option<Zone>, _registry: &CardRegistry) -> Vec<(crate::types::CounterType, u32)> { vec![] }
 
+    /// CR 614.1d: whether this permanent enters the battlefield tapped.
+    ///
+    /// A replacement effect, not a triggered ability — it modifies the
+    /// entering event itself, so it uses no stack and opens no priority
+    /// window, and its condition is evaluated at the moment of entry. The
+    /// Innistrad check lands ("enters tapped unless you control a Mountain or
+    /// a Plains") read their condition here.
+    ///
+    /// `state` is the game as it stands with the permanent already placed but
+    /// before `EnteredBattlefield` is emitted, so a self-referential condition
+    /// must exclude `self_id`. `from_zone` is where it came from, for cards
+    /// that care.
+    fn enters_tapped(&self, _state: &GameState, _self_id: ObjectId, _from_zone: Option<Zone>, _registry: &CardRegistry) -> bool { false }
+
     /// CR 614.1c: Compute additional counters another creature should enter
     /// with, contributed by this card from its current zone.
     /// Used by Dearly Departed (in graveyard, adds +1/+1 to entering Humans).

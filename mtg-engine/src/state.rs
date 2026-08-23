@@ -542,6 +542,9 @@ impl GameState {
             self.add_counters(id, *counter_type, *count);
         }
 
+        // CR 614.1d: tokens can enter tapped too.
+        self.apply_enters_tapped_replacement(id, None, registry);
+
         let controller = self.get_object(id).map_or(owner, |o| o.controller);
         self.events.push(crate::events::GameEvent::EnteredBattlefield {
             object: id,
@@ -757,6 +760,12 @@ impl GameState {
                     self.add_counters(id, *counter_type, *count);
                 }
 
+                // CR 614.1d: "enters tapped" is a replacement effect, applied
+                // before the event is emitted — so no stack entry, no priority
+                // window in which the permanent is briefly untapped, and the
+                // condition is read at the moment of entry rather than later.
+                self.apply_enters_tapped_replacement(id, from, registry);
+
                 let controller = self.get_object(id).map_or(PlayerId(0), |o| o.controller);
                 self.events.push(crate::events::GameEvent::EnteredBattlefield {
                     object: id,
@@ -771,6 +780,22 @@ impl GameState {
     /// under the same controller as `entering_id`, the entering creature's characteristics
     /// are replaced with those of the copy source. The entering creature keeps its own
     /// identity (`ObjectId`, owner, controller) but gains the source's copiable values.
+    /// CR 614.1d: ask the card whether it enters tapped, and tap it if so.
+    /// Runs while the permanent is already on the battlefield but before
+    /// `EnteredBattlefield` is emitted, which is the moment the replacement
+    /// applies.
+    fn apply_enters_tapped_replacement(&mut self, id: ObjectId, from: Option<Zone>, registry: &crate::cards::CardRegistry) {
+        let card_id = self.get_object(id).map_or(CardId(0), |o| o.card_id);
+        let Some(behavior) = registry.get(card_id) else { return };
+        if behavior.enters_tapped(self, id, from, registry) {
+            if let Some(obj) = self.get_object_mut(id) {
+                obj.tapped = true;
+            }
+            let name = self.obj_name(id);
+            self.log(LogLevel::Info, format!("{name} enters tapped"));
+        }
+    }
+
     fn apply_entering_copy_replacement(&mut self, entering_id: ObjectId, registry: &crate::cards::CardRegistry) {
         // Get the entering creature's controller and check it's a creature.
         let (controller, is_creature) = match self.get_object(entering_id) {

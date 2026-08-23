@@ -1,8 +1,7 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, ManaAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{Zone, CardType, ManaType};
-use crate::actions::Target;
 
 /// Sulfur Falls — Land.
 /// This land enters tapped unless you control an Island or a Mountain.
@@ -40,25 +39,19 @@ impl CardBehavior for SulfurFalls {
             oracle_text: "This land enters tapped unless you control an Island or a Mountain.\n{T}: Add {U} or {R}.".into(),
             keywords: vec![],
             flashback_cost: None, continuous_effects: vec![], additional_cost: None,
-            triggered_abilities: vec![
-                TriggeredAbilityDef {
-                    kind: TriggerKind::EntersBattlefield,
-                    description: "enters tapped unless you control an Island or a Mountain".into(),
-                target_requirement: None,
-                },
-            ],
+            // "Enters tapped unless ..." is a replacement effect (CR 614.1d),
+            // declared via `enters_tapped` — not a triggered ability.
+            triggered_abilities: vec![],
         }
     }
 
-    fn has_etb_handler(&self) -> bool { true }
-
-    fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        if !Self::controller_has_matching_land(state, object_id, registry) {
-            if let Some(obj) = state.get_object_mut(object_id) {
-                obj.tapped = true;
-            }
-            state.log(crate::state::LogLevel::Info, "Sulfur Falls enters tapped".into());
-        }
+    /// CR 614.1d: "SulfurFalls enters tapped unless you control a Island or a Mountain."
+    /// A replacement effect — no stack entry, no window in which the land is
+    /// briefly untapped and could be tapped for mana in response, and the
+    /// condition is read at the moment of entry rather than at resolution
+    /// (so an opponent cannot bounce the Island in response to change it).
+    fn enters_tapped(&self, state: &GameState, self_id: ObjectId, _from_zone: Option<Zone>, registry: &CardRegistry) -> bool {
+        !Self::controller_has_matching_land(state, self_id, registry)
     }
 
     fn mana_abilities(&self, state: &GameState, object_id: ObjectId) -> Vec<ManaAbilityDef> {
