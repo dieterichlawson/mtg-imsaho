@@ -1,11 +1,13 @@
 ---
 id: thraben_sentry-01
-status: new
+status: fixed
 card: Thraben Sentry
 audit_run_id: 2026-04-19-thraben_sentry-audit
 audit_model: sonnet
 audit_tokens: 16871
 audit_duration: 354
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: death-watch dispatch uses state.triggered_abilities_of (active face, CR 712.8d); regression coverage present
 ---
 
 ## Audit Finding

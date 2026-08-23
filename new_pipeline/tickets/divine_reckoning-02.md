@@ -1,11 +1,13 @@
 ---
 id: divine_reckoning-02
-status: new
+status: fixed
 card: Divine Reckoning
 audit_run_id: 2026-04-19-divine_reckoning-audit
 audit_model: sonnet
 audit_tokens: 33181
 audit_duration: 977
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: spell cleanup is engine-owned; the card no longer calls move_spell_after_resolve (CR 608.2m); regression coverage present
 ---
 
 ## Audit Finding

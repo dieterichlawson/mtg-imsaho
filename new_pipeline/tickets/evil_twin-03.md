@@ -1,11 +1,13 @@
 ---
 id: evil_twin-03
-status: new
+status: fixed
 card: Evil Twin
 audit_run_id: 2026-04-19-evil_twin-audit
 audit_model: sonnet
 audit_tokens: 43910
 audit_duration: 1253
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: entering_copy_source cleared after a successful CopyCreature (engine.rs:3600); regression coverage present
 ---
 
 ## Audit Finding

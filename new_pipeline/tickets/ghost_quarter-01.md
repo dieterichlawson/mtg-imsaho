@@ -1,11 +1,13 @@
 ---
 id: ghost_quarter-01
-status: new
+status: fixed
 card: Ghost Quarter
 audit_run_id: 2026-04-19-ghost_quarter-audit
 audit_model: sonnet
 audit_tokens: 25466
 audit_duration: 1899
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: matches_target_filter HasCardType now resolves via state.has_card_type (engine.rs:1821); regression coverage present
 ---
 
 ## Audit Finding

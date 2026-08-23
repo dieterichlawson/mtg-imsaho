@@ -1,11 +1,13 @@
 ---
 id: daybreak_ranger-03
-status: new
+status: fixed
 card: Daybreak Ranger
 audit_run_id: 2026-04-19-daybreak_ranger-audit
 audit_model: sonnet
 audit_tokens: 29964
 audit_duration: 567
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: combat::fight now routes both hits through damage::deal_damage, which applies PreventDamageRemoveCounter; regression coverage present
 ---
 
 ## Audit Finding

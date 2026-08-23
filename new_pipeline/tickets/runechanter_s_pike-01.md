@@ -1,11 +1,13 @@
 ---
 id: runechanter_s_pike-01
-status: new
+status: fixed
 card: Runechanter's Pike
 audit_run_id: 2026-04-19-runechanter_s_pike-audit
 audit_model: sonnet
 audit_tokens: 46835
 audit_duration: 2354
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: effective_power/toughness self-check guarded by obj.power.is_some() (state.rs:1141); regression coverage present
 ---
 
 ## Audit Finding

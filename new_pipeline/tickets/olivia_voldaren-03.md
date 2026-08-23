@@ -1,11 +1,13 @@
 ---
 id: olivia_voldaren-03
-status: new
+status: fixed
 card: Olivia Voldaren
 audit_run_id: 2026-04-19-olivia_voldaren-audit
 audit_model: sonnet
 audit_tokens: 22278
 audit_duration: 724
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: resolution guard uses state.has_subtype instead of reading obj.subtypes; regression coverage present
 ---
 
 ## Audit Finding

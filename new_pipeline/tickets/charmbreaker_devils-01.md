@@ -1,11 +1,13 @@
 ---
 id: charmbreaker_devils-01
-status: new
+status: fixed
 card: Charmbreaker Devils
 audit_run_id: 2026-04-19-charmbreaker_devils-audit
 audit_model: sonnet
 audit_tokens: 19584
 audit_duration: 382
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: should_trigger_on_spell_cast implemented and consulted at dispatch (triggers.rs:945); regression coverage present
 ---
 
 ## Audit Finding

@@ -1,11 +1,13 @@
 ---
 id: fiend_hunter-01
-status: new
+status: fixed
 card: Fiend Hunter
 audit_run_id: 2026-04-19-fiend_hunter-audit
 audit_model: sonnet
 audit_tokens: 39764
 audit_duration: 801
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: ETB declares target_requirement and on_enter_battlefield consumes chosen_targets (CR 603.3b); regression coverage present
 ---
 
 ## Audit Finding

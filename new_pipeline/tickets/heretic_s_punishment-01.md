@@ -1,11 +1,13 @@
 ---
 id: heretic_s_punishment-01
-status: new
+status: fixed
 card: Heretic's Punishment
 audit_run_id: 2026-04-19-heretic_s_punishment-audit
 audit_model: sonnet
 audit_tokens: 23651
 audit_duration: 422
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: inline damage replaced by damage::deal_damage (heretics_punishment.rs:109); regression coverage present
 ---
 
 ## Audit Finding

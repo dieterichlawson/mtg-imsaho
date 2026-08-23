@@ -1,11 +1,13 @@
 ---
 id: into_the_maw_of_hell-01
-status: new
+status: fixed
 card: Into the Maw of Hell
 audit_run_id: 2026-04-19-into_the_maw_of_hell-audit
 audit_model: sonnet
 audit_tokens: 27027
 audit_duration: 478
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: same HasCardType fix; TwoTargets land sub-requirement now enumerates non-token lands; regression coverage present
 ---
 
 ## Audit Finding

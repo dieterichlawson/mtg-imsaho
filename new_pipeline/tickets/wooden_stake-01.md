@@ -1,11 +1,13 @@
 ---
 id: wooden_stake-01
-status: new
+status: fixed
 card: Wooden Stake
 audit_run_id: 2026-04-19-wooden_stake-audit
 audit_model: sonnet
 audit_tokens: 26131
 audit_duration: 436
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: should_trigger_on_blocks / _on_becomes_blocked implemented and consulted at dispatch; regression coverage present
 ---
 
 ## Audit Finding

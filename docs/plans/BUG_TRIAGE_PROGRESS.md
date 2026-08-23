@@ -29,7 +29,7 @@ never filter through `grep FAILED`.
 |---|---------|--------:|--------|
 | 2 | Protection-from-source in ability targeting | ~10 | **done** |
 | 1 | Intervening-if triggers (CR 603.4) | 12 | **done** |
-| — | Confirm-and-close already-fixed tickets | ~20 | not started |
+| — | Confirm-and-close already-fixed tickets | 19 | **done** |
 | 3 | Enters-tapped replacement effects | ~8 | not started |
 | 4 | Card code reading empty object-level fields | ~7 | not started |
 | 5 | Control-on-entry ordering | ~4 | not started |
@@ -124,15 +124,42 @@ time (CR 603.2 event condition). `wooden_stake-01` is a "blocks a Vampire"
 event condition, which the existing `should_trigger_on_blocks` hook already
 covers. Both are tracked as one-offs instead.
 
+### Confirm-and-close pass — 19 tickets
+
+`SESSION_HANDOFF.md` listed ~20 tickets believed fixed by the previous
+session's engine work. Each was verified by reading the ticket's own claim and
+then the current code at the path it names — not by trusting the list. All 19
+are genuinely fixed, and each has regression-test coverage already in
+`mtg-engine/tests/`. Per-ticket verification notes are in each ticket's
+`fix_note`. The recurring shapes were:
+
+- **Inline damage → `damage::deal_damage`** (blazing_torch-01,
+  heretic_s_punishment-01, skirsdag_cultist-01, daybreak_ranger-03 via
+  `combat::fight`). The central pipeline applies protection, the planeswalker
+  loyalty branch, `PreventDamageRemoveCounter` and lifelink; each inline copy
+  had missed some subset.
+- **Characteristics layer** (ghost_quarter-01, maw_of_the_mire-01,
+  into_the_maw_of_hell-01, blazing_torch-02, heretic_s_punishment-02,
+  skirsdag_cultist-02, olivia_voldaren-03) — filters now go through
+  `state.has_card_type` / `has_subtype` rather than reading the empty
+  object-level vectors.
+- **Dispatch-time trigger conditions** (charmbreaker_devils-01 via
+  `should_trigger_on_spell_cast`, wooden_stake-01 via
+  `should_trigger_on_blocks`, thraben_sentry-01 via
+  `triggered_abilities_of`) — the same family as the new `should_trigger`.
+- One-offs: fiend_hunter-01 (target locking), divine_reckoning-02 (engine-owned
+  spell cleanup), runechanter_s_pike-01 (equipment `dynamic_pt` leaking into
+  its own P/T), evil_twin-03 (`entering_copy_source` never cleared),
+  blazing_torch-03 (attached-ability controller guard).
+
+The one correction in the handoff held up: **unbreathing_horde-01 is still
+open** and is not covered by the damage-pipeline work.
+
 ## Next up
 
-1. Confirm-and-close the ~20 tickets `SESSION_HANDOFF.md` believes are already
-   fixed. (That doc explicitly corrects one: **unbreathing_horde-01 is still
-   open** — it is about counting Zombie *cards* excluding tokens on entry, not
-   the fight-damage prevention the damage pipeline fixed.)
-2. Then clusters 3 → 4 → 5 → 6, and the one-off tail last.
-3. `should_trigger` is now the hook for any future intervening-if card — check
+1. Clusters 3 → 4 → 5 → 6, then the one-off tail.
+2. `should_trigger` is now the hook for any future intervening-if card — check
    for one whenever a ticket says "the condition is only evaluated at
    resolution".
 
-**Backlog count: 24 fixed / 92 open** (was 2 / 114 at the start of this pass).
+**Backlog count: 43 fixed / 73 open** (was 2 / 114 at the start of this pass).

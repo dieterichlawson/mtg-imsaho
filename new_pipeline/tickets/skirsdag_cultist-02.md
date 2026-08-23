@@ -1,11 +1,13 @@
 ---
 id: skirsdag_cultist-02
-status: new
+status: fixed
 card: Skirsdag Cultist
 audit_run_id: 2026-04-19-skirsdag_cultist-audit
 audit_model: sonnet
 audit_tokens: 29132
 audit_duration: 1795
+fixed_at: 2026-08-23T17:06:20Z
+fix_note: verified fixed on master by inspection: AnyTarget branch uses state.has_card_type for planeswalkers; regression coverage present
 ---
 
 ## Audit Finding
