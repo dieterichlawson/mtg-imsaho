@@ -1,11 +1,15 @@
 ---
 id: splinterfright-02
-status: new
+status: fixed
 card: Splinterfright
 audit_run_id: 2026-04-19-splinterfright-audit
 audit_model: sonnet
 audit_tokens: 27529
 audit_duration: 462
+fixed_sha: 1e05ab6e4596cc9aab3a893ece318376dea011d6
+fixed_at: 2026-08-23T20:24:12Z
+test_file: mtg-engine/tests/enters_under_control.rs
+fix_note: reads owner, not a stale controller, when counting its graveyard (CR 112.8)
 ---
 
 ## Audit Finding

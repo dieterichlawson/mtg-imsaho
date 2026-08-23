@@ -1,11 +1,15 @@
 ---
 id: grimoire_of_the_dead-03
-status: new
+status: fixed
 card: Grimoire of the Dead
 audit_run_id: 2026-04-19-grimoire_of_the_dead-audit
 audit_model: sonnet
 audit_tokens: 22452
 audit_duration: 439
+fixed_sha: 1e05ab6e4596cc9aab3a893ece318376dea011d6
+fixed_at: 2026-08-23T20:24:12Z
+test_file: mtg-engine/tests/enters_under_control.rs
+fix_note: cluster fix: move_object_under_control sets the controller before the zone change so EnteredBattlefield carries it (CR 110.2)
 ---
 
 ## Audit Finding
