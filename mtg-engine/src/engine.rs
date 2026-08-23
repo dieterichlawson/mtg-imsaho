@@ -3564,16 +3564,22 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 format!("{source_name}: +1/+1 counter from attack trigger"));
         }
         (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
-            // Copy the target creature's characteristics onto the source permanent.
-            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_evil_twin) =
+            // Copy the target creature's copiable characteristics onto the
+            // source permanent (CR 707.2), including the legendary supertype.
+            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_legendary, is_evil_twin) =
                 match state.get_object(*target_id) {
                     Some(o) => {
                         let kw = registry.card_data(o.card_id)
                             .map(|d| d.keywords.clone())
                             .unwrap_or_default();
                         let evil_twin = o.card_state.contains_key("is_evil_twin");
+                        // Legendary is copiable (CR 707.2); read the object flag
+                        // or fall back to the printed supertype.
+                        let legendary = o.is_legendary
+                            || registry.card_data(o.card_id)
+                                .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
                         (o.name.clone(), o.power, o.toughness, o.card_id,
-                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone(), evil_twin)
+                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone(), legendary, evil_twin)
                     }
                     None => return,
                 };
@@ -3587,6 +3593,7 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 obj.card_types = card_types;
                 obj.subtypes = subtypes;
                 obj.colors = colors;
+                obj.is_legendary = is_legendary;
                 // Always set the "is_evil_twin" marker on the source: CopyCreature is
                 // only ever created by Evil Twin's ETB trigger, so the source is always
                 // an Evil Twin that needs the destroy ability regardless of which
