@@ -49,8 +49,11 @@ impl CardBehavior for PastInFlames {
                 state.face_data(o.id, registry).and_then(|d| {
                     let is_instant_or_sorcery = d.card_types.contains(&CardType::Instant)
                         || d.card_types.contains(&CardType::Sorcery);
+                    // CR 702.33a: the flashback cost is "equal to its mana
+                    // cost", so a card with no mana cost gains no usable
+                    // flashback — it is skipped, not given a free cost.
                     if is_instant_or_sorcery {
-                        Some((o.id, d.cost.clone().unwrap_or(ManaCost::free())))
+                        d.cost.clone().map(|c| (o.id, c))
                     } else {
                         None
                     }

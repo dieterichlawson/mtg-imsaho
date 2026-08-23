@@ -48,25 +48,22 @@ impl CardBehavior for SnapcasterMage {
         let is_instant_or_sorcery = state.face_data(obj.id, registry)
             .is_some_and(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery));
         if !is_instant_or_sorcery { return false; }
-        // Don't redundantly grant flashback to a card that already has it
-        // queued for this turn (e.g., second Snapcaster prompt).
-        let already_granted = state.until_end_of_turn.iter().any(|e| matches!(e,
-            crate::state::TemporaryEffect::GrantFlashback { target, .. } if *target == *id));
-        !already_granted
+        // A card that already has a flashback grant is still a legal target:
+        // "target instant or sorcery card in your graveyard" has no clause
+        // excluding it, and CR 702.33 explicitly allows several instances of
+        // flashback at once. Refusing meant a second Snapcaster found no legal
+        // target and its trigger was removed under CR 603.3c.
+        true
     }
 
     fn on_enter_battlefield(&self, state: &mut GameState, _object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         // CR 603.3d: target was chosen when the trigger went on the stack.
         let Some(Target::Object(target_id)) = chosen_targets.first() else { return };
-        let (cost, name) = match state.get_object(*target_id) {
-            Some(obj) => {
-                let cost = state.face_data(obj.id, registry)
-                    .and_then(|d| d.cost.clone())
-                    .unwrap_or_else(ManaCost::free);
-                (cost, obj.name.clone())
-            }
-            None => return,
-        };
+        // CR 702.33a: a flashback cost is "equal to its mana cost". A card with NO
+        // mana cost has no flashback cost and simply cannot be cast this way —
+        // substituting a free cost made it castable for {0}.
+        let Some(cost) = state.face_data(*target_id, registry).and_then(|d| d.cost.clone()) else { return };
+        let Some(name) = state.get_object(*target_id).map(|o| o.name.clone()) else { return };
         state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: *target_id, cost });
         state.log(crate::state::LogLevel::Event,
             format!("Snapcaster Mage grants flashback to {name}"));

@@ -1205,7 +1205,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
     }
 
     // Cast spells via flashback from graveyard.
-    let mut seen_untargeted_flashbacks: Vec<CardId> = Vec::new();
+    let mut seen_untargeted_flashbacks: Vec<(CardId, ManaCost)> = Vec::new();
     for obj in state.objects_in_zone(Zone::Graveyard, player) {
         if let Some(behavior) = registry.get(obj.card_id) {
             let data = behavior.card_data();
@@ -1215,27 +1215,38 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 continue;
             }
 
-            // Check for flashback cost, dynamic flashback, or "cast from graveyard" ability.
-            let dynamic_fb = state.until_end_of_turn.iter()
-                .find_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
-                    if *target == obj.id { Some(cost.clone()) } else { None }
-                } else { None });
+            // CR 702.33: a card can have several instances of flashback at
+            // once — a granted one (Snapcaster Mage, Past in Flames) alongside
+            // its printed one — and the player may pay ANY of them. This used
+            // to pick a single winner, granted-before-printed, and silently
+            // discard the rest. That is not merely a missing choice: with
+            // Bump in the Night ({B} printed cost, {5}{R} printed flashback)
+            // in the graveyard and only red mana available, the granted {B}
+            // cost was found unaffordable and the payable {5}{R} was never
+            // offered at all.
             let cast_from_gy = behavior.can_cast_from_graveyard();
-            let fb_cost = match dynamic_fb {
-                Some(ref c) => c,
-                None => match &data.flashback_cost {
-                    Some(c) => c,
-                    None => if cast_from_gy {
-                        // Cast from graveyard uses normal mana cost.
-                        match &data.cost {
-                            Some(c) => c,
-                            None => continue,
-                        }
-                    } else {
-                        continue;
-                    },
-                },
-            };
+            let mut fb_costs: Vec<ManaCost> = state.until_end_of_turn.iter()
+                .filter_map(|e| if let crate::state::TemporaryEffect::GrantFlashback { target, cost } = e {
+                    if *target == obj.id { Some(cost.clone()) } else { None }
+                } else { None })
+                .collect();
+            if let Some(c) = &data.flashback_cost {
+                fb_costs.push(c.clone());
+            }
+            if cast_from_gy {
+                // Cast from graveyard uses the normal mana cost.
+                if let Some(c) = &data.cost {
+                    fb_costs.push(c.clone());
+                }
+            }
+            // Two identical costs are one option, not two.
+            let mut unique: Vec<ManaCost> = Vec::new();
+            for c in fb_costs {
+                if !unique.contains(&c) {
+                    unique.push(c);
+                }
+            }
+            if unique.is_empty() { continue; }
 
             let is_instant = data.card_types.contains(&CardType::Instant);
             let is_sorcery_type = data.card_types.contains(&CardType::Sorcery)
@@ -1253,6 +1264,8 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             if !can_cast_timing { continue; }
 
+            // One castable option per distinct flashback cost.
+            for fb_cost in &unique {
             // Compute autotap for the non-X portion of the flashback cost.
             // X-cost flashback spells (Devil's Play's {X}{R}{R}{R} flashback)
             // are funded via a ChooseXFunding prompt after the spell is
@@ -1268,9 +1281,10 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
             } else {
                 fb_cost
             };
-            let fb_tap_plan = mana::compute_autotap(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &hand_costs);
-            if fb_tap_plan.is_none() { continue; }
-            let fb_tap_plan = fb_tap_plan.unwrap();
+            let Some(fb_tap_plan) = mana::compute_autotap(fb_cost_for_autotap, &player_state.mana_pool, &mana_sources, &hand_costs) else {
+                // This particular cost is unaffordable; another may not be.
+                continue;
+            };
 
             // Check additional cost eligibility for graveyard casts.
             {
@@ -1289,20 +1303,26 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
 
             let target_req = behavior.target_requirement();
 
+            // Collapse identical untargeted flashbacks across duplicate copies
+            // of the same card — but keyed on the COST as well, or a card's
+            // second flashback option would be swallowed as a duplicate of its
+            // first.
             if matches!(target_req, crate::cards::TargetRequirement::None) {
-                if seen_untargeted_flashbacks.contains(&obj.card_id) { continue; }
-                seen_untargeted_flashbacks.push(obj.card_id);
+                let key = (obj.card_id, fb_cost.clone());
+                if seen_untargeted_flashbacks.contains(&key) { continue; }
+                seen_untargeted_flashbacks.push(key);
             }
 
             let mut cast_actions = generate_cast_actions_with_targets(
                 state, player, obj.id, &target_req, behavior,
             );
-            // Set autotap plan on flashback actions.
-            if !fb_tap_plan.is_empty() {
-                for action in &mut cast_actions {
-                    if let Action::CastSpell { tap_plan, .. } = action {
-                        tap_plan.clone_from(&fb_tap_plan);
-                    }
+            // Each action carries the cost it was offered for, so the cast
+            // handler charges the one the player picked rather than
+            // re-deriving a winner.
+            for action in &mut cast_actions {
+                if let Action::CastSpell { tap_plan, alternative_cost, .. } = action {
+                    tap_plan.clone_from(&fb_tap_plan);
+                    *alternative_cost = Some(fb_cost.clone());
                 }
             }
             if !cast_actions.is_empty() {
@@ -1318,6 +1338,7 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                     sacrifice_options: vec![], // Flashback spells don't have sacrifice additional costs
                     additional_cost_label: None,
                 });
+            }
             }
         }
     }
@@ -3404,12 +3425,10 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         }
         (Target::Object(target_id), PendingEffect::GrantFlashback { source_name }) => {
             // Grant flashback to the chosen card until end of turn.
-            let fb_info = state.get_object(*target_id).map(|obj| {
-                let card_id = obj.card_id;
-                registry.card_data(card_id)
-                    .and_then(|d| d.cost.clone())
-                    .unwrap_or(ManaCost::free())
-            });
+            // CR 702.33a: the flashback cost equals the card's mana cost, so
+            // a card with none gains no usable flashback. Substituting a free
+            // cost made it castable for {0}.
+            let fb_info = state.face_data(*target_id, registry).and_then(|d| d.cost.clone());
             if let Some(cost) = fb_info {
                 state.until_end_of_turn.push(crate::state::TemporaryEffect::GrantFlashback { target: *target_id, cost });
                 state.log(LogLevel::Event,
