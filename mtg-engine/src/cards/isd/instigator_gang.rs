@@ -74,8 +74,17 @@ impl CardBehavior for InstigatorGang {
                     description: "attacking creatures you control get +3/+0".into(),
                 target_requirement: None,
                 },
+                TriggeredAbilityDef {
+                    kind: TriggerKind::Upkeep,
+                    description: "transform back if 2+ spells cast".into(),
+                target_requirement: None,
+                },
             ],
         })
+    }
+
+    fn should_trigger(&self, state: &GameState, self_id: ObjectId, kind: &TriggerKind, registry: &CardRegistry) -> bool {
+        helpers::werewolf_should_trigger(self, state, self_id, kind, registry)
     }
 
     fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {

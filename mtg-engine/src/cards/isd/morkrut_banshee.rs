@@ -1,3 +1,4 @@
+use crate::cards::helpers;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::{GameState, PendingEffect};
@@ -38,6 +39,10 @@ impl CardBehavior for MorkrutBanshee {
     }
 
     fn has_etb_handler(&self) -> bool { true }
+
+    fn should_trigger(&self, state: &GameState, _self_id: ObjectId, kind: &TriggerKind, _registry: &CardRegistry) -> bool {
+        helpers::morbid_should_trigger(state, kind)
+    }
 
     /// Enforce morbid at target selection: if no creature died this turn,
     /// no creature is a legal target, so the trigger is removed per CR 603.3c.

@@ -1,5 +1,6 @@
 use rand::seq::SliceRandom;
 
+use crate::cards::helpers;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
@@ -40,6 +41,10 @@ impl CardBehavior for WoodlandSleuth {
     }
 
     fn has_etb_handler(&self) -> bool { true }
+
+    fn should_trigger(&self, state: &GameState, _self_id: ObjectId, kind: &TriggerKind, _registry: &CardRegistry) -> bool {
+        helpers::morbid_should_trigger(state, kind)
+    }
 
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         if !state.creature_died_this_turn {

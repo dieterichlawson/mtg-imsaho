@@ -75,6 +75,10 @@ impl CardBehavior for UlvenwaldMystics {
         })
     }
 
+    fn should_trigger(&self, state: &GameState, self_id: ObjectId, kind: &TriggerKind, registry: &CardRegistry) -> bool {
+        helpers::werewolf_should_trigger(self, state, self_id, kind, registry)
+    }
+
     fn should_transform(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
         Self::werewolf_should_transform(state, object_id)
     }
