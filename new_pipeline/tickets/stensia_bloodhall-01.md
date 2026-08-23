@@ -1,11 +1,15 @@
 ---
 id: stensia_bloodhall-01
-status: new
+status: fixed
 card: Stensia Bloodhall
 audit_run_id: 2026-04-19-stensia_bloodhall-audit
 audit_model: sonnet
 audit_tokens: 29778
 audit_duration: 562
+fixed_sha: c15d59216468a939ae6b78cb28062bbb8d811628
+fixed_at: 2026-08-23T16:52:36Z
+test_file: mtg-engine/tests/ability_target_protection.rs
+fix_note: cluster fix: generate_ability_targets now threads Some(source_id) into can_be_targeted_by (CR 702.16b)
 ---
 
 ## Audit Finding

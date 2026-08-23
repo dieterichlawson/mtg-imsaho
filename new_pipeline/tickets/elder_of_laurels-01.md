@@ -1,11 +1,15 @@
 ---
 id: elder_of_laurels-01
-status: new
+status: fixed
 card: Elder of Laurels
 audit_run_id: 2026-04-19-elder_of_laurels-audit
 audit_model: sonnet
 audit_tokens: 18493
 audit_duration: 356
+fixed_sha: c15d59216468a939ae6b78cb28062bbb8d811628
+fixed_at: 2026-08-23T16:52:36Z
+test_file: mtg-engine/tests/ability_target_protection.rs
+fix_note: cluster fix: generate_ability_targets now threads Some(source_id) into can_be_targeted_by (CR 702.16b)
 ---
 
 ## Audit Finding
