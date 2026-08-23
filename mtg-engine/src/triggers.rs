@@ -894,9 +894,19 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         if let Some(behavior) = registry.get(card_id) {
                             let desc = face_trigger_description(registry, card_id, &kind, is_transformed);
                             if !desc.is_empty() {
-                                if behavior.step_trigger_scope(&kind, is_transformed) == crate::cards::TriggerScope::Your
-                                    && controller != active_player
-                                {
+                                // CR 603.2: the trigger event is a particular
+                                // player's step beginning. Which player depends
+                                // on the ability's scope.
+                                let in_scope = match behavior.step_trigger_scope(&kind, is_transformed) {
+                                    crate::cards::TriggerScope::Each => true,
+                                    crate::cards::TriggerScope::Your => controller == active_player,
+                                    crate::cards::TriggerScope::AttachedPlayer => {
+                                        state.get_object(obj_id)
+                                            .and_then(|o| o.attached_to_player)
+                                            .is_some_and(|p| p == active_player)
+                                    }
+                                };
+                                if !in_scope {
                                     continue;
                                 }
                                 // CR 603.4: intervening-if is checked at trigger

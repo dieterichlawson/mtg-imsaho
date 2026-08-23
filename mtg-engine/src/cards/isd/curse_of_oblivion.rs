@@ -46,6 +46,16 @@ impl CardBehavior for CurseOfOblivion {
         crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
+    /// "At the beginning of ENCHANTED PLAYER's upkeep" — CR 603.2: the trigger
+    /// event is that player's upkeep beginning, so it must not go on the stack
+    /// during anyone else's.
+    fn step_trigger_scope(&self, kind: &TriggerKind, _is_back_face: bool) -> crate::cards::TriggerScope {
+        match kind {
+            TriggerKind::Upkeep => crate::cards::TriggerScope::AttachedPlayer,
+            _ => crate::cards::TriggerScope::Each,
+        }
+    }
+
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let cursed_player = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.attached_to_player,

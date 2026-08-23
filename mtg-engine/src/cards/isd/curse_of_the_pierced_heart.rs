@@ -46,19 +46,14 @@ impl CardBehavior for CurseOfThePiercedHeart {
         crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
-    /// "At the beginning of ENCHANTED PLAYER's upkeep..." — the trigger event
-    /// is that player's upkeep beginning, not everyone's. `TriggerScope` only
-    /// distinguishes "your upkeep" from "each upkeep", so without this the
-    /// trigger went on the stack every upkeep and the handler quietly did
-    /// nothing on the wrong turns — a spurious priority window each time.
-    /// Gating dispatch on the condition is what CR 603.2 asks for.
-    fn should_trigger(&self, state: &GameState, self_id: ObjectId, kind: &TriggerKind, _registry: &CardRegistry) -> bool {
-        if *kind != TriggerKind::Upkeep {
-            return true;
+    /// "At the beginning of ENCHANTED PLAYER's upkeep" — CR 603.2: the trigger
+    /// event is that player's upkeep beginning, so it must not go on the stack
+    /// during anyone else's.
+    fn step_trigger_scope(&self, kind: &TriggerKind, _is_back_face: bool) -> crate::cards::TriggerScope {
+        match kind {
+            TriggerKind::Upkeep => crate::cards::TriggerScope::AttachedPlayer,
+            _ => crate::cards::TriggerScope::Each,
         }
-        state.get_object(self_id)
-            .and_then(|o| o.attached_to_player)
-            .is_some_and(|cursed| state.active_player == cursed)
     }
 
     fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {

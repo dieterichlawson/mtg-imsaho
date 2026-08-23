@@ -124,6 +124,13 @@ pub struct LoyaltyAbilityDef {
 pub enum TriggerScope {
     Each,
     Your,
+    /// "At the beginning of ENCHANTED PLAYER's upkeep" — fires only on the
+    /// upkeep of the player this permanent is attached to, which is normally
+    /// an opponent, so neither `Each` nor `Your` describes it. Every Curse in
+    /// the set needs this; without it they used `Each` and each wrote the same
+    /// early-return in its handler, leaving an inert trigger on the stack
+    /// during every other player's upkeep.
+    AttachedPlayer,
 }
 
 /// What kind of event triggers an ability.

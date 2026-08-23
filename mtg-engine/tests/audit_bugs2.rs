@@ -733,14 +733,26 @@ fn bug_mask_of_avacyn_duplicate_equip_action() {
 
     // Get legal actions
     let legal = engine::legal_actions(&state, &registry);
-    let equip_actions: Vec<_> = legal.actions.iter().filter(|a| {
-        matches!(a, Action::ActivateAbility { object_id, .. } if *object_id == mask)
+    let equip_targets: Vec<_> = legal.actions.iter().filter_map(|a| match a {
+        Action::ActivateAbility { object_id, targets, .. } if *object_id == mask => Some(targets.clone()),
+        _ => None,
     }).collect();
 
-    // Should have exactly 1 equip action (to move to c2)
-    // BUG: May have duplicate equip actions from attached-aura loop
-    assert!(equip_actions.len() <= 1,
-        "Should have at most 1 equip action, got {}", equip_actions.len());
+    // The bug this guards is the attached-permanent loop offering the SAME
+    // equip twice, so the check is for duplicates — not for a target count.
+    // Both creatures are legal targets: CR 702.6a does not exclude the
+    // creature the equipment is already attached to, and re-equipping to the
+    // current host is a real play whenever the equip cost is what you want.
+    let mut seen: Vec<&Vec<Target>> = Vec::new();
+    for t in &equip_targets {
+        assert!(!seen.contains(&t),
+            "each equip target should be offered exactly once; {t:?} appears \
+             twice in {equip_targets:?}");
+        seen.push(t);
+    }
+    assert_eq!(equip_targets.len(), 2,
+        "both creatures the player controls are legal equip targets, including \
+         the one already wearing the Mask (CR 702.6a); got {equip_targets:?}");
 }
 
 // ═══════════════════════════════════════════════════════════════

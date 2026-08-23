@@ -1855,15 +1855,17 @@ fn generate_ability_targets(
                 .collect()
         }
         TargetRequirement::CreatureWithFilter(filter) => {
-            // For equipment equip abilities, exclude the creature already attached to this equipment.
-            let already_attached: Option<ObjectId> = state.get_object(source_id)
-                .filter(|o| o.is_equipment)
-                .and_then(|o| o.attached_to);
+            // CR 702.6a: equip is "Attach this permanent to target creature you
+            // control" — nothing excludes the creature it is already attached
+            // to. This used to filter that creature out as a UX shortcut, which
+            // made a legal play unavailable: re-equipping to the same host is
+            // the point whenever the equip COST is what you want (Demonmail
+            // Hauberk sacrificing a different creature), and with only one
+            // creature on the battlefield it removed the ability entirely.
             state.all_objects_in_zone(Zone::Battlefield).iter()
                 .filter(|o| state.is_creature(o.id, registry))
                 .filter(|o| can_be_targeted_by(state, o.id, controller, Some(source_id), registry))
                 .filter(|o| matches_target_filter(state, o, filter, controller, Some(source_id), registry))
-                .filter(|o| already_attached != Some(o.id))
                 .map(|o| Target::Object(o.id))
                 .filter(|t| behavior.is_valid_target(state, controller, t, registry))
                 .collect()
