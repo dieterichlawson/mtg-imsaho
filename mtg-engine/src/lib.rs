@@ -7,6 +7,7 @@ pub mod mana;
 pub mod funding;
 pub mod stack;
 pub mod combat;
+pub mod damage;
 pub mod sba;
 pub mod engine;
 pub mod view;

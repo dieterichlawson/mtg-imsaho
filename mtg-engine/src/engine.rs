@@ -3252,87 +3252,15 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
     use rand::seq::SliceRandom;
 
     match (target, effect) {
-        (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name }) => {
-            // Check for "prevent damage, remove counter" replacement (Unbreathing Horde).
-            let has_prevent = state.has_continuous_effect(*id, &|e| {
-                match e {
-                    crate::types::ContinuousEffect::PreventDamageRemoveCounter { scope } => Some(scope),
-                    _ => None,
-                }
-            }, registry);
-            if has_prevent {
-                let counter_count = state.get_object(*id)
-                    .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied())
-                    .unwrap_or(0);
-                if counter_count > 0 {
-                    if let Some(obj) = state.get_object_mut(*id) {
-                        let entry = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
-                        *entry = entry.saturating_sub(1);
-                        if *entry == 0 {
-                            obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
-                        }
-                    }
-                    let name = state.obj_name(*id);
-                    state.log(LogLevel::Event,
-                        format!("{name}: damage prevented, removed a +1/+1 counter"));
-                }
-                // Damage prevented — skip normal damage application.
-            } else if state.has_protection_from(*id, *source_id, registry) {
-                // Protection prevents damage from the source.
-                let name = state.obj_name(*id);
-                state.log(LogLevel::Event,
-                    format!("{name}: damage from {source_name} prevented by protection"));
-            } else if let Some(obj) = state.get_object_mut(*id) {
-                if obj.zone == Zone::Battlefield {
-                    // Check if target is a planeswalker — damage removes loyalty counters.
-                    let is_planeswalker = obj.card_types.contains(&CardType::Planeswalker)
-                        || registry.card_data(obj.card_id)
-                            .is_some_and(|d| d.card_types.contains(&CardType::Planeswalker));
-
-                    if is_planeswalker {
-                        // Remove loyalty counters equal to damage.
-                        let loyalty = obj.counters.entry(crate::types::CounterType::Loyalty).or_insert(0);
-                        *loyalty = loyalty.saturating_sub(*amount);
-                        if *loyalty == 0 {
-                            obj.counters.remove(&crate::types::CounterType::Loyalty);
-                        }
-                    } else {
-                        obj.damage_marked += amount;
-                    }
-                    obj.damaged_by.push(*source_id);
-                    state.events.push(GameEvent::NonCombatDamageDealt {
-                        source: *source_id,
-                        target: crate::events::DamageTarget::Object(*id),
-                        amount: *amount,
-                    });
-                    state.log(LogLevel::Event, format!("{} dealt {} damage to {}", source_name, amount, state.obj_name(*id)));
-                    if state.has_keyword(*source_id, Keyword::Lifelink, registry) {
-                        if let Some(src) = state.get_object(*source_id) {
-                            let src_controller = src.controller;
-                            let old_life = state.get_player(src_controller).life;
-                            let new_life = old_life + i32::try_from(*amount).unwrap_or(i32::MAX);
-                            state.get_player_mut(src_controller).life = new_life;
-                            state.events.push(GameEvent::LifeChanged {
-                                player: src_controller,
-                                old: old_life,
-                                new_life,
-                            });
-                        }
-                    }
-                }
-            }
+        (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name: _ }) => {
+            crate::damage::deal_damage(state, *source_id,
+                crate::events::DamageTarget::Object(*id), *amount,
+                crate::damage::DamageKind::NonCombat, registry);
         }
-        (Target::Player(pid), PendingEffect::DealDamage { amount, source_id, source_name }) => {
-            let old = state.get_player(*pid).life;
-            let new_life = old - i32::try_from(*amount).unwrap_or(i32::MAX);
-            state.get_player_mut(*pid).life = new_life;
-            state.events.push(GameEvent::NonCombatDamageDealt {
-                source: *source_id,
-                target: crate::events::DamageTarget::Player(*pid),
-                amount: *amount,
-            });
-            state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
-            state.log(LogLevel::Event, format!("{} dealt {} damage to p{}", source_name, amount, pid.0));
+        (Target::Player(pid), PendingEffect::DealDamage { amount, source_id, source_name: _ }) => {
+            crate::damage::deal_damage(state, *source_id,
+                crate::events::DamageTarget::Player(*pid), *amount,
+                crate::damage::DamageKind::NonCombat, registry);
         }
         (Target::Object(id), PendingEffect::Destroy { source_name } | PendingEffect::DestroyCreature { source_name }) => {
             let name = state.obj_name(*id);

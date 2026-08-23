@@ -1319,11 +1319,31 @@ impl GameState {
             return true;
         }
 
+        // Check filter-based static ProtectionFrom effects (e.g., protection
+        // from a color or card type granted by a permanent).
+        for src_obj in self.objects.values() {
+            if src_obj.zone != Zone::Battlefield {
+                continue;
+            }
+            for effect in self.continuous_effects_of(src_obj.id, registry) {
+                if let ContinuousEffect::ProtectionFrom { filter, scope } = effect {
+                    if self.effect_applies_to(target_id, &scope, src_obj.id, src_obj.controller, registry)
+                        && self.matches_filter(source_id, &filter, src_obj.controller, registry)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        let target_controller = self.get_object(target_id)
+            .map_or(crate::ids::PlayerId(0), |o| o.controller);
+
         // Check until-end-of-turn protection grants (e.g., Spare from Evil).
         for effect in &self.until_end_of_turn {
             match effect {
                 TemporaryEffect::GrantProtection { target, filter } if *target == target_id => {
-                    if self.matches_filter(source_id, filter, crate::ids::PlayerId(0), registry) {
+                    if self.matches_filter(source_id, filter, target_controller, registry) {
                         return true;
                     }
                 }

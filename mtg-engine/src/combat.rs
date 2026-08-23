@@ -2,7 +2,7 @@
 use crate::cards::CardRegistry;
 use crate::events::{GameEvent, DamageTarget};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{CombatState, GameState, LogLevel};
+use crate::state::{CombatState, GameState};
 use crate::types::{Keyword, Zone};
 
 /// Set up attackers. Validates and taps them.
@@ -144,61 +144,16 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
 }
 
 /// Fight: each creature deals damage equal to its power to the other.
-/// Used by Prey Upon and similar "fight" cards.
+/// Used by Prey Upon and similar "fight" cards. Fight damage is noncombat
+/// damage: protection, deathtouch, lifelink, and noncombat replacement
+/// effects apply; combat-only modifiers (Inquisitor's Flail, Moonmist,
+/// Ghostly Possession) do not.
 pub fn fight(state: &mut GameState, a: ObjectId, b: ObjectId, registry: &CardRegistry) {
     let power_a = u32::try_from(state.effective_power(a, registry).unwrap_or(0).max(0)).unwrap_or(0);
     let power_b = u32::try_from(state.effective_power(b, registry).unwrap_or(0).max(0)).unwrap_or(0);
 
-    if power_a > 0 {
-        deal_fight_damage(state, a, b, power_a, registry);
-    }
-    if power_b > 0 {
-        deal_fight_damage(state, b, a, power_b, registry);
-    }
-}
-
-/// Deal fight damage (non-combat). Respects protection, deathtouch, lifelink,
-/// but NOT combat-only modifiers (Inquisitor's Flail, Moonmist, Ghostly Possession).
-fn deal_fight_damage(
-    state: &mut GameState,
-    source: ObjectId,
-    target: ObjectId,
-    amount: u32,
-    registry: &CardRegistry,
-) {
-    // Protection: if target has protection from the source, prevent damage.
-    if has_protection_from_creature(state, target, source, registry) {
-        return;
-    }
-
-    let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
-    if let Some(obj) = state.get_object_mut(target) {
-        obj.damage_marked += amount;
-        if has_deathtouch {
-            obj.dealt_deathtouch_damage = true;
-        }
-        if !obj.damaged_by.contains(&source) {
-            obj.damaged_by.push(source);
-        }
-    }
-    state.events.push(GameEvent::NonCombatDamageDealt {
-        source,
-        target: DamageTarget::Object(target),
-        amount,
-    });
-
-    // Lifelink: source's controller gains life.
-    if state.has_keyword(source, Keyword::Lifelink, registry) {
-        let controller = state.get_object(source).expect("damage source must exist").controller;
-        let old_life = state.get_player(controller).life;
-        let new_life = old_life + i32::try_from(amount).unwrap_or(i32::MAX);
-        state.get_player_mut(controller).life = new_life;
-        state.events.push(GameEvent::LifeChanged {
-            player: controller,
-            old: old_life,
-            new_life,
-        });
-    }
+    crate::damage::deal_damage(state, a, DamageTarget::Object(b), power_a, crate::damage::DamageKind::NonCombat, registry);
+    crate::damage::deal_damage(state, b, DamageTarget::Object(a), power_b, crate::damage::DamageKind::NonCombat, registry);
 }
 
 /// Execute one combat damage step.
@@ -303,91 +258,6 @@ fn deal_damage_step(
     }
 }
 
-/// Check if a creature has a "prevent damage, remove counter" replacement effect
-/// (e.g., Unbreathing Horde). If so, prevent the damage and remove a +1/+1 counter.
-/// Returns true if damage was prevented.
-fn apply_prevent_damage_remove_counter(state: &mut GameState, target: ObjectId, registry: &CardRegistry) -> bool {
-    let has_effect = state.has_continuous_effect(target, &|e| {
-        match e {
-            crate::types::ContinuousEffect::PreventDamageRemoveCounter { scope } => Some(scope),
-            _ => None,
-        }
-    }, registry);
-    if has_effect {
-        let counter_count = state.get_object(target)
-            .and_then(|o| o.counters.get(&crate::types::CounterType::PlusOnePlusOne).copied())
-            .unwrap_or(0);
-        if counter_count > 0 {
-            if let Some(obj) = state.get_object_mut(target) {
-                let entry = obj.counters.entry(crate::types::CounterType::PlusOnePlusOne).or_insert(0);
-                *entry = entry.saturating_sub(1);
-                if *entry == 0 {
-                    obj.counters.remove(&crate::types::CounterType::PlusOnePlusOne);
-                }
-            }
-            let name = state.get_object(target).map(|o| o.name.clone()).unwrap_or_default();
-            state.log(crate::state::LogLevel::Event,
-                format!("{name}: damage prevented, removed a +1/+1 counter"));
-        }
-        // Damage is always prevented even if no counters remain.
-        true
-    } else {
-        false
-    }
-}
-
-/// Check if a creature's combat damage should be prevented because it's not a Wolf/Werewolf
-/// (set by Moonmist's effect for the rest of the turn).
-fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
-    if !state.until_end_of_turn.iter().any(|e| matches!(e,
-        crate::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage
-    )) {
-        return false;
-    }
-    let subtypes = get_subtypes(state, source, registry);
-    !subtypes.iter().any(|s| s == "Wolf" || s == "Werewolf")
-}
-
-/// Compute the combat damage multiplier from `DoubleCombatDamage` effects (e.g., Inquisitor's Flail).
-/// Each source doubles independently: 1 Flail = x2, 2 Flails = x4, 3 = x8, etc.
-fn combat_damage_multiplier(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> u32 {
-    let count = state.count_continuous_effect(creature_id, &|e| {
-        match e {
-            crate::types::ContinuousEffect::DoubleCombatDamage { scope } => Some(scope),
-            _ => None,
-        }
-    }, registry);
-    1u32 << count // 2^count
-}
-
-/// Check if a creature has combat damage prevented (e.g., Ghostly Possession).
-fn has_damage_prevention(state: &GameState, creature_id: ObjectId, registry: &CardRegistry) -> bool {
-    state.has_continuous_effect(creature_id, &|e| {
-        match e {
-            crate::types::ContinuousEffect::PreventCombatDamage { scope } => Some(scope),
-            _ => None,
-        }
-    }, registry)
-}
-
-/// Check if a creature has protection from a specific subtype.
-fn has_protection_from(state: &GameState, creature_id: ObjectId, subtype: &str, registry: &CardRegistry) -> bool {
-    for source in state.objects.values() {
-        if source.zone != crate::types::Zone::Battlefield {
-            continue;
-        }
-        let effects = state.continuous_effects_of(source.id, registry);
-        for effect in &effects {
-            if let crate::types::ContinuousEffect::ProtectionFromSubtype { subtype: prot_sub, scope } = effect {
-                if prot_sub == subtype && state.effect_applies_to(creature_id, scope, source.id, source.controller, registry) {
-                    return true;
-                }
-            }
-        }
-    }
-    false
-}
-
 /// Get all subtypes of a creature (from both card data and object-level subtypes).
 /// Transform-aware: uses back-face data for transformed DFCs.
 #[must_use]
@@ -395,62 +265,7 @@ pub fn get_subtypes(state: &GameState, creature_id: ObjectId, registry: &CardReg
     state.subtypes_of(creature_id, registry)
 }
 
-/// Check if `creature_a` has protection from `creature_b`.
-/// Checks all protection-from-subtype effects and until-EOT protection grants.
-fn has_protection_from_creature(state: &GameState, protected: ObjectId, attacker: ObjectId, registry: &CardRegistry) -> bool {
-    let attacker_subtypes = get_subtypes(state, attacker, registry);
-
-    // Check static protection-from-subtype effects.
-    for subtype in &attacker_subtypes {
-        if has_protection_from(state, protected, subtype, registry) {
-            return true;
-        }
-    }
-
-    // Check static ProtectionFrom (filter-based) effects.
-    for source in state.objects.values() {
-        if source.zone != crate::types::Zone::Battlefield {
-            continue;
-        }
-        let effects = state.continuous_effects_of(source.id, registry);
-        for effect in &effects {
-            if let crate::types::ContinuousEffect::ProtectionFrom { filter, scope } = effect {
-                if state.effect_applies_to(protected, scope, source.id, source.controller, registry)
-                    && state.matches_filter(attacker, filter, source.controller, registry)
-                {
-                    return true;
-                }
-            }
-        }
-    }
-
-    // Check until-end-of-turn protection grants.
-    for effect in &state.until_end_of_turn {
-        match effect {
-            crate::state::TemporaryEffect::GrantProtection { target, filter } if *target == protected => {
-                let controller = state.get_object(protected).map_or(crate::ids::PlayerId(0), |o| o.controller);
-                if state.matches_filter(attacker, filter, controller, registry) {
-                    return true;
-                }
-            }
-            crate::state::TemporaryEffect::GrantProtectionAll { controller, protection_filter } => {
-                if let Some(obj) = state.get_object(protected) {
-                    if obj.controller == *controller
-                        && obj.zone == crate::types::Zone::Battlefield
-                        && state.matches_filter(attacker, protection_filter, *controller, registry)
-                    {
-                        return true;
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
-
-    false
-}
-
-/// Deal damage from a source creature to a target creature. Handles lifelink.
+/// Deal combat damage from a source creature to a target creature.
 fn deal_damage_to_creature(
     state: &mut GameState,
     source: ObjectId,
@@ -458,65 +273,10 @@ fn deal_damage_to_creature(
     amount: u32,
     registry: &CardRegistry,
 ) {
-    // Skip if source or target has combat damage prevention (e.g., Ghostly Possession).
-    if has_damage_prevention(state, source, registry) || has_damage_prevention(state, target, registry) {
-        return;
-    }
-
-    // Moonmist: prevent combat damage from non-Wolf/non-Werewolf creatures.
-    if is_non_wolf_damage_prevented(state, source, registry) {
-        return;
-    }
-
-    // Protection: if target has protection from the source creature, prevent damage.
-    if has_protection_from_creature(state, target, source, registry) {
-        return;
-    }
-
-    // Unbreathing Horde: prevent damage, remove counter.
-    if apply_prevent_damage_remove_counter(state, target, registry) {
-        return;
-    }
-
-    // Inquisitor's Flail: multiply damage for each DoubleCombatDamage source.
-    // Dealing: source's Flails multiply the damage dealt.
-    // Receiving: target's Flails multiply the damage received.
-    let mut amount = amount;
-    amount *= combat_damage_multiplier(state, source, registry);
-    amount *= combat_damage_multiplier(state, target, registry);
-
-    let has_deathtouch = state.has_keyword(source, Keyword::Deathtouch, registry);
-    if let Some(obj) = state.get_object_mut(target) {
-        obj.damage_marked += amount;
-        if has_deathtouch {
-            obj.dealt_deathtouch_damage = true;
-        }
-        // Track which creatures dealt damage to this creature (for Abattoir Ghoul).
-        if !obj.damaged_by.contains(&source) {
-            obj.damaged_by.push(source);
-        }
-    }
-    state.events.push(GameEvent::CombatDamageDealt {
-        source,
-        target: DamageTarget::Object(target),
-        amount,
-    });
-
-    // Lifelink: source's controller gains life.
-    if state.has_keyword(source, Keyword::Lifelink, registry) {
-        let controller = state.get_object(source).expect("damage source must exist").controller;
-        let old_life = state.get_player(controller).life;
-        let new_life = old_life + i32::try_from(amount).unwrap_or(i32::MAX);
-        state.get_player_mut(controller).life = new_life;
-        state.events.push(GameEvent::LifeChanged {
-            player: controller,
-            old: old_life,
-            new_life,
-        });
-    }
+    crate::damage::deal_damage(state, source, DamageTarget::Object(target), amount, crate::damage::DamageKind::Combat, registry);
 }
 
-/// Deal damage from a source creature to a player. Handles lifelink.
+/// Deal combat damage from a source creature to a player.
 fn deal_damage_to_player(
     state: &mut GameState,
     source: ObjectId,
@@ -524,66 +284,7 @@ fn deal_damage_to_player(
     amount: u32,
     registry: &CardRegistry,
 ) {
-    // Skip if source has combat damage prevention (e.g., Ghostly Possession).
-    if has_damage_prevention(state, source, registry) {
-        return;
-    }
-
-    // Moonmist: prevent combat damage from non-Wolf/non-Werewolf creatures.
-    if is_non_wolf_damage_prevented(state, source, registry) {
-        return;
-    }
-
-    // Inquisitor's Flail: multiply damage for each DoubleCombatDamage source.
-    let mut amount = amount;
-    amount *= combat_damage_multiplier(state, source, registry);
-
-    // CR 614: Check for replacement effects that replace combat damage to a player
-    // (e.g. Undead Alchemist: Zombie damage → mill instead).
-    let source_controller = state.get_object(source).map(|o| o.controller);
-    if let Some(controller) = source_controller {
-        let replacers: Vec<(ObjectId, crate::ids::CardId)> = state.objects.values()
-            .filter(|o| o.zone == crate::types::Zone::Battlefield && o.controller == controller)
-            .map(|o| (o.id, o.card_id))
-            .collect();
-        for (obj_id, card_id) in replacers {
-            if let Some(behavior) = registry.get(card_id) {
-                if behavior.replace_combat_damage_to_player(state, obj_id, source, player, amount, registry) {
-                    return; // Damage fully replaced
-                }
-            }
-        }
-    }
-
-    let old_life = state.get_player(player).life;
-    let new_life = old_life - i32::try_from(amount).unwrap_or(i32::MAX);
-    state.get_player_mut(player).life = new_life;
-
-    state.events.push(GameEvent::CombatDamageDealt {
-        source,
-        target: DamageTarget::Player(player),
-        amount,
-    });
-    state.events.push(GameEvent::LifeChanged {
-        player,
-        old: old_life,
-        new_life,
-    });
-
-    state.log(LogLevel::Event, format!("p{} took {} combat damage ({}) from {}", player.0, amount, new_life, state.obj_name(source)));
-
-    // Lifelink: source's controller gains life.
-    if state.has_keyword(source, Keyword::Lifelink, registry) {
-        let controller = state.get_object(source).expect("damage source must exist").controller;
-        let old = state.get_player(controller).life;
-        let new = old + i32::try_from(amount).unwrap_or(i32::MAX);
-        state.get_player_mut(controller).life = new;
-        state.events.push(GameEvent::LifeChanged {
-            player: controller,
-            old,
-            new_life: new,
-        });
-    }
+    crate::damage::deal_damage(state, source, DamageTarget::Player(player), amount, crate::damage::DamageKind::Combat, registry);
 }
 
 /// Clean up combat state at end of combat. Any delayed triggered abilities
@@ -723,7 +424,7 @@ pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: 
     // Protection: a creature with protection from X can't be BLOCKED BY X.
     // Only check if the ATTACKER has protection from the blocker — that prevents the block.
     // A BLOCKER having protection from the attacker does NOT prevent it from blocking.
-    if has_protection_from_creature(state, attacker_id, blocker_id, registry) {
+    if state.has_protection_from(attacker_id, blocker_id, registry) {
         return false;
     }
 

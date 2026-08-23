@@ -1,7 +1,7 @@
 use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
 use crate::state::GameState;
-use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
+use crate::types::{ManaCost, ManaSymbol, Color, CardType};
 
 /// Ashmouth Hound — {1}{R} 2/1 Elemental Hound.
 /// Whenever this creature blocks or becomes blocked by a creature,
@@ -41,30 +41,19 @@ impl CardBehavior for AshmouthHound {
         }
     }
 
-    fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, blocked_attacker: ObjectId, _registry: &CardRegistry) {
+    fn on_blocks(&self, state: &mut GameState, self_id: ObjectId, blocked_attacker: ObjectId, registry: &CardRegistry) {
         // When Ashmouth Hound blocks: deal 1 damage to the creature it's blocking.
-        deal_1_damage(state, self_id, blocked_attacker);
+        deal_1_damage(state, self_id, blocked_attacker, registry);
     }
 
-    fn on_becomes_blocked(&self, state: &mut GameState, self_id: ObjectId, blocker_id: ObjectId, _registry: &CardRegistry) {
+    fn on_becomes_blocked(&self, state: &mut GameState, self_id: ObjectId, blocker_id: ObjectId, registry: &CardRegistry) {
         // When Ashmouth Hound becomes blocked: deal 1 damage to the blocking creature.
-        deal_1_damage(state, self_id, blocker_id);
+        deal_1_damage(state, self_id, blocker_id, registry);
     }
 }
 
-fn deal_1_damage(state: &mut GameState, source: ObjectId, target: ObjectId) {
-    if let Some(obj) = state.get_object_mut(target) {
-        if obj.zone == Zone::Battlefield {
-            obj.damage_marked += 1;
-            obj.damaged_by.push(source);
-            let name = obj.name.clone();
-            state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                source,
-                target: crate::events::DamageTarget::Object(target),
-                amount: 1,
-            });
-            state.log(crate::state::LogLevel::Event,
-                format!("Ashmouth Hound deals 1 damage to {name}"));
-        }
-    }
+fn deal_1_damage(state: &mut GameState, source: ObjectId, target: ObjectId, registry: &CardRegistry) {
+    crate::damage::deal_damage(state, source,
+        crate::events::DamageTarget::Object(target), 1,
+        crate::damage::DamageKind::NonCombat, registry);
 }

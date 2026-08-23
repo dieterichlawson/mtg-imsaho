@@ -46,39 +46,15 @@ impl CardBehavior for SkirsdagCultist {
         }
     }
 
-    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], _registry: &CardRegistry) {
+    fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, targets: &[Target], registry: &CardRegistry) {
         // Deal 2 damage to the chosen target.
         if let Some(target) = targets.first() {
-            match target {
-                Target::Object(target_id) => {
-                    if let Some(obj) = state.get_object_mut(*target_id) {
-                        if obj.zone == Zone::Battlefield {
-                            obj.damage_marked += 2;
-                            obj.damaged_by.push(object_id);
-                        }
-                    }
-                    if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
-                        state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                            source: object_id,
-                            target: crate::events::DamageTarget::Object(*target_id),
-                            amount: 2,
-                        });
-                        state.log(crate::state::LogLevel::Event, format!("Skirsdag Cultist dealt 2 damage to {}", state.obj_name(*target_id)));
-                    }
-                }
-                Target::Player(player_id) => {
-                    let old = state.get_player(*player_id).life;
-                    let new_life = old - 2;
-                    state.get_player_mut(*player_id).life = new_life;
-                    state.events.push(crate::events::GameEvent::NonCombatDamageDealt {
-                        source: object_id,
-                        target: crate::events::DamageTarget::Player(*player_id),
-                        amount: 2,
-                    });
-                    state.events.push(crate::events::GameEvent::LifeChanged { player: *player_id, old, new_life });
-                    state.log(crate::state::LogLevel::Event, format!("Skirsdag Cultist dealt 2 damage to p{}", player_id.0));
-                }
-            }
+            let damage_target = match target {
+                Target::Object(target_id) => crate::events::DamageTarget::Object(*target_id),
+                Target::Player(player_id) => crate::events::DamageTarget::Player(*player_id),
+            };
+            crate::damage::deal_damage(state, object_id, damage_target, 2,
+                crate::damage::DamageKind::NonCombat, registry);
         }
     }
 }

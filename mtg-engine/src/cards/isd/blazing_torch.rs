@@ -1,6 +1,6 @@
 use crate::actions::Target;
 use crate::cards::{ActivatedAbilityDef, CardBehavior, CardData, CardRegistry, SacrificeCost, TargetFilter, TargetRequirement};
-use crate::events::{DamageTarget, GameEvent};
+use crate::events::DamageTarget;
 use crate::ids::{ObjectId, PlayerId};
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, CardType, ContinuousEffect, CreatureFilter, EffectScope, Zone};
@@ -119,36 +119,12 @@ impl CardBehavior for BlazingTorch {
 
             // Deal 2 damage to the target. Source is the torch, not the creature.
             if let Some(target) = targets.first() {
-                match target {
-                    Target::Object(target_id) => {
-                        if let Some(obj) = state.get_object_mut(*target_id) {
-                            obj.damage_marked += 2;
-                            obj.damaged_by.push(damage_source);
-                        }
-                        state.events.push(GameEvent::NonCombatDamageDealt {
-                            source: damage_source,
-                            target: DamageTarget::Object(*target_id),
-                            amount: 2,
-                        });
-                    }
-                    Target::Player(player_id) => {
-                        let old_life = state.get_player(*player_id).life;
-                        let new_life = old_life - 2;
-                        state.get_player_mut(*player_id).life = new_life;
-                        state.events.push(GameEvent::NonCombatDamageDealt {
-                            source: damage_source,
-                            target: DamageTarget::Player(*player_id),
-                            amount: 2,
-                        });
-                        state.events.push(GameEvent::LifeChanged {
-                            player: *player_id,
-                            old: old_life,
-                            new_life,
-                        });
-                    }
-                }
-                state.log(crate::state::LogLevel::Event,
-                    "Blazing Torch deals 2 damage".into());
+                let damage_target = match target {
+                    Target::Object(target_id) => DamageTarget::Object(*target_id),
+                    Target::Player(player_id) => DamageTarget::Player(*player_id),
+                };
+                crate::damage::deal_damage(state, damage_source, damage_target, 2,
+                    crate::damage::DamageKind::NonCombat, registry);
             }
         }
     }
