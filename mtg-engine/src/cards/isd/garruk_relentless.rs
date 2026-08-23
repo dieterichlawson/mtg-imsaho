@@ -255,19 +255,15 @@ impl CardBehavior for GarrukRelentless {
                 // where X is the number of creature cards in your graveyard.
                 let x = i32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
                     .iter()
-                    .filter(|o| {
-                        if o.card_types.is_empty() {
-                            registry.card_data(o.card_id)
-                                .is_some_and(|d| d.card_types.contains(&CardType::Creature))
-                        } else {
-                            o.card_types.contains(&CardType::Creature)
-                        }
-                    })
+                    .filter(|o| state.has_card_type(o.id, CardType::Creature, registry))
                     .count()).unwrap_or(i32::MAX);
 
+                // `obj.card_types` is empty for every non-token permanent, so
+                // reading it directly silently excluded ordinary creatures from
+                // the buff. `is_creature` resolves through the active face.
                 let creatures: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()
-                    .filter(|o| o.card_types.contains(&CardType::Creature))
+                    .filter(|o| state.is_creature(o.id, registry))
                     .map(|o| o.id)
                     .collect();
 

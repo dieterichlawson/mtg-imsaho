@@ -69,17 +69,9 @@ impl CardBehavior for FullMoonsRise {
 
         let werewolves: Vec<ObjectId> = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .filter(|o| {
-                o.power.is_some() && {
-                    let subtypes = registry.card_data(o.card_id)
-                        .map(|d| d.subtypes.clone())
-                        .unwrap_or_default();
-                    let all_subtypes: Vec<&str> = o.subtypes.iter().map(std::string::String::as_str)
-                        .chain(subtypes.iter().map(std::string::String::as_str))
-                        .collect();
-                    all_subtypes.contains(&"Werewolf")
-                }
-            })
+            // `registry.card_data` reads the front face only; `has_subtype`
+            // reads the active one and unions in runtime-granted subtypes.
+            .filter(|o| o.power.is_some() && state.has_subtype(o.id, "Werewolf", registry))
             .map(|o| o.id)
             .collect();
 

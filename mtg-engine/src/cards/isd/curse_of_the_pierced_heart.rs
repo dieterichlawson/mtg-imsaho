@@ -46,7 +46,7 @@ impl CardBehavior for CurseOfThePiercedHeart {
         crate::cards::helpers::resolve_curse(state, object_id, targets, registry);
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let (controller, cursed_player) = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => (o.controller, o.attached_to_player),
             _ => return,
@@ -58,10 +58,14 @@ impl CardBehavior for CurseOfThePiercedHeart {
         }
 
         // Check if the cursed player controls any planeswalkers.
+        // `obj.card_types` is empty for non-token permanents, so reading it
+        // directly made "or a planeswalker that player controls" dead code for
+        // every real planeswalker. `has_card_type` reads the active face.
         let planeswalkers: Vec<Target> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == cursed_player
-                && o.card_types.contains(&CardType::Planeswalker))
-            .map(|o| Target::Object(o.id))
+            .filter(|o| o.zone == Zone::Battlefield && o.controller == cursed_player)
+            .map(|o| o.id)
+            .filter(|id| state.has_card_type(*id, CardType::Planeswalker, registry))
+            .map(Target::Object)
             .collect();
 
         if planeswalkers.is_empty() {

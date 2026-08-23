@@ -66,11 +66,11 @@ impl HamletCaptain {
                     && o.power.is_some()
                     && o.id != self_id
             })
-            .filter(|o| {
-                o.subtypes.iter().any(|s| s == "Human")
-                || registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-            })
+            // `registry.card_data` always returns FRONT-face data, so a
+            // transformed werewolf still looked Human and got buffed. CR 712.8d:
+            // a DFC on the battlefield has only its current face's
+            // characteristics — `has_subtype` reads that face.
+            .filter(|o| state.has_subtype(o.id, "Human", registry))
             .map(|o| o.id)
             .collect();
 
