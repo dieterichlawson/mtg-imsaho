@@ -283,6 +283,32 @@ pub enum TemporaryEffect {
     },
 }
 
+/// The single battlefield permanent an until-end-of-turn effect is attached
+/// to, if any. Such effects end when that permanent leaves the battlefield
+/// (CR 400.7 — the returning object is new and must not inherit them).
+/// Controller-scoped, global, and graveyard-targeted effects return `None`.
+///
+/// Exhaustive by design: a new `TemporaryEffect` variant must be classified
+/// here rather than silently defaulting.
+fn until_eot_object_target(effect: &TemporaryEffect) -> Option<ObjectId> {
+    match effect {
+        TemporaryEffect::ModifyPT { target, .. }
+        | TemporaryEffect::GrantKeyword { target, .. }
+        | TemporaryEffect::RemoveKeyword { target, .. }
+        | TemporaryEffect::CantBlock { target }
+        | TemporaryEffect::GrantProtection { target, .. }
+        | TemporaryEffect::ChangeControl { target, .. }
+        | TemporaryEffect::ModifyPTWhileSourceInPlay { target, .. } => Some(*target),
+        // Targets a card in the graveyard, not a battlefield permanent.
+        TemporaryEffect::GrantFlashback { .. } => None,
+        // Controller-scoped or global — not tied to one permanent.
+        TemporaryEffect::PreventNonWolfWerewolfCombatDamage
+        | TemporaryEffect::ModifyPTAll { .. }
+        | TemporaryEffect::GrantKeywordAll { .. }
+        | TemporaryEffect::GrantProtectionAll { .. } => None,
+    }
+}
+
 impl GameState {
     /// Create a new game state for a given number of players.
     #[must_use]
@@ -675,6 +701,14 @@ impl GameState {
             if let Some(obj) = self.objects.get_mut(&id) {
                 obj.entering_copy_source = true;
             }
+        }
+
+        // CR 400.7: when a permanent leaves the battlefield it becomes a new
+        // object. End any until-end-of-turn effect attached to it, so a
+        // same-turn return reusing this ObjectId is a clean object rather than
+        // inheriting stale buffs/grants/control changes.
+        if from == Some(Zone::Battlefield) && to != Zone::Battlefield {
+            self.until_end_of_turn.retain(|e| until_eot_object_target(e) != Some(id));
         }
 
         // Emit zone-change events outside the mutable borrow.
