@@ -1,11 +1,14 @@
 ---
 id: caravan_vigil-01
-status: new
+status: fixed
 card: Caravan Vigil
 audit_run_id: 2026-04-19-caravan_vigil-audit
 audit_model: sonnet
 audit_tokens: 22204
 audit_duration: 427
+fixed_sha: 612f503d41eea0d946bd0831975e605882f64669
+fixed_at: 2026-08-23T20:18:55Z
+fix_note: morbid choice was skipped whenever 2+ basic lands were found; both branches now go through finish_search
 ---
 
 ## Audit Finding
