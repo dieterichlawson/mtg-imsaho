@@ -62,12 +62,23 @@ impl CardBehavior for NightTerrors {
                 // Multiple nonland cards — controller chooses which to exile.
                 crate::cards::helpers::present_target_choice(
                     state, object_id, controller, nonland_cards.iter().map(|&id| Target::Object(id)).collect(),
-                    crate::state::PendingEffect::ExileCardAndCleanup { spell_id: object_id, source_name: "Night Terrors".into() },
+                    crate::state::PendingEffect::CardEffect { source_id: object_id, key: String::new() },
                     "Night Terrors: choose a nonland card to exile",
                     false,
                 );
                 return; // Don't move spell yet — awaiting choice.
             }
         }
+    }
+
+    /// "...exile a nonland card from it." Moving the chosen card to exile and
+    /// finishing this spell's own resolution is Night Terrors' business.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        let Target::Object(id) = target else { return };
+        let name = state.obj_name(*id);
+        state.move_object(*id, Zone::Exile, registry);
+        state.log(crate::state::LogLevel::Event,
+            format!("Night Terrors exiled {name} from hand"));
+        state.move_spell_after_resolve(source_id, registry);
     }
 }

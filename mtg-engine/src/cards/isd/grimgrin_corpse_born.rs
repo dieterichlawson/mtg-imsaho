@@ -121,10 +121,21 @@ impl CardBehavior for GrimgrinCorpseBorn {
         // That removal is handled by process_pending_trigger_pushes (no legal targets).
         // When we reach here, we have a target to destroy.
         let Some(target) = chosen_targets.first() else { return };
-        let effect = PendingEffect::DestroyThenCounter {
-            source_id: self_id,
-            source_name: "Grimgrin, Corpse-Born".into(),
-        };
+        let effect = PendingEffect::CardEffect { source_id: self_id, key: String::new() };
         crate::engine::apply_pending_effect(state, target, &effect, registry);
+    }
+
+    /// "Whenever this creature attacks, destroy target creature. Put a +1/+1
+    /// counter on this creature." The counter goes on regardless of whether
+    /// the destruction succeeds (indestructible, regeneration) — that is this
+    /// card's wording, not a general rule.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        let Target::Object(id) = target else { return };
+        let name = state.obj_name(*id);
+        crate::destruction::try_destroy(state, *id, registry);
+        state.log(crate::state::LogLevel::Event, format!("Grimgrin, Corpse-Born destroyed {name}"));
+        state.add_counters(source_id, crate::types::CounterType::PlusOnePlusOne, 1);
+        state.log(crate::state::LogLevel::Event,
+            "Grimgrin, Corpse-Born: +1/+1 counter from attack trigger".into());
     }
 }

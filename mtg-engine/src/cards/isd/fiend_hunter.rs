@@ -57,7 +57,7 @@ impl CardBehavior for FiendHunter {
         let Some(target) = chosen_targets.first().cloned() else { return };
         crate::cards::helpers::present_optional_target_choice(
             state, object_id, controller, vec![target],
-            PendingEffect::ExileAndStore { source_id: object_id, source_name: "Fiend Hunter".into() },
+            PendingEffect::CardEffect { source_id: object_id, key: String::new() },
             "Fiend Hunter: you may exile the targeted creature",
         );
     }
@@ -76,5 +76,19 @@ impl CardBehavior for FiendHunter {
                 state.log(crate::state::LogLevel::Event, format!("{returned_name} returned to the battlefield"));
             }
         }
+    }
+
+    /// "When this creature enters, exile another target creature." The exiled
+    /// creature's id is remembered on this permanent so the leaves-the-
+    /// battlefield trigger can return it — the key is this card's own
+    /// convention, so the bookkeeping belongs here.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        let Target::Object(id) = target else { return };
+        let name = state.obj_name(*id);
+        state.move_object(*id, Zone::Exile, registry);
+        if let Some(source_obj) = state.get_object_mut(source_id) {
+            source_obj.card_state.insert("exiled_creature".into(), *id);
+        }
+        state.log(crate::state::LogLevel::Event, format!("Fiend Hunter exiled {name}"));
     }
 }

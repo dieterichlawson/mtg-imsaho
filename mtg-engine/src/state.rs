@@ -1620,6 +1620,32 @@ impl GameState {
         self.result.is_some()
     }
 
+    /// Change a player's life total and emit the `LifeChanged` event.
+    ///
+    /// Every caller used to hand-roll this — read `life`, write `life`, push
+    /// the event — which meant a site that forgot the event silently broke any
+    /// "whenever you gain life" watcher. `delta` is signed: negative loses.
+    pub fn change_life(&mut self, player: crate::ids::PlayerId, delta: i32) {
+        if delta == 0 {
+            return;
+        }
+        let old = self.get_player(player).life;
+        let new_life = old + delta;
+        self.get_player_mut(player).life = new_life;
+        self.events.push(crate::events::GameEvent::LifeChanged { player, old, new_life });
+    }
+
+    /// `change_life` with a positive amount (CR 118.3).
+    pub fn gain_life(&mut self, player: crate::ids::PlayerId, amount: i32) {
+        self.change_life(player, amount);
+    }
+
+    /// `change_life` with a negative amount. Note this is life LOSS, which is
+    /// not damage — it bypasses protection, prevention and damage triggers.
+    pub fn lose_life(&mut self, player: crate::ids::PlayerId, amount: i32) {
+        self.change_life(player, -amount);
+    }
+
     // ===== Characteristics layer =====
     //
     // THE RULE: an object's characteristics are
@@ -2210,10 +2236,8 @@ pub enum PendingEffect {
     CantBlockThisTurn { source_name: String },
     /// Target player mills N cards.
     Mill { count: u32, source_name: String },
-    /// Exile the chosen creature and store its ID on the source permanent.
-    ExileAndStore { source_id: ObjectId, source_name: String },
-    /// Target player draws a card and loses 1 life (Bloodgift Demon).
-    DrawAndLoseLife { source_name: String },
+
+
     /// Destroy target creature matching a filter (Reaper from the Abyss).
     DestroyCreature { source_name: String },
 
@@ -2221,17 +2245,11 @@ pub enum PendingEffect {
     ReturnToHand { source_name: String },
     /// Put the chosen object on top of its owner's library.
     PutOnTopOfLibrary { source_name: String },
-    /// Sacrifice the chosen creature and gain life equal to its toughness (Tribute to Hunger).
-    /// `beneficiary` gains the life; `spell_id` is cleaned up after resolution.
-    SacrificeAndGainLife { beneficiary: PlayerId, spell_id: ObjectId },
-    /// Exile a card from graveyard; if it's a creature card, controller gains 2 life (Graveyard Shovel).
-    ExileFromGraveyardGainLife { controller: PlayerId },
+
+
     /// Sacrifice the chosen creature, then search library for a creature card (Garruk -1).
     SacrificeAndTutor { garruk_id: ObjectId },
-    /// Destroy the target creature, then put a +1/+1 counter on the source permanent.
-    /// The counter is added regardless of whether destruction succeeds (indestructible/regenerate),
-    /// but the entire effect is skipped if the target is illegal.
-    DestroyThenCounter { source_id: ObjectId, source_name: String },
+
     /// Sacrifice the chosen creature (generic sacrifice, e.g. Liliana -2).
     SacrificeCreature { source_name: String },
     /// Copy the chosen creature onto the source permanent (Evil Twin clone effect).
@@ -2258,11 +2276,9 @@ pub enum PendingEffect {
     ChooseCurseThenAttach { searcher: PlayerId, source: ObjectId },
     /// Grant flashback to a chosen card until end of turn (Snapcaster Mage).
     GrantFlashback { source_name: String },
-    /// Target player loses 1 life, controller gains 1 life (Falkenrath Noble, etc.).
-    DrainLife { controller: PlayerId, source_name: String },
 
-    /// Exile the chosen card (from hand) and move the source spell to the graveyard (Night Terrors).
-    ExileCardAndCleanup { spell_id: ObjectId, source_name: String },
+
+
 
     /// The legend rule: the chosen permanent is KEPT, all others with the same name
     /// under that player's control are sent to the graveyard.

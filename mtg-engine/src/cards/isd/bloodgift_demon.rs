@@ -68,8 +68,18 @@ impl CardBehavior for BloodgiftDemon {
                 description: "Bloodgift Demon: choose a player to draw a card and lose 1 life".into(),
                 options: targets,
                 optional: false,
-                effect: PendingEffect::DrawAndLoseLife { source_name: "Bloodgift Demon".into() },
+                effect: PendingEffect::CardEffect { source_id: self_id, key: String::new() },
             },
         });
+    }
+
+    /// "At the beginning of your upkeep, target player draws a card and loses
+    /// 1 life." The card count and the life loss are this card's numbers.
+    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        let Target::Player(pid) = target else { return };
+        crate::engine::draw_cards(state, *pid, 1, registry);
+        state.lose_life(*pid, 1);
+        state.log(crate::state::LogLevel::Event,
+            format!("Bloodgift Demon: p{} drew a card and lost 1 life", pid.0));
     }
 }

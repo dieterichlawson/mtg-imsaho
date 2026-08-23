@@ -3340,42 +3340,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             mill_cards(state, *pid, *count as usize, registry);
             state.log(LogLevel::Event, format!("{} milled {} card(s) from p{}", source_name, count, pid.0));
         }
-        (Target::Object(id), PendingEffect::ExileAndStore { source_id, source_name }) => {
-            let name = state.obj_name(*id);
-            state.move_object(*id, Zone::Exile, registry);
-            // Store the exiled creature's ID on the source permanent for LTB retrieval.
-            if let Some(source_obj) = state.get_object_mut(*source_id) {
-                source_obj.card_state.insert("exiled_creature".into(), *id);
-            }
-            state.log(LogLevel::Event, format!("{source_name} exiled {name}"));
-        }
-        (Target::Object(id), PendingEffect::ExileCardAndCleanup { spell_id, source_name }) => {
-            let name = state.obj_name(*id);
-            state.move_object(*id, Zone::Exile, registry);
-            state.log(LogLevel::Event, format!("{source_name} exiled {name} from hand"));
-            state.move_spell_after_resolve(*spell_id, registry);
-        }
-        (Target::Player(pid), PendingEffect::DrawAndLoseLife { source_name }) => {
-            draw_cards(state, *pid, 1, registry);
-            let old = state.get_player(*pid).life;
-            let new_life = old - 1;
-            state.get_player_mut(*pid).life = new_life;
-            state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
-            state.log(LogLevel::Event, format!("{}: p{} drew a card and lost 1 life", source_name, pid.0));
-        }
-        (Target::Player(pid), PendingEffect::DrainLife { controller, source_name }) => {
-            // Target player loses 1 life.
-            let old = state.get_player(*pid).life;
-            let new_life = old - 1;
-            state.get_player_mut(*pid).life = new_life;
-            state.events.push(GameEvent::LifeChanged { player: *pid, old, new_life });
-            // Controller gains 1 life.
-            let old_self = state.get_player(*controller).life;
-            let new_self = old_self + 1;
-            state.get_player_mut(*controller).life = new_self;
-            state.events.push(GameEvent::LifeChanged { player: *controller, old: old_self, new_life: new_self });
-            state.log(LogLevel::Event, format!("{}: p{} lost 1 life, p{} gained 1 life", source_name, pid.0, controller.0));
-        }
         (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Hand, registry);
@@ -3388,51 +3352,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             // Insert at position 0 (top of library).
             state.get_player_mut(owner).library_order.insert(0, *id);
             state.log(LogLevel::Event, format!("{source_name}: put {name} on top of library"));
-        }
-        (Target::Object(id), PendingEffect::SacrificeAndGainLife { beneficiary, spell_id }) => {
-            // Get the creature's toughness before sacrificing.
-            let toughness = state.effective_toughness(*id, registry)
-                .or_else(|| state.get_object(*id).and_then(|o| o.toughness))
-                .unwrap_or(0);
-            let name = state.obj_name(*id);
-
-            crate::destruction::sacrifice(state, *id, registry);
-
-            // Gain life equal to the creature's toughness.
-            if toughness > 0 {
-                let old = state.get_player(*beneficiary).life;
-                let new_life = old + toughness;
-                state.get_player_mut(*beneficiary).life = new_life;
-                state.events.push(GameEvent::LifeChanged { player: *beneficiary, old, new_life });
-                state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {}, p{} gained {} life",
-                    name, beneficiary.0, toughness));
-            } else {
-                state.log(LogLevel::Event, format!("Tribute to Hunger: sacrificed {name}"));
-            }
-
-            state.move_spell_after_resolve(*spell_id, registry);
-        }
-        (Target::Object(id), PendingEffect::ExileFromGraveyardGainLife { controller }) => {
-            let is_creature = state.get_object(*id)
-                .is_some_and(|o| {
-                    state.is_creature(o.id, registry)
-                });
-            let name = state.obj_name(*id);
-            state.move_object(*id, Zone::Exile, registry);
-            state.log(LogLevel::Event, format!("Graveyard Shovel: exiled {name} from graveyard"));
-
-            if is_creature {
-                let old_life = state.get_player(*controller).life;
-                let new_life = old_life + 2;
-                state.get_player_mut(*controller).life = new_life;
-                state.events.push(GameEvent::LifeChanged {
-                    player: *controller,
-                    old: old_life,
-                    new_life,
-                });
-                state.log(LogLevel::Event,
-                    format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));
-            }
         }
         (Target::Object(id), PendingEffect::SacrificeAndTutor { garruk_id }) => {
             use crate::state::ResolutionChoiceKind;
@@ -3484,18 +3403,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let name = state.obj_name(*id);
             crate::destruction::sacrifice(state, *id, registry);
             state.log(LogLevel::Event, format!("{source_name}: sacrificed {name}"));
-        }
-        (Target::Object(id), PendingEffect::DestroyThenCounter { source_id, source_name }) => {
-            // Destroy the target creature, then add a +1/+1 counter to the source.
-            // The counter is added regardless of whether destruction succeeds
-            // (e.g. indestructible/regenerate), per MTG rules.
-            let name = state.obj_name(*id);
-            crate::destruction::try_destroy(state, *id, registry);
-            state.log(LogLevel::Event, format!("{source_name} destroyed {name}"));
-            // Add +1/+1 counter to the source permanent.
-            state.add_counters(*source_id, crate::types::CounterType::PlusOnePlusOne, 1);
-            state.log(LogLevel::Event,
-                format!("{source_name}: +1/+1 counter from attack trigger"));
         }
         (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
             // Copy the target creature's copiable characteristics onto the

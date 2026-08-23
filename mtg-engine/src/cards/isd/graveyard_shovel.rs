@@ -107,12 +107,29 @@ impl CardBehavior for GraveyardShovel {
                         description: "Graveyard Shovel: choose a card from your graveyard to exile".to_string(),
                         options: gy_cards,
                         optional: false,
-                        effect: crate::state::PendingEffect::ExileFromGraveyardGainLife {
-                            controller,
-                        },
+                        effect: crate::state::PendingEffect::CardEffect { source_id: object_id, key: String::new() },
                     },
                 });
             }
+        }
+    }
+
+    /// "{2}, {T}: Target player exiles a card from their graveyard. If a
+    /// creature card is exiled this way, you gain 2 life." The 2 life and the
+    /// creature condition are this card's text.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        let Target::Object(id) = target else { return };
+        let was_creature = state.is_creature(*id, registry);
+        let name = state.obj_name(*id);
+        state.move_object(*id, Zone::Exile, registry);
+        state.log(crate::state::LogLevel::Event,
+            format!("Graveyard Shovel: exiled {name} from graveyard"));
+
+        if was_creature {
+            let controller = crate::cards::helpers::controller_of(state, source_id);
+            state.gain_life(controller, 2);
+            state.log(crate::state::LogLevel::Event,
+                format!("Graveyard Shovel: p{} gained 2 life (creature exiled)", controller.0));
         }
     }
 }

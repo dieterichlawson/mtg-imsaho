@@ -1,7 +1,7 @@
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{GameState, PendingEffect};
+use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword};
 
 /// Falkenrath Noble — {3}{B} 2/2 Vampire Noble. Flying.
@@ -58,13 +58,15 @@ impl CardBehavior for FalkenrathNoble {
     }
 }
 
-/// Apply Falkenrath Noble's drain to the chosen target player.
-fn drain(state: &mut GameState, controller: PlayerId, chosen_targets: &[Target], registry: &CardRegistry) {
-    // CR 603.3d: target was chosen when the trigger went on the stack.
-    let Some(target) = chosen_targets.first() else { return };
-    let effect = PendingEffect::DrainLife {
-        controller,
-        source_name: "Falkenrath Noble".into(),
-    };
-    crate::engine::apply_pending_effect(state, target, &effect, registry);
+/// "...target player loses 1 life and you gain 1 life." Both amounts are this
+/// card's text, so the effect is applied here rather than through a shared
+/// engine effect. This was never a deferred resolution — the target is already
+/// chosen (CR 603.3d, locked in when the trigger went on the stack) — so it
+/// runs directly instead of round-tripping through `apply_pending_effect`.
+fn drain(state: &mut GameState, controller: PlayerId, chosen_targets: &[Target], _registry: &CardRegistry) {
+    let Some(Target::Player(pid)) = chosen_targets.first() else { return };
+    state.lose_life(*pid, 1);
+    state.gain_life(controller, 1);
+    state.log(crate::state::LogLevel::Event,
+        format!("Falkenrath Noble: p{} lost 1 life, p{} gained 1 life", pid.0, controller.0));
 }
