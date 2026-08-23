@@ -658,6 +658,28 @@ impl GameState {
                 obj.attached_to = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;
+                // CR 400.7: a permanent that changes zones becomes a new object
+                // with no memory of what happened to the old one. For a
+                // non-token card the printed characteristics live in the
+                // registry, so these object-level vectors hold only what an
+                // effect granted at runtime — Olivia Voldaren's "Vampire",
+                // Grimoire of the Dead's "Zombie" and black. Those must not
+                // follow the card into the graveyard and back onto the
+                // battlefield. Tokens are the exception: their object-level
+                // fields ARE their printed characteristics.
+                //
+                // This runs before the CR 712.8a revert below, which writes the
+                // front face onto a transformed DFC's object and would
+                // otherwise be wiped by the clear.
+                // `card_types` is deliberately left alone: nothing in the set
+                // grants a card type at runtime (only the copy-effect and
+                // token paths write it), so there is no stale grant to drop.
+                if !obj.is_token {
+                    obj.subtypes.clear();
+                    obj.colors.clear();
+                }
+                // CR 712.8a: a DFC that isn't on the battlefield or the stack
+                // has only its front-face characteristics.
                 if obj.is_transformed {
                     let front = registry.get(obj.card_id).map(|b| b.card_data());
                     if let Some(data) = front {
@@ -1535,22 +1557,16 @@ impl GameState {
                     })
             }
             EffectCondition::AttachedHasSubtype(subtype) => {
-                // Check if the creature this aura is attached to has the subtype.
-                // Use obj.subtypes as authoritative when non-empty (covers type changes),
-                // fall back to registry only when obj.subtypes is empty.
+                // Subtypes are additive: `obj.subtypes` holds only what was
+                // granted at runtime (Olivia's "Vampire", Grimoire's "Zombie"),
+                // while the creature's printed types live on its active face.
+                // Treating a non-empty `obj.subtypes` as the whole truth made a
+                // Human that Olivia had turned into a Vampire stop counting as
+                // a Human. `has_subtype` unions both, and reads the back face
+                // for a transformed DFC.
                 self.get_object(source_id)
                     .and_then(|o| o.attached_to)
-                    .and_then(|target_id| {
-                        self.get_object(target_id).map(|target_obj| {
-                            if target_obj.subtypes.is_empty() {
-                                registry.card_data(target_obj.card_id)
-                                    .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
-                            } else {
-                                target_obj.subtypes.iter().any(|s| s == subtype)
-                            }
-                        })
-                    })
-                    .unwrap_or(false)
+                    .is_some_and(|target_id| self.has_subtype(target_id, subtype, registry))
             }
             EffectCondition::AttachedLacksSubtype(subtype) => {
                 !self.check_condition(&EffectCondition::AttachedHasSubtype(subtype.clone()), source_id, controller, registry)
