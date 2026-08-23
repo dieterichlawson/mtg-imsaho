@@ -22,23 +22,24 @@ const P0: PlayerId = PlayerId(0);
 
 #[test]
 fn transformed_villagers_of_estwald_has_werewolf_subtype_not_human() {
-    // Villagers of Estwald front: Human Werewolf. Back (Howlpack of Estwald): Werewolf only.
-    // After transform, obj.subtypes must be populated with the back-face subtypes so
-    // that EffectCondition::AttachedHasSubtype (used by Bonds of Faith) resolves to
-    // "not a Human" for the transformed creature.
+    // Villagers of Estwald front: Human Werewolf. Back (Howlpack of Estwald):
+    // Werewolf only. After transform the creature must read as "not a Human"
+    // so `EffectCondition::AttachedHasSubtype` (Bonds of Faith) resolves right.
+    // Asserted through the characteristics layer: the back face's subtypes are
+    // no longer copied onto `obj.subtypes`, they are read from the face.
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::PrecombatMain, P0);
     let id = named_creature(&mut state, &registry, "Villagers of Estwald", P0);
 
     helpers::apply_transform(&mut state, id, &registry);
 
-    let post = state.get_object(id).unwrap();
-    assert!(post.is_transformed);
-    assert_eq!(post.name, "Howlpack of Estwald");
-    assert!(post.subtypes.iter().any(|s| s == "Werewolf"),
+    assert!(state.get_object(id).unwrap().is_transformed);
+    assert_eq!(state.get_object(id).unwrap().name, "Howlpack of Estwald");
+    assert!(state.has_subtype(id, "Werewolf", &registry),
         "back face must still be a Werewolf");
-    assert!(!post.subtypes.iter().any(|s| s == "Human"),
-        "back face is NOT a Human per oracle");
+    assert!(!state.has_subtype(id, "Human", &registry),
+        "back face is NOT a Human per oracle; subtypes_of = {:?}",
+        state.subtypes_of(id, &registry));
 }
 
 #[test]

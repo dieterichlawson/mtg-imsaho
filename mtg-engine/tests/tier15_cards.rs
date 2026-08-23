@@ -962,7 +962,7 @@ fn delver_transforms_when_player_reveals_instant() {
     assert!(state.get_object(delver).unwrap().is_transformed);
     assert_eq!(state.get_object(delver).unwrap().name, "Insectile Aberration");
     // Dynamic P/T should be 3/2.
-    assert_eq!(behavior.dynamic_pt(&state, delver), Some((3, 2)));
+    assert_eq!(behavior.dynamic_pt(&state, delver, &reg), Some((3, 2)));
 
     // The card should still be on top of the library (per ruling).
     assert_eq!(state.players[0].library_order.first().copied(), Some(bolt));
@@ -1059,7 +1059,7 @@ fn cloistered_youth_presents_transform_choice_at_upkeep() {
     // Now should be transformed.
     assert!(state.get_object(youth).unwrap().is_transformed);
     assert_eq!(state.get_object(youth).unwrap().name, "Unholy Fiend");
-    assert_eq!(behavior.dynamic_pt(&state, youth), Some((3, 3)));
+    assert_eq!(behavior.dynamic_pt(&state, youth, &reg), Some((3, 3)));
 }
 
 #[test]
@@ -1159,7 +1159,7 @@ fn screeching_bat_transforms_at_upkeep_when_player_pays() {
     // Now should be transformed.
     assert!(state.get_object(bat).unwrap().is_transformed);
     assert_eq!(state.get_object(bat).unwrap().name, "Stalking Vampire");
-    assert_eq!(behavior.dynamic_pt(&state, bat), Some((5, 5)));
+    assert_eq!(behavior.dynamic_pt(&state, bat, &reg), Some((5, 5)));
 
     // Mana should have been spent.
     assert_eq!(state.get_player(P0).mana_pool.total(), 0);
@@ -1254,10 +1254,8 @@ fn stalking_vampire_does_not_have_flying() {
 
     let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
 
-    // Simulate real game setup: obj.keywords is populated from front face card_data.
-    if let Some(obj) = state.get_object_mut(bat) {
-        obj.keywords = vec![Keyword::Flying];
-    }
+    // (No hand-seeding of obj.keywords: printed keywords live on the card's
+    // active face, so `has_keyword` reads them straight from the registry.)
 
     // Verify front face has Flying.
     assert!(state.has_keyword(bat, Keyword::Flying, &reg));
@@ -1291,18 +1289,11 @@ fn screeching_bat_regains_flying_on_transform_back() {
 
     let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
 
-    // Simulate real game: front face keywords populated.
-    if let Some(obj) = state.get_object_mut(bat) {
-        obj.keywords = vec![Keyword::Flying];
-    }
-
-    // Transform to Stalking Vampire via the helper directly.
-    // (Set up as if already transformed, with back face data.)
+    // Start already on the back face. Flipping `is_transformed` is the whole
+    // of it — the characteristics accessors read the active face.
     if let Some(obj) = state.get_object_mut(bat) {
         obj.is_transformed = true;
         obj.name = "Stalking Vampire".into();
-        obj.keywords = vec![]; // Back face has no keywords.
-        obj.subtypes = vec!["Vampire".into()];
     }
 
     // Add mana and transform back.
@@ -1322,8 +1313,6 @@ fn screeching_bat_regains_flying_on_transform_back() {
     assert_eq!(state.get_object(bat).unwrap().name, "Screeching Bat");
     assert!(state.has_keyword(bat, Keyword::Flying, &reg),
         "Screeching Bat should have Flying after transforming back");
-    assert!(state.get_object(bat).unwrap().keywords.contains(&Keyword::Flying),
-        "obj.keywords should contain Flying after transforming back");
 }
 
 #[test]
@@ -1333,14 +1322,8 @@ fn screeching_bat_transform_updates_subtypes() {
 
     let bat = named_creature(&mut state, &reg, "Screeching Bat", P0);
 
-    // Simulate real game setup: front face subtypes.
-    if let Some(obj) = state.get_object_mut(bat) {
-        obj.keywords = vec![Keyword::Flying];
-        obj.subtypes = vec!["Bat".into()];
-    }
-
-    // Verify front face subtype.
-    assert!(state.get_object(bat).unwrap().subtypes.contains(&"Bat".to_string()));
+    // Front face is a Bat, per the registry — nothing to seed.
+    assert!(state.has_subtype(bat, "Bat", &reg));
 
     // Add mana and transform.
     state.get_player_mut(P0).mana_pool.add(ManaType::Colorless, 2);
@@ -1355,10 +1338,9 @@ fn screeching_bat_transform_updates_subtypes() {
     );
 
     // Stalking Vampire should have "Vampire" subtype, not "Bat".
-    let obj = state.get_object(bat).unwrap();
-    assert!(obj.subtypes.contains(&"Vampire".to_string()),
+    assert!(state.has_subtype(bat, "Vampire", &reg),
         "Stalking Vampire should have Vampire subtype");
-    assert!(!obj.subtypes.contains(&"Bat".to_string()),
+    assert!(!state.has_subtype(bat, "Bat", &reg),
         "Stalking Vampire should not have Bat subtype");
 }
 
@@ -1385,12 +1367,12 @@ fn ludevics_test_subject_transforms_at_five_counters() {
     let obj = state.get_object(subject).unwrap();
     assert!(obj.is_transformed);
     assert_eq!(obj.name, "Ludevic's Abomination");
-    assert_eq!(behavior.dynamic_pt(&state, subject), Some((13, 13)));
-    // Verify keywords and subtypes are updated by apply_transform (not stale).
-    assert!(obj.keywords.contains(&Keyword::Trample), "back face should have Trample");
-    assert!(!obj.keywords.contains(&Keyword::Defender), "back face should not have Defender");
-    assert!(obj.subtypes.contains(&"Lizard".to_string()));
-    assert!(obj.subtypes.contains(&"Horror".to_string()));
+    assert_eq!(behavior.dynamic_pt(&state, subject, &reg), Some((13, 13)));
+    // The back face's keywords and subtypes come from the active face.
+    assert!(state.has_keyword(subject, Keyword::Trample, &reg), "back face should have Trample");
+    assert!(!state.has_keyword(subject, Keyword::Defender, &reg), "back face should not have Defender");
+    assert!(state.has_subtype(subject, "Lizard", &reg));
+    assert!(state.has_subtype(subject, "Horror", &reg));
 }
 
 // ── Thraben Sentry ──────────────────────────────────────────
@@ -1421,7 +1403,7 @@ fn thraben_sentry_transforms_when_creature_dies() {
 
     assert!(state.get_object(sentry).unwrap().is_transformed);
     assert_eq!(state.get_object(sentry).unwrap().name, "Thraben Militia");
-    assert_eq!(behavior.dynamic_pt(&state, sentry), Some((5, 4)));
+    assert_eq!(behavior.dynamic_pt(&state, sentry, &reg), Some((5, 4)));
 }
 
 #[test]

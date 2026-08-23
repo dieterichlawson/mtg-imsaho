@@ -45,20 +45,14 @@ fn test_bloodline_keeper_name_reverts_in_graveyard() {
 // After transform + death, subtypes must revert to front face.
 #[test]
 fn test_daybreak_ranger_subtypes_revert_in_graveyard() {
-    let (state, id, _reg) = transform_then_move("Daybreak Ranger", Zone::Graveyard);
-    let obj = state.get_object(id).unwrap();
-    assert_eq!(
-        obj.subtypes.contains(&"Human".to_string()),
-        true,
-        "CR 712.8a: DFC in graveyard should have front-face subtype 'Human', got {:?}",
-        obj.subtypes
-    );
-    assert_eq!(
-        obj.subtypes.contains(&"Archer".to_string()),
-        true,
-        "CR 712.8a: DFC in graveyard should have front-face subtype 'Archer', got {:?}",
-        obj.subtypes
-    );
+    let (state, id, reg) = transform_then_move("Daybreak Ranger", Zone::Graveyard);
+    // Asserted through the characteristics layer, which is where a card's
+    // subtypes live — `obj.subtypes` holds only runtime grants.
+    for sub in ["Human", "Archer"] {
+        assert!(state.has_subtype(id, sub, &reg),
+            "CR 712.8a: a DFC in the graveyard has its FRONT face, so it should \
+             have subtype {sub:?}; subtypes_of = {:?}", state.subtypes_of(id, &reg));
+    }
 }
 
 // Delver of Secrets (front: no Flying) / Insectile Aberration (back: Flying).
@@ -131,35 +125,35 @@ fn test_mayor_of_avabruck_name_reverts_in_graveyard() {
 // After transform + death, graveyard name and subtypes must revert.
 #[test]
 fn test_cloistered_youth_name_reverts_on_death() {
-    let (state, id, _reg) = transform_then_move("Cloistered Youth", Zone::Graveyard);
-    let obj = state.get_object(id).unwrap();
+    let (state, id, reg) = transform_then_move("Cloistered Youth", Zone::Graveyard);
     assert_eq!(
-        obj.name,
+        state.get_object(id).unwrap().name,
         "Cloistered Youth",
         "CR 712.8a: DFC in graveyard should have front-face name, not 'Unholy Fiend'"
     );
-    assert_eq!(
-        obj.subtypes,
-        vec!["Human".to_string()],
-        "CR 712.8a: DFC in graveyard should have front-face subtypes [Human], not [Horror]"
-    );
+    assert!(state.has_subtype(id, "Human", &reg),
+        "CR 712.8a: DFC in graveyard has its front face, so it is a Human; \
+         subtypes_of = {:?}", state.subtypes_of(id, &reg));
+    assert!(!state.has_subtype(id, "Horror", &reg),
+        "CR 712.8a: the back face's Horror subtype must not survive the zone \
+         change; subtypes_of = {:?}", state.subtypes_of(id, &reg));
 }
 
 // Cloistered Youth exiled while transformed: same rule applies in exile.
 #[test]
 fn test_cloistered_youth_name_reverts_on_exile() {
-    let (state, id, _reg) = transform_then_move("Cloistered Youth", Zone::Exile);
-    let obj = state.get_object(id).unwrap();
+    let (state, id, reg) = transform_then_move("Cloistered Youth", Zone::Exile);
     assert_eq!(
-        obj.name,
+        state.get_object(id).unwrap().name,
         "Cloistered Youth",
         "CR 712.8a: DFC in exile should have front-face name, not 'Unholy Fiend'"
     );
-    assert_eq!(
-        obj.subtypes,
-        vec!["Human".to_string()],
-        "CR 712.8a: DFC in exile should have front-face subtypes [Human], not [Horror]"
-    );
+    assert!(state.has_subtype(id, "Human", &reg),
+        "CR 712.8a: DFC in exile has its front face, so it is a Human; \
+         subtypes_of = {:?}", state.subtypes_of(id, &reg));
+    assert!(!state.has_subtype(id, "Horror", &reg),
+        "CR 712.8a: the back face's Horror subtype must not survive the zone \
+         change; subtypes_of = {:?}", state.subtypes_of(id, &reg));
 }
 
 // Garruk Relentless (front) / Garruk, the Veil-Cursed (back).

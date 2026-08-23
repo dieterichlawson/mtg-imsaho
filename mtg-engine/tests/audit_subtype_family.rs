@@ -4,12 +4,19 @@
 //! bug exists" to "regression-protects against the bug coming back".
 //!
 //! This file covers the "Subtype filter family — instance vs registry
-//! mismatch" group. The root cause is Bug BD (`setup_game` leaves
-//! `obj.subtypes` empty), and the rest of the family is a catalog of
-//! call sites that break because of it.
+//! mismatch" group. The rest of the family is a catalog of call sites that
+//! each hand-rolled their own answer to "does this object have subtype X?".
+//!
+//! The audit named Bug BD (`setup_game` leaves `obj.subtypes` empty) as the
+//! family's root cause and proposed copying the registry's subtypes onto every
+//! object. That was the wrong direction — see the first test below. The actual
+//! root cause is that a permanent's characteristics had no single authoritative
+//! reader, so every call site improvised; the fix is the characteristics layer
+//! in `state.rs`, and Bug BD is resolved by removing the duplication rather
+//! than extending it.
 //!
 //! Bugs covered in this file:
-//! - Bug BD: `setup_game` doesn't copy `card_data.subtypes` into obj.subtypes
+//! - Bug BD: re-decided — printed characteristics stay on the card's face
 //! - Bug AX: ISD dual lands always enter tapped (instance-only subtype check)
 //! - Bug AT: registry-only subtype filters miss tokens (Slayer of the Wicked)
 //! - Bug AY: `TargetFilter::HasSubtype` is instance-only (Olivia Voldaren's
@@ -36,24 +43,24 @@ use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine::{self, Decklist, GameConfig};
 use mtg_engine::types::*;
 
-/// Bug BD (`audits/AUDIT_BUGS.md)`: `setup_game` doesn't initialize
-/// `obj.subtypes` from registry data.
+/// Bug BD, re-decided. The original audit saw that `obj.subtypes` was empty
+/// on library objects and prescribed "make `setup_game` populate it from the
+/// registry, the way it already populates `card_types`, `colors` and
+/// `keywords`". That cure was worse than the disease: copying printed
+/// characteristics onto every object gave a card TWO sources of truth that had
+/// to be kept in sync by hand, and since `create_object` (tests, tokens,
+/// reanimation) never did the copying, the same card had populated fields in a
+/// real game and empty ones under test. Card code that read the raw fields
+/// therefore worked in play and silently did nothing in its own tests — which
+/// is how this one bug got found and re-reported roughly fifteen times.
 ///
-/// Oracle (Swamp): "Basic Land — Swamp" — the card's subtype is "Swamp"
-/// per the registry (`mtg-engine/src/cards/swamp.rs`:
-/// `subtypes: vec!["Swamp".into()]`).
-///
-/// Failure mode: `setup_game` (`engine.rs:3449-3462`) copies
-/// `card_data.colors`, `name`, `keywords`, and `card_types` onto each
-/// freshly-created library object, but does NOT copy `card_data.subtypes`.
-/// So every normal card object starts the game with `obj.subtypes = []`,
-/// which is the root cause of Bug AX (dual lands), Bug AT (token
-/// subtype filters), and Bug AY (`HasSubtype` target filter).
-///
-/// This test asserts the EXPECTED CORRECT behavior, so it currently
-/// fails. It will start passing as soon as Bug BD is fixed.
+/// The invariant is the opposite: printed characteristics live on the card's
+/// active face and are read through the characteristics accessors; the
+/// object-level vectors carry only what an effect granted at runtime. So
+/// `setup_game` must NOT populate them — and the thing the original test
+/// actually wanted, "a Swamp is discoverably a Swamp", has to hold anyway.
 #[test]
-fn bug_bd_setup_game_populates_obj_subtypes_from_registry() {
+fn setup_game_leaves_printed_characteristics_on_the_card_not_the_object() {
     let registry = CardRegistry::with_all_cards();
     let config = GameConfig {
         player_names: vec!["P0".into(), "P1".into()],
@@ -67,30 +74,66 @@ fn bug_bd_setup_game_populates_obj_subtypes_from_registry() {
 
     let state = engine::setup_game(&config, &registry);
 
-    // Every Swamp object in the game — library or opening hand — should
-    // have "Swamp" in its instance subtypes, matching the registry.
     let swamp_card_id = registry.get_id_by_name("Swamp").unwrap();
-    let swamps: Vec<_> = state
-        .objects
-        .values()
+    let swamps: Vec<_> = state.objects.values()
         .filter(|o| o.card_id == swamp_card_id)
         .collect();
-    assert!(
-        !swamps.is_empty(),
-        "Expected Swamps to exist after setup_game"
-    );
+    assert!(!swamps.is_empty(), "expected Swamps to exist after setup_game");
 
     for swamp in &swamps {
-        assert!(
-            swamp.subtypes.iter().any(|s| s == "Swamp"),
-            "Swamp object {:?} (zone {:?}) should have 'Swamp' in obj.subtypes \
-             after setup_game, but obj.subtypes = {:?}. Bug BD: setup_game \
-             doesn't initialize obj.subtypes from registry data.",
-            swamp.id,
-            swamp.zone,
-            swamp.subtypes,
-        );
+        // The accessor answers correctly — that is the guarantee that matters.
+        assert!(state.has_subtype(swamp.id, "Swamp", &registry),
+            "a Swamp must be discoverably a Swamp through the characteristics \
+             layer (object {:?}, zone {:?})", swamp.id, swamp.zone);
+        assert!(state.has_card_type(swamp.id, CardType::Land, &registry),
+            "a Swamp must be discoverably a Land (object {:?})", swamp.id);
+
+        // And the raw vectors stay empty, because nothing granted anything.
+        assert!(swamp.subtypes.is_empty() && swamp.card_types.is_empty()
+                && swamp.colors.is_empty(),
+            "printed characteristics must not be duplicated onto the object; \
+             got subtypes={:?} card_types={:?} colors={:?}",
+            swamp.subtypes, swamp.card_types, swamp.colors);
     }
+}
+
+/// The same object built by `create_object` must be indistinguishable from one
+/// built by `setup_game` as far as the characteristics layer is concerned.
+/// This is the property whose absence made the whole bug class invisible to
+/// tests, so it gets pinned directly.
+#[test]
+fn test_built_and_game_built_objects_agree_on_characteristics() {
+    let reg = CardRegistry::with_all_cards();
+
+    let config = GameConfig {
+        player_names: vec!["P0".into(), "P1".into()],
+        decklists: vec![
+            Decklist { entries: vec![("Avacyn's Pilgrim".into(), 60)] },
+            Decklist { entries: vec![("Avacyn's Pilgrim".into(), 60)] },
+        ],
+        starting_life: 20,
+        starting_player: Some(P0),
+    };
+    let game_state = engine::setup_game(&config, &reg);
+    let game_obj = game_state.objects.values()
+        .find(|o| o.card_id == reg.get_id_by_name("Avacyn's Pilgrim").unwrap())
+        .expect("pilgrim should exist");
+
+    let mut test_state = game_at_step(Step::PrecombatMain, P0);
+    let test_obj = named_creature(&mut test_state, &reg, "Avacyn's Pilgrim", P0);
+
+    assert_eq!(
+        game_state.subtypes_of(game_obj.id, &reg),
+        test_state.subtypes_of(test_obj, &reg),
+        "subtypes must not depend on which code path created the object");
+    assert_eq!(
+        game_state.card_types_of(game_obj.id, &reg),
+        test_state.card_types_of(test_obj, &reg),
+        "card types must not depend on which code path created the object");
+    assert_eq!(
+        game_state.colors_of(game_obj.id, &reg),
+        test_state.colors_of(test_obj, &reg),
+        "colors must not depend on which code path created the object");
 }
 
 /// Bug AX (`audits/AUDIT_BUGS.md)`: Four ISD dual lands always enter
@@ -674,63 +717,39 @@ fn bug_99_002_delver_transform_updates_obj_subtypes() {
     let registry = CardRegistry::with_all_cards();
     let mut state = game_at_step(Step::Upkeep, P0);
 
-    // Delver of Secrets in play, with the front-face subtypes mirrored
-    // onto obj.subtypes (the post-Bug-BD initial state).
     let delver = named_creature(&mut state, &registry, "Delver of Secrets", P0);
-    {
-        let obj = state.get_object_mut(delver).unwrap();
-        obj.subtypes = vec!["Human".into(), "Wizard".into()];
-    }
 
-    // Put an instant on top of P0's library so the reveal triggers a
-    // transform.
+    // Put an instant on top of P0's library so the reveal triggers a transform.
     let bolt_card_id = registry.get_id_by_name("Lightning Bolt").unwrap();
     let bolt = state.create_object(bolt_card_id, P0, Zone::Library, None, None);
     state.get_object_mut(bolt).unwrap().name = "Lightning Bolt".into();
     state.get_player_mut(P0).library_order.insert(0, bolt);
 
-    // Drive Delver's "yes, reveal" path. The hand-rolled transform code
-    // (delver_of_secrets.rs:146-149) flips is_transformed and renames
-    // the object, but leaves obj.subtypes alone.
+    // Drive Delver's "yes, reveal" path. It hand-rolls its own transform
+    // rather than calling `apply_transform` — which used to matter, because
+    // `apply_transform` also copied the new face's subtypes onto the object
+    // and a hand-rolled flip left them stale. Nothing is copied any more, so
+    // there is nothing to leave stale: the subtypes follow `is_transformed`.
     let delver_card_id = registry.get_id_by_name("Delver of Secrets").unwrap();
     let behavior = registry.get(delver_card_id).unwrap();
     behavior.on_yes_no_choice(&mut state, delver, true, &registry);
 
-    let obj = state.get_object(delver).unwrap();
-    assert!(
-        obj.is_transformed,
-        "Test setup: Delver should have transformed (instant on top of library)"
-    );
+    assert!(state.get_object(delver).unwrap().is_transformed,
+        "test setup: Delver should have transformed (instant on top of library)");
 
-    // After a correct transform, obj.subtypes should reflect the back
-    // face (Insectile Aberration). The exact back-face subtype list is
-    // owned by the registry, so we look it up rather than hard-coding.
-    let back = behavior
-        .back_face_data()
+    // The guarantee, asserted through the characteristics layer rather than
+    // through whichever field happens to back it.
+    let back = behavior.back_face_data()
         .expect("Delver of Secrets should expose back_face_data()");
-
-    for s in &back.subtypes {
-        assert!(
-            obj.subtypes.iter().any(|x| x == s),
-            "After transforming to Insectile Aberration, obj.subtypes \
-             should contain back-face subtype {:?}, but obj.subtypes = {:?}. \
-             Bug 99-002: Delver's hand-rolled transform doesn't update \
-             obj.subtypes — only is_transformed and name.",
-            s,
-            obj.subtypes,
-        );
+    for sub in &back.subtypes {
+        assert!(state.has_subtype(delver, sub, &registry),
+            "after transforming to Insectile Aberration the creature must have \
+             back-face subtype {sub:?}; subtypes_of = {:?}",
+            state.subtypes_of(delver, &registry));
     }
-    // The front-face-only subtypes should be gone. "Wizard" is on the
-    // front face but not the back face (Insectile Aberration is Human
-    // Insect, no Wizard), so it must not survive the flip.
-    assert!(
-        !obj.subtypes.iter().any(|s| s == "Wizard"),
-        "After transforming to Insectile Aberration, obj.subtypes should \
-         NOT contain front-face-only subtype 'Wizard', but obj.subtypes = \
-         {:?}. Bug 99-002: Delver's hand-rolled transform leaves the stale \
-         instance subtypes alone.",
-        obj.subtypes,
-    );
+    assert!(!state.has_subtype(delver, "Wizard", &registry),
+        "'Wizard' is on the front face only and must not survive the flip; \
+         subtypes_of = {:?}", state.subtypes_of(delver, &registry));
 }
 
 /// Bug AO (`audits/AUDIT_BUGS.md)`: `combat::get_subtypes` is not
@@ -766,11 +785,10 @@ fn bug_ao_get_subtypes_excludes_dropped_front_face_subtype() {
         state.get_object(youth).unwrap().is_transformed,
         "Test setup: Cloistered Youth should be transformed to Unholy Fiend"
     );
-    // Sanity: instance subtypes are ["Horror"] after transform.
-    assert!(
-        state.get_object(youth).unwrap().subtypes.iter().any(|s| s == "Horror"),
-        "Test setup: Unholy Fiend should have Horror in obj.subtypes"
-    );
+    // Sanity: the live face is Horror. (Read through the accessor — the back
+    // face's subtypes are no longer mirrored onto `obj.subtypes`.)
+    assert!(state.has_subtype(youth, "Horror", &registry),
+        "Test setup: Unholy Fiend should have the Horror subtype");
 
     let subtypes = mtg_engine::combat::get_subtypes(&state, youth, &registry);
     assert!(
