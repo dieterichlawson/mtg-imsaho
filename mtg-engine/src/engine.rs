@@ -4211,7 +4211,14 @@ pub fn advance_step(state: &mut GameState, registry: &CardRegistry) {
         }
     }
 
-    let next = state.step.next();
+    // CR 510.5: with first/double strikers in combat there are TWO combat
+    // damage steps. The first instance set combat_damage_step_pending; repeat
+    // Step::CombatDamage (regular damage) instead of moving to EndCombat.
+    let next = if state.step == Step::CombatDamage && state.combat_damage_step_pending {
+        Some(Step::CombatDamage)
+    } else {
+        state.step.next()
+    };
     if let Some(next_step) = next {
         state.step = next_step;
     } else {
@@ -4331,10 +4338,24 @@ fn perform_turn_based_actions(state: &mut GameState, registry: &CardRegistry) {
                 .is_some_and(|c| !c.attackers.is_empty());
 
             if has_attackers {
-                combat::deal_combat_damage(state, registry);
+                if state.combat_damage_step_pending {
+                    // Second combat damage step (CR 510.5): regular damage
+                    // from creatures that didn't deal first-strike damage,
+                    // plus double strikers.
+                    combat::deal_regular_damage_pass(state, registry);
+                    state.combat_damage_step_pending = false;
+                } else if combat::any_first_strike_in_combat(state, registry) {
+                    // First of two combat damage steps (CR 510.5): only
+                    // first/double strikers deal damage now. advance_step
+                    // repeats Step::CombatDamage after this step's SBA /
+                    // trigger / priority round.
+                    combat::deal_first_strike_damage_pass(state, registry);
+                    state.combat_damage_step_pending = true;
+                } else {
+                    combat::deal_combat_damage(state, registry);
+                }
             }
-            // No priority in combat damage step for Phase 1.
-            // (Technically there should be, but no instants yet.)
+            // Players get priority after combat damage is dealt (CR 510.4).
             state.priority_player = Some(active);
         }
 

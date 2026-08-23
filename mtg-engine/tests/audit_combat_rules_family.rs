@@ -67,6 +67,7 @@ fn bug_17_005_non_trample_attacker_can_kill_multiple_blockers() {
     state.combat = Some(CombatState {
         attackers: attackers_map,
         blocker_assignments,
+        ..Default::default()
     });
 
     mtg_engine::combat::deal_combat_damage(&mut state, &registry);

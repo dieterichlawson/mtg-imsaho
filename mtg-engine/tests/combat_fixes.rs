@@ -78,6 +78,97 @@ fn double_striker_stays_blocked_when_blocker_leaves_combat() {
         "blocked double-striker must not hit the player when its blocker leaves combat");
 }
 
+/// CR 510.5: with first strikers in combat there are TWO combat damage
+/// steps, with SBAs and a priority round between them. The engine models
+/// this by repeating Step::CombatDamage.
+#[test]
+fn first_strike_creates_second_combat_damage_step_with_window() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // 2/2 first striker attacks; 4/4 blocks (survives first strike).
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
+    let blocker = ready_creature(&mut state, P1, 4, 4);
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    // Enter the combat damage step: FIRST instance — first-strike damage only.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    assert!(state.combat_damage_step_pending,
+        "a second combat damage step must be pending (CR 510.5)");
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 2,
+        "first striker deals its damage in the first step");
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 0,
+        "non-first-striker deals nothing in the first step");
+
+    // Priority window between the steps: the defender removes the attacker
+    // (as a Doom Blade would during this round of priority).
+    state.move_object(attacker, Zone::Graveyard, &reg);
+
+    // All players pass: the step repeats — SECOND instance, regular damage.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage,
+        "Step::CombatDamage must repeat for the regular damage step");
+    assert!(!state.combat_damage_step_pending);
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 2,
+        "the removed attacker deals no regular damage; blocker keeps only first-strike damage");
+
+    // And the step sequence continues normally afterwards.
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::EndCombat);
+}
+
+/// Without first strikers, the combat damage step happens exactly once.
+#[test]
+fn no_first_strike_single_combat_damage_step() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::CombatDamage);
+    assert!(!state.combat_damage_step_pending,
+        "no first strikers: no second damage step");
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 2);
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 2);
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.step, Step::EndCombat);
+}
+
+/// First-strike deaths produce their triggers BEFORE regular damage: the
+/// window lets death triggers resolve between the two damage steps.
+#[test]
+fn first_strike_kill_prevents_regular_damage_back() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+
+    // 2/2 first striker vs 2/2 blocker: blocker dies to first strike and
+    // never deals regular damage back.
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    state.get_object_mut(attacker).unwrap().keywords.push(Keyword::FirstStrike);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers(&mut state, &[(blocker, attacker)]);
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    // The game loop runs SBAs before granting priority (CR 117.5).
+    while mtg_engine::sba::check_state_based_actions(&mut state, &reg) {}
+    assert_eq!(state.get_object(blocker).unwrap().zone, Zone::Graveyard,
+        "blocker dies to first-strike damage before the regular step");
+
+    mtg_engine::engine::advance_step(&mut state, &reg);
+    assert_eq!(state.get_object(attacker).unwrap().damage_marked, 0,
+        "dead blocker deals no regular-step damage");
+}
+
 /// Blazing Torch's granted ability must be offered to the equipped
 /// creature's controller only when that player also controls the Torch —
 /// its cost sacrifices the Torch, which only its controller may do.

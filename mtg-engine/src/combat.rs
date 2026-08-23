@@ -44,6 +44,9 @@ pub fn declare_blockers(
         for &(blocker_id, attacker_id) in assignments {
             if let Some(blockers) = combat.blocker_assignments.get_mut(&attacker_id) {
                 blockers.push(blocker_id);
+                // CR 509.2: blocked-ness is permanent for this combat, even
+                // if every blocker later leaves combat.
+                combat.blocked_attackers.insert(attacker_id);
             }
         }
     }
@@ -136,9 +139,16 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
         // Run SBAs between first strike and normal damage. Creatures that
         // leave combat during this pass (e.g. a blocker that regenerated —
         // CR 701.15c) are skipped in the normal step via the liveness checks
-        // in deal_damage_step; the snapshot is still used for blocked-ness
+        // in deal_damage_step; blocked-ness persists via blocked_attackers
         // (a blocked attacker stays blocked even if its blockers leave,
         // CR 510.1c).
+        //
+        // NOTE: this combined entry point runs both damage steps with no
+        // priority window and is kept for tests and direct callers. The game
+        // loop instead runs the two steps as two Step::CombatDamage
+        // instances (CR 510.5) via deal_first_strike_damage_pass /
+        // deal_regular_damage_pass, with SBAs, triggers, and priority
+        // between them.
         while crate::sba::check_state_based_actions(state, registry) {}
         // Normal damage step: non-first-strikers + double strikers.
         deal_damage_step(state, &combat, registry, false);
@@ -146,6 +156,34 @@ pub fn deal_combat_damage(state: &mut GameState, registry: &CardRegistry) {
         // No first strike: everyone deals damage simultaneously.
         deal_damage_step(state, &combat, registry, false);
     }
+}
+
+/// True if any creature in the current combat has first or double strike —
+/// i.e. the combat damage step happens twice (CR 510.5).
+#[must_use]
+pub fn any_first_strike_in_combat(state: &GameState, registry: &CardRegistry) -> bool {
+    let Some(combat) = &state.combat else { return false };
+    combat.attackers.keys()
+        .chain(combat.blocker_assignments.values().flat_map(|v| v.iter()))
+        .any(|&id| {
+            state.has_keyword(id, Keyword::FirstStrike, registry)
+                || state.has_keyword(id, Keyword::DoubleStrike, registry)
+        })
+}
+
+/// Deal the FIRST-STRIKE combat damage step's damage (CR 510.5). Used by the
+/// turn machinery, which then gives players a full SBA/trigger/priority
+/// round before the regular combat damage step.
+pub fn deal_first_strike_damage_pass(state: &mut GameState, registry: &CardRegistry) {
+    let Some(combat) = state.combat.clone() else { return };
+    deal_damage_step(state, &combat, registry, true);
+}
+
+/// Deal the REGULAR combat damage step's damage: creatures that didn't deal
+/// first-strike damage, plus double strikers.
+pub fn deal_regular_damage_pass(state: &mut GameState, registry: &CardRegistry) {
+    let Some(combat) = state.combat.clone() else { return };
+    deal_damage_step(state, &combat, registry, false);
 }
 
 /// Fight: each creature deals damage equal to its power to the other.
@@ -184,9 +222,20 @@ fn deal_damage_step(
         let has_first_strike = state.has_keyword(attacker_id, Keyword::FirstStrike, registry);
         let has_double_strike = state.has_keyword(attacker_id, Keyword::DoubleStrike, registry);
         let attacker_deals = if first_strike_only {
-            has_first_strike || has_double_strike
+            let deals = has_first_strike || has_double_strike;
+            if deals {
+                // CR 510.5: record membership so the regular step knows this
+                // creature already dealt its damage (unless double strike).
+                if let Some(c) = state.combat.as_mut() {
+                    c.dealt_first_strike.insert(attacker_id);
+                }
+            }
+            deals
         } else {
-            !has_first_strike || has_double_strike // normal strikers + double strikers
+            // Regular step: creatures that didn't deal first-strike damage,
+            // plus double strikers (CR 510.5).
+            has_double_strike
+                || !state.combat.as_ref().is_some_and(|c| c.dealt_first_strike.contains(&attacker_id))
         };
 
         let attacker_power = if attacker_deals {
@@ -202,7 +251,9 @@ fn deal_damage_step(
             .cloned()
             .unwrap_or_default();
 
-        if blockers.is_empty() {
+        let was_blocked = combat.blocked_attackers.contains(&attacker_id)
+            || state.combat.as_ref().is_some_and(|c| c.blocked_attackers.contains(&attacker_id));
+        if blockers.is_empty() && !was_blocked {
             // Unblocked: deal damage to defending player.
             if attacker_power > 0 {
                 deal_damage_to_player(state, attacker_id, defending_player, attacker_power, registry);
@@ -230,9 +281,16 @@ fn deal_damage_step(
                 let blocker_has_first_strike = state.has_keyword(blocker_id, Keyword::FirstStrike, registry);
                 let blocker_has_double_strike = state.has_keyword(blocker_id, Keyword::DoubleStrike, registry);
                 let blocker_deals = if first_strike_only {
-                    blocker_has_first_strike || blocker_has_double_strike
+                    let deals = blocker_has_first_strike || blocker_has_double_strike;
+                    if deals {
+                        if let Some(c) = state.combat.as_mut() {
+                            c.dealt_first_strike.insert(blocker_id);
+                        }
+                    }
+                    deals
                 } else {
-                    !blocker_has_first_strike || blocker_has_double_strike
+                    blocker_has_double_strike
+                        || !state.combat.as_ref().is_some_and(|c| c.dealt_first_strike.contains(&blocker_id))
                 };
 
                 if blocker_deals {
@@ -313,6 +371,8 @@ fn deal_damage_to_player(
 /// the stack with priority windows, not be applied as turn-based actions.
 pub fn end_combat(state: &mut GameState, _registry: &crate::cards::CardRegistry) {
     state.combat = None;
+    // Defensive: never carry a pending second combat damage step out of combat.
+    state.combat_damage_step_pending = false;
 }
 
 /// Get all creatures a player controls that are eligible to attack.

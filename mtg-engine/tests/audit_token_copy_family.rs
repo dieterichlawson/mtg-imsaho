@@ -313,6 +313,7 @@ fn bug_by_geist_angel_token_defender_matches_geist() {
     state.combat = Some(CombatState {
         attackers,
         blocker_assignments: HashMap::new(),
+        ..Default::default()
     });
 
     let geist_card_id = state.get_object(geist).unwrap().card_id;

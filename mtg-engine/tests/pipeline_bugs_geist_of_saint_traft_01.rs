@@ -11,6 +11,7 @@ fn setup_geist_attacking(state: &mut mtg_engine::state::GameState, reg: &CardReg
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(geist, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
     let behavior = reg.get(state.get_object(geist).unwrap().card_id).unwrap();
     behavior.on_attacks(state, geist, &[], reg);

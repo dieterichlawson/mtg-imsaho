@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use serde::{Serialize, Deserialize};
 
@@ -99,6 +99,13 @@ pub struct GameState {
 
     /// Whether the game is waiting for attackers/blockers declaration.
     pub awaiting_action: Option<AwaitingAction>,
+
+    /// CR 510.5: when first/double strikers are in combat, the combat damage
+    /// step happens twice. Set after the first-strike damage instance; tells
+    /// `advance_step` to repeat `Step::CombatDamage` (with a full SBA /
+    /// trigger / priority round in between) instead of moving to EndCombat.
+    #[serde(default)]
+    pub combat_damage_step_pending: bool,
 
     /// The spell currently mid-resolution because it presented a player
     /// choice (`awaiting_action`). The ENGINE owns moving a resolved spell
@@ -296,6 +303,7 @@ impl GameState {
             combat: None,
             end_of_combat_exiles: Vec::new(),
             awaiting_action: None,
+            combat_damage_step_pending: false,
             resolving_spell: None,
             result: None,
             consecutive_passes: 0,
@@ -1839,6 +1847,17 @@ pub struct CombatState {
     pub attackers: HashMap<ObjectId, PlayerId>,
     /// Map of attacker `ObjectId` -> list of blockers assigned to it.
     pub blocker_assignments: HashMap<ObjectId, Vec<ObjectId>>,
+    /// Attackers that became blocked when blockers were declared. Blocked-ness
+    /// is permanent for the combat (CR 509.2): an attacker whose blockers all
+    /// leave combat is still blocked (deals no combat damage without trample),
+    /// which `blocker_assignments` alone can't express once its list empties.
+    #[serde(default)]
+    pub blocked_attackers: HashSet<ObjectId>,
+    /// Creatures that had first/double strike when first-strike combat damage
+    /// was dealt (CR 510.5): they don't deal damage again in the regular
+    /// combat damage step unless they have double strike.
+    #[serde(default)]
+    pub dealt_first_strike: HashSet<ObjectId>,
 }
 
 impl CombatState {

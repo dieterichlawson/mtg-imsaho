@@ -116,6 +116,7 @@ fn kessig_cagebreakers_creates_wolf_tokens_on_attack() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(cage, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     // Put 3 creatures in graveyard.
@@ -1580,6 +1581,7 @@ fn grimgrin_attack_trigger_destroys_and_adds_counter() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     // Fire the AttackersDeclared event and run the trigger pipeline.
@@ -1611,6 +1613,7 @@ fn grimgrin_attack_trigger_presents_choice_with_multiple_targets() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     // Fire the AttackersDeclared event and collect triggers (which enters
@@ -1656,6 +1659,7 @@ fn grimgrin_attack_no_targets_no_counter() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
@@ -1685,6 +1689,7 @@ fn grimgrin_attack_indestructible_target_still_gets_counter() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
@@ -1717,6 +1722,7 @@ fn grimgrin_attack_uses_defending_player_from_combat() {
     state.combat = Some(mtg_engine::state::CombatState {
         attackers: [(grimgrin, P1)].into_iter().collect(),
         blocker_assignments: std::collections::HashMap::new(),
+        ..Default::default()
     });
 
     state.events.push(mtg_engine::events::GameEvent::AttackersDeclared {
