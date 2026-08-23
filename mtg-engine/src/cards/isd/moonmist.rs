@@ -86,8 +86,15 @@ impl CardBehavior for Moonmist {
             state.log(crate::state::LogLevel::Event,
                 format!("Moonmist transformed {count} Human(s)"));
         }
-        // Prevent all combat damage from non-Wolf/non-Werewolf creatures this turn.
-        state.until_end_of_turn.push(crate::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
+        // "Prevent all combat damage that would be dealt this turn by creatures
+        // other than Werewolves and Wolves." Moonmist names the exceptions; the
+        // engine just applies the filter.
+        state.until_end_of_turn.push(crate::state::TemporaryEffect::PreventCombatDamageExcept {
+            filter: crate::types::CreatureFilter::Or(vec![
+                crate::types::CreatureFilter::HasSubtype("Wolf".into()),
+                crate::types::CreatureFilter::HasSubtype("Werewolf".into()),
+            ]),
+        });
         state.log(crate::state::LogLevel::Event,
             "Moonmist: preventing combat damage from non-Wolf/non-Werewolf creatures this turn".into());
 

@@ -250,8 +250,11 @@ pub enum TemporaryEffect {
     ChangeControl { target: ObjectId, original_controller: PlayerId },
     /// Grant flashback to a card in the graveyard (e.g., Snapcaster Mage).
     GrantFlashback { target: ObjectId, cost: crate::types::ManaCost },
-    /// Prevent combat damage from non-Wolf/Werewolf creatures (Moonmist).
-    PreventNonWolfWerewolfCombatDamage,
+    /// "Prevent all combat damage that would be dealt this turn by creatures
+    /// other than <filter>." The filter names the creatures that still deal
+    /// damage; everything else is prevented. Moonmist supplies Wolves and
+    /// Werewolves — the engine does not know that, and shouldn't.
+    PreventCombatDamageExcept { filter: crate::types::CreatureFilter },
     /// Blanket P/T modifier — applies to all creatures matching a filter.
     /// Used by anthems like Rally the Peasants ("creatures you control get +2/+0").
     ModifyPTAll {
@@ -302,7 +305,7 @@ fn until_eot_object_target(effect: &TemporaryEffect) -> Option<ObjectId> {
         // Targets a card in the graveyard, not a battlefield permanent.
         TemporaryEffect::GrantFlashback { .. } => None,
         // Controller-scoped or global — not tied to one permanent.
-        TemporaryEffect::PreventNonWolfWerewolfCombatDamage
+        TemporaryEffect::PreventCombatDamageExcept { .. }
         | TemporaryEffect::ModifyPTAll { .. }
         | TemporaryEffect::GrantKeywordAll { .. }
         | TemporaryEffect::GrantProtectionAll { .. } => None,
@@ -392,6 +395,7 @@ impl GameState {
             attached_to: None,
             attached_to_player: None,
             zone_change_count: 0,
+            copy_grantor: None,
             is_token: false,
             is_legendary: false,
             cast_with_flashback: false,
@@ -511,6 +515,7 @@ impl GameState {
             attached_to: None,
             attached_to_player: None,
             zone_change_count: 0,
+            copy_grantor: None,
             is_token: true,
             is_legendary: false,
             cast_with_flashback: false,
@@ -1806,6 +1811,15 @@ pub struct GameObject {
     // Tracks zone changes for staleness detection (XMage pattern).
     pub zone_change_count: u32,
 
+    /// CR 706.2: when a copy effect says "except it has <ability>", the copy's
+    /// `card_id` becomes the copied card and the granting card's identity would
+    /// otherwise be lost. This records the card whose copy effect produced this
+    /// object, so the engine can ask THAT card's behavior for the abilities it
+    /// added — without knowing which card it is. `None` for anything that is
+    /// not such a copy.
+    #[serde(default)]
+    pub copy_grantor: Option<CardId>,
+
     /// Whether this object is a token (tokens cease to exist when not on the battlefield).
     pub is_token: bool,
     /// Whether this permanent is legendary (for the legend rule SBA).
@@ -2189,7 +2203,7 @@ pub enum PendingEffect {
     /// Move chosen creature from graveyard to battlefield.
     ReturnToBattlefield { spell_id: ObjectId },
     /// Put +1/+1 counters on chosen creature.
-    AddCounters { count: u32, human_bonus: bool },
+    AddCounters { count: u32 },
     /// Apply -N/-M until end of turn to the chosen creature.
     DebuffUntilEOT { power: i32, toughness: i32, source_name: String },
     /// Target creature can't block this turn.
@@ -2202,9 +2216,7 @@ pub enum PendingEffect {
     DrawAndLoseLife { source_name: String },
     /// Destroy target creature matching a filter (Reaper from the Abyss).
     DestroyCreature { source_name: String },
-    /// Exile the chosen card from graveyard (Curse of Oblivion).
-    /// If remaining > 0, presents another exile choice after this one.
-    ExileCurseOfOblivion { remaining: u32 },
+
     /// Return the chosen object to its owner's hand.
     ReturnToHand { source_name: String },
     /// Put the chosen object on top of its owner's library.
@@ -2248,18 +2260,30 @@ pub enum PendingEffect {
     GrantFlashback { source_name: String },
     /// Target player loses 1 life, controller gains 1 life (Falkenrath Noble, etc.).
     DrainLife { controller: PlayerId, source_name: String },
-    /// Put the chosen basic land from library onto the battlefield, then shuffle (Ghost Quarter).
-    GhostQuarterSearch { searcher: PlayerId },
+
     /// Exile the chosen card (from hand) and move the source spell to the graveyard (Night Terrors).
     ExileCardAndCleanup { spell_id: ObjectId, source_name: String },
-    /// Exile the chosen creature card from graveyard and create a Spirit token (Moorland Haunt).
-    ExileFromGraveyardAndCreateToken { controller: PlayerId },
+
     /// The legend rule: the chosen permanent is KEPT, all others with the same name
     /// under that player's control are sent to the graveyard.
     LegendRuleKeep { player: PlayerId, legend_name: String },
     /// CR 603.3d: attach the chosen target to the next pending trigger
     /// in the AP/NAP push queue, then push it onto the stack and continue
     /// processing remaining pending triggers.
+    /// A deferred resolution that belongs to the card that queued it.
+    ///
+    /// The engine routes the chosen target back to `source_id`'s behavior via
+    /// `CardBehavior::resolve_card_effect` and does nothing else. Use this for
+    /// anything card-specific: the alternative is a new engine enum variant
+    /// plus an engine match arm executing one card's rules, which is how the
+    /// engine ended up knowing about Ghost Quarter, Moorland Haunt, Curse of
+    /// Oblivion and Elder Cathar's Human bonus by name.
+    ///
+    /// `key` distinguishes multiple deferred effects on the same card; a card
+    /// with only one can pass `""`. Carry extra state in the source's
+    /// `card_state`, not in new engine variants.
+    CardEffect { source_id: ObjectId, key: String },
+
     AttachTargetToPendingTrigger,
 }
 

@@ -1791,7 +1791,9 @@ fn evil_twin_copies_creature_on_etb() {
     assert_eq!(state.get_object(twin).unwrap().power, Some(2));
     assert_eq!(state.get_object(twin).unwrap().toughness, Some(2));
     // Should still have the Evil Twin marker.
-    assert!(state.get_object(twin).unwrap().card_state.contains_key("is_evil_twin"));
+    assert!(state.get_object(twin).unwrap().copy_grantor.is_some(),
+        "a permanent that entered as a copy records the card whose copy \
+         effect made it, so the granted ability can be found (CR 706.2)");
 }
 
 /// A copy of a legendary creature is itself legendary (CR 707.2), so an Evil

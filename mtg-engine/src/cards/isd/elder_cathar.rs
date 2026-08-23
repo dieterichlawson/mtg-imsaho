@@ -46,14 +46,9 @@ impl CardBehavior for ElderCathar {
         if targets.is_empty() {
             // No creatures to put counters on.
         } else if targets.len() == 1 {
-            // Auto-add counters to the only creature.
-            if let Target::Object(id) = targets[0] {
-                let is_human = state.has_subtype(id, "Human", registry);
-                let count = if is_human { 2 } else { 1 };
-                state.add_counters(id, CounterType::PlusOnePlusOne, count);
-                state.log(LogLevel::Event,
-                    format!("Elder Cathar's death granted {} +1/+1 counter{}", count, if count > 1 { "s" } else { "" }));
-            }
+            // Auto-pick the only legal target, then take the same path as a
+            // chosen one so the Human rule lives in exactly one place.
+            self.resolve_card_effect(state, object_id, "", &targets[0], registry);
         } else {
             state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
                 player: controller,
@@ -62,9 +57,22 @@ impl CardBehavior for ElderCathar {
                     description: "Elder Cathar: put +1/+1 counter(s) on target creature you control".into(),
                     options: targets,
                     optional: false,
-                    effect: PendingEffect::AddCounters { count: 1, human_bonus: true },
+                    effect: PendingEffect::CardEffect { source_id: object_id, key: String::new() },
                 },
             });
         }
+    }
+
+    /// "...put a +1/+1 counter on target creature you control. If that
+    /// creature is a Human, put two +1/+1 counters on it instead." The Human
+    /// check is this card's rule, so it lives here rather than as a flag on a
+    /// shared engine effect.
+    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        let Target::Object(id) = target else { return };
+        let count = if state.has_subtype(*id, "Human", registry) { 2 } else { 1 };
+        state.add_counters(*id, CounterType::PlusOnePlusOne, count);
+        state.log(LogLevel::Event,
+            format!("Elder Cathar's death granted {} +1/+1 counter{}",
+                count, if count > 1 { "s" } else { "" }));
     }
 }

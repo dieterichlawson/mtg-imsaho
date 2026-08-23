@@ -10,6 +10,18 @@ use common::*;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::types::*;
 
+/// The blanket prevention Moonmist puts up: everything except Wolves and
+/// Werewolves stops dealing combat damage this turn. Built here the way the
+/// card builds it, so the test exercises the same filter.
+fn moonmist_prevention() -> mtg_engine::state::TemporaryEffect {
+    mtg_engine::state::TemporaryEffect::PreventCombatDamageExcept {
+        filter: CreatureFilter::Or(vec![
+            CreatureFilter::HasSubtype("Wolf".into()),
+            CreatureFilter::HasSubtype("Werewolf".into()),
+        ]),
+    }
+}
+
 fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
 }
@@ -24,7 +36,7 @@ fn sets_prevention_flag() {
     let new_state = cast_and_resolve(&state, &reg, moonmist, vec![]);
 
     assert!(new_state.until_end_of_turn.iter().any(|e| matches!(e,
-        mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage)),
+        mtg_engine::state::TemporaryEffect::PreventCombatDamageExcept { .. })),
         "Moonmist should set the prevention flag");
 }
 
@@ -33,7 +45,7 @@ fn sets_prevention_flag() {
 fn prevents_non_wolf_combat_damage_to_player() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
+    state.until_end_of_turn.push(moonmist_prevention());
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     // A plain 3/3 creature (not Wolf or Werewolf).
@@ -51,7 +63,7 @@ fn prevents_non_wolf_combat_damage_to_player() {
 fn wolf_still_deals_damage() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
+    state.until_end_of_turn.push(moonmist_prevention());
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     // Use a named Wolf card.
@@ -69,7 +81,7 @@ fn wolf_still_deals_damage() {
 fn prevents_non_wolf_combat_damage_to_creature() {
     let reg = registry();
     let mut state = game_at_step(Step::CombatDamage, P0);
-    state.until_end_of_turn.push(mtg_engine::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage);
+    state.until_end_of_turn.push(moonmist_prevention());
     state.combat = Some(mtg_engine::state::CombatState::new());
 
     let attacker = ready_creature(&mut state, P0, 3, 3);

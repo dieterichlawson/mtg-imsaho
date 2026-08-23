@@ -105,11 +105,33 @@ impl CardBehavior for GhostQuarter {
                     description: "Ghost Quarter: you may search for a basic land card".into(),
                     options: targets,
                     optional: true, // "may" search
-                    effect: crate::state::PendingEffect::GhostQuarterSearch {
-                        searcher: target_controller,
+                    effect: crate::state::PendingEffect::CardEffect {
+                        source_id: object_id,
+                        key: String::new(),
                     },
                 },
             });
         }
+    }
+
+    /// "...Its controller may search their library for a basic land card, put
+    /// it onto the battlefield, then shuffle." Putting the land in and
+    /// shuffling is Ghost Quarter's own resolution, so it lives here.
+    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        use rand::seq::SliceRandom;
+        let Target::Object(land_id) = target else { return };
+        let searcher = state.get_object(*land_id).map_or(crate::ids::PlayerId(0), |o| o.owner);
+        let name = state.obj_name(*land_id);
+
+        state.get_player_mut(searcher).library_order.retain(|&id| id != *land_id);
+        state.move_object(*land_id, Zone::Battlefield, registry);
+        if let Some(obj) = state.get_object_mut(*land_id) {
+            obj.summoning_sick = false;
+        }
+        state.log(crate::state::LogLevel::Event,
+            format!("Ghost Quarter: p{} searched for {name}", searcher.0));
+
+        let mut rng = rand::thread_rng();
+        state.get_player_mut(searcher).library_order.shuffle(&mut rng);
     }
 }

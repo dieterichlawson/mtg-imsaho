@@ -62,7 +62,7 @@ fn deal_damage_to_object(
         {
             return;
         }
-        if is_non_wolf_damage_prevented(state, source, registry) {
+        if is_combat_damage_prevented_by_exception(state, source, registry) {
             return;
         }
     }
@@ -143,7 +143,7 @@ fn deal_damage_to_player(
         if has_combat_damage_prevention(state, source, registry) {
             return;
         }
-        if is_non_wolf_damage_prevented(state, source, registry) {
+        if is_combat_damage_prevented_by_exception(state, source, registry) {
             return;
         }
     }
@@ -223,16 +223,16 @@ fn has_combat_damage_prevention(state: &GameState, creature_id: ObjectId, regist
     }, registry)
 }
 
-/// Check if a creature's combat damage should be prevented because it's not
-/// a Wolf/Werewolf (set by Moonmist's effect for the rest of the turn).
-fn is_non_wolf_damage_prevented(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
-    if !state.until_end_of_turn.iter().any(|e| matches!(e,
-        crate::state::TemporaryEffect::PreventNonWolfWerewolfCombatDamage
-    )) {
-        return false;
-    }
-    let subtypes = state.subtypes_of(source, registry);
-    !subtypes.iter().any(|s| s == "Wolf" || s == "Werewolf")
+/// Whether a blanket "prevent all combat damage by creatures other than X"
+/// effect in play this turn prevents this source's damage. The filter names
+/// the exceptions; a source that doesn't match one is prevented.
+fn is_combat_damage_prevented_by_exception(state: &GameState, source: ObjectId, registry: &CardRegistry) -> bool {
+    let controller = state.get_object(source).map_or(crate::ids::PlayerId(0), |o| o.controller);
+    state.until_end_of_turn.iter().any(|e| match e {
+        crate::state::TemporaryEffect::PreventCombatDamageExcept { filter } =>
+            !state.matches_filter(source, filter, controller, registry),
+        _ => false,
+    })
 }
 
 /// Compute the combat damage multiplier from `DoubleCombatDamage` effects

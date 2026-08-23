@@ -463,6 +463,15 @@ pub trait CardBehavior: Send + Sync {
     /// Default: no intervening-if clause, so the ability always triggers.
     fn should_trigger(&self, _state: &GameState, _self_id: ObjectId, _kind: &TriggerKind, _registry: &CardRegistry) -> bool { true }
 
+    /// Resolve a `PendingEffect::CardEffect` this card queued earlier — after
+    /// the player chose a target, so this runs at resolution with the choice in
+    /// hand. `key` is whatever the card passed when queueing, so one card can
+    /// have several deferred effects.
+    ///
+    /// This is the seam that keeps card-specific resolution in card files. If
+    /// you are reaching for a new `PendingEffect` variant, use this instead.
+    fn resolve_card_effect(&self, _state: &mut GameState, _source_id: ObjectId, _key: &str, _target: &Target, _registry: &CardRegistry) {}
+
     /// Loyalty abilities for planeswalkers.
     fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
 

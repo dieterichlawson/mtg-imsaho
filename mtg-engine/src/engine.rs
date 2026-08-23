@@ -653,19 +653,14 @@ pub fn legal_actions(state: &GameState, registry: &CardRegistry) -> LegalActions
                 abilities.push((obj_card_id, ab));
             }
         }
-        // If this is an Evil Twin that has copied another creature, its card_id now
-        // points to the copied creature. We must also invoke Evil Twin's own behavior
-        // to surface the "{U}{B}, {T}: Destroy" ability stored there.
-        let is_evil_twin_copy = state.get_object(obj_id)
-            .is_some_and(|o| o.card_state.contains_key("is_evil_twin"));
-        if is_evil_twin_copy {
-            if let Some(evil_twin_card_id) = registry.get_id_by_name("Evil Twin") {
-                if evil_twin_card_id != obj_card_id {
-                    if let Some(behavior) = registry.get(evil_twin_card_id) {
-                        for ab in behavior.activated_abilities(state, obj_id, registry) {
-                            abilities.push((evil_twin_card_id, ab));
-                        }
-                    }
+        // CR 706.2: a copy effect may say "except it has <ability>". The copy's
+        // `card_id` is the copied card, so the granting card's abilities have to
+        // be collected from `copy_grantor` — whichever card that happens to be.
+        let grantor = state.get_object(obj_id).and_then(|o| o.copy_grantor);
+        if let Some(grantor_id) = grantor.filter(|&g| g != obj_card_id) {
+            if let Some(behavior) = registry.get(grantor_id) {
+                for ab in behavior.activated_abilities(state, obj_id, registry) {
+                    abilities.push((grantor_id, ab));
                 }
             }
         }
@@ -2396,15 +2391,14 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
 
             let obj = new_state.get_object(*object_id).expect("activated ability object must exist");
             let card_id = obj.card_id;
-            let is_evil_twin_copy = new_state.get_object(*object_id)
-                .is_some_and(|o| o.card_state.contains_key("is_evil_twin"));
+            let copy_grantor = new_state.get_object(*object_id).and_then(|o| o.copy_grantor);
 
             // Resolve which card's behavior contributed this ability:
             // - Some(cid): caller explicitly disambiguated the source — used by
             //   legal_actions to mark aura-granted abilities. Look up in cid only.
-            // - None: backward-compat chained lookup (native → Evil Twin override
-            //   → attached auras). Used by tests and code paths that don't need
-            //   to disambiguate (only one of those sources contributes the ability).
+            // - None: backward-compat chained lookup (native → copy-grantor
+            //   override → attached auras). Used by tests and code paths that
+            //   don't need to disambiguate (only one contributes the ability).
             let (behavior_card_id, ability) = if let Some(cid) = *source_card_id {
                 let ab = registry.get(cid)
                     .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
@@ -2416,15 +2410,15 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         .into_iter().find(|a| a.ability_index == *ability_index));
                 if native.is_some() {
                     (card_id, native)
-                } else if is_evil_twin_copy {
-                    // Evil Twin override: dispatch to Evil Twin's behavior.
-                    let et_id = registry.get_id_by_name("Evil Twin")
-                        .filter(|&et_id| et_id != card_id);
-                    let ab = et_id.and_then(|cid| registry.get(cid))
+                } else if copy_grantor.is_some() {
+                    // CR 706.2: an ability the copy effect added — dispatch to
+                    // the card whose copy effect granted it.
+                    let g_id = copy_grantor.filter(|&g| g != card_id);
+                    let ab = g_id.and_then(|cid| registry.get(cid))
                         .and_then(|b| b.activated_abilities(&new_state, *object_id, registry)
                             .into_iter().find(|a| a.ability_index == *ability_index));
                     if let Some(ab) = ab {
-                        (et_id.unwrap_or(card_id), Some(ab))
+                        (g_id.unwrap_or(card_id), Some(ab))
                     } else {
                         // Fall through to attached lookup below.
                         let mut found = (card_id, None);
@@ -3293,6 +3287,14 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
     use rand::seq::SliceRandom;
 
     match (target, effect) {
+        // Card-specific resolution: hand it straight back to the card. The
+        // engine deliberately knows nothing about what happens next.
+        (_, PendingEffect::CardEffect { source_id, key }) => {
+            let card_id = state.get_object(*source_id).map(|o| o.card_id);
+            if let Some(behavior) = card_id.and_then(|cid| registry.get(cid)) {
+                behavior.resolve_card_effect(state, *source_id, key, target, registry);
+            }
+        }
         (Target::Object(id), PendingEffect::DealDamage { amount, source_id, source_name: _ }) => {
             crate::damage::deal_damage(state, *source_id,
                 crate::events::DamageTarget::Object(*id), *amount,
@@ -3314,17 +3316,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.log(LogLevel::Event, format!("{name} returned to the battlefield"));
             state.move_spell_after_resolve(*spell_id, registry);
         }
-        (Target::Object(id), PendingEffect::AddCounters { count, human_bonus }) => {
-            let mut final_count = *count;
-            if *human_bonus {
-                if state.has_subtype(*id, "Human", registry) {
-                    final_count = count * 2;
-                }
-            }
+        (Target::Object(id), PendingEffect::AddCounters { count }) => {
             let name = state.obj_name(*id);
-            state.add_counters(*id, crate::types::CounterType::PlusOnePlusOne, final_count);
+            state.add_counters(*id, crate::types::CounterType::PlusOnePlusOne, *count);
             state.log(LogLevel::Event,
-                format!("Added {} +1/+1 counter{} to {}", final_count, if final_count > 1 { "s" } else { "" }, name));
+                format!("Added {} +1/+1 counter{} to {}", count, if *count > 1 { "s" } else { "" }, name));
         }
         (Target::Object(id), PendingEffect::DebuffUntilEOT { power, toughness, source_name }) => {
             let name = state.obj_name(*id);
@@ -3379,30 +3375,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.get_player_mut(*controller).life = new_self;
             state.events.push(GameEvent::LifeChanged { player: *controller, old: old_self, new_life: new_self });
             state.log(LogLevel::Event, format!("{}: p{} lost 1 life, p{} gained 1 life", source_name, pid.0, controller.0));
-        }
-        (Target::Object(id), PendingEffect::ExileCurseOfOblivion { remaining }) => {
-            let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
-            state.move_object(*id, Zone::Exile, registry);
-            state.log(LogLevel::Event, format!("Curse of Oblivion: exiled a card from p{}'s graveyard", owner.0));
-            // If more cards to exile, present another choice.
-            if *remaining > 0 {
-                let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, owner)
-                    .iter()
-                    .map(|o| Target::Object(o.id))
-                    .collect();
-                if !gy_cards.is_empty() {
-                    state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
-                        player: owner,
-                        source: crate::ids::ObjectId(0), // curse source
-                        choice: crate::state::ResolutionChoiceKind::ChooseTarget {
-                            description: "Curse of Oblivion: choose another card to exile".into(),
-                            options: gy_cards,
-                            optional: false,
-                            effect: PendingEffect::ExileCurseOfOblivion { remaining: remaining - 1 },
-                        },
-                    });
-                }
-            }
         }
         (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
             let name = state.obj_name(*id);
@@ -3528,23 +3500,29 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
         (Target::Object(target_id), PendingEffect::CopyCreature { source_id }) => {
             // Copy the target creature's copiable characteristics onto the
             // source permanent (CR 707.2), including the legendary supertype.
-            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_legendary, is_evil_twin) =
+            let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_legendary) =
                 match state.get_object(*target_id) {
                     Some(o) => {
-                        let kw = registry.card_data(o.card_id)
+                        let kw = state.face_data(o.id, registry)
                             .map(|d| d.keywords.clone())
                             .unwrap_or_default();
-                        let evil_twin = o.card_state.contains_key("is_evil_twin");
                         // Legendary is copiable (CR 707.2); read the object flag
                         // or fall back to the printed supertype.
                         let legendary = o.is_legendary
-                            || registry.card_data(o.card_id)
+                            || state.face_data(o.id, registry)
                                 .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
                         (o.name.clone(), o.power, o.toughness, o.card_id,
-                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone(), legendary, evil_twin)
+                         o.card_types.clone(), o.subtypes.clone(), kw, o.colors.clone(), legendary)
                     }
                     None => return,
                 };
+
+            // CR 706.2: whatever card's copy effect this is, that card may have
+            // added abilities of its own ("except it has ..."). Record it before
+            // `card_id` is overwritten — this is the only place the granting
+            // card's identity is still known, and the engine never needs to know
+            // WHICH card it is.
+            let grantor = state.get_object(*source_id).map(|o| o.card_id);
 
             if let Some(obj) = state.get_object_mut(*source_id) {
                 // Setting `card_id` is what makes this object a copy: every
@@ -3562,19 +3540,14 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 obj.subtypes = subtypes;
                 obj.colors = colors;
                 obj.is_legendary = is_legendary;
-                // Always set the "is_evil_twin" marker on the source: CopyCreature is
-                // only ever created by Evil Twin's ETB trigger, so the source is always
-                // an Evil Twin that needs the destroy ability regardless of which
-                // creature it copies. This also handles the case where another creature
-                // copies an Evil Twin (the target carries the marker).
-                let _ = is_evil_twin; // retained from target for documentation; source always gets it
-                obj.card_state.insert("is_evil_twin".into(), ObjectId(1));
+                obj.copy_grantor = grantor;
                 // The copy has resolved — disarm the SBA copy-guard so the
                 // permanent is once again subject to state-based actions.
                 obj.entering_copy_source = false;
             }
+            let copy_name = state.get_object(*source_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(LogLevel::Event,
-                format!("Evil Twin enters as a copy of {}", state.obj_name(*target_id)));
+                format!("{copy_name} enters as a copy of {}", state.obj_name(*target_id)));
         }
         (Target::Object(id), PendingEffect::KeepOneDestroyRest {
             remaining_players, kept_so_far, source_name,
@@ -3733,34 +3706,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
                 state.log(LogLevel::Event,
                     format!("{} grants flashback to {}", source_name, state.obj_name(*target_id)));
             }
-        }
-        (Target::Object(land_id), PendingEffect::GhostQuarterSearch { searcher }) => {
-            // Put the chosen basic land onto the battlefield, then shuffle.
-            let name = state.obj_name(*land_id);
-            state.get_player_mut(*searcher).library_order.retain(|&id| id != *land_id);
-            state.move_object(*land_id, Zone::Battlefield, registry);
-            if let Some(obj) = state.get_object_mut(*land_id) {
-                obj.summoning_sick = false;
-            }
-            state.log(LogLevel::Event,
-                format!("Ghost Quarter: p{} searched for {}", searcher.0, name));
-            // Shuffle the library.
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
-        }
-        (Target::Object(id), PendingEffect::ExileFromGraveyardAndCreateToken { controller }) => {
-            let name = state.obj_name(*id);
-            state.move_object(*id, Zone::Exile, registry);
-            state.log(LogLevel::Event, format!("Moorland Haunt exiled {name} from graveyard"));
-            state.create_token_with_subtypes(
-                "Spirit Token", *controller, 1, 1,
-                vec![crate::types::Color::White],
-                vec![crate::types::CardType::Creature],
-                vec![crate::types::Keyword::Flying],
-                vec!["Spirit".into()],
-                registry,
-            );
-            state.log(LogLevel::Event, "Moorland Haunt created a 1/1 white Spirit token with flying".into());
         }
         (Target::Object(keep_id), PendingEffect::LegendRuleKeep { player, legend_name }) => {
             // Keep the chosen permanent, move all other legendaries with the same name to graveyard.

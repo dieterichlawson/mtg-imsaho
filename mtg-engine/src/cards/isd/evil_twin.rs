@@ -80,8 +80,12 @@ impl CardBehavior for EvilTwin {
             Some(o) if o.zone == Zone::Battlefield => o,
             _ => return vec![],
         };
-        // Only show the destroy ability if this is an Evil Twin copy.
-        if !obj.card_state.contains_key("is_evil_twin") {
+        // The granted ability exists only on a permanent that actually entered
+        // as a copy (CR 706.2 "except it has ..."). An Evil Twin whose copy
+        // choice was declined is a plain 0/0 with no ability. The engine
+        // consults this behavior for a copy whose `copy_grantor` is this card,
+        // so the presence of a grantor is the whole test.
+        if obj.copy_grantor.is_none() {
             return vec![];
         }
 

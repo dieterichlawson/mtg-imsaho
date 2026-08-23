@@ -1593,7 +1593,7 @@ fn bug_reaper_intervening_if_not_checked_at_trigger() {
 // CARD-SPECIFIC: EVIL TWIN — MARKER SET BEFORE CHOICE
 // ═══════════════════════════════════════════════════════════════
 
-/// Bug: Evil Twin sets `is_evil_twin` before the copy choice. The destroy ability
+/// Bug: Evil Twin marked itself as a copy before the copy choice. The destroy ability
 /// comes from the "except it has..." clause, which only applies when a copy is made.
 /// Per ruling: "You can choose not to copy anything. In that case, Evil Twin enters
 /// as a 0/0 creature." A 0/0 that didn't copy anything should NOT have the destroy
@@ -1611,9 +1611,9 @@ fn bug_evil_twin_marker_set_before_choice() {
     // Fire ETB triggers (this is where on_enter_battlefield runs)
     mtg_engine::triggers::process_triggers(&mut state, &registry);
 
-    // Check if is_evil_twin is set before the copy choice is made
+    // Check if the copy-grantor marker is set before the copy choice is made
     let has_marker = state.get_object(twin).is_some_and(|o|
-        o.card_state.contains_key("is_evil_twin")
+        o.copy_grantor.is_some()
     );
 
     let has_choice = state.awaiting_action.is_some();
@@ -1622,7 +1622,9 @@ fn bug_evil_twin_marker_set_before_choice() {
     // If the player declines, the 0/0 Twin dies without the destroy ability.
     // BUG: Marker is set before the choice is presented.
     assert!(!(has_marker && has_choice),
-        "is_evil_twin should not be set while copy choice is pending. Marker: {has_marker}, Choice: {has_choice}");
+        "copy_grantor must not be set while the copy choice is still pending, \
+         or the granted ability would appear before the copy exists. \
+         Marker: {has_marker}, Choice: {has_choice}");
 }
 
 // ═══════════════════════════════════════════════════════════════

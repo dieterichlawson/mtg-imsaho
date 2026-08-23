@@ -86,7 +86,43 @@ impl CardBehavior for CurseOfOblivion {
                 description: "Curse of Oblivion: choose a card to exile from your graveyard".into(),
                 options: gy_cards,
                 optional: false,
-                effect: PendingEffect::ExileCurseOfOblivion { remaining: 1 },
+                effect: PendingEffect::CardEffect { source_id: self_id, key: "1".into() },
+            },
+        });
+    }
+
+    /// "At the beginning of enchanted player's upkeep, that player exiles two
+    /// cards from their graveyard." The chained second choice is this card's
+    /// own loop; `key` carries how many exiles are still owed.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, key: &str, target: &Target, _registry: &CardRegistry) {
+        let Target::Object(id) = target else { return };
+        let owner = state.get_object(*id).map_or(crate::ids::PlayerId(0), |o| o.owner);
+        state.move_object(*id, Zone::Exile, _registry);
+        state.log(crate::state::LogLevel::Event,
+            format!("Curse of Oblivion: exiled a card from p{}'s graveyard", owner.0));
+
+        let remaining: u32 = key.parse().unwrap_or(0);
+        if remaining == 0 {
+            return;
+        }
+        let gy_cards: Vec<Target> = state.objects_in_zone(Zone::Graveyard, owner)
+            .iter()
+            .map(|o| Target::Object(o.id))
+            .collect();
+        if gy_cards.is_empty() {
+            return;
+        }
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: owner,
+            source: source_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: "Curse of Oblivion: choose another card to exile".into(),
+                options: gy_cards,
+                optional: false,
+                effect: PendingEffect::CardEffect {
+                    source_id,
+                    key: (remaining - 1).to_string(),
+                },
             },
         });
     }
