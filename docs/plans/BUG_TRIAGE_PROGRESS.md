@@ -23,6 +23,68 @@ With that set, all 16 llm_conversation tests pass. Per CLAUDE.md: check the
 exit code and read the full output for both `FAILED` and `could not compile`;
 never filter through `grep FAILED`.
 
+## The root-cause refactor (read this first)
+
+Cluster 4 was a symptom. The disease was that **a permanent's characteristics
+had no single authoritative reader**, so ~55 call sites each improvised. Three
+things made that inevitable; all three are now fixed, and the rule is enforced
+by `mtg-engine/tests/characteristics_invariant.rs`.
+
+**The rule:** an object's characteristics = its **active face** UNION its
+**runtime grants**. `face_data` is the printed half (back face when
+transformed); the object-level vectors are grants only (Olivia's "Vampire",
+Grimoire's "Zombie"). Tokens are the exception — no registry face, so their
+object fields carry their printed characteristics.
+
+What was wrong:
+
+1. **The composition rule contradicted itself.** `card_types_of` and
+   `colors_of` returned the object's vector *instead of* the face's when
+   non-empty; `subtypes_of` unioned. Same question, different answer depending
+   on the field. All three union now.
+2. **The fields were populated on one code path and not the other.**
+   `setup_game` copied each card's data onto its library object; `create_object`
+   (every test helper, token, reanimation) left them empty. Proven directly:
+   Avacyn's Pilgrim came out `card_types=[Creature] subtypes=["Human","Monk"]`
+   from `setup_game` and `[] []` from the test helper. **So card code reading
+   the raw field worked in a real game and silently did nothing under test** —
+   the bug was invisible to the tests written to catch it, which is why one
+   defect was re-reported ~15 times under 15 card names. `setup_game` no
+   longer copies.
+3. **Nothing enforced the rule.** It was documented in `state.rs` and violated
+   in ~55 places. Now a test fails the build, naming file, line and the
+   accessor to use. Its allowlist has five entries that implement the layer
+   rather than consume it, and a second test rejects any entry that stops
+   needing its exemption (it caught two dead ones immediately).
+
+Also removed: `apply_transform` copying the new face's name/keywords/subtypes
+onto the object (a second source of truth whose only job was to agree with the
+first — and which a card hand-rolling its own transform left disagreeing), and
+the copy path's redundant duplicates.
+
+**Two real bugs this surfaced**, both invisible before because tests and
+production disagreed:
+- **Runechanter's Pike** counted instants/sorceries in the graveyard off raw
+  `o.card_types` with no fallback — it worked *only* because `setup_game`
+  populated that field, and was already broken in every test. (`dynamic_pt`
+  now takes a registry; a characteristic-defining ability needs one.)
+- **Champion of the Parish** used `registry.card_data`, which is always the
+  FRONT face, so it counted a transformed werewolf as a Human — the same
+  defect `hamlet_captain-01` was filed for.
+
+**Nine tests were re-based** from asserting the duplication to asserting the
+guarantee. The sharpest case: `audit_subtype_family`'s Bug BD demanded that
+`setup_game` populate `obj.subtypes` *too*, and named itself the root cause of
+three sibling bugs. That prescription was the disease — it asks for more
+duplication across the two paths. Replaced by its inverse, plus a test pinning
+the property whose absence hid everything: an object built by `create_object`
+and one built by `setup_game` must agree on their characteristics.
+
+`new_pipeline/prompts/auditor-insights.md` — which every audit agent reads
+before starting — recorded this backwards ("always empty for non-token
+permanents"). Corrected, with the two superseded entries marked RESOLVED in
+place so a top-to-bottom read cannot act on them.
+
 ## Cluster status
 
 | # | Cluster | Tickets | Status |
@@ -211,4 +273,5 @@ olivia_voldaren-01, grimoire_of_the_dead-01.
    for one whenever a ticket says "the condition is only evaluated at
    resolution".
 
-**Backlog count: 50 fixed / 66 open** (was 2 / 114 at the start of this pass).
+**Backlog count: 50 fixed / 66 open**, plus the root-cause refactor above,
+which removes the mechanism behind the whole characteristics bug family (was 2 / 114 at the start of this pass).
