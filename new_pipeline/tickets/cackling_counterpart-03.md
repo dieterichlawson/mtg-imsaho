@@ -1,11 +1,15 @@
 ---
 id: cackling_counterpart-03
-status: new
+status: fixed
 card: Cackling Counterpart
 audit_run_id: 2026-04-18-cackling_counterpart-audit
 audit_model: sonnet
 audit_tokens: 15636
 audit_duration: 272
+fixed_sha: 778ed4738894357d762d118ea082f892dcb0d2c4
+fixed_at: 2026-08-23T23:24:11Z
+test_file: mtg-engine/tests/copy_effects.rs
+fix_note: coverage added: token copy of a creature, and the copied creature's ETB firing on the token
 ---
 
 ## Audit Finding

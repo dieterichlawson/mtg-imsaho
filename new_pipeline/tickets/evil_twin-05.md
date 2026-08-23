@@ -1,11 +1,15 @@
 ---
 id: evil_twin-05
-status: new
+status: fixed
 card: Evil Twin
 audit_run_id: 2026-04-19-evil_twin-audit
 audit_model: sonnet
 audit_tokens: 43910
 audit_duration: 1253
+fixed_sha: 778ed4738894357d762d118ea082f892dcb0d2c4
+fixed_at: 2026-08-23T23:24:11Z
+test_file: mtg-engine/tests/copy_effects.rs
+fix_note: printed_keywords_of falls back to the object for generic tokens, which have no registry face
 ---
 
 ## Audit Finding
