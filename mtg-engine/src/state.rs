@@ -1837,6 +1837,21 @@ impl GameState {
                 .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
     }
 
+    /// Printed keywords of the object: the active face's, or the object's own
+    /// for something with no registry face (a generic token, whose
+    /// `obj.keywords` ARE its printed keywords).
+    ///
+    /// This is the printed set only — keywords granted by continuous or
+    /// temporary effects are not included. Ask `has_keyword` for the full
+    /// picture; use this when copying, which copies printed values (CR 707.2).
+    #[must_use]
+    pub fn printed_keywords_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Keyword> {
+        if let Some(data) = self.face_data(id, registry) {
+            return data.keywords;
+        }
+        self.get_object(id).map(|o| o.keywords.clone()).unwrap_or_default()
+    }
+
     /// Colors of the object: the union of any granted at runtime (Grimoire of
     /// the Dead's black) and those derived from the active face's mana cost.
     /// (Color indicators are not modeled.)

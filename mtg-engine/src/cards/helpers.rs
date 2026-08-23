@@ -161,6 +161,23 @@ pub fn creature_targets_except(state: &GameState, exclude: ObjectId, source_id: 
         .collect()
 }
 
+/// Every creature on the battlefield except one — for effects that CHOOSE a
+/// creature rather than target it.
+///
+/// CR 115.1: an effect targets only where the word "target" appears. Hexproof
+/// (702.11) and protection (702.16) restrict targeting, so neither applies
+/// here. Evil Twin's "a copy of any creature on the battlefield" is a
+/// replacement-effect choice (CR 614.12b), and an opponent's hexproof creature
+/// is a legal thing to copy — using the targeting helper wrongly hid it.
+#[must_use]
+pub fn creature_choices_except(state: &GameState, exclude: ObjectId, registry: &CardRegistry) -> Vec<Target> {
+    state.objects.values()
+        .filter(|o| o.zone == Zone::Battlefield && o.id != exclude)
+        .filter(|o| state.is_creature(o.id, registry))
+        .map(|o| Target::Object(o.id))
+        .collect()
+}
+
 /// All targetable creatures + planeswalkers + all players ("any target").
 #[must_use]
 pub fn any_targets(state: &GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) -> Vec<Target> {

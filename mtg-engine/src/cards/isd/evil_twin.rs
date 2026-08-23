@@ -51,9 +51,11 @@ impl CardBehavior for EvilTwin {
     fn on_enter_battlefield(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = crate::cards::helpers::controller_of(state, object_id);
 
-        // The SBA copy-guard was armed at entry by move_object. Collect all
-        // creatures on the battlefield except Evil Twin itself.
-        let targets = crate::cards::helpers::creature_targets_except(state, object_id, object_id, controller, registry);
+        // "a copy of ANY CREATURE on the battlefield" — a choice, not a
+        // target (CR 115.1, 614.12b), so hexproof and protection do not
+        // restrict it. Using the targeting helper hid an opponent's hexproof
+        // creature, which is a perfectly legal thing to copy.
+        let targets = crate::cards::helpers::creature_choices_except(state, object_id, registry);
 
         // "You may" — present an optional choice. If no creatures exist or the
         // player declines, Evil Twin stays as a 0/0 and dies to SBA.

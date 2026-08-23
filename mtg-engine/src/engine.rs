@@ -3377,9 +3377,11 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let (name, power, toughness, card_id, card_types, subtypes, keywords, colors, is_legendary) =
                 match state.get_object(*target_id) {
                     Some(o) => {
-                        let kw = state.face_data(o.id, registry)
-                            .map(|d| d.keywords.clone())
-                            .unwrap_or_default();
+                        // A generic token has no registry face, so its
+                        // printed keywords live on the object. Reading only the
+                        // face dropped them — a copy of a 1/1 Spirit token lost
+                        // its flying.
+                        let kw = state.printed_keywords_of(o.id, registry);
                         // Legendary is copiable (CR 707.2); read the object flag
                         // or fall back to the printed supertype.
                         let legendary = o.is_legendary
@@ -3422,6 +3424,35 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             let copy_name = state.get_object(*source_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(LogLevel::Event,
                 format!("{copy_name} enters as a copy of {}", state.obj_name(*target_id)));
+
+            // CR 614.12: the permanent enters AS the copy, so the abilities
+            // that trigger on it entering are the COPIED creature's. The copy
+            // is modelled here as a choice resolving after entry, so those
+            // triggers have to be raised now — otherwise copying a creature
+            // with an enters-the-battlefield ability silently lost it.
+            //
+            // This queues the copied card's ETB trigger rather than re-emitting
+            // `EnteredBattlefield`: the entering event already happened and
+            // every watcher saw it, and firing it twice would double-count for
+            // things like Champion of the Parish.
+            if let Some(behavior) = registry.get(card_id) {
+                if behavior.has_etb_handler() {
+                    let etb_kind = crate::cards::TriggerKind::EntersBattlefield;
+                    if behavior.should_trigger(state, *source_id, &etb_kind, registry) {
+                        let controller = state.get_object(*source_id)
+                            .map_or(PlayerId(0), |o| o.controller);
+                        state.pending_triggers.push(
+                            crate::triggers::PendingTrigger::EnteredBattlefield {
+                                object_id: *source_id,
+                                card_id,
+                                controller,
+                                description: format!("{copy_name} (copy) enters the battlefield"),
+                                chosen_targets: Vec::new(),
+                            }
+                        );
+                    }
+                }
+            }
         }
         (Target::Object(target_id), PendingEffect::GrantFlashback { source_name }) => {
             // Grant flashback to the chosen card until end of turn.
