@@ -46,50 +46,29 @@ impl CardBehavior for TravelersAmulet {
     }
 
     fn on_activate_ability(&self, state: &mut GameState, object_id: ObjectId, _ability_index: usize, _targets: &[Target], registry: &CardRegistry) {
-        use rand::seq::SliceRandom;
 
         // The artifact was already sacrificed by the engine.
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
-        // Search library for all basic land cards.
+        // "Search your library for a basic land card, reveal it, put it into
+        // your hand, then shuffle." The search shape itself is general.
         let basic_lands: Vec<crate::ids::ObjectId> = state.get_player(controller).library_order.iter()
-            .filter(|&&lib_id| {
-                state.get_object(lib_id)
-                    .and_then(|o| state.face_data(o.id, registry))
-                    .is_some_and(|d| {
-                        d.card_types.contains(&CardType::Land)
-                            && d.supertypes.contains(&Supertype::Basic)
-                    })
-            })
             .copied()
+            .filter(|&id| is_basic_land(state, id, registry))
             .collect();
 
-        if basic_lands.is_empty() {
-            state.log(crate::state::LogLevel::Event,
-                format!("Traveler's Amulet: p{} found no basic land", controller.0));
-            // Still shuffle (you searched).
-            state.get_player_mut(controller).library_order.shuffle(&mut rand::thread_rng());
-        } else if basic_lands.len() == 1 {
-            let land_id = basic_lands[0];
-            state.get_player_mut(controller).library_order.retain(|&id| id != land_id);
-            state.move_object(land_id, Zone::Hand, registry);
-            let name = state.obj_name(land_id);
-            state.log(crate::state::LogLevel::Event,
-                format!("Traveler's Amulet: p{} searched for {}", controller.0, name));
-            state.get_player_mut(controller).library_order.shuffle(&mut rand::thread_rng());
-        } else {
-            // Multiple basic lands — player chooses.
-            state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: object_id,
-                choice: crate::state::ResolutionChoiceKind::ChooseFromLibrary {
-                    description: "Traveler's Amulet: choose a basic land card".into(),
-                    options: basic_lands,
-                    searcher: controller,
-                    source_id: object_id,
-                },
-            });
-            // ChooseFromLibrary handler moves to hand and shuffles.
-        }
+        crate::cards::helpers::search_library(
+            state, object_id, controller, basic_lands,
+            Zone::Hand, false, false,
+            "Traveler's Amulet: choose a basic land card",
+            registry,
+        );
     }
+}
+
+/// A basic land card — `Land` card type plus the `Basic` supertype.
+fn is_basic_land(state: &GameState, id: crate::ids::ObjectId, registry: &CardRegistry) -> bool {
+    state.has_card_type(id, CardType::Land, registry)
+        && state.face_data(id, registry)
+            .is_some_and(|d| d.supertypes.contains(&Supertype::Basic))
 }

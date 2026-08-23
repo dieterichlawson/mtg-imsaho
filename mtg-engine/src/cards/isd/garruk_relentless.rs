@@ -25,7 +25,6 @@ impl GarrukRelentless {
     /// Sacrifice a creature and then search library for a creature card.
     /// Used when there's only one creature to sacrifice (no choice needed).
     fn sacrifice_and_tutor(state: &mut GameState, garruk_id: ObjectId, sac_id: ObjectId, controller: crate::ids::PlayerId, registry: &CardRegistry) {
-        use rand::seq::SliceRandom;
 
         let sac_name = state.get_object(sac_id).map(|o| o.name.clone()).unwrap_or_default();
         crate::destruction::sacrifice(state, sac_id, registry);
@@ -34,38 +33,15 @@ impl GarrukRelentless {
 
         // Find all creature cards in library for the player to choose from.
         let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
-            .filter(|&&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
             .copied()
+            .filter(|&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
             .collect();
-
-        if creature_options.is_empty() {
-            state.log(crate::state::LogLevel::Event,
-                "Garruk, the Veil-Cursed: no creature card found in library".into());
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(controller).library_order.shuffle(&mut rng);
-        } else if creature_options.len() == 1 {
-            let found_id = creature_options[0];
-            let found_name = state.get_object(found_id).map(|o| o.name.clone()).unwrap_or_default();
-            let player = state.get_player_mut(controller);
-            player.library_order.retain(|&lid| lid != found_id);
-            state.move_object(found_id, Zone::Hand, registry);
-            state.log(crate::state::LogLevel::Event,
-                format!("Garruk, the Veil-Cursed: searched and found {found_name}"));
-            let mut rng = rand::thread_rng();
-            state.get_player_mut(controller).library_order.shuffle(&mut rng);
-        } else {
-            // Multiple creatures in library — present choice.
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: garruk_id,
-                choice: ResolutionChoiceKind::ChooseFromLibrary {
-                    description: "Garruk, the Veil-Cursed: choose a creature card from your library".into(),
-                    options: creature_options,
-                    searcher: controller,
-                    source_id: garruk_id,
-                },
-            });
-        }
+        crate::cards::helpers::search_library(
+            state, garruk_id, controller, creature_options,
+            Zone::Hand, false, false,
+            "Garruk, the Veil-Cursed: choose a creature card from your library",
+            registry,
+        );
     }
 }
 
@@ -315,7 +291,6 @@ impl CardBehavior for GarrukRelentless {
     /// for a creature card, reveal it, put it into your hand, then shuffle."
     /// The sacrifice, the search and the shuffle are all this card's text.
     fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
-        use rand::seq::SliceRandom;
         let Target::Object(id) = target else { return };
         let controller = crate::cards::helpers::controller_of(state, source_id);
 
@@ -325,41 +300,17 @@ impl CardBehavior for GarrukRelentless {
             format!("Garruk, the Veil-Cursed: sacrificed {sac_name}"));
 
         let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
-            .filter(|&&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
             .copied()
+            .filter(|&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
             .collect();
 
-        match creature_options.len() {
-            0 => {
-                state.log(crate::state::LogLevel::Event,
-                    "Garruk, the Veil-Cursed: no creature card found in library".into());
-            }
-            1 => {
-                let found = creature_options[0];
-                let found_name = state.obj_name(found);
-                state.get_player_mut(controller).library_order.retain(|&lid| lid != found);
-                state.move_object(found, Zone::Hand, registry);
-                state.log(crate::state::LogLevel::Event,
-                    format!("Garruk, the Veil-Cursed: searched and found {found_name}"));
-            }
-            _ => {
-                // The player picks; the shuffle happens when that choice resolves.
-                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
-                    player: controller,
-                    source: source_id,
-                    choice: crate::state::ResolutionChoiceKind::ChooseFromLibrary {
-                        description: "Garruk, the Veil-Cursed: choose a creature card from your library".into(),
-                        options: creature_options,
-                        searcher: controller,
-                        source_id,
-                    },
-                });
-                return;
-            }
-        }
-
-        // "then shuffle" — only on the paths that finish here.
-        let mut rng = rand::thread_rng();
-        state.get_player_mut(controller).library_order.shuffle(&mut rng);
+        // "Search your library for a creature card, reveal it, put it into
+        // your hand, then shuffle."
+        crate::cards::helpers::search_library(
+            state, source_id, controller, creature_options,
+            Zone::Hand, false, false,
+            "Garruk, the Veil-Cursed: choose a creature card from your library",
+            registry,
+        );
     }
 }

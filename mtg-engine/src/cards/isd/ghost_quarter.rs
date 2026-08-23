@@ -96,42 +96,16 @@ impl CardBehavior for GhostQuarter {
                 return;
             }
 
-            // Present "may search" choice via YesNo. Auto-select if only controller.
-            let targets: Vec<Target> = basic_lands.iter().map(|&id| Target::Object(id)).collect();
-            state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
-                player: target_controller,
-                source: object_id,
-                choice: crate::state::ResolutionChoiceKind::ChooseTarget {
-                    description: "Ghost Quarter: you may search for a basic land card".into(),
-                    options: targets,
-                    optional: true, // "may" search
-                    effect: crate::state::PendingEffect::CardEffect {
-                        source_id: object_id,
-                        key: String::new(),
-                    },
-                },
-            });
+            // "...put it onto the battlefield, then shuffle." The land goes
+            // straight to the battlefield untapped, which is why this could
+            // not use the engine's search before it carried a destination.
+            crate::cards::helpers::search_library(
+                state, object_id, target_controller, basic_lands,
+                Zone::Battlefield, false, true,
+                "Ghost Quarter: you may search for a basic land card",
+                registry,
+            );
         }
     }
 
-    /// "...Its controller may search their library for a basic land card, put
-    /// it onto the battlefield, then shuffle." Putting the land in and
-    /// shuffling is Ghost Quarter's own resolution, so it lives here.
-    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
-        use rand::seq::SliceRandom;
-        let Target::Object(land_id) = target else { return };
-        let searcher = state.get_object(*land_id).map_or(crate::ids::PlayerId(0), |o| o.owner);
-        let name = state.obj_name(*land_id);
-
-        state.get_player_mut(searcher).library_order.retain(|&id| id != *land_id);
-        state.move_object(*land_id, Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(*land_id) {
-            obj.summoning_sick = false;
-        }
-        state.log(crate::state::LogLevel::Event,
-            format!("Ghost Quarter: p{} searched for {name}", searcher.0));
-
-        let mut rng = rand::thread_rng();
-        state.get_player_mut(searcher).library_order.shuffle(&mut rng);
-    }
 }

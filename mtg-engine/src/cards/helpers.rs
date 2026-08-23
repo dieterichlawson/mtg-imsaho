@@ -5,6 +5,7 @@
 //! - Choice presentation helpers (`present_target_choice`, `present_yes_no`, etc.)
 //! - Target collection helpers (`any_targets`, `creature_targets`, etc.)
 //! - Trigger-time condition helpers (`werewolf_should_trigger`, `morbid_should_trigger`)
+//! - Library search (`search_library`, `finish_library_search`)
 
 use crate::actions::Target;
 use crate::cards::{CardBehavior, CardRegistry, TriggerKind};
@@ -336,4 +337,101 @@ pub fn morbid_should_trigger(state: &GameState, kind: &TriggerKind) -> bool {
         return state.creature_died_this_turn;
     }
     true
+}
+
+/// CR 701.19: search a library, take at most one matching card, then shuffle.
+///
+/// Handles the whole shape once: no match (shuffle and move on), exactly one
+/// (take it without asking — there is no choice to make), or several (ask, and
+/// finish in `finish_library_search` when the answer comes back). Five cards
+/// each had their own copy of this, with subtly different behaviour in the
+/// zero- and one-candidate cases.
+///
+/// `candidates` is what the card considers a legal find; `destination` and
+/// `tapped` are where it ends up. The shuffle always happens, even when
+/// nothing is found — you searched.
+pub fn search_library(
+    state: &mut GameState,
+    source_id: ObjectId,
+    searcher: PlayerId,
+    candidates: Vec<ObjectId>,
+    destination: Zone,
+    tapped: bool,
+    optional: bool,
+    description: &str,
+    registry: &CardRegistry,
+) {
+    // "You MAY search" is a real decision even when only one card qualifies —
+    // the player is entitled to decline — so an optional search always asks.
+    if optional && !candidates.is_empty() {
+        let options: Vec<Target> = candidates.into_iter().map(Target::Object).collect();
+        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+            player: searcher,
+            source: source_id,
+            choice: ResolutionChoiceKind::ChooseTarget {
+                description: description.to_string(),
+                options,
+                optional: true,
+                effect: PendingEffect::FinishLibrarySearch { searcher, destination, tapped },
+            },
+        });
+        return;
+    }
+
+    match candidates.len() {
+        0 => {
+            state.log(crate::state::LogLevel::Event,
+                format!("{}: no matching card found in library", state.obj_name(source_id)));
+            shuffle_library(state, searcher);
+        }
+        1 => finish_library_search(state, searcher, candidates[0], destination, tapped, registry),
+        _ => {
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player: searcher,
+                source: source_id,
+                choice: ResolutionChoiceKind::ChooseFromLibrary {
+                    description: description.to_string(),
+                    options: candidates,
+                    searcher,
+                    source_id,
+                    destination,
+                    tapped,
+                },
+            });
+        }
+    }
+}
+
+/// Move a found card out of the library to its destination, then shuffle.
+/// Shared by the auto-pick path in `search_library` and the engine's handler
+/// for the player's answer, so both behave identically.
+pub fn finish_library_search(
+    state: &mut GameState,
+    searcher: PlayerId,
+    found: ObjectId,
+    destination: Zone,
+    tapped: bool,
+    registry: &CardRegistry,
+) {
+    let name = state.obj_name(found);
+    state.get_player_mut(searcher).library_order.retain(|&id| id != found);
+    state.move_object(found, destination, registry);
+    if destination == Zone::Battlefield {
+        if let Some(obj) = state.get_object_mut(found) {
+            obj.summoning_sick = false;
+            if tapped {
+                obj.tapped = true;
+            }
+        }
+    }
+    state.log(crate::state::LogLevel::Event,
+        format!("p{} searched their library and found {name}", searcher.0));
+    shuffle_library(state, searcher);
+}
+
+/// CR 701.20: shuffle a player's library.
+pub fn shuffle_library(state: &mut GameState, player: PlayerId) {
+    use rand::seq::SliceRandom;
+    let mut rng = rand::thread_rng();
+    state.get_player_mut(player).library_order.shuffle(&mut rng);
 }

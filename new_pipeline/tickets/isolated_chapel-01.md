@@ -1,11 +1,15 @@
 ---
 id: isolated_chapel-01
-status: new
+status: fixed
 card: Isolated Chapel
 audit_run_id: 2026-04-19-isolated_chapel-audit
 audit_model: sonnet
 audit_tokens: 10757
 audit_duration: 207
+fixed_sha: 5c9fc98eed8d4f0b9ed73646882b288f0f55545d
+fixed_at: 2026-08-23T20:10:52Z
+test_file: mtg-engine/tests/enters_tapped_replacement.rs
+fix_note: cluster fix: CardBehavior::enters_tapped applies the tap as a CR 614.1d replacement effect, not an ETB trigger
 ---
 
 ## Audit Finding

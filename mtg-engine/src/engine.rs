@@ -2914,19 +2914,10 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         new_state.log(LogLevel::Event, format!("Kept {keep_name}"));
                         new_state.move_spell_after_resolve(*spell_id, registry);
                     }
-                    (ResolutionChoiceKind::ChooseFromLibrary { searcher, .. },
+                    (ResolutionChoiceKind::ChooseFromLibrary { searcher, destination, tapped, .. },
                      ResolvedChoice::ChosenCard(chosen_id)) => {
-                        let chosen_name = new_state.obj_name(*chosen_id);
-                        let player = new_state.get_player_mut(*searcher);
-                        player.library_order.retain(|&id| id != *chosen_id);
-                        new_state.move_object(*chosen_id, Zone::Hand, registry);
-                        new_state.log(LogLevel::Event, format!("Searched library and found {chosen_name}"));
-                        // Shuffle library after searching.
-                        {
-                            use rand::seq::SliceRandom;
-                            let mut rng = rand::thread_rng();
-                            new_state.get_player_mut(*searcher).library_order.shuffle(&mut rng);
-                        }
+                        crate::cards::helpers::finish_library_search(
+                            &mut new_state, *searcher, *chosen_id, *destination, *tapped, registry);
                     }
                     (ResolutionChoiceKind::ChooseCardType { options, spell_id, controller, .. },
                      ResolvedChoice::ChosenIndex(index, _)) => {
@@ -3286,6 +3277,10 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
     use crate::state::PendingEffect;
 
     match (target, effect) {
+        (Target::Object(found), PendingEffect::FinishLibrarySearch { searcher, destination, tapped }) => {
+            crate::cards::helpers::finish_library_search(
+                state, *searcher, *found, *destination, *tapped, registry);
+        }
         // Card-specific resolution: hand it straight back to the card. The
         // engine deliberately knows nothing about what happens next.
         (_, PendingEffect::CardEffect { source_id, key }) => {

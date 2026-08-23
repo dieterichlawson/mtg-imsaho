@@ -2149,6 +2149,13 @@ pub enum ResolutionChoiceKind {
         searcher: PlayerId,
         /// The source permanent that initiated the search.
         source_id: ObjectId,
+        /// Where the found card goes (CR 701.19). Hand for a tutor, battlefield
+        /// for a land-fetch. This used to be hardcoded to `Hand`, which is why
+        /// every card that fetched onto the battlefield hand-rolled its own
+        /// search instead of using this.
+        destination: Zone,
+        /// Whether it arrives tapped — only meaningful for the battlefield.
+        tapped: bool,
     },
     /// Choose a permanent type from a list of options (Creeping Renaissance).
     ChooseCardType {
@@ -2295,6 +2302,12 @@ pub enum PendingEffect {
     /// CR 603.3d: attach the chosen target to the next pending trigger
     /// in the AP/NAP push queue, then push it onto the stack and continue
     /// processing remaining pending triggers.
+    /// CR 701.19: complete a library search the player was offered. Generic —
+    /// the searcher, destination and tapped-ness fully describe it, so any
+    /// "you may search your library for ..." uses this rather than a
+    /// card-specific effect. Declining still shuffles.
+    FinishLibrarySearch { searcher: PlayerId, destination: Zone, tapped: bool },
+
     /// A deferred resolution that belongs to the card that queued it.
     ///
     /// The engine routes the chosen target back to `source_id`'s behavior via

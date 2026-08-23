@@ -120,6 +120,9 @@ fn single_card_pending_effect_variants_are_justified() {
         }
     }
     walk(&src.join("cards"), &mut card_files);
+    // `cards/helpers.rs` is shared infrastructure for cards, not a card, so a
+    // variant used only from there is not "one card's logic".
+    card_files.retain(|p| p.file_name().is_some_and(|n| n != "helpers.rs"));
 
     let single_user = |v: &str| -> Option<String> {
         let needle = format!("PendingEffect::{v}");
