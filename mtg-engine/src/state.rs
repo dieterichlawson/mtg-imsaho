@@ -607,6 +607,28 @@ impl GameState {
 
     /// Move an object to a new zone.
     /// Per MTG rules, changing zones makes it a "new object" — we increment `zone_change_count`.
+    /// Move a permanent onto the battlefield under a specified controller
+    /// (CR 110.2 — reanimation and steal effects put it in under *their*
+    /// controller, not its owner).
+    ///
+    /// The controller is set BEFORE the zone change, because `move_object`
+    /// emits `EnteredBattlefield` during the move and the event carries the
+    /// controller as it stands at that moment. Cards that moved first and
+    /// assigned afterwards fixed the object but left the event — and every
+    /// `AnyCreatureEnters` watcher reading it — with the previous controller.
+    pub fn move_object_under_control(
+        &mut self,
+        id: ObjectId,
+        to: Zone,
+        controller: PlayerId,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        if let Some(obj) = self.get_object_mut(id) {
+            obj.controller = controller;
+        }
+        self.move_object(id, to, registry);
+    }
+
     pub fn move_object(&mut self, id: ObjectId, to: Zone, registry: &crate::cards::CardRegistry) {
         // Collect log info before mutating.
         let log_msg = self.objects.get(&id).and_then(|obj| {

@@ -154,9 +154,8 @@ impl CardBehavior for GrimoireOfTheDead {
                                 .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
                             (o.name.clone(), legendary)
                         });
-                    state.move_object(cid, Zone::Battlefield, registry);
+                    state.move_object_under_control(cid, Zone::Battlefield, controller, registry);
                     if let Some(obj) = state.get_object_mut(cid) {
-                        obj.controller = controller;
                         obj.is_legendary = is_legendary;
                         // They're black Zombies in addition to their other colors and types.
                         if !obj.subtypes.contains(&"Zombie".into()) {

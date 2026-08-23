@@ -67,10 +67,7 @@ impl CardBehavior for MoldgrafMonstrosity {
         let to_return: Vec<ObjectId> = creatures_in_gy.into_iter().take(2).collect();
         for cid in &to_return {
             let name = state.get_object(*cid).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(*cid, Zone::Battlefield, registry);
-            if let Some(obj) = state.get_object_mut(*cid) {
-                obj.controller = controller;
-            }
+            state.move_object_under_control(*cid, Zone::Battlefield, controller, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Moldgraf Monstrosity: {name} returned to the battlefield"));
         }

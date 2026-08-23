@@ -68,11 +68,10 @@ impl CardBehavior for FiendHunter {
         if let Some(target_id) = exiled_id {
             if state.get_object(target_id).is_some_and(|o| o.zone == Zone::Exile) {
                 let returned_name = state.obj_name(target_id);
-                state.move_object(target_id, Zone::Battlefield, registry);
-                // "under its owner's control" — reset controller to owner
-                if let Some(obj) = state.get_object_mut(target_id) {
-                    obj.controller = obj.owner;
-                }
+                // CR 110.2: the creature returns under its OWNER's control, and that has
+                // to be true when EnteredBattlefield fires — not corrected afterwards.
+                let Some(owner) = state.get_object(target_id).map(|o| o.owner) else { return };
+                state.move_object_under_control(target_id, Zone::Battlefield, owner, registry);
                 state.log(crate::state::LogLevel::Event, format!("{returned_name} returned to the battlefield"));
             }
         }

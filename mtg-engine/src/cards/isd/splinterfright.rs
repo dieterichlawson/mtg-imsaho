@@ -41,8 +41,12 @@ impl CardBehavior for Splinterfright {
     }
 
     fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
-        let controller = state.get_object(object_id)?.controller;
-        let creature_cards_in_gy = i32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
+        // CR 112.8: a card in a graveyard is controlled by its owner, and
+        // `objects_in_zone` filters graveyards by owner — so reading a stale
+        // `controller` left over from a steal effect would count the
+        // opponent's graveyard instead of this card's owner's.
+        let owner = state.get_object(object_id)?.owner;
+        let creature_cards_in_gy = i32::try_from(state.objects_in_zone(Zone::Graveyard, owner)
             .iter()
             .filter(|o| o.power.is_some())
             .count()).unwrap_or(i32::MAX);
