@@ -63,18 +63,13 @@ fn legend_rule_removes_duplicate() {
         &reg,
     );
 
-    // One should be on battlefield, one in graveyard.
-    let on_bf: Vec<_> = new_state.objects.values()
-        .filter(|o| o.name == "Thalia" && o.zone == Zone::Battlefield)
-        .collect();
-    let in_gy: Vec<_> = new_state.objects.values()
-        .filter(|o| o.name == "Thalia" && o.zone == Zone::Graveyard)
-        .collect();
-
-    assert_eq!(on_bf.len(), 1,
-        "Legend rule: only one legendary permanent with the same name should remain (CR 704.5k)");
-    assert_eq!(in_gy.len(), 1,
-        "Legend rule: the duplicate should be in the graveyard");
+    // Track the two by id. Identifying them by the hand-set name does not
+    // work: CR 400.7 restores an object's PRINTED name when it leaves the
+    // battlefield, so the loser reverts to whatever `card_id` actually names.
+    assert_eq!(new_state.get_object(legend1).unwrap().zone, Zone::Battlefield,
+        "Legend rule: the kept legendary stays (CR 704.5k)");
+    assert_eq!(new_state.get_object(legend2).unwrap().zone, Zone::Graveyard,
+        "Legend rule: the duplicate goes to the graveyard");
 }
 
 /// Legendary permanents with DIFFERENT names are fine — both stay.

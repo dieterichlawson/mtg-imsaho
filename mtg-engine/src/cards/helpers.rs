@@ -244,7 +244,12 @@ pub fn controller_of(state: &GameState, object_id: ObjectId) -> PlayerId {
 /// its own transform could leave stale. There is nothing left to leave stale.
 pub fn apply_transform(state: &mut GameState, object_id: ObjectId, registry: &CardRegistry) {
     let (card_id, was_transformed) = match state.get_object(object_id) {
-        Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.is_transformed),
+        // A token copy of a double-faced card has only the copied face — it is
+        // not itself a double-faced card, so it cannot transform (CR 111.7,
+        // and the Back from the Brink ruling says so explicitly). A token
+        // stamped with a DFC's `card_id` would otherwise pick up that card's
+        // upkeep trigger and flip.
+        Some(o) if o.zone == Zone::Battlefield && !o.is_token => (o.card_id, o.is_transformed),
         _ => return,
     };
     let Some(behavior) = registry.get(card_id) else { return; };
@@ -320,6 +325,11 @@ pub fn werewolf_should_trigger(
     registry: &CardRegistry,
 ) -> bool {
     if *kind == TriggerKind::Upkeep {
+        // A token copy of a werewolf cannot transform, so its transform
+        // ability has nothing to do and should not reach the stack at all.
+        if state.get_object(self_id).is_some_and(|o| o.is_token) {
+            return false;
+        }
         return behavior.should_transform(state, self_id, registry);
     }
     true

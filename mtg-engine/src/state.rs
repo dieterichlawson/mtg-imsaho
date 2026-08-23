@@ -669,6 +669,24 @@ impl GameState {
             vec![]
         };
 
+        // CR 400.7 / 712.8a: a permanent leaving the battlefield becomes a new
+        // object printed as its front face. Its name and base P/T have to come
+        // back from the registry, and that lookup needs `&self`, so it happens
+        // before the mutable borrow below. For a copy, "printed" means the card
+        // it was before the copy effect — which `copy_grantor` remembers.
+        let printed_reset: Option<(String, Option<i32>, Option<i32>)> =
+            if to != Zone::Battlefield && self.get_object(id).is_some_and(|o| !o.is_token) {
+                self.get_object(id).and_then(|o| {
+                    let printed_card = o.copy_grantor.unwrap_or(o.card_id);
+                    registry.get(printed_card).map(|b| {
+                        let d = b.card_data();
+                        (d.name, d.power, d.toughness)
+                    })
+                })
+            } else {
+                None
+            };
+
         if let Some(obj) = self.objects.get_mut(&id) {
             let from = obj.zone;
             obj.zone = to;
@@ -686,6 +704,11 @@ impl GameState {
                     obj.card_state.insert("last_attached_to".into(), att);
                 }
                 obj.attached_to = None;
+                // The player-attachment counterpart, for Curses. Without this
+                // a Curse kept `attached_to_player` in the graveyard, so any
+                // effect returning it to the battlefield would re-attach it to
+                // that player with no targeting and no consent.
+                obj.attached_to_player = None;
                 obj.counters.clear();
                 obj.regeneration_shields = 0;
                 // CR 400.7: a permanent that changes zones becomes a new object
@@ -708,18 +731,29 @@ impl GameState {
                     obj.subtypes.clear();
                     obj.colors.clear();
                 }
-                // CR 712.8a: a DFC that isn't on the battlefield or the stack
-                // has only its front-face characteristics. Clearing
-                // `is_transformed` is all it takes — every characteristics
-                // accessor resolves through `face_data`, which now reads the
-                // front face again. Only `name` needs writing back, because it
-                // is a display cache with no registry lookup behind it.
-                if obj.is_transformed {
-                    if let Some(front) = registry.get(obj.card_id).map(|b| b.card_data()) {
-                        obj.name.clone_from(&front.name);
-                    }
+                // A copy stops being a copy: `card_id` is what makes it one, so
+                // restore the card it is printed as. Otherwise an Evil Twin
+                // that died carried the copied creature's identity into the
+                // graveyard, and reanimating it ran that creature's ETB
+                // handler instead of its own — it came back as a permanent
+                // copy that could never offer its own choice again.
+                if let Some(printed) = obj.copy_grantor.take() {
+                    obj.card_id = printed;
                 }
+                // CR 712.8a: a DFC off the battlefield has only its front
+                // face. Clearing `is_transformed` does most of it — every
+                // characteristics accessor resolves through `face_data`, which
+                // reads that flag. What has no registry lookup behind it is
+                // `name` and the base P/T, so those are written back from the
+                // printed card: the Tree of Redemption's toughness exchange
+                // otherwise followed it into the graveyard and came back with
+                // it, and a copy kept the copied creature's name.
                 obj.is_transformed = false;
+                if let Some((name, power, toughness)) = printed_reset {
+                    obj.name = name;
+                    obj.power = power;
+                    obj.toughness = toughness;
+                }
                 obj.instance_continuous_effects = None;
                 obj.instance_oracle_text = None;
             }
