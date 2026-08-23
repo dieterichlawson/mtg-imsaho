@@ -1,11 +1,15 @@
 ---
 id: mentor_of_the_meek-01
-status: new
+status: fixed
 card: Mentor of the Meek
 audit_run_id: 2026-04-19-mentor_of_the_meek-audit
 audit_model: sonnet
 audit_tokens: 25250
 audit_duration: 428
+fixed_sha: 95ff6a31e8cff7425bfea743cfff80f5e2bba92a
+fixed_at: 2026-08-23T20:37:59Z
+test_file: mtg-engine/tests/enter_trigger_conditions.rs
+fix_note: fixed via should_trigger_on_creature_enters (dispatch-time CR 603.2 gate) rather than the proposed power snapshot — see commit for why
 ---
 
 ## Audit Finding
