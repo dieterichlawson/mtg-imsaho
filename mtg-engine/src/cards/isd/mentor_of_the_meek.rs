@@ -36,20 +36,31 @@ impl CardBehavior for MentorOfTheMeek {
         }
     }
 
+    /// "Whenever another creature with power 2 or less enters under your
+    /// control..." — an event condition, so it is read as the creature enters.
+    fn should_trigger_on_creature_enters(&self, state: &GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: crate::ids::PlayerId, registry: &CardRegistry) -> bool {
+        if entered_id == self_id {
+            return false; // "another creature"
+        }
+        let Some(controller) = state.get_object(self_id).map(|o| o.controller) else { return false };
+        if entered_controller != controller {
+            return false; // "under your control"
+        }
+        state.effective_power(entered_id, registry).is_some_and(|p| p <= 2)
+    }
+
     fn on_any_creature_enters(&self, state: &mut GameState, self_id: ObjectId, entered_id: ObjectId, entered_controller: PlayerId, registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) => o.controller,
             None => return,
         };
-        // Must be under our control and not self.
-        if entered_controller != controller || entered_id == self_id {
-            return;
-        }
-        // Check if the entering creature has power 2 or less.
-        let power = state.effective_power(entered_id, registry).unwrap_or(99);
-        if power > 2 {
-            return;
-        }
+        // The whole condition — another creature you control, power 2 or less —
+        // was already checked at dispatch time in `should_trigger_on_creature_
+        // enters`. Re-checking power here would be wrong, not just redundant:
+        // a creature that entered with power 2 and was pumped in response
+        // still triggered, and one that entered with power 3 and shrank did
+        // not (CR 603.2).
+        let _ = (entered_controller, entered_id, registry);
         // "You may pay {1}" — present choice to the player.
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: controller,

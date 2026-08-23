@@ -452,6 +452,13 @@ pub trait CardBehavior: Send + Sync {
     /// same check for defense in depth. Default: trigger for every spell.
     fn should_trigger_on_spell_cast(&self, _state: &GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) -> bool { true }
 
+    /// CR 603.2: "whenever another creature WITH POWER 2 OR LESS enters"
+    /// only triggers when the entering creature matches. Consulted at DISPATCH
+    /// time, so the condition is read as the creature enters — a creature
+    /// pumped or shrunk before the trigger resolves does not change whether it
+    /// fired. Default: trigger for every creature that enters.
+    fn should_trigger_on_creature_enters(&self, _state: &GameState, _self_id: ObjectId, _entered_id: ObjectId, _entered_controller: PlayerId, _registry: &CardRegistry) -> bool { true }
+
     /// CR 603.2: "whenever [this/equipped creature] blocks [a Type]" only
     /// triggers when the blocked creature matches. Consulted at DISPATCH
     /// time. `self_id` is the permanent whose trigger this is (the blocker,

@@ -599,7 +599,13 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         if let Some(behavior) = registry.get(watcher_card_id) {
                             let has_trigger = behavior.card_data().triggered_abilities.iter()
                                 .any(|t| t.kind == trigger_kind);
-                            if has_trigger && behavior.trigger_zones(&trigger_kind).contains(&watcher_zone) {
+                            // CR 603.2: an event condition on the entering
+                            // creature is read HERE, as it enters — not at
+                            // resolution, by which time its power may differ.
+                            let condition_holds = behavior.should_trigger_on_creature_enters(
+                                state, watcher_id, *object, controller, registry);
+                            if has_trigger && condition_holds
+                                && behavior.trigger_zones(&trigger_kind).contains(&watcher_zone) {
                                 let desc = trigger_description(registry, watcher_card_id, &trigger_kind, false);
                                 let trigger = PendingTrigger::EnterWatch {
                                     watcher_id,
