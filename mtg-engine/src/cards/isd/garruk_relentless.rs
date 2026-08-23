@@ -234,7 +234,7 @@ impl CardBehavior for GarrukRelentless {
                             description: "Garruk, the Veil-Cursed: choose a creature to sacrifice".into(),
                             options: creatures,
                             optional: false,
-                            effect: PendingEffect::SacrificeAndTutor { garruk_id: self_id },
+                            effect: PendingEffect::CardEffect { source_id: self_id, key: String::new() },
                         },
                     });
                 }
@@ -275,6 +275,19 @@ impl CardBehavior for GarrukRelentless {
 
     }
 
+    /// CR 603.8: "When Garruk Relentless has two or fewer loyalty counters on
+    /// him, transform him." The threshold is this card's text.
+    fn state_trigger_condition(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> bool {
+        state.get_object(object_id).is_some_and(|o| {
+            !o.is_transformed
+                && *o.counters.get(&CounterType::Loyalty).unwrap_or(&0) <= 2
+        })
+    }
+
+    fn state_trigger_description(&self) -> String {
+        "When Garruk Relentless has two or fewer loyalty counters on him, transform him".into()
+    }
+
     fn on_state_trigger(&self, state: &mut GameState, self_id: ObjectId, _registry: &CardRegistry) {
         // State-triggered ability (CR 603.8): transform Garruk Relentless into
         // Garruk, the Veil-Cursed when he has 2 or fewer loyalty counters.
@@ -297,5 +310,56 @@ impl CardBehavior for GarrukRelentless {
         }
         state.log(crate::state::LogLevel::Event,
             "Garruk Relentless enters with 3 loyalty".into());
+    }
+    /// Garruk, the Veil-Cursed -1: "Sacrifice a creature. Search your library
+    /// for a creature card, reveal it, put it into your hand, then shuffle."
+    /// The sacrifice, the search and the shuffle are all this card's text.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+        use rand::seq::SliceRandom;
+        let Target::Object(id) = target else { return };
+        let controller = crate::cards::helpers::controller_of(state, source_id);
+
+        let sac_name = state.obj_name(*id);
+        crate::destruction::sacrifice(state, *id, registry);
+        state.log(crate::state::LogLevel::Event,
+            format!("Garruk, the Veil-Cursed: sacrificed {sac_name}"));
+
+        let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
+            .filter(|&&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
+            .copied()
+            .collect();
+
+        match creature_options.len() {
+            0 => {
+                state.log(crate::state::LogLevel::Event,
+                    "Garruk, the Veil-Cursed: no creature card found in library".into());
+            }
+            1 => {
+                let found = creature_options[0];
+                let found_name = state.obj_name(found);
+                state.get_player_mut(controller).library_order.retain(|&lid| lid != found);
+                state.move_object(found, Zone::Hand, registry);
+                state.log(crate::state::LogLevel::Event,
+                    format!("Garruk, the Veil-Cursed: searched and found {found_name}"));
+            }
+            _ => {
+                // The player picks; the shuffle happens when that choice resolves.
+                state.awaiting_action = Some(crate::state::AwaitingAction::ResolutionChoice {
+                    player: controller,
+                    source: source_id,
+                    choice: crate::state::ResolutionChoiceKind::ChooseFromLibrary {
+                        description: "Garruk, the Veil-Cursed: choose a creature card from your library".into(),
+                        options: creature_options,
+                        searcher: controller,
+                        source_id,
+                    },
+                });
+                return;
+            }
+        }
+
+        // "then shuffle" — only on the paths that finish here.
+        let mut rng = rand::thread_rng();
+        state.get_player_mut(controller).library_order.shuffle(&mut rng);
     }
 }

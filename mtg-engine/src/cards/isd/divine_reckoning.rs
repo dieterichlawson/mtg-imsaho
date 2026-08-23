@@ -37,73 +37,114 @@ impl CardBehavior for DivineReckoning {
     }
 
     fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
-        // Collect players in turn order starting with the active player.
+        // Players choose in turn order starting with the active player (CR 101.4).
         let active = state.active_player;
         let mut player_order: Vec<PlayerId> = state.players.iter().map(|p| p.id).collect();
-        // Rotate so active player is first.
         if let Some(pos) = player_order.iter().position(|&p| p == active) {
             player_order.rotate_left(pos);
         }
+        Self::advance(state, object_id, Vec::new(), player_order, registry);
+    }
 
-        // Filter to only players who control 2+ creatures (those with 0-1 are auto-handled).
-        let mut kept: Vec<ObjectId> = Vec::new();
-        let mut pending_players: Vec<PlayerId> = Vec::new();
+    /// Continue the chain after a player picked the creature they keep.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, key: &str, target: &Target, registry: &CardRegistry) {
+        let Target::Object(id) = target else { return };
+        let (mut kept, remaining) = Self::decode(key);
+        let chooser = state.get_object(*id).map_or(PlayerId(0), |o| o.controller);
+        state.log(LogLevel::Event,
+            format!("Divine Reckoning: p{} keeps {}", chooser.0, state.obj_name(*id)));
+        kept.push(*id);
+        Self::advance(state, source_id, kept, remaining, registry);
+    }
+}
 
-        for &player_id in &player_order {
-            let creatures: Vec<ObjectId> = state.objects.values()
-                .filter(|o| o.zone == Zone::Battlefield && o.controller == player_id && o.power.is_some())
-                .map(|o| o.id)
-                .collect();
+impl DivineReckoning {
+    /// The chain state — which creatures are already spoken for, and which
+    /// players have yet to choose — round-trips through the `CardEffect` key.
+    /// The key is opaque to the engine by design: the shape of a card's
+    /// intermediate state is the card's business, not something the engine
+    /// should carry a variant for.
+    fn encode(kept: &[ObjectId], remaining: &[PlayerId]) -> String {
+        let k: Vec<String> = kept.iter().map(|o| o.0.to_string()).collect();
+        let r: Vec<String> = remaining.iter().map(|p| p.0.to_string()).collect();
+        format!("{}|{}", k.join(","), r.join(","))
+    }
 
-            if creatures.len() <= 1 {
-                // 0 or 1 creature: auto-keep (no choice needed).
-                if let Some(&only) = creatures.first() {
-                    kept.push(only);
-                    state.log(LogLevel::Event, format!("Divine Reckoning: p{} keeps {} (only creature)", player_id.0, state.obj_name(only)));
-                }
-            } else {
-                pending_players.push(player_id);
-            }
-        }
+    fn decode(key: &str) -> (Vec<ObjectId>, Vec<PlayerId>) {
+        let mut parts = key.splitn(2, '|');
+        let kept = parts.next().unwrap_or("").split(',')
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse().ok())
+            .map(ObjectId)
+            .collect();
+        let remaining = parts.next().unwrap_or("").split(',')
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| s.parse().ok())
+            .map(PlayerId)
+            .collect();
+        (kept, remaining)
+    }
 
-        // Spell cleanup is engine-owned: resolve_spell handles the immediate
-        // case, finish_spell_resolution_if_idle the suspended-choice case —
-        // AFTER the choice chain completes (CR 608.2m).
-        if pending_players.is_empty() {
-            // All players had 0-1 creatures; destroy everything not kept.
-            let all_creatures: Vec<ObjectId> = state.objects.values()
-                .filter(|o| o.zone == Zone::Battlefield && o.power.is_some())
-                .map(|o| o.id)
-                .collect();
-            for cid in all_creatures {
-                if !kept.contains(&cid) {
-                    crate::destruction::try_destroy(state, cid, registry);
-                }
-            }
-        } else {
-            // Present choice to the first pending player.
-            let first_player = pending_players[0];
-            let remaining = pending_players[1..].to_vec();
-
+    /// Walk the remaining players, auto-keeping for anyone with 0 or 1
+    /// creature and stopping to ask anyone with a real choice. When nobody is
+    /// left, "destroy the rest".
+    ///
+    /// Spell cleanup is engine-owned (CR 608.2m) and runs once the choice
+    /// chain finishes, so this deliberately does not move the spell itself.
+    fn advance(
+        state: &mut GameState,
+        source_id: ObjectId,
+        mut kept: Vec<ObjectId>,
+        remaining: Vec<PlayerId>,
+        registry: &CardRegistry,
+    ) {
+        let mut queue = remaining;
+        while let Some(player) = queue.first().copied() {
+            queue.remove(0);
             let options: Vec<Target> = state.objects.values()
-                .filter(|o| o.zone == Zone::Battlefield && o.controller == first_player && o.power.is_some())
+                .filter(|o| o.zone == Zone::Battlefield
+                    && o.controller == player
+                    && state.is_creature(o.id, registry))
                 .map(|o| Target::Object(o.id))
                 .collect();
 
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: first_player,
-                source: object_id,
-                choice: ResolutionChoiceKind::ChooseTarget {
-                    description: "Divine Reckoning: choose a creature you control to keep".into(),
-                    options,
-                    optional: false,
-                    effect: PendingEffect::KeepOneDestroyRest {
-                        remaining_players: remaining,
-                        kept_so_far: kept,
-                        source_name: "Divine Reckoning".into(),
-                    },
-                },
-            });
+            match options.len() {
+                0 => {}
+                1 => {
+                    if let Some(Target::Object(only)) = options.first() {
+                        kept.push(*only);
+                        state.log(LogLevel::Event,
+                            format!("Divine Reckoning: p{} keeps {} (only creature)",
+                                player.0, state.obj_name(*only)));
+                    }
+                }
+                _ => {
+                    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                        player,
+                        source: source_id,
+                        choice: ResolutionChoiceKind::ChooseTarget {
+                            description: "Divine Reckoning: choose a creature you control to keep".into(),
+                            options,
+                            optional: false,
+                            effect: PendingEffect::CardEffect {
+                                source_id,
+                                key: Self::encode(&kept, &queue),
+                            },
+                        },
+                    });
+                    return;
+                }
+            }
+        }
+
+        // Everyone has chosen — destroy the rest.
+        let doomed: Vec<ObjectId> = state.objects.values()
+            .filter(|o| o.zone == Zone::Battlefield && state.is_creature(o.id, registry))
+            .map(|o| o.id)
+            .filter(|id| !kept.contains(id))
+            .collect();
+        for id in doomed {
+            crate::destruction::try_destroy(state, id, registry);
         }
     }
 }

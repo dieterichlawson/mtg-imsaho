@@ -510,6 +510,18 @@ pub trait CardBehavior: Send + Sync {
     /// For DFCs: check if the transform condition is met (called during upkeep for werewolves).
     fn should_transform(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool { false }
 
+    /// CR 603.8: whether this permanent's state-triggered ability's condition
+    /// currently holds. A state trigger fires as soon as its condition becomes
+    /// true and does not fire again while it is already on the stack (the
+    /// engine tracks that part). Return `true` while the condition holds.
+    ///
+    /// The condition is the card's text — Garruk Relentless's "two or fewer
+    /// loyalty counters" lives in his file, not in `sba.rs`.
+    fn state_trigger_condition(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> bool { false }
+
+    /// Text shown when this card's state-triggered ability goes on the stack.
+    fn state_trigger_description(&self) -> String { String::new() }
+
     /// Called when a state-triggered ability (CR 603.8) for this permanent resolves.
     /// State-triggered abilities check a condition continuously and trigger when the
     /// condition is first true. They don't trigger again while already on the stack.

@@ -2247,8 +2247,7 @@ pub enum PendingEffect {
     PutOnTopOfLibrary { source_name: String },
 
 
-    /// Sacrifice the chosen creature, then search library for a creature card (Garruk -1).
-    SacrificeAndTutor { garruk_id: ObjectId },
+
 
     /// Sacrifice the chosen creature (generic sacrifice, e.g. Liliana -2).
     SacrificeCreature { source_name: String },
@@ -2256,24 +2255,9 @@ pub enum PendingEffect {
     /// The source becomes a copy of the target, except it retains any extra abilities
     /// stored via `card_state` markers.
     CopyCreature { source_id: ObjectId },
-    /// "Each player chooses a creature they control. Destroy the rest."
-    /// The chosen creature is added to `kept_so_far`. If `remaining_players` is non-empty,
-    /// the next player's choice is presented. Once all players have chosen, all creatures
-    /// on the battlefield that aren't in the kept set are destroyed.
-    KeepOneDestroyRest {
-        /// Players still needing to choose (in turn order), after the current chooser.
-        remaining_players: Vec<PlayerId>,
-        /// Creatures already chosen to keep by earlier players.
-        kept_so_far: Vec<ObjectId>,
-        /// The spell that initiated this effect (for logging).
-        source_name: String,
-    },
-    /// Attach a Curse card from library onto the battlefield attached to the chosen player
-    /// (Bitterheart Witch). The `curse_id` is the library object to move; searcher is the
-    /// controller whose library is shuffled afterwards.
-    AttachCurseToPlayer { curse_id: ObjectId, searcher: PlayerId },
-    /// Two-step Curse selection: player chose a Curse from library, now need to choose a player.
-    ChooseCurseThenAttach { searcher: PlayerId, source: ObjectId },
+
+
+
     /// Grant flashback to a chosen card until end of turn (Snapcaster Mage).
     GrantFlashback { source_name: String },
 

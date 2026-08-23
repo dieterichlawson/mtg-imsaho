@@ -25,9 +25,10 @@ impl BitterheartWitch {
                 description: "Bitterheart Witch: choose a player to attach the Curse to".into(),
                 options: player_targets,
                 optional: false,
-                effect: PendingEffect::AttachCurseToPlayer {
-                    curse_id,
-                    searcher: controller,
+                effect: PendingEffect::CardEffect {
+                    source_id: self_id,
+                    // Step 2: the Curse is chosen, the player is not yet.
+                    key: format!("attach:{}", curse_id.0),
                 },
             },
         });
@@ -118,12 +119,47 @@ impl CardBehavior for BitterheartWitch {
                     description: "Bitterheart Witch: choose a Curse card from your library".into(),
                     options: curse_targets,
                     optional: false,
-                    effect: PendingEffect::ChooseCurseThenAttach {
-                        searcher: controller,
-                        source: self_id,
+                    effect: PendingEffect::CardEffect {
+                        source_id: self_id,
+                        key: "choose".into(),
                     },
                 },
             });
         }
+    }
+
+    /// "When this creature dies, you may search your library for a Curse card,
+    /// put it onto the battlefield attached to target player, then shuffle."
+    /// Two chained choices — which Curse, then which player — so `key` names
+    /// which step this is. The engine only routes the answer back here.
+    fn resolve_card_effect(&self, state: &mut GameState, source_id: ObjectId, key: &str, target: &Target, registry: &CardRegistry) {
+        let controller = crate::cards::helpers::controller_of(state, source_id);
+
+        if key == "choose" {
+            // Step 1 answered: this is the Curse. Now ask for the player.
+            let Target::Object(curse_id) = target else { return };
+            Self::present_player_choice(state, source_id, controller, *curse_id, registry);
+            return;
+        }
+
+        // Step 2 answered: attach the chosen Curse to the chosen player.
+        let Some(curse_id) = key.strip_prefix("attach:")
+            .and_then(|n| n.parse().ok())
+            .map(ObjectId) else { return };
+        let Target::Player(pid) = target else { return };
+
+        let name = state.obj_name(curse_id);
+        state.get_player_mut(controller).library_order.retain(|&id| id != curse_id);
+        state.move_object(curse_id, crate::types::Zone::Battlefield, registry);
+        if let Some(obj) = state.get_object_mut(curse_id) {
+            obj.attached_to_player = Some(*pid);
+            obj.summoning_sick = false;
+        }
+        state.log(crate::state::LogLevel::Event,
+            format!("Bitterheart Witch: attached {name} to p{}", pid.0));
+
+        use rand::seq::SliceRandom;
+        let mut rng = rand::thread_rng();
+        state.get_player_mut(controller).library_order.shuffle(&mut rng);
     }
 }

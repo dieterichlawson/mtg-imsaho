@@ -199,39 +199,35 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
         // soon as their condition is true — Garruk Relentless's "transform when
         // ≤2 loyalty" must trigger before the zero-loyalty SBA destroys him.
         {
-            let garruk_card_id = registry.get_id_by_name("Garruk Relentless");
-            if let Some(gid) = garruk_card_id {
-                let garruk_to_trigger: Vec<_> = state.objects.values()
-                    .filter(|o| {
-                        o.zone == Zone::Battlefield
-                            && o.card_id == gid
-                            && !o.is_transformed
-                            && !o.state_trigger_on_stack
-                            && *o.counters.get(&crate::types::CounterType::Loyalty).unwrap_or(&0) <= 2
-                    })
-                    .map(|o| (o.id, o.controller))
-                    .collect();
-                let any_garruk_triggered = !garruk_to_trigger.is_empty();
-                if let Some((id, controller)) = garruk_to_trigger.into_iter().next() {
-                    if let Some(obj) = state.get_object_mut(id) {
-                        obj.state_trigger_on_stack = true;
+            let candidates: Vec<(ObjectId, crate::ids::CardId, crate::ids::PlayerId)> = state.objects.values()
+                .filter(|o| o.zone == Zone::Battlefield && !o.state_trigger_on_stack)
+                .map(|o| (o.id, o.card_id, o.controller))
+                .collect();
+            let mut triggered = None;
+            for (id, card_id, controller) in candidates {
+                let Some(behavior) = registry.get(card_id) else { continue };
+                if behavior.state_trigger_condition(state, id, registry) {
+                    triggered = Some((id, card_id, controller, behavior.state_trigger_description()));
+                    break;
+                }
+            }
+            if let Some((id, card_id, controller, description)) = triggered {
+                if let Some(obj) = state.get_object_mut(id) {
+                    obj.state_trigger_on_stack = true;
+                }
+                state.log(LogLevel::Event,
+                    format!("{}'s state-triggered ability triggers", state.obj_name(id)));
+                state.pending_triggers.push(
+                    crate::triggers::PendingTrigger::StateTriggered {
+                        object_id: id,
+                        card_id,
+                        controller,
+                        description,
                     }
-                    state.pending_triggers.push(
-                        crate::triggers::PendingTrigger::StateTriggered {
-                            object_id: id,
-                            card_id: gid,
-                            controller,
-                            description: "When Garruk Relentless has two or fewer loyalty counters on him, transform him".into(),
-                        }
-                    );
-                    state.log(LogLevel::Event,
-                        "Garruk Relentless's state-triggered ability triggers (transform)".into());
-                }
-                // Return immediately so the state trigger(s) go on the stack
+                );
+                // Return immediately so the state trigger goes on the stack
                 // before any further SBA processing (e.g. zero-loyalty death).
-                if any_garruk_triggered {
-                    return true;
-                }
+                return true;
             }
         }
 
