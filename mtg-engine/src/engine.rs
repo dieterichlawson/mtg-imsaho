@@ -2565,6 +2565,19 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
         }
 
         Action::DeclareAttackers { attackers } => {
+            // Validate declarations: only the active player's eligible
+            // creatures (untapped, not summoning-sick without haste, no
+            // defender/Pacifism — CR 508.1a) may attack, and only a valid
+            // defender may be attacked. The engine is the authority; it does
+            // not trust the submitted list. Illegal entries are dropped,
+            // mirroring how blocker validation filters illegal blocks.
+            let eligible = combat::eligible_attackers(&new_state, new_state.active_player, registry);
+            let valid_defender = new_state.opponent(new_state.active_player);
+            let attackers: Vec<(ObjectId, PlayerId)> = attackers.iter()
+                .filter(|(id, def)| eligible.contains(id) && *def == valid_defender)
+                .copied()
+                .collect();
+            let attackers = &attackers[..];
             if attackers.is_empty() {
                 new_state.log(LogLevel::Debug, "No attackers declared".into());
             } else {

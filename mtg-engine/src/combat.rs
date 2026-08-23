@@ -63,7 +63,13 @@ pub fn declare_blockers_with_registry(
     assignments: &[(ObjectId, ObjectId)],
     registry: &CardRegistry,
 ) {
+    // Only the defending player's creatures may block, and only creatures
+    // that are actually attacking may be blocked (CR 509.1a). In a two-player
+    // game the defender is the non-active player.
+    let defender = state.opponent(state.active_player);
     let valid: Vec<_> = assignments.iter()
+        .filter(|&&(_, attacker)| state.combat.as_ref().is_some_and(|c| c.attackers.contains_key(&attacker)))
+        .filter(|&&(blocker, _)| state.get_object(blocker).is_some_and(|o| o.controller == defender))
         .filter(|&&(blocker, attacker)| can_block_attacker(state, blocker, attacker, registry))
         .copied()
         .collect();
@@ -431,6 +437,15 @@ pub fn eligible_blockers(state: &GameState, player: PlayerId, registry: &CardReg
 /// Enforces flying (only blocked by flying/reach) and intimidate (only by artifact/same color).
 #[must_use]
 pub fn can_block_attacker(state: &GameState, blocker_id: ObjectId, attacker_id: ObjectId, registry: &CardRegistry) -> bool {
+    // A blocker must be an untapped creature on the battlefield (CR 509.1a).
+    // This is a pure per-pair legality predicate; whether the attacker is
+    // actually attacking is enforced by the caller with combat context
+    // (declare_blockers_with_registry).
+    let Some(blocker) = state.get_object(blocker_id) else { return false };
+    if blocker.zone != Zone::Battlefield || blocker.tapped || !state.is_creature(blocker_id, registry) {
+        return false;
+    }
+
     // Flying: can only be blocked by creatures with flying or reach.
     if state.has_keyword(attacker_id, Keyword::Flying, registry)
         && !state.has_keyword(blocker_id, Keyword::Flying, registry)

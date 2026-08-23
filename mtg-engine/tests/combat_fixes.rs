@@ -13,10 +13,75 @@ use common::*;
 use mtg_engine::actions::Action;
 use mtg_engine::cards::CardRegistry;
 use mtg_engine::engine;
+use mtg_engine::state::AwaitingAction;
 use mtg_engine::types::*;
 
 fn registry() -> CardRegistry {
     CardRegistry::with_all_cards()
+}
+
+/// A tapped creature can't be declared as a blocker (CR 509.1a). The
+/// validating gate must drop it, leaving the attacker unblocked.
+#[test]
+fn tapped_creature_cannot_block() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let blocker = ready_creature(&mut state, P1, 2, 2);
+    state.get_object_mut(blocker).unwrap().tapped = true;
+    let p1_life = state.get_player(P1).life;
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(blocker, attacker)], &reg);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_object(blocker).unwrap().damage_marked, 0,
+        "a tapped creature isn't blocking, so it takes no combat damage");
+    assert_eq!(state.get_player(P1).life, p1_life - 2,
+        "the block was illegal; the attacker is unblocked and hits the player");
+}
+
+/// A creature the attacking player controls can't be declared as a blocker —
+/// only the defending player's creatures block (CR 509.1a).
+#[test]
+fn attacking_players_own_creature_cannot_block() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareBlockers, P0);
+    let attacker = ready_creature(&mut state, P0, 2, 2);
+    let fake_blocker = ready_creature(&mut state, P0, 2, 2); // controlled by the attacker's player
+    let p1_life = state.get_player(P1).life;
+
+    mtg_engine::combat::declare_attackers(&mut state, &[(attacker, P1)], &reg);
+    mtg_engine::combat::declare_blockers_with_registry(&mut state, &[(fake_blocker, attacker)], &reg);
+    mtg_engine::combat::deal_combat_damage(&mut state, &reg);
+
+    assert_eq!(state.get_player(P1).life, p1_life - 2,
+        "a creature controlled by the attacker can't block; attacker is unblocked");
+}
+
+/// The DeclareAttackers handler validates eligibility: a summoning-sick
+/// creature (no haste) submitted as an attacker is dropped.
+#[test]
+fn ineligible_attacker_is_filtered_by_the_handler() {
+    let reg = registry();
+    let mut state = game_at_step(Step::DeclareAttackers, P0);
+    let sick = sick_creature(&mut state, P0, 2, 2);
+    let ready = ready_creature(&mut state, P0, 3, 3);
+    state.awaiting_action = Some(AwaitingAction::DeclareAttackers);
+    state.priority_player = Some(P0);
+
+    let state = engine::submit_action(
+        &state,
+        &Action::DeclareAttackers { attackers: vec![(sick, P1), (ready, P1)] },
+        &reg,
+    );
+
+    let attacking: Vec<_> = state.combat.as_ref()
+        .map(|c| c.attackers.keys().copied().collect())
+        .unwrap_or_default();
+    assert!(attacking.contains(&ready), "the eligible creature attacks");
+    assert!(!attacking.contains(&sick),
+        "a summoning-sick creature without haste can't be declared as an attacker");
 }
 
 /// A blocker that regenerates away first-strike lethal damage is removed
