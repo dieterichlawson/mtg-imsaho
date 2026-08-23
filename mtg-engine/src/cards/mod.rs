@@ -429,6 +429,26 @@ pub trait CardBehavior: Send + Sync {
     /// `caster` is the player who cast the spell, `spell_id` is the spell object.
     fn on_spell_cast(&self, _state: &mut GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _chosen_targets: &[Target], _registry: &CardRegistry) {}
 
+    /// CR 603.2: a "whenever [player] casts [a type of] spell" ability only
+    /// triggers when its full condition holds. Consulted at DISPATCH time in
+    /// `collect_triggers` so conditional spell-cast watchers don't create
+    /// spurious stack entries for spells they don't care about. Cards with a
+    /// conditional SpellCast trigger (restricting caster or spell type) must
+    /// override this to mirror the condition; `on_spell_cast` may keep the
+    /// same check for defense in depth. Default: trigger for every spell.
+    fn should_trigger_on_spell_cast(&self, _state: &GameState, _self_id: ObjectId, _caster: PlayerId, _spell_id: ObjectId, _registry: &CardRegistry) -> bool { true }
+
+    /// CR 603.2: "whenever [this/equipped creature] blocks [a Type]" only
+    /// triggers when the blocked creature matches. Consulted at DISPATCH
+    /// time. `self_id` is the permanent whose trigger this is (the blocker,
+    /// or an equipment attached to it). Default: trigger for every block.
+    fn should_trigger_on_blocks(&self, _state: &GameState, _self_id: ObjectId, _blocked_attacker: ObjectId, _registry: &CardRegistry) -> bool { true }
+
+    /// CR 603.2: "whenever [this/equipped creature] becomes blocked by
+    /// [a Type]" only triggers when the blocker matches. Consulted at
+    /// DISPATCH time. Default: trigger for every block.
+    fn should_trigger_on_becomes_blocked(&self, _state: &GameState, _self_id: ObjectId, _blocker_id: ObjectId, _registry: &CardRegistry) -> bool { true }
+
     /// Loyalty abilities for planeswalkers.
     fn loyalty_abilities(&self, _state: &GameState, _object_id: ObjectId) -> Vec<LoyaltyAbilityDef> { vec![] }
 

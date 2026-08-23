@@ -921,15 +921,19 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                 }
             }
             GameEvent::SpellCast { player: caster, object: spell_id } => {
-                // Dispatch SpellCast triggers for ALL spell types (not just instant/sorcery).
-                // Individual card handlers can filter by spell type if needed.
                 {
                     let watchers: Vec<(ObjectId, CardId, PlayerId)> = state.objects.values()
                         .filter(|o| o.zone == Zone::Battlefield)
                         .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
                     for (watcher_id, watcher_card_id, watcher_controller) in watchers {
-                        if registry.get(watcher_card_id).is_some() {
+                        if let Some(behavior) = registry.get(watcher_card_id) {
+                            // CR 603.2: only create the trigger when the
+                            // watcher's full condition holds (caster / spell
+                            // type restrictions), not for every spell cast.
+                            if !behavior.should_trigger_on_spell_cast(state, watcher_id, *caster, *spell_id, registry) {
+                                continue;
+                            }
                             let desc = trigger_description(registry, watcher_card_id, &crate::cards::TriggerKind::SpellCast, false);
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::SpellCastWatch {
@@ -1034,8 +1038,14 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
                         _ => continue,
                     };
-                    if registry.get(card_id).is_some() {
-                        let desc = trigger_description(registry, card_id, &crate::cards::TriggerKind::Blocks, false);
+                    if let Some(b) = registry.get(card_id) {
+                        // CR 603.2: conditional Blocks triggers only fire
+                        // when the blocked creature matches.
+                        let desc = if b.should_trigger_on_blocks(state, *blocker_id, *attacker_id, registry) {
+                            trigger_description(registry, card_id, &crate::cards::TriggerKind::Blocks, false)
+                        } else {
+                            String::new()
+                        };
                         if !desc.is_empty() {
                             let trigger = PendingTrigger::BlocksTrigger {
                                 object_id: *blocker_id,
@@ -1057,8 +1067,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
                     for (eq_id, eq_card_id, eq_controller) in attached {
-                        if registry.get(eq_card_id).is_some() {
-                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks, false);
+                        if let Some(b) = registry.get(eq_card_id) {
+                            let desc = if b.should_trigger_on_blocks(state, eq_id, *attacker_id, registry) {
+                                trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::Blocks, false)
+                            } else {
+                                String::new()
+                            };
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::BlocksTrigger {
                                     object_id: eq_id,
@@ -1081,8 +1095,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         Some(o) if o.zone == Zone::Battlefield => (o.card_id, o.controller),
                         _ => continue,
                     };
-                    if registry.get(att_card_id).is_some() {
-                        let desc = trigger_description(registry, att_card_id, &crate::cards::TriggerKind::BecomesBlocked, false);
+                    if let Some(b) = registry.get(att_card_id) {
+                        let desc = if b.should_trigger_on_becomes_blocked(state, *attacker_id, *blocker_id, registry) {
+                            trigger_description(registry, att_card_id, &crate::cards::TriggerKind::BecomesBlocked, false)
+                        } else {
+                            String::new()
+                        };
                         if !desc.is_empty() {
                             let trigger = PendingTrigger::BecomesBlockedTrigger {
                                 object_id: *attacker_id,
@@ -1104,8 +1122,12 @@ pub fn collect_triggers(state: &mut GameState, registry: &CardRegistry) -> bool 
                         .map(|o| (o.id, o.card_id, o.controller))
                         .collect();
                     for (eq_id, eq_card_id, eq_controller) in att_attached {
-                        if registry.get(eq_card_id).is_some() {
-                            let desc = trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::BecomesBlocked, false);
+                        if let Some(b) = registry.get(eq_card_id) {
+                            let desc = if b.should_trigger_on_becomes_blocked(state, eq_id, *blocker_id, registry) {
+                                trigger_description(registry, eq_card_id, &crate::cards::TriggerKind::BecomesBlocked, false)
+                            } else {
+                                String::new()
+                            };
                             if !desc.is_empty() {
                                 let trigger = PendingTrigger::BecomesBlockedTrigger {
                                     object_id: eq_id,

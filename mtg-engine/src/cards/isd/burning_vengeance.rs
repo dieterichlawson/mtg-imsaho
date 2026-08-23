@@ -41,6 +41,17 @@ impl CardBehavior for BurningVengeance {
         }
     }
 
+    // "Whenever you cast a spell from your graveyard" — both restrictions
+    // are part of the trigger condition (CR 603.2) and gate dispatch.
+    fn should_trigger_on_spell_cast(&self, state: &GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, _registry: &CardRegistry) -> bool {
+        let controller = match state.get_object(self_id) {
+            Some(o) => o.controller,
+            None => return false,
+        };
+        caster == controller
+            && state.get_object(spell_id).is_some_and(|o| o.cast_with_flashback)
+    }
+
     fn on_spell_cast(&self, state: &mut GameState, self_id: ObjectId, caster: PlayerId, spell_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
         let controller = match state.get_object(self_id) {
             Some(o) if o.zone == Zone::Battlefield => o.controller,
