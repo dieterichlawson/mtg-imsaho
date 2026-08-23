@@ -1,4 +1,4 @@
-use crate::cards::{CardBehavior, CardData};
+use crate::cards::{CardRegistry, CardBehavior, CardData};
 use crate::ids::ObjectId;
 use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
@@ -30,7 +30,7 @@ impl CardBehavior for ScourgeOfGeierReach {
         }
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         let controller = state.get_object(object_id)?.controller;
         let opponent = state.opponent(controller);
         let opponent_creatures = i32::try_from(state.objects.values()

@@ -52,13 +52,7 @@ impl CardBehavior for DearlyDeparted {
             return vec![];
         }
         // Only affects Human creatures.
-        let is_human = state.get_object(entering_id)
-            .is_some_and(|o| {
-                let registry_has = registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"));
-                let instance_has = o.subtypes.iter().any(|s| s == "Human");
-                registry_has || instance_has
-            });
+        let is_human = state.has_subtype(entering_id, "Human", registry);
         if !is_human {
             return vec![];
         }

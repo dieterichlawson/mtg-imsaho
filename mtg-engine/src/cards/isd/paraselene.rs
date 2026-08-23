@@ -34,7 +34,7 @@ impl CardBehavior for Paraselene {
         let enchantments: Vec<ObjectId> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield)
             .filter(|o| {
-                registry.card_data(o.card_id)
+                state.face_data(o.id, registry)
                     .is_some_and(|d| d.card_types.contains(&CardType::Enchantment))
             })
             .map(|o| o.id)

@@ -38,14 +38,7 @@ impl CardBehavior for VillageCannibals {
         if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
-        let is_human = state.get_object(dead_id)
-            .is_some_and(|o| {
-                let from_registry = registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"));
-                let from_instance = o.subtypes.iter().any(|s| s == "Human");
-                from_registry || from_instance
-            });
-        if is_human {
+        if state.has_subtype(dead_id, "Human", registry) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }
     }

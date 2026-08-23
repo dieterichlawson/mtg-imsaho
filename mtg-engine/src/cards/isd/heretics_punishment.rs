@@ -83,8 +83,7 @@ impl CardBehavior for HereticsPunishment {
         // Compute highest mana value among cards to be milled before moving them.
         let mut max_mv: u32 = 0;
         for &card_obj_id in &to_mill {
-            let card_id = state.get_object(card_obj_id).map_or(crate::ids::CardId(0), |o| o.card_id);
-            let mv = registry.card_data(card_id)
+            let mv = state.face_data(card_obj_id, registry)
                 .and_then(|d| d.cost.map(|c| c.mana_value()))
                 .unwrap_or(0);
             if mv > max_mv {

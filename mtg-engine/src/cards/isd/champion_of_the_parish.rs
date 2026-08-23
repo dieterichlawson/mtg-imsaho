@@ -43,14 +43,10 @@ impl CardBehavior for ChampionOfTheParish {
         if entered_controller != controller {
             return;
         }
-        // Check if the entered creature is a Human (registry data or instance subtypes)
-        let card_id = state.get_object(entered_id).map(|o| o.card_id);
-        let is_human = card_id
-            .and_then(|cid| registry.card_data(cid))
-            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-            || state.get_object(entered_id)
-                .is_some_and(|o| o.subtypes.iter().any(|s| s == "Human"));
-        if is_human {
+        // `has_subtype` reads the ACTIVE face; the previous hand-rolled check
+        // used `registry.card_data`, which is always the front face, so a
+        // transformed werewolf still counted as a Human here.
+        if state.has_subtype(entered_id, "Human", registry) {
             state.add_counters(self_id, CounterType::PlusOnePlusOne, 1);
         }
     }

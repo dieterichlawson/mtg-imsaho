@@ -16,10 +16,8 @@ use crate::types::{ManaCost, ManaSymbol, Color, CardType, ContinuousEffect, Effe
 pub struct UnbreathingHorde;
 
 impl UnbreathingHorde {
-    fn is_zombie(obj: &crate::state::GameObject, registry: &CardRegistry) -> bool {
-        registry.card_data(obj.card_id)
-            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-            || obj.subtypes.iter().any(|s| s == "Zombie")
+    fn is_zombie(state: &GameState, id: ObjectId, registry: &CardRegistry) -> bool {
+        state.has_subtype(id, "Zombie", registry)
     }
 }
 
@@ -56,7 +54,7 @@ impl CardBehavior for UnbreathingHorde {
                 o.zone == Zone::Battlefield
                 && o.controller == controller
                 && o.id != self_id
-                && Self::is_zombie(o, registry)
+                && Self::is_zombie(state, o.id, registry)
             })
             .count()).unwrap_or(u32::MAX);
 
@@ -66,7 +64,7 @@ impl CardBehavior for UnbreathingHorde {
         // count (per the Scryfall ruling: "it will count itself").
         let gy_count = u32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| o.id != self_id && Self::is_zombie(o, registry))
+            .filter(|o| o.id != self_id && Self::is_zombie(state, o.id, registry))
             .count()).unwrap_or(u32::MAX);
 
         // Per ruling: count self when entering from graveyard.

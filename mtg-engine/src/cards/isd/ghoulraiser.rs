@@ -52,7 +52,7 @@ impl CardBehavior for Ghoulraiser {
         let mut zombies: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| {
-                registry.card_data(o.card_id)
+                state.face_data(o.id, registry)
                     .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
             })
             .map(|o| o.id)

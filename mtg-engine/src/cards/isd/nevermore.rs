@@ -46,6 +46,9 @@ impl CardBehavior for Nevermore {
         let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         // Collect all implemented nonland card names.
+        // Nevermore names a CARD, not a permanent — this reads the registry by
+        // name with no game object involved, so the characteristics layer
+        // (which resolves an object's active face) does not apply.
         let mut card_names: Vec<String> = registry.all_names().into_iter()
             .filter(|name| {
                 registry.get_id_by_name(name)

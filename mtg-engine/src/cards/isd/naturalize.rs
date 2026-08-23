@@ -37,7 +37,7 @@ impl CardBehavior for Naturalize {
                     Some(o) if o.zone == Zone::Battlefield => o,
                     _ => return false,
                 };
-                registry.card_data(obj.card_id)
+                state.face_data(obj.id, registry)
                     .is_some_and(|d| d.card_types.contains(&CardType::Artifact) || d.card_types.contains(&CardType::Enchantment))
             }
             Target::Player(_) => false,

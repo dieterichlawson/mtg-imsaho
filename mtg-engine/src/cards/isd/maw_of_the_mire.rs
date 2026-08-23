@@ -40,7 +40,7 @@ impl CardBehavior for MawOfTheMire {
                     Some(o) if o.zone == Zone::Battlefield => o,
                     _ => return false,
                 };
-                registry.card_data(obj.card_id)
+                state.face_data(obj.id, registry)
                     .is_some_and(|d| d.card_types.contains(&CardType::Land))
             }
             Target::Player(_) => false,

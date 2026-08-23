@@ -37,7 +37,7 @@ impl CardBehavior for RunicRepetition {
                 state.get_object(*id)
                     .is_some_and(|o| {
                         o.zone == Zone::Exile && o.owner == caster
-                            && registry.card_data(o.card_id)
+                            && state.face_data(o.id, registry)
                                 .is_some_and(|d| d.flashback_cost.is_some())
                     })
             }

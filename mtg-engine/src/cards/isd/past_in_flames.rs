@@ -46,7 +46,7 @@ impl CardBehavior for PastInFlames {
         let targets: Vec<(ObjectId, ManaCost)> = state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.id != object_id)
             .filter_map(|o| {
-                registry.card_data(o.card_id).and_then(|d| {
+                state.face_data(o.id, registry).and_then(|d| {
                     let is_instant_or_sorcery = d.card_types.contains(&CardType::Instant)
                         || d.card_types.contains(&CardType::Sorcery);
                     if is_instant_or_sorcery {

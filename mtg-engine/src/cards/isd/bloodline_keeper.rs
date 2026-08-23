@@ -15,14 +15,7 @@ impl BloodlineKeeper {
     fn count_vampires(state: &GameState, controller: crate::ids::PlayerId, registry: &CardRegistry) -> usize {
         state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
-            .filter(|o| {
-                // Check subtypes on object (for tokens) or via registry.
-                if o.subtypes.iter().any(|s| s == "Vampire") {
-                    return true;
-                }
-                registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Vampire"))
-            })
+            .filter(|o| state.has_subtype(o.id, "Vampire", registry))
             .count()
     }
 }
@@ -77,7 +70,7 @@ impl CardBehavior for BloodlineKeeper {
         })
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 5))
         } else {

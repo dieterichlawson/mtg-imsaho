@@ -48,19 +48,7 @@ impl CardBehavior for ElderCathar {
         } else if targets.len() == 1 {
             // Auto-add counters to the only creature.
             if let Target::Object(id) = targets[0] {
-                let is_human = state.get_object(id)
-                    .is_some_and(|o| {
-                        if o.subtypes.iter().any(|s| s == "Human") {
-                            true
-                        } else if o.is_transformed {
-                            registry.get(o.card_id)
-                                .and_then(super::super::CardBehavior::back_face_data)
-                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        } else {
-                            registry.card_data(o.card_id)
-                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        }
-                    });
+                let is_human = state.has_subtype(id, "Human", registry);
                 let count = if is_human { 2 } else { 1 };
                 state.add_counters(id, CounterType::PlusOnePlusOne, count);
                 state.log(LogLevel::Event,

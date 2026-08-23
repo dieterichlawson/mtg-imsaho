@@ -53,11 +53,7 @@ impl CardBehavior for ReaperFromTheAbyss {
         if obj.zone != Zone::Battlefield || obj.power.is_none() {
             return false;
         }
-        // Exclude Demons (check both the object's subtypes and the card data).
-        let is_demon = obj.subtypes.iter().any(|s| s == "Demon")
-            || registry.card_data(obj.card_id)
-                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Demon"));
-        !is_demon
+        !state.has_subtype(obj.id, "Demon", registry)
     }
 
     fn on_end_step(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {

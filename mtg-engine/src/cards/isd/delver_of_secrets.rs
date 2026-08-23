@@ -14,13 +14,8 @@ impl DelverOfSecrets {
     fn top_card_is_instant_or_sorcery(state: &GameState, controller: crate::ids::PlayerId, registry: &CardRegistry) -> bool {
         let top_card_id = state.get_player(controller).library_order.first().copied();
         if let Some(top_id) = top_card_id {
-            let card_id = state.get_object(top_id).map(|o| o.card_id);
-            card_id
-                .and_then(|cid| registry.card_data(cid)).map_or_else(|| {
-                    // Fallback to object card_types (for tokens or objects without registry entries).
-                    state.get_object(top_id)
-                        .is_some_and(|o| o.card_types.contains(&CardType::Instant) || o.card_types.contains(&CardType::Sorcery))
-                }, |d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery))
+            state.has_card_type(top_id, CardType::Instant, registry)
+                || state.has_card_type(top_id, CardType::Sorcery, registry)
         } else {
             false
         }
@@ -72,7 +67,7 @@ impl CardBehavior for DelverOfSecrets {
         })
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((3, 2))
         } else {

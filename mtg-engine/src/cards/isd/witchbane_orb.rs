@@ -48,7 +48,7 @@ impl CardBehavior for WitchbaneOrb {
             .filter(|o| {
                 o.zone == Zone::Battlefield
                     && o.attached_to_player == Some(controller)
-                    && registry.card_data(o.card_id)
+                    && state.face_data(o.id, registry)
                         .is_some_and(|d| d.subtypes.iter().any(|s| s == "Curse"))
             })
             .map(|o| o.id)

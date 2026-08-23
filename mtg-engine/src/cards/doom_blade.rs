@@ -30,14 +30,14 @@ impl CardBehavior for DoomBlade {
         TargetRequirement::CreatureWithFilter(TargetFilter::Nonblack)
     }
 
-    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, _registry: &CardRegistry) -> bool {
+    fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         match target {
             Target::Object(id) => {
                 state.get_object(*id)
                     .is_some_and(|o| {
                         o.zone == Zone::Battlefield
                             && o.power.is_some()
-                            && !o.colors.contains(&Color::Black)
+                            && !state.colors_of(o.id, registry).contains(&Color::Black)
                     })
             }
             Target::Player(_) => false,

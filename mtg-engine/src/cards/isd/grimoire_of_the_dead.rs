@@ -150,7 +150,7 @@ impl CardBehavior for GrimoireOfTheDead {
                 let count = creatures.len();
                 for cid in creatures {
                     let (name, is_legendary) = state.get_object(cid).map_or_else(|| (String::new(), false), |o| {
-                            let legendary = registry.card_data(o.card_id)
+                            let legendary = state.face_data(o.id, registry)
                                 .is_some_and(|d| d.supertypes.contains(&Supertype::Legendary));
                             (o.name.clone(), legendary)
                         });

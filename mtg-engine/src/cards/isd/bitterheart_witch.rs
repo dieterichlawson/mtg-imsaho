@@ -88,9 +88,7 @@ impl CardBehavior for BitterheartWitch {
         // Search library for Curse cards.
         let curse_ids: Vec<ObjectId> = state.get_player(controller).library_order.iter()
             .filter(|&&obj_id| {
-                let card_id = state.get_object(obj_id).map_or(crate::ids::CardId(0), |o| o.card_id);
-                registry.card_data(card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Curse"))
+                state.has_subtype(obj_id, "Curse", registry)
             })
             .copied()
             .collect();

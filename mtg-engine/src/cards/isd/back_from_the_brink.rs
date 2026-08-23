@@ -51,14 +51,14 @@ impl CardBehavior for BackFromTheBrink {
                 // A creature card: check the object's power (set for creature cards)
                 // or fall back to the registry card data.
                 o.power.is_some()
-                    || registry.card_data(o.card_id)
+                    || state.face_data(o.id, registry)
                         .is_some_and(|d| d.card_types.contains(&CardType::Creature))
             })
             .collect();
 
         creatures.into_iter().map(|creature| {
             // Look up the creature's mana cost from the registry.
-            let mana_cost = registry.card_data(creature.card_id)
+            let mana_cost = state.face_data(creature.id, registry)
                 .and_then(|d| d.cost.clone())
                 .unwrap_or_else(|| ManaCost::new(vec![]));
 

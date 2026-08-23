@@ -357,7 +357,7 @@ pub trait CardBehavior: Send + Sync {
     /// Returns Some((power, toughness)) to override base P/T, or None for normal P/T.
     /// Called by `effective_power/effective_toughness` during P/T computation.
     /// Examples: Geist-Honored Monk (creatures you control), Wreath of Geists (creatures in graveyard).
-    fn dynamic_pt(&self, _state: &GameState, _object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, _state: &GameState, _object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         None
     }
 

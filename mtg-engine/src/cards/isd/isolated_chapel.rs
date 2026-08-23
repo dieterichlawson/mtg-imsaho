@@ -21,11 +21,7 @@ impl IsolatedChapel {
                 if o.id == object_id {
                     return false;
                 }
-                let has_subtype = |name: &str| {
-                    o.subtypes.iter().any(|s| s == name)
-                        || registry.card_data(o.card_id)
-                            .is_some_and(|d| d.subtypes.iter().any(|s| s == name))
-                };
+                let has_subtype = |name: &str| state.has_subtype(o.id, name, registry);
                 has_subtype("Plains") || has_subtype("Swamp")
             })
     }

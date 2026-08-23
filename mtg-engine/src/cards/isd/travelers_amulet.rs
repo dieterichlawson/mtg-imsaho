@@ -55,7 +55,7 @@ impl CardBehavior for TravelersAmulet {
         let basic_lands: Vec<crate::ids::ObjectId> = state.get_player(controller).library_order.iter()
             .filter(|&&lib_id| {
                 state.get_object(lib_id)
-                    .and_then(|o| registry.card_data(o.card_id))
+                    .and_then(|o| state.face_data(o.id, registry))
                     .is_some_and(|d| {
                         d.card_types.contains(&CardType::Land)
                             && d.supertypes.contains(&Supertype::Basic)

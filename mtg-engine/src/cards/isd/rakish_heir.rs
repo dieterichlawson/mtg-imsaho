@@ -46,10 +46,8 @@ impl CardBehavior for RakishHeir {
             Some(o) if o.zone == Zone::Battlefield && o.controller == controller => o,
             _ => return,
         };
-        let is_vampire = registry.card_data(source.card_id)
-            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Vampire"))
-            || source.subtypes.iter().any(|s| s == "Vampire");
-        if is_vampire {
+        let _ = source;
+        if state.has_subtype(source_id, "Vampire", registry) {
             // Put a +1/+1 counter on THAT Vampire (the source).
             state.add_counters(source_id, CounterType::PlusOnePlusOne, 1);
         }

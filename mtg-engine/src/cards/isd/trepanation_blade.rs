@@ -82,7 +82,7 @@ impl CardBehavior for TrepanationBlade {
             // Check if this card is a land via the registry (object card_types
             // may be empty for non-token cards).
             let is_land = state.get_object(card_id)
-                .and_then(|o| registry.card_data(o.card_id))
+                .and_then(|o| state.face_data(o.id, registry))
                 .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
 
             // Remove from library and put into graveyard.

@@ -45,7 +45,7 @@ impl CardBehavior for SnapcasterMage {
     fn is_valid_target(&self, state: &GameState, _caster: PlayerId, target: &Target, registry: &CardRegistry) -> bool {
         let Target::Object(id) = target else { return false; };
         let Some(obj) = state.get_object(*id) else { return false; };
-        let is_instant_or_sorcery = registry.card_data(obj.card_id)
+        let is_instant_or_sorcery = state.face_data(obj.id, registry)
             .is_some_and(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery));
         if !is_instant_or_sorcery { return false; }
         // Don't redundantly grant flashback to a card that already has it
@@ -60,7 +60,7 @@ impl CardBehavior for SnapcasterMage {
         let Some(Target::Object(target_id)) = chosen_targets.first() else { return };
         let (cost, name) = match state.get_object(*target_id) {
             Some(obj) => {
-                let cost = registry.card_data(obj.card_id)
+                let cost = state.face_data(obj.id, registry)
                     .and_then(|d| d.cost.clone())
                     .unwrap_or_else(ManaCost::free);
                 (cost, obj.name.clone())

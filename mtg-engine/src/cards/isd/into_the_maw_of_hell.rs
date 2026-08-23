@@ -45,7 +45,7 @@ impl CardBehavior for IntoTheMawOfHell {
                     _ => return false,
                 };
                 // Valid if it's a land or a creature.
-                let is_land = registry.card_data(obj.card_id)
+                let is_land = state.face_data(obj.id, registry)
                     .is_some_and(|d| d.card_types.contains(&CardType::Land));
                 let is_creature = obj.power.is_some();
                 is_land || is_creature

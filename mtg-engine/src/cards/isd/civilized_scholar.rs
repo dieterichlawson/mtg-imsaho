@@ -89,7 +89,7 @@ impl CardBehavior for CivilizedScholar {
         }
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((5, 1))
         } else {
@@ -135,7 +135,7 @@ impl CardBehavior for CivilizedScholar {
             let discard_id = hand[0];
             let is_creature = state.get_object(discard_id)
                 .is_some_and(|o| {
-                    o.power.is_some() || registry.card_data(o.card_id)
+                    o.power.is_some() || state.face_data(o.id, registry)
                         .is_some_and(|d| d.card_types.contains(&CardType::Creature))
                 });
             state.move_object(discard_id, Zone::Graveyard, registry);
@@ -172,7 +172,7 @@ impl CardBehavior for CivilizedScholar {
         // Check if the discarded card was a creature (via power or registry).
         let is_creature = state.get_object(discarded_id)
             .is_some_and(|o| {
-                o.power.is_some() || registry.card_data(o.card_id)
+                o.power.is_some() || state.face_data(o.id, registry)
                     .is_some_and(|d| d.card_types.contains(&CardType::Creature))
             });
         if is_creature {

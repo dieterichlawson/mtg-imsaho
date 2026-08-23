@@ -90,10 +90,8 @@ impl CardBehavior for UndeadAlchemist {
             Some(o) if o.controller == controller => o,
             _ => return false,
         };
-        let is_zombie = registry.card_data(source.card_id)
-            .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-            || source.subtypes.iter().any(|s| s == "Zombie");
-        if !is_zombie {
+        let _ = source;
+        if !state.has_subtype(source_id, "Zombie", registry) {
             return false;
         }
 

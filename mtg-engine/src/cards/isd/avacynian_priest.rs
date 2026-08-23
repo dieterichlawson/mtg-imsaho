@@ -54,16 +54,7 @@ impl CardBehavior for AvacynianPriest {
             Target::Object(id) => {
                 state.get_object(*id)
                     .is_some_and(|o| {
-                        let is_human = if o.subtypes.iter().any(|s| s == "Human") {
-                            true
-                        } else if o.is_transformed {
-                            registry.get(o.card_id)
-                                .and_then(super::super::CardBehavior::back_face_data)
-                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        } else {
-                            registry.card_data(o.card_id)
-                                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                        };
+                        let is_human = state.has_subtype(o.id, "Human", registry);
                         o.zone == Zone::Battlefield
                             && o.power.is_some()
                             && !is_human

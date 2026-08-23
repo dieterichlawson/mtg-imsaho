@@ -40,13 +40,8 @@ impl CardBehavior for SlayerOfTheWicked {
         // "Target Vampire, Werewolf, or Zombie" — any controller, not just opponent.
         let targets: Vec<Target> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield && o.power.is_some() && o.id != object_id)
-            .filter(|o| {
-                let target_subtypes = ["Vampire", "Werewolf", "Zombie"];
-                let registry_has = registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| target_subtypes.contains(&s.as_str())));
-                let instance_has = o.subtypes.iter().any(|s| target_subtypes.contains(&s.as_str()));
-                registry_has || instance_has
-            })
+            .filter(|o| ["Vampire", "Werewolf", "Zombie"].iter()
+                .any(|st| state.has_subtype(o.id, st, registry)))
             .map(|o| Target::Object(o.id))
             .collect();
         // "You may" — always present choice.

@@ -45,9 +45,7 @@ impl CardBehavior for AngelOfFlightAlabaster {
         if obj.zone != Zone::Graveyard {
             return false;
         }
-        obj.subtypes.iter().any(|s| s == "Spirit")
-            || registry.card_data(obj.card_id)
-                .is_some_and(|d| d.subtypes.iter().any(|s| s == "Spirit"))
+        state.has_subtype(obj.id, "Spirit", registry)
     }
 
     fn step_trigger_scope(&self, kind: &TriggerKind, _is_back_face: bool) -> crate::cards::TriggerScope {

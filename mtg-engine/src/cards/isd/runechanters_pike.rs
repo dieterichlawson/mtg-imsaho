@@ -51,7 +51,7 @@ impl CardBehavior for RunechantersPike {
 
     /// Dynamic P/T: +X/+0 where X = instant/sorcery count in controller's graveyard.
     /// Called by the engine when computing P/T for the attached creature.
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, registry: &CardRegistry) -> Option<(i32, i32)> {
         let obj = state.get_object(object_id)?;
         if obj.zone != Zone::Battlefield {
             return None;
@@ -59,9 +59,8 @@ impl CardBehavior for RunechantersPike {
         let controller = obj.controller;
         let count = i32::try_from(state.objects.values()
             .filter(|o| o.zone == Zone::Graveyard && o.owner == controller)
-            .filter(|o| {
-                o.card_types.contains(&CardType::Instant) || o.card_types.contains(&CardType::Sorcery)
-            })
+            .filter(|o| state.has_card_type(o.id, CardType::Instant, registry)
+                || state.has_card_type(o.id, CardType::Sorcery, registry))
             .count()).unwrap_or(i32::MAX);
         Some((count, 0))
     }

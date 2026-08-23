@@ -69,7 +69,7 @@ impl CardBehavior for CellarDoor {
             // Check if it was a creature.
             let is_creature = state.get_object(milled_id)
                 .is_some_and(|o| {
-                    registry.card_data(o.card_id)
+                    state.face_data(o.id, registry)
                         .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
                 });
 

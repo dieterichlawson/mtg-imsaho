@@ -65,7 +65,7 @@ impl CardBehavior for CharmbreakerDevils {
         let mut candidates: Vec<ObjectId> = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| {
-                registry.card_data(o.card_id)
+                state.face_data(o.id, registry)
                     .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Instant | CardType::Sorcery)))
             })
             .map(|o| o.id)
@@ -104,7 +104,7 @@ impl CardBehavior for CharmbreakerDevils {
         }
         // Only trigger on instant or sorcery spells.
         let is_instant_or_sorcery = state.get_object(spell_id)
-            .and_then(|o| registry.card_data(o.card_id))
+            .and_then(|o| state.face_data(o.id, registry))
             .is_some_and(|d| d.card_types.contains(&CardType::Instant) || d.card_types.contains(&CardType::Sorcery));
         if !is_instant_or_sorcery {
             return;

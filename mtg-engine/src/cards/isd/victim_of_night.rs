@@ -35,12 +35,8 @@ impl CardBehavior for VictimOfNight {
             Target::Object(id) => {
                 let Some(obj) = state.get_object(*id) else { return false; };
                 if obj.zone != Zone::Battlefield || obj.power.is_none() { return false; }
-                // Check both registry subtypes (regular cards) and object subtypes (tokens).
-                let excluded = ["Vampire", "Werewolf", "Zombie"];
-                let has_excluded_registry = registry.card_data(obj.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| excluded.contains(&s.as_str())));
-                let has_excluded_obj = obj.subtypes.iter().any(|s| excluded.contains(&s.as_str()));
-                !has_excluded_registry && !has_excluded_obj
+                !["Vampire", "Werewolf", "Zombie"].iter()
+                    .any(|st| state.has_subtype(obj.id, st, registry))
             }
             Target::Player(_) => false,
         }

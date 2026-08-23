@@ -34,18 +34,7 @@ impl GarrukRelentless {
 
         // Find all creature cards in library for the player to choose from.
         let creature_options: Vec<ObjectId> = state.get_player(controller).library_order.iter()
-            .filter(|&&lib_id| {
-                if let Some(obj) = state.get_object(lib_id) {
-                    if obj.card_types.is_empty() {
-                        registry.card_data(obj.card_id)
-                            .is_some_and(|d| d.card_types.contains(&CardType::Creature))
-                    } else {
-                        obj.card_types.contains(&CardType::Creature)
-                    }
-                } else {
-                    false
-                }
-            })
+            .filter(|&&lib_id| state.has_card_type(lib_id, CardType::Creature, registry))
             .copied()
             .collect();
 
@@ -223,7 +212,7 @@ impl CardBehavior for GarrukRelentless {
                 // you must sacrifice a creature if you control one."
                 let creatures: Vec<Target> = state.objects_in_zone(Zone::Battlefield, controller)
                     .iter()
-                    .filter(|o| o.card_types.contains(&CardType::Creature)
+                    .filter(|o| state.has_card_type(o.id, CardType::Creature, registry)
                         || o.power.is_some()) // creatures include tokens
                     .map(|o| Target::Object(o.id))
                     .collect();

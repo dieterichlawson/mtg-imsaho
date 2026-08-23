@@ -43,10 +43,7 @@ impl CardBehavior for Mulch {
         let mut non_lands = Vec::new();
 
         for &card_id in &revealed {
-            let is_land = registry.card_data(
-                state.get_object(card_id).map_or(crate::ids::CardId(0), |o| o.card_id)
-            )
-            .is_some_and(|d| d.card_types.iter().any(|ct| matches!(ct, CardType::Land)));
+            let is_land = state.has_card_type(card_id, CardType::Land, registry);
 
             if is_land {
                 lands.push(card_id);

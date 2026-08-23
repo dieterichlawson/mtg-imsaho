@@ -37,19 +37,7 @@ impl CardBehavior for Moonmist {
         let humans_to_transform: Vec<(ObjectId, bool)> = state.objects.values()
             .filter(|o| o.zone == Zone::Battlefield)
             .filter(|o| {
-                // Check if the creature currently has the Human subtype on its
-                // active face. Check instance subtypes first, then also check
-                // the registry for the correct face (transform-aware).
-                let has_human_subtype = if o.subtypes.iter().any(|s| s == "Human") {
-                    true
-                } else if o.is_transformed {
-                    registry.get(o.card_id)
-                        .and_then(super::super::CardBehavior::back_face_data)
-                        .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                } else {
-                    registry.card_data(o.card_id)
-                        .is_some_and(|d| d.subtypes.iter().any(|s| s == "Human"))
-                };
+                let has_human_subtype = state.has_subtype(o.id, "Human", registry);
                 // Must be a DFC (has a back face).
                 let has_back_face = registry.get(o.card_id)
                     .and_then(super::super::CardBehavior::back_face_data)

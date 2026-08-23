@@ -69,7 +69,7 @@ impl CardBehavior for CloisteredYouth {
         }
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         if state.get_object(object_id).is_some_and(|o| o.is_transformed) {
             Some((3, 3))
         } else {

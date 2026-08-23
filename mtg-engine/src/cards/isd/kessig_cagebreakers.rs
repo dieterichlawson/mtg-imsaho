@@ -46,7 +46,7 @@ impl CardBehavior for KessigCagebreakers {
         let creature_count = state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
             .filter(|o| {
-                registry.card_data(o.card_id)
+                state.face_data(o.id, registry)
                     .map_or(o.power.is_some(), |d| d.card_types.iter().any(|ct| matches!(ct, CardType::Creature)))
             })
             .count();

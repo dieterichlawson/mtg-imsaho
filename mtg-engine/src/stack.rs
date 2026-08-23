@@ -92,8 +92,7 @@ pub fn resolve_top_of_stack(state: &mut GameState, registry: &CardRegistry) {
         StackEntry::Ability { source_id, ability_index, behavior_card_id, targets, x_value, .. } => {
             state.stack.pop();
             state.last_activated_x_value = x_value;
-            let name = registry.card_data(behavior_card_id)
-                .map_or_else(|| "Unknown".into(), |d| d.name.clone());
+            let name = state.name_of(source_id, registry);
             state.log(LogLevel::Event, format!("{name} ability resolved"));
             if let Some(behavior) = registry.get(behavior_card_id) {
                 behavior.resolve_activated_ability(state, source_id, ability_index, &targets, registry);

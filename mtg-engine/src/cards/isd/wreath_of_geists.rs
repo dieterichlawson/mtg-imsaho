@@ -30,7 +30,7 @@ impl CardBehavior for WreathOfGeists {
         TargetRequirement::Creature
     }
 
-    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId) -> Option<(i32, i32)> {
+    fn dynamic_pt(&self, state: &GameState, object_id: ObjectId, _registry: &CardRegistry) -> Option<(i32, i32)> {
         // The controller of the aura determines whose graveyard to count.
         let controller = state.get_object(object_id)?.controller;
         let creature_count = i32::try_from(state.objects.values()

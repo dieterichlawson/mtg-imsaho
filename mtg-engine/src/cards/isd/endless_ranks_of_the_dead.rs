@@ -57,11 +57,7 @@ impl CardBehavior for EndlessRanksOfTheDead {
         let zombie_count = state.objects_in_zone(Zone::Battlefield, controller)
             .iter()
             .filter(|o| o.power.is_some()) // creatures only
-            .filter(|o| {
-                registry.card_data(o.card_id)
-                    .is_some_and(|d| d.subtypes.iter().any(|s| s == "Zombie"))
-                || o.subtypes.iter().any(|s| s == "Zombie")
-            })
+            .filter(|o| state.has_subtype(o.id, "Zombie", registry))
             .count();
         let tokens_to_create = zombie_count / 2;
         for _ in 0..tokens_to_create {

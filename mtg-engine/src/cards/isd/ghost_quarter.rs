@@ -79,7 +79,7 @@ impl CardBehavior for GhostQuarter {
             let basic_lands: Vec<ObjectId> = state.get_player(target_controller).library_order.iter()
                 .filter(|&&lib_id| {
                     state.get_object(lib_id)
-                        .and_then(|o| registry.card_data(o.card_id))
+                        .and_then(|o| state.face_data(o.id, registry))
                         .is_some_and(|d| {
                             d.card_types.contains(&CardType::Land)
                                 && d.supertypes.contains(&Supertype::Basic)
