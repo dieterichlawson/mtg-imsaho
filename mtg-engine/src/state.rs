@@ -1557,6 +1557,124 @@ impl GameState {
     pub fn is_game_over(&self) -> bool {
         self.result.is_some()
     }
+
+    // ===== Characteristics layer =====
+    //
+    // Single source of truth for an object's printed characteristics.
+    // Resolution order: object-level fields (set for tokens and copies)
+    // → active face (back face when transformed) → registry front face.
+    //
+    // Engine code should use these instead of reading `obj.card_types` /
+    // `obj.subtypes` / `obj.colors` directly or calling `registry.card_data`:
+    // object fields are empty for non-token permanents, and raw registry
+    // lookups return front-face data for transformed DFCs.
+
+    /// The `CardData` of the object's active face: the back face for a
+    /// transformed DFC, the front face otherwise. `None` for objects with
+    /// no registry entry (anonymous test objects).
+    #[must_use]
+    pub fn face_data(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Option<crate::cards::CardData> {
+        let obj = self.get_object(id)?;
+        let behavior = registry.get(obj.card_id)?;
+        if obj.is_transformed {
+            if let Some(back) = behavior.back_face_data() {
+                return Some(back);
+            }
+        }
+        Some(behavior.card_data())
+    }
+
+    /// Card types of the object: object-level types if set (tokens, copies),
+    /// otherwise the active face's types.
+    #[must_use]
+    pub fn card_types_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::CardType> {
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        if !obj.card_types.is_empty() {
+            return obj.card_types.clone();
+        }
+        self.face_data(id, registry).map(|d| d.card_types).unwrap_or_default()
+    }
+
+    /// Whether the object has the given card type on its active face.
+    #[must_use]
+    pub fn has_card_type(&self, id: ObjectId, card_type: crate::types::CardType, registry: &crate::cards::CardRegistry) -> bool {
+        self.card_types_of(id, registry).contains(&card_type)
+    }
+
+    /// Whether the object is a creature. Checks card types first; also
+    /// accepts object-level P/T as a creature sentinel (tokens, `*/*`
+    /// creatures, and anonymous test objects all set it, while equipment,
+    /// auras, and lands never do).
+    #[must_use]
+    pub fn is_creature(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> bool {
+        self.has_card_type(id, crate::types::CardType::Creature, registry)
+            || self.get_object(id).is_some_and(|o| o.power.is_some())
+    }
+
+    /// Subtypes of the object: the union of object-level subtypes and the
+    /// active face's subtypes.
+    #[must_use]
+    pub fn subtypes_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<String> {
+        let mut subs = self.get_object(id).map(|o| o.subtypes.clone()).unwrap_or_default();
+        if let Some(data) = self.face_data(id, registry) {
+            for s in data.subtypes {
+                if !subs.contains(&s) {
+                    subs.push(s);
+                }
+            }
+        }
+        subs
+    }
+
+    /// Whether the object has the given subtype on its active face.
+    #[must_use]
+    pub fn has_subtype(&self, id: ObjectId, subtype: &str, registry: &crate::cards::CardRegistry) -> bool {
+        self.get_object(id).is_some_and(|o| o.subtypes.iter().any(|s| s == subtype))
+            || self.face_data(id, registry)
+                .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
+    }
+
+    /// Colors of the object: object-level colors if set, otherwise derived
+    /// from the active face's mana cost. (Color indicators are not modeled;
+    /// object-level colors are populated at setup for all real cards.)
+    #[must_use]
+    pub fn colors_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::Color> {
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        if !obj.colors.is_empty() {
+            return obj.colors.clone();
+        }
+        self.face_data(id, registry)
+            .and_then(|d| d.cost)
+            .map(|cost| {
+                let mut cols = Vec::new();
+                for sym in &cost.symbols {
+                    if let crate::types::ManaSymbol::Colored(c) = sym {
+                        if !cols.contains(c) {
+                            cols.push(*c);
+                        }
+                    }
+                }
+                cols
+            })
+            .unwrap_or_default()
+    }
+
+    /// Continuous effects the object provides: instance-level overrides if
+    /// present (e.g. equipment granting effects), otherwise the active face's.
+    #[must_use]
+    pub fn continuous_effects_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::types::ContinuousEffect> {
+        let Some(obj) = self.get_object(id) else { return Vec::new() };
+        if let Some(ref inst) = obj.instance_continuous_effects {
+            return inst.clone();
+        }
+        self.face_data(id, registry).map(|d| d.continuous_effects).unwrap_or_default()
+    }
+
+    /// Triggered abilities of the object's active face.
+    #[must_use]
+    pub fn triggered_abilities_of(&self, id: ObjectId, registry: &crate::cards::CardRegistry) -> Vec<crate::cards::TriggeredAbilityDef> {
+        self.face_data(id, registry).map(|d| d.triggered_abilities).unwrap_or_default()
+    }
 }
 
 
@@ -2123,5 +2241,62 @@ mod tests {
         let player = state.get_player_mut(PlayerId(0));
         assert!(player.draw_top_card().is_none());
         assert!(player.has_drawn_from_empty);
+    }
+
+    #[test]
+    fn face_data_uses_back_face_when_transformed() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let dfc = registry.get_id_by_name("Daybreak Ranger").unwrap();
+        let id = state.create_object(dfc, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
+
+        assert_eq!(state.face_data(id, &registry).unwrap().name, "Daybreak Ranger");
+        state.get_object_mut(id).unwrap().is_transformed = true;
+        assert_eq!(state.face_data(id, &registry).unwrap().name, "Nightfall Predator");
+    }
+
+    #[test]
+    fn card_types_of_falls_back_to_registry_for_non_tokens() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let pike = registry.get_id_by_name("Runechanter's Pike").unwrap();
+        // Non-token permanents have empty object-level card_types.
+        let id = state.create_object(pike, PlayerId(0), Zone::Battlefield, None, None);
+        assert!(state.get_object(id).unwrap().card_types.is_empty());
+
+        assert!(state.has_card_type(id, crate::types::CardType::Artifact, &registry));
+        assert!(!state.is_creature(id, &registry));
+    }
+
+    #[test]
+    fn is_creature_covers_cards_tokens_and_anonymous_objects() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+
+        let bears = registry.get_id_by_name("Grizzly Bears").unwrap();
+        let card = state.create_object(bears, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
+        assert!(state.is_creature(card, &registry));
+
+        // Anonymous object with P/T (test convention).
+        let anon = state.create_object(CardId(9999), PlayerId(0), Zone::Battlefield, Some(1), Some(1));
+        assert!(state.is_creature(anon, &registry));
+
+        // Aura: no P/T, not a creature.
+        let pacifism = registry.get_id_by_name("Pacifism").unwrap();
+        let aura = state.create_object(pacifism, PlayerId(0), Zone::Battlefield, None, None);
+        assert!(!state.is_creature(aura, &registry));
+    }
+
+    #[test]
+    fn subtypes_of_is_transform_aware() {
+        let registry = crate::cards::CardRegistry::with_all_cards();
+        let mut state = GameState::new(2);
+        let dfc = registry.get_id_by_name("Daybreak Ranger").unwrap();
+        let id = state.create_object(dfc, PlayerId(0), Zone::Battlefield, Some(2), Some(2));
+
+        assert!(state.has_subtype(id, "Human", &registry));
+        state.get_object_mut(id).unwrap().is_transformed = true;
+        let subs = state.subtypes_of(id, &registry);
+        assert!(subs.iter().any(|s| s == "Werewolf"), "back face subtypes: {subs:?}");
     }
 }
