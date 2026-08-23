@@ -154,7 +154,7 @@ function call. It now applies its own drain directly.
 | 4 | Card code reading empty object-level fields | 7 | **done** |
 | 5 | Control-on-entry ordering | 4 | **done** |
 | 6 | Targeted trigger declared untargeted | 4 | **done** |
-| 7 | Card-specific one-offs | ~45 | not started |
+| 7 | Card-specific one-offs | 38 left | in progress |
 
 ## Done
 
@@ -374,6 +374,38 @@ Two tests were found to be **passing vacuously** while writing this: moving a
 creature to the graveyard is not *dying*, so the death trigger never fired and
 "no trigger on the stack" was trivially true. They now destroy the creature.
 
+### Cluster 7 so far — the "one-offs" keep turning out to be clusters
+
+Working the tail, the tickets have mostly collapsed into shared root causes
+rather than needing individual handling:
+
+- **`TriggerScope::AttachedPlayer`** — all three upkeep Curses said "at the
+  beginning of ENCHANTED PLAYER's upkeep", which neither `Each` nor `Your`
+  describes, so each fell back to `Each` and wrote the same early-return in its
+  handler. This also replaced the `should_trigger` workaround Curse of the
+  Pierced Heart had been given: one mechanism instead of the same condition
+  written three times.
+- **Equip re-targeting (CR 702.6a)** — target generation excluded the creature
+  already wearing the equipment. Re-equipping to the current host is a real
+  play whenever the equip COST is the point, and with one creature on the
+  battlefield the filter removed the ability entirely. 3 tickets, one line.
+- **Flashback (CR 702.33)** — a card can hold several instances of flashback at
+  once and the player may pay any; the generator picked one winner and dropped
+  the rest. Not just a missing choice: an unaffordable granted cost hid a
+  payable printed one. Plus CR 702.33a — a card with no mana cost gains no
+  flashback, where three sites substituted a free cost and made it castable for
+  {0}. 5 tickets.
+- **CR 400.7 identity reset** — `move_object` reset the obvious battlefield
+  state but left a copy's `card_id`, an exchanged base toughness, a Curse's
+  `attached_to_player`, and the display name. 4 tickets.
+
+**Two more fragile test fixtures found**, both the same shape as before: a test
+hand-set a fake name onto `CardId(200)` (really Hanweir Watchkeep) and then
+identified its objects by that name, so the correct name reset made it find
+nothing; and the Mask of Avacyn test asserted "no duplicate equip actions" by
+counting actions, which conflated duplicates with target count. Both now
+assert what they mean.
+
 ## Next up
 
 1. Clusters 3 → 5 → 6, then the one-off tail.
@@ -381,5 +413,5 @@ creature to the graveyard is not *dying*, so the death trigger never fired and
    for one whenever a ticket says "the condition is only evaluated at
    resolution".
 
-**Backlog count: 64 fixed / 52 open**, plus the root-cause refactor above,
+**Backlog count: 78 fixed / 38 open**, plus the root-cause refactor above,
 which removes the mechanism behind the whole characteristics bug family (was 2 / 114 at the start of this pass).
