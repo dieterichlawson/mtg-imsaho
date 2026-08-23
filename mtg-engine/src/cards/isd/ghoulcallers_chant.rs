@@ -53,7 +53,7 @@ impl CardBehavior for GhoulcallersChant {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(card_id) = target {
                 if let Some(obj) = state.get_object(*card_id) {
@@ -66,6 +66,5 @@ impl CardBehavior for GhoulcallersChant {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

@@ -75,6 +75,5 @@ impl CardBehavior for Mulch {
             state.move_object(non_land_id, Zone::Graveyard, registry);
         }
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

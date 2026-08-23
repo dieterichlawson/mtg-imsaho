@@ -33,6 +33,5 @@ impl CardBehavior for MidnightHaunting {
         }
         state.log(crate::state::LogLevel::Event,
             "Midnight Haunting: created two 1/1 white Spirit tokens with flying".into());
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

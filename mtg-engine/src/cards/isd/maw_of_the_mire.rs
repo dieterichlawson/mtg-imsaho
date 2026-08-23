@@ -74,6 +74,5 @@ impl CardBehavior for MawOfTheMire {
                 format!("Maw of the Mire: p{} gained 4 life", controller.0));
         }
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

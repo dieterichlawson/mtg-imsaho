@@ -36,7 +36,7 @@ impl CardBehavior for TraiterousBlood {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(creature_id)) = targets.first() {
             if state.get_object(*creature_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
@@ -62,6 +62,5 @@ impl CardBehavior for TraiterousBlood {
                     format!("Traitorous Blood steals {name}, untaps it, grants haste and trample"));
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

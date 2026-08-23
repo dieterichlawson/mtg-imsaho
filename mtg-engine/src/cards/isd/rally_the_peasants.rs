@@ -27,7 +27,7 @@ impl CardBehavior for RallyThePeasants {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         state.until_end_of_turn.push(
@@ -39,6 +39,5 @@ impl CardBehavior for RallyThePeasants {
             }
         );
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

@@ -45,7 +45,7 @@ impl CardBehavior for LostInTheMist {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         // Counter the spell (first target)
         if let Some(Target::Object(spell_id)) = targets.first() {
             if let Some(obj) = state.get_object(*spell_id) {
@@ -67,6 +67,5 @@ impl CardBehavior for LostInTheMist {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

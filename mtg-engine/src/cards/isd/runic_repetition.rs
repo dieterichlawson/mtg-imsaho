@@ -45,13 +45,12 @@ impl CardBehavior for RunicRepetition {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             let name = state.get_object(*target_id).map(|o| o.name.clone()).unwrap_or_default();
             state.move_object(*target_id, Zone::Hand, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Runic Repetition returned {name} from exile to hand"));
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

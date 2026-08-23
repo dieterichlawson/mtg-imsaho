@@ -78,6 +78,5 @@ impl CardBehavior for MemorysJourney {
                 format!("Memory's Journey: p{}'s library shuffled", target_player.0));
         }
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

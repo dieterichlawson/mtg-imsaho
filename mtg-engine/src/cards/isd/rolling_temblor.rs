@@ -39,6 +39,5 @@ impl CardBehavior for RollingTemblor {
                     crate::damage::DamageKind::NonCombat, registry);
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

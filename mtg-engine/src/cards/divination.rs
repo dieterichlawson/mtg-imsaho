@@ -31,6 +31,5 @@ impl CardBehavior for Divination {
             .map_or(crate::ids::PlayerId(0), |o| o.controller);
 
         crate::engine::draw_cards(state, controller, 2, registry);
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

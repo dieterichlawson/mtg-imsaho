@@ -29,7 +29,7 @@ impl CardBehavior for GiantGrowth {
         TargetRequirement::Creature
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         if let Some(Target::Object(target_id)) = targets.first() {
             if state.get_object(*target_id).is_some_and(|o| o.zone == Zone::Battlefield) {
                 state.until_end_of_turn.push(
@@ -41,6 +41,5 @@ impl CardBehavior for GiantGrowth {
                 );
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

@@ -69,6 +69,5 @@ impl CardBehavior for NightTerrors {
                 return; // Don't move spell yet — awaiting choice.
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

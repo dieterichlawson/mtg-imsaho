@@ -30,7 +30,7 @@ impl CardBehavior for SpareFromEvil {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map(|o| o.controller).unwrap();
 
         // Grant protection from non-Human creatures until end of turn.
@@ -45,6 +45,5 @@ impl CardBehavior for SpareFromEvil {
         state.log(crate::state::LogLevel::Event,
             "Spare from Evil: creatures gain protection from non-Human creatures until end of turn".into());
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

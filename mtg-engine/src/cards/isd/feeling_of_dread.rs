@@ -31,7 +31,7 @@ impl CardBehavior for FeelingOfDread {
         TargetRequirement::UpToTargets(2, Box::new(TargetRequirement::Creature))
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, _object_id: ObjectId, targets: &[Target], _registry: &CardRegistry) {
         for target in targets {
             if let Target::Object(target_id) = target {
                 if let Some(obj) = state.get_object_mut(*target_id) {
@@ -41,6 +41,5 @@ impl CardBehavior for FeelingOfDread {
                 }
             }
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

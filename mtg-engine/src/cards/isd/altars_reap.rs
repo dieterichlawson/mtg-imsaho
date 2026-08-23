@@ -38,6 +38,5 @@ impl CardBehavior for AltarsReap {
         // The creature sacrifice happens at cast time (as an additional cost).
         // On resolution, just draw two cards.
         crate::engine::draw_cards(state, controller, 2, registry);
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

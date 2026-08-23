@@ -43,6 +43,5 @@ impl CardBehavior for DesperateRavings {
             state.move_object(discard_id, Zone::Graveyard, registry);
             state.events.push(crate::events::GameEvent::Discarded { player: owner, object: discard_id });
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

@@ -57,6 +57,5 @@ impl CardBehavior for HarvestPyre {
             }
         }
 
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

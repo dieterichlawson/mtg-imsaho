@@ -47,6 +47,5 @@ impl CardBehavior for CorpseLunge {
                 crate::events::DamageTarget::Object(*target_id), damage,
                 crate::damage::DamageKind::NonCombat, registry);
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

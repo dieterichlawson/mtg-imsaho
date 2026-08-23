@@ -28,7 +28,7 @@ impl CardBehavior for GnawToTheBone {
         }
     }
 
-    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], registry: &CardRegistry) {
+    fn on_resolve(&self, state: &mut GameState, object_id: ObjectId, _targets: &[Target], _registry: &CardRegistry) {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         // Count creature cards in controller's graveyard (the spell is still on the stack, not in graveyard).
         let creature_count = state.objects.values()
@@ -45,6 +45,5 @@ impl CardBehavior for GnawToTheBone {
                 new_life,
             });
         }
-        state.move_spell_after_resolve(object_id, registry);
     }
 }

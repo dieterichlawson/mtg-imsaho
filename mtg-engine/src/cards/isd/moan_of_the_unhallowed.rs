@@ -35,6 +35,5 @@ impl CardBehavior for MoanOfTheUnhallowed {
         }
         state.log(crate::state::LogLevel::Event,
             "Moan of the Unhallowed: created two 2/2 black Zombie tokens".into());
-        state.move_spell_after_resolve(object_id, registry);
     }
 }
