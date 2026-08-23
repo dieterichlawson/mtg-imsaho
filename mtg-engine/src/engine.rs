@@ -3330,10 +3330,6 @@ pub fn apply_pending_effect(state: &mut GameState, target: &crate::actions::Targ
             state.until_end_of_turn.push(crate::state::TemporaryEffect::CantBlock { target: *id });
             state.log(LogLevel::Event, format!("{source_name} prevents {name} from blocking this turn"));
         }
-        (Target::Player(pid), PendingEffect::Mill { count, source_name }) => {
-            mill_cards(state, *pid, *count as usize, registry);
-            state.log(LogLevel::Event, format!("{} milled {} card(s) from p{}", source_name, count, pid.0));
-        }
         (Target::Object(id), PendingEffect::ReturnToHand { source_name }) => {
             let name = state.obj_name(*id);
             state.move_object(*id, Zone::Hand, registry);

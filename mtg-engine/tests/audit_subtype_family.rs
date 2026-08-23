@@ -658,10 +658,14 @@ fn bug_31_004_elder_cathar_no_bonus_on_transformed_werewolf() {
         .copied()
         .unwrap_or(0);
 
-    // Fire Elder Cathar's death trigger directly.
+    // Fire Elder Cathar's death trigger directly. CR 603.3b: the target is
+    // chosen when the trigger goes on the stack and handed to the resolution
+    // handler, so pass it the way the engine does. (This used to be `&[]`,
+    // because the card selected its own target at resolution — which is the
+    // bug elder_cathar-01 reported.)
     let cathar_card_id = registry.get_id_by_name("Elder Cathar").unwrap();
     let behavior = registry.get(cathar_card_id).unwrap();
-    behavior.on_dies(&mut state, cathar, &[], &registry);
+    behavior.on_dies(&mut state, cathar, &[Target::Object(pariah)], &registry);
 
     let counters_after = state
         .get_object(pariah)

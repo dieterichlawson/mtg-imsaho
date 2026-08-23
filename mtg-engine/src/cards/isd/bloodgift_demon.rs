@@ -1,6 +1,6 @@
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{TargetRequirement, CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
+use crate::state::GameState;
 use crate::actions::Target;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Keyword, Zone};
 
@@ -31,7 +31,10 @@ impl CardBehavior for BloodgiftDemon {
                 TriggeredAbilityDef {
                     kind: TriggerKind::Upkeep,
                     description: "target player draws a card and loses 1 life".into(),
-                target_requirement: None,
+                    // CR 603.3b: the target is chosen as the trigger goes on
+                    // the stack, so the engine picks it — with hexproof
+                    // filtering — rather than `on_upkeep` prompting later.
+                    target_requirement: Some(TargetRequirement::PlayerOnly),
                 },
             ],
         }
@@ -44,33 +47,14 @@ impl CardBehavior for BloodgiftDemon {
         }
     }
 
-    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
-        if state.active_player != controller {
+    /// CR 603.3b: the target arrived with the trigger. `step_trigger_scope`
+    /// already restricted this to the controller's own upkeep.
+    fn on_upkeep(&self, state: &mut GameState, self_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
             return;
         }
-        // "Target player" — present choice between all players.
-        let targets: Vec<Target> = state.players.iter()
-            .filter(|p| !p.lost)
-            .filter(|p| !state.player_has_hexproof(p.id, registry) || p.id == controller)
-            .map(|p| Target::Player(p.id))
-            .collect();
-        if targets.is_empty() {
-            return;
-        }
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: controller,
-            source: self_id,
-            choice: ResolutionChoiceKind::ChooseTarget {
-                description: "Bloodgift Demon: choose a player to draw a card and lose 1 life".into(),
-                options: targets,
-                optional: false,
-                effect: PendingEffect::CardEffect { source_id: self_id, key: String::new() },
-            },
-        });
+        let Some(target) = chosen_targets.first() else { return };
+        self.resolve_card_effect(state, self_id, "", target, registry);
     }
 
     /// "At the beginning of your upkeep, target player draws a card and loses

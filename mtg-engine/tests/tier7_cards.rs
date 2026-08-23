@@ -78,15 +78,19 @@ fn bloodgift_demon_draws_and_loses_life() {
 
     fire_step_trigger(&mut state, Step::Upkeep, &reg);
 
-    // Bloodgift Demon now presents a player choice. Choose P0 (self).
+    // CR 603.3b: the target is chosen as the trigger goes on the stack, so the
+    // prompt comes first and the trigger resolves afterwards. (It used to be
+    // the other way round — the trigger resolved and then asked, which is the
+    // bug bloodgift_demon-01 reported.)
     assert!(state.awaiting_action.is_some(), "Should be awaiting player choice");
-    let state = mtg_engine::engine::submit_action(
+    let mut state = mtg_engine::engine::submit_action(
         &state,
         &mtg_engine::actions::Action::ResolveChoice {
             choice: mtg_engine::actions::ResolvedChoice::ChosenTarget(Some(mtg_engine::actions::Target::Player(P0))),
         },
         &reg,
     );
+    mtg_engine::triggers::process_triggers(&mut state, &reg);
 
     let hand = state.objects.values()
         .filter(|o| o.zone == Zone::Hand && o.owner == P0)

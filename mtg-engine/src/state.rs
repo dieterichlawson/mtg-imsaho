@@ -2288,8 +2288,7 @@ pub enum PendingEffect {
     DebuffUntilEOT { power: i32, toughness: i32, source_name: String },
     /// Target creature can't block this turn.
     CantBlockThisTurn { source_name: String },
-    /// Target player mills N cards.
-    Mill { count: u32, source_name: String },
+
 
 
     /// Destroy target creature matching a filter (Reaper from the Abyss).

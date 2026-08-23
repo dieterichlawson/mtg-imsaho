@@ -1,7 +1,7 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{CardBehavior, CardData, CardRegistry, TargetRequirement, TriggerKind, TriggeredAbilityDef};
 use crate::ids::ObjectId;
-use crate::state::{AwaitingAction, GameState, LogLevel, PendingEffect, ResolutionChoiceKind};
+use crate::state::{GameState, LogLevel};
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone, CounterType};
 
 /// Elder Cathar — {2}{W} 2/2 Human Soldier.
@@ -28,46 +28,45 @@ impl CardBehavior for ElderCathar {
             triggered_abilities: vec![
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
-                    description: "put +1/+1 counters on target creature".into(),
-                target_requirement: None,
+                    description: "put +1/+1 counters on target creature you control".into(),
+                    // CR 603.3b: the target is chosen when the trigger goes on
+                    // the stack, so the engine picks it — not `on_dies`.
+                    target_requirement: Some(TargetRequirement::Creature),
                 },
             ],
         }
     }
 
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
-        // Find creatures we control on the battlefield.
-        let targets: Vec<Target> = state.objects.values()
-            .filter(|o| o.zone == Zone::Battlefield && o.controller == controller && o.power.is_some() && o.id != object_id)
-            .map(|o| Target::Object(o.id))
-            .collect();
-
-        if targets.is_empty() {
-            // No creatures to put counters on.
-        } else if targets.len() == 1 {
-            // Auto-pick the only legal target, then take the same path as a
-            // chosen one so the Human rule lives in exactly one place.
-            self.resolve_card_effect(state, object_id, "", &targets[0], registry);
-        } else {
-            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                player: controller,
-                source: object_id,
-                choice: ResolutionChoiceKind::ChooseTarget {
-                    description: "Elder Cathar: put +1/+1 counter(s) on target creature you control".into(),
-                    options: targets,
-                    optional: false,
-                    effect: PendingEffect::CardEffect { source_id: object_id, key: String::new() },
-                },
-            });
-        }
+    /// CR 603.3b: the target was chosen when the trigger went on the stack, so
+    /// it arrives in `chosen_targets`. CR 603.3c already removed the trigger if
+    /// there were no legal targets, and CR 608.2b re-checked legality on the
+    /// way down, neither of which happened while this selected its own target
+    /// at resolution.
+    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        let Some(target) = chosen_targets.first() else { return };
+        self.apply_counters(state, target, registry);
+        let _ = object_id;
     }
 
+    /// "target creature you control" — restrict the engine's creature
+    /// enumeration to this card's controller, and exclude the dying Cathar.
+    fn is_valid_target(&self, state: &GameState, caster: crate::ids::PlayerId, target: &Target, registry: &CardRegistry) -> bool {
+        let Target::Object(id) = target else { return false };
+        state.get_object(*id).is_some_and(|o| {
+            o.zone == Zone::Battlefield
+                && o.controller == caster
+                && state.is_creature(o.id, registry)
+        })
+    }
+
+}
+
+impl ElderCathar {
     /// "...put a +1/+1 counter on target creature you control. If that
     /// creature is a Human, put two +1/+1 counters on it instead." The Human
     /// check is this card's rule, so it lives here rather than as a flag on a
     /// shared engine effect.
-    fn resolve_card_effect(&self, state: &mut GameState, _source_id: ObjectId, _key: &str, target: &Target, registry: &CardRegistry) {
+    fn apply_counters(&self, state: &mut GameState, target: &Target, registry: &CardRegistry) {
         let Target::Object(id) = target else { return };
         let count = if state.has_subtype(*id, "Human", registry) { 2 } else { 1 };
         state.add_counters(*id, CounterType::PlusOnePlusOne, count);

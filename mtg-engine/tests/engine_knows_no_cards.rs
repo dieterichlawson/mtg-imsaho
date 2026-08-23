@@ -83,7 +83,6 @@ fn engine_does_not_look_up_cards_by_name() {
 const REVIEWED_SINGLE_USER: &[(&str, &str)] = &[
     ("DebuffUntilEOT", "general: 'target creature gets -X/-X until end of turn', card supplies X"),
     ("CantBlockThisTurn", "general: 'target creature can't block this turn'"),
-    ("Mill", "general: 'target player mills N cards', card supplies N"),
     ("DestroyCreature", "general: destroy a creature, card supplies only the log name"),
     ("ReturnToHand", "general: return a permanent to its owner's hand"),
     ("CopyCreature", "general: CR 706 copy effect; the copy grantor is generic"),

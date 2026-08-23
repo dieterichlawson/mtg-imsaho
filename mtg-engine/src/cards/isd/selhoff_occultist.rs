@@ -1,7 +1,7 @@
 use crate::actions::Target;
-use crate::cards::{CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
+use crate::cards::{TargetRequirement, CardBehavior, CardData, CardRegistry, TriggerKind, TriggeredAbilityDef};
 use crate::ids::{ObjectId, PlayerId};
-use crate::state::{AwaitingAction, GameState, PendingEffect, ResolutionChoiceKind};
+use crate::state::GameState;
 use crate::types::{ManaCost, ManaSymbol, Color, CardType, Zone};
 
 /// Selhoff Occultist — {2}{U} 2/3 Human Rogue.
@@ -28,51 +28,42 @@ impl CardBehavior for SelhoffOccultist {
                 TriggeredAbilityDef {
                     kind: TriggerKind::SelfDies,
                     description: "target player mills a card".into(),
-                target_requirement: None,
+                    // CR 603.3b: chosen when the trigger goes on the stack.
+                    target_requirement: Some(TargetRequirement::PlayerOnly),
                 },
                 TriggeredAbilityDef {
                     kind: TriggerKind::AnyCreatureDies,
                     description: "target player mills a card".into(),
-                target_requirement: None,
+                    // CR 603.3b: chosen when the trigger goes on the stack.
+                    target_requirement: Some(TargetRequirement::PlayerOnly),
                 },
             ],
         }
     }
 
     /// When Selhoff Occultist itself dies, target player mills a card.
-    fn on_dies(&self, state: &mut GameState, object_id: ObjectId, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = state.get_object(object_id).map_or(crate::ids::PlayerId(0), |o| o.controller);
-        present_mill_choice(state, object_id, controller, registry);
+    /// CR 603.3b: the target arrived with the trigger, chosen when it went on
+    /// the stack — the engine's `process_pending_trigger_pushes` auto-picks a
+    /// lone legal target or prompts, and applies hexproof filtering. This used
+    /// to build its own prompt at resolution, which also skipped the CR 603.3c
+    /// "no legal targets" removal and the CR 608.2b legality re-check.
+    fn on_dies(&self, state: &mut GameState, _object_id: ObjectId, chosen_targets: &[Target], registry: &CardRegistry) {
+        mill_target(state, chosen_targets, registry);
     }
 
     /// When another creature dies, target player mills a card.
-    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, _chosen_targets: &[Target], registry: &CardRegistry) {
-        let controller = match state.get_object(self_id) {
-            Some(o) if o.zone == Zone::Battlefield => o.controller,
-            _ => return,
-        };
-        present_mill_choice(state, self_id, controller, registry);
+    fn on_any_creature_dies(&self, state: &mut GameState, self_id: ObjectId, _dead_id: ObjectId, _dead_controller: PlayerId, _dead_damaged_by: &[ObjectId], _dead_toughness: i32, _dead_is_token: bool, chosen_targets: &[Target], registry: &CardRegistry) {
+        if state.get_object(self_id).is_none_or(|o| o.zone != Zone::Battlefield) {
+            return;
+        }
+        mill_target(state, chosen_targets, registry);
     }
 }
 
-fn present_mill_choice(state: &mut GameState, source_id: ObjectId, controller: PlayerId, registry: &CardRegistry) {
-    let options: Vec<Target> = state.players.iter()
-        .filter(|p| !state.player_has_hexproof(p.id, registry) || p.id == controller)
-        .map(|p| Target::Player(p.id))
-        .collect();
-
-    if options.is_empty() {
-        return;
-    }
-
-    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-        player: controller,
-        source: source_id,
-        choice: ResolutionChoiceKind::ChooseTarget {
-            description: "Selhoff Occultist: target player mills a card".into(),
-            options,
-            optional: false,
-            effect: PendingEffect::Mill { count: 1, source_name: "Selhoff Occultist".into() },
-        },
-    });
+/// "...target player mills a card."
+fn mill_target(state: &mut GameState, chosen_targets: &[Target], registry: &CardRegistry) {
+    let Some(Target::Player(pid)) = chosen_targets.first() else { return };
+    crate::engine::mill_cards(state, *pid, 1, registry);
+    state.log(crate::state::LogLevel::Event,
+        format!("Selhoff Occultist: p{} milled a card", pid.0));
 }
