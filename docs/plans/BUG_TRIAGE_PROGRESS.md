@@ -85,6 +85,64 @@ before starting — recorded this backwards ("always empty for non-token
 permanents"). Corrected, with the two superseded entries marked RESOLVED in
 place so a top-to-bottom read cannot act on them.
 
+## Second root-cause refactor: card logic in the engine
+
+**The rule: no card-specific logic in engine modules.** Enforced by
+`mtg-engine/tests/engine_knows_no_cards.rs`. It had leaked in by two routes.
+
+**By name.** `engine.rs` called `registry.get_id_by_name("Evil Twin")` — twice —
+to re-find a copy's granted ability, because the copy overwrites `card_id` and
+the granting card's identity was otherwise lost. `sba.rs` looked up
+"Garruk Relentless" to run his state-triggered ability, with the "two or fewer
+loyalty" threshold and trigger text written into state-based actions. Both are
+now generic: `GameObject::copy_grantor` (CR 706.2 — a copy effect may add
+abilities) and `CardBehavior::state_trigger_condition` /
+`state_trigger_description` (CR 603.8).
+
+**By enum variant.** `PendingEffect` is a closed engine enum, so a card needing
+a deferred resolution had to add a variant *and* an engine match arm to execute
+it. That is structurally guaranteed to pull card rules into the engine, and it
+had: Ghost Quarter's library search, Moorland Haunt's Spirit token, Curse of
+Oblivion's exile loop, Elder Cathar's Human bonus, Graveyard Shovel's 2 life,
+Tribute to Hunger's toughness gain, Grimgrin's counter, Bloodgift Demon's
+draw-and-lose-1, Fiend Hunter's bookkeeping, Night Terrors' exile, Bitterheart
+Witch's two-step Curse search, Garruk's -1 tutor, and ~70 lines of Divine
+Reckoning's entire choice chain — each with the card's name in the engine's log
+strings.
+
+`PendingEffect::CardEffect { source_id, key }` replaces them: the engine routes
+the chosen target back to the source card's `CardBehavior::resolve_card_effect`
+and does nothing else. Chain state travels in `key`, which the engine treats as
+opaque — the shape of a card's intermediate state is not the engine's business.
+**PendingEffect went from 29 variants to 16**, and every remaining one is a
+general primitive.
+
+Also generalised: `damage.rs` had `is_non_wolf_damage_prevented`, hardcoding
+Moonmist's subtype list behind a `TemporaryEffect` variant named after it. Now
+`PreventCombatDamageExcept { filter }` — which is what the card actually says —
+with Moonmist supplying the filter. And `PendingEffect::AddCounters` carried a
+`human_bonus: bool`, i.e. Elder Cathar's rule as a flag on a shared effect; the
+card had a *second* copy of the same check for its auto-pick path, so the rule
+was written twice and could drift.
+
+Added `GameState::change_life` / `gain_life` / `lose_life`: every site was
+hand-rolling read-life, write-life, push `LifeChanged`, so a site that forgot
+the event would silently break any life-total watcher.
+
+**The guard has two checks**, both verified by reintroducing a violation:
+a literal card name passed to `get_id_by_name` in an engine module, and a
+`PendingEffect` variant used by exactly one card. The second is a *signal*, not
+proof — a general primitive can have one user today — so such variants must be
+listed with the reason they are general. Six are (DebuffUntilEOT,
+CantBlockThisTurn, Mill, DestroyCreature, ReturnToHand, CopyCreature); the
+thirteen removed would all have failed, because their arms spelled out card
+text rather than applying a general rule to card-supplied parameters. Stale
+entries fail too.
+
+**Falkenrath Noble** turned out never to need a deferred effect at all — its
+target is locked in at CR 603.3d, so it was using `PendingEffect` as a plain
+function call. It now applies its own drain directly.
+
 ## Cluster status
 
 | # | Cluster | Tickets | Status |
