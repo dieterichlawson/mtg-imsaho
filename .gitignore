@@ -19,3 +19,7 @@
 .claude/settings.local.json
 .claude/worktrees/
 .*.swp
+
+# Python bytecode caches from scripts/
+__pycache__/
+*.pyc
