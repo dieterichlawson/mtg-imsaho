@@ -1,11 +1,15 @@
 ---
 id: moldgraf_monstrosity-01
-status: new
+status: fixed
 card: Moldgraf Monstrosity
 audit_run_id: 2026-04-19-moldgraf_monstrosity-audit
 audit_model: sonnet
 audit_tokens: 28519
 audit_duration: 480
+fixed_sha: 64f2e6f
+fixed_at: 2026-08-24T01:12:48Z
+test_file: mtg-engine/tests/resolution_time_checks.rs
+fix_note: Exile applies only to the card in the graveyard; the two-creature return happens either way.
 ---
 
 ## Audit Finding

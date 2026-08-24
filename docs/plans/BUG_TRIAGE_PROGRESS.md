@@ -472,23 +472,69 @@ assert what they mean.
   `mill_one`, so no `CreatureCardMilled` event was emitted and Undead
   Alchemist never saw it.
 
+### Cluster 7, continued — "at once", and reading state at the wrong moment
+
+- **Simultaneous destruction (CR 700.2c)** — "destroy all creatures" is one
+  event, not a sequence of them, and the difference is observable. Angelic
+  Overseer is "indestructible as long as you control a Human"; when a sweeper
+  catches the Overseer and its controller's last Human together, the Human is
+  still on the battlefield at the moment destruction happens, so the Overseer
+  survives. A loop over `try_destroy` got that wrong whenever it reached the
+  Human first — and gave a different answer depending on list order.
+  `try_destroy_all` decides for every permanent against the state before any of
+  them died, and captures each death's last known information there too
+  (CR 608.2g) rather than after earlier deaths changed the board. Divine
+  Reckoning, Paraselene and Witchbane Orb go through it.
+- **Simultaneous discard (CR 101.4)** — Liliana's +1 discarded as each player
+  chose, so control returned to the game loop — which collects triggers — with
+  one card already in the graveyard and the next player not yet asked. A
+  discard watcher could see it mid-choice. `ChooseCardFromHand` now carries
+  `discard_immediately`; Liliana collects and discards together. Her queue of
+  remaining players was also packed by joining player ids with commas and
+  parsing the result **as a u64**, silently 0 with more than one player left.
+- **`GameState::discard_card`** — "move to graveyard, then push Discarded" was
+  written out at thirteen sites, and a site that forgot the event silently
+  broke every discard watcher.
+- **"You may search" (CR 701.19)** — an optional search skipped the question
+  entirely when nothing qualified and shuffled anyway. The decision is the
+  player's, and the unconditional shuffle leaked that there had been nothing to
+  find. Fixed in the shared helper, not in Ghost Quarter.
+- **"You may pay" (CR 608.2g)** — Frightful Delusion offered its choice only to
+  a player who already had {1} floating and silently countered everyone else.
+  There is no priority window mid-resolution, so the engine now does what it
+  does for every other cost: works out a tap plan and runs it on "yes"
+  (`can_pay_with_sources` / `pay_cost_with_sources`). The handler also ignored
+  whether payment succeeded, so answering "pay" with an empty pool saved the
+  spell for free.
+- **Moldgraf Monstrosity** — "exile it" ran unconditionally, so the second of
+  two simultaneous death triggers exiled a creature the first had already
+  returned to the battlefield.
+
 ## Next up
 
-1. The 14 remaining one-offs. Two are architectural rather than local:
-   - `instigator_gang-02` — "attacking creatures you control get +X/+0" is
-     modelled as an `AnyCreatureAttacks` trigger pushing
-     `ModifyPTWhileSourceInPlay` rather than a static continuous effect. Three
-     divergences follow: the buff persists past end of combat, it misses
-     creatures put onto the battlefield attacking, and it misses existing
-     attackers if the Gang enters after attackers are declared.
-   - `shimmering_grotto-01` — "{1}, {T}: Add one mana of any color" is a mana
-     ability under CR 605.1a but is exposed through `activated_abilities`, so
-     the autotap planner never sees it. `ManaAbilityDef` has no cost field and
-     cannot express a choice of color; both would need to change.
-2. `should_trigger` is the hook for any future intervening-if card — check for
-   one whenever a ticket says "the condition is only evaluated at resolution".
-3. `can_pay_tap_cost` is the hook for any future `{T}` cost. Card code that
-   re-derives a cost the engine already checks is the recurring shape of this
-   whole backlog.
+The 9 remaining one-offs. Two are architectural rather than local:
 
-**Backlog count: 102 fixed / 14 open** (was 2 / 114 at the start of this pass).
+- `instigator_gang-02` — "attacking creatures you control get +X/+0" is modelled
+  as an `AnyCreatureAttacks` trigger pushing `ModifyPTWhileSourceInPlay` rather
+  than a static continuous effect. Three divergences follow: the buff persists
+  past end of combat, it misses creatures put onto the battlefield attacking,
+  and it misses existing attackers if the Gang enters after attackers are
+  declared.
+- `shimmering_grotto-01` — "{1}, {T}: Add one mana of any color" is a mana
+  ability under CR 605.1a but is exposed through `activated_abilities`, so the
+  autotap planner never sees it. `ManaAbilityDef` has no cost field and cannot
+  express a choice of color; both would need to change.
+
+Hooks worth reaching for before writing a new special case:
+
+- `should_trigger` for any intervening-if condition (CR 603.4).
+- `can_pay_tap_cost` for any `{T}` cost; `can_pay_with_sources` for any "you
+  may pay".
+- `try_destroy_all` whenever an effect destroys more than one thing.
+- `search_library` for anything that searches, so the "may" and the shuffle
+  stay right.
+
+Card code that re-derives something the engine already checks is the recurring
+shape of this whole backlog.
+
+**Backlog count: 107 fixed / 9 open** (was 2 / 114 at the start of this pass).

@@ -1,11 +1,15 @@
 ---
 id: liliana_of_the_veil-01
-status: new
+status: fixed
 card: Liliana of the Veil
 audit_run_id: 2026-04-19-liliana_of_the_veil-audit
 audit_model: sonnet
 audit_tokens: 28126
 audit_duration: 882
+fixed_sha: 0c32353
+fixed_at: 2026-08-24T01:12:48Z
+test_file: mtg-engine/tests/simultaneous_events.rs
+fix_note: Liliana +1 collects every choice before any card leaves a hand (CR 101.4); ChooseCardFromHand gained discard_immediately.
 ---
 
 ## Audit Finding

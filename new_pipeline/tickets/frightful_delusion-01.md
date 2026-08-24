@@ -1,11 +1,15 @@
 ---
 id: frightful_delusion-01
-status: new
+status: fixed
 card: Frightful Delusion
 audit_run_id: 2026-04-19-frightful_delusion-audit
 audit_model: sonnet
 audit_tokens: 12774
 audit_duration: 838
+fixed_sha: 8c97bcf
+fixed_at: 2026-08-24T01:12:48Z
+test_file: mtg-engine/tests/resolution_time_checks.rs
+fix_note: The prompt is always presented; legal_actions offers paying when the mana can be produced by tapping, and the payment result is honoured.
 ---
 
 ## Audit Finding

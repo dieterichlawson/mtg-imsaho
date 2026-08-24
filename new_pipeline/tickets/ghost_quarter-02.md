@@ -1,11 +1,15 @@
 ---
 id: ghost_quarter-02
-status: new
+status: fixed
 card: Ghost Quarter
 audit_run_id: 2026-04-19-ghost_quarter-audit
 audit_model: sonnet
 audit_tokens: 25466
 audit_duration: 1899
+fixed_sha: 7422446
+fixed_at: 2026-08-24T01:12:48Z
+test_file: mtg-engine/tests/resolution_time_checks.rs
+fix_note: An optional search always asks, and a player who declines does not shuffle. Fixed in the shared search_library helper.
 ---
 
 ## Audit Finding

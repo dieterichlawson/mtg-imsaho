@@ -1,11 +1,15 @@
 ---
 id: divine_reckoning-01
-status: new
+status: fixed
 card: Divine Reckoning
 audit_run_id: 2026-04-19-divine_reckoning-audit
 audit_model: sonnet
 audit_tokens: 33181
 audit_duration: 977
+fixed_sha: 677e197
+fixed_at: 2026-08-24T01:12:48Z
+test_file: mtg-engine/tests/simultaneous_events.rs
+fix_note: destruction::try_destroy_all decides for every permanent against the state before any of them died (CR 700.2c).
 ---
 
 ## Audit Finding
