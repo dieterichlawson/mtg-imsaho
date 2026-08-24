@@ -1686,6 +1686,30 @@ impl GameState {
         })
     }
 
+    /// Whether a player has protection from `color`.
+    #[must_use]
+    pub fn player_has_protection_from(&self, player: PlayerId, color: crate::types::Color, registry: &crate::cards::CardRegistry) -> bool {
+        self.objects.values().any(|o| {
+            o.zone == Zone::Battlefield
+                && o.controller == player
+                && registry.get(o.card_id)
+                    .is_some_and(|b| b.grants_player_protection_from().contains(&color))
+        })
+    }
+
+    /// Whether `aura_id` can legally be attached to `player`.
+    ///
+    /// CR 702.16b: a player with protection from a color can't be enchanted by
+    /// Auras of that color. CR 303.4h: an Aura that would enter the
+    /// battlefield attached to something it can't legally enchant doesn't
+    /// enter at all — so this is checked both when offering the choice and
+    /// again when the attachment is actually made.
+    #[must_use]
+    pub fn player_can_be_enchanted_by(&self, aura_id: ObjectId, player: PlayerId, registry: &crate::cards::CardRegistry) -> bool {
+        !self.colors_of(aura_id, registry).into_iter()
+            .any(|c| self.player_has_protection_from(player, c, registry))
+    }
+
     /// Add counters to a permanent.
     pub fn add_counters(&mut self, id: ObjectId, counter_type: crate::types::CounterType, count: u32) {
         // CR 121.1: counters go on permanents. A permanent that has left the

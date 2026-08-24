@@ -615,6 +615,15 @@ pub trait CardBehavior: Send + Sync {
     /// Whether this permanent grants its controller hexproof (e.g., Witchbane Orb).
     fn grants_player_hexproof(&self) -> bool { false }
 
+    /// Colors this permanent grants its controller protection from
+    /// (e.g. a "you have protection from red" effect).
+    ///
+    /// Player protection is not the same restriction as hexproof: hexproof
+    /// stops the player being targeted, protection additionally stops them
+    /// being enchanted by an Aura of that color (CR 702.16b), which is how a
+    /// Curse can fail to attach even to a player who was legally targeted.
+    fn grants_player_protection_from(&self) -> Vec<crate::types::Color> { Vec::new() }
+
     /// Called after a mana ability is activated. Used for mana abilities with side effects
     /// (e.g., Deranged Assistant mills a card when tapped for mana).
     fn on_activate_mana_ability(&self, _state: &mut GameState, _object_id: ObjectId, _ability_index: usize, _registry: &CardRegistry) {}

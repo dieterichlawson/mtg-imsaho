@@ -1,11 +1,15 @@
 ---
 id: grimoire_of_the_dead-02
-status: new
+status: fixed
 card: Grimoire of the Dead
 audit_run_id: 2026-04-19-grimoire_of_the_dead-audit
 audit_model: sonnet
 audit_tokens: 22452
 audit_duration: 439
+fixed_sha: b8a6354
+fixed_at: 2026-08-24T01:35:16Z
+test_file: mtg-engine/tests/counter_costs.rs
+fix_note: ActivatedAbilityDef::counter_cost: the engine gates on the counters and removes exactly three before the sacrifice clears the rest.
 ---
 
 ## Audit Finding

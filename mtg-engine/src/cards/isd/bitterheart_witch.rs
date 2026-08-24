@@ -12,9 +12,14 @@ pub struct BitterheartWitch;
 impl BitterheartWitch {
     /// Present the "target player" choice after a Curse has been selected.
     fn present_player_choice(state: &mut GameState, self_id: ObjectId, controller: PlayerId, curse_id: ObjectId, registry: &CardRegistry) {
+        // Two separate restrictions. Hexproof stops the ability targeting the
+        // player at all; protection from the Curse's color stops the Curse
+        // being attached to them even if they could be targeted (CR 702.16b),
+        // which makes them an illegal choice for "attached to target player".
         let player_targets: Vec<crate::actions::Target> = (0..state.players.len())
             .map(|i| PlayerId(u8::try_from(i).unwrap_or(u8::MAX)))
             .filter(|&pid| !state.player_has_hexproof(pid, registry) || pid == controller)
+            .filter(|&pid| state.player_can_be_enchanted_by(curse_id, pid, registry))
             .map(crate::actions::Target::Player)
             .collect();
 
@@ -149,14 +154,22 @@ impl CardBehavior for BitterheartWitch {
         let Target::Player(pid) = target else { return };
 
         let name = state.obj_name(curse_id);
-        state.get_player_mut(controller).library_order.retain(|&id| id != curse_id);
-        state.move_object(curse_id, crate::types::Zone::Battlefield, registry);
-        if let Some(obj) = state.get_object_mut(curse_id) {
-            obj.attached_to_player = Some(*pid);
-            obj.summoning_sick = false;
+        // CR 303.4h: an Aura that would enter attached to something it can't
+        // legally enchant doesn't enter the battlefield — it stays where it
+        // is. The shuffle below still happens; the search did.
+        if !state.player_can_be_enchanted_by(curse_id, *pid, registry) {
+            state.log(crate::state::LogLevel::Event,
+                format!("Bitterheart Witch: {name} can't enchant p{} and stays in the library", pid.0));
+        } else {
+            state.get_player_mut(controller).library_order.retain(|&id| id != curse_id);
+            state.move_object(curse_id, crate::types::Zone::Battlefield, registry);
+            if let Some(obj) = state.get_object_mut(curse_id) {
+                obj.attached_to_player = Some(*pid);
+                obj.summoning_sick = false;
+            }
+            state.log(crate::state::LogLevel::Event,
+                format!("Bitterheart Witch: attached {name} to p{}", pid.0));
         }
-        state.log(crate::state::LogLevel::Event,
-            format!("Bitterheart Witch: attached {name} to p{}", pid.0));
 
         use rand::seq::SliceRandom;
         let mut rng = rand::thread_rng();
