@@ -239,6 +239,51 @@ those to agree.
 **Guard.** Extend `engine_knows_no_cards.rs` style: a test that every
 `GameEvent` which can trigger has exactly one collection site.
 
+### What was done (and where it diverged from the plan)
+
+The duplication turned out not to be the self/watch pairing. It was that
+all twenty variants restated the *same four facts about the source* —
+object id, card id, controller, description — under four different naming
+conventions (`watcher_id` / `object_id` / `dead_id` / `creature_id`, and the
+matching `*_card_id`). That is why five accessors and `display_name` were
+each a twenty-arm or-pattern over one field.
+
+So the shape is `PendingTrigger { source: TriggerSource, event: TriggerEvent }`
+rather than the planned `subject: TriggerSubject`. The self and watcher
+events stay separate variants, deliberately: they dispatch to different
+`CardBehavior` hooks and match different `TriggerKind`s, and a card can have
+both — Blood Artist's "whenever this or another creature dies" has to fire
+its watcher ability when it dies itself, which a `source.id == subject.id`
+test would get wrong. What they no longer do is carry two independent
+descriptions of the same source.
+
+The predicted drift was real and worse than expected. It was not two
+mismatched guards but ten: half the dispatch arms gated on the source still
+being on the battlefield and half did not, and the split ran through matched
+pairs (a creature's own combat-damage trigger resolved after it died, a
+watcher's did not; same for attacks). CR 113.7a says a triggered ability on
+the stack is independent of its source, so the ungated half was right — the
+same rule already applied to the end-step arm for Reaper from the Abyss. The
+gate is gone from the engine entirely.
+
+Removing it exposed twenty-three cards that had written the gate themselves.
+Sixteen are protective and stay (transform needs a battlefield permanent; a
+card that puts a counter on itself must not counter a graveyard card). Seven
+were bugs, fixed with `tests/trigger_source_independence.rs`: Rakish Heir,
+Curse of Stalked Prey, Balefire Dragon, Burning Vengeance, Charmbreaker
+Devils, Curiosity, and the three upkeep Curses. The Curses needed
+`GameState::attached_player` — `move_object` cleared `attached_to_player`, so
+a destroyed Curse no longer knew whom it had cursed (CR 608.2).
+
+Two smaller things fell out: `chosen_targets` now lives on the source, so
+every trigger can carry targets (seven of twenty variants had the field, so a
+`target_requirement` declared on any other kind was silently dropped); and
+`display_name` is transform-aware for every kind, not just upkeep.
+
+Guard: `triggers_are_built_in_one_place` (a trigger can only be constructed
+in `triggers/collect/`, plus the two the engine raises itself) and
+`trigger_dispatch_does_not_gate_on_the_source_zone`.
+
 ---
 
 ## Phase 4 — continuous effects: conditional twins, and a real restriction/requirement category

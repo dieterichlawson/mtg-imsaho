@@ -158,3 +158,82 @@ fn curse_of_stalked_prey_gives_its_counter_after_the_curse_is_destroyed() {
     assert_eq!(counters_of(&state, attacker, CounterType::PlusOnePlusOne), 1,
         "CR 113.7a/608.2: the counter is placed even though the Curse is gone");
 }
+
+// ---------------------------------------------------------------------------
+// Structural guards
+// ---------------------------------------------------------------------------
+
+fn engine_sources() -> Vec<(std::path::PathBuf, String)> {
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut files = Vec::new();
+    fn walk(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+        for e in std::fs::read_dir(dir).expect("readable").flatten() {
+            let p = e.path();
+            if p.is_dir() { walk(&p, out); }
+            else if p.extension().is_some_and(|x| x == "rs") { out.push(p); }
+        }
+    }
+    walk(&src, &mut files);
+    files.into_iter()
+        .map(|p| { let t = std::fs::read_to_string(&p).expect("readable"); (p, t) })
+        .collect()
+}
+
+/// A trigger is built in exactly one place per event, and only where events
+/// are turned into triggers.
+///
+/// `TriggerSource` is the one way to name a trigger's source, so counting its
+/// constructions counts the ways a trigger can come into existence. Everything
+/// that reads a `GameEvent` goes through `triggers/collect/`; the two
+/// exceptions are triggers the engine raises itself rather than off an event —
+/// a state-triggered ability (CR 603.8) during SBA processing, and the ETB
+/// ability a copy effect gives a new copy (CR 614.12).
+#[test]
+fn triggers_are_built_in_one_place() {
+    const ALLOWED: &[&str] = &[
+        "triggers/collect/mod.rs", // Collector::emit — every event-driven trigger
+        "sba.rs",                  // CR 603.8 state-triggered abilities
+        "engine/effects.rs",       // CR 614.12 ETB for a permanent that entered as a copy
+    ];
+    let mut offenders = Vec::new();
+    for (path, text) in engine_sources() {
+        let rel = path.to_string_lossy().replace('\\', "/");
+        if ALLOWED.iter().any(|a| rel.ends_with(a)) {
+            continue;
+        }
+        for (n, line) in text.lines().enumerate() {
+            let l = line.trim();
+            if l.starts_with("pub struct TriggerSource") || l.starts_with("impl TriggerSource") {
+                continue; // the definition, not a construction
+            }
+            if l.contains("TriggerSource::new(") || l.contains("TriggerSource {") {
+                offenders.push(format!("{rel}:{}: {}", n + 1, line.trim()));
+            }
+        }
+    }
+    assert!(offenders.is_empty(),
+        "triggers must be built through Collector::emit in triggers/collect/, \
+         not spread across the engine:\n{}", offenders.join("\n"));
+}
+
+/// `resolve_next_trigger` does not consult the source's zone.
+///
+/// CR 113.7a: a triggered ability on the stack is independent of its source.
+/// Ten of the old twenty dispatch arms gated on the source still being on the
+/// battlefield and ten did not; the rule is now stated once, by not being
+/// there at all. A handler that needs its permanent present checks for itself.
+#[test]
+fn trigger_dispatch_does_not_gate_on_the_source_zone() {
+    let (_, text) = engine_sources().into_iter()
+        .find(|(p, _)| p.file_name().is_some_and(|f| f == "triggers.rs"))
+        .expect("triggers.rs");
+    let start = text.find("pub fn resolve_next_trigger").expect("resolve_next_trigger");
+    let body = &text[start..];
+    let end = body.find("\npub fn process_triggers").unwrap_or(body.len());
+    let offenders: Vec<&str> = body[..end].lines()
+        .filter(|l| l.contains("Zone::Battlefield") && !l.trim_start().starts_with("//"))
+        .collect();
+    assert!(offenders.is_empty(),
+        "CR 113.7a: trigger dispatch must not check whether the source is still \
+         on the battlefield:\n{}", offenders.join("\n"));
+}
