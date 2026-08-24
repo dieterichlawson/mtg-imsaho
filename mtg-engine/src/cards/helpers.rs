@@ -388,9 +388,14 @@ pub fn search_library(
     description: &str,
     registry: &CardRegistry,
 ) {
-    // "You MAY search" is a real decision even when only one card qualifies —
-    // the player is entitled to decline — so an optional search always asks.
-    if optional && !candidates.is_empty() {
+    // "You MAY search" is a real decision even when only one card qualifies,
+    // or when nothing does — the player is entitled to decline, and a player
+    // who declines never searched, so they do not shuffle either. Asking
+    // regardless also keeps the prompt from leaking whether the library holds
+    // a match: an unconditional shuffle told the table there was nothing to
+    // find. With no candidates the only answer available is "decline", which
+    // is the right outcome, not a reason to skip the question.
+    if optional {
         let options: Vec<Target> = candidates.into_iter().map(Target::Object).collect();
         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
             player: searcher,
@@ -405,6 +410,8 @@ pub fn search_library(
         return;
     }
 
+    // Mandatory search from here on. CR 701.19: the search happened whether or
+    // not anything was found, so the shuffle happens too.
     match candidates.len() {
         0 => {
             state.log(crate::state::LogLevel::Event,

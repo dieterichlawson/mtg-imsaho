@@ -83,14 +83,10 @@ impl CardBehavior for GhostQuarter {
                 .copied()
                 .collect();
 
-            if basic_lands.is_empty() {
-                // No basic lands to find — shuffle anyway per oracle text.
-                use rand::seq::SliceRandom;
-                let mut rng = rand::thread_rng();
-                state.get_player_mut(target_controller).library_order.shuffle(&mut rng);
-                return;
-            }
-
+            // A controller with no basic lands is still offered the "may
+            // search" — declining is their choice to make, and a player who
+            // does not search does not shuffle. `search_library` handles that.
+            //
             // "...put it onto the battlefield, then shuffle." The land goes
             // straight to the battlefield untapped, which is why this could
             // not use the engine's search before it carried a destination.
