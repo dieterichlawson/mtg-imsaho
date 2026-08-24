@@ -64,7 +64,10 @@ impl CardBehavior for UnbreathingHorde {
         // count (per the Scryfall ruling: "it will count itself").
         let gy_count = u32::try_from(state.objects_in_zone(Zone::Graveyard, controller)
             .iter()
-            .filter(|o| o.id != self_id && Self::is_zombie(state, o.id, registry))
+            // "each Zombie CARD" — CR 109.1: a token is not a card. The
+            // battlefield count above says just "Zombie", so it correctly
+            // includes tokens; this one must not.
+            .filter(|o| o.id != self_id && state.is_card(o.id) && Self::is_zombie(state, o.id, registry))
             .count()).unwrap_or(u32::MAX);
 
         // Per ruling: count self when entering from graveyard.

@@ -1850,6 +1850,18 @@ impl GameState {
                 .is_some_and(|d| d.subtypes.iter().any(|s| s == subtype))
     }
 
+    /// CR 109.1: a "card" is a physical game object. A token is not one, so
+    /// any effect whose text says "card" must exclude tokens.
+    ///
+    /// This matters in the graveyard specifically. SBA removes a token from a
+    /// non-battlefield zone (CR 704.5e), but that is a discrete pass, not
+    /// something that happens the instant the token arrives — so a count taken
+    /// mid-resolution can see a token that is on its way out.
+    #[must_use]
+    pub fn is_card(&self, id: ObjectId) -> bool {
+        self.get_object(id).is_some_and(|o| !o.is_token)
+    }
+
     /// Printed keywords of the object: the active face's, or the object's own
     /// for something with no registry face (a generic token, whose
     /// `obj.keywords` ARE its printed keywords).

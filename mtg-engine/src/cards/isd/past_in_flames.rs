@@ -44,7 +44,7 @@ impl CardBehavior for PastInFlames {
 
         // Grant flashback to each instant and sorcery in the graveyard.
         let targets: Vec<(ObjectId, ManaCost)> = state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.id != object_id)
+            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && !o.is_token && o.id != object_id)
             .filter_map(|o| {
                 state.face_data(o.id, registry).and_then(|d| {
                     let is_instant_or_sorcery = d.card_types.contains(&CardType::Instant)

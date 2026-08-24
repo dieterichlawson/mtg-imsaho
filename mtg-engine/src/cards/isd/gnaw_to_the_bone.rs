@@ -32,7 +32,7 @@ impl CardBehavior for GnawToTheBone {
         let controller = state.get_object(object_id).map_or(PlayerId(0), |o| o.controller);
         // Count creature cards in controller's graveyard (the spell is still on the stack, not in graveyard).
         let creature_count = state.objects.values()
-            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.power.is_some() && o.id != object_id)
+            .filter(|o| o.zone == Zone::Graveyard && o.owner == controller && o.power.is_some() && !o.is_token && o.id != object_id)
             .count();
         let life_gain = i32::try_from(creature_count).unwrap_or(i32::MAX) * 2;
         if life_gain > 0 {
