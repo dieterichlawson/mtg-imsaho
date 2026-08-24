@@ -33,7 +33,9 @@ use std::path::{Path, PathBuf};
 const ALLOWED: &[(&str, &str)] = &[
     ("state.rs", "defines the characteristics layer itself"),
     ("view.rs", "renders the object for display, not a rules decision"),
-    ("engine.rs", "copy effects and token creation write the object's own base"),
+    ("engine.rs", "setup_game builds library objects from a decklist; no game object exists yet"),
+    ("engine/mana_sources.rs", "matches a CARD being cast against a SpellFilter by CardId — a \
+      DFC is always cast as its front face (CR 712.6a), so the registry face is the right read"),
     ("cards/isd/olivia_voldaren.rs", "grants the Vampire subtype at runtime"),
     ("cards/isd/grimoire_of_the_dead.rs", "grants Zombie and black at runtime"),
     ("cards/isd/nevermore.rs", "names a CARD from the registry; no game object involved"),
