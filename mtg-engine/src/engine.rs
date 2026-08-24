@@ -2775,8 +2775,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                 .map(|&id| card_name(&new_state, registry, id))
                 .collect();
             for &card_id in cards {
-                new_state.events.push(GameEvent::Discarded { player, object: card_id });
-                new_state.move_object(card_id, Zone::Graveyard, registry);
+                new_state.discard_card(card_id, registry);
             }
             if is_hand_size {
                 new_state.log(LogLevel::Event,
@@ -2944,8 +2943,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                         let hand: Vec<_> = new_state.objects_in_zone(Zone::Hand, controller)
                             .iter().map(|o| o.id).collect();
                         if hand.len() == 1 {
-                            new_state.move_object(hand[0], Zone::Graveyard, registry);
-                            new_state.events.push(GameEvent::Discarded { player: controller, object: hand[0] });
+                            new_state.discard_card(hand[0], registry);
                             new_state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
                         } else if !hand.is_empty() {
                             new_state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -2955,6 +2953,7 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                                     description: "Frightful Delusion: choose a card to discard".into(),
                                     player: controller,
                                     cards: hand,
+                                    discard_immediately: true,
                                 },
                             });
                             // Move the spell to graveyard before the discard choice.
@@ -2986,15 +2985,17 @@ pub fn submit_action(state: &GameState, action: &Action, registry: &CardRegistry
                             }
                         }
                     }
-                    (ResolutionChoiceKind::ChooseCardFromHand { .. },
+                    (ResolutionChoiceKind::ChooseCardFromHand { discard_immediately, .. },
                      ResolvedChoice::ChosenCard(discard_id)) => {
-                        let name = new_state.obj_name(*discard_id);
-                        new_state.move_object(*discard_id, Zone::Graveyard, registry);
-                        new_state.events.push(GameEvent::Discarded {
-                            player: new_state.get_object(*discard_id).map_or(PlayerId(0), |o| o.owner),
-                            object: *discard_id,
-                        });
-                        new_state.log(LogLevel::Event, format!("Discarded {name}"));
+                        // CR 101.4: when several players are each choosing a
+                        // card to discard, the source collects the choices and
+                        // discards them together once the last one has chosen
+                        // — see `discard_immediately`.
+                        if *discard_immediately {
+                            let name = new_state.obj_name(*discard_id);
+                            new_state.discard_card(*discard_id, registry);
+                            new_state.log(LogLevel::Event, format!("Discarded {name}"));
+                        }
                         // Notify the source card about the discard (e.g., Civilized Scholar
                         // checks if the discarded card was a creature to trigger transform).
                         let source_card_id = new_state.get_object(choice_source).map(|o| o.card_id);

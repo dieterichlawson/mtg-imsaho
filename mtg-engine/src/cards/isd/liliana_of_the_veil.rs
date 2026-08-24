@@ -69,10 +69,8 @@ impl CardBehavior for LilianaOfTheVeil {
 
         match ability_index {
             0 => {
-                // +1: Each player discards a card.
-                // Per ruling: active player chooses first, then each other player in turn order.
-                // Present ChooseCardFromHand to the active player first.
-                // Use card_state to track which players still need to discard.
+                // +1: Each player discards a card. The active player chooses
+                // first, then each other player in turn order (CR 101.4).
                 let active = state.active_player;
 
                 // Build list of players who need to discard, starting with active player.
@@ -103,57 +101,13 @@ impl CardBehavior for LilianaOfTheVeil {
                     return;
                 }
 
-                // Store remaining players in card_state for chaining.
-                // We'll process them one at a time via on_discard_choice.
-                let first_player = players_to_discard[0];
-                let remaining: Vec<PlayerId> = players_to_discard[1..].to_vec();
-
-                // Store remaining player IDs in card_state as a comma-separated string.
-                if let Some(obj) = state.get_object_mut(self_id) {
-                    let remaining_str = remaining.iter()
-                        .map(|p| p.0.to_string())
-                        .collect::<Vec<_>>()
-                        .join(",");
-                    obj.card_state.insert("liliana_discard_remaining".into(),
-                        crate::ids::ObjectId(remaining_str.parse::<u64>().unwrap_or(0)));
-                    // Use a more robust encoding: store count and each player ID.
-                    // Since card_state maps String->ObjectId, encode as separate keys.
-                    obj.card_state.insert("liliana_discard_count".into(),
-                        crate::ids::ObjectId(remaining.len() as u64));
-                    for (i, pid) in remaining.iter().enumerate() {
-                        obj.card_state.insert(format!("liliana_discard_{i}"),
-                            crate::ids::ObjectId(u64::from(pid.0)));
-                    }
-                }
-
-                let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, first_player)
-                    .iter().map(|o| o.id).collect();
-
-                if hand.len() == 1 {
-                    // Only one card — auto-discard.
-                    let card_id = hand[0];
-                    let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    state.move_object(card_id, Zone::Graveyard, registry);
-                    state.events.push(crate::events::GameEvent::Discarded {
-                        player: first_player,
-                        object: card_id,
-                    });
-                    state.log(crate::state::LogLevel::Event,
-                        format!("Liliana +1: p{} discarded {}", first_player.0, name));
-                    // Chain to next player.
-                    Self::chain_next_discard(state, self_id, registry);
-                } else {
-                    // Present choice to the first player.
-                    state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-                        player: first_player,
-                        source: self_id,
-                        choice: ResolutionChoiceKind::ChooseCardFromHand {
-                            description: "Liliana +1: choose a card to discard".into(),
-                            player: first_player,
-                            cards: hand,
-                        },
-                    });
-                }
+                // CR 101.4: every player chooses in turn order, and the
+                // cards leave their hands simultaneously. So the choices are
+                // collected first — nothing is discarded until the last
+                // player has chosen — otherwise a discard trigger (Murder of
+                // Crows) fires and is seen while someone is still choosing.
+                Self::store_queue(state, self_id, &players_to_discard, &[]);
+                Self::advance(state, self_id, registry);
             }
             1 => {
                 // -2: Target player sacrifices a creature.
@@ -220,81 +174,107 @@ impl CardBehavior for LilianaOfTheVeil {
         }
     }
 
-    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, _discarded_id: ObjectId, registry: &CardRegistry) {
-        // After a player discards for Liliana +1, chain to the next player.
-        Self::chain_next_discard(state, self_id, registry);
+    fn on_discard_choice(&self, state: &mut GameState, self_id: ObjectId, discarded_id: ObjectId, registry: &CardRegistry) {
+        // The engine did NOT discard this card — `discard_immediately: false`.
+        // Record the choice and move on to the next player.
+        Self::push_chosen(state, self_id, discarded_id);
+        Self::advance(state, self_id, registry);
     }
 }
 
 impl LilianaOfTheVeil {
-    /// After one player has discarded for the +1, check if more players need to discard
-    /// and present the choice to the next one.
-    fn chain_next_discard(state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
-        // Read remaining player count from card_state.
-        let count = state.get_object(self_id)
-            .and_then(|o| o.card_state.get("liliana_discard_count").copied())
-            .map_or(0, |id| usize::try_from(id.0).unwrap_or(usize::MAX));
+    // The +1's intermediate state lives in `card_state`, which maps
+    // String -> ObjectId: a queue of players who have yet to choose, and the
+    // cards chosen so far. Both are counted lists rather than one packed
+    // value — the previous encoding parsed a comma-joined string of player ids
+    // *as a u64*, which silently became 0 for any game with more than one
+    // player left to ask.
+    const QUEUE_LEN: &'static str = "liliana_queue_len";
+    const CHOSEN_LEN: &'static str = "liliana_chosen_len";
 
-        if count == 0 {
-            // All players have discarded. Clean up card_state.
-            if let Some(obj) = state.get_object_mut(self_id) {
-                obj.card_state.remove("liliana_discard_count");
+    fn store_queue(state: &mut GameState, self_id: ObjectId, queue: &[PlayerId], chosen: &[ObjectId]) {
+        let Some(obj) = state.get_object_mut(self_id) else { return };
+        obj.card_state.retain(|k, _| !k.starts_with("liliana_"));
+        obj.card_state.insert(Self::QUEUE_LEN.into(), ObjectId(queue.len() as u64));
+        for (i, pid) in queue.iter().enumerate() {
+            obj.card_state.insert(format!("liliana_queue_{i}"), ObjectId(u64::from(pid.0)));
+        }
+        obj.card_state.insert(Self::CHOSEN_LEN.into(), ObjectId(chosen.len() as u64));
+        for (i, cid) in chosen.iter().enumerate() {
+            obj.card_state.insert(format!("liliana_chosen_{i}"), *cid);
+        }
+    }
+
+    fn load_queue(state: &GameState, self_id: ObjectId) -> (Vec<PlayerId>, Vec<ObjectId>) {
+        let Some(obj) = state.get_object(self_id) else { return (vec![], vec![]) };
+        let read = |key: &str, len_key: &str| -> Vec<ObjectId> {
+            let len = obj.card_state.get(len_key).map_or(0, |id| usize::try_from(id.0).unwrap_or(0));
+            (0..len)
+                .filter_map(|i| obj.card_state.get(&format!("{key}{i}")).copied())
+                .collect()
+        };
+        let queue = read("liliana_queue_", Self::QUEUE_LEN).into_iter()
+            .map(|id| PlayerId(u8::try_from(id.0).unwrap_or(u8::MAX)))
+            .collect();
+        (queue, read("liliana_chosen_", Self::CHOSEN_LEN))
+    }
+
+    fn push_chosen(state: &mut GameState, self_id: ObjectId, card: ObjectId) {
+        let (queue, mut chosen) = Self::load_queue(state, self_id);
+        chosen.push(card);
+        Self::store_queue(state, self_id, &queue, &chosen);
+    }
+
+    /// Ask the next player in the queue, or — when the queue is empty —
+    /// discard every collected card at once.
+    fn advance(state: &mut GameState, self_id: ObjectId, registry: &CardRegistry) {
+        let (mut queue, mut chosen) = Self::load_queue(state, self_id);
+
+        while !queue.is_empty() {
+            let player = queue.remove(0);
+            let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, player)
+                .iter().map(|o| o.id).collect();
+
+            if hand.is_empty() {
+                // A card may have left this player's hand since the ability
+                // started resolving.
+                state.log(crate::state::LogLevel::Event,
+                    format!("Liliana +1: p{} has no cards to discard", player.0));
+                continue;
             }
-            return;
-        }
-
-        // Pop the next player from the remaining list.
-        let next_player_id = state.get_object(self_id)
-            .and_then(|o| o.card_state.get("liliana_discard_0").copied())
-            .map_or(PlayerId(0), |id| PlayerId(u8::try_from(id.0).unwrap_or(u8::MAX)));
-
-        // Shift remaining players down and decrement count.
-        if let Some(obj) = state.get_object_mut(self_id) {
-            for i in 0..(count - 1) {
-                let next_key = format!("liliana_discard_{}", i + 1);
-                let val = obj.card_state.get(&next_key).copied().unwrap_or(crate::ids::ObjectId(0));
-                obj.card_state.insert(format!("liliana_discard_{i}"), val);
+            if hand.len() == 1 {
+                // No choice to make — but still no discard yet, because the
+                // players after this one have not chosen.
+                chosen.push(hand[0]);
+                continue;
             }
-            obj.card_state.remove(&format!("liliana_discard_{}", count - 1));
-            obj.card_state.insert("liliana_discard_count".into(),
-                crate::ids::ObjectId((count - 1) as u64));
-        }
 
-        let hand: Vec<ObjectId> = state.objects_in_zone(Zone::Hand, next_player_id)
-            .iter().map(|o| o.id).collect();
-
-        if hand.is_empty() {
-            // This player has no cards — skip and chain to next.
-            state.log(crate::state::LogLevel::Event,
-                format!("Liliana +1: p{} has no cards to discard", next_player_id.0));
-            Self::chain_next_discard(state, self_id, registry);
-            return;
-        }
-
-        if hand.len() == 1 {
-            // Only one card — auto-discard.
-            let card_id = hand[0];
-            let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-            state.move_object(card_id, Zone::Graveyard, registry);
-            state.events.push(crate::events::GameEvent::Discarded {
-                player: next_player_id,
-                object: card_id,
+            Self::store_queue(state, self_id, &queue, &chosen);
+            state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
+                player,
+                source: self_id,
+                choice: ResolutionChoiceKind::ChooseCardFromHand {
+                    description: "Liliana +1: choose a card to discard".into(),
+                    player,
+                    cards: hand,
+                    discard_immediately: false,
+                },
             });
-            state.log(crate::state::LogLevel::Event,
-                format!("Liliana +1: p{} discarded {}", next_player_id.0, name));
-            Self::chain_next_discard(state, self_id, registry);
             return;
         }
 
-        // Present choice to this player.
-        state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
-            player: next_player_id,
-            source: self_id,
-            choice: ResolutionChoiceKind::ChooseCardFromHand {
-                description: "Liliana +1: choose a card to discard".into(),
-                player: next_player_id,
-                cards: hand,
-            },
-        });
+        // Everyone has chosen. Now the cards leave their hands together.
+        for card in &chosen {
+            let name = state.obj_name(*card);
+            let owner = state.get_object(*card).map(|o| o.owner);
+            state.discard_card(*card, registry);
+            if let Some(owner) = owner {
+                state.log(crate::state::LogLevel::Event,
+                    format!("Liliana +1: p{} discarded {name}", owner.0));
+            }
+        }
+        if let Some(obj) = state.get_object_mut(self_id) {
+            obj.card_state.retain(|k, _| !k.starts_with("liliana_"));
+        }
     }
 }

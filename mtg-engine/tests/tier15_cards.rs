@@ -1915,9 +1915,10 @@ fn liliana_plus_one_each_player_discards_with_choice() {
         choice: ResolvedChoice::ChosenCard(p0_card_a),
     }, &reg);
 
-    // P0's chosen card should be in graveyard.
-    assert_eq!(state.get_object(p0_card_a).unwrap().zone, Zone::Graveyard);
-    // P0's other card should still be in hand.
+    // CR 101.4: the choice is recorded, but nothing has left a hand yet —
+    // every player chooses first and the cards are discarded together.
+    assert_eq!(state.get_object(p0_card_a).unwrap().zone, Zone::Hand,
+        "P0's card must stay in hand until P1 has also chosen");
     assert_eq!(state.get_object(p0_card_b).unwrap().zone, Zone::Hand);
 
     // Now P1 should be asked to choose.
@@ -1934,9 +1935,12 @@ fn liliana_plus_one_each_player_discards_with_choice() {
         choice: ResolvedChoice::ChosenCard(p1_card_b),
     }, &reg);
 
-    // P1's chosen card should be in graveyard.
+    // Now that the last player has chosen, both discards happen at once.
+    assert_eq!(state.get_object(p0_card_a).unwrap().zone, Zone::Graveyard,
+        "P0's chosen card is discarded when the last player has chosen");
     assert_eq!(state.get_object(p1_card_b).unwrap().zone, Zone::Graveyard);
-    // P1's other card should still be in hand.
+    // Each player's other card should still be in hand.
+    assert_eq!(state.get_object(p0_card_b).unwrap().zone, Zone::Hand);
     assert_eq!(state.get_object(p1_card_a).unwrap().zone, Zone::Hand);
 }
 

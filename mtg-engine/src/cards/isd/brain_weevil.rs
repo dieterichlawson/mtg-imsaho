@@ -53,11 +53,7 @@ impl CardBehavior for BrainWeevil {
             // If exactly 1 card, discard it (no choice needed, still need a second discard of 0).
             if hand.len() == 1 {
                 let card_id = hand[0];
-                state.move_object(card_id, Zone::Graveyard, registry);
-                state.events.push(crate::events::GameEvent::Discarded {
-                    player: *target_player,
-                    object: card_id,
-                });
+                state.discard_card(card_id, registry);
                 state.log(crate::state::LogLevel::Event,
                     format!("Brain Weevil: p{} discarded 1 card (only had 1)", target_player.0));
                 return;
@@ -65,11 +61,7 @@ impl CardBehavior for BrainWeevil {
             // If exactly 2 cards, discard both (no choice needed).
             if hand.len() == 2 {
                 for &card_id in &hand {
-                    state.move_object(card_id, Zone::Graveyard, registry);
-                    state.events.push(crate::events::GameEvent::Discarded {
-                        player: *target_player,
-                        object: card_id,
-                    });
+                    state.discard_card(card_id, registry);
                 }
                 state.log(crate::state::LogLevel::Event,
                     format!("Brain Weevil: p{} discarded 2 cards", target_player.0));
@@ -88,6 +80,7 @@ impl CardBehavior for BrainWeevil {
                     description: "Brain Weevil: choose a card to discard (1 of 2)".into(),
                     player: *target_player,
                     cards: hand,
+                    discard_immediately: true,
                 },
             });
         }
@@ -118,11 +111,7 @@ impl CardBehavior for BrainWeevil {
         if hand.len() == 1 {
             // Only one card left — auto-discard.
             let card_id = hand[0];
-            state.move_object(card_id, Zone::Graveyard, registry);
-            state.events.push(crate::events::GameEvent::Discarded {
-                player: target_player,
-                object: card_id,
-            });
+            state.discard_card(card_id, registry);
             state.log(crate::state::LogLevel::Event,
                 format!("Brain Weevil: p{} discarded 2nd card", target_player.0));
             return;
@@ -135,6 +124,7 @@ impl CardBehavior for BrainWeevil {
                 description: "Brain Weevil: choose a card to discard (2 of 2)".into(),
                 player: target_player,
                 cards: hand,
+                discard_immediately: true,
             },
         });
     }

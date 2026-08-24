@@ -1740,6 +1740,18 @@ impl GameState {
         self.change_life(player, -amount);
     }
 
+    /// Discard a card: move it to its owner's graveyard and announce it
+    /// (CR 701.8a).
+    ///
+    /// The move and the `Discarded` event were written out side by side at
+    /// thirteen call sites; a site that forgot the event silently broke every
+    /// discard watcher (Murder of Crows, Civilized Scholar's transform).
+    pub fn discard_card(&mut self, id: ObjectId, registry: &crate::cards::CardRegistry) {
+        let Some(player) = self.get_object(id).map(|o| o.owner) else { return; };
+        self.move_object(id, Zone::Graveyard, registry);
+        self.events.push(crate::events::GameEvent::Discarded { player, object: id });
+    }
+
     // ===== Characteristics layer =====
     //
     // THE RULE: an object's characteristics are
@@ -2253,6 +2265,16 @@ pub enum ResolutionChoiceKind {
         description: String,
         player: PlayerId,
         cards: Vec<ObjectId>,
+        /// Whether the engine discards the chosen card as soon as it is
+        /// chosen. True for an ordinary one-player discard.
+        ///
+        /// False when this is one of several choices being collected under
+        /// CR 101.4 — "each player discards a card" has every player choose in
+        /// APNAP order and the cards leave their hands *simultaneously*, so
+        /// the source card holds the choices and discards them together once
+        /// the last player has chosen. Discarding as we go would let a discard
+        /// trigger fire, and be seen, while a later player is still choosing.
+        discard_immediately: bool,
     },
     /// Choose one card from a revealed set to keep (Forbidden Alchemy).
     ChooseFromRevealed {

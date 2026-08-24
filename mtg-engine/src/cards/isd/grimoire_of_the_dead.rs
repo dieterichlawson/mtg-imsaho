@@ -102,11 +102,7 @@ impl CardBehavior for GrimoireOfTheDead {
                     // Only one card in hand -- auto-discard it.
                     let card_id = hand[0];
                     let name = state.get_object(card_id).map(|o| o.name.clone()).unwrap_or_default();
-                    state.move_object(card_id, Zone::Graveyard, registry);
-                    state.events.push(crate::events::GameEvent::Discarded {
-                        player: controller,
-                        object: card_id,
-                    });
+                    state.discard_card(card_id, registry);
                     state.log(crate::state::LogLevel::Event,
                         format!("Grimoire of the Dead: p{} discarded {}", controller.0, name));
 
@@ -124,6 +120,7 @@ impl CardBehavior for GrimoireOfTheDead {
                             description: "Grimoire of the Dead: choose a card to discard".into(),
                             player: controller,
                             cards: hand,
+                            discard_immediately: true,
                         },
                     });
                 }

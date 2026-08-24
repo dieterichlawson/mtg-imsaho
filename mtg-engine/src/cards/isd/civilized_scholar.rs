@@ -138,11 +138,7 @@ impl CardBehavior for CivilizedScholar {
                     o.power.is_some() || state.face_data(o.id, registry)
                         .is_some_and(|d| d.card_types.contains(&CardType::Creature))
                 });
-            state.move_object(discard_id, Zone::Graveyard, registry);
-            state.events.push(crate::events::GameEvent::Discarded {
-                player: controller,
-                object: discard_id,
-            });
+            state.discard_card(discard_id, registry);
             let discard_name = state.get_object(discard_id).map(|o| o.name.clone()).unwrap_or_default();
             state.log(crate::state::LogLevel::Event,
                 format!("Civilized Scholar: p{} discarded {}", controller.0, discard_name));
@@ -163,6 +159,7 @@ impl CardBehavior for CivilizedScholar {
                     description: "Civilized Scholar: choose a card to discard".into(),
                     player: controller,
                     cards: hand,
+                    discard_immediately: true,
                 },
             });
         }

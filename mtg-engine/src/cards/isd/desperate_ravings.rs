@@ -39,9 +39,7 @@ impl CardBehavior for DesperateRavings {
             .collect();
         let to_discard = hand.choose(&mut rand::thread_rng()).copied();
         if let Some(discard_id) = to_discard {
-            let owner = state.get_object(discard_id).map_or(crate::ids::PlayerId(0), |o| o.owner);
-            state.move_object(discard_id, Zone::Graveyard, registry);
-            state.events.push(crate::events::GameEvent::Discarded { player: owner, object: discard_id });
+            state.discard_card(discard_id, registry);
         }
     }
 }

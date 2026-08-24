@@ -73,8 +73,7 @@ impl CardBehavior for FrightfulDelusion {
                     let hand: Vec<_> = state.objects_in_zone(Zone::Hand, controller)
                         .iter().map(|o| o.id).collect();
                     if hand.len() == 1 {
-                        state.move_object(hand[0], Zone::Graveyard, registry);
-                        state.events.push(crate::events::GameEvent::Discarded { player: controller, object: hand[0] });
+                        state.discard_card(hand[0], registry);
                         state.log(LogLevel::Event, format!("p{} discarded a card", controller.0));
                     } else if !hand.is_empty() {
                         state.awaiting_action = Some(AwaitingAction::ResolutionChoice {
@@ -84,6 +83,7 @@ impl CardBehavior for FrightfulDelusion {
                                 description: "Frightful Delusion: choose a card to discard".into(),
                                 player: controller,
                                 cards: hand,
+                                discard_immediately: true,
                             },
                         });
                         // Move spell to graveyard before the discard choice.
