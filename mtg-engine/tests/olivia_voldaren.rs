@@ -114,8 +114,10 @@ fn olivia_stolen_creatures_return_when_olivia_leaves() {
     assert_eq!(state.get_object(target1).unwrap().controller, P0);
     assert_eq!(state.get_object(target2).unwrap().controller, P0);
 
-    // Olivia leaves the battlefield.
-    behavior.on_leave_battlefield(&mut state, olivia, &reg);
+    // Olivia leaves the battlefield. The control effect's condition is
+    // checked as a state-based action, not by a handler on the card.
+    mtg_engine::destruction::try_destroy(&mut state, olivia, &reg);
+    mtg_engine::sba::check_state_based_actions(&mut state, &reg);
 
     // Both stolen creatures should return to P1.
     assert_eq!(state.get_object(target1).unwrap().controller, P1,

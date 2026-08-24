@@ -1,11 +1,15 @@
 ---
 id: bitterheart_witch-01
-status: new
+status: fixed
 card: Bitterheart Witch
 audit_run_id: 2026-04-19-bitterheart_witch-audit
 audit_model: sonnet
 audit_tokens: 45598
 audit_duration: 898
+fixed_sha: d0afe9e
+fixed_at: 2026-08-24T01:39:16Z
+test_file: mtg-engine/tests/player_protection.rs
+fix_note: Adds player protection from a color and the enchant-legality check (CR 702.16b / 303.4h); Bitterheart Witch filters and re-checks.
 ---
 
 ## Audit Finding

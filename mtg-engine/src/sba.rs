@@ -17,6 +17,16 @@ pub fn check_state_based_actions(state: &mut GameState, registry: &CardRegistry)
     loop {
         let mut took_action = false;
 
+        // CR 611.2b: a "for as long as" duration ends the moment its condition
+        // stops being true. The engine has no continuous re-evaluation, so the
+        // check rides along with state-based actions — the closest thing to
+        // "the moment". First, because a permanent that has just changed hands
+        // should be back with its owner before anything else looks at who
+        // controls what.
+        if state.expire_control_effects() {
+            took_action = true;
+        }
+
         // Rule 704.5a: A player with 0 or less life loses the game.
         for i in 0..state.players.len() {
             let (lost, life, id) = {

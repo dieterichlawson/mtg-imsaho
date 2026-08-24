@@ -135,6 +135,10 @@ pub struct GameState {
     #[serde(default)]
     pub until_end_of_turn: Vec<TemporaryEffect>,
 
+    /// "Gain control of X for as long as ..." effects still in force.
+    #[serde(default)]
+    pub control_effects: Vec<ControlEffect>,
+
     /// Whether a creature has died this turn (for morbid).
     #[serde(default)]
     pub creature_died_this_turn: bool,
@@ -340,6 +344,7 @@ impl GameState {
             events: Vec::new(),
             game_log: Vec::new(),
             until_end_of_turn: Vec::new(),
+            control_effects: Vec::new(),
             creature_died_this_turn: false,
             day_night: None,
             num_spells_cast_this_turn: HashMap::new(),
@@ -1663,6 +1668,69 @@ impl GameState {
         }
     }
 
+    /// "Gain control of `object` for as long as `source`'s controller
+    /// controls it" (CR 611.2b).
+    ///
+    /// Records the duration so the engine can end it — see `ControlEffect`.
+    /// Card code must not keep its own list of what it stole: doing that meant
+    /// the control effect only ended in the one way that card happened to
+    /// check for.
+    pub fn gain_control_while_source_controlled(
+        &mut self,
+        object: ObjectId,
+        source: ObjectId,
+        registry: &crate::cards::CardRegistry,
+    ) {
+        let Some(source_obj) = self.get_object(source) else { return };
+        let source_controller = source_obj.controller;
+        let Some(obj) = self.get_object(object) else { return };
+        let original_controller = obj.controller;
+        if original_controller == source_controller {
+            return;
+        }
+        let _ = registry;
+        self.change_control(object, source_controller);
+        self.control_effects.push(ControlEffect {
+            object,
+            controller: source_controller,
+            original_controller,
+            source,
+            source_controller,
+        });
+    }
+
+    /// End every control effect whose condition has stopped being true, giving
+    /// each permanent back to whoever had it (CR 611.2b). Returns true if
+    /// anything changed.
+    ///
+    /// Run as a state-based action, which is the closest the engine has to
+    /// "the moment the condition becomes false".
+    pub fn expire_control_effects(&mut self) -> bool {
+        let ended: Vec<ControlEffect> = self.control_effects.iter()
+            .filter(|e| {
+                // The source has to still be on the battlefield AND still be
+                // controlled by the player who gained control.
+                !self.get_object(e.source)
+                    .is_some_and(|s| s.zone == Zone::Battlefield && s.controller == e.source_controller)
+            })
+            .cloned()
+            .collect();
+        if ended.is_empty() {
+            return false;
+        }
+        self.control_effects.retain(|e| !ended.contains(e));
+        for effect in ended {
+            if self.get_object(effect.object).is_some_and(|o| o.zone == Zone::Battlefield) {
+                let name = self.obj_name(effect.object);
+                self.change_control(effect.object, effect.original_controller);
+                self.log(LogLevel::Event, format!(
+                    "{name} returns to p{}: the control effect's condition no longer holds",
+                    effect.original_controller.0));
+            }
+        }
+        true
+    }
+
     /// Move a resolving spell to the appropriate zone.
     /// Flashback spells go to exile; others go to graveyard.
     pub fn move_spell_after_resolve(&mut self, object_id: ObjectId, registry: &crate::cards::CardRegistry) {
@@ -2176,6 +2244,31 @@ impl PlayerState {
             Some(self.library_order.remove(0))
         }
     }
+}
+
+/// One "gain control of X for as long as you control this permanent" effect
+/// (CR 611.2b).
+///
+/// The duration ends the *moment* its condition stops being true, however that
+/// happens — the source leaving the battlefield is the obvious way, but an
+/// opponent taking the source with Act of Treason ends it just as surely, with
+/// no zone change to notice. Reverting only in the source's
+/// `on_leave_battlefield` handled the first and missed the second, so the
+/// condition is written down here and checked as a state-based action instead.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ControlEffect {
+    /// The permanent whose control was gained.
+    pub object: ObjectId,
+    /// Who controls it while the effect lasts.
+    pub controller: PlayerId,
+    /// Who controlled it before, and gets it back when the effect ends.
+    pub original_controller: PlayerId,
+    /// The permanent the duration depends on ("...for as long as you control
+    /// **Olivia Voldaren**").
+    pub source: ObjectId,
+    /// Who has to keep controlling `source`. The effect ends if `source`
+    /// leaves the battlefield or comes under anyone else's control.
+    pub source_controller: PlayerId,
 }
 
 /// Combat state, tracking attackers and blockers.
